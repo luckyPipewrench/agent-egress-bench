@@ -1,29 +1,93 @@
-# Pipelock benchmark config: all scanners enabled, actions set to block.
+# Pipelock benchmark config: all scanners enabled, enforcement on.
 # This tests capability, not default UX tradeoffs.
 
+version: 1
 mode: strict
 
-enforce:
-  action: block
+api_allowlist:
+  - "*.anthropic.com"
+  - "*.openai.com"
+  - "github.com"
+  - "*.github.com"
+  - "*.githubusercontent.com"
+  - "api.example.com"
+  - "httpbin.org"
 
 fetch_proxy:
-  enabled: true
+  listen: 127.0.0.1:18899
+  timeout_seconds: 30
+  max_response_mb: 10
+  user_agent: Pipelock Fetch/1.0
   monitoring:
-    max_req_per_minute: 0  # disable rate limiting for benchmarks
+    max_url_length: 2000
+    entropy_threshold: 3.5
+    max_requests_per_minute: 0
+    max_data_per_minute: 0
+    blocklist:
+      - "*.pastebin.com"
+      - "*.hastebin.com"
+      - "*.paste.ee"
+      - "*.transfer.sh"
+      - "*.file.io"
+      - "*.requestbin.com"
 
 forward_proxy:
   enabled: true
+  sni_verification: true
 
 dlp:
-  action: block
-  scan_body: true
-  body_max_size: 1048576
-  scan_headers: true
   scan_env: false
+  patterns:
+    - name: Anthropic API Key
+      regex: sk-ant-[a-zA-Z0-9\-_]{10,}
+      severity: critical
+    - name: OpenAI API Key
+      regex: sk-proj-[a-zA-Z0-9\-_]{10,}
+      severity: critical
+    - name: GitHub Token
+      regex: gh[pousr]_[A-Za-z0-9_]{36,}
+      severity: critical
+    - name: GitHub Fine-Grained PAT
+      regex: github_pat_[a-zA-Z0-9_]{36,}
+      severity: critical
+    - name: AWS Access ID
+      regex: (AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16,}
+      severity: critical
+    - name: Slack Token
+      regex: xox[bpras]-[0-9a-zA-Z-]{15,}
+      severity: critical
+    - name: Discord Bot Token
+      regex: '[MN][A-Za-z0-9]{23,}\.[A-Za-z0-9\-_]{6}\.[A-Za-z0-9\-_]{27,}'
+      severity: critical
+    - name: SendGrid API Key
+      regex: SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}
+      severity: critical
+    - name: Stripe Key
+      regex: '[sr]k_(live|test)_[a-zA-Z0-9]{20,}'
+      severity: critical
+    - name: Private Key Header
+      regex: '-----BEGIN\s+(RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----'
+      severity: critical
+    - name: JWT Token
+      regex: (ey[a-zA-Z0-9_\-=]{10,}\.){2}[a-zA-Z0-9_\-=]{10,}
+      severity: high
+    - name: Social Security Number
+      regex: \b\d{3}-\d{2}-\d{4}\b
+      severity: low
+    - name: Credential in URL
+      regex: \b(?:password|passwd|secret|token|apikey|api_key|api-key)\s*=\s*[^\s&]{4,}
+      severity: high
 
 response_scanning:
   enabled: true
   action: block
+
+request_body_scanning:
+  enabled: true
+  action: block
+  max_body_bytes: 1048576
+  scan_headers: true
+  header_mode: all
 
 mcp_input_scanning:
   enabled: true
@@ -32,14 +96,14 @@ mcp_input_scanning:
 mcp_tool_scanning:
   enabled: true
   action: block
+  detect_drift: true
 
 mcp_tool_policy:
-  enabled: true
-  default_action: allow
+  enabled: false
 
 mcp_session_binding:
   enabled: true
-  action: block
+  unknown_tool_action: block
 
 tool_chain_detection:
   enabled: true
@@ -47,3 +111,7 @@ tool_chain_detection:
 
 logging:
   level: warn
+  format: json
+  output: stdout
+  include_allowed: false
+  include_blocked: true

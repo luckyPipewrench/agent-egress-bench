@@ -30,7 +30,7 @@ TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
 
 # Start pipelock
 echo "starting pipelock on port $PORT..." >&2
-"$PIPELOCK" run --config "$CONFIG" --port "$PORT" &
+"$PIPELOCK" run --config "$CONFIG" --listen "127.0.0.1:$PORT" &
 PIPELOCK_PID=$!
 # shellcheck disable=SC2064
 trap "kill $PIPELOCK_PID 2>/dev/null; wait $PIPELOCK_PID 2>/dev/null" EXIT
@@ -187,7 +187,7 @@ total=0
 
 > "$RESULTS_FILE"
 
-find "$CASES_DIR" -name '*.json' -type f | sort | while read -r case_file; do
+while read -r case_file; do
     total=$((total + 1))
     case_id=$(jq -r '.id' "$case_file")
     input_type=$(jq -r '.input_type' "$case_file")
@@ -226,7 +226,7 @@ find "$CASES_DIR" -name '*.json' -type f | sort | while read -r case_file; do
         fail)    failed=$((failed + 1)); echo "  FAIL  $case_id" >&2 ;;
         error)   errors=$((errors + 1)); echo "  ERR   $case_id" >&2 ;;
     esac
-done
+done < <(find "$CASES_DIR" -name '*.json' -type f | sort)
 
 # Print results to stdout
 cat "$RESULTS_FILE"
