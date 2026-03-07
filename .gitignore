@@ -1,0 +1,28 @@
+# Local/private files
+CLAUDE.local.md
+*.local.md
+*.local.yaml
+
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Build artifacts
+/tmp/
+/validate/aeb-validate
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test output
+*.jsonl
+
+# Playwright
+.playwright-mcp/

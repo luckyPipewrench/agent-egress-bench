@@ -36,3 +36,12 @@ jobs:
             echo "ERROR: no case files found"
             exit 1
           fi
+
+      - name: Scan for personal information
+        run: |
+          if grep -ri 'pipelab\|debserver\|clawdbot\|family-agent\|10\.10\.' \
+            cases/ docs/ examples/ README.md CONTRIBUTING.md CLAUDE.md 2>/dev/null; then
+            echo "ERROR: personal/infrastructure information found in repo content"
+            exit 1
+          fi
+          echo "Personal info scan: clean"
