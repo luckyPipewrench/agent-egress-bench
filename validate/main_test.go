@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -453,6 +455,659 @@ func TestCLIRequiresArgument(t *testing.T) {
 	}
 }
 
+func TestInvalidSchemaVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-ver-001.json", `{
+		"schema_version": 2,
+		"id": "url-ver-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["url_dlp"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-ver-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "schema_version must be 1")
+}
+
+func TestInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-bad-json-001.json", `{not valid json}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-bad-json-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "JSON parse error")
+}
+
+func TestMissingRequiredStringFields(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		wantError string
+	}{
+		{
+			name: "missing title",
+			json: `{
+				"schema_version": 1, "id": "url-notitle-001", "category": "url",
+				"title": "", "description": "D", "input_type": "url",
+				"transport": "fetch_proxy",
+				"payload": {"method": "GET", "url": "https://example.com"},
+				"expected_verdict": "block", "severity": "high",
+				"capability_tags": ["url_dlp"], "requires": [],
+				"false_positive_risk": "low", "why_expected": "test",
+				"notes": "", "source": ""
+			}`,
+			wantError: "missing title",
+		},
+		{
+			name: "missing description",
+			json: `{
+				"schema_version": 1, "id": "url-nodesc-001", "category": "url",
+				"title": "T", "description": "", "input_type": "url",
+				"transport": "fetch_proxy",
+				"payload": {"method": "GET", "url": "https://example.com"},
+				"expected_verdict": "block", "severity": "high",
+				"capability_tags": ["url_dlp"], "requires": [],
+				"false_positive_risk": "low", "why_expected": "test",
+				"notes": "", "source": ""
+			}`,
+			wantError: "missing description",
+		},
+		{
+			name: "missing id",
+			json: `{
+				"schema_version": 1, "id": "", "category": "url",
+				"title": "T", "description": "D", "input_type": "url",
+				"transport": "fetch_proxy",
+				"payload": {"method": "GET", "url": "https://example.com"},
+				"expected_verdict": "block", "severity": "high",
+				"capability_tags": ["url_dlp"], "requires": [],
+				"false_positive_risk": "low", "why_expected": "test",
+				"notes": "", "source": ""
+			}`,
+			wantError: "missing id",
+		},
+		{
+			name: "missing why_expected",
+			json: `{
+				"schema_version": 1, "id": "url-nowhy-001", "category": "url",
+				"title": "T", "description": "D", "input_type": "url",
+				"transport": "fetch_proxy",
+				"payload": {"method": "GET", "url": "https://example.com"},
+				"expected_verdict": "block", "severity": "high",
+				"capability_tags": ["url_dlp"], "requires": [],
+				"false_positive_risk": "low", "why_expected": "",
+				"notes": "", "source": ""
+			}`,
+			wantError: "missing why_expected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			// Use a filename that matches the id when present
+			fname := "url-test-001.json"
+			writeCase(t, dir, "url", fname, tt.json)
+			ids := make(map[string]string)
+			path := filepath.Join(dir, "url", fname)
+			errors := validateFile(path, ids)
+			assertContainsError(t, errors, tt.wantError)
+		})
+	}
+}
+
+func TestInvalidEnumValues(t *testing.T) {
+	baseJSON := func(field, value string) string {
+		category := "url"
+		inputType := "url"
+		transport := "fetch_proxy"
+		verdict := "block"
+		severity := "high"
+		fpRisk := "low"
+		capTags := `["url_dlp"]`
+
+		switch field {
+		case "category":
+			category = value
+		case "input_type":
+			inputType = value
+		case "transport":
+			transport = value
+		case "expected_verdict":
+			verdict = value
+		case "severity":
+			severity = value
+		case "false_positive_risk":
+			fpRisk = value
+		case "capability_tags":
+			capTags = value
+		case "requires":
+			return fmt.Sprintf(`{
+				"schema_version": 1, "id": "url-enum-001", "category": "url",
+				"title": "T", "description": "D", "input_type": "url",
+				"transport": "fetch_proxy",
+				"payload": {"method": "GET", "url": "https://example.com"},
+				"expected_verdict": "block", "severity": "high",
+				"capability_tags": ["url_dlp"], "requires": [%s],
+				"false_positive_risk": "low", "why_expected": "test",
+				"notes": "", "source": ""
+			}`, value)
+		}
+
+		return fmt.Sprintf(`{
+			"schema_version": 1, "id": "url-enum-001", "category": "%s",
+			"title": "T", "description": "D", "input_type": "%s",
+			"transport": "%s",
+			"payload": {"method": "GET", "url": "https://example.com"},
+			"expected_verdict": "%s", "severity": "%s",
+			"capability_tags": %s, "requires": [],
+			"false_positive_risk": "%s", "why_expected": "test",
+			"notes": "", "source": ""
+		}`, category, inputType, transport, verdict, severity, capTags, fpRisk)
+	}
+
+	tests := []struct {
+		name      string
+		field     string
+		value     string
+		wantError string
+	}{
+		{"invalid category", "category", "invalid_cat", `invalid category: "invalid_cat"`},
+		{"invalid input_type", "input_type", "magic", `invalid input_type: "magic"`},
+		{"invalid transport", "transport", "carrier_pigeon", `invalid transport: "carrier_pigeon"`},
+		{"invalid verdict", "expected_verdict", "maybe", `invalid expected_verdict: "maybe"`},
+		{"invalid severity info", "severity", "info", `invalid severity: "info"`},
+		{"invalid severity warning", "severity", "warning", `invalid severity: "warning"`},
+		{"invalid fp_risk", "false_positive_risk", "extreme", `invalid false_positive_risk: "extreme"`},
+		{"invalid capability_tag", "capability_tags", `["not_a_tag"]`, `invalid capability_tag: "not_a_tag"`},
+		{"invalid requires", "requires", `"not_a_req"`, `invalid requires value: "not_a_req"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeCase(t, dir, "url", "url-enum-001.json", baseJSON(tt.field, tt.value))
+			ids := make(map[string]string)
+			path := filepath.Join(dir, "url", "url-enum-001.json")
+			errors := validateFile(path, ids)
+			assertContainsError(t, errors, tt.wantError)
+		})
+	}
+}
+
+func TestEmptyCapabilityTags(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-notags-001.json", `{
+		"schema_version": 1, "id": "url-notags-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": [], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-notags-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "capability_tags must not be empty")
+}
+
+func TestCategoryDirectoryMismatch(t *testing.T) {
+	dir := t.TempDir()
+	// Put a URL case in the headers directory
+	writeCase(t, dir, "headers", "url-wrongdir-001.json", `{
+		"schema_version": 1, "id": "url-wrongdir-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["url_dlp"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "headers", "url-wrongdir-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, `expects directory "url"`)
+}
+
+func TestMissingPayload(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-nopay-001.json", `{
+		"schema_version": 1, "id": "url-nopay-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["url_dlp"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-nopay-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "missing payload")
+}
+
+func TestPayloadMethodMustBeString(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-badmethod-001.json", `{
+		"schema_version": 1, "id": "url-badmethod-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": 42, "url": "https://example.com"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["url_dlp"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-badmethod-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "payload.method must be a string")
+}
+
+func TestMCPToolResultPayload(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-tool", "mcp-tool-valid-001.json", `{
+		"schema_version": 1, "id": "mcp-tool-valid-001", "category": "mcp_tool",
+		"title": "T", "description": "D", "input_type": "mcp_tool_result",
+		"transport": "mcp_stdio",
+		"payload": {"jsonrpc_messages": [{"jsonrpc": "2.0", "result": {"content": [{"type": "text", "text": "test"}]}, "id": 1}]},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_tool_poison"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-tool", "mcp-tool-valid-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for mcp_tool_result, got: %v", errors)
+	}
+}
+
+func TestMCPToolDefinitionPayload(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-tool", "mcp-tool-def-001.json", `{
+		"schema_version": 1, "id": "mcp-tool-def-001", "category": "mcp_tool",
+		"title": "T", "description": "D", "input_type": "mcp_tool_definition",
+		"transport": "mcp_http",
+		"payload": {"jsonrpc_messages": [{"jsonrpc": "2.0", "result": {"tools": [{"name": "evil", "description": "do bad things"}]}, "id": 1}]},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_tool_poison"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-tool", "mcp-tool-def-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for mcp_tool_definition, got: %v", errors)
+	}
+}
+
+func TestMCPChainPayload(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-chain", "mcp-chain-valid-001.json", `{
+		"schema_version": 1, "id": "mcp-chain-valid-001", "category": "mcp_chain",
+		"title": "T", "description": "D", "input_type": "mcp_tool_sequence",
+		"transport": "mcp_stdio",
+		"payload": {"jsonrpc_messages": [
+			{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "read_file"}, "id": 1},
+			{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "send_email"}, "id": 2}
+		]},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_chain"], "requires": ["mcp_chain_memory"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-chain", "mcp-chain-valid-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for mcp_chain, got: %v", errors)
+	}
+}
+
+func TestResponseMITMValidPayload(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "response-mitm", "response-mitm-valid-001.json", `{
+		"schema_version": 1, "id": "response-mitm-valid-001", "category": "response_mitm",
+		"title": "T", "description": "D", "input_type": "response_content",
+		"transport": "http_proxy",
+		"payload": {"url": "https://example.com", "response_body": "<html>injected</html>"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["response_injection"], "requires": ["response_scanning", "tls_interception"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "response-mitm", "response-mitm-valid-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for response_mitm, got: %v", errors)
+	}
+}
+
+func TestRequestBodyValidPayload(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "request-body", "request-body-valid-001.json", `{
+		"schema_version": 1, "id": "request-body-valid-001", "category": "request_body",
+		"title": "T", "description": "D", "input_type": "request_body",
+		"transport": "http_proxy",
+		"payload": {"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "{\"key\": \"secret\"}"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["request_body_dlp"], "requires": ["request_body_scanning"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "request-body", "request-body-valid-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for request_body, got: %v", errors)
+	}
+}
+
+func TestHeaderValidPayload(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "headers", "headers-valid-001.json", `{
+		"schema_version": 1, "id": "headers-valid-001", "category": "headers",
+		"title": "T", "description": "D", "input_type": "header",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com", "headers": {"Authorization": "Bearer secret123"}},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["header_dlp"], "requires": ["header_scanning"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "headers", "headers-valid-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for header payload, got: %v", errors)
+	}
+}
+
+func TestMCPJsonrpcElementMustBeObject(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-input", "mcp-notobj-001.json", `{
+		"schema_version": 1, "id": "mcp-notobj-001", "category": "mcp_input",
+		"title": "T", "description": "D", "input_type": "mcp_tool_call",
+		"transport": "mcp_stdio",
+		"payload": {"jsonrpc_messages": [42]},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_input_scan"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-input", "mcp-notobj-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "must be an object")
+}
+
+func TestMCPJsonrpcElementMissingVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-input", "mcp-noversion-001.json", `{
+		"schema_version": 1, "id": "mcp-noversion-001", "category": "mcp_input",
+		"title": "T", "description": "D", "input_type": "mcp_tool_call",
+		"transport": "mcp_stdio",
+		"payload": {"jsonrpc_messages": [{"method": "tools/call", "params": {}, "id": 1}]},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_input_scan"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-input", "mcp-noversion-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, `missing required field "jsonrpc"`)
+}
+
+func TestMCPJsonrpcMessagesNotArray(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-input", "mcp-notarray-001.json", `{
+		"schema_version": 1, "id": "mcp-notarray-001", "category": "mcp_input",
+		"title": "T", "description": "D", "input_type": "mcp_tool_call",
+		"transport": "mcp_stdio",
+		"payload": {"jsonrpc_messages": "not an array"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_input_scan"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-input", "mcp-notarray-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "payload.jsonrpc_messages must be an array")
+}
+
+func TestAllCategoryTransportCombinations(t *testing.T) {
+	// Verify every valid category+transport combo passes
+	combos := map[string]struct {
+		inputType string
+		transport string
+		payload   string
+	}{
+		"url+fetch_proxy":            {"url", "fetch_proxy", `{"method": "GET", "url": "https://example.com"}`},
+		"url+http_proxy":             {"url", "http_proxy", `{"method": "GET", "url": "https://example.com"}`},
+		"url+websocket":              {"url", "websocket", `{"method": "GET", "url": "https://example.com"}`},
+		"request_body+fetch_proxy":   {"request_body", "fetch_proxy", `{"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "data"}`},
+		"request_body+http_proxy":    {"request_body", "http_proxy", `{"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "data"}`},
+		"headers+fetch_proxy":        {"header", "fetch_proxy", `{"method": "GET", "url": "https://example.com", "headers": {"X-Key": "val"}}`},
+		"response_fetch+fetch_proxy": {"response_content", "fetch_proxy", `{"url": "https://example.com", "response_body": "hello"}`},
+		"response_mitm+http_proxy":   {"response_content", "http_proxy", `{"url": "https://example.com", "response_body": "hello"}`},
+		"mcp_input+mcp_stdio":        {"mcp_tool_call", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+		"mcp_input+mcp_http":         {"mcp_tool_call", "mcp_http", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+		"mcp_tool+mcp_stdio":         {"mcp_tool_result", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "result": {}, "id": 1}]}`},
+		"mcp_chain+mcp_stdio":        {"mcp_tool_sequence", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+	}
+
+	for name, combo := range combos {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			// Extract category from name
+			category := name[:strings.Index(name, "+")]
+			subdir := categoryDir(category)
+			id := strings.ReplaceAll(name, "+", "-")
+			fname := id + ".json"
+			caseJSON := fmt.Sprintf(`{
+				"schema_version": 1, "id": %q, "category": %q,
+				"title": "T", "description": "D", "input_type": %q,
+				"transport": %q,
+				"payload": %s,
+				"expected_verdict": "block", "severity": "high",
+				"capability_tags": ["url_dlp"], "requires": [],
+				"false_positive_risk": "low", "why_expected": "test",
+				"notes": "", "source": ""
+			}`, id, category, combo.inputType, combo.transport, combo.payload)
+			writeCase(t, dir, subdir, fname, caseJSON)
+			ids := make(map[string]string)
+			path := filepath.Join(dir, subdir, fname)
+			errors := validateFile(path, ids)
+			if len(errors) > 0 {
+				t.Errorf("expected valid combo %s, got errors: %v", name, errors)
+			}
+		})
+	}
+}
+
+func TestSafeExampleFalseOnBenignCase(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-safeFalse-001.json", `{
+		"schema_version": 1, "id": "url-safeFalse-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com"},
+		"expected_verdict": "allow", "severity": "low",
+		"capability_tags": ["benign"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"safe_example": false,
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-safeFalse-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "safe_example")
+}
+
+func TestMultipleValidationErrors(t *testing.T) {
+	// A case with many issues should report all of them
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-multi-001.json", `{
+		"schema_version": 0,
+		"id": "url-multi-001", "category": "invalid_cat",
+		"title": "", "description": "", "input_type": "bad_type",
+		"transport": "carrier_pigeon",
+		"payload": {"method": "GET", "url": "https://example.com"},
+		"expected_verdict": "maybe", "severity": "ultra",
+		"capability_tags": [], "requires": [],
+		"false_positive_risk": "extreme", "why_expected": "",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-multi-001.json")
+	errors := validateFile(path, ids)
+
+	// Should have at least 8 errors: schema_version, title, description, why_expected,
+	// category, input_type, transport, verdict, severity, fp_risk, capability_tags
+	if len(errors) < 8 {
+		t.Errorf("expected at least 8 errors, got %d: %v", len(errors), errors)
+	}
+}
+
+func TestResponseContentPayloadMissingResponseBody(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "response-fetch", "response-fetch-nobody-001.json", `{
+		"schema_version": 1, "id": "response-fetch-nobody-001", "category": "response_fetch",
+		"title": "T", "description": "D", "input_type": "response_content",
+		"transport": "fetch_proxy",
+		"payload": {"url": "https://example.com"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["response_injection"], "requires": ["response_scanning"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "response-fetch", "response-fetch-nobody-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, `payload missing required key "response_body"`)
+}
+
+func TestResponseContentPayloadMissingURL(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "response-fetch", "response-fetch-nourl-001.json", `{
+		"schema_version": 1, "id": "response-fetch-nourl-001", "category": "response_fetch",
+		"title": "T", "description": "D", "input_type": "response_content",
+		"transport": "fetch_proxy",
+		"payload": {"response_body": "test"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["response_injection"], "requires": ["response_scanning"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "response-fetch", "response-fetch-nourl-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, `payload missing required key "url"`)
+}
+
+func TestRequestBodyPayloadMissingContentType(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "request-body", "request-body-noct-001.json", `{
+		"schema_version": 1, "id": "request-body-noct-001", "category": "request_body",
+		"title": "T", "description": "D", "input_type": "request_body",
+		"transport": "fetch_proxy",
+		"payload": {"method": "POST", "url": "https://example.com", "body": "data"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["request_body_dlp"], "requires": ["request_body_scanning"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "request-body", "request-body-noct-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, `payload missing required key "content_type"`)
+}
+
+func TestCLIExitCodeOnFailure(t *testing.T) {
+	binPath := filepath.Join(t.TempDir(), "validate")
+	build := exec.Command("go", "build", "-o", binPath, ".")
+	build.Dir = "."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build failed: %v\n%s", err, out)
+	}
+
+	// Run against an empty directory (no cases)
+	emptyDir := t.TempDir()
+	cmd := exec.Command(binPath, emptyDir)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected non-zero exit code for empty directory")
+	}
+	if !containsStr(string(output), "no case files found") {
+		t.Errorf("expected 'no case files found' message, got: %s", output)
+	}
+}
+
+func TestCLISuccessOnValidCases(t *testing.T) {
+	binPath := filepath.Join(t.TempDir(), "validate")
+	build := exec.Command("go", "build", "-o", binPath, ".")
+	build.Dir = "."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build failed: %v\n%s", err, out)
+	}
+
+	// Create a valid case
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-cli-001.json", `{
+		"schema_version": 1, "id": "url-cli-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["url_dlp"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	cmd := exec.Command(binPath, dir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected zero exit code, got error: %v\n%s", err, output)
+	}
+	if !containsStr(string(output), "validated 1 case") {
+		t.Errorf("expected success message, got: %s", output)
+	}
+}
+
 func TestAllExistingCasesValid(t *testing.T) {
 	// Validate the actual corpus to make sure the validator doesn't break real cases.
 	casesDir := "../cases"
@@ -482,6 +1137,30 @@ func TestAllExistingCasesValid(t *testing.T) {
 			t.Errorf("validation error: %s", e)
 		}
 	}
+}
+
+// assertContainsError checks that at least one error contains the substring.
+func assertContainsError(t *testing.T, errors []string, substr string) {
+	t.Helper()
+	if len(errors) == 0 {
+		t.Fatalf("expected error containing %q, got no errors", substr)
+	}
+	for _, e := range errors {
+		if containsStr(e, substr) {
+			return
+		}
+	}
+	t.Errorf("expected error containing %q, got: %v", substr, errors)
+}
+
+// categoryDir maps category names to directory names for test setup.
+func categoryDir(category string) string {
+	dirs := map[string]string{
+		"url": "url", "request_body": "request-body", "headers": "headers",
+		"response_fetch": "response-fetch", "response_mitm": "response-mitm",
+		"mcp_input": "mcp-input", "mcp_tool": "mcp-tool", "mcp_chain": "mcp-chain",
+	}
+	return dirs[category]
 }
 
 func containsStr(s, substr string) bool {

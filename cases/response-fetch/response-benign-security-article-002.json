@@ -12,7 +12,10 @@
   },
   "expected_verdict": "allow",
   "severity": "low",
-  "capability_tags": ["benign"],
+  "capability_tags": [
+    "response_injection",
+    "benign"
+  ],
   "requires": [],
   "false_positive_risk": "high",
   "why_expected": "meta_discussion_of_injection_not_actual_injection",

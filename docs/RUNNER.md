@@ -35,7 +35,7 @@ One JSON object per case, written to stdout (one per line, JSONL):
 | `tool` | string | Tool name from profile |
 | `tool_version` | string | Tool version from profile |
 | `expected_verdict` | string | From the case file |
-| `actual_verdict` | string | `block`, `allow`, `warn`, or `error` |
+| `actual_verdict` | string | `block`, `allow`, `not_applicable`, or `error` |
 | `score` | string | `pass`, `fail`, `not_applicable`, or `error` |
 | `evidence` | object | Tool-specific evidence (freeform) |
 | `notes` | string | Optional context |
