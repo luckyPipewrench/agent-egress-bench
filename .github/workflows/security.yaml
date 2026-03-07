@@ -6,7 +6,11 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 3 * * 0'
+    - cron: '0 3 * * 0' # Weekly Sunday 3AM UTC
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -14,17 +18,18 @@ permissions:
 jobs:
   codeql:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4
         with:
           languages: go
           queries: security-and-quality
 
-      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/autobuild@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4

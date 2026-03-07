@@ -1,8 +1,25 @@
 # agent-egress-bench
 
+[![Validate Cases](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml/badge.svg)](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml)
+[![Security](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml/badge.svg)](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/luckyPipewrench/agent-egress-bench/badge)](https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/agent-egress-bench)
+[![Go Report Card](https://goreportcard.com/badge/github.com/luckyPipewrench/agent-egress-bench)](https://goreportcard.com/report/github.com/luckyPipewrench/agent-egress-bench)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 A standardized test corpus for evaluating AI agent egress security tools. 72 cases across 8 categories, covering secret exfiltration, prompt injection, SSRF, MCP tool poisoning, and chain detection.
 
-**This tests the security tool, not the agent.** Every other benchmark in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) tests whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
+**This tests the security tool, not the agent.** Most benchmarks in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) test whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
+
+```
+┌─────────────────────┐     ┌──────────────────────┐     ┌──────────┐
+│  AI Agent           │     │  Security Tool        │     │          │
+│  (has secrets,      │────▶│  (proxy / firewall /  │────▶│ Internet │
+│   runs tools)       │     │   MCP wrapper)        │     │          │
+└─────────────────────┘     └──────────────────────┘     └──────────┘
+                                     ▲
+                            agent-egress-bench
+                            tests THIS layer
+```
 
 ## Why this exists
 
@@ -35,6 +52,13 @@ Each case is a self-contained JSON file with the attack payload, expected verdic
 cd validate && go build -o /tmp/aeb-validate . && /tmp/aeb-validate ../cases
 ```
 
+**Validate a runner's output or tool profile:**
+
+```bash
+/tmp/aeb-validate results path/to/results.jsonl
+/tmp/aeb-validate profile path/to/tool-profile.json
+```
+
 **Run against a tool** (using the Pipelock reference runner as an example):
 
 ```bash
@@ -43,6 +67,18 @@ bash harness.sh /path/to/pipelock
 ```
 
 Output is JSONL (one result per case). See [docs/RUNNER.md](docs/RUNNER.md) for the runner contract.
+
+## What this does NOT test
+
+This corpus has a specific scope. It does not cover:
+
+- **Model alignment.** Whether the LLM refuses harmful instructions. Use AgentDojo, AgentHarm, or ASB for that.
+- **Application-layer guardrails.** Whether a guardrail API flags a prompt as malicious. Use AgentShield-benchmark for that.
+- **Code generation safety.** Whether the model writes insecure code. Use CyberSecEval for that.
+- **Authentication or authorization.** Whether the agent has valid credentials for the APIs it calls.
+- **Inbound traffic.** What enters the agent's environment. This corpus focuses on outbound (egress) traffic.
+
+If you need to test the model, use a model benchmark. If you need to test the network security layer, use this.
 
 ## How it works
 
@@ -62,7 +98,7 @@ A runner connects your security tool to this corpus. You need:
 2. A script that feeds each case to your tool and observes the verdict
 3. JSONL output following the format in [docs/RUNNER.md](docs/RUNNER.md)
 
-Put your runner in `examples/{your-tool}/` and open a PR.
+Start from the [runner template](examples/runner-template/) for a working skeleton, or look at the [Pipelock runner](examples/pipelock/) for a complete example. Put your runner in `examples/{your-tool}/` and open a PR. See [docs/ADOPTION.md](docs/ADOPTION.md) for the full guide.
 
 ## OWASP Agentic Top 10 mapping
 
@@ -104,7 +140,11 @@ AgentShield-benchmark is the closest comparable, but operates at the application
 - [SPEC.md](docs/SPEC.md): case schema, field definitions, enums, payload formats
 - [SCORING.md](docs/SCORING.md): pass/fail/not_applicable/error scoring model
 - [RUNNER.md](docs/RUNNER.md): runner output contract and verdict mapping
+- [ADOPTION.md](docs/ADOPTION.md): guide for vendors adopting the benchmark
+- [GLOSSARY.md](docs/GLOSSARY.md): definitions of key terms (agent firewall, egress security, etc.)
+- [GOVERNANCE.md](docs/GOVERNANCE.md): neutrality policy, case immutability, contribution rules
 - [OWASP-MAPPING.md](docs/OWASP-MAPPING.md): case categories mapped to OWASP Agentic Top 10
+- [schemas/](schemas/): JSON Schema files for cases, tool profiles, and results
 
 ## Contributing
 
@@ -117,6 +157,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Cases, runners, and documentation improv
 This corpus was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author. Contributions from any vendor or individual are welcome. This repo does not produce rankings or cross-tool comparison tables. Each tool publishes its own results independently.
 
 **Conflict of interest disclosure:** The author builds an agent egress security tool. This corpus was designed to be tool-neutral: cases test observable behavior (did the request get blocked?), not implementation details. The [Pipelock runner](examples/pipelock/) is a reference implementation, not a privileged position.
+
+Full governance policy: [docs/GOVERNANCE.md](docs/GOVERNANCE.md).
 
 ## License
 
