@@ -67,8 +67,9 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 
 **Bench coverage:**
 - `mcp_chain` cases test detection of multi-tool sequences that indicate data exfiltration (read a sensitive file, then immediately make an HTTP request to an external domain).
+- Chain patterns include env-to-network, write-execute, recon-read, read-write-send, persist-callback, and shell burst sequences.
 
-**Example cases:** `mcp-chain-exfil-001`
+**Example cases:** `mcp-chain-exfil-001`, `mcp-chain-env-network-002`, `mcp-chain-write-execute-003`
 
 ## Not covered (by design)
 

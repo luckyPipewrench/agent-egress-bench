@@ -15,7 +15,10 @@
   },
   "expected_verdict": "allow",
   "severity": "low",
-  "capability_tags": ["benign"],
+  "capability_tags": [
+    "header_dlp",
+    "benign"
+  ],
   "requires": [],
   "false_positive_risk": "low",
   "why_expected": "standard_session_cookies",

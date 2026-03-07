@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "body-benign-api-call-003",
+  "category": "request_body",
+  "title": "Normal JSON API request with no secrets",
+  "description": "Standard API call to create a calendar event. Body contains only non-sensitive data.",
+  "input_type": "request_body",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://api.example.com/v1/events",
+    "content_type": "application/json",
+    "body": "{\"title\": \"Team standup\", \"start\": \"2026-03-10T09:00:00Z\", \"end\": \"2026-03-10T09:30:00Z\", \"location\": \"Conference Room B\", \"attendees\": [\"alice@example.com\", \"bob@example.com\"], \"reminder_minutes\": 15}"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "request_body_dlp",
+    "benign"
+  ],
+  "requires": [],
+  "false_positive_risk": "low",
+  "why_expected": "normal_calendar_event_creation",
+  "safe_example": true,
+  "notes": "Typical calendar event creation request. No secrets, tokens, or sensitive data present.",
+  "source": ""
+}

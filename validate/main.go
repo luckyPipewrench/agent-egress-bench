@@ -329,7 +329,7 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		requireStringKey("response_body")
 
 	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence":
-		// Required: jsonrpc_messages (array)
+		// Required: jsonrpc_messages (array of objects with "jsonrpc" field)
 		requireKey("jsonrpc_messages")
 		v, ok := payload["jsonrpc_messages"]
 		if ok {
@@ -338,6 +338,17 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 				errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages must be an array for input_type %q", inputType))
 			} else if len(arr) == 0 {
 				errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages must not be empty for input_type %q", inputType))
+			} else {
+				for i, elem := range arr {
+					obj, isObj := elem.(map[string]interface{})
+					if !isObj {
+						errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages[%d] must be an object for input_type %q", i, inputType))
+						continue
+					}
+					if _, hasVersion := obj["jsonrpc"]; !hasVersion {
+						errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages[%d] missing required field \"jsonrpc\" for input_type %q", i, inputType))
+					}
+				}
 			}
 		}
 	}

@@ -23,7 +23,10 @@
   },
   "expected_verdict": "allow",
   "severity": "low",
-  "capability_tags": ["benign"],
+  "capability_tags": [
+    "mcp_input_scan",
+    "benign"
+  ],
   "requires": [],
   "false_positive_risk": "low",
   "why_expected": "normal_file_read_of_safe_path",

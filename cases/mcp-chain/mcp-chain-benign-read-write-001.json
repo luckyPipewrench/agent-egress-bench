@@ -13,7 +13,9 @@
         "method": "tools/call",
         "params": {
           "name": "read_file",
-          "arguments": {"path": "/home/user/project/README.md"}
+          "arguments": {
+            "path": "/home/user/project/README.md"
+          }
         },
         "id": 1
       },
@@ -33,8 +35,13 @@
   },
   "expected_verdict": "allow",
   "severity": "low",
-  "capability_tags": ["benign"],
-  "requires": ["mcp_chain_memory"],
+  "capability_tags": [
+    "mcp_chain",
+    "benign"
+  ],
+  "requires": [
+    "mcp_chain_memory"
+  ],
   "false_positive_risk": "low",
   "safe_example": true,
   "why_expected": "benign_read_write_no_sensitive_no_network",
