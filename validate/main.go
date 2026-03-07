@@ -53,34 +53,62 @@ var (
 		"header_scanning": true, "response_scanning": true,
 		"mcp_tool_baseline": true, "mcp_chain_memory": true,
 	}
+
+	// Valid category → input_type combinations per SPEC.md.
+	validCategoryInputType = map[string][]string{
+		"url":            {"url"},
+		"request_body":   {"request_body"},
+		"headers":        {"header"},
+		"response_fetch": {"response_content"},
+		"response_mitm":  {"response_content"},
+		"mcp_input":      {"mcp_tool_call"},
+		"mcp_tool":       {"mcp_tool_result", "mcp_tool_definition"},
+		"mcp_chain":      {"mcp_tool_sequence"},
+	}
+
+	// Valid category → transport combinations.
+	// HTTP categories use fetch_proxy, http_proxy, or websocket.
+	// MCP categories use mcp_stdio or mcp_http.
+	// response_mitm specifically requires http_proxy (MITM needs CONNECT tunnel).
+	validCategoryTransport = map[string][]string{
+		"url":            {"fetch_proxy", "http_proxy", "websocket"},
+		"request_body":   {"fetch_proxy", "http_proxy", "websocket"},
+		"headers":        {"fetch_proxy", "http_proxy", "websocket"},
+		"response_fetch": {"fetch_proxy", "http_proxy", "websocket"},
+		"response_mitm":  {"http_proxy"},
+		"mcp_input":      {"mcp_stdio", "mcp_http"},
+		"mcp_tool":       {"mcp_stdio", "mcp_http"},
+		"mcp_chain":      {"mcp_stdio", "mcp_http"},
+	}
 )
 
 // Case represents a single benchmark case.
 type Case struct {
-	SchemaVersion  int                    `json:"schema_version"`
-	ID             string                 `json:"id"`
-	Category       string                 `json:"category"`
-	Title          string                 `json:"title"`
-	Description    string                 `json:"description"`
-	InputType      string                 `json:"input_type"`
-	Transport      string                 `json:"transport"`
-	Payload        map[string]interface{} `json:"payload"`
-	ExpectedVerdict string               `json:"expected_verdict"`
-	Severity       string                 `json:"severity"`
-	CapabilityTags []string               `json:"capability_tags"`
-	Requires       []string               `json:"requires"`
-	FPRisk         string                 `json:"false_positive_risk"`
-	WhyExpected    string                 `json:"why_expected"`
-	SafeExample    *bool                  `json:"safe_example,omitempty"`
-	Notes          string                 `json:"notes"`
-	Source         string                 `json:"source"`
+	SchemaVersion   int                    `json:"schema_version"`
+	ID              string                 `json:"id"`
+	Category        string                 `json:"category"`
+	Title           string                 `json:"title"`
+	Description     string                 `json:"description"`
+	InputType       string                 `json:"input_type"`
+	Transport       string                 `json:"transport"`
+	Payload         map[string]interface{} `json:"payload"`
+	ExpectedVerdict string                 `json:"expected_verdict"`
+	Severity        string                 `json:"severity"`
+	CapabilityTags  []string               `json:"capability_tags"`
+	Requires        []string               `json:"requires"`
+	FPRisk          string                 `json:"false_positive_risk"`
+	WhyExpected     string                 `json:"why_expected"`
+	SafeExample     *bool                  `json:"safe_example,omitempty"`
+	Notes           string                 `json:"notes"`
+	Source          string                 `json:"source"`
 }
 
 func main() {
-	casesDir := "cases"
-	if len(os.Args) > 1 {
-		casesDir = os.Args[1]
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "usage: validate <cases-directory>\n")
+		os.Exit(1)
 	}
+	casesDir := os.Args[1]
 
 	ids := make(map[string]string) // id -> file path
 	var errors []string
@@ -221,6 +249,99 @@ func validateFile(path string, ids map[string]string) []string {
 		addErr("benign cases (expected_verdict=allow) must have safe_example: true")
 	}
 
+	// Category ↔ input_type consistency
+	if validCategories[c.Category] && validInputTypes[c.InputType] {
+		allowed := validCategoryInputType[c.Category]
+		if !contains(allowed, c.InputType) {
+			addErr(fmt.Sprintf("category %q does not allow input_type %q (valid: %s)",
+				c.Category, c.InputType, strings.Join(allowed, ", ")))
+		}
+	}
+
+	// Category ↔ transport consistency
+	if validCategories[c.Category] && validTransports[c.Transport] {
+		allowed := validCategoryTransport[c.Category]
+		if !contains(allowed, c.Transport) {
+			addErr(fmt.Sprintf("category %q does not allow transport %q (valid: %s)",
+				c.Category, c.Transport, strings.Join(allowed, ", ")))
+		}
+	}
+
+	// Payload shape validation per input_type
+	if c.Payload != nil && validInputTypes[c.InputType] {
+		payloadErrors := validatePayload(c.InputType, c.Payload)
+		for _, pe := range payloadErrors {
+			addErr(pe)
+		}
+	}
+
+	return errors
+}
+
+// validatePayload checks that the payload has the required fields for the given input_type.
+func validatePayload(inputType string, payload map[string]interface{}) []string {
+	var errors []string
+
+	requireKey := func(key string) {
+		if _, ok := payload[key]; !ok {
+			errors = append(errors, fmt.Sprintf("payload missing required key %q for input_type %q", key, inputType))
+		}
+	}
+
+	requireStringKey := func(key string) {
+		v, ok := payload[key]
+		if !ok {
+			errors = append(errors, fmt.Sprintf("payload missing required key %q for input_type %q", key, inputType))
+			return
+		}
+		if _, isStr := v.(string); !isStr {
+			errors = append(errors, fmt.Sprintf("payload.%s must be a string for input_type %q", key, inputType))
+		}
+	}
+
+	switch inputType {
+	case "url":
+		// Required: method (string), url (string)
+		requireStringKey("method")
+		requireStringKey("url")
+
+	case "request_body":
+		// Required: method (string), url (string), content_type (string), body (string)
+		requireStringKey("method")
+		requireStringKey("url")
+		requireStringKey("content_type")
+		requireStringKey("body")
+
+	case "header":
+		// Required: method (string), url (string), headers (object)
+		requireStringKey("method")
+		requireStringKey("url")
+		v, ok := payload["headers"]
+		if !ok {
+			errors = append(errors, fmt.Sprintf("payload missing required key %q for input_type %q", "headers", inputType))
+		} else if _, isMap := v.(map[string]interface{}); !isMap {
+			errors = append(errors, fmt.Sprintf("payload.headers must be an object for input_type %q", inputType))
+		}
+
+	case "response_content":
+		// Required: url (string), response_body (string)
+		requireStringKey("url")
+		requireStringKey("response_body")
+
+	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence":
+		// Required: jsonrpc_messages (array)
+		requireKey("jsonrpc_messages")
+		v, ok := payload["jsonrpc_messages"]
+		if ok {
+			arr, isArr := v.([]interface{})
+			if !isArr {
+				errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages must be an array for input_type %q", inputType))
+			} else if len(arr) == 0 {
+				errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages must not be empty for input_type %q", inputType))
+			}
+		}
+	}
+
 	return errors
 }
 
@@ -245,4 +366,13 @@ func categoryToDir(category string) string {
 	default:
 		return ""
 	}
+}
+
+func contains(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
 }

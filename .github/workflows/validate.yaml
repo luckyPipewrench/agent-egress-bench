@@ -1,0 +1,38 @@
+name: Validate Cases
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Run validator tests
+        run: cd validate && go test -race -count=1 ./...
+
+      - name: Build validator
+        run: cd validate && go build -o /tmp/aeb-validate .
+
+      - name: Validate all cases
+        run: /tmp/aeb-validate cases
+
+      - name: Check case count
+        run: |
+          count=$(find cases -name '*.json' -type f | wc -l)
+          echo "Total cases: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "ERROR: no case files found"
+            exit 1
+          fi
