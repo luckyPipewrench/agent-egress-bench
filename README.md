@@ -2,9 +2,11 @@
 
 [![Validate Cases](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml/badge.svg)](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml)
 [![Security](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml/badge.svg)](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml)
+[![Pipelock Scan](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg)](https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/luckyPipewrench/agent-egress-bench/badge)](https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/agent-egress-bench)
 [![Go Report Card](https://goreportcard.com/badge/github.com/luckyPipewrench/agent-egress-bench)](https://goreportcard.com/report/github.com/luckyPipewrench/agent-egress-bench)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Pipelab](https://img.shields.io/badge/Pipelab-pipelab.org-blue)](https://pipelab.org)
 
 A standardized test corpus for evaluating AI agent egress security tools. 72 cases across 8 categories, covering secret exfiltration, prompt injection, SSRF, MCP tool poisoning, and chain detection.
 
