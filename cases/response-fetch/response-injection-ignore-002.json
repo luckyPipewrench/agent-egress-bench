@@ -17,5 +17,5 @@
   "false_positive_risk": "low",
   "why_expected": "ignore_instructions_with_exfil_command",
   "notes": "Direct injection with shell command to exfiltrate SSH private key.",
-  "source": ""
+  "source": "Greshake et al., Not What You've Signed Up For (2023); ignore-previous-instructions indirect prompt injection"
 }

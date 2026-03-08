@@ -46,5 +46,5 @@
   "safe_example": true,
   "why_expected": "benign_read_write_no_sensitive_no_network",
   "notes": "Benign workflow: read a non-sensitive project file and write a summary in the same directory. No sensitive paths, no credentials, no network access. Should not trigger chain detection.",
-  "source": ""
+  "source": "Synthetic benign traffic pattern"
 }

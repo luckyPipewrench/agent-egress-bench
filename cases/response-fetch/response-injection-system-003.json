@@ -17,5 +17,5 @@
   "false_positive_risk": "low",
   "why_expected": "system_prompt_extraction_pattern",
   "notes": "Attempts to impersonate a system message to extract the agent's instructions.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI01; system prompt extraction via indirect prompt injection"
 }

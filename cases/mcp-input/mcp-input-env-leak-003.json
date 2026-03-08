@@ -30,5 +30,5 @@
   "false_positive_risk": "low",
   "why_expected": "env_var_dump_with_secrets_in_tool_args",
   "notes": "Multiple sensitive environment variables (database URL with password, AWS secret key, Stripe key) are dumped into a message body. All secrets are obviously fake/example values.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; MCP tool argument exfiltration of environment variables"
 }

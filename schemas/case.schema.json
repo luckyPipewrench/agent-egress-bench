@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case.schema.json",
+  "title": "agent-egress-bench Case",
+  "description": "A single test case for evaluating AI agent egress security tools. Each case specifies an input, the expected verdict (block or allow), and the capabilities required to evaluate it.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "category",
+    "title",
+    "description",
+    "input_type",
+    "transport",
+    "payload",
+    "expected_verdict",
+    "severity",
+    "capability_tags",
+    "requires",
+    "false_positive_risk",
+    "why_expected"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Must be 1."
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique identifier. Immutable once published."
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "url",
+        "request_body",
+        "headers",
+        "response_fetch",
+        "response_mitm",
+        "mcp_input",
+        "mcp_tool",
+        "mcp_chain"
+      ],
+      "description": "Attack surface category."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short human-readable title."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What the case tests."
+    },
+    "input_type": {
+      "type": "string",
+      "enum": [
+        "url",
+        "request_body",
+        "header",
+        "response_content",
+        "mcp_tool_call",
+        "mcp_tool_result",
+        "mcp_tool_definition",
+        "mcp_tool_sequence"
+      ],
+      "description": "Type of input being tested."
+    },
+    "transport": {
+      "type": "string",
+      "enum": [
+        "fetch_proxy",
+        "http_proxy",
+        "mcp_stdio",
+        "mcp_http",
+        "websocket"
+      ],
+      "description": "Expected transport mechanism."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Test payload. Format varies by input_type."
+    },
+    "expected_verdict": {
+      "type": "string",
+      "enum": ["block", "allow"],
+      "description": "Expected tool verdict. v1 is binary (no warn)."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"],
+      "description": "Impact severity of the attack being tested."
+    },
+    "capability_tags": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "url_dlp",
+          "request_body_dlp",
+          "header_dlp",
+          "response_injection",
+          "mcp_input_scan",
+          "mcp_tool_poison",
+          "mcp_chain",
+          "ssrf",
+          "domain_blocklist",
+          "entropy",
+          "encoding_evasion",
+          "benign"
+        ]
+      },
+      "description": "What capabilities this case exercises. Used for reporting and applicability."
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "tls_interception",
+          "request_body_scanning",
+          "header_scanning",
+          "response_scanning",
+          "mcp_tool_baseline",
+          "mcp_chain_memory"
+        ]
+      },
+      "description": "Runtime prerequisites. If a tool's profile does not satisfy all entries, the case is not_applicable."
+    },
+    "false_positive_risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Likelihood of incorrect blocking on benign input."
+    },
+    "why_expected": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Machine-readable reason for expected verdict."
+    },
+    "safe_example": {
+      "type": "boolean",
+      "description": "Must be true for benign cases (expected_verdict: allow)."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Human context about the case."
+    },
+    "source": {
+      "type": "string",
+      "description": "Reference or citation."
+    }
+  },
+  "if": {
+    "properties": {
+      "expected_verdict": {
+        "const": "allow"
+      }
+    },
+    "required": ["expected_verdict"]
+  },
+  "then": {
+    "required": ["safe_example"],
+    "properties": {
+      "safe_example": {
+        "const": true
+      }
+    }
+  }
+}

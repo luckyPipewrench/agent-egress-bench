@@ -35,5 +35,5 @@
   "false_positive_risk": "low",
   "why_expected": "description_drift_with_malicious_content",
   "notes": "Tests rug-pull detection: tool description changed from benign to malicious after baseline was established.",
-  "source": ""
+  "source": "OWASP ASI04 Supply Chain; Invariant Labs, MCP security research (2025), rug-pull description drift attack"
 }

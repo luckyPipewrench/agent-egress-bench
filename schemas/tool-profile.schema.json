@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json",
+  "title": "agent-egress-bench Tool Profile",
+  "description": "Declares a tool's claimed capabilities and supported transports/features. Used by runners to determine case applicability before execution.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool",
+    "tool_version",
+    "runner_version",
+    "claims",
+    "supports"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Must be 1."
+    },
+    "tool": {
+      "type": "string",
+      "description": "Tool name."
+    },
+    "tool_version": {
+      "type": "string",
+      "description": "Version of the tool being profiled."
+    },
+    "runner_version": {
+      "type": "string",
+      "description": "Version of the runner used with this profile."
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "url_dlp",
+          "request_body_dlp",
+          "header_dlp",
+          "response_injection",
+          "mcp_input_scan",
+          "mcp_tool_poison",
+          "mcp_chain",
+          "ssrf",
+          "domain_blocklist",
+          "entropy",
+          "encoding_evasion",
+          "benign"
+        ]
+      },
+      "description": "Capability tags this tool claims to support. Cases with tags outside this list are not_applicable."
+    },
+    "supports": {
+      "type": "object",
+      "description": "Transport mechanisms and runtime features the tool supports.",
+      "required": [
+        "fetch_proxy",
+        "http_proxy",
+        "mcp_stdio",
+        "mcp_http",
+        "websocket",
+        "tls_interception",
+        "request_body_scanning",
+        "header_scanning",
+        "response_scanning",
+        "mcp_tool_baseline",
+        "mcp_chain_memory"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fetch_proxy": {
+          "type": "boolean",
+          "description": "Tool supports fetch proxy transport."
+        },
+        "http_proxy": {
+          "type": "boolean",
+          "description": "Tool supports HTTP forward proxy (CONNECT) transport."
+        },
+        "mcp_stdio": {
+          "type": "boolean",
+          "description": "Tool supports MCP stdio proxy transport."
+        },
+        "mcp_http": {
+          "type": "boolean",
+          "description": "Tool supports MCP streamable HTTP transport."
+        },
+        "websocket": {
+          "type": "boolean",
+          "description": "Tool supports WebSocket proxy transport."
+        },
+        "tls_interception": {
+          "type": "boolean",
+          "description": "Tool supports TLS interception for CONNECT tunnel scanning."
+        },
+        "request_body_scanning": {
+          "type": "boolean",
+          "description": "Tool scans HTTP request bodies for secrets and exfiltration."
+        },
+        "header_scanning": {
+          "type": "boolean",
+          "description": "Tool scans HTTP headers for secrets and exfiltration."
+        },
+        "response_scanning": {
+          "type": "boolean",
+          "description": "Tool scans HTTP response content for prompt injection."
+        },
+        "mcp_tool_baseline": {
+          "type": "boolean",
+          "description": "Tool maintains tool description baselines for rug-pull detection."
+        },
+        "mcp_chain_memory": {
+          "type": "boolean",
+          "description": "Tool tracks tool call sequences for chain detection."
+        }
+      }
+    }
+  }
+}

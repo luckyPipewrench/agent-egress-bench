@@ -35,5 +35,5 @@
   "false_positive_risk": "medium",
   "why_expected": "env_then_network_pattern",
   "notes": "Agent harvests environment credentials then exfiltrates via HTTP. The env-then-network pattern is a strong exfiltration signal.",
-  "source": ""
+  "source": "OWASP ASI02 + ASI08; multi-step exfiltration sequence, environment credential harvest then network send"
 }

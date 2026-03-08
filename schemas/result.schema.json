@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result.schema.json",
+  "title": "agent-egress-bench Result",
+  "description": "A single result line from a benchmark runner (JSONL output). One result per case, recording the expected verdict, actual verdict, score, and tool-specific evidence.",
+  "type": "object",
+  "required": [
+    "case_id",
+    "tool",
+    "tool_version",
+    "expected_verdict",
+    "actual_verdict",
+    "score",
+    "evidence",
+    "notes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "description": "The case ID from the case file."
+    },
+    "tool": {
+      "type": "string",
+      "description": "Tool name from the tool profile."
+    },
+    "tool_version": {
+      "type": "string",
+      "description": "Tool version from the tool profile."
+    },
+    "expected_verdict": {
+      "type": "string",
+      "enum": ["block", "allow"],
+      "description": "Expected verdict from the case file."
+    },
+    "actual_verdict": {
+      "type": "string",
+      "enum": ["block", "allow", "not_applicable", "error"],
+      "description": "Verdict observed by the runner. not_applicable if the case does not apply to this tool. error if the runner or tool failed."
+    },
+    "score": {
+      "type": "string",
+      "enum": ["pass", "fail", "not_applicable", "error"],
+      "description": "pass if actual matches expected, fail if not, not_applicable if case was skipped, error if runner/tool failure."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Tool-specific evidence supporting the verdict. Freeform structure."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional context about the result."
+    }
+  }
+}

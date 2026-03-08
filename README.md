@@ -48,17 +48,25 @@ Each case is a self-contained JSON file with the attack payload, expected verdic
 
 ## Quick start
 
+**Prerequisites:** [Go 1.24+](https://go.dev/dl/) (stdlib only, no external dependencies).
+
+**Build the validator:**
+
+```bash
+cd validate && go build -o aeb-validate .
+```
+
 **Validate the corpus:**
 
 ```bash
-cd validate && go build -o /tmp/aeb-validate . && /tmp/aeb-validate ../cases
+./aeb-validate ../cases
 ```
 
-**Validate a runner's output or tool profile:**
+**Validate a runner's results or tool profile:**
 
 ```bash
-/tmp/aeb-validate results path/to/results.jsonl
-/tmp/aeb-validate profile path/to/tool-profile.json
+./aeb-validate results path/to/results.jsonl
+./aeb-validate profile path/to/tool-profile.json
 ```
 
 **Run against a tool** (using the Pipelock reference runner as an example):

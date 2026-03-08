@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: agent-egress-bench
+message: "If you use this corpus in research, please cite it."
+type: dataset
+authors:
+  - name: Josh Waldrep
+    alias: luckyPipewrench
+repository-code: https://github.com/luckyPipewrench/agent-egress-bench
+license: Apache-2.0
+keywords:
+  - ai-security
+  - agent-security
+  - benchmark
+  - mcp
+  - dlp
+  - prompt-injection
+  - ssrf
+  - exfiltration
+date-released: "2026-03-07"

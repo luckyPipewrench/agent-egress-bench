@@ -19,5 +19,5 @@
   "false_positive_risk": "low",
   "why_expected": "env_dump_with_aws_credentials",
   "notes": "Full environment dump with AWS credentials mixed among benign variables.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; environment variable dump with embedded credentials"
 }

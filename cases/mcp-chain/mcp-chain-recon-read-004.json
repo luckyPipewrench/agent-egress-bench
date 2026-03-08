@@ -44,5 +44,5 @@
   "false_positive_risk": "medium",
   "why_expected": "directory_scan_then_read_sensitive_pattern",
   "notes": "Reconnaissance chain: enumerate directories to discover user accounts and SSH key locations, then read the private key. The progressive narrowing from /home to .ssh to id_rsa is a strong recon signal.",
-  "source": ""
+  "source": "OWASP ASI02 + ASI08; multi-step reconnaissance sequence, directory enumeration then SSH key theft"
 }

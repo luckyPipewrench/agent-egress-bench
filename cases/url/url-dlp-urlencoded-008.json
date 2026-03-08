@@ -17,5 +17,5 @@
   "false_positive_risk": "low",
   "why_expected": "urlencoded_aws_key",
   "notes": "Percent-encoded value decodes to AKIAIOSFODNN7EXAMPLE.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; RFC 3986 percent-encoding; AWS IAM key format documentation"
 }

@@ -29,5 +29,5 @@
   "false_positive_risk": "low",
   "why_expected": "exfiltration_instructions_in_tool_result",
   "notes": "Tool result contains a fake SYSTEM NOTE with instructions to exfiltrate data via an HTTP call. Tests response scanning for prompt injection in MCP tool results.",
-  "source": ""
+  "source": "OWASP ASI04 Supply Chain; MCP tool poisoning via exfiltration instructions in tool results"
 }

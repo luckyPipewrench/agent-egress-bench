@@ -23,5 +23,5 @@
   "why_expected": "normal_user_profile_data",
   "safe_example": true,
   "notes": "Standard user profile update. No secrets.",
-  "source": ""
+  "source": "Synthetic benign traffic pattern"
 }

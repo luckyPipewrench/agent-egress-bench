@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "tool": "YOUR_TOOL_NAME",
+  "tool_version": "0.0.0",
+  "runner_version": "v1",
+  "claims": [],
+  "supports": {
+    "fetch_proxy": false,
+    "http_proxy": false,
+    "mcp_stdio": false,
+    "mcp_http": false,
+    "websocket": false,
+    "tls_interception": false,
+    "request_body_scanning": false,
+    "header_scanning": false,
+    "response_scanning": false,
+    "mcp_tool_baseline": false,
+    "mcp_chain_memory": false
+  }
+}

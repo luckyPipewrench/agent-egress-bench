@@ -17,5 +17,5 @@
   "false_positive_risk": "high",
   "why_expected": "high_entropy_path_segment",
   "notes": "Shannon entropy of the path segment exceeds typical threshold (~4.5 bits/char). Some legitimate APIs use similar identifiers, so false positive risk is high.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; Shannon entropy-based covert channel detection"
 }

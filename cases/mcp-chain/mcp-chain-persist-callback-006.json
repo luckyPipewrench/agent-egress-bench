@@ -38,5 +38,5 @@
   "false_positive_risk": "low",
   "why_expected": "persist_then_callback_pattern",
   "notes": "Persistence chain: install a cron job that periodically fetches and executes remote commands, then notify the C2 server that the implant is active. Writing to crontab paths followed by outbound HTTP is a strong persistence indicator.",
-  "source": ""
+  "source": "OWASP ASI02 + ASI08; multi-step persistence sequence, crontab write then C2 callback"
 }

@@ -19,5 +19,5 @@
   "false_positive_risk": "low",
   "why_expected": "credit_card_numbers_in_csv_body",
   "notes": "CSV with well-known test credit card numbers (Visa, Mastercard, Amex). All are standard test numbers, not real.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; PII exfiltration via structured data export"
 }

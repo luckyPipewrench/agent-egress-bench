@@ -19,5 +19,5 @@
   "false_positive_risk": "low",
   "why_expected": "github_pat_in_multipart",
   "notes": "GitHub PAT hidden inside a multipart form data upload.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; multipart/form-data secret exfiltration pattern"
 }

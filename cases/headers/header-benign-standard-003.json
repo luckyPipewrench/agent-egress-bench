@@ -30,5 +30,5 @@
   "why_expected": "standard_browser_headers_no_secrets",
   "safe_example": true,
   "notes": "Typical browser headers including a UUID-format request ID. None of these values match known secret patterns.",
-  "source": ""
+  "source": "Synthetic benign traffic pattern"
 }

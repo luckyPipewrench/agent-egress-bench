@@ -29,5 +29,5 @@
   "false_positive_risk": "low",
   "why_expected": "jwt_token_in_url_query_parameter",
   "notes": "A JWT (the well-known jwt.io example token) is passed as a URL query parameter. DLP should detect the three-part base64url.base64url.base64url JWT pattern.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; MCP tool argument exfiltration of JWT token via URL parameter"
 }

@@ -20,5 +20,5 @@
   "false_positive_risk": "low",
   "why_expected": "jwt_token_in_auth_header",
   "notes": "Complete RS256 JWT token. The signature portion contains high-entropy data that should trigger DLP detection.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; JSON Web Token format (RFC 7519); Bearer scheme (RFC 6750)"
 }

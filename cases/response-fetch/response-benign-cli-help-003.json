@@ -21,5 +21,5 @@
   "safe_example": true,
   "why_expected": "legitimate_cli_documentation",
   "notes": "Contains words like 'ignore', 'override', 'execute', and 'force' in legitimate CLI flag documentation context. Should not trigger injection detection.",
-  "source": ""
+  "source": "Synthetic benign traffic pattern"
 }

@@ -17,5 +17,5 @@
   "false_positive_risk": "low",
   "why_expected": "markdown_image_tag_exfiltrates_data_via_url_query_params",
   "notes": "Markdown image rendering is a common exfiltration vector in LLM agents. The agent fetches the image URL, sending the encoded data to the attacker. This is sometimes called a 'markdown image exfiltration' or 'image callback' attack.",
-  "source": ""
+  "source": "TLS interception attack pattern; markdown image exfiltration (Greshake et al. 2023, OWASP ASI01)"
 }

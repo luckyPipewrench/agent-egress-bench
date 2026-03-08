@@ -29,5 +29,5 @@
   "false_positive_risk": "medium",
   "why_expected": "injection_pattern_in_tool_args",
   "notes": "Prompt injection embedded in file content being written via MCP tool.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; prompt injection embedded in MCP tool arguments"
 }

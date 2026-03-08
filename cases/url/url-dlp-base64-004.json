@@ -17,5 +17,5 @@
   "false_positive_risk": "medium",
   "why_expected": "base64_encoded_aws_key",
   "notes": "QUtJQUlPU0ZPRE5ON0VYQU1QTEU= decodes to AKIAIOSFODNN7EXAMPLE.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; AWS IAM key format documentation; base64 encoding evasion"
 }

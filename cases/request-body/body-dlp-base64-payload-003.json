@@ -19,5 +19,5 @@
   "false_positive_risk": "medium",
   "why_expected": "base64_encoded_secret_in_body",
   "notes": "Base64 payload decodes to AKIAIOSFODNN7EXAMPLE.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; base64 encoding evasion of DLP in request body"
 }

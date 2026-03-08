@@ -32,5 +32,5 @@
   "why_expected": "normal_file_read_of_safe_path",
   "safe_example": true,
   "notes": "Normal MCP tool call to read a README. No secrets, no injection.",
-  "source": ""
+  "source": "Synthetic benign traffic pattern"
 }

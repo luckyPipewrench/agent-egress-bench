@@ -17,5 +17,5 @@
   "false_positive_risk": "low",
   "why_expected": "authority_escalation_pattern",
   "notes": "Combines false authority claims with urgent command execution. The pattern of granting privileges then demanding action is a social engineering technique adapted for AI agents.",
-  "source": ""
+  "source": "Greshake et al., Not What You've Signed Up For (2023); indirect prompt injection via authority escalation"
 }

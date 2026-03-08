@@ -28,5 +28,5 @@
   "false_positive_risk": "low",
   "why_expected": "aws_key_in_tool_arguments",
   "notes": "AWS access key embedded in a web search query tool argument.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; MCP tool argument exfiltration"
 }

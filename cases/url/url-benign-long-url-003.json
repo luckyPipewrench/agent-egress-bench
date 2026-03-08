@@ -21,5 +21,5 @@
   "why_expected": "long_url_with_normal_params",
   "safe_example": true,
   "notes": "Long URL with many parameters but all are normal filter/sort values.",
-  "source": ""
+  "source": "Synthetic benign traffic pattern"
 }

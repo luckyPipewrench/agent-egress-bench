@@ -29,5 +29,5 @@
   "false_positive_risk": "low",
   "why_expected": "ssh_private_key_in_file_write_args",
   "notes": "An SSH private key (fake, obviously synthetic base64 content) is being written to a world-readable temp directory. DLP should flag the BEGIN OPENSSH PRIVATE KEY marker.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; MCP tool argument exfiltration of SSH private key"
 }

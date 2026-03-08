@@ -53,5 +53,5 @@
   "false_positive_risk": "low",
   "why_expected": "shell_burst_command_spray_pattern",
   "notes": "Shell burst: rapid sequence of system enumeration commands followed by exfiltration. The pattern of whoami, passwd read, root listing, then curl to an external host is a textbook post-compromise enumeration and exfil chain.",
-  "source": ""
+  "source": "OWASP ASI02 + ASI08; multi-step exfiltration sequence, rapid shell command spray with data exfil"
 }

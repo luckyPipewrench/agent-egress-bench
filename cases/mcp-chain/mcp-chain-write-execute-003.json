@@ -38,5 +38,5 @@
   "false_positive_risk": "low",
   "why_expected": "write_then_execute_pattern",
   "notes": "Classic dropper: write a script to /tmp then execute it. The write-execute sequence is a strong indicator of staged payload delivery.",
-  "source": ""
+  "source": "OWASP ASI02 + ASI08; multi-step exfiltration sequence, write-then-execute dropper pattern"
 }

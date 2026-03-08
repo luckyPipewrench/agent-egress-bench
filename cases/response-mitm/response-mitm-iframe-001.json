@@ -17,5 +17,5 @@
   "false_positive_risk": "medium",
   "why_expected": "hidden_iframe_to_malicious_domain",
   "notes": "Hidden iframe is a classic web injection. In agent context, it could cause the agent to navigate to the attacker's page.",
-  "source": ""
+  "source": "TLS interception attack pattern; hidden iframe injection for agent navigation hijacking"
 }

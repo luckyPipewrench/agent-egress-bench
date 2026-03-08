@@ -20,5 +20,5 @@
   "false_positive_risk": "low",
   "why_expected": "github_pat_in_cookie",
   "notes": "GitHub PAT embedded among normal cookie values.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; GitHub PAT token format (ghp_ prefix)"
 }

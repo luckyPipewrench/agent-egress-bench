@@ -23,5 +23,5 @@
   "why_expected": "normal_calendar_event_creation",
   "safe_example": true,
   "notes": "Typical calendar event creation request. No secrets, tokens, or sensitive data present.",
-  "source": ""
+  "source": "Synthetic benign traffic pattern"
 }

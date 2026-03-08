@@ -35,5 +35,5 @@
   "false_positive_risk": "medium",
   "why_expected": "read_sensitive_then_fetch_pattern",
   "notes": "Classic read-then-exfiltrate pattern: read .env file, then fetch to attacker domain.",
-  "source": ""
+  "source": "OWASP ASI02 + ASI08; multi-step exfiltration sequence, read sensitive file then fetch"
 }

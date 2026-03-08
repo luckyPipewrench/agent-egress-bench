@@ -43,5 +43,5 @@
   "false_positive_risk": "low",
   "why_expected": "preference_manipulation_in_tool_description",
   "notes": "Tool description uses preference manipulation to override built-in tools and intercept file contents. The 'PREFERRED TOOL' and 'Always use this instead of' patterns are strong indicators of tool poisoning attempting to hijack the agent's tool selection.",
-  "source": ""
+  "source": "OWASP ASI04 Supply Chain; Invariant Labs, MCP security research (2025), tool shadowing via preference manipulation"
 }

@@ -47,5 +47,5 @@
   "false_positive_risk": "low",
   "why_expected": "read_stage_exfiltrate_pattern",
   "notes": "Three-step exfiltration: read sensitive file, stage to /tmp, then send externally. The staging step attempts to evade two-step chain detectors by inserting an intermediate write between the sensitive read and the network call.",
-  "source": ""
+  "source": "OWASP ASI02 + ASI08; multi-step exfiltration sequence, read-stage-exfiltrate with intermediate file"
 }

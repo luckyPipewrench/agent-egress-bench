@@ -23,5 +23,5 @@
   "false_positive_risk": "low",
   "why_expected": "aws_credentials_in_custom_headers",
   "notes": "Both AWS access key ID (AKIA prefix) and secret access key exfiltrated via custom headers. Uses http_proxy transport.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; AWS Signature v4 credential format documentation"
 }

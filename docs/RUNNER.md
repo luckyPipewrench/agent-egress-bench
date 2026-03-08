@@ -2,6 +2,10 @@
 
 A runner connects a specific tool to the benchmark corpus. This document defines the contract every runner must satisfy.
 
+**JSON Schemas:** [`schemas/result.schema.json`](../schemas/result.schema.json) (result lines), [`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json) (tool profiles)
+
+**Starter template:** [`examples/runner-template/`](../examples/runner-template/)
+
 ## Input
 
 1. A directory of case JSON files
@@ -84,3 +88,15 @@ After all cases, the runner should print a summary line to stderr:
 ```
 results: 22 passed, 3 failed, 10 not_applicable, 0 errors (35 total)
 ```
+
+## Validating Output
+
+The validator can check your runner's JSONL output and tool profile:
+
+```bash
+cd validate && go build -o aeb-validate .
+./aeb-validate results path/to/results.jsonl
+./aeb-validate profile path/to/tool-profile.json
+```
+
+This checks field presence, enum validity, and score consistency (e.g., `actual_verdict == expected_verdict` should produce `score: "pass"`).

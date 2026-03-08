@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -54,6 +55,21 @@ var (
 		"mcp_tool_baseline": true, "mcp_chain_memory": true,
 	}
 
+	validActualVerdicts = map[string]bool{
+		"block": true, "allow": true, "not_applicable": true, "error": true,
+	}
+
+	validScores = map[string]bool{
+		"pass": true, "fail": true, "not_applicable": true, "error": true,
+	}
+
+	validSupportsKeys = map[string]bool{
+		"fetch_proxy": true, "http_proxy": true, "mcp_stdio": true, "mcp_http": true,
+		"websocket": true, "tls_interception": true, "request_body_scanning": true,
+		"header_scanning": true, "response_scanning": true, "mcp_tool_baseline": true,
+		"mcp_chain_memory": true,
+	}
+
 	// Valid category → input_type combinations per SPEC.md.
 	validCategoryInputType = map[string][]string{
 		"url":            {"url"},
@@ -103,14 +119,50 @@ type Case struct {
 	Source          string                 `json:"source"`
 }
 
+const usageText = `usage: validate <command> <target>
+
+commands:
+  cases   <dir>    validate case JSON files in a directory
+  results <file>   validate a runner results JSONL file
+  profile <file>   validate a tool profile JSON file
+
+for backwards compatibility, 'validate <dir>' works as 'validate cases <dir>'.
+`
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "usage: validate <cases-directory>\n")
+		fmt.Fprint(os.Stderr, usageText)
 		os.Exit(1)
 	}
-	casesDir := os.Args[1]
 
-	ids := make(map[string]string) // id -> file path
+	subcmd := os.Args[1]
+	switch subcmd {
+	case "cases":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "usage: validate cases <cases-directory>\n")
+			os.Exit(1)
+		}
+		os.Exit(runCases(os.Args[2]))
+	case "results":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "usage: validate results <results-file>\n")
+			os.Exit(1)
+		}
+		os.Exit(runResults(os.Args[2]))
+	case "profile":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "usage: validate profile <profile-file>\n")
+			os.Exit(1)
+		}
+		os.Exit(runProfile(os.Args[2]))
+	default:
+		// Backward compatibility: treat bare argument as cases directory.
+		os.Exit(runCases(subcmd))
+	}
+}
+
+func runCases(casesDir string) int {
+	ids := make(map[string]string)
 	var errors []string
 	fileCount := 0
 
@@ -121,7 +173,6 @@ func main() {
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
 			return nil
 		}
-
 		fileCount++
 		fileErrors := validateFile(path, ids)
 		errors = append(errors, fileErrors...)
@@ -129,23 +180,47 @@ func main() {
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error walking cases directory: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
-
 	if fileCount == 0 {
 		fmt.Fprintf(os.Stderr, "no case files found in %s\n", casesDir)
-		os.Exit(1)
+		return 1
 	}
-
 	if len(errors) > 0 {
 		fmt.Fprintf(os.Stderr, "validation failed with %d error(s):\n\n", len(errors))
 		for _, e := range errors {
 			fmt.Fprintf(os.Stderr, "  %s\n", e)
 		}
-		os.Exit(1)
+		return 1
 	}
-
 	fmt.Printf("validated %d case files. all passed.\n", fileCount)
+	return 0
+}
+
+func runResults(path string) int {
+	errors := validateResultsFile(path)
+	if len(errors) > 0 {
+		fmt.Fprintf(os.Stderr, "validation failed with %d error(s):\n\n", len(errors))
+		for _, e := range errors {
+			fmt.Fprintf(os.Stderr, "  %s\n", e)
+		}
+		return 1
+	}
+	fmt.Println("results file validated. all passed.")
+	return 0
+}
+
+func runProfile(path string) int {
+	errors := validateProfileFile(path)
+	if len(errors) > 0 {
+		fmt.Fprintf(os.Stderr, "validation failed with %d error(s):\n\n", len(errors))
+		for _, e := range errors {
+			fmt.Fprintf(os.Stderr, "  %s\n", e)
+		}
+		return 1
+	}
+	fmt.Println("profile file validated. all passed.")
+	return 0
 }
 
 func validateFile(path string, ids map[string]string) []string {
@@ -161,7 +236,9 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 
 	var c Case
-	if err := json.Unmarshal(data, &c); err != nil {
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
 		addErr(fmt.Sprintf("JSON parse error: %v", err))
 		return errors
 	}
@@ -386,4 +463,186 @@ func contains(slice []string, val string) bool {
 		}
 	}
 	return false
+}
+
+// ResultLine represents a single line in a runner results JSONL file.
+type ResultLine struct {
+	CaseID          string                 `json:"case_id"`
+	Tool            string                 `json:"tool"`
+	ToolVersion     string                 `json:"tool_version"`
+	ExpectedVerdict string                 `json:"expected_verdict"`
+	ActualVerdict   string                 `json:"actual_verdict"`
+	Score           string                 `json:"score"`
+	Evidence        map[string]interface{} `json:"evidence"`
+	Notes           *string                `json:"notes"`
+}
+
+func validateResultLine(lineNum int, r ResultLine) []string {
+	var errors []string
+	addErr := func(msg string) {
+		errors = append(errors, fmt.Sprintf("line %d: %s", lineNum, msg))
+	}
+
+	if r.CaseID == "" {
+		addErr("missing case_id")
+	}
+	if r.Tool == "" {
+		addErr("missing tool")
+	}
+	if r.ToolVersion == "" {
+		addErr("missing tool_version")
+	}
+	if !validVerdicts[r.ExpectedVerdict] {
+		addErr(fmt.Sprintf("invalid expected_verdict: %q (must be block or allow)", r.ExpectedVerdict))
+	}
+	if !validActualVerdicts[r.ActualVerdict] {
+		addErr(fmt.Sprintf("invalid actual_verdict: %q", r.ActualVerdict))
+	}
+	if !validScores[r.Score] {
+		addErr(fmt.Sprintf("invalid score: %q", r.Score))
+	}
+	if r.Evidence == nil {
+		addErr("missing evidence (must be an object)")
+	}
+	if r.Notes == nil {
+		addErr("missing notes (must be a string, use empty string if no context)")
+	}
+
+	// Score consistency checks.
+	if validActualVerdicts[r.ActualVerdict] && validVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
+		switch {
+		case r.ActualVerdict == r.ExpectedVerdict && r.Score != "pass":
+			addErr(fmt.Sprintf("inconsistent score: actual_verdict matches expected_verdict (%q) but score is %q (should be pass)",
+				r.ActualVerdict, r.Score))
+		case r.ActualVerdict == "not_applicable" && r.Score != "not_applicable":
+			addErr(fmt.Sprintf("inconsistent score: actual_verdict is not_applicable but score is %q (should be not_applicable)", r.Score))
+		case r.ActualVerdict == "error" && r.Score != "error":
+			addErr(fmt.Sprintf("inconsistent score: actual_verdict is error but score is %q (should be error)", r.Score))
+		}
+	}
+
+	return errors
+}
+
+func validateResultsFile(path string) []string {
+	f, err := os.Open(path)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: read error: %v", path, err)}
+	}
+	defer f.Close()
+
+	var allErrors []string
+	seenIDs := make(map[string]int)
+	lineNum := 0
+	resultCount := 0
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lineNum++
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		resultCount++
+
+		var r ResultLine
+		dec := json.NewDecoder(strings.NewReader(text))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&r); err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("line %d: JSON parse error: %v", lineNum, err))
+			continue
+		}
+
+		lineErrors := validateResultLine(lineNum, r)
+		allErrors = append(allErrors, lineErrors...)
+
+		if r.CaseID != "" {
+			if prevLine, exists := seenIDs[r.CaseID]; exists {
+				allErrors = append(allErrors, fmt.Sprintf("line %d: duplicate case_id %q (first seen on line %d)", lineNum, r.CaseID, prevLine))
+			} else {
+				seenIDs[r.CaseID] = lineNum
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		allErrors = append(allErrors, fmt.Sprintf("%s: read error: %v", path, err))
+	}
+	if resultCount == 0 {
+		allErrors = append(allErrors, fmt.Sprintf("%s: file contains no result lines", path))
+	}
+
+	return allErrors
+}
+
+// Profile represents a tool profile JSON file.
+type Profile struct {
+	SchemaVersion int                    `json:"schema_version"`
+	Tool          string                 `json:"tool"`
+	ToolVersion   string                 `json:"tool_version"`
+	RunnerVersion string                 `json:"runner_version"`
+	Claims        []string               `json:"claims"`
+	Supports      map[string]interface{} `json:"supports"`
+}
+
+func validateProfile(p Profile) []string {
+	var errors []string
+
+	if p.SchemaVersion != 1 {
+		errors = append(errors, fmt.Sprintf("schema_version must be 1, got %d", p.SchemaVersion))
+	}
+	if p.Tool == "" {
+		errors = append(errors, "missing tool")
+	}
+	if p.ToolVersion == "" {
+		errors = append(errors, "missing tool_version")
+	}
+	if p.RunnerVersion == "" {
+		errors = append(errors, "missing runner_version")
+	}
+	if p.Claims == nil {
+		errors = append(errors, "missing claims (must be an array)")
+	}
+	for _, claim := range p.Claims {
+		if !validCapabilityTags[claim] {
+			errors = append(errors, fmt.Sprintf("invalid claim: %q", claim))
+		}
+	}
+	if p.Supports == nil {
+		errors = append(errors, "missing supports (must be an object)")
+	} else {
+		// Validate present keys.
+		for key, val := range p.Supports {
+			if !validSupportsKeys[key] {
+				errors = append(errors, fmt.Sprintf("invalid supports key: %q", key))
+			}
+			if _, isBool := val.(bool); !isBool {
+				errors = append(errors, fmt.Sprintf("supports.%s must be a boolean", key))
+			}
+		}
+		// Require all supports keys per schema.
+		for key := range validSupportsKeys {
+			if _, exists := p.Supports[key]; !exists {
+				errors = append(errors, fmt.Sprintf("missing required supports key: %q", key))
+			}
+		}
+	}
+
+	return errors
+}
+
+func validateProfileFile(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: read error: %v", path, err)}
+	}
+
+	var p Profile
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&p); err != nil {
+		return []string{fmt.Sprintf("%s: JSON parse error: %v", path, err)}
+	}
+
+	return validateProfile(p)
 }

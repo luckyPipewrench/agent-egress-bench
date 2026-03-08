@@ -26,7 +26,7 @@ bash harness.sh pipelock /path/to/cases
 
 The harness starts Pipelock with `pipelock-benchmark.yaml` (all scanners enabled, actions set to block) and runs HTTP/fetch cases through the fetch proxy endpoint.
 
-MCP and response-content cases are marked as `error` in v1 (runner not yet implemented for those transports). The cases themselves are valid; the harness just doesn't have the plumbing to test them yet.
+MCP and response-content cases are marked as `not_applicable` in v1 (the runner does not yet support those transports). The cases themselves are valid; the v1 harness only supports `fetch_proxy` transport.
 
 ## Output
 

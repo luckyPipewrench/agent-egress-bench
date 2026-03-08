@@ -1175,3 +1175,265 @@ func searchStr(s, substr string) bool {
 	}
 	return false
 }
+
+// strPtr returns a pointer to a string value.
+func strPtr(s string) *string { return &s }
+
+// allSupportsKeys returns a supports map with all 11 required keys set to false.
+func allSupportsKeys() map[string]interface{} {
+	return map[string]interface{}{
+		"fetch_proxy": false, "http_proxy": false, "mcp_stdio": false,
+		"mcp_http": false, "websocket": false, "tls_interception": false,
+		"request_body_scanning": false, "header_scanning": false,
+		"response_scanning": false, "mcp_tool_baseline": false,
+		"mcp_chain_memory": false,
+	}
+}
+
+// --- Result validation tests ---
+
+func TestResultValidation_ValidLine(t *testing.T) {
+	r := ResultLine{
+		CaseID: "test-001", Tool: "test", ToolVersion: "1.0",
+		ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass",
+		Evidence: map[string]interface{}{"status": float64(403)}, Notes: strPtr(""),
+	}
+	errors := validateResultLine(1, r)
+	if len(errors) != 0 {
+		t.Fatalf("expected no errors, got: %v", errors)
+	}
+}
+
+func TestResultValidation_MissingFields(t *testing.T) {
+	r := ResultLine{} // all empty
+	errors := validateResultLine(1, r)
+	if len(errors) < 3 {
+		t.Fatalf("expected multiple errors for empty result line, got %d", len(errors))
+	}
+}
+
+func TestResultValidation_InconsistentScore(t *testing.T) {
+	tests := []struct {
+		name     string
+		actual   string
+		expected string
+		score    string
+		wantErr  bool
+	}{
+		{"match should be pass", "block", "block", "pass", false},
+		{"match but fail", "block", "block", "fail", true},
+		{"na verdict na score", "not_applicable", "block", "not_applicable", false},
+		{"na verdict wrong score", "not_applicable", "block", "pass", true},
+		{"error verdict error score", "error", "block", "error", false},
+		{"error verdict wrong score", "error", "block", "pass", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := ResultLine{
+				CaseID: "t", Tool: "t", ToolVersion: "1",
+				ExpectedVerdict: tt.expected, ActualVerdict: tt.actual, Score: tt.score,
+				Evidence: map[string]interface{}{}, Notes: strPtr(""),
+			}
+			errors := validateResultLine(1, r)
+			hasErr := len(errors) > 0
+			if hasErr != tt.wantErr {
+				t.Errorf("wantErr=%v but got errors: %v", tt.wantErr, errors)
+			}
+		})
+	}
+}
+
+func TestResultValidation_DuplicateCaseId(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "results.jsonl")
+	lines := `{"case_id":"a","tool":"t","tool_version":"1","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{},"notes":""}
+{"case_id":"a","tool":"t","tool_version":"1","expected_verdict":"block","actual_verdict":"allow","score":"fail","evidence":{},"notes":""}`
+	os.WriteFile(path, []byte(lines), 0o600)
+
+	errors := validateResultsFile(path)
+	found := false
+	for _, e := range errors {
+		if strings.Contains(e, "duplicate case_id") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected duplicate case_id error")
+	}
+}
+
+func TestResultValidation_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.jsonl")
+	os.WriteFile(path, []byte(""), 0o600)
+
+	errors := validateResultsFile(path)
+	if len(errors) == 0 {
+		t.Fatal("expected error for empty file")
+	}
+}
+
+// --- Profile validation tests ---
+
+func TestProfileValidation_Valid(t *testing.T) {
+	sup := allSupportsKeys()
+	sup["fetch_proxy"] = true
+	p := Profile{
+		SchemaVersion: 1, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+		Claims:   []string{"url_dlp", "ssrf"},
+		Supports: sup,
+	}
+	errors := validateProfile(p)
+	if len(errors) != 0 {
+		t.Fatalf("expected no errors, got: %v", errors)
+	}
+}
+
+func TestProfileValidation_InvalidClaims(t *testing.T) {
+	p := Profile{
+		SchemaVersion: 1, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+		Claims:   []string{"url_dlp", "not_a_real_claim"},
+		Supports: allSupportsKeys(),
+	}
+	errors := validateProfile(p)
+	found := false
+	for _, e := range errors {
+		if strings.Contains(e, "invalid claim") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected invalid claim error")
+	}
+}
+
+func TestProfileValidation_MissingFields(t *testing.T) {
+	p := Profile{} // all empty/zero
+	errors := validateProfile(p)
+	if len(errors) < 4 {
+		t.Fatalf("expected multiple errors for empty profile, got %d: %v", len(errors), errors)
+	}
+}
+
+func TestProfileValidation_InvalidSupportsKey(t *testing.T) {
+	sup := allSupportsKeys()
+	sup["fake_key"] = true
+	p := Profile{
+		SchemaVersion: 1, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+		Claims:   []string{"url_dlp"},
+		Supports: sup,
+	}
+	errors := validateProfile(p)
+	found := false
+	for _, e := range errors {
+		if strings.Contains(e, "invalid supports key") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected invalid supports key error")
+	}
+}
+
+func TestProfileValidation_NonBooleanSupports(t *testing.T) {
+	sup := allSupportsKeys()
+	sup["fetch_proxy"] = "yes"
+	p := Profile{
+		SchemaVersion: 1, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+		Claims:   []string{"url_dlp"},
+		Supports: sup,
+	}
+	errors := validateProfile(p)
+	found := false
+	for _, e := range errors {
+		if strings.Contains(e, "must be a boolean") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected boolean error for supports value")
+	}
+}
+
+func TestProfileValidation_File(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false}}`
+	_ = os.WriteFile(path, []byte(data), 0o600)
+
+	errors := validateProfileFile(path)
+	if len(errors) != 0 {
+		t.Fatalf("expected no errors, got: %v", errors)
+	}
+}
+
+// --- Regression tests for unknown fields and missing required fields ---
+
+func TestCaseValidation_RejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "url", "url-extra-001.json", `{
+		"schema_version": 1, "id": "url-extra-001", "category": "url",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["url_dlp"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": "",
+		"bogus_field": "should fail"
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "url", "url-extra-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, "unknown field")
+}
+
+func TestResultValidation_RejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "results.jsonl")
+	line := `{"case_id":"t","tool":"t","tool_version":"1","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{},"notes":"","extra":"bad"}`
+	_ = os.WriteFile(path, []byte(line+"\n"), 0o600)
+
+	errors := validateResultsFile(path)
+	assertContainsError(t, errors, "unknown field")
+}
+
+func TestResultValidation_MissingNotes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "results.jsonl")
+	line := `{"case_id":"t","tool":"t","tool_version":"1","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{}}`
+	_ = os.WriteFile(path, []byte(line+"\n"), 0o600)
+
+	errors := validateResultsFile(path)
+	assertContainsError(t, errors, "missing notes")
+}
+
+func TestResultValidation_BlankOnlyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "blank.jsonl")
+	_ = os.WriteFile(path, []byte("\n\n\n"), 0o600)
+
+	errors := validateResultsFile(path)
+	assertContainsError(t, errors, "no result lines")
+}
+
+func TestProfileValidation_MissingSupportsKeys(t *testing.T) {
+	p := Profile{
+		SchemaVersion: 1, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+		Claims:   []string{"url_dlp"},
+		Supports: map[string]interface{}{"fetch_proxy": true},
+	}
+	errors := validateProfile(p)
+	assertContainsError(t, errors, "missing required supports key")
+}
+
+func TestProfileValidation_RejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false},"bogus":true}`
+	_ = os.WriteFile(path, []byte(data), 0o600)
+
+	errors := validateProfileFile(path)
+	assertContainsError(t, errors, "unknown field")
+}

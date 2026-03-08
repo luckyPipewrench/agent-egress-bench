@@ -20,5 +20,5 @@
   "false_positive_risk": "low",
   "why_expected": "api_key_in_header",
   "notes": "SendGrid-style API key in a custom header.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; SendGrid API key format (SG. prefix)"
 }

@@ -1,7 +1,9 @@
 # agent-egress-bench Specification
 
 **Version:** 1
-**Status:** Draft
+**Status:** Stable
+
+**JSON Schema:** [`schemas/case.schema.json`](../schemas/case.schema.json)
 
 ## Overview
 
@@ -140,7 +142,17 @@ A case is `not_applicable` for a tool if either:
 
 This is deterministic. No judgment calls.
 
+## Machine-Readable Schemas
+
+JSON Schema files for programmatic validation:
+
+- [`schemas/case.schema.json`](../schemas/case.schema.json): case file schema
+- [`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json): tool profile schema
+- [`schemas/result.schema.json`](../schemas/result.schema.json): runner result line schema
+
 ## Governance
+
+See [GOVERNANCE.md](GOVERNANCE.md) for full policy. Key rules:
 
 1. Case IDs are immutable forever.
 2. Existing case semantics do not change silently. Semantic changes require a new case.

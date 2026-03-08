@@ -19,5 +19,5 @@
   "false_positive_risk": "medium",
   "why_expected": "hex_encoded_aws_secret_key_in_body",
   "notes": "Hex blob decodes to padding bytes around wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY (AWS example secret key). Tests hex decoding in DLP scanning.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; hex encoding evasion of DLP in request body"
 }

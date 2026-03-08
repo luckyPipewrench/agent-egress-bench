@@ -17,5 +17,5 @@
   "false_positive_risk": "low",
   "why_expected": "authority_impersonation_with_remote_code_execution_via_piped_shell",
   "notes": "This attack combines multiple injection techniques: authority impersonation ('SYSTEM ADMINISTRATOR'), privilege escalation ('elevated privileges'), urgency ('must be performed immediately'), and remote code execution ('curl | bash'). The piped shell pattern is especially dangerous as it downloads and executes arbitrary code.",
-  "source": ""
+  "source": "TLS interception attack pattern; Greshake et al. indirect prompt injection via authority impersonation and remote code execution"
 }

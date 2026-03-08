@@ -17,5 +17,5 @@
   "false_positive_risk": "low",
   "why_expected": "ignore_previous_instructions_pattern",
   "notes": "Classic injection pattern hidden in HTML comment where users cannot see it.",
-  "source": ""
+  "source": "Greshake et al., Not What You've Signed Up For (2023); indirect prompt injection hidden in HTML comment"
 }

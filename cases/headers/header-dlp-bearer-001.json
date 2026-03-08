@@ -20,5 +20,5 @@
   "false_positive_risk": "low",
   "why_expected": "aws_key_in_auth_header",
   "notes": "AWS access key format in Authorization header value.",
-  "source": ""
+  "source": "OWASP Agentic Top 10 ASI02; Bearer token format (RFC 6750); AWS access key ID pattern"
 }
