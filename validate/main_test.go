@@ -1248,7 +1248,9 @@ func TestResultValidation_DuplicateCaseId(t *testing.T) {
 	path := filepath.Join(dir, "results.jsonl")
 	lines := `{"case_id":"a","tool":"t","tool_version":"1","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{},"notes":""}
 {"case_id":"a","tool":"t","tool_version":"1","expected_verdict":"block","actual_verdict":"allow","score":"fail","evidence":{},"notes":""}`
-	os.WriteFile(path, []byte(lines), 0o600)
+	if err := os.WriteFile(path, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	errors := validateResultsFile(path)
 	found := false
@@ -1265,7 +1267,9 @@ func TestResultValidation_DuplicateCaseId(t *testing.T) {
 func TestResultValidation_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.jsonl")
-	os.WriteFile(path, []byte(""), 0o600)
+	if err := os.WriteFile(path, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	errors := validateResultsFile(path)
 	if len(errors) == 0 {

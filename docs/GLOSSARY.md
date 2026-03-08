@@ -26,7 +26,7 @@ A JSON declaration of a security tool's capabilities (what it claims to detect) 
 
 ### Case
 
-A single test scenario in the corpus. Contains an attack payload (or benign traffic), the expected verdict, severity, capability requirements, and metadata. Each case is a self-contained JSON file. See [SPEC.md](SPEC.md) for the schema.
+A single test scenario in the corpus. Contains an attack payload (or benign traffic), the expected verdict, severity, capability requirements, and metadata. Each case is a JSON file that encodes the payload and expected verdict. Some cases require runner-side setup (see [RUNNER.md](RUNNER.md) for details). See [SPEC.md](SPEC.md) for the schema.
 
 ### Verdict
 

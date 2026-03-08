@@ -165,7 +165,7 @@ bash run.sh /path/to/your-tool > results.jsonl 2>summary.txt
 jq empty results.jsonl
 
 # Check required fields exist on every line
-jq -e 'has("case_id", "tool", "tool_version", "expected_verdict", "actual_verdict", "score", "evidence")' results.jsonl > /dev/null
+jq -e 'has("case_id") and has("tool") and has("tool_version") and has("expected_verdict") and has("actual_verdict") and has("score") and has("evidence") and has("notes")' results.jsonl > /dev/null
 ```
 
 ### Check verdicts are valid

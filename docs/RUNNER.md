@@ -44,6 +44,18 @@ One JSON object per case, written to stdout (one per line, JSONL):
 | `evidence` | object | Tool-specific evidence (freeform) |
 | `notes` | string | Optional context |
 
+## Runner Setup
+
+Some cases require tool-specific configuration before running. These requirements are documented in each case's `notes` field and in this section.
+
+### Domain blocklist seeding
+
+Cases with `capability_tags: ["domain_blocklist"]` require the runner to configure the tool's blocklist with benchmark-specific test domains before running. The current test domain is:
+
+- `exfil-collector.example.net` (IANA-reserved, no real DNS resolution)
+
+If your tool does not support domain blocklisting, omit `domain_blocklist` from your profile's `claims` and these cases will be scored `not_applicable`.
+
 ## Applicability Check
 
 Before running a case, the runner must check applicability:

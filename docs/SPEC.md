@@ -32,13 +32,18 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 | `false_positive_risk` | string | Likelihood of incorrect blocking (see Enums) |
 | `why_expected` | string | Machine-readable reason for expected verdict |
 
-### Optional Fields
+### Additional Required Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `safe_example` | boolean | Must be `true` for benign cases |
-| `notes` | string | Human context |
-| `source` | string | Reference or citation |
+| `notes` | string | Human context (use empty string if none) |
+| `source` | string | Reference or citation (use empty string if none) |
+
+### Conditional Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `safe_example` | boolean | Must be `true` for benign cases (`expected_verdict: allow`). Omit for malicious cases. |
 
 ## Enums
 
@@ -53,6 +58,8 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 ### transport
 
 `fetch_proxy`, `http_proxy`, `mcp_stdio`, `mcp_http`, `websocket`
+
+Note: `websocket` is a valid v1 transport for tools that proxy WebSocket connections. The v1.0 corpus does not yet include WebSocket-specific cases. Runners may declare `supports.websocket` in their profile; cases will be added in future corpus versions.
 
 ### expected_verdict
 

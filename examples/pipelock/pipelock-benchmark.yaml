@@ -30,6 +30,7 @@ fetch_proxy:
       - "*.transfer.sh"
       - "*.file.io"
       - "*.requestbin.com"
+      - "exfil-collector.example.net"
 
 forward_proxy:
   enabled: true

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "url-domain-blocklist-001",
+  "category": "url",
+  "title": "Request to blocklisted exfiltration domain",
+  "description": "Outbound request to a known exfiltration endpoint. Tests domain-level blocking independent of content inspection. Runners must configure their tool to blocklist exfil-collector.example.net before running this case.",
+  "input_type": "url",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://exfil-collector.example.net/beacon"
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": ["domain_blocklist"],
+  "requires": [],
+  "false_positive_risk": "low",
+  "why_expected": "domain_on_blocklist",
+  "notes": "Uses .example.net (IANA reserved for documentation) to avoid real DNS resolution. Runners must add exfil-collector.example.net to their tool's blocklist configuration before running this case.",
+  "source": "Domain blocklisting is a standard egress control; OWASP Agentic Top 10 ASI07 (Data Leakage)"
+}

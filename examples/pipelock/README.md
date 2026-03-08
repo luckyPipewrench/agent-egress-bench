@@ -4,7 +4,7 @@ Runs the agent-egress-bench corpus against [Pipelock](https://github.com/luckyPi
 
 ## Prerequisites
 
-- `pipelock` binary (v0.3.6+)
+- `pipelock` binary (v1.0.0+)
 - `jq`
 - `python3` (for URL encoding)
 - `curl`
@@ -24,9 +24,9 @@ bash harness.sh pipelock /path/to/cases
 
 ## What it runs
 
-The harness starts Pipelock with `pipelock-benchmark.yaml` (all scanners enabled, actions set to block) and runs HTTP/fetch cases through the fetch proxy endpoint.
+The harness starts Pipelock with `pipelock-benchmark.yaml` (all scanners enabled, actions set to block) and runs HTTP/fetch cases through the fetch proxy endpoint. The benchmark config includes the test blocklist domain (`exfil-collector.example.net`) required by domain blocklist cases.
 
-MCP and response-content cases are marked as `not_applicable` in v1 (the runner does not yet support those transports). The cases themselves are valid; the v1 harness only supports `fetch_proxy` transport.
+The profile claims `benign` so false-positive cases are included in results. MCP and response-content cases are marked as `not_applicable` in v1 (the runner does not yet support those transports). The cases themselves are valid; the v1 harness only supports `fetch_proxy` transport.
 
 ## Output
 
