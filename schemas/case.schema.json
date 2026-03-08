@@ -18,7 +18,9 @@
     "capability_tags",
     "requires",
     "false_positive_risk",
-    "why_expected"
+    "why_expected",
+    "notes",
+    "source"
   ],
   "additionalProperties": false,
   "properties": {

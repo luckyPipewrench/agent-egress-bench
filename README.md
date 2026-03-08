@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Pipelab](https://img.shields.io/badge/Pipelab-pipelab.org-blue)](https://pipelab.org)
 
-A standardized test corpus for evaluating AI agent egress security tools. 72 cases across 8 categories, covering secret exfiltration, prompt injection, SSRF, MCP tool poisoning, and chain detection.
+A standardized test corpus for evaluating AI agent egress security tools. 73 cases across 8 categories, covering secret exfiltration, prompt injection, SSRF, MCP tool poisoning, and chain detection.
 
 **This tests the security tool, not the agent.** Most benchmarks in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) test whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
 
@@ -33,7 +33,7 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 
 | Category | Directory | Cases | What it tests |
 |----------|-----------|-------|---------------|
-| URL DLP | `cases/url/` | 14 | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF |
+| URL DLP | `cases/url/` | 15 | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF, domain blocklist |
 | Request body DLP | `cases/request-body/` | 10 | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
 | Header DLP | `cases/headers/` | 9 | API keys and tokens in HTTP headers (Bearer, JWT, AWS, multi-header) |
 | Response injection (fetch) | `cases/response-fetch/` | 8 | Prompt injection in fetched web content |
@@ -42,7 +42,7 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 | MCP tool poisoning | `cases/mcp-tool/` | 7 | Poisoned tool descriptions, schema injection, rug-pull changes |
 | MCP chain detection | `cases/mcp-chain/` | 8 | Multi-step exfiltration sequences (read-then-send, env-to-network) |
 
-56 malicious cases (expected: block) and 16 benign cases (expected: allow) to test false positive rates.
+57 malicious cases (expected: block) and 16 benign cases (expected: allow) to test false positive rates.
 
 Each case is a self-contained JSON file with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome.
 
@@ -139,7 +139,7 @@ Most AI agent security benchmarks test whether the **model** behaves safely. Thi
 | [CyberSecEval](https://github.com/meta-llama/PurpleLlama) (Meta) | The LLM | Insecure code generation, cyberattack assistance |
 | [ASB](https://github.com/agiresearch/ASB) (ICLR 2025) | The LLM agent | Defense prompts reducing attack success (90K cases) |
 | [AgentShield-bench](https://github.com/doronp/agentshield-benchmark) (Agent Guard) | Security middleware | Prompt injection and jailbreak detection at API layer (537 cases) |
-| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning at the network layer (72 cases)** |
+| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning at the network layer (73 cases)** |
 
 The model-testing benchmarks assume the LLM is the last line of defense. This corpus assumes models will sometimes fail, and tests the defense-in-depth layer that sits between the agent and the network.
 

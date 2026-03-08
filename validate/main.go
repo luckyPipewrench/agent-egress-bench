@@ -529,7 +529,7 @@ func validateResultsFile(path string) []string {
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read error: %v", path, err)}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var allErrors []string
 	seenIDs := make(map[string]int)
