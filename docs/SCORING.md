@@ -20,11 +20,15 @@ A case is `not_applicable` if either:
 
 This is checked before running the case. Not-applicable cases are never executed.
 
-## Result Format
+## Summary Format
 
-Results are reported as: `{passed}/{applicable} ({not_applicable} skipped, {errors} errors)`
+Runners print a summary to stderr after all cases:
 
-Example: `22/25 (10 skipped, 0 errors)`
+```
+results: 22 passed, 3 failed, 10 not_applicable, 0 errors (35 total)
+```
+
+The four counters must sum to the total number of cases processed.
 
 ## What Scoring Is NOT
 
@@ -36,4 +40,8 @@ A tool failing a case it was never designed to handle is not a meaningful signal
 
 A runner error (tool crash, timeout, transport failure) is scored as `error`, not `fail`. This prevents infrastructure problems from being counted as detection failures.
 
-If a tool produces `error` on more than 20% of applicable cases, the run should be considered invalid and the results should not be published.
+If a tool produces `error` on more than 20% of applicable cases, the run should be considered invalid and the results should not be published. This threshold is a guideline for result publishers; the Go validator does not enforce it automatically.
+
+## Authoritative Validation
+
+The Go validator (`validate/`) is the authoritative tool for checking case files, result lines, and tool profiles. The JSON Schemas provide structural validation. Cross-field constraints (score consistency, category/input_type mapping, category/transport mapping) are enforced by the Go validator only.

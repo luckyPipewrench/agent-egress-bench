@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "tool": "pipelock",
-  "tool_version": "0.3.6",
+  "tool_version": "1.0.0",
   "runner_version": "v1",
   "claims": [
     "url_dlp",
@@ -14,7 +14,8 @@
     "ssrf",
     "domain_blocklist",
     "entropy",
-    "encoding_evasion"
+    "encoding_evasion",
+    "benign"
   ],
   "supports": {
     "fetch_proxy": true,

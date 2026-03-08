@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result.schema.json",
   "title": "agent-egress-bench Result",
-  "description": "A single result line from a benchmark runner (JSONL output). One result per case, recording the expected verdict, actual verdict, score, and tool-specific evidence.",
+  "description": "A single result line from a benchmark runner (JSONL output). One result per case, recording the expected verdict, actual verdict, score, and tool-specific evidence. Note: cross-field constraints (e.g. score consistency with actual_verdict) are enforced by the Go validator, not this schema.",
   "type": "object",
   "required": [
     "case_id",
