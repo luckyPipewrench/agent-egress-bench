@@ -21,4 +21,6 @@ jobs:
           scan-diff: 'true'
           fail-on-findings: 'true'
           test-vectors: 'false'
-          exclude-paths: 'cases/'
+          exclude-paths: |
+            cases/
+            README.md
