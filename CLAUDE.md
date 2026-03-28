@@ -1,6 +1,6 @@
 # CLAUDE.md: agent-egress-bench Development Guide
 
-agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egress security tools. JSON case files, a Go validator, spec docs, and reference runners. This is NOT an application. The validator is a build tool, not the product.
+agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egress security tools. 143 cases across 16 categories. JSON case files, a Go validator, a Gauntlet scoring runner, spec docs, and reference runners. This is NOT an application. The validator and runner are build tools, not the product.
 
 ## Hard Rules
 
@@ -18,21 +18,20 @@ agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egres
 | Go | 1.24+ (validator only) |
 | Validator | stdlib-only Go, zero external deps |
 | Spec | `docs/SPEC.md` (source of truth for case format) |
-| Scoring | `docs/SCORING.md` |
+| Scoring | `docs/SCORING.md` (pass/fail) + `docs/gauntlet.md` (4-dimension scoring) |
 | Runner contract | `docs/RUNNER.md` |
+| Gauntlet runner | `runner/` (stdlib-only Go, zero deps) |
 | OWASP mapping | `docs/OWASP-MAPPING.md` |
 
 ## Build, Test, Validate
 
 ```bash
-cd validate && go test -race -count=1 ./...                    # Run validator tests
+cd validate && go test -race -count=1 ./...                    # Validator tests
 cd validate && go build -o /tmp/aeb-validate .                 # Build validator
 /tmp/aeb-validate ../cases                                     # Validate all cases
-```
-
-One-liner:
-```bash
-cd validate && go test -race -count=1 ./... && go build -o /tmp/aeb-validate . && /tmp/aeb-validate ../cases
+cd runner && go test -race -count=1 ./...                      # Runner tests
+cd runner && go build -o /tmp/aeb-gauntlet .                   # Build runner
+/tmp/aeb-gauntlet --cases ../cases --profile ../examples/pipelock/tool-profile.json --output /tmp/summary.json
 ```
 
 ## Project Structure
@@ -47,10 +46,20 @@ cases/
   mcp-input/        MCP tool call argument scanning (DLP, injection)
   mcp-tool/         MCP tool description poisoning and rug-pull
   mcp-chain/        Multi-step MCP tool call sequence detection
+  a2a-message/      A2A protocol message scanning (DLP, injection)
+  a2a-agent-card/   A2A Agent Card poisoning and drift
+  websocket-dlp/    WebSocket frame DLP, fragment evasion
+  ssrf-bypass/      SSRF via encoded IPs, cloud metadata
+  encoding-evasion/ Multi-layer encoding chains, homoglyphs
+  shell-obfuscation/ Obfuscated shell commands in tool args
+  crypto-financial/ Wallet addresses, seed phrases, credit cards
+  false-positive/   Benign traffic that must not be blocked
 validate/           Go validator (stdlib-only, zero deps)
+runner/             Gauntlet scoring runner CLI (stdlib-only, zero deps)
 examples/           Reference runner implementations
   pipelock/         Pipelock reference runner (harness.sh, config, tool-profile)
-docs/               Spec, scoring, runner contract, OWASP mapping
+docs/               Spec, scoring, Gauntlet methodology, runner contract, OWASP mapping
+scripts/            CI tooling (pr-review.py)
 ```
 
 ## Case Format
@@ -76,13 +85,13 @@ Every case is a JSON file. Filename (minus `.json`) must match the `id` field ex
 | `false_positive_risk` | string | `low`, `medium`, or `high` |
 | `why_expected` | string | Machine-readable reason for expected verdict |
 
-### Optional Fields
+### Conditional/Optional Fields
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `safe_example` | bool | **Required `true`** for benign cases (`expected_verdict: allow`) |
-| `notes` | string | Human-readable context |
-| `source` | string | Research attribution |
+| `notes` | string | Required. Human-readable context (use `""` if none) |
+| `source` | string | Required. Provenance: `"original"`, `"public: <url>"`, or `"synthetic: <desc>"`. Must be non-empty for Gauntlet categories. |
 
 ### Category/Input Type/Transport Consistency
 
@@ -98,6 +107,14 @@ The validator enforces these relationships:
 | `mcp_input` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
 | `mcp_tool` | `mcp_tool_result`, `mcp_tool_definition` | `mcp_stdio`, `mcp_http` |
 | `mcp_chain` | `mcp_tool_sequence` | `mcp_stdio`, `mcp_http` |
+| `a2a_message` | `a2a_message` | `a2a` |
+| `a2a_agent_card` | `a2a_agent_card` | `a2a` |
+| `websocket_dlp` | `websocket_frame` | `websocket` |
+| `ssrf_bypass` | `url` | `fetch_proxy`, `http_proxy` |
+| `encoding_evasion` | `url`, `request_body`, `mcp_tool_call` | `fetch_proxy`, `mcp_stdio` |
+| `shell_obfuscation` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
+| `crypto_financial` | `url`, `request_body`, `header`, `mcp_tool_call` | `fetch_proxy`, `mcp_stdio` |
+| `false_positive` | any | any |
 
 ### Payload Shape Per Input Type
 
@@ -108,12 +125,17 @@ The validator enforces these relationships:
 | `header` | `method`, `url` (strings), `headers` (object) |
 | `response_content` | `url`, `response_body` (strings) |
 | `mcp_tool_call/result/definition/sequence` | `jsonrpc_messages` (non-empty array) |
+| `a2a_message` | `jsonrpc_messages` (non-empty array, A2A methods) |
+| `a2a_agent_card` | `agent_card` (object with `name` and `skills`) |
+| `websocket_frame` | `url` (string), `frames` (non-empty array with `opcode` and `payload`) |
 
 ## Enum Values
 
-**capability_tags:** `url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`
+**capability_tags:** `url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`
 
-**requires:** `tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`
+**requires:** `tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `websocket_frame_scanning`, `a2a_scanning`, `shell_analysis`, `dns_rebinding_fixture`
+
+**transports:** `fetch_proxy`, `http_proxy`, `mcp_stdio`, `mcp_http`, `websocket`, `a2a`
 
 ## Common Development Tasks
 
