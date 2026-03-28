@@ -15,6 +15,11 @@
     "header_scanning": false,
     "response_scanning": false,
     "mcp_tool_baseline": false,
-    "mcp_chain_memory": false
+    "mcp_chain_memory": false,
+    "a2a": false,
+    "websocket_frame_scanning": false,
+    "a2a_scanning": false,
+    "shell_analysis": false,
+    "dns_rebinding_fixture": false
   }
 }

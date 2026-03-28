@@ -12,9 +12,13 @@
     "mcp_tool_poison",
     "mcp_chain",
     "ssrf",
+    "ssrf_bypass",
     "domain_blocklist",
     "entropy",
     "encoding_evasion",
+    "websocket_dlp",
+    "shell_obfuscation",
+    "crypto_dlp",
     "benign"
   ],
   "supports": {
@@ -28,6 +32,11 @@
     "header_scanning": true,
     "response_scanning": true,
     "mcp_tool_baseline": true,
-    "mcp_chain_memory": true
+    "mcp_chain_memory": true,
+    "a2a": false,
+    "websocket_frame_scanning": true,
+    "a2a_scanning": false,
+    "shell_analysis": true,
+    "dns_rebinding_fixture": false
   }
 }

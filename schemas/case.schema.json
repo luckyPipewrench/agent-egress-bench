@@ -43,7 +43,15 @@
         "response_mitm",
         "mcp_input",
         "mcp_tool",
-        "mcp_chain"
+        "mcp_chain",
+        "a2a_message",
+        "a2a_agent_card",
+        "websocket_dlp",
+        "ssrf_bypass",
+        "encoding_evasion",
+        "shell_obfuscation",
+        "crypto_financial",
+        "false_positive"
       ],
       "description": "Attack surface category."
     },
@@ -67,7 +75,10 @@
         "mcp_tool_call",
         "mcp_tool_result",
         "mcp_tool_definition",
-        "mcp_tool_sequence"
+        "mcp_tool_sequence",
+        "a2a_message",
+        "a2a_agent_card",
+        "websocket_frame"
       ],
       "description": "Type of input being tested."
     },
@@ -78,7 +89,8 @@
         "http_proxy",
         "mcp_stdio",
         "mcp_http",
-        "websocket"
+        "websocket",
+        "a2a"
       ],
       "description": "Expected transport mechanism."
     },
@@ -113,7 +125,13 @@
           "domain_blocklist",
           "entropy",
           "encoding_evasion",
-          "benign"
+          "benign",
+          "a2a_scan",
+          "a2a_card_poison",
+          "websocket_dlp",
+          "ssrf_bypass",
+          "shell_obfuscation",
+          "crypto_dlp"
         ]
       },
       "description": "What capabilities this case exercises. Used for reporting and applicability."
@@ -128,7 +146,11 @@
           "header_scanning",
           "response_scanning",
           "mcp_tool_baseline",
-          "mcp_chain_memory"
+          "mcp_chain_memory",
+          "websocket_frame_scanning",
+          "a2a_scanning",
+          "shell_analysis",
+          "dns_rebinding_fixture"
         ]
       },
       "description": "Runtime prerequisites. If a tool's profile does not satisfy all entries, the case is not_applicable."
