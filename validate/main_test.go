@@ -274,6 +274,55 @@ func TestBenignCaseMissingSafeExample(t *testing.T) {
 	}
 }
 
+func TestGauntletCategoryRequiresSource(t *testing.T) {
+	dir := t.TempDir()
+	// Gauntlet category (ssrf_bypass) with empty source should fail.
+	writeCase(t, dir, "ssrf-bypass", "ssrf-test-001.json", `{
+		"schema_version": 1, "id": "ssrf-test-001", "category": "ssrf_bypass",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "http://127.0.0.1"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["ssrf_bypass"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "test", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "ssrf-bypass", "ssrf-test-001.json")
+	errors := validateFile(path, ids)
+	found := false
+	for _, e := range errors {
+		if strings.Contains(e, "non-empty source") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected source enforcement error for gauntlet category, got: %v", errors)
+	}
+}
+
+func TestGauntletCategoryWithSourcePasses(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "ssrf-bypass", "ssrf-test-002.json", `{
+		"schema_version": 1, "id": "ssrf-test-002", "category": "ssrf_bypass",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "http://127.0.0.1"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["ssrf_bypass"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "test", "source": "original"
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "ssrf-bypass", "ssrf-test-002.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for gauntlet case with source, got: %v", errors)
+	}
+}
+
 func TestDuplicateID(t *testing.T) {
 	dir := t.TempDir()
 	writeCase(t, dir, "url", "url-dup-001.json", `{

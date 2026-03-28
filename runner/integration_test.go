@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+func TestRunBadCasesDir(t *testing.T) {
+	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9)
+	if err == nil {
+		t.Fatal("expected error for nonexistent cases dir")
+	}
+}
+
+func TestRunBadProfile(t *testing.T) {
+	err := run(filepath.Join("..", "cases"), "/nonexistent/profile.json",
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9)
+	if err == nil {
+		t.Fatal("expected error for nonexistent profile")
+	}
+}
+
 func TestIntegrationRealCases(t *testing.T) {
 	casesDir := filepath.Join("..", "cases")
 	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")

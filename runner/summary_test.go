@@ -51,6 +51,66 @@ func TestBuildToolSupport(t *testing.T) {
 	}
 }
 
+func TestBuildToolSupportNilClaims(t *testing.T) {
+	p := Profile{
+		Claims:   nil,
+		Supports: map[string]bool{},
+	}
+	ts := buildToolSupport(p)
+	if ts.Claims == nil {
+		t.Error("claims should not be nil")
+	}
+	if ts.UnsupportedTransports == nil {
+		t.Error("unsupported_transports should not be nil")
+	}
+	if ts.UnsupportedRequires == nil {
+		t.Error("unsupported_requires should not be nil")
+	}
+}
+
+func TestBuildToolSupportAllSupported(t *testing.T) {
+	supports := map[string]bool{
+		"fetch_proxy": true, "http_proxy": true, "mcp_stdio": true,
+		"mcp_http": true, "websocket": true, "a2a": true,
+		"tls_interception": true, "request_body_scanning": true,
+		"header_scanning": true, "response_scanning": true,
+		"mcp_tool_baseline": true, "mcp_chain_memory": true,
+		"websocket_frame_scanning": true, "a2a_scanning": true,
+		"shell_analysis": true, "dns_rebinding_fixture": true,
+	}
+	p := Profile{Claims: []string{"url_dlp"}, Supports: supports}
+	ts := buildToolSupport(p)
+	if len(ts.UnsupportedTransports) != 0 {
+		t.Errorf("expected no unsupported transports, got %v", ts.UnsupportedTransports)
+	}
+	if len(ts.UnsupportedRequires) != 0 {
+		t.Errorf("expected no unsupported requires, got %v", ts.UnsupportedRequires)
+	}
+}
+
+func TestComputeCorpusSHA256NonexistentDir(t *testing.T) {
+	_, err := computeCorpusSHA256("/nonexistent/dir")
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory")
+	}
+}
+
+func TestWriteSummaryBadPath(t *testing.T) {
+	s := GauntletSummary{Tool: "test"}
+	err := writeSummary(s, "/nonexistent/dir/summary.json")
+	if err == nil {
+		t.Fatal("expected error for bad path")
+	}
+}
+
+func TestBuildSummaryErrorPath(t *testing.T) {
+	p := Profile{Tool: "test", ToolVersion: "1.0"}
+	_, err := buildSummary(p, nil, nil, nil, 0, "/nonexistent/dir", nil)
+	if err == nil {
+		t.Fatal("expected error for nonexistent cases dir")
+	}
+}
+
 func TestComputeCorpusSHA256(t *testing.T) {
 	dir := t.TempDir()
 

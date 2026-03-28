@@ -99,6 +99,62 @@ func TestLoadProfile(t *testing.T) {
 	}
 }
 
+func TestLoadCasesInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadCases(dir)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestLoadCasesNonexistentDir(t *testing.T) {
+	_, err := loadCases("/nonexistent/path/that/does/not/exist")
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory")
+	}
+}
+
+func TestLoadCasesSkipsNonJSON(t *testing.T) {
+	dir := t.TempDir()
+	// Write a valid case and a non-JSON file.
+	caseJSON := `{"schema_version":1,"id":"test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"test"}`
+	if err := os.WriteFile(filepath.Join(dir, "test-001.json"), []byte(caseJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("not a case"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases, err := loadCases(dir)
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+	if len(cases) != 1 {
+		t.Fatalf("expected 1 case (skip .txt), got %d", len(cases))
+	}
+}
+
+func TestLoadProfileNotFound(t *testing.T) {
+	_, err := loadProfile("/nonexistent/profile.json")
+	if err == nil {
+		t.Fatal("expected error for missing profile")
+	}
+}
+
+func TestLoadProfileInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadProfile(path)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
 func TestCheckApplicability(t *testing.T) {
 	profile := Profile{
 		Claims: []string{"url_dlp", "benign"},
