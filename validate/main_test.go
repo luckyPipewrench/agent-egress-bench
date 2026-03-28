@@ -1179,7 +1179,7 @@ func searchStr(s, substr string) bool {
 // strPtr returns a pointer to a string value.
 func strPtr(s string) *string { return &s }
 
-// allSupportsKeys returns a supports map with all 11 required keys set to false.
+// allSupportsKeys returns a supports map with all required keys set to false.
 func allSupportsKeys() map[string]interface{} {
 	return map[string]interface{}{
 		"fetch_proxy": false, "http_proxy": false, "mcp_stdio": false,
@@ -1187,6 +1187,9 @@ func allSupportsKeys() map[string]interface{} {
 		"request_body_scanning": false, "header_scanning": false,
 		"response_scanning": false, "mcp_tool_baseline": false,
 		"mcp_chain_memory": false,
+		"a2a": false, "websocket_frame_scanning": false,
+		"a2a_scanning": false, "shell_analysis": false,
+		"dns_rebinding_fixture": false,
 	}
 }
 
@@ -1362,7 +1365,7 @@ func TestProfileValidation_NonBooleanSupports(t *testing.T) {
 func TestProfileValidation_File(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
-	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false}}`
+	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false,"a2a":false,"websocket_frame_scanning":false,"a2a_scanning":false,"shell_analysis":false,"dns_rebinding_fixture":false}}`
 	_ = os.WriteFile(path, []byte(data), 0o600)
 
 	errors := validateProfileFile(path)
@@ -1435,7 +1438,7 @@ func TestProfileValidation_MissingSupportsKeys(t *testing.T) {
 func TestProfileValidation_RejectsUnknownFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
-	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false},"bogus":true}`
+	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false,"a2a":false,"websocket_frame_scanning":false,"a2a_scanning":false,"shell_analysis":false,"dns_rebinding_fixture":false},"bogus":true}`
 	_ = os.WriteFile(path, []byte(data), 0o600)
 
 	errors := validateProfileFile(path)

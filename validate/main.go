@@ -17,17 +17,29 @@ var (
 		"url": true, "request_body": true, "headers": true,
 		"response_fetch": true, "response_mitm": true,
 		"mcp_input": true, "mcp_tool": true, "mcp_chain": true,
+		"a2a_message": true, "a2a_agent_card": true, "websocket_dlp": true,
+		"ssrf_bypass": true, "encoding_evasion": true, "shell_obfuscation": true,
+		"crypto_financial": true, "false_positive": true,
+	}
+
+	// New categories added by the Gauntlet expansion.
+	gauntletCategories = map[string]bool{
+		"a2a_message": true, "a2a_agent_card": true, "websocket_dlp": true,
+		"ssrf_bypass": true, "encoding_evasion": true, "shell_obfuscation": true,
+		"crypto_financial": true, "false_positive": true,
 	}
 
 	validInputTypes = map[string]bool{
 		"url": true, "request_body": true, "header": true,
 		"response_content": true, "mcp_tool_call": true, "mcp_tool_result": true,
 		"mcp_tool_definition": true, "mcp_tool_sequence": true,
+		"a2a_message": true, "a2a_agent_card": true, "websocket_frame": true,
 	}
 
 	validTransports = map[string]bool{
 		"fetch_proxy": true, "http_proxy": true,
 		"mcp_stdio": true, "mcp_http": true, "websocket": true,
+		"a2a": true,
 	}
 
 	validVerdicts = map[string]bool{
@@ -47,12 +59,16 @@ var (
 		"response_injection": true, "mcp_input_scan": true, "mcp_tool_poison": true,
 		"mcp_chain": true, "ssrf": true, "domain_blocklist": true,
 		"entropy": true, "encoding_evasion": true, "benign": true,
+		"a2a_scan": true, "a2a_card_poison": true, "websocket_dlp": true,
+		"ssrf_bypass": true, "shell_obfuscation": true, "crypto_dlp": true,
 	}
 
 	validRequires = map[string]bool{
 		"tls_interception": true, "request_body_scanning": true,
 		"header_scanning": true, "response_scanning": true,
 		"mcp_tool_baseline": true, "mcp_chain_memory": true,
+		"websocket_frame_scanning": true, "a2a_scanning": true,
+		"shell_analysis": true, "dns_rebinding_fixture": true,
 	}
 
 	validActualVerdicts = map[string]bool{
@@ -68,6 +84,8 @@ var (
 		"websocket": true, "tls_interception": true, "request_body_scanning": true,
 		"header_scanning": true, "response_scanning": true, "mcp_tool_baseline": true,
 		"mcp_chain_memory": true,
+		"a2a": true, "websocket_frame_scanning": true, "a2a_scanning": true,
+		"shell_analysis": true, "dns_rebinding_fixture": true,
 	}
 
 	// Valid category → input_type combinations per SPEC.md.
@@ -80,6 +98,15 @@ var (
 		"mcp_input":      {"mcp_tool_call"},
 		"mcp_tool":       {"mcp_tool_result", "mcp_tool_definition"},
 		"mcp_chain":      {"mcp_tool_sequence"},
+		// Gauntlet categories:
+		"a2a_message":       {"a2a_message"},
+		"a2a_agent_card":    {"a2a_agent_card"},
+		"websocket_dlp":     {"websocket_frame"},
+		"ssrf_bypass":       {"url"},
+		"encoding_evasion":  {"url", "request_body", "mcp_tool_call"},
+		"shell_obfuscation": {"mcp_tool_call"},
+		"crypto_financial":  {"url", "request_body", "header", "mcp_tool_call"},
+		"false_positive":    {"url", "request_body", "header", "response_content", "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "websocket_frame", "a2a_message"},
 	}
 
 	// Valid category → transport combinations.
@@ -95,6 +122,15 @@ var (
 		"mcp_input":      {"mcp_stdio", "mcp_http"},
 		"mcp_tool":       {"mcp_stdio", "mcp_http"},
 		"mcp_chain":      {"mcp_stdio", "mcp_http"},
+		// Gauntlet categories:
+		"a2a_message":       {"a2a"},
+		"a2a_agent_card":    {"a2a"},
+		"websocket_dlp":     {"websocket"},
+		"ssrf_bypass":       {"fetch_proxy", "http_proxy"},
+		"encoding_evasion":  {"fetch_proxy", "mcp_stdio"},
+		"shell_obfuscation": {"mcp_stdio", "mcp_http"},
+		"crypto_financial":  {"fetch_proxy", "mcp_stdio"},
+		"false_positive":    {"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"},
 	}
 )
 
@@ -352,6 +388,11 @@ func validateFile(path string, ids map[string]string) []string {
 		}
 	}
 
+	// Gauntlet categories require a non-empty source field.
+	if gauntletCategories[c.Category] && c.Source == "" {
+		addErr(fmt.Sprintf("category %q requires a non-empty source field (see provenance conventions)", c.Category))
+	}
+
 	return errors
 }
 
@@ -405,7 +446,8 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		requireStringKey("url")
 		requireStringKey("response_body")
 
-	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence":
+	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence",
+		"a2a_message":
 		// Required: jsonrpc_messages (array of objects with "jsonrpc" field)
 		requireKey("jsonrpc_messages")
 		v, ok := payload["jsonrpc_messages"]
@@ -425,6 +467,48 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 					if _, hasVersion := obj["jsonrpc"]; !hasVersion {
 						errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages[%d] missing required field \"jsonrpc\" for input_type %q", i, inputType))
 					}
+				}
+			}
+		}
+
+	case "a2a_agent_card":
+		// Required: agent_card (object with "name" and "skills" fields)
+		v, ok := payload["agent_card"]
+		if !ok {
+			errors = append(errors, fmt.Sprintf("payload missing required key %q for input_type %q", "agent_card", inputType))
+		} else if card, isObj := v.(map[string]interface{}); !isObj {
+			errors = append(errors, fmt.Sprintf("payload.agent_card must be an object for input_type %q", inputType))
+		} else {
+			if _, hasName := card["name"]; !hasName {
+				errors = append(errors, fmt.Sprintf("payload.agent_card missing required field \"name\" for input_type %q", inputType))
+			}
+			if _, hasSkills := card["skills"]; !hasSkills {
+				errors = append(errors, fmt.Sprintf("payload.agent_card missing required field \"skills\" for input_type %q", inputType))
+			}
+		}
+
+	case "websocket_frame":
+		// Required: url (string), frames (non-empty array of objects with "opcode" and "payload")
+		requireStringKey("url")
+		v, ok := payload["frames"]
+		if !ok {
+			errors = append(errors, fmt.Sprintf("payload missing required key %q for input_type %q", "frames", inputType))
+		} else if arr, isArr := v.([]interface{}); !isArr {
+			errors = append(errors, fmt.Sprintf("payload.frames must be an array for input_type %q", inputType))
+		} else if len(arr) == 0 {
+			errors = append(errors, fmt.Sprintf("payload.frames must not be empty for input_type %q", inputType))
+		} else {
+			for i, elem := range arr {
+				frame, isObj := elem.(map[string]interface{})
+				if !isObj {
+					errors = append(errors, fmt.Sprintf("payload.frames[%d] must be an object for input_type %q", i, inputType))
+					continue
+				}
+				if _, hasOpcode := frame["opcode"]; !hasOpcode {
+					errors = append(errors, fmt.Sprintf("payload.frames[%d] missing required field \"opcode\" for input_type %q", i, inputType))
+				}
+				if _, hasPayload := frame["payload"]; !hasPayload {
+					errors = append(errors, fmt.Sprintf("payload.frames[%d] missing required field \"payload\" for input_type %q", i, inputType))
 				}
 			}
 		}
@@ -451,6 +535,22 @@ func categoryToDir(category string) string {
 		return "mcp-tool"
 	case "mcp_chain":
 		return "mcp-chain"
+	case "a2a_message":
+		return "a2a-message"
+	case "a2a_agent_card":
+		return "a2a-agent-card"
+	case "websocket_dlp":
+		return "websocket-dlp"
+	case "ssrf_bypass":
+		return "ssrf-bypass"
+	case "encoding_evasion":
+		return "encoding-evasion"
+	case "shell_obfuscation":
+		return "shell-obfuscation"
+	case "crypto_financial":
+		return "crypto-financial"
+	case "false_positive":
+		return "false-positive"
 	default:
 		return ""
 	}

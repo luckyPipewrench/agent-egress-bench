@@ -14,6 +14,14 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 | `mcp_input` | ASI02 Tool Misuse & Exploitation | Yes |
 | `mcp_tool` | ASI04 Agentic Supply Chain Vulnerabilities | Yes |
 | `mcp_chain` | ASI02 Tool Misuse + ASI08 Cascading Failures | Yes |
+| `a2a_message` | ASI07 Insecure Inter-Agent Communication | Yes |
+| `a2a_agent_card` | ASI04 Supply Chain + ASI07 Inter-Agent Communication | Yes |
+| `websocket_dlp` | ASI02 Tool Misuse & Exploitation | Yes |
+| `ssrf_bypass` | ASI02 Tool Misuse & Exploitation | Yes |
+| `encoding_evasion` | ASI02 Tool Misuse & Exploitation | Yes |
+| `shell_obfuscation` | ASI02 Tool Misuse + ASI05 Unexpected Code Execution | Yes |
+| `crypto_financial` | ASI02 Tool Misuse & Exploitation | Yes |
+| `false_positive` | N/A (benign baseline) | Yes |
 
 ## Detailed mapping
 
@@ -71,6 +79,27 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 
 **Example cases:** `mcp-chain-exfil-001`, `mcp-chain-env-network-002`, `mcp-chain-write-execute-003`
 
+### ASI05: Unexpected Code Execution (partial)
+
+**Threat:** Agents execute unintended code through tool misuse or injection.
+
+**Bench coverage:**
+- `shell_obfuscation` cases test whether obfuscated shell commands (backtick substitution, fullwidth Unicode, brace expansion, IFS manipulation, escape sequences) are detected in MCP tool call arguments.
+
+**Example cases:** `shell-backtick-substitution-001`, `shell-fullwidth-latin-002`, `shell-ifs-manipulation-006`
+
+**Limitation:** The corpus tests detection of obfuscated commands, not sandboxing or execution prevention. Full ASI05 coverage requires runtime enforcement testing beyond egress scanning.
+
+### ASI07: Insecure Inter-Agent Communication
+
+**Threat:** Attackers exploit agent-to-agent communication to exfiltrate data or inject instructions.
+
+**Bench coverage:**
+- `a2a_message` cases test detection of secrets (API keys, tokens, environment variables) and prompt injection in Google A2A protocol message parts (text and data kinds).
+- `a2a_agent_card` cases test detection of poisoned Agent Card skill descriptions containing hidden exfiltration instructions, system overrides, and metadata injection.
+
+**Example cases:** `a2a-msg-dlp-api-key-001`, `a2a-msg-injection-hijack-004`, `a2a-card-poison-hidden-instruction-001`
+
 ## Not covered (by design)
 
 This corpus tests egress security tools, not the full agent attack surface. The following OWASP items are out of scope:
@@ -78,8 +107,6 @@ This corpus tests egress security tools, not the full agent attack surface. The 
 | OWASP item | Why not covered |
 |------------|----------------|
 | ASI03 Identity & Privilege Abuse | Tests credential management, not egress scanning |
-| ASI05 Unexpected Code Execution | Tests sandboxing, not network-layer security |
-| ASI07 Insecure Inter-Agent Communication | Tests agent-to-agent protocols, not egress |
 | ASI09 Human-Agent Trust Exploitation | Tests UI/UX trust, not network traffic |
 | ASI10 Rogue Agents | Tests agent behavior, not security tool detection |
 

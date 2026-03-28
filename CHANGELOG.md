@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Gauntlet scoring program:** four independent metrics (containment, false positive rate, detection, evidence) with an 80% containment gate. See `docs/gauntlet.md`.
+- **Gauntlet runner CLI** (`runner/`): Go binary that runs all cases against a tool profile, computes scores, and outputs a machine-readable summary. Dry-run mode for v1. Zero external dependencies.
+- **AI PR review workflow** (`/review` and `/review deep`): slash-command triggered code review via GitHub Actions.
+- 70 new test cases across 8 new categories: a2a-message (10), a2a-agent-card (7), websocket-dlp (8), ssrf-bypass (9), encoding-evasion (9), shell-obfuscation (7), crypto-financial (8), false-positive (12)
+- New input types: `a2a_message`, `a2a_agent_card`, `websocket_frame`
+- New transport: `a2a`
+- New capability tags: `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`
+- New requires values: `websocket_frame_scanning`, `a2a_scanning`, `shell_analysis`, `dns_rebinding_fixture`
+- OWASP mapping for ASI05 (partial, shell obfuscation) and ASI07 (A2A inter-agent communication)
+- Source provenance enforcement for new categories (validator rule)
+
+### Changed
+
+- Corpus expanded from 73 to 143 cases (106 malicious, 37 benign)
+- Pipelock reference profile updated with new capability claims
+- Runner template profile updated with new supports fields
+- Tool profile schema: 5 new supports fields (a2a, websocket_frame_scanning, a2a_scanning, shell_analysis, dns_rebinding_fixture)
+
 ## [1.0.0] - 2026-03-08
 
 ### Added

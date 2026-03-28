@@ -11,7 +11,7 @@
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
 </p>
 
-A standardized test corpus for evaluating AI agent egress security tools. 73 cases across 8 categories, covering secret exfiltration, prompt injection, SSRF, MCP tool poisoning, and chain detection.
+A standardized test corpus for evaluating AI agent egress security tools. 143 cases across 16 categories, covering secret exfiltration, prompt injection, SSRF, MCP tool poisoning, chain detection, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
 
 **This tests the security tool, not the agent.** Most benchmarks in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) test whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
 
@@ -44,8 +44,16 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 | MCP input scanning | `cases/mcp-input/` | 9 | DLP and injection in MCP tool arguments (base64, hex, scattered, SSH keys) |
 | MCP tool poisoning | `cases/mcp-tool/` | 7 | Poisoned tool descriptions, schema injection, rug-pull changes |
 | MCP chain detection | `cases/mcp-chain/` | 8 | Multi-step exfiltration sequences (read-then-send, env-to-network) |
+| A2A message scanning | `cases/a2a-message/` | 10 | Secrets and injection in A2A message parts |
+| A2A Agent Card poisoning | `cases/a2a-agent-card/` | 7 | Injection in Agent Card skill descriptions, card drift |
+| WebSocket DLP | `cases/websocket-dlp/` | 8 | Secrets in WebSocket frames, fragment reassembly evasion |
+| SSRF bypass | `cases/ssrf-bypass/` | 9 | Private IP detection, cloud metadata, encoded IPs |
+| Encoding evasion | `cases/encoding-evasion/` | 9 | Multi-layer encoding chains, Unicode tricks, zero-width insertion |
+| Shell obfuscation | `cases/shell-obfuscation/` | 7 | Backtick substitution, brace expansion, IFS manipulation |
+| Crypto/financial DLP | `cases/crypto-financial/` | 8 | Wallet addresses, seed phrases, credit cards, IBANs |
+| False positive suite | `cases/false-positive/` | 12 | Benign traffic that must not be blocked |
 
-57 malicious cases (expected: block) and 16 benign cases (expected: allow) to test false positive rates.
+106 malicious cases (expected: block) and 37 benign cases (expected: allow) to test false positive rates.
 
 Each case is a self-contained JSON file with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome.
 
@@ -80,6 +88,28 @@ bash harness.sh /path/to/pipelock
 ```
 
 Output is JSONL (one result per case). See [docs/RUNNER.md](docs/RUNNER.md) for the runner contract.
+
+## Gauntlet scoring
+
+The Gauntlet is an optional scoring program that evaluates tools on four independent metrics beyond pass/fail:
+
+| Metric | What it measures |
+|--------|-----------------|
+| **Containment** | Percentage of attacks correctly blocked |
+| **False positive rate** | Percentage of benign traffic incorrectly blocked (lower is better) |
+| **Detection** | Whether the tool identified what it caught |
+| **Evidence** | Whether the tool emitted structured proof |
+
+Containment has a hard floor: below 80%, the run is marked insufficient. There is no composite score. Each metric is reported independently.
+
+**Run the Gauntlet:**
+
+```bash
+cd runner && go build -o aeb-gauntlet .
+./aeb-gauntlet --cases ../cases --profile ../examples/pipelock/tool-profile.json --output summary.json
+```
+
+Full methodology: [docs/gauntlet.md](docs/gauntlet.md)
 
 ## What this does NOT test
 
@@ -122,9 +152,9 @@ Each case is a self-contained JSON file. Here's what one looks like:
 A runner feeds each case to the security tool and records whether it blocked or allowed the traffic. Runner output is one JSONL line per case:
 
 ```json
-{"case_id":"url-dlp-aws-key-001","verdict":"block","score":"pass","latency_ms":12}
-{"case_id":"url-benign-api-call-001","verdict":"allow","score":"pass","latency_ms":8}
-{"case_id":"response-mitm-tls-inject-001","verdict":"allow","score":"not_applicable","reason":"tls_interception not supported"}
+{"case_id":"url-dlp-aws-key-001","tool":"pipelock","tool_version":"2.0.0","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{},"notes":""}
+{"case_id":"url-benign-api-call-001","tool":"pipelock","tool_version":"2.0.0","expected_verdict":"allow","actual_verdict":"allow","score":"pass","evidence":{},"notes":""}
+{"case_id":"a2a-msg-dlp-api-key-001","tool":"pipelock","tool_version":"2.0.0","expected_verdict":"block","actual_verdict":"not_applicable","score":"not_applicable","evidence":{},"notes":"not applicable: missing_capability"}
 ```
 
 Cases the tool can't handle (missing capabilities) score `not_applicable`, not `fail`. Nobody gets penalized for features they don't claim to support. See [docs/SCORING.md](docs/SCORING.md).
@@ -153,6 +183,14 @@ The 8 case categories map to the [OWASP Top 10 for Agentic Applications (2026)](
 | `mcp_input` | ASI02 Tool Misuse | DLP and injection in tool arguments |
 | `mcp_tool` | ASI04 Supply Chain | Poisoned tool descriptions, rug-pull changes |
 | `mcp_chain` | ASI02 Tool Misuse + ASI08 Cascading Failures | Multi-step exfiltration sequences |
+| `a2a_message` | ASI07 Inter-Agent Communication | Secrets and injection in A2A messages |
+| `a2a_agent_card` | ASI04 Supply Chain + ASI07 Inter-Agent | Poisoned Agent Card skill descriptions |
+| `websocket_dlp` | ASI02 Tool Misuse | Secrets in WebSocket frames, fragment evasion |
+| `ssrf_bypass` | ASI02 Tool Misuse | SSRF via IP encoding, cloud metadata |
+| `encoding_evasion` | ASI02 Tool Misuse | Multi-layer encoding to bypass scanning |
+| `shell_obfuscation` | ASI02 Tool Misuse + ASI05 Code Execution | Obfuscated shell commands in tool args |
+| `crypto_financial` | ASI02 Tool Misuse | Wallet addresses, seed phrases, credit cards |
+| `false_positive` | N/A | Benign traffic that must not be blocked |
 
 Full mapping with MITRE ATT&CK techniques: [docs/OWASP-MAPPING.md](docs/OWASP-MAPPING.md)
 
@@ -168,7 +206,7 @@ Most AI agent security benchmarks test whether the **model** behaves safely. Thi
 | [CyberSecEval](https://github.com/meta-llama/PurpleLlama) (Meta) | The LLM | Insecure code generation, cyberattack assistance |
 | [ASB](https://github.com/agiresearch/ASB) (ICLR 2025) | The LLM agent | Defense prompts reducing attack success (90K cases) |
 | [AgentShield-bench](https://github.com/doronp/agentshield-benchmark) (Agent Guard) | Security middleware | Prompt injection and jailbreak detection at API layer (537 cases) |
-| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning at the network layer (73 cases)** |
+| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning, A2A, encoding evasion at the network layer (143 cases)** |
 
 The model-testing benchmarks assume the LLM is the last line of defense. This corpus assumes models will sometimes fail, and tests the defense-in-depth layer that sits between the agent and the network.
 
@@ -178,6 +216,7 @@ AgentShield-benchmark is the closest comparable, but operates at the application
 
 - [SPEC.md](docs/SPEC.md): case schema, field definitions, enums, payload formats
 - [SCORING.md](docs/SCORING.md): pass/fail/not_applicable/error scoring model
+- [gauntlet.md](docs/gauntlet.md): Gauntlet scoring methodology (containment, FP rate, detection, evidence)
 - [RUNNER.md](docs/RUNNER.md): runner output contract and verdict mapping
 - [ADOPTION.md](docs/ADOPTION.md): guide for vendors adopting the benchmark
 - [GLOSSARY.md](docs/GLOSSARY.md): definitions of key terms (agent firewall, egress security, etc.)

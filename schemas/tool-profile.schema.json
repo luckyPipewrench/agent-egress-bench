@@ -47,7 +47,13 @@
           "domain_blocklist",
           "entropy",
           "encoding_evasion",
-          "benign"
+          "benign",
+          "a2a_scan",
+          "a2a_card_poison",
+          "websocket_dlp",
+          "ssrf_bypass",
+          "shell_obfuscation",
+          "crypto_dlp"
         ]
       },
       "description": "Capability tags this tool claims to support. Cases with tags outside this list are not_applicable."
@@ -66,7 +72,12 @@
         "header_scanning",
         "response_scanning",
         "mcp_tool_baseline",
-        "mcp_chain_memory"
+        "mcp_chain_memory",
+        "a2a",
+        "websocket_frame_scanning",
+        "a2a_scanning",
+        "shell_analysis",
+        "dns_rebinding_fixture"
       ],
       "additionalProperties": false,
       "properties": {
@@ -113,6 +124,26 @@
         "mcp_chain_memory": {
           "type": "boolean",
           "description": "Tool tracks tool call sequences for chain detection."
+        },
+        "a2a": {
+          "type": "boolean",
+          "description": "Tool supports A2A (Agent-to-Agent) protocol transport."
+        },
+        "websocket_frame_scanning": {
+          "type": "boolean",
+          "description": "Tool scans individual WebSocket frame payloads for DLP."
+        },
+        "a2a_scanning": {
+          "type": "boolean",
+          "description": "Tool scans A2A message parts and Agent Cards."
+        },
+        "shell_analysis": {
+          "type": "boolean",
+          "description": "Tool detects obfuscated shell commands in tool arguments."
+        },
+        "dns_rebinding_fixture": {
+          "type": "boolean",
+          "description": "Runner provides controlled DNS for rebinding tests."
         }
       }
     }
