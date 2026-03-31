@@ -105,7 +105,7 @@ func TestWriteSummaryBadPath(t *testing.T) {
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, 0, "/nonexistent/dir", nil)
+	_, err := buildSummary(p, nil, nil, nil, 0, "/nonexistent/dir", nil, "/nonexistent/profile.json")
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -152,6 +152,38 @@ func TestComputeCorpusSHA256(t *testing.T) {
 	}
 }
 
+func TestComputeProfileSHA256(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(path, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	hash1, err := computeProfileSHA256(path)
+	if err != nil {
+		t.Fatalf("computeProfileSHA256: %v", err)
+	}
+	if hash1 == "" {
+		t.Error("hash should not be empty")
+	}
+
+	// Same content = same hash.
+	hash2, err := computeProfileSHA256(path)
+	if err != nil {
+		t.Fatalf("computeProfileSHA256: %v", err)
+	}
+	if hash1 != hash2 {
+		t.Errorf("hash should be deterministic: %s != %s", hash1, hash2)
+	}
+}
+
+func TestComputeProfileSHA256BadPath(t *testing.T) {
+	_, err := computeProfileSHA256("/nonexistent/profile.json")
+	if err == nil {
+		t.Fatal("expected error for nonexistent path")
+	}
+}
+
 func TestWriteSummary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "summary.json")
@@ -162,20 +194,22 @@ func TestWriteSummary(t *testing.T) {
 	evidence := 0.0
 
 	s := GauntletSummary{
-		GauntletVersion: gauntletVersion,
-		RunnerVersion:   runnerVersion,
-		Tool:            "test-tool",
-		ToolVersion:     "1.0.0",
-		CorpusVersion:   "v1.0.0",
-		CorpusSHA256:    "abc123",
-		Date:            "2026-03-28T00:00:00Z",
+		GauntletVersion:   gauntletVersion,
+		ScoringVersion:    scoringVersion,
+		RunnerVersion:     runnerVersion,
+		Tool:              "test-tool",
+		ToolVersion:       "1.0.0",
+		CorpusVersion:     "v2.0.0",
+		CorpusSHA256:      "abc123",
+		ToolProfileSHA256: "def456",
+		Date:              "2026-03-28T00:00:00Z",
 		CaseCount: CaseCount{
 			Total:         100,
 			Applicable:    90,
 			NotApplicable: 10,
 			NotApplicableReasons: map[string]int{
-				"missing_capability": 5,
-				"missing_requires":   3,
+				"missing_capability":    5,
+				"missing_requires":      3,
 				"unsupported_transport": 2,
 			},
 			Errors: 0,
@@ -185,11 +219,19 @@ func TestWriteSummary(t *testing.T) {
 			UnsupportedTransports: []string{"a2a"},
 			UnsupportedRequires:   []string{"dns_rebinding_fixture"},
 		},
-		Scores: Scores{
-			Containment:       &containment,
-			FalsePositiveRate: &fpRate,
-			Detection:         &detection,
-			Evidence:          &evidence,
+		Scores: DualScores{
+			Full: Scores{
+				Containment:       &containment,
+				FalsePositiveRate: &fpRate,
+				Detection:         &detection,
+				Evidence:          &evidence,
+			},
+			Applicable: Scores{
+				Containment:       &containment,
+				FalsePositiveRate: &fpRate,
+				Detection:         &detection,
+				Evidence:          &evidence,
+			},
 		},
 		Sufficient:  true,
 		PerCategory: map[string]CategoryScores{},
@@ -215,8 +257,17 @@ func TestWriteSummary(t *testing.T) {
 	if parsed.Sufficient != true {
 		t.Error("sufficient should be true")
 	}
-	if parsed.Scores.Containment == nil || *parsed.Scores.Containment != 0.95 {
-		t.Errorf("containment = %v, want 0.95", ptrVal(parsed.Scores.Containment))
+	if parsed.ScoringVersion != scoringVersion {
+		t.Errorf("scoring_version = %q, want %q", parsed.ScoringVersion, scoringVersion)
+	}
+	if parsed.ToolProfileSHA256 != "def456" {
+		t.Errorf("tool_profile_sha256 = %q, want def456", parsed.ToolProfileSHA256)
+	}
+	if parsed.Scores.Full.Containment == nil || *parsed.Scores.Full.Containment != 0.95 {
+		t.Errorf("full containment = %v, want 0.95", ptrVal(parsed.Scores.Full.Containment))
+	}
+	if parsed.Scores.Applicable.Containment == nil || *parsed.Scores.Applicable.Containment != 0.95 {
+		t.Errorf("applicable containment = %v, want 0.95", ptrVal(parsed.Scores.Applicable.Containment))
 	}
 
 	// Verify file permissions.

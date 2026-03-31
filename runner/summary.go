@@ -14,32 +14,41 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	runnerVersion   = "0.1.0"
+	scoringVersion  = "2.0"
+	runnerVersion   = "0.2.0"
 )
+
+// DualScores holds both full-corpus and applicable-only score views.
+type DualScores struct {
+	Full       Scores `json:"full"`
+	Applicable Scores `json:"applicable"`
+}
 
 // GauntletSummary is the top-level output written to --output.
 type GauntletSummary struct {
-	GauntletVersion string                    `json:"gauntlet_version"`
-	RunnerVersion   string                    `json:"runner_version"`
-	Tool            string                    `json:"tool"`
-	ToolVersion     string                    `json:"tool_version"`
-	CorpusVersion   string                    `json:"corpus_version"`
-	CorpusSHA256    string                    `json:"corpus_sha256"`
-	Date            string                    `json:"date"`
-	CaseCount       CaseCount                 `json:"case_count"`
-	ToolSupport     ToolSupport               `json:"tool_support"`
-	Scores          Scores                    `json:"scores"`
-	Sufficient      bool                      `json:"sufficient"`
-	PerCategory     map[string]CategoryScores `json:"per_category"`
+	GauntletVersion  string                    `json:"gauntlet_version"`
+	ScoringVersion   string                    `json:"scoring_version"`
+	RunnerVersion    string                    `json:"runner_version"`
+	Tool             string                    `json:"tool"`
+	ToolVersion      string                    `json:"tool_version"`
+	CorpusVersion    string                    `json:"corpus_version"`
+	CorpusSHA256     string                    `json:"corpus_sha256"`
+	ToolProfileSHA256 string                   `json:"tool_profile_sha256"`
+	Date             string                    `json:"date"`
+	CaseCount        CaseCount                 `json:"case_count"`
+	ToolSupport      ToolSupport               `json:"tool_support"`
+	Scores           DualScores                `json:"scores"`
+	Sufficient       bool                      `json:"sufficient"`
+	PerCategory      map[string]CategoryScores `json:"per_category"`
 }
 
 // CaseCount tracks totals and N/A breakdown.
 type CaseCount struct {
-	Total               int            `json:"total"`
-	Applicable          int            `json:"applicable"`
-	NotApplicable       int            `json:"not_applicable"`
+	Total                int            `json:"total"`
+	Applicable           int            `json:"applicable"`
+	NotApplicable        int            `json:"not_applicable"`
 	NotApplicableReasons map[string]int `json:"not_applicable_reasons"`
-	Errors              int            `json:"errors"`
+	Errors               int            `json:"errors"`
 }
 
 // ToolSupport summarizes what the tool claims and what it doesn't support.
@@ -79,6 +88,16 @@ func computeCorpusSHA256(casesDir string) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// computeProfileSHA256 hashes the tool profile file contents.
+func computeProfileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading profile for hash: %w", err)
+	}
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:]), nil
 }
 
 // buildToolSupport extracts unsupported transports and requires from the profile.
@@ -135,13 +154,20 @@ func buildSummary(
 	errorCount int,
 	casesDir string,
 	casesByID map[string]Case,
+	profilePath string,
 ) (GauntletSummary, error) {
 	corpusSHA, err := computeCorpusSHA256(casesDir)
 	if err != nil {
 		return GauntletSummary{}, err
 	}
 
-	scores := computeScores(applicableResults)
+	profileSHA, err := computeProfileSHA256(profilePath)
+	if err != nil {
+		return GauntletSummary{}, err
+	}
+
+	applicableScores := computeScores(applicableResults)
+	fullScores := computeFullCorpusScores(applicableResults, allCases)
 	perCategory := computeCategoryScores(applicableResults, casesByID)
 
 	naReasonsStr := make(map[string]int, len(naReasons))
@@ -155,13 +181,15 @@ func buildSummary(
 	}
 
 	return GauntletSummary{
-		GauntletVersion: gauntletVersion,
-		RunnerVersion:   runnerVersion,
-		Tool:            p.Tool,
-		ToolVersion:     p.ToolVersion,
-		CorpusVersion:   "v1.0.0",
-		CorpusSHA256:    corpusSHA,
-		Date:            time.Now().UTC().Format(time.RFC3339),
+		GauntletVersion:   gauntletVersion,
+		ScoringVersion:    scoringVersion,
+		RunnerVersion:     runnerVersion,
+		Tool:              p.Tool,
+		ToolVersion:       p.ToolVersion,
+		CorpusVersion:     "v2.0.0",
+		CorpusSHA256:      corpusSHA,
+		ToolProfileSHA256: profileSHA,
+		Date:              time.Now().UTC().Format(time.RFC3339),
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),
@@ -170,8 +198,11 @@ func buildSummary(
 			Errors:               errorCount,
 		},
 		ToolSupport: buildToolSupport(p),
-		Scores:      scores,
-		Sufficient:  isSufficient(scores, len(applicableResults), errorCount),
+		Scores: DualScores{
+			Full:       fullScores,
+			Applicable: applicableScores,
+		},
+		Sufficient:  isSufficient(fullScores, len(applicableResults), errorCount),
 		PerCategory: perCategory,
 	}, nil
 }

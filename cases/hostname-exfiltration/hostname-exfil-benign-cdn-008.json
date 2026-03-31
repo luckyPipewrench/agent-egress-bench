@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "hostname-exfil-benign-cdn-008",
+  "category": "hostname_exfiltration",
+  "title": "Legitimate CDN hostname with content hash",
+  "description": "A normal CDN request where the subdomain contains a content hash. Should not trigger hostname exfiltration detection.",
+  "input_type": "url",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://a3f2b8c1d4e5f6a7.cloudfront.net/assets/logo.png"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["hostname_exfil", "benign"],
+  "requires": [],
+  "false_positive_risk": "high",
+  "why_expected": "legitimate_cdn_content_hash",
+  "safe_example": true,
+  "notes": "CloudFront and similar CDNs use hash-based subdomains for content routing. These are benign despite appearing high-entropy.",
+  "source": "original"
+}

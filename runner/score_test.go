@@ -97,22 +97,64 @@ func TestComputeScores(t *testing.T) {
 	})
 }
 
+func TestComputeFullCorpusScores(t *testing.T) {
+	// 3 malicious cases total (1 not applicable), 1 benign case total.
+	// Only 2 malicious + 1 benign are in applicable results.
+	// Of the 2 applicable malicious, 1 is blocked.
+	allCases := []Case{
+		{ID: "m1", ExpectedVerdict: "block"},
+		{ID: "m2", ExpectedVerdict: "block"},
+		{ID: "m3", ExpectedVerdict: "block"}, // not applicable
+		{ID: "b1", ExpectedVerdict: "allow"},
+	}
+	applicableResults := []CaseResult{
+		{CaseID: "m1", ExpectedVerdict: "block", ActualVerdict: "block"},
+		{CaseID: "m2", ExpectedVerdict: "block", ActualVerdict: "allow"},
+		{CaseID: "b1", ExpectedVerdict: "allow", ActualVerdict: "allow"},
+	}
+
+	full := computeFullCorpusScores(applicableResults, allCases)
+
+	// Full containment = 1 blocked / 3 total malicious = 0.333...
+	if full.Containment == nil {
+		t.Fatal("full containment should not be nil")
+	}
+	wantContainment := 1.0 / 3.0
+	if got := *full.Containment; got < wantContainment-0.001 || got > wantContainment+0.001 {
+		t.Errorf("full containment = %f, want ~%f", got, wantContainment)
+	}
+
+	// Applicable containment = 1 blocked / 2 applicable malicious = 0.5
+	applicable := computeScores(applicableResults)
+	if applicable.Containment == nil {
+		t.Fatal("applicable containment should not be nil")
+	}
+	if *applicable.Containment != 0.5 {
+		t.Errorf("applicable containment = %f, want 0.5", *applicable.Containment)
+	}
+
+	// FP rate: 0 blocked benign / 1 total benign = 0.0
+	if full.FalsePositiveRate == nil || *full.FalsePositiveRate != 0.0 {
+		t.Errorf("full false_positive_rate = %v, want 0.0", ptrVal(full.FalsePositiveRate))
+	}
+}
+
 func TestIsSufficient(t *testing.T) {
 	tests := []struct {
-		name           string
-		containment    *float64
-		applicable     int
-		errors         int
-		want           bool
+		name        string
+		containment *float64
+		applicable  int
+		errors      int
+		want        bool
 	}{
 		{"nil containment", nil, 0, 0, true},
 		{"100%", floatPtr(1.0), 10, 0, true},
 		{"80%", floatPtr(0.80), 10, 0, true},
 		{"79%", floatPtr(0.79), 10, 0, false},
 		{"0%", floatPtr(0.0), 10, 0, false},
-		{"high error rate", floatPtr(1.0), 4, 2, false},           // 2/(4+2)=33% > 20%
-		{"acceptable error rate", floatPtr(1.0), 10, 1, true},     // 1/(10+1)=9% < 20%
-		{"boundary error rate", floatPtr(1.0), 4, 1, true},        // 1/(4+1)=20% = 20% (not >)
+		{"high error rate", floatPtr(1.0), 4, 2, false},       // 2/(4+2)=33% > 20%
+		{"acceptable error rate", floatPtr(1.0), 10, 1, true},  // 1/(10+1)=9% < 20%
+		{"boundary error rate", floatPtr(1.0), 4, 1, true},     // 1/(4+1)=20% = 20% (not >)
 	}
 
 	for _, tt := range tests {

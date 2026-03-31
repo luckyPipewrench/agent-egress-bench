@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipelock Gauntlet</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+  --green: #3fb950; --red: #f85149; --yellow: #d29922;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem 1rem; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+h2 { font-size: 1.4rem; margin: 2rem 0 1rem; color: var(--accent); }
+p, li { color: var(--muted); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.subtitle { color: var(--muted); font-size: 1.1rem; margin-bottom: 2rem; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 1rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; margin-left: 0.25rem; }
+.badge-verified { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-self-reported { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.badge-outdated { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-sufficient { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-insufficient { background: rgba(248,81,73,0.15); color: var(--red); }
+.tool-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+.tool-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+.tool-name { font-size: 1.3rem; font-weight: 600; }
+.tool-meta { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; }
+.tool-version { font-family: var(--mono); font-size: 0.85rem; color: var(--muted); margin-right: 0.5rem; }
+.denominator { font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; }
+.scores-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+.score-box { background: var(--bg); border: 1px solid var(--border); border-radius: 0.375rem; padding: 1rem; text-align: center; }
+.score-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+.score-value { font-size: 1.8rem; font-weight: 700; font-family: var(--mono); }
+.score-good { color: var(--green); }
+.score-warn { color: var(--yellow); }
+.score-bad { color: var(--red); }
+.score-na { color: var(--muted); font-size: 1.2rem; }
+.section-label { font-size: 0.85rem; color: var(--muted); margin: 1rem 0 0.5rem; font-weight: 600; }
+.toggle { font-size: 0.8rem; color: var(--muted); cursor: pointer; user-select: none; margin-bottom: 0.5rem; }
+.toggle:hover { color: var(--accent); }
+.hidden { display: none; }
+.cat-header, .cat-row { display: grid; grid-template-columns: 2fr repeat(4, 1fr); gap: 0.5rem; padding: 0.25rem 0; font-size: 0.85rem; font-family: var(--mono); }
+.cat-header { color: var(--muted); font-family: var(--font); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 0.25rem; }
+.provenance { font-size: 0.75rem; color: var(--muted); font-family: var(--mono); margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.provenance span { margin-right: 1.5rem; }
+.how-to { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.5rem; }
+pre { background: var(--bg); border: 1px solid var(--border); border-radius: 0.375rem; padding: 1rem; overflow-x: auto; font-family: var(--mono); font-size: 0.85rem; margin: 0.75rem 0; color: var(--text); }
+.empty-state { text-align: center; padding: 4rem 2rem; color: var(--muted); }
+@media (max-width: 640px) {
+  body { padding: 1rem 0.5rem; }
+  h1 { font-size: 1.5rem; }
+  .scores-grid { grid-template-columns: repeat(2, 1fr); }
+  .cat-header, .cat-row { grid-template-columns: 2fr repeat(2, 1fr); }
+  .col-det, .col-evi { display: none; }
+}
+</style>
+</head>
+<body data-results-url="./gauntlet-results.json" data-corpus-version="v2.0.0" data-scoring-version="2.0">
+
+<h1>Pipelock Gauntlet</h1>
+<p class="subtitle">Agent egress security benchmark. Tests the security tool, not the agent.</p>
+<div id="results"></div>
+
+<h2>How to Run</h2>
+<div class="how-to">
+  <p>Build the runner and run it against your tool:</p>
+  <pre>git clone https://github.com/luckyPipewrench/agent-egress-bench.git
+cd agent-egress-bench/runner
+go build -o aeb-gauntlet .
+./aeb-gauntlet --cases ../cases --profile path/to/your-profile.json --output results.json</pre>
+  <p style="margin-top:1rem">See the <a href="https://github.com/luckyPipewrench/agent-egress-bench/blob/main/docs/methodology.md">methodology</a> for scoring details and the <a href="https://github.com/luckyPipewrench/agent-egress-bench/blob/main/docs/ADOPTION.md">adoption guide</a> for building a runner.</p>
+  <p style="margin-top:0.75rem">To submit results, open a <a href="https://github.com/luckyPipewrench/agent-egress-bench/discussions">discussion</a>.</p>
+</div>
+
+<script>
+(function() {
+  'use strict';
+  var container = document.getElementById('results');
+  var resultsUrl = document.body.getAttribute('data-results-url') || './gauntlet-results.json';
+  var curCorpus = document.body.getAttribute('data-corpus-version');
+  var curScoring = document.body.getAttribute('data-scoring-version');
+
+  function el(tag, cls) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  function txt(tag, text, cls) {
+    var e = el(tag, cls);
+    e.textContent = text;
+    return e;
+  }
+
+  function pctCls(v, invert) {
+    if (v === null || v === undefined) return 'score-na';
+    var p = v * 100;
+    if (invert) return p <= 5 ? 'score-good' : p <= 15 ? 'score-warn' : 'score-bad';
+    return p >= 80 ? 'score-good' : p >= 50 ? 'score-warn' : 'score-bad';
+  }
+
+  function fmtPct(v) {
+    if (v === null || v === undefined) return 'N/A';
+    return (v * 100).toFixed(1) + '%';
+  }
+
+  function makeScoreBox(label, val, invert) {
+    var box = el('div', 'score-box');
+    box.appendChild(txt('div', label, 'score-label'));
+    box.appendChild(txt('div', fmtPct(val), 'score-value ' + pctCls(val, invert)));
+    return box;
+  }
+
+  function makeBadge(text, cls) {
+    return txt('span', text, 'badge badge-' + cls);
+  }
+
+  function makeScoresGrid(scores) {
+    var grid = el('div', 'scores-grid');
+    grid.appendChild(makeScoreBox('Containment', scores.containment, false));
+    grid.appendChild(makeScoreBox('False Positive', scores.false_positive_rate, true));
+    grid.appendChild(makeScoreBox('Detection', scores.detection, false));
+    grid.appendChild(makeScoreBox('Evidence', scores.evidence, false));
+    return grid;
+  }
+
+  function makeCategories(perCat) {
+    if (!perCat || Object.keys(perCat).length === 0) return null;
+    var wrap = el('div');
+    var toggle = txt('div', 'Per-category breakdown \u25BE', 'toggle');
+    var detail = el('div', 'hidden');
+
+    var header = el('div', 'cat-header');
+    header.appendChild(txt('span', 'Category'));
+    header.appendChild(txt('span', 'Contain.'));
+    header.appendChild(txt('span', 'FP Rate'));
+    var dh = txt('span', 'Detect.'); dh.className = 'col-det'; header.appendChild(dh);
+    var eh = txt('span', 'Evidence'); eh.className = 'col-evi'; header.appendChild(eh);
+    detail.appendChild(header);
+
+    Object.keys(perCat).sort().forEach(function(cat) {
+      var c = perCat[cat];
+      var row = el('div', 'cat-row');
+      row.appendChild(txt('span', cat));
+      row.appendChild(txt('span', fmtPct(c.containment)));
+      row.appendChild(txt('span', fmtPct(c.false_positive_rate)));
+      var dr = txt('span', fmtPct(c.detection)); dr.className = 'col-det'; row.appendChild(dr);
+      var er = txt('span', fmtPct(c.evidence)); er.className = 'col-evi'; row.appendChild(er);
+      detail.appendChild(row);
+    });
+
+    toggle.addEventListener('click', function() { detail.classList.toggle('hidden'); });
+    wrap.appendChild(toggle);
+    wrap.appendChild(detail);
+    return wrap;
+  }
+
+  function renderTool(r) {
+    var card = el('div', 'tool-card');
+    var hdr = el('div', 'tool-header');
+    hdr.appendChild(txt('span', r.tool || 'Unknown', 'tool-name'));
+
+    var meta = el('div', 'tool-meta');
+    meta.appendChild(txt('span', r.tool_version || '', 'tool-version'));
+
+    var verification = r.verification || 'self-reported';
+    meta.appendChild(makeBadge(verification, verification === 'verified' ? 'verified' : 'self-reported'));
+    meta.appendChild(makeBadge(r.sufficient ? 'sufficient' : 'insufficient', r.sufficient ? 'sufficient' : 'insufficient'));
+
+    var stale = r.corpus_version !== curCorpus || r.scoring_version !== curScoring;
+    if (stale) meta.appendChild(makeBadge('outdated', 'outdated'));
+
+    hdr.appendChild(meta);
+    card.appendChild(hdr);
+
+    var cc = r.case_count || {};
+    card.appendChild(txt('div', 'Scored on ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+
+    var scores = r.scores || {};
+    var full = scores.full || scores;
+    var applicable = scores.applicable;
+
+    card.appendChild(txt('div', 'Full Corpus Scores (primary)', 'section-label'));
+    card.appendChild(makeScoresGrid(full));
+
+    if (applicable) {
+      var aToggle = txt('div', 'Show applicable scores (diagnostic) \u25BE', 'toggle');
+      var aWrap = el('div', 'hidden');
+      aWrap.appendChild(makeScoresGrid(applicable));
+      aToggle.addEventListener('click', function() { aWrap.classList.toggle('hidden'); });
+      card.appendChild(aToggle);
+      card.appendChild(aWrap);
+    }
+
+    var cats = makeCategories(r.per_category);
+    if (cats) card.appendChild(cats);
+
+    var prov = el('div', 'provenance');
+    var fields = [
+      ['corpus', r.corpus_version], ['scoring', r.scoring_version],
+      ['runner', r.runner_version], ['date', r.date ? r.date.split('T')[0] : '?']
+    ];
+    fields.forEach(function(f) {
+      var s = el('span');
+      s.textContent = f[0] + ': ' + (f[1] || '?');
+      prov.appendChild(s);
+    });
+    card.appendChild(prov);
+    return card;
+  }
+
+  function render(results) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    if (!results || results.length === 0) {
+      container.appendChild(txt('div', 'No results yet. Be the first to run the Gauntlet.', 'empty-state'));
+      return;
+    }
+    results.sort(function(a, b) {
+      var s = function(r) {
+        var sc = r.scores || {};
+        var f = sc.full || sc;
+        return (f && f.containment) || 0;
+      };
+      return s(b) - s(a);
+    });
+    results.forEach(function(r) { container.appendChild(renderTool(r)); });
+  }
+
+  fetch(resultsUrl).then(function(resp) {
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return resp.json();
+  }).then(function(data) {
+    render(Array.isArray(data) ? data : [data]);
+  }).catch(function(err) {
+    container.appendChild(txt('div', 'No results available. ' + err.message, 'empty-state'));
+  });
+})();
+</script>
+</body>
+</html>

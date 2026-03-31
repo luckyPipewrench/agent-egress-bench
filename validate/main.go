@@ -20,6 +20,7 @@ var (
 		"a2a_message": true, "a2a_agent_card": true, "websocket_dlp": true,
 		"ssrf_bypass": true, "encoding_evasion": true, "shell_obfuscation": true,
 		"crypto_financial": true, "false_positive": true,
+		"hostname_exfiltration": true,
 	}
 
 	// New categories added by the Gauntlet expansion.
@@ -27,6 +28,7 @@ var (
 		"a2a_message": true, "a2a_agent_card": true, "websocket_dlp": true,
 		"ssrf_bypass": true, "encoding_evasion": true, "shell_obfuscation": true,
 		"crypto_financial": true, "false_positive": true,
+		"hostname_exfiltration": true,
 	}
 
 	validInputTypes = map[string]bool{
@@ -61,6 +63,7 @@ var (
 		"entropy": true, "encoding_evasion": true, "benign": true,
 		"a2a_scan": true, "a2a_card_poison": true, "websocket_dlp": true,
 		"ssrf_bypass": true, "shell_obfuscation": true, "crypto_dlp": true,
+		"hostname_exfil": true,
 	}
 
 	validRequires = map[string]bool{
@@ -106,7 +109,8 @@ var (
 		"encoding_evasion":  {"url", "request_body", "mcp_tool_call"},
 		"shell_obfuscation": {"mcp_tool_call"},
 		"crypto_financial":  {"url", "request_body", "header", "mcp_tool_call"},
-		"false_positive":    {"url", "request_body", "header", "response_content", "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "websocket_frame", "a2a_message"},
+		"false_positive":         {"url", "request_body", "header", "response_content", "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "websocket_frame", "a2a_message"},
+		"hostname_exfiltration": {"url"},
 	}
 
 	// Valid category → transport combinations.
@@ -130,7 +134,8 @@ var (
 		"encoding_evasion":  {"fetch_proxy", "mcp_stdio"},
 		"shell_obfuscation": {"mcp_stdio", "mcp_http"},
 		"crypto_financial":  {"fetch_proxy", "mcp_stdio"},
-		"false_positive":    {"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"},
+		"false_positive":         {"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"},
+		"hostname_exfiltration": {"fetch_proxy", "http_proxy"},
 	}
 )
 
@@ -153,6 +158,7 @@ type Case struct {
 	SafeExample     *bool                  `json:"safe_example,omitempty"`
 	Notes           string                 `json:"notes"`
 	Source          string                 `json:"source"`
+	Supersedes      string                 `json:"supersedes,omitempty"`
 }
 
 const usageText = `usage: validate <command> <target>
@@ -551,6 +557,8 @@ func categoryToDir(category string) string {
 		return "crypto-financial"
 	case "false_positive":
 		return "false-positive"
+	case "hostname_exfiltration":
+		return "hostname-exfiltration"
 	default:
 		return ""
 	}
