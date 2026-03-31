@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +13,7 @@ import (
 
 func TestRunBadCasesDir(t *testing.T) {
 	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -18,7 +21,7 @@ func TestRunBadCasesDir(t *testing.T) {
 
 func TestRunBadProfile(t *testing.T) {
 	err := run(filepath.Join("..", "cases"), "/nonexistent/profile.json",
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent profile")
 	}
@@ -37,7 +40,7 @@ func TestRunUnknownAdapter(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "")
 	if err == nil {
 		t.Fatal("expected error for unknown adapter")
 	}
@@ -60,7 +63,7 @@ func TestIntegrationNullAdapter(t *testing.T) {
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "null")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "")
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -102,7 +105,7 @@ func TestIntegrationRealCases(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
 	// Run the full pipeline.
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun") // 10s
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "") // 10s
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -202,4 +205,71 @@ func TestIntegrationRealCases(t *testing.T) {
 	t.Logf("Summary: %d total, %d applicable, %d N/A, sufficient=%v",
 		summary.CaseCount.Total, summary.CaseCount.Applicable,
 		summary.CaseCount.NotApplicable, summary.Sufficient)
+}
+
+func TestSubmitResults(t *testing.T) {
+	var received []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("content-type = %q, want application/json", ct)
+		}
+		var err error
+		received, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"test-uuid","url":"/results/test-uuid"}`))
+	}))
+	defer srv.Close()
+
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "submit-summary.json")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", srv.URL)
+	if err != nil {
+		t.Fatalf("run with submit failed: %v", err)
+	}
+
+	// Verify the server received valid JSON matching the written summary.
+	if len(received) == 0 {
+		t.Fatal("server received no data")
+	}
+	var submitted GauntletSummary
+	if err := json.Unmarshal(received, &submitted); err != nil {
+		t.Fatalf("submitted data is not valid summary JSON: %v", err)
+	}
+	if submitted.Tool != "pipelock" {
+		t.Errorf("submitted tool = %q, want pipelock", submitted.Tool)
+	}
+}
+
+func TestSubmitResultsBadURL(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "submit-bad.json")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "http://127.0.0.1:1/nonexistent")
+	if err == nil {
+		t.Fatal("expected error for bad submit URL")
+	}
+	if !strings.Contains(err.Error(), "submitting results") {
+		t.Errorf("error should mention submitting: %v", err)
+	}
 }

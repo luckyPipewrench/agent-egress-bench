@@ -3,9 +3,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -17,22 +20,23 @@ func main() {
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
 	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null")
+	submitURL := flag.String("submit", "", "POST results to this URL after run (e.g. https://pipelab.org/api/results)")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 
 	flag.Parse()
 
 	if *casesDir == "" || *profilePath == "" {
-		_, _ = fmt.Fprintf(os.Stderr, "usage: aeb-gauntlet --cases <dir> --profile <profile.json> [--output <summary.json>] [--adapter dryrun|null] [--timeout 10s]\n")
+		_, _ = fmt.Fprintf(os.Stderr, "usage: aeb-gauntlet --cases <dir> --profile <profile.json> [--output <summary.json>] [--adapter dryrun|null] [--submit <url>] [--timeout 10s]\n")
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *submitURL); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, submitURL string) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -158,6 +162,35 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	_, _ = fmt.Fprintf(os.Stderr, "Sufficient:       %v\n", summary.Sufficient)
 	_, _ = fmt.Fprintf(os.Stderr, "Summary written:  %s\n", outputPath)
 
+	if submitURL != "" {
+		if err := submitResults(submitURL, outputPath); err != nil {
+			return fmt.Errorf("submitting results: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// submitResults POSTs the summary JSON to the given URL.
+func submitResults(url, summaryPath string) error {
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		return fmt.Errorf("reading summary for submit: %w", err)
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("POST to %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("POST %s returned %d: %s", url, resp.StatusCode, string(body))
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "Submitted:        %s\n", string(body))
 	return nil
 }
 
