@@ -13,7 +13,7 @@ import (
 
 func TestRunBadCasesDir(t *testing.T) {
 	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", false)
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -21,7 +21,7 @@ func TestRunBadCasesDir(t *testing.T) {
 
 func TestRunBadProfile(t *testing.T) {
 	err := run(filepath.Join("..", "cases"), "/nonexistent/profile.json",
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", false)
 	if err == nil {
 		t.Fatal("expected error for nonexistent profile")
 	}
@@ -40,7 +40,7 @@ func TestRunUnknownAdapter(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "", false)
 	if err == nil {
 		t.Fatal("expected error for unknown adapter")
 	}
@@ -63,7 +63,7 @@ func TestIntegrationNullAdapter(t *testing.T) {
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "", false)
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestIntegrationRealCases(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
 	// Run the full pipeline.
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "") // 10s
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", false) // 10s
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestSubmitResults(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "submit-summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", srv.URL)
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", srv.URL, false)
 	if err != nil {
 		t.Fatalf("run with submit failed: %v", err)
 	}
@@ -254,6 +254,59 @@ func TestSubmitResults(t *testing.T) {
 	}
 }
 
+func TestSubmitResultsPrivate(t *testing.T) {
+	var received []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		received, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"priv-uuid","url":"/gauntlet/results/priv-uuid"}`))
+	}))
+	defer srv.Close()
+
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "private-summary.json")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", srv.URL, true)
+	if err != nil {
+		t.Fatalf("run with private submit failed: %v", err)
+	}
+
+	// Verify the server received the wrapped format.
+	var wrapper struct {
+		Payload json.RawMessage `json:"payload"`
+		Public  bool            `json:"public"`
+	}
+	if err := json.Unmarshal(received, &wrapper); err != nil {
+		t.Fatalf("received data is not wrapped format: %v", err)
+	}
+	if wrapper.Public {
+		t.Error("expected public=false for private submission")
+	}
+	if len(wrapper.Payload) == 0 {
+		t.Fatal("payload should not be empty")
+	}
+
+	// Verify the payload inside the wrapper is valid summary JSON.
+	var summary GauntletSummary
+	if err := json.Unmarshal(wrapper.Payload, &summary); err != nil {
+		t.Fatalf("wrapped payload is not valid summary: %v", err)
+	}
+	if summary.Tool != "pipelock" {
+		t.Errorf("wrapped tool = %q, want pipelock", summary.Tool)
+	}
+}
+
 func TestSubmitResultsBadURL(t *testing.T) {
 	casesDir := filepath.Join("..", "cases")
 	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
@@ -265,7 +318,7 @@ func TestSubmitResultsBadURL(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "submit-bad.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "http://127.0.0.1:1/nonexistent")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "http://127.0.0.1:1/nonexistent", false)
 	if err == nil {
 		t.Fatal("expected error for bad submit URL")
 	}

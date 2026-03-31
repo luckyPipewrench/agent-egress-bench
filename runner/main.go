@@ -21,6 +21,7 @@ func main() {
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
 	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null")
 	submitURL := flag.String("submit", "", "POST results to this URL after run (e.g. https://pipelab.org/api/results)")
+	private := flag.Bool("private", false, "mark submitted results as private (not shown on public leaderboard)")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 
 	flag.Parse()
@@ -30,13 +31,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *submitURL); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *submitURL, *private); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, submitURL string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, submitURL string, private bool) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -163,7 +164,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	_, _ = fmt.Fprintf(os.Stderr, "Summary written:  %s\n", outputPath)
 
 	if submitURL != "" {
-		if err := submitResults(submitURL, outputPath); err != nil {
+		if err := submitResults(submitURL, outputPath, private); err != nil {
 			return fmt.Errorf("submitting results: %w", err)
 		}
 	}
@@ -172,25 +173,44 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 }
 
 // submitResults POSTs the summary JSON to the given URL.
-func submitResults(url, summaryPath string) error {
+// When private is true, wraps the payload: {"payload": ..., "public": false}.
+// When private is false, sends the raw summary JSON (public by default on the server).
+func submitResults(submitURL, summaryPath string, private bool) error {
 	data, err := os.ReadFile(summaryPath)
 	if err != nil {
 		return fmt.Errorf("reading summary for submit: %w", err)
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
+	var body []byte
+	if private {
+		wrapped := struct {
+			Payload json.RawMessage `json:"payload"`
+			Public  bool            `json:"public"`
+		}{
+			Payload: data,
+			Public:  false,
+		}
+		body, err = json.Marshal(wrapped)
+		if err != nil {
+			return fmt.Errorf("wrapping payload: %w", err)
+		}
+	} else {
+		body = data
+	}
+
+	resp, err := http.Post(submitURL, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("POST to %s: %w", url, err)
+		return fmt.Errorf("POST to %s: %w", submitURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("POST %s returned %d: %s", url, resp.StatusCode, string(body))
+		return fmt.Errorf("POST %s returned %d: %s", submitURL, resp.StatusCode, string(respBody))
 	}
 
-	_, _ = fmt.Fprintf(os.Stderr, "Submitted:        %s\n", string(body))
+	_, _ = fmt.Fprintf(os.Stderr, "Submitted:        %s\n", string(respBody))
 	return nil
 }
 
