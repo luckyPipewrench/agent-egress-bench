@@ -53,7 +53,8 @@
           "websocket_dlp",
           "ssrf_bypass",
           "shell_obfuscation",
-          "crypto_dlp"
+          "crypto_dlp",
+          "hostname_exfil"
         ]
       },
       "description": "Capability tags this tool claims to support. Cases with tags outside this list are not_applicable."

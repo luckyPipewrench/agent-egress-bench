@@ -221,9 +221,12 @@ go build -o aeb-gauntlet .
       return;
     }
     results.sort(function(a, b) {
-      var af = (a.scores && a.scores.full && a.scores.full.containment) || 0;
-      var bf = (b.scores && b.scores.full && b.scores.full.containment) || 0;
-      return bf - af;
+      var s = function(r) {
+        var sc = r.scores || {};
+        var f = sc.full || sc;
+        return (f && f.containment) || 0;
+      };
+      return s(b) - s(a);
     });
     results.forEach(function(r) { container.appendChild(renderTool(r)); });
   }
