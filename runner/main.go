@@ -16,22 +16,23 @@ func main() {
 	casesDir := flag.String("cases", "", "directory of case JSON files (required)")
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
+	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 
 	flag.Parse()
 
 	if *casesDir == "" || *profilePath == "" {
-		_, _ = fmt.Fprintf(os.Stderr, "usage: aeb-gauntlet --cases <dir> --profile <profile.json> --output <summary.json> [--timeout 10s]\n")
+		_, _ = fmt.Fprintf(os.Stderr, "usage: aeb-gauntlet --cases <dir> --profile <profile.json> [--output <summary.json>] [--adapter dryrun|null] [--timeout 10s]\n")
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName string) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -48,8 +49,16 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration) error 
 		casesByID[c.ID] = c
 	}
 
-	// V1: dry-run adapter (actual_verdict = expected_verdict).
-	adapt := adapter.DryRunAdapter{}
+	// Select adapter based on flag.
+	var adapt adapter.Adapter
+	switch adapterName {
+	case "dryrun":
+		adapt = adapter.DryRunAdapter{}
+	case "null":
+		adapt = adapter.NullAdapter{}
+	default:
+		return fmt.Errorf("unknown adapter: %q (available: dryrun, null)", adapterName)
+	}
 
 	var applicableResults []CaseResult
 	naReasons := make(map[NAKind]int)
@@ -127,7 +136,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration) error 
 	}
 
 	// Build and write summary.
-	summary, err := buildSummary(profile, cases, applicableResults, naReasons, errorCount, casesDir, casesByID)
+	summary, err := buildSummary(profile, cases, applicableResults, naReasons, errorCount, casesDir, casesByID, profilePath)
 	if err != nil {
 		return err
 	}
@@ -139,31 +148,40 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration) error 
 	// Human-readable summary to stderr.
 	_, _ = fmt.Fprintf(os.Stderr, "\n--- Gauntlet Summary ---\n")
 	_, _ = fmt.Fprintf(os.Stderr, "Tool:       %s %s\n", profile.Tool, profile.ToolVersion)
+	_, _ = fmt.Fprintf(os.Stderr, "Adapter:    %s\n", adapterName)
 	_, _ = fmt.Fprintf(os.Stderr, "Cases:      %d total, %d applicable, %d N/A, %d errors\n",
 		len(cases), len(applicableResults), summary.CaseCount.NotApplicable, errorCount)
 
-	if summary.Scores.Containment != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Containment:      %.1f%%\n", *summary.Scores.Containment*100)
-	} else {
-		_, _ = fmt.Fprintf(os.Stderr, "Containment:      N/A\n")
-	}
-	if summary.Scores.FalsePositiveRate != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "False Positive:   %.1f%%\n", *summary.Scores.FalsePositiveRate*100)
-	} else {
-		_, _ = fmt.Fprintf(os.Stderr, "False Positive:   N/A\n")
-	}
-	if summary.Scores.Detection != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Detection:        %.1f%%\n", *summary.Scores.Detection*100)
-	} else {
-		_, _ = fmt.Fprintf(os.Stderr, "Detection:        N/A\n")
-	}
-	if summary.Scores.Evidence != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Evidence:         %.1f%%\n", *summary.Scores.Evidence*100)
-	} else {
-		_, _ = fmt.Fprintf(os.Stderr, "Evidence:         N/A\n")
-	}
+	printScores(os.Stderr, "Full Corpus Scores (primary)", summary.Scores.Full)
+	printScores(os.Stderr, "Applicable Scores (diagnostic)", summary.Scores.Applicable)
+
 	_, _ = fmt.Fprintf(os.Stderr, "Sufficient:       %v\n", summary.Sufficient)
 	_, _ = fmt.Fprintf(os.Stderr, "Summary written:  %s\n", outputPath)
 
 	return nil
+}
+
+// printScores writes a score block with a label to the given writer.
+func printScores(w *os.File, label string, scores Scores) {
+	_, _ = fmt.Fprintf(w, "\n  %s:\n", label)
+	if scores.Containment != nil {
+		_, _ = fmt.Fprintf(w, "    Containment:      %.1f%%\n", *scores.Containment*100)
+	} else {
+		_, _ = fmt.Fprintf(w, "    Containment:      N/A\n")
+	}
+	if scores.FalsePositiveRate != nil {
+		_, _ = fmt.Fprintf(w, "    False Positive:   %.1f%%\n", *scores.FalsePositiveRate*100)
+	} else {
+		_, _ = fmt.Fprintf(w, "    False Positive:   N/A\n")
+	}
+	if scores.Detection != nil {
+		_, _ = fmt.Fprintf(w, "    Detection:        %.1f%%\n", *scores.Detection*100)
+	} else {
+		_, _ = fmt.Fprintf(w, "    Detection:        N/A\n")
+	}
+	if scores.Evidence != nil {
+		_, _ = fmt.Fprintf(w, "    Evidence:         %.1f%%\n", *scores.Evidence*100)
+	} else {
+		_, _ = fmt.Fprintf(w, "    Evidence:         N/A\n")
+	}
 }
