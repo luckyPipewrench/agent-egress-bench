@@ -51,7 +51,8 @@
         "encoding_evasion",
         "shell_obfuscation",
         "crypto_financial",
-        "false_positive"
+        "false_positive",
+        "hostname_exfiltration"
       ],
       "description": "Attack surface category."
     },
@@ -131,7 +132,8 @@
           "websocket_dlp",
           "ssrf_bypass",
           "shell_obfuscation",
-          "crypto_dlp"
+          "crypto_dlp",
+          "hostname_exfil"
         ]
       },
       "description": "What capabilities this case exercises. Used for reporting and applicability."
@@ -176,6 +178,10 @@
     "source": {
       "type": "string",
       "description": "Reference or citation."
+    },
+    "supersedes": {
+      "type": "string",
+      "description": "ID of the case this supersedes. Used for verdict corrections."
     }
   },
   "if": {
