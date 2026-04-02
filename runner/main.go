@@ -61,7 +61,11 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		if proxyAddr == "" {
 			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
 		}
-		adapt = adapter.NewProxyAdapter(proxyAddr)
+		var proxyErr error
+		adapt, proxyErr = adapter.NewProxyAdapter(proxyAddr)
+		if proxyErr != nil {
+			return proxyErr
+		}
 	default:
 		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, proxy)", adapterName)
 	}

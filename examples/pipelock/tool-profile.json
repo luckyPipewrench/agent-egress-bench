@@ -19,9 +19,9 @@
     "websocket_dlp",
     "shell_obfuscation",
     "crypto_dlp",
-    "hostname_exfiltration",
-    "a2a_agent_card",
-    "a2a_message",
+    "hostname_exfil",
+    "a2a_card_poison",
+    "a2a_scan",
     "benign"
   ],
   "supports": {

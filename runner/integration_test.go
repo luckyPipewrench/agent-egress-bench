@@ -10,7 +10,7 @@ import (
 
 func TestRunBadCasesDir(t *testing.T) {
 	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -18,7 +18,7 @@ func TestRunBadCasesDir(t *testing.T) {
 
 func TestRunBadProfile(t *testing.T) {
 	err := run(filepath.Join("..", "cases"), "/nonexistent/profile.json",
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent profile")
 	}
@@ -37,7 +37,7 @@ func TestRunUnknownAdapter(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "")
 	if err == nil {
 		t.Fatal("expected error for unknown adapter")
 	}
@@ -60,7 +60,7 @@ func TestIntegrationNullAdapter(t *testing.T) {
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "null")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "")
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestIntegrationRealCases(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
 	// Run the full pipeline.
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun") // 10s
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "") // 10s
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}

@@ -22,9 +22,12 @@ type ProxyAdapter struct {
 }
 
 // NewProxyAdapter creates a proxy adapter pointing at the given address.
-func NewProxyAdapter(addr string) *ProxyAdapter {
-	u, _ := url.Parse("http://" + addr)
-	return &ProxyAdapter{proxyURL: u}
+func NewProxyAdapter(addr string) (*ProxyAdapter, error) {
+	u, err := url.Parse("http://" + addr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy address %q: %w", addr, err)
+	}
+	return &ProxyAdapter{proxyURL: u}, nil
 }
 
 // Run sends the case payload through the proxy and returns the verdict.
@@ -111,10 +114,13 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		}
 	}
 
+	// TLS verification is intentionally disabled for benchmarking.
+	// The bench corpus uses fake domains (evil.example.com) that don't
+	// have valid certificates. This is test tooling, not production code.
 	transport := &http.Transport{
 		Proxy: http.ProxyURL(p.proxyURL),
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // bench traffic uses fake domains
+			InsecureSkipVerify: true, //nolint:gosec // G402: intentional for bench test traffic
 		},
 	}
 	client := &http.Client{Timeout: timeout, Transport: transport}
