@@ -18,6 +18,9 @@ func main() {
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
 	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null, proxy")
 	proxyAddr := flag.String("proxy-addr", "", "proxy address for proxy adapter (e.g. 127.0.0.1:8888)")
+	scanAddr := flag.String("scan-addr", "", "scan API address for MCP/A2A cases (defaults to proxy-addr)")
+	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
+	mcpCmd := flag.String("mcp-cmd", "", "MCP proxy command for MCP/A2A/shell cases (e.g. 'pipelock mcp proxy --config bench.yaml -- cat')")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 
 	flag.Parse()
@@ -27,13 +30,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -62,7 +65,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
 		}
 		var proxyErr error
-		adapt, proxyErr = adapter.NewProxyAdapter(proxyAddr)
+		adapt, proxyErr = adapter.NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd)
 		if proxyErr != nil {
 			return proxyErr
 		}

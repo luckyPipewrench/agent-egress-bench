@@ -8,11 +8,14 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://a3f2b8c1d4e5f6a7.cloudfront.net/assets/logo.png"
+    "url": "https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"
   },
   "expected_verdict": "allow",
   "severity": "low",
-  "capability_tags": ["hostname_exfil", "benign"],
+  "capability_tags": [
+    "hostname_exfil",
+    "benign"
+  ],
   "requires": [],
   "false_positive_risk": "high",
   "why_expected": "legitimate_cdn_content_hash",
