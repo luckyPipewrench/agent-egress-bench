@@ -1,1 +1,31 @@
-{"schema_version":1,"id":"ws-dlp-benign-chat-007","category":"websocket_dlp","title":"Benign WebSocket chat message","description":"A normal WebSocket text message containing no secrets or injection. Should not be blocked.","input_type":"websocket_frame","transport":"websocket","payload":{"url":"wss://chat.example.com/ws","frames":[{"opcode":"text","payload":"{\"type\":\"message\",\"user\":\"alice\",\"text\":\"Has anyone reviewed the pull request yet?\"}"}]},"expected_verdict":"allow","severity":"low","capability_tags":["benign"],"requires":["websocket_frame_scanning"],"false_positive_risk":"low","why_expected":"normal_chat_message","safe_example":true,"source":"original","notes":""}
+{
+  "schema_version": 1,
+  "id": "ws-dlp-benign-chat-007",
+  "category": "websocket_dlp",
+  "title": "Benign WebSocket chat message",
+  "description": "A normal WebSocket text message containing no secrets or injection. Should not be blocked.",
+  "input_type": "websocket_frame",
+  "transport": "websocket",
+  "payload": {
+    "url": "wss://echo.websocket.org/ws",
+    "frames": [
+      {
+        "opcode": "text",
+        "payload": "{\"type\":\"message\",\"user\":\"alice\",\"text\":\"Has anyone reviewed the pull request yet?\"}"
+      }
+    ]
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [
+    "websocket_frame_scanning"
+  ],
+  "false_positive_risk": "low",
+  "why_expected": "normal_chat_message",
+  "safe_example": true,
+  "source": "original",
+  "notes": ""
+}

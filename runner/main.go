@@ -16,7 +16,8 @@ func main() {
 	casesDir := flag.String("cases", "", "directory of case JSON files (required)")
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
-	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null")
+	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null, proxy")
+	proxyAddr := flag.String("proxy-addr", "", "proxy address for proxy adapter (e.g. 127.0.0.1:8888)")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 
 	flag.Parse()
@@ -26,13 +27,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr string) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -56,8 +57,13 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		adapt = adapter.DryRunAdapter{}
 	case "null":
 		adapt = adapter.NullAdapter{}
+	case "proxy":
+		if proxyAddr == "" {
+			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
+		}
+		adapt = adapter.NewProxyAdapter(proxyAddr)
 	default:
-		return fmt.Errorf("unknown adapter: %q (available: dryrun, null)", adapterName)
+		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, proxy)", adapterName)
 	}
 
 	var applicableResults []CaseResult
@@ -90,6 +96,8 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		adapterCase := adapter.Case{
 			ID:              c.ID,
 			ExpectedVerdict: c.ExpectedVerdict,
+			Transport:       c.Transport,
+			Payload:         c.Payload,
 		}
 		adapterResult := adapt.Run(adapterCase, timeout)
 
@@ -104,6 +112,25 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 				Score:           "error",
 				Evidence:        map[string]interface{}{},
 				Notes:           fmt.Sprintf("adapter error: %v", adapterResult.Err),
+			}
+			if encErr := enc.Encode(result); encErr != nil {
+				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
+			}
+			continue
+		}
+
+		// Adapter returned skip (transport not supported). Treat as N/A.
+		if adapterResult.Verdict == "skip" {
+			naReasons[NAUnsupportedTransport]++
+			result := CaseResult{
+				CaseID:          c.ID,
+				Tool:            profile.Tool,
+				ToolVersion:     profile.ToolVersion,
+				ExpectedVerdict: c.ExpectedVerdict,
+				ActualVerdict:   "not_applicable",
+				Score:           "not_applicable",
+				Evidence:        adapterResult.Evidence,
+				Notes:           "adapter skip: transport not supported",
 			}
 			if encErr := enc.Encode(result); encErr != nil {
 				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)

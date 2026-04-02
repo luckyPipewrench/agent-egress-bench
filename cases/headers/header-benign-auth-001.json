@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://api.example.com/me",
+    "url": "https://api.github.com/me",
     "headers": {
       "Authorization": "Bearer mF_9.B5f-4.1JqM"
     }

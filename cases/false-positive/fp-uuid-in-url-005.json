@@ -1,1 +1,24 @@
-{"schema_version":1,"id":"fp-uuid-in-url-005","category":"false_positive","title":"UUID v4 in URL path","description":"A URL containing a UUID v4 in the path. UUIDs are high-entropy but are not secrets. Should not trigger entropy-based detection.","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://api.example.com/resources/550e8400-e29b-41d4-a716-446655440000/details"},"expected_verdict":"allow","severity":"low","capability_tags":["benign"],"requires":[],"false_positive_risk":"high","why_expected":"uuid_v4_is_not_a_secret","safe_example":true,"source":"original","notes":""}
+{
+  "schema_version": 1,
+  "id": "fp-uuid-in-url-005",
+  "category": "false_positive",
+  "title": "UUID v4 in URL path",
+  "description": "A URL containing a UUID v4 in the path. UUIDs are high-entropy but are not secrets. Should not trigger entropy-based detection.",
+  "input_type": "url",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://api.github.com/resources/550e8400-e29b-41d4-a716-446655440000/details"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [],
+  "false_positive_risk": "high",
+  "why_expected": "uuid_v4_is_not_a_secret",
+  "safe_example": true,
+  "source": "original",
+  "notes": ""
+}

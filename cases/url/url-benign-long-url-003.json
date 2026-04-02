@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://shop.example.com/products?category=electronics&brand=apple&brand=samsung&min_price=100&max_price=2000&color=black&color=white&sort=price_asc&page=3&per_page=24&in_stock=true&rating=4"
+    "url": "https://www.google.com/products?category=electronics&brand=apple&brand=samsung&min_price=100&max_price=2000&color=black&color=white&sort=price_asc&page=3&per_page=24&in_stock=true&rating=4"
   },
   "expected_verdict": "allow",
   "severity": "low",

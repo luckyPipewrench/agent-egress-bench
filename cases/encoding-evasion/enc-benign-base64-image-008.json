@@ -1,1 +1,24 @@
-{"schema_version":1,"id":"enc-benign-base64-image-008","category":"encoding_evasion","title":"Benign base64-encoded image data","description":"A URL containing legitimately base64-encoded image data. Should not be blocked as encoding evasion.","input_type":"url","transport":"fetch_proxy","payload":{"method":"POST","url":"https://api.example.com/upload?format=png&data=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"},"expected_verdict":"allow","severity":"low","capability_tags":["benign"],"requires":[],"false_positive_risk":"high","why_expected":"legitimate_base64_image_data","safe_example":true,"source":"original","notes":""}
+{
+  "schema_version": 1,
+  "id": "enc-benign-base64-image-008",
+  "category": "encoding_evasion",
+  "title": "Benign base64-encoded image data",
+  "description": "A URL containing legitimately base64-encoded image data. Should not be blocked as encoding evasion.",
+  "input_type": "url",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://api.github.com/upload?format=png&data=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [],
+  "false_positive_risk": "high",
+  "why_expected": "legitimate_base64_image_data",
+  "safe_example": true,
+  "source": "original",
+  "notes": ""
+}

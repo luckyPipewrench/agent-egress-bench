@@ -3,10 +3,12 @@ package adapter
 
 import "time"
 
-// Case holds the subset of case fields an adapter needs to produce a verdict.
+// Case holds the fields an adapter needs to produce a verdict.
 type Case struct {
 	ID              string
 	ExpectedVerdict string
+	Transport       string
+	Payload         map[string]interface{}
 }
 
 // Result is what an adapter returns after running a case.

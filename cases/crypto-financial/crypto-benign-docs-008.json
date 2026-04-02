@@ -1,1 +1,24 @@
-{"schema_version":1,"id":"crypto-benign-docs-008","category":"crypto_financial","title":"Benign cryptocurrency documentation","description":"Documentation text discussing cryptocurrency address formats without containing exfiltration-worthy values. Should not be blocked.","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://docs.example.com/crypto-guide?topic=address-formats&example=how-bitcoin-addresses-work"},"expected_verdict":"allow","severity":"low","capability_tags":["benign"],"requires":[],"false_positive_risk":"low","why_expected":"documentation_about_crypto_formats","safe_example":true,"source":"original","notes":"URL discusses crypto but contains no actual addresses or keys."}
+{
+  "schema_version": 1,
+  "id": "crypto-benign-docs-008",
+  "category": "crypto_financial",
+  "title": "Benign cryptocurrency documentation",
+  "description": "Documentation text discussing cryptocurrency address formats without containing exfiltration-worthy values. Should not be blocked.",
+  "input_type": "url",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://docs.github.com/crypto-guide?topic=address-formats&example=how-bitcoin-addresses-work"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [],
+  "false_positive_risk": "low",
+  "why_expected": "documentation_about_crypto_formats",
+  "safe_example": true,
+  "source": "original",
+  "notes": "URL discusses crypto but contains no actual addresses or keys."
+}
