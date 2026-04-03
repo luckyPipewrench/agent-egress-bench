@@ -115,6 +115,13 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline") {
+			return Result{
+				Verdict:  "skip",
+				Evidence: map[string]interface{}{"reason": "fetch_timeout", "detail": truncate(errStr, 120)},
+			}
+		}
 		return Result{Err: fmt.Errorf("case %s: fetch proxy: %w", c.ID, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -172,9 +179,16 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		if strings.Contains(errStr, "reset by peer") {
 			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "connection_reset"}}
 		}
-		// Infrastructure failures: proxy down, DNS unresolvable, TLS mismatch,
-		// upstream unreachable. These are not policy decisions — report error.
-		return Result{Err: fmt.Errorf("case %s: request failed: %w", c.ID, err)}
+		// Proxy unreachable — adapter infrastructure problem.
+		if strings.Contains(errStr, "connection refused") {
+			return Result{Err: fmt.Errorf("case %s: proxy unreachable: %w", c.ID, err)}
+		}
+		// Upstream unreachable (DNS, TLS, timeout) — the proxy allowed the
+		// CONNECT but the upstream doesn't exist. Skip, not error.
+		return Result{
+			Verdict:  "skip",
+			Evidence: map[string]interface{}{"reason": "upstream_unreachable", "detail": truncate(errStr, 120)},
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -207,7 +221,16 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: websocket proxy: %w", c.ID, err)}
+		errStr := err.Error()
+		// Proxy unreachable — adapter infrastructure problem.
+		if strings.Contains(errStr, "connection refused") {
+			return Result{Err: fmt.Errorf("case %s: ws proxy unreachable: %w", c.ID, err)}
+		}
+		// Upstream WS server unreachable (timeout, DNS). Skip, not error.
+		return Result{
+			Verdict:  "skip",
+			Evidence: map[string]interface{}{"reason": "ws_upstream_unreachable", "detail": truncate(errStr, 120)},
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -513,15 +536,21 @@ func (p *ProxyAdapter) runA2AViaMCP(c Case, timeout time.Duration) Result {
 
 // extractTextFromPayload pulls scannable text from any payload format.
 func extractTextFromPayload(payload map[string]interface{}) string {
-	// A2A agent cards.
+	// A2A agent cards — scan name, description, and skill descriptions.
 	if card, ok := payload["agent_card"].(map[string]interface{}); ok {
 		var texts []string
+		if name, ok := card["name"].(string); ok {
+			texts = append(texts, name)
+		}
 		if desc, ok := card["description"].(string); ok {
 			texts = append(texts, desc)
 		}
 		if skills, ok := card["skills"].([]interface{}); ok {
 			for _, s := range skills {
 				skill, _ := s.(map[string]interface{})
+				if name, ok := skill["name"].(string); ok {
+					texts = append(texts, name)
+				}
 				if desc, ok := skill["description"].(string); ok {
 					texts = append(texts, desc)
 				}

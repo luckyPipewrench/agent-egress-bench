@@ -15,7 +15,7 @@
           "name": "run_command",
           "arguments": {
             "command": "echo",
-            "args": ["6768705f4558414d504c45544f4b454e313233343536373839304142434445464748"],
+            "args": ["6768705f4558414d504c45544f4b454e313233343536373839304142434445464748494a4b4c6d6e6f70"],
             "note": "Decoded value for debugging"
           }
         },
