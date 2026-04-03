@@ -126,9 +126,15 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 			continue
 		}
 
-		// Adapter returned skip (transport not supported). Treat as N/A.
+		// Adapter returned skip (transport not supported or infrastructure issue).
 		if adapterResult.Verdict == "skip" {
 			naReasons[NAUnsupportedTransport]++
+			skipReason := "adapter skip"
+			if adapterResult.Evidence != nil {
+				if r, ok := adapterResult.Evidence["reason"].(string); ok {
+					skipReason = "adapter skip: " + r
+				}
+			}
 			result := CaseResult{
 				CaseID:          c.ID,
 				Tool:            profile.Tool,
@@ -137,7 +143,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 				ActualVerdict:   "not_applicable",
 				Score:           "not_applicable",
 				Evidence:        adapterResult.Evidence,
-				Notes:           "adapter skip: transport not supported",
+				Notes:           skipReason,
 			}
 			if encErr := enc.Encode(result); encErr != nil {
 				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)

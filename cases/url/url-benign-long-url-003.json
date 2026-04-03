@@ -3,7 +3,7 @@
   "id": "url-benign-long-url-003",
   "category": "url",
   "title": "Long but clean URL with many query parameters",
-  "description": "URL with many query filter parameters. Long but not suspicious.",
+  "description": "URL with many product filter query parameters. Long but not suspicious.",
   "input_type": "url",
   "transport": "fetch_proxy",
   "payload": {

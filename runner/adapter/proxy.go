@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -62,8 +63,16 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 	case "mcp_stdio", "mcp_http":
 		return p.runMCPStdio(c, timeout)
 	case "a2a":
-		// A2A uses scan API with dual-pass: DLP first, then prompt_injection.
-		return p.runScanAPIDualPass(c, timeout)
+		// A2A: scan API first (fast), then MCP proxy (deeper DLP with encoding decode).
+		result := p.runScanAPIDualPass(c, timeout)
+		if result.Verdict == "block" || result.Err != nil {
+			return result
+		}
+		// Scan API allowed — try routing through MCP proxy for wider coverage.
+		if p.mcpCmd != "" {
+			return p.runA2AViaMCP(c, timeout)
+		}
+		return result
 	default:
 		return Result{
 			Verdict:  "skip",
@@ -97,10 +106,7 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		if strings.Contains(err.Error(), "connection refused") {
-			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "connection_refused"}}
-		}
-		return Result{Err: fmt.Errorf("case %s: request failed: %w", c.ID, err)}
+		return Result{Err: fmt.Errorf("case %s: fetch proxy: %w", c.ID, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -152,24 +158,16 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
+		// Proxy actively rejected the CONNECT (policy decision).
 		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
 			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "proxy_rejected"}}
 		}
-		if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "reset by peer") {
-			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "connection_refused"}}
+		// Proxy or upstream connection reset — may be an active block.
+		if strings.Contains(errStr, "reset by peer") {
+			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "connection_reset"}}
 		}
-		if strings.Contains(errStr, "no such host") || strings.Contains(errStr, "lookup") {
-			if c.ExpectedVerdict == "block" {
-				return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "dns_blocked"}}
-			}
-			return Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "upstream_unresolvable"}}
-		}
-		if strings.Contains(errStr, "certificate") || strings.Contains(errStr, "tls") {
-			if c.ExpectedVerdict == "block" {
-				return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "tls_blocked"}}
-			}
-			return Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tls_error_no_interception"}}
-		}
+		// Infrastructure failures: proxy down, DNS unresolvable, TLS mismatch,
+		// upstream unreachable. These are not policy decisions — report error.
 		return Result{Err: fmt.Errorf("case %s: request failed: %w", c.ID, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -203,10 +201,7 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		if strings.Contains(err.Error(), "connection refused") {
-			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "connection_refused"}}
-		}
-		return Result{Err: fmt.Errorf("case %s: request failed: %w", c.ID, err)}
+		return Result{Err: fmt.Errorf("case %s: websocket proxy: %w", c.ID, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -261,27 +256,39 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	}
 
 	// Build the MCP command. For tool poisoning (server responses in payload),
-	// create an inline mock that returns the poisoned responses.
+	// create a temp-file-based mock that returns the poisoned responses.
+	// This avoids shell escaping issues with complex JSON payloads.
 	mcpCmd := p.mcpCmd
+	var tempFiles []string // cleaned up after cmd.Wait
 	if len(serverResponses) > 0 {
-		// The mock echoes the server responses for each line of input.
-		var responseLines []string
+		// Write server responses to a temp file (one JSON line per response).
+		respFile, respErr := os.CreateTemp("", "mock-responses-*.jsonl")
+		if respErr != nil {
+			return Result{Err: fmt.Errorf("case %s: create temp response file: %w", c.ID, respErr)}
+		}
+		tempFiles = append(tempFiles, respFile.Name())
 		for _, sr := range serverResponses {
 			line, _ := json.Marshal(sr)
-			responseLines = append(responseLines, string(line))
+			_, _ = respFile.Write(line)
+			_, _ = respFile.Write([]byte("\n"))
 		}
-		// Build a shell one-liner that outputs each response for each input line.
-		mockScript := "while IFS= read -r line; do "
-		for _, rl := range responseLines {
-			// Shell-escape single quotes in the JSON.
-			escaped := strings.ReplaceAll(rl, "'", "'\\''")
-			mockScript += fmt.Sprintf("echo '%s'; ", escaped)
-		}
-		mockScript += "done"
+		_ = respFile.Close()
 
-		// Replace "-- cat" or "-- /tmp/mock-mcp-echo.sh" with our custom mock.
+		// Write a mock script that reads the response file.
+		// For each input line, output the next line from the response file.
+		mockScript, scriptErr := os.CreateTemp("", "mock-script-*.sh")
+		if scriptErr != nil {
+			return Result{Err: fmt.Errorf("case %s: create temp script: %w", c.ID, scriptErr)}
+		}
+		tempFiles = append(tempFiles, mockScript.Name())
+		_, _ = fmt.Fprintf(mockScript, "#!/bin/bash\n_n=0\nwhile IFS= read -r _input; do\n  _n=$((_n+1))\n  sed -n \"${_n}p\" '%s'\ndone\n",
+			respFile.Name())
+		_ = mockScript.Close()
+		_ = os.Chmod(mockScript.Name(), 0o750)
+
+		// Replace the backend command with our custom mock script.
 		if idx := strings.Index(mcpCmd, " -- "); idx >= 0 {
-			mcpCmd = mcpCmd[:idx] + " -- sh -c '" + strings.ReplaceAll(mockScript, "'", "'\\''") + "'"
+			mcpCmd = mcpCmd[:idx] + " -- " + mockScript.Name()
 		}
 
 		// If no client messages, send a tools/list request to trigger the response.
@@ -326,11 +333,19 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	}
 	_ = stdin.Close()
 
-	_ = cmd.Wait()
+	waitErr := cmd.Wait()
+	for _, tf := range tempFiles {
+		_ = os.Remove(tf)
+	}
 	output := <-outputCh
 
+	// Context timeout is expected (subprocess runs until stdin closes).
+	// But other wait errors with no output indicate a real failure.
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
+		if waitErr != nil && ctx.Err() == nil {
+			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
+		}
 		return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "no_output"}}
 	}
 
@@ -375,101 +390,6 @@ type scanAPIInput struct {
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
-// runScanAPI sends MCP, A2A, and shell cases through the proxy's scan API.
-// Parses jsonrpc_messages from the case payload to extract tool names,
-// arguments, and text content for scanning.
-func (p *ProxyAdapter) runScanAPI(c Case, timeout time.Duration) Result {
-	var scanReq scanAPIRequest
-
-	// A2A agent cards: extract descriptions and scan for injection.
-	if card, ok := c.Payload["agent_card"].(map[string]interface{}); ok {
-		var texts []string
-		if desc, ok := card["description"].(string); ok {
-			texts = append(texts, desc)
-		}
-		if skills, ok := card["skills"].([]interface{}); ok {
-			for _, s := range skills {
-				skill, _ := s.(map[string]interface{})
-				if desc, ok := skill["description"].(string); ok {
-					texts = append(texts, desc)
-				}
-			}
-		}
-		if len(texts) > 0 {
-			scanReq.Kind = "prompt_injection"
-			scanReq.Input.Content = strings.Join(texts, "\n")
-		} else {
-			cardJSON, _ := json.Marshal(card)
-			scanReq.Kind = "prompt_injection"
-			scanReq.Input.Content = string(cardJSON)
-		}
-	} else if msgs, ok := c.Payload["jsonrpc_messages"]; ok {
-		// A2A messages and MCP via jsonrpc_messages.
-		scanReq = p.buildScanFromJSONRPC(msgs)
-	} else if toolName, ok := payloadString(c.Payload, "tool_name"); ok && toolName != "" {
-		scanReq.Kind = "tool_call"
-		scanReq.Input.ToolName = toolName
-		if args, ok := c.Payload["arguments"]; ok {
-			argBytes, _ := json.Marshal(args)
-			scanReq.Input.Arguments = argBytes
-		}
-	} else if u, ok := payloadString(c.Payload, "url"); ok && u != "" {
-		scanReq.Kind = "url"
-		scanReq.Input.URL = u
-	} else {
-		// Fallback: serialize the entire payload and scan as DLP.
-		payloadBytes, _ := json.Marshal(c.Payload)
-		scanReq.Kind = "dlp"
-		scanReq.Input.Text = string(payloadBytes)
-	}
-
-	body, err := json.Marshal(scanReq)
-	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: marshal scan request: %w", c.ID, err)}
-	}
-
-	scanURL := fmt.Sprintf("%s/api/v1/scan", p.scanURL)
-	req, err := http.NewRequest(http.MethodPost, scanURL, bytes.NewReader(body))
-	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: building request: %w", c.ID, err)}
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if p.scanToken != "" {
-		req.Header.Set("Authorization", "Bearer "+p.scanToken)
-	}
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		if strings.Contains(err.Error(), "connection refused") {
-			return Result{Err: fmt.Errorf("case %s: scan API not reachable (is scan_api.listen configured?): %w", c.ID, err)}
-		}
-		return Result{Err: fmt.Errorf("case %s: scan API request failed: %w", c.ID, err)}
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-
-	// The scan API returns {"verdict": "block"|"allow", ...}
-	var scanResp struct {
-		Verdict string `json:"verdict"`
-		Action  string `json:"action"`
-	}
-	if jsonErr := json.Unmarshal(respBody, &scanResp); jsonErr == nil && scanResp.Verdict != "" {
-		evidence := map[string]interface{}{
-			"status_code": resp.StatusCode,
-			"verdict":     scanResp.Verdict,
-		}
-		if scanResp.Verdict == "block" || scanResp.Action == "block" {
-			return Result{Verdict: "block", Evidence: evidence}
-		}
-		return Result{Verdict: "allow", Evidence: evidence}
-	}
-
-	// Fallback to HTTP status classification.
-	return classifyResponse(resp.StatusCode, string(respBody))
-}
-
 // runScanAPIDualPass runs the scan API twice: once for DLP, once for injection.
 // A2A cases may contain both secrets and injection in the same payload.
 func (p *ProxyAdapter) runScanAPIDualPass(c Case, timeout time.Duration) Result {
@@ -512,11 +432,16 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: scan API: %w", c.ID, err)}
+		return Result{Err: fmt.Errorf("case %s: scan API (%s): %w", c.ID, kind, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	if resp.StatusCode >= 400 {
+		return Result{Err: fmt.Errorf("case %s: scan API (%s) returned %d: %s", c.ID, kind, resp.StatusCode, truncate(string(respBody), 120))}
+	}
+
 	var scanResp struct {
 		Verdict  string `json:"verdict"`
 		Action   string `json:"action"`
@@ -527,15 +452,47 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 		if decision == "" {
 			decision = scanResp.Verdict
 		}
-		if decision == "block" || scanResp.Action == "block" {
+		if isScanDeny(decision) || isScanDeny(scanResp.Action) {
 			return Result{Verdict: "block", Evidence: map[string]interface{}{"kind": kind, "decision": decision}}
 		}
-		if decision == "allow" {
+		if decision != "" {
 			return Result{Verdict: "allow", Evidence: map[string]interface{}{"kind": kind}}
 		}
 	}
 
-	return classifyResponse(resp.StatusCode, string(respBody))
+	return Result{Err: fmt.Errorf("case %s: scan API (%s) returned unparseable response: %s", c.ID, kind, truncate(string(respBody), 120))}
+}
+
+// runA2AViaMCP wraps A2A content in a fake tools/call message and sends
+// it through the MCP proxy. The MCP input scanner runs full DLP including
+// encoding decode, which catches secrets that the scan API DLP misses.
+func (p *ProxyAdapter) runA2AViaMCP(c Case, timeout time.Duration) Result {
+	text := extractTextFromPayload(c.Payload)
+	if text == "" {
+		return Result{Verdict: "allow", Evidence: map[string]interface{}{"reason": "no_text_extracted"}}
+	}
+	// Wrap in a tools/call JSON-RPC message.
+	wrapped := Case{
+		ID:              c.ID,
+		ExpectedVerdict: c.ExpectedVerdict,
+		Transport:       "mcp_stdio",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{
+					"jsonrpc": "2.0",
+					"method":  "tools/call",
+					"id":      1,
+					"params": map[string]interface{}{
+						"name": "a2a_relay",
+						"arguments": map[string]interface{}{
+							"content": text,
+						},
+					},
+				},
+			},
+		},
+	}
+	return p.runMCPStdio(wrapped, timeout)
 }
 
 // extractTextFromPayload pulls scannable text from any payload format.
@@ -586,81 +543,6 @@ func extractTextFromPayload(payload map[string]interface{}) string {
 	return string(b)
 }
 
-// buildScanFromJSONRPC extracts scan parameters from jsonrpc_messages.
-// For tools/call: uses tool_call kind with tool name and arguments.
-// For message/send (A2A): extracts text parts and scans as DLP.
-// For tools/list responses with descriptions: scans as prompt_injection.
-func (p *ProxyAdapter) buildScanFromJSONRPC(msgs interface{}) scanAPIRequest {
-	msgList, ok := msgs.([]interface{})
-	if !ok || len(msgList) == 0 {
-		return scanAPIRequest{Kind: "dlp", Input: scanAPIInput{Text: fmt.Sprintf("%v", msgs)}}
-	}
-
-	// Use the first message to determine the scan kind.
-	first, ok := msgList[0].(map[string]interface{})
-	if !ok {
-		return scanAPIRequest{Kind: "dlp", Input: scanAPIInput{Text: fmt.Sprintf("%v", msgs)}}
-	}
-
-	method, _ := first["method"].(string)
-	params, _ := first["params"].(map[string]interface{})
-
-	switch method {
-	case "tools/call":
-		name, _ := params["name"].(string)
-		args, _ := params["arguments"].(map[string]interface{})
-		argBytes, _ := json.Marshal(args)
-		return scanAPIRequest{
-			Kind:  "tool_call",
-			Input: scanAPIInput{ToolName: name, Arguments: argBytes},
-		}
-
-	case "message/send":
-		// A2A: extract text from message parts.
-		msg, _ := params["message"].(map[string]interface{})
-		parts, _ := msg["parts"].([]interface{})
-		var texts []string
-		for _, part := range parts {
-			p, _ := part.(map[string]interface{})
-			if text, ok := p["text"].(string); ok {
-				texts = append(texts, text)
-			}
-		}
-		if len(texts) > 0 {
-			return scanAPIRequest{
-				Kind:  "dlp",
-				Input: scanAPIInput{Text: strings.Join(texts, "\n")},
-			}
-		}
-
-	case "tools/list":
-		// Tool poisoning: scan tool descriptions for injection.
-		result, _ := first["result"].(map[string]interface{})
-		tools, _ := result["tools"].([]interface{})
-		var descs []string
-		for _, t := range tools {
-			tool, _ := t.(map[string]interface{})
-			if desc, ok := tool["description"].(string); ok {
-				descs = append(descs, desc)
-			}
-		}
-		if len(descs) > 0 {
-			return scanAPIRequest{
-				Kind:  "prompt_injection",
-				Input: scanAPIInput{Content: strings.Join(descs, "\n")},
-			}
-		}
-	}
-
-	// For chain detection, shell obfuscation, and other complex cases:
-	// serialize the whole message sequence as DLP.
-	fullPayload, _ := json.Marshal(msgs)
-	return scanAPIRequest{
-		Kind:  "dlp",
-		Input: scanAPIInput{Text: string(fullPayload)},
-	}
-}
-
 // classifyResponse determines block vs allow from the HTTP response.
 func classifyResponse(statusCode int, body string) Result {
 	evidence := map[string]interface{}{
@@ -684,15 +566,10 @@ func classifyResponse(statusCode int, body string) Result {
 		return Result{Verdict: "allow", Evidence: evidence}
 	}
 
-	// 404 from scan API means endpoint not configured.
-	if statusCode == http.StatusNotFound {
-		return Result{
-			Verdict:  "skip",
-			Evidence: map[string]interface{}{"reason": "scan_api_not_configured", "status_code": statusCode},
-		}
-	}
-
-	evidence["reason"] = fmt.Sprintf("ambiguous_http_%d", statusCode)
+	// 4xx/5xx that aren't 400/403/502 — the request reached the upstream and
+	// got an error response. The proxy allowed it through (not a policy block).
+	// 404, 429, 500, etc. all mean the proxy didn't intervene.
+	evidence["reason"] = fmt.Sprintf("http_%d_passthrough", statusCode)
 	return Result{Verdict: "allow", Evidence: evidence}
 }
 
@@ -710,4 +587,10 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// isScanDeny returns true if the verdict string indicates a block/deny.
+// Pipelock's scan API uses "deny"; older or alternative engines may use "block".
+func isScanDeny(v string) bool {
+	return v == "deny" || v == "block"
 }
