@@ -1,1 +1,24 @@
-{"schema_version":1,"id":"fp-multilingual-security-terms-001","category":"false_positive","title":"Japanese text with security terminology","description":"Japanese text discussing password security. Contains security-related terms that should not trigger DLP.","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://docs.example.com/security?content=%E3%83%91%E3%82%B9%E3%83%AF%E3%83%BC%E3%83%89%E3%81%AE%E3%82%BB%E3%82%AD%E3%83%A5%E3%83%AA%E3%83%86%E3%82%A3"},"expected_verdict":"allow","severity":"low","capability_tags":["benign"],"requires":[],"false_positive_risk":"high","why_expected":"multilingual_security_terminology","safe_example":true,"source":"synthetic: Japanese security terminology that might trigger pattern matching","notes":"URL-encoded Japanese text meaning 'password security'."}
+{
+  "schema_version": 1,
+  "id": "fp-multilingual-security-terms-001",
+  "category": "false_positive",
+  "title": "Japanese text with security terminology",
+  "description": "Japanese text discussing password security. Contains security-related terms that should not trigger DLP.",
+  "input_type": "url",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://docs.github.com/security?content=%E3%83%91%E3%82%B9%E3%83%AF%E3%83%BC%E3%83%89%E3%81%AE%E3%82%BB%E3%82%AD%E3%83%A5%E3%83%AA%E3%83%86%E3%82%A3"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [],
+  "false_positive_risk": "high",
+  "why_expected": "multilingual_security_terminology",
+  "safe_example": true,
+  "source": "synthetic: Japanese security terminology that might trigger pattern matching",
+  "notes": "URL-encoded Japanese text meaning 'password security'."
+}

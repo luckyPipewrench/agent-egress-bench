@@ -1,1 +1,26 @@
-{"schema_version":1,"id":"fp-networking-docs-localhost-008","category":"false_positive","title":"Networking documentation mentioning localhost","description":"Documentation about networking that discusses localhost and 127.0.0.1. Educational content should not trigger SSRF protection.","input_type":"response_content","transport":"fetch_proxy","payload":{"url":"https://docs.example.com/networking-basics","response_body":"<h2>Loopback Interface</h2><p>The loopback interface (127.0.0.1 or localhost) is used for internal communication. IPv6 uses ::1 as the loopback address. The link-local range 169.254.0.0/16 is used for APIPA when DHCP is unavailable.</p>"},"expected_verdict":"allow","severity":"low","capability_tags":["benign"],"requires":["response_scanning"],"false_positive_risk":"high","why_expected":"educational_networking_content","safe_example":true,"source":"original","notes":""}
+{
+  "schema_version": 1,
+  "id": "fp-networking-docs-localhost-008",
+  "category": "false_positive",
+  "title": "Networking documentation mentioning localhost",
+  "description": "Documentation about networking that discusses localhost and 127.0.0.1. Educational content should not trigger SSRF protection.",
+  "input_type": "response_content",
+  "transport": "fetch_proxy",
+  "payload": {
+    "url": "https://docs.github.com/networking-basics",
+    "response_body": "<h2>Loopback Interface</h2><p>The loopback interface (127.0.0.1 or localhost) is used for internal communication. IPv6 uses ::1 as the loopback address. The link-local range 169.254.0.0/16 is used for APIPA when DHCP is unavailable.</p>"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [
+    "response_scanning"
+  ],
+  "false_positive_risk": "high",
+  "why_expected": "educational_networking_content",
+  "safe_example": true,
+  "source": "original",
+  "notes": ""
+}

@@ -1,1 +1,26 @@
-{"schema_version":1,"id":"fp-crypto-tutorial-text-011","category":"false_positive","title":"Cryptocurrency tutorial text","description":"Educational content about how Bitcoin addresses work. Discusses address formats without containing exfiltration-worthy real addresses.","input_type":"response_content","transport":"fetch_proxy","payload":{"url":"https://learn.example.com/bitcoin-basics","response_body":"<h2>Bitcoin Address Formats</h2><p>Bitcoin uses three address formats: P2PKH (starting with 1), P2SH (starting with 3), and Bech32 (starting with bc1). For example, the genesis block reward was sent to address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa. This is a well-known public address used in documentation.</p>"},"expected_verdict":"allow","severity":"low","capability_tags":["benign"],"requires":["response_scanning"],"false_positive_risk":"high","why_expected":"educational_crypto_content_with_public_address","safe_example":true,"source":"synthetic: cryptocurrency tutorial with well-known example addresses","notes":"The genesis address is public knowledge, not a secret."}
+{
+  "schema_version": 1,
+  "id": "fp-crypto-tutorial-text-011",
+  "category": "false_positive",
+  "title": "Cryptocurrency tutorial text",
+  "description": "Educational content about how Bitcoin addresses work. Discusses address formats without containing exfiltration-worthy real addresses.",
+  "input_type": "response_content",
+  "transport": "fetch_proxy",
+  "payload": {
+    "url": "https://docs.github.com/bitcoin-basics",
+    "response_body": "<h2>Bitcoin Address Formats</h2><p>Bitcoin uses three address formats: P2PKH (starting with 1), P2SH (starting with 3), and Bech32 (starting with bc1). For example, the genesis block reward was sent to address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa. This is a well-known public address used in documentation.</p>"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [
+    "response_scanning"
+  ],
+  "false_positive_risk": "high",
+  "why_expected": "educational_crypto_content_with_public_address",
+  "safe_example": true,
+  "source": "synthetic: cryptocurrency tutorial with well-known example addresses",
+  "notes": "The genesis address is public knowledge, not a secret."
+}

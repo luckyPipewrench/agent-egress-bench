@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "tool": "pipelock",
-  "tool_version": "1.0.0",
-  "runner_version": "v1",
+  "tool_version": "2.1.0",
+  "runner_version": "v2",
   "claims": [
     "url_dlp",
     "request_body_dlp",
@@ -19,6 +19,9 @@
     "websocket_dlp",
     "shell_obfuscation",
     "crypto_dlp",
+    "hostname_exfil",
+    "a2a_card_poison",
+    "a2a_scan",
     "benign"
   ],
   "supports": {
@@ -33,9 +36,9 @@
     "response_scanning": true,
     "mcp_tool_baseline": true,
     "mcp_chain_memory": true,
-    "a2a": false,
+    "a2a": true,
     "websocket_frame_scanning": true,
-    "a2a_scanning": false,
+    "a2a_scanning": true,
     "shell_analysis": true,
     "dns_rebinding_fixture": false
   }

@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "POST",
-    "url": "https://api.example.com/users/profile",
+    "url": "https://api.github.com/users/profile",
     "content_type": "application/json",
     "body": "{\"name\": \"Jane Smith\", \"email\": \"jane@example.com\", \"preferences\": {\"theme\": \"dark\", \"language\": \"en\"}}"
   },

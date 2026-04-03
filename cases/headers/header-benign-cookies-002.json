@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://example.com/dashboard",
+    "url": "https://httpbin.org/dashboard",
     "headers": {
       "Cookie": "session_id=abc123def456; theme=dark; _ga=GA1.2.1234567890.1234567890; consent=accepted"
     }

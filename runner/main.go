@@ -16,23 +16,27 @@ func main() {
 	casesDir := flag.String("cases", "", "directory of case JSON files (required)")
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
-	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null")
+	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null, proxy")
+	proxyAddr := flag.String("proxy-addr", "", "proxy address for proxy adapter (e.g. 127.0.0.1:8888)")
+	scanAddr := flag.String("scan-addr", "", "scan API address for MCP/A2A cases (defaults to proxy-addr)")
+	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
+	mcpCmd := flag.String("mcp-cmd", "", "MCP proxy command for MCP/A2A/shell cases (e.g. 'pipelock mcp proxy --config bench.yaml -- cat')")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 
 	flag.Parse()
 
 	if *casesDir == "" || *profilePath == "" {
-		_, _ = fmt.Fprintf(os.Stderr, "usage: aeb-gauntlet --cases <dir> --profile <profile.json> [--output <summary.json>] [--adapter dryrun|null] [--timeout 10s]\n")
+		flag.Usage()
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -56,8 +60,17 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		adapt = adapter.DryRunAdapter{}
 	case "null":
 		adapt = adapter.NullAdapter{}
+	case "proxy":
+		if proxyAddr == "" {
+			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
+		}
+		var proxyErr error
+		adapt, proxyErr = adapter.NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd)
+		if proxyErr != nil {
+			return proxyErr
+		}
 	default:
-		return fmt.Errorf("unknown adapter: %q (available: dryrun, null)", adapterName)
+		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, proxy)", adapterName)
 	}
 
 	var applicableResults []CaseResult
@@ -90,6 +103,8 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		adapterCase := adapter.Case{
 			ID:              c.ID,
 			ExpectedVerdict: c.ExpectedVerdict,
+			Transport:       c.Transport,
+			Payload:         c.Payload,
 		}
 		adapterResult := adapt.Run(adapterCase, timeout)
 
@@ -104,6 +119,31 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 				Score:           "error",
 				Evidence:        map[string]interface{}{},
 				Notes:           fmt.Sprintf("adapter error: %v", adapterResult.Err),
+			}
+			if encErr := enc.Encode(result); encErr != nil {
+				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
+			}
+			continue
+		}
+
+		// Adapter returned skip (transport not supported or infrastructure issue).
+		if adapterResult.Verdict == "skip" {
+			naReasons[NAUnsupportedTransport]++
+			skipReason := "adapter skip"
+			if adapterResult.Evidence != nil {
+				if r, ok := adapterResult.Evidence["reason"].(string); ok {
+					skipReason = "adapter skip: " + r
+				}
+			}
+			result := CaseResult{
+				CaseID:          c.ID,
+				Tool:            profile.Tool,
+				ToolVersion:     profile.ToolVersion,
+				ExpectedVerdict: c.ExpectedVerdict,
+				ActualVerdict:   "not_applicable",
+				Score:           "not_applicable",
+				Evidence:        adapterResult.Evidence,
+				Notes:           skipReason,
 			}
 			if encErr := enc.Encode(result); encErr != nil {
 				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
