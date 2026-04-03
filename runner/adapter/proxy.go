@@ -82,10 +82,19 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 }
 
 // runFetchProxy sends a request to the proxy's /fetch endpoint.
+// The fetch endpoint only supports GET — cases declaring other methods are skipped.
 func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	targetURL, _ := payloadString(c.Payload, "url")
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
+	}
+
+	// The /fetch endpoint only accepts GET. Skip cases that require other methods.
+	if m, ok := payloadString(c.Payload, "method"); ok && m != "" && m != http.MethodGet {
+		return Result{
+			Verdict:  "skip",
+			Evidence: map[string]interface{}{"reason": fmt.Sprintf("fetch endpoint does not support %s", m)},
+		}
 	}
 
 	fetchURL := fmt.Sprintf("%s/fetch?url=%s", p.proxyURL.String(), url.QueryEscape(targetURL))
@@ -150,6 +159,7 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	transport := &http.Transport{
 		Proxy: http.ProxyURL(p.proxyURL),
 		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
 			InsecureSkipVerify: true, //nolint:gosec // G402: intentional for bench test traffic
 		},
 	}
@@ -349,7 +359,9 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "no_output"}}
 	}
 
-	// Check ALL response lines for a JSON-RPC error (any block = blocked).
+	// Check response lines for policy-block JSON-RPC errors.
+	// Pipelock uses -32000 to -32009 for policy decisions (scan block, chain, etc.).
+	// Standard JSON-RPC errors (-32700 to -32600) are protocol issues, not blocks.
 	for _, respLine := range lines {
 		var rpcResp struct {
 			Error *struct {
@@ -358,14 +370,20 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			} `json:"error"`
 		}
 		if jsonErr := json.Unmarshal([]byte(respLine), &rpcResp); jsonErr == nil && rpcResp.Error != nil {
-			if rpcResp.Error.Code < 0 {
+			code := rpcResp.Error.Code
+			if code >= -32099 && code <= -32000 {
+				// Policy block from the proxy (-32000 to -32099 range).
 				return Result{
 					Verdict: "block",
 					Evidence: map[string]interface{}{
-						"error_code":    rpcResp.Error.Code,
+						"error_code":    code,
 						"error_message": rpcResp.Error.Message,
 					},
 				}
+			}
+			if code <= -32600 {
+				// Standard JSON-RPC protocol error — not a policy decision.
+				return Result{Err: fmt.Errorf("case %s: JSON-RPC protocol error %d: %s", c.ID, code, rpcResp.Error.Message)}
 			}
 		}
 	}

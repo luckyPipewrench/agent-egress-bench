@@ -26,7 +26,7 @@ func main() {
 	flag.Parse()
 
 	if *casesDir == "" || *profilePath == "" {
-		_, _ = fmt.Fprintf(os.Stderr, "usage: aeb-gauntlet --cases <dir> --profile <profile.json> [--output <summary.json>] [--adapter dryrun|null] [--timeout 10s]\n")
+		flag.Usage()
 		os.Exit(1)
 	}
 
