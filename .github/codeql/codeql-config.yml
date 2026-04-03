@@ -1,7 +1,0 @@
-name: "agent-egress-bench CodeQL config"
-
-# The runner/adapter package is benchmark test tooling, not production code.
-# InsecureSkipVerify is intentional — bench cases use fake domains without
-# valid TLS certificates.
-paths-ignore:
-  - runner/adapter

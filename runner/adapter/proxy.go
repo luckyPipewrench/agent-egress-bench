@@ -153,14 +153,10 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		}
 	}
 
-	// TLS verification disabled for benchmarking. The bench corpus uses
-	// fake domains that don't have valid certificates. This is test
-	// tooling, not production code.
 	transport := &http.Transport{
 		Proxy: http.ProxyURL(p.proxyURL),
 		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: true, //nolint:gosec // G402: intentional for bench test traffic
+			MinVersion: tls.VersionTLS12,
 		},
 	}
 	client := &http.Client{Timeout: timeout, Transport: transport}
@@ -299,6 +295,8 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		// Replace the backend command with our custom mock script.
 		if idx := strings.Index(mcpCmd, " -- "); idx >= 0 {
 			mcpCmd = mcpCmd[:idx] + " -- " + mockScript.Name()
+		} else {
+			return Result{Err: fmt.Errorf("case %s: --mcp-cmd missing ' -- ' separator, cannot inject mock backend", c.ID)}
 		}
 
 		// If no client messages, send a tools/list request to trigger the response.
