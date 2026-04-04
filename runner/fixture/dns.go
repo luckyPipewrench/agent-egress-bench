@@ -31,7 +31,13 @@ func (f *DNSFixture) Addr() string { return f.addr }
 
 // SetRebind configures a hostname to return different IPs on successive lookups.
 // First query returns ips[0], second returns ips[1], etc. Wraps around.
-func (f *DNSFixture) SetRebind(hostname string, ips []string) {
+func (f *DNSFixture) SetRebind(hostname string, ips []string) error {
+	if hostname == "" {
+		return fmt.Errorf("hostname must not be empty")
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("ips must not be empty")
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	// Ensure hostname ends with a dot (DNS FQDN format).
@@ -39,6 +45,7 @@ func (f *DNSFixture) SetRebind(hostname string, ips []string) {
 		hostname += "."
 	}
 	f.records[hostname] = &rebindRecord{ips: ips}
+	return nil
 }
 
 // StartDNS creates and starts a DNS server on a random UDP port.

@@ -100,6 +100,40 @@ func TestWSFixture(t *testing.T) {
 	}
 }
 
+func TestHTTPFixture(t *testing.T) {
+	f, err := StartHTTP()
+	if err != nil {
+		t.Fatalf("StartHTTP: %v", err)
+	}
+	defer f.Close()
+
+	f.SetRoute("/api/data", `{"result": "test payload"}`)
+
+	// Registered route returns content.
+	resp, err := http.Get("http://" + f.Addr() + "/api/data")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != `{"result": "test payload"}` {
+		t.Errorf("body = %q, want test payload", body)
+	}
+
+	// Unregistered route returns 404.
+	resp2, err := http.Get("http://" + f.Addr() + "/unknown")
+	if err != nil {
+		t.Fatalf("GET /unknown: %v", err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("unregistered status = %d, want 404", resp2.StatusCode)
+	}
+}
+
 func TestDNSFixture(t *testing.T) {
 	f, err := StartDNS()
 	if err != nil {
@@ -108,7 +142,9 @@ func TestDNSFixture(t *testing.T) {
 	defer f.Close()
 
 	// Configure rebinding: first query → public IP, second → loopback.
-	f.SetRebind("attacker.test", []string{"93.184.216.34", "127.0.0.1"})
+	if err := f.SetRebind("attacker.test", []string{"93.184.216.34", "127.0.0.1"}); err != nil {
+		t.Fatal(err)
+	}
 
 	client := &dns.Client{Timeout: 2 * time.Second}
 
@@ -166,7 +202,9 @@ func TestDNSFixture_ResolverIntegration(t *testing.T) {
 	}
 	defer f.Close()
 
-	f.SetRebind("safe.test", []string{"93.184.216.34"})
+	if err := f.SetRebind("safe.test", []string{"93.184.216.34"}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Use Go's net.Resolver pointed at our fixture.
 	host, port, _ := net.SplitHostPort(f.Addr())
