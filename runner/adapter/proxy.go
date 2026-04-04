@@ -35,6 +35,9 @@ type ProxyAdapter struct {
 	scanURL   string // base URL for scan API (e.g. http://127.0.0.1:9990)
 	scanToken string // bearer token for scan API auth
 	mcpCmd    string // MCP proxy command (e.g. "pipelock mcp proxy --config /tmp/bench.yaml -- cat")
+	httpFixtureAddr string                 // HTTP fixture for response-mitm via fetch
+	setHTTPRoute    func(path, body string) // callback to register HTTP fixture routes
+	wsAddr          string                 // WS fixture for websocket cases
 }
 
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
@@ -50,6 +53,16 @@ func NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd string) (*ProxyAdapt
 	}
 	return &ProxyAdapter{proxyURL: u, scanURL: scanBase, scanToken: scanToken, mcpCmd: mcpCmd}, nil
 }
+
+// SetHTTPFixture configures the HTTP response fixture for response-mitm cases.
+// Cases with response_body are routed through the fetch endpoint to this server.
+func (p *ProxyAdapter) SetHTTPFixture(addr string, setRoute func(path, body string)) {
+	p.httpFixtureAddr = addr
+	p.setHTTPRoute = setRoute
+}
+
+// SetWSFixture configures the WS fixture address for websocket cases.
+func (p *ProxyAdapter) SetWSFixture(addr string) { p.wsAddr = addr }
 
 // Run sends the case payload through the proxy and returns the verdict.
 func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
@@ -127,6 +140,15 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	// The fetch endpoint returns JSON with a "blocked" field.
+	var fetchResp struct {
+		Blocked bool `json:"blocked"`
+	}
+	if jsonErr := json.Unmarshal(body, &fetchResp); jsonErr == nil && fetchResp.Blocked {
+		return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "fetch_blocked"}}
+	}
+
 	return classifyResponse(resp.StatusCode, string(body))
 }
 
@@ -135,6 +157,28 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	targetURL, _ := payloadString(c.Payload, "url")
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
+	}
+
+	// Response-MITM cases have a response_body field. Route through the
+	// fetch endpoint + HTTP fixture so the proxy scans the response content.
+	if respBody, ok := payloadString(c.Payload, "response_body"); ok && respBody != "" {
+		if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+			return Result{
+				Verdict:  "skip",
+				Evidence: map[string]interface{}{"reason": "no_response_fixture"},
+			}
+		}
+		path := "/" + c.ID
+		p.setHTTPRoute(path, respBody)
+		// Route through fetch endpoint instead of CONNECT tunnel.
+		fixtureURL := "http://" + p.httpFixtureAddr + path
+		fetchCase := Case{
+			ID:              c.ID,
+			ExpectedVerdict: c.ExpectedVerdict,
+			Transport:       "fetch_proxy",
+			Payload:         map[string]interface{}{"url": fixtureURL},
+		}
+		return p.runFetchProxy(fetchCase, timeout)
 	}
 
 	method, _ := payloadString(c.Payload, "method")
@@ -201,6 +245,15 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	targetURL, _ := payloadString(c.Payload, "url")
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
+	}
+
+	// If WS fixture is available, rewrite fake upstream URLs to the echo server.
+	if p.wsAddr != "" {
+		if u, err := url.Parse(targetURL); err == nil {
+			if u.Host == "example.com" || u.Host == "echo.websocket.org" || strings.HasSuffix(u.Host, ".example.com") {
+				targetURL = "ws://" + p.wsAddr + "/echo"
+			}
+		}
 	}
 
 	wsURL := fmt.Sprintf("%s/ws?url=%s", p.proxyURL.String(), url.QueryEscape(targetURL))
