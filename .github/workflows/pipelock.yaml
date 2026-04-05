@@ -25,3 +25,4 @@ jobs:
             cases/
             README.md
             scripts/
+            runner/go.sum

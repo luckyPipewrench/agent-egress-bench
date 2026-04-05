@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/adapter"
+	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
 
 func main() {
@@ -21,6 +22,7 @@ func main() {
 	scanAddr := flag.String("scan-addr", "", "scan API address for MCP/A2A cases (defaults to proxy-addr)")
 	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
 	mcpCmd := flag.String("mcp-cmd", "", "MCP proxy command for MCP/A2A/shell cases (e.g. 'pipelock mcp proxy --config bench.yaml -- cat')")
+	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 
 	flag.Parse()
@@ -30,13 +32,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -64,11 +66,22 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		if proxyAddr == "" {
 			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
 		}
-		var proxyErr error
-		adapt, proxyErr = adapter.NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd)
+		pa, proxyErr := adapter.NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd)
 		if proxyErr != nil {
 			return proxyErr
 		}
+		if useFixtures {
+			fm, fErr := fixture.StartAll()
+			if fErr != nil {
+				return fmt.Errorf("starting fixtures: %w", fErr)
+			}
+			defer fm.Close()
+			pa.SetHTTPFixture(fm.HTTP().Addr(), fm.HTTP().SetRoute)
+			pa.SetWSFixture(fm.WS().Addr())
+			_, _ = fmt.Fprintf(os.Stderr, "Fixtures: HTTP=%s WS=%s DNS=%s\n",
+				fm.HTTP().Addr(), fm.WS().Addr(), fm.DNS().Addr())
+		}
+		adapt = pa
 	default:
 		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, proxy)", adapterName)
 	}
