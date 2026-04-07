@@ -68,6 +68,11 @@ func (p *ProxyAdapter) SetWSFixture(addr string) { p.wsAddr = addr }
 func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 	switch c.Transport {
 	case "fetch_proxy":
+		// Body and header DLP cases route through scan API since
+		// the fetch endpoint only scans URLs, not request bodies.
+		if c.InputType == "request_body" || (c.InputType == "header" && p.scanURL != "") {
+			return p.runBodyViaScanAPI(c, timeout)
+		}
 		return p.runFetchProxy(c, timeout)
 	case "http_proxy":
 		return p.runHTTPProxy(c, timeout)
@@ -95,26 +100,32 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 }
 
 // runFetchProxy sends a request to the proxy's /fetch endpoint.
-// The fetch endpoint only supports GET — cases declaring other methods are skipped.
+// Supports GET (URL scanning) and POST (request body scanning).
 func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	targetURL, _ := payloadString(c.Payload, "url")
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
 	}
 
-	// The /fetch endpoint only accepts GET. Skip cases that require other methods.
-	if m, ok := payloadString(c.Payload, "method"); ok && m != "" && m != http.MethodGet {
-		return Result{
-			Verdict:  "skip",
-			Evidence: map[string]interface{}{"reason": fmt.Sprintf("fetch endpoint does not support %s", m)},
-		}
-	}
-
 	fetchURL := fmt.Sprintf("%s/fetch?url=%s", p.proxyURL.String(), url.QueryEscape(targetURL))
 
-	req, err := http.NewRequest(http.MethodGet, fetchURL, nil)
+	method := http.MethodGet
+	if m, ok := payloadString(c.Payload, "method"); ok && m != "" {
+		method = m
+	}
+
+	var bodyReader io.Reader
+	if bodyStr, ok := payloadString(c.Payload, "body"); ok && bodyStr != "" {
+		bodyReader = strings.NewReader(bodyStr)
+	}
+
+	req, err := http.NewRequest(method, fetchURL, bodyReader)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: building request: %w", c.ID, err)}
+	}
+
+	if ct, ok := payloadString(c.Payload, "content_type"); ok && ct != "" {
+		req.Header.Set("Content-Type", ct)
 	}
 
 	if hdrs, ok := c.Payload["headers"].(map[string]interface{}); ok {
@@ -141,12 +152,21 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 
-	// The fetch endpoint returns JSON with a "blocked" field.
+	// The fetch endpoint returns JSON with blocked, block_reason, and scanner fields.
 	var fetchResp struct {
-		Blocked bool `json:"blocked"`
+		Blocked     bool   `json:"blocked"`
+		BlockReason string `json:"block_reason"`
+		Scanner     string `json:"scanner"`
 	}
 	if jsonErr := json.Unmarshal(body, &fetchResp); jsonErr == nil && fetchResp.Blocked {
-		return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "fetch_blocked"}}
+		ev := map[string]interface{}{"reason": "fetch_blocked"}
+		if fetchResp.BlockReason != "" {
+			ev["block_reason"] = fetchResp.BlockReason
+		}
+		if fetchResp.Scanner != "" {
+			ev["scanner"] = fetchResp.Scanner
+		}
+		return Result{Verdict: "block", Evidence: ev}
 	}
 
 	return classifyResponse(resp.StatusCode, string(body))
@@ -217,11 +237,15 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		errStr := err.Error()
 		// Proxy actively rejected the CONNECT (policy decision).
 		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
-			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "proxy_rejected"}}
+			ev := map[string]interface{}{"reason": "proxy_rejected"}
+			extractBlockEvidence(errStr, ev)
+			return Result{Verdict: "block", Evidence: ev}
 		}
 		// Proxy or upstream connection reset — may be an active block.
 		if strings.Contains(errStr, "reset by peer") {
-			return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "connection_reset"}}
+			ev := map[string]interface{}{"reason": "connection_reset"}
+			extractBlockEvidence(errStr, ev)
+			return Result{Verdict: "block", Evidence: ev}
 		}
 		// Proxy unreachable — adapter infrastructure problem.
 		if strings.Contains(errStr, "connection refused") {
@@ -555,6 +579,56 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 	return Result{Err: fmt.Errorf("case %s: scan API (%s) returned unparseable response: %s", c.ID, kind, truncate(string(respBody), 120))}
 }
 
+// runBodyViaScanAPI routes request_body and header cases through the scan
+// API for DLP checking. Falls back to the scan API text path since the fetch
+// endpoint only scans URLs, not request bodies.
+func (p *ProxyAdapter) runBodyViaScanAPI(c Case, timeout time.Duration) Result {
+	if p.scanURL == "" {
+		return Result{
+			Verdict:  "skip",
+			Evidence: map[string]interface{}{"reason": "scan API not configured for body/header DLP"},
+		}
+	}
+
+	var texts []string
+
+	// Extract body text.
+	if bodyStr, ok := payloadString(c.Payload, "body"); ok && bodyStr != "" {
+		texts = append(texts, bodyStr)
+	}
+
+	// Extract header values.
+	if hdrs, ok := c.Payload["headers"].(map[string]interface{}); ok {
+		for k, v := range hdrs {
+			if s, ok := v.(string); ok {
+				texts = append(texts, k+": "+s)
+			}
+		}
+	}
+
+	if len(texts) == 0 {
+		return Result{Verdict: "allow", Evidence: map[string]interface{}{"reason": "no_body_or_headers"}}
+	}
+
+	// Also scan the URL if present (catch URL DLP + body DLP together).
+	if u, ok := payloadString(c.Payload, "url"); ok && u != "" {
+		urlResult := p.runFetchProxy(c, timeout)
+		if urlResult.Verdict == "block" {
+			return urlResult
+		}
+	}
+
+	// Dual-pass scan: DLP first, then prompt_injection for body content
+	// that may contain injection patterns.
+	text := strings.Join(texts, "\n")
+	scanC := Case{ID: c.ID, ExpectedVerdict: c.ExpectedVerdict, Payload: map[string]interface{}{"body": text}}
+	result := p.runScanAPIWithKind(scanC, timeout, "dlp")
+	if result.Verdict == "block" || result.Err != nil {
+		return result
+	}
+	return p.runScanAPIWithKind(scanC, timeout, "prompt_injection")
+}
+
 // runA2AViaMCP wraps A2A content in a fake tools/call message and sends
 // it through the MCP proxy. The MCP input scanner runs full DLP including
 // encoding decode, which catches secrets that the scan API DLP misses.
@@ -641,22 +715,66 @@ func extractTextFromPayload(payload map[string]interface{}) string {
 	return string(b)
 }
 
+// extractBlockEvidence parses a block response body for scanner and reason fields.
+// Pipelock returns these in multiple formats depending on transport:
+//   - Fetch JSON: {"blocked":true,"block_reason":"DLP match: AWS","scanner":"dlp"}
+//   - Forward proxy text: "blocked by DLP: AWS Access ID" or "SSRF: private IP"
+//   - Kill switch: "kill switch active"
+func extractBlockEvidence(body string, ev map[string]interface{}) {
+	// Try JSON first (fetch endpoint responses).
+	var jsonResp struct {
+		BlockReason string `json:"block_reason"`
+		Scanner     string `json:"scanner"`
+	}
+	if json.Unmarshal([]byte(body), &jsonResp) == nil {
+		if jsonResp.BlockReason != "" {
+			ev["block_reason"] = jsonResp.BlockReason
+		}
+		if jsonResp.Scanner != "" {
+			ev["scanner"] = jsonResp.Scanner
+		}
+		return
+	}
+
+	// Text body classification by keyword matching.
+	lower := strings.ToLower(body)
+	switch {
+	case strings.Contains(lower, "dlp") || strings.Contains(lower, "secret") || strings.Contains(lower, "credential"):
+		ev["block_reason"] = truncate(body, 120)
+		ev["scanner"] = "dlp"
+	case strings.Contains(lower, "ssrf") || strings.Contains(lower, "private ip") || strings.Contains(lower, "metadata"):
+		ev["block_reason"] = truncate(body, 120)
+		ev["scanner"] = "ssrf"
+	case strings.Contains(lower, "injection") || strings.Contains(lower, "prompt"):
+		ev["block_reason"] = truncate(body, 120)
+		ev["scanner"] = "response_injection"
+	case strings.Contains(lower, "entropy"):
+		ev["block_reason"] = truncate(body, 120)
+		ev["scanner"] = "entropy"
+	case strings.Contains(lower, "blocklist") || strings.Contains(lower, "blocked domain"):
+		ev["block_reason"] = truncate(body, 120)
+		ev["scanner"] = "blocklist"
+	case strings.Contains(lower, "kill switch"):
+		ev["block_reason"] = truncate(body, 120)
+		ev["scanner"] = "kill_switch"
+	case strings.Contains(lower, "airlock"):
+		ev["block_reason"] = truncate(body, 120)
+		ev["scanner"] = "airlock"
+	case len(body) > 0:
+		ev["block_reason"] = truncate(body, 120)
+	}
+}
+
 // classifyResponse determines block vs allow from the HTTP response.
 func classifyResponse(statusCode int, body string) Result {
 	evidence := map[string]interface{}{
 		"status_code": statusCode,
 	}
 
-	if statusCode == http.StatusForbidden {
-		evidence["reason"] = "http_403"
-		if strings.Contains(body, "block_reason") || strings.Contains(body, "blocked") {
-			evidence["body_snippet"] = truncate(body, 200)
-		}
-		return Result{Verdict: "block", Evidence: evidence}
-	}
-
-	if statusCode == http.StatusBadRequest || statusCode == http.StatusBadGateway {
+	if statusCode == http.StatusForbidden || statusCode == http.StatusBadRequest || statusCode == http.StatusBadGateway {
 		evidence["reason"] = fmt.Sprintf("http_%d", statusCode)
+		// Extract structured block details from response body.
+		extractBlockEvidence(body, evidence)
 		return Result{Verdict: "block", Evidence: evidence}
 	}
 

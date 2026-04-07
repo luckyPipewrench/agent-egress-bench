@@ -185,16 +185,19 @@ go build -o aeb-gauntlet .
     var full = scores.full || scores;
     var applicable = scores.applicable;
 
-    card.appendChild(txt('div', 'Full Corpus Scores (primary)', 'section-label'));
-    card.appendChild(makeScoresGrid(full));
-
     if (applicable) {
-      var aToggle = txt('div', 'Show applicable scores (diagnostic) \u25BE', 'toggle');
-      var aWrap = el('div', 'hidden');
-      aWrap.appendChild(makeScoresGrid(applicable));
-      aToggle.addEventListener('click', function() { aWrap.classList.toggle('hidden'); });
-      card.appendChild(aToggle);
-      card.appendChild(aWrap);
+      card.appendChild(txt('div', 'Applicable Scores (' + (cc.applicable || 0) + ' cases)', 'section-label'));
+      card.appendChild(makeScoresGrid(applicable));
+
+      var fToggle = txt('div', 'Show full corpus scores \u25BE', 'toggle');
+      var fWrap = el('div', 'hidden');
+      fWrap.appendChild(makeScoresGrid(full));
+      fToggle.addEventListener('click', function() { fWrap.classList.toggle('hidden'); });
+      card.appendChild(fToggle);
+      card.appendChild(fWrap);
+    } else {
+      card.appendChild(txt('div', 'Scores', 'section-label'));
+      card.appendChild(makeScoresGrid(full));
     }
 
     var cats = makeCategories(r.per_category);
