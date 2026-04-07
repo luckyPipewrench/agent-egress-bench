@@ -80,19 +80,29 @@ func TestNewProxyAdapter_ScanAddrFallback(t *testing.T) {
 	}
 }
 
-func TestRunFetchProxy_SkipsNonGET(t *testing.T) {
-	a := &ProxyAdapter{}
+func TestRunFetchProxy_AcceptsPOST(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"blocked":false}`)
+	}))
+	defer srv.Close()
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
 	c := Case{
 		ID:        "test-post",
 		Transport: "fetch_proxy",
 		Payload: map[string]interface{}{
-			"url":    "https://example.com/upload",
-			"method": "POST",
+			"url":          "https://example.com/upload",
+			"method":       "POST",
+			"content_type": "application/json",
+			"body":         `{"key": "value"}`,
 		},
 	}
 	result := a.runFetchProxy(c, 5*time.Second)
-	if result.Verdict != "skip" {
-		t.Errorf("expected skip for POST fetch_proxy, got %q", result.Verdict)
+	if result.Verdict == "skip" {
+		t.Errorf("POST fetch_proxy should not be skipped, got skip")
 	}
 }
 
