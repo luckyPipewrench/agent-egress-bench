@@ -44,15 +44,44 @@ func scoreCase(expected, actual string) string {
 	}
 }
 
+// hasClassification checks if the evidence contains scanner/kind information
+// that demonstrates the tool identified what KIND of attack it blocked.
+func hasClassification(ev map[string]interface{}) bool {
+	// Scan API results include "kind" (dlp, prompt_injection, tool_call).
+	if _, ok := ev["kind"]; ok {
+		return true
+	}
+	// Fetch proxy results include "scanner" or "block_reason".
+	if _, ok := ev["scanner"]; ok {
+		return true
+	}
+	if _, ok := ev["block_reason"]; ok {
+		return true
+	}
+	// MCP proxy results include "error_message" with scanner context.
+	if msg, ok := ev["error_message"].(string); ok && msg != "" {
+		return true
+	}
+	return false
+}
+
+// hasStructuredEvidence checks if the evidence contains structured proof
+// fields beyond a bare pass/fail signal.
+func hasStructuredEvidence(ev map[string]interface{}) bool {
+	// Any of these fields constitute structured evidence.
+	for _, key := range []string{"kind", "scanner", "block_reason", "error_message", "decision", "findings"} {
+		if v, ok := ev[key]; ok && v != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // computeScores calculates the four scoring dimensions from applicable case results.
 func computeScores(results []CaseResult) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
-	// In v1 dry-run mode, detection and evidence are 0.0 because there's
-	// no real tool output to inspect.
-	// correctly_blocked_malicious = malicious cases where actual == block
-	// classified_correctly = 0 (no detection info in dry run)
-	// evidence_emitted = 0 (no evidence in dry run)
+	var classifiedCorrectly, evidenceEmitted int
 
 	for _, r := range results {
 		switch r.ExpectedVerdict {
@@ -60,6 +89,12 @@ func computeScores(results []CaseResult) Scores {
 			totalMalicious++
 			if r.ActualVerdict == "block" {
 				blockedMalicious++
+				if hasClassification(r.Evidence) {
+					classifiedCorrectly++
+				}
+				if hasStructuredEvidence(r.Evidence) {
+					evidenceEmitted++
+				}
 			}
 		case "allow":
 			totalBenign++
@@ -82,13 +117,10 @@ func computeScores(results []CaseResult) Scores {
 	}
 
 	if blockedMalicious > 0 {
-		// Detection: classified_correctly / correctly_blocked_malicious
-		// In dry-run mode, no classification info, so 0.0
-		zero := 0.0
-		s.Detection = &zero
-		// Evidence: evidence_emitted / correctly_blocked_malicious
-		// In dry-run mode, no evidence emitted, so 0.0
-		s.Evidence = &zero
+		det := float64(classifiedCorrectly) / float64(blockedMalicious)
+		s.Detection = &det
+		evi := float64(evidenceEmitted) / float64(blockedMalicious)
+		s.Evidence = &evi
 	}
 
 	return s
@@ -99,6 +131,7 @@ func computeScores(results []CaseResult) Scores {
 func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
+	var classifiedCorrectly, evidenceEmitted int
 
 	for _, c := range allCases {
 		switch c.ExpectedVerdict {
@@ -114,6 +147,12 @@ func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case) Sc
 		case "block":
 			if r.ActualVerdict == "block" {
 				blockedMalicious++
+				if hasClassification(r.Evidence) {
+					classifiedCorrectly++
+				}
+				if hasStructuredEvidence(r.Evidence) {
+					evidenceEmitted++
+				}
 			}
 		case "allow":
 			if r.ActualVerdict == "block" {
@@ -132,9 +171,10 @@ func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case) Sc
 		s.FalsePositiveRate = &v
 	}
 	if blockedMalicious > 0 {
-		zero := 0.0
-		s.Detection = &zero
-		s.Evidence = &zero
+		det := float64(classifiedCorrectly) / float64(blockedMalicious)
+		s.Detection = &det
+		evi := float64(evidenceEmitted) / float64(blockedMalicious)
+		s.Evidence = &evi
 	}
 	return s
 }

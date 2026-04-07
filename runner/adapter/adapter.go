@@ -8,6 +8,7 @@ type Case struct {
 	ID              string
 	ExpectedVerdict string
 	Transport       string
+	InputType       string
 	Payload         map[string]interface{}
 }
 

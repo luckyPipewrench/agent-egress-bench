@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "tool": "pipelock",
-  "tool_version": "2.1.0",
+  "tool_version": "2.1.2",
   "runner_version": "v2",
   "claims": [
     "url_dlp",

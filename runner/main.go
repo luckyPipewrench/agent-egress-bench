@@ -117,6 +117,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 			ID:              c.ID,
 			ExpectedVerdict: c.ExpectedVerdict,
 			Transport:       c.Transport,
+			InputType:       c.InputType,
 			Payload:         c.Payload,
 		}
 		adapterResult := adapt.Run(adapterCase, timeout)
