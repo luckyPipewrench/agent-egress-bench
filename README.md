@@ -100,7 +100,7 @@ The Gauntlet is an optional scoring program that evaluates tools on four indepen
 | **Detection** | Whether the tool identified what it caught |
 | **Evidence** | Whether the tool emitted structured proof |
 
-Containment has a hard floor: below 80%, the run is marked insufficient. There is no composite score. Each metric is reported independently.
+Containment has a hard floor: below 80%, the run is marked insufficient. There is no composite score. Each metric is reported independently. Published results are available on the [Gauntlet leaderboard](https://pipelab.org/gauntlet/).
 
 **Run the Gauntlet:**
 
@@ -237,6 +237,13 @@ This corpus was created by the [Pipelock](https://github.com/luckyPipewrench/pip
 **Conflict of interest disclosure:** The author builds an agent egress security tool. This corpus was designed to be tool-neutral: cases test observable behavior (did the request get blocked?), not implementation details. The [Pipelock runner](examples/pipelock/) is a reference implementation, not a privileged position.
 
 Full governance policy: [docs/GOVERNANCE.md](docs/GOVERNANCE.md).
+
+## Learn more
+
+- [What is an Agent Firewall?](https://pipelab.org/agent-firewall/) — the security architecture this corpus tests
+- [AI Agent Security: Three Layers](https://pipelab.org/learn/ai-agent-security/) — hooks, guardrails, and egress inspection explained
+- [MCP Vulnerabilities](https://pipelab.org/learn/mcp-vulnerabilities/) — the MCP attack surface mapped
+- [Gauntlet Leaderboard](https://pipelab.org/gauntlet/) — published scoring results
 
 ## License
 
