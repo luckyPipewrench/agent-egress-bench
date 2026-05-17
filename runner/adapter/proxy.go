@@ -121,16 +121,11 @@ func (p *ProxyAdapter) runResponseContentViaScanAPI(c Case, timeout time.Duratio
 	if !ok || body == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'response_body'", c.ID)}
 	}
-	scanCase := Case{
-		ID:              c.ID,
-		ExpectedVerdict: c.ExpectedVerdict,
-		Payload:         map[string]interface{}{"body": body},
-	}
-	result := p.runScanAPIWithKind(scanCase, timeout, "prompt_injection")
+	result := p.runScanAPITextWithKind(c.ID, body, timeout, "prompt_injection")
 	if result.Verdict == "block" || result.Err != nil {
 		return result
 	}
-	return p.runScanAPIWithKind(scanCase, timeout, "dlp")
+	return p.runScanAPITextWithKind(c.ID, body, timeout, "dlp")
 }
 
 // runWebSocketFrameViaProxy performs a real WebSocket upgrade through the
@@ -794,17 +789,22 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 	if text == "" {
 		return Result{Verdict: "allow", Evidence: map[string]interface{}{"reason": "no_text_extracted"}}
 	}
+	if kind == "url" {
+		if rawURL, ok := payloadString(c.Payload, "url"); ok {
+			text = rawURL
+		}
+	}
 
+	return p.runScanAPITextWithKind(c.ID, text, timeout, kind)
+}
+
+func (p *ProxyAdapter) runScanAPITextWithKind(caseID, text string, timeout time.Duration, kind string) Result {
 	var input scanAPIInput
 	switch kind {
 	case "prompt_injection":
 		input.Content = text
 	case "url":
-		if rawURL, ok := payloadString(c.Payload, "url"); ok {
-			input.URL = rawURL
-		} else {
-			input.URL = text
-		}
+		input.URL = text
 	default:
 		input.Text = text
 	}
@@ -814,7 +814,7 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 	scanURL := fmt.Sprintf("%s/api/v1/scan", p.scanURL)
 	req, err := http.NewRequest(http.MethodPost, scanURL, bytes.NewReader(body))
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: building request: %w", c.ID, err)}
+		return Result{Err: fmt.Errorf("case %s: building request: %w", caseID, err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if p.scanToken != "" {
@@ -824,14 +824,14 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: scan API (%s): %w", c.ID, kind, err)}
+		return Result{Err: fmt.Errorf("case %s: scan API (%s): %w", caseID, kind, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 
 	if resp.StatusCode >= 400 {
-		return Result{Err: fmt.Errorf("case %s: scan API (%s) returned %d: %s", c.ID, kind, resp.StatusCode, truncate(string(respBody), 120))}
+		return Result{Err: fmt.Errorf("case %s: scan API (%s) returned %d: %s", caseID, kind, resp.StatusCode, truncate(string(respBody), 120))}
 	}
 
 	var scanResp struct {
@@ -852,7 +852,7 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 		}
 	}
 
-	return Result{Err: fmt.Errorf("case %s: scan API (%s) returned unparseable response: %s", c.ID, kind, truncate(string(respBody), 120))}
+	return Result{Err: fmt.Errorf("case %s: scan API (%s) returned unparseable response: %s", caseID, kind, truncate(string(respBody), 120))}
 }
 
 // runBodyViaScanAPI routes request_body and header cases through the scan
@@ -897,16 +897,11 @@ func (p *ProxyAdapter) runBodyViaScanAPI(c Case, timeout time.Duration) Result {
 	// Dual-pass scan: DLP first, then prompt_injection for body content
 	// that may contain injection patterns.
 	text := strings.Join(texts, "\n")
-	scanC := Case{ID: c.ID, ExpectedVerdict: c.ExpectedVerdict, Payload: map[string]interface{}{"body": text}}
-	result := p.runScanAPIWithKind(scanC, timeout, "dlp")
+	result := p.runScanAPITextWithKind(c.ID, text, timeout, "dlp")
 	if result.Verdict == "block" || result.Err != nil {
 		return result
 	}
-	result = p.runScanAPIWithKind(scanC, timeout, "prompt_injection")
-	if result.Verdict == "block" || result.Err != nil || p.mcpCmd == "" {
-		return result
-	}
-	return p.runA2AViaMCP(scanC, timeout)
+	return p.runScanAPITextWithKind(c.ID, text, timeout, "prompt_injection")
 }
 
 // runA2AViaMCP wraps A2A content in a fake tools/call message and sends
