@@ -7,43 +7,81 @@
   ],
   "minimumReleaseAge": "10 days",
   "internalChecksFilter": "strict",
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "prConcurrentLimit": 10,
   "vulnerabilityAlerts": {
-    "labels": ["security", "fast-track"],
+    "labels": [
+      "security",
+      "fast-track"
+    ],
     "minimumReleaseAge": "0 days",
-    "schedule": ["at any time"]
+    "schedule": [
+      "at any time"
+    ]
   },
   "packageRules": [
     {
-      "matchManagers": ["github-actions"],
+      "matchPackagePatterns": [
+        "^luckyPipewrench/",
+        "^ghcr\\.io/luckypipewrench/"
+      ],
+      "minimumReleaseAge": "0 days",
+      "description": "Own-org packages bypass cooldown (we control the supply chain)"
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
       "pinDigests": true,
       "commitMessagePrefix": "ci:",
-      "addLabels": ["ci"],
+      "addLabels": [
+        "ci"
+      ],
       "groupName": "ci-actions"
     },
     {
-      "matchManagers": ["gomod"],
-      "matchFileNames": ["validate/**"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "validate/**"
+      ],
       "commitMessagePrefix": "deps:",
       "groupName": "go-validate"
     },
     {
-      "matchManagers": ["gomod"],
-      "matchFileNames": ["runner/**"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "runner/**"
+      ],
       "commitMessagePrefix": "deps:",
       "groupName": "go-runner"
     },
     {
-      "matchManagers": ["pip_requirements"],
-      "matchFileNames": [".github/**"],
+      "matchManagers": [
+        "pip_requirements"
+      ],
+      "matchFileNames": [
+        ".github/**"
+      ],
       "commitMessagePrefix": "ci:",
-      "addLabels": ["ci"],
+      "addLabels": [
+        "ci"
+      ],
       "groupName": "python-deps"
     },
     {
-      "matchUpdateTypes": ["major"],
-      "addLabels": ["major-update", "needs-review"],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "addLabels": [
+        "major-update",
+        "needs-review"
+      ],
       "automerge": false
     }
   ]
