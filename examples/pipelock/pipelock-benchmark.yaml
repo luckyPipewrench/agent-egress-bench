@@ -55,6 +55,25 @@ internal: []
 
 dlp:
   patterns:
+    # Benchmark calibration overlays:
+    # These patterns match synthetic corpus fixtures, not production vendor
+    # credential formats. They are for reproducible agent-egress-bench runs
+    # only; do not copy them into production Pipelock configs.
+    - name: "Benchmark SendGrid API Key"
+      regex: 'SG\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+      severity: critical
+    - name: "Benchmark GitHub Token"
+      regex: 'ghp_[A-Za-z0-9_]{30,}'
+      severity: critical
+    - name: "Benchmark Stripe Key"
+      regex: 'sk_live_[A-Za-z0-9_]{16,}'
+      severity: critical
+    - name: "Benchmark Bearer JWT"
+      regex: 'Bearer\s+ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}'
+      severity: high
+    - name: "Benchmark AWS Secret Key"
+      regex: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXM?PLEKEY'
+      severity: critical
     - name: "Ethereum Address"
       regex: '0x[0-9a-fA-F]{40}\b'
       severity: high
@@ -102,7 +121,6 @@ tool_chain_detection:
 
 seed_phrase_detection:
   enabled: true
-  action: block
 
 address_protection:
   enabled: true
@@ -114,7 +132,6 @@ reverse_proxy:
   upstream: "http://127.0.0.1:9993"
 
 logging:
-  level: warn
   format: json
   output: stdout
   include_allowed: false

@@ -49,17 +49,15 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 
 ### category
 
-`url`, `request_body`, `headers`, `response_fetch`, `response_mitm`, `mcp_input`, `mcp_tool`, `mcp_chain`
+`url`, `request_body`, `headers`, `hostname_exfiltration`, `response_fetch`, `response_mitm`, `mcp_input`, `mcp_tool`, `mcp_chain`, `a2a_message`, `a2a_agent_card`, `websocket_dlp`, `ssrf_bypass`, `encoding_evasion`, `shell_obfuscation`, `crypto_financial`, `false_positive`
 
 ### input_type
 
-`url`, `request_body`, `header`, `response_content`, `mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `mcp_tool_sequence`
+`url`, `request_body`, `header`, `response_content`, `mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `mcp_tool_sequence`, `a2a_message`, `a2a_agent_card`, `websocket_frame`
 
 ### transport
 
-`fetch_proxy`, `http_proxy`, `mcp_stdio`, `mcp_http`, `websocket`
-
-Note: `websocket` is a valid v1 transport for tools that proxy WebSocket connections. The v1.0 corpus does not yet include WebSocket-specific cases. Runners may declare `supports.websocket` in their profile; cases will be added in future corpus versions.
+`fetch_proxy`, `http_proxy`, `mcp_stdio`, `mcp_http`, `websocket`, `a2a`
 
 ### expected_verdict
 
@@ -77,13 +75,13 @@ v1 is binary. No `warn` in case expectations.
 
 ## capability_tags (v1)
 
-`url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`
+`url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`, `hostname_exfil`
 
 Tags describe what the case exercises. Used for reporting and applicability.
 
 ## requires (v1)
 
-`tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`
+`tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `websocket_frame_scanning`, `a2a_scanning`, `shell_analysis`, `dns_rebinding_fixture`
 
 Runtime prerequisites. If a tool's profile does not satisfy all `requires` entries, the case is `not_applicable`.
 
@@ -136,6 +134,38 @@ Runtime prerequisites. If a tool's profile does not satisfy all `requires` entri
 {
   "jsonrpc_messages": [
     {"jsonrpc": "2.0", "method": "tools/call", "params": {...}, "id": 1}
+  ]
+}
+```
+
+### A2A message cases (`input_type: a2a_message`)
+
+```json
+{
+  "jsonrpc_messages": [
+    {"jsonrpc": "2.0", "method": "message/send", "params": {"message": {"parts": []}}, "id": 1}
+  ]
+}
+```
+
+### A2A Agent Card cases (`input_type: a2a_agent_card`)
+
+```json
+{
+  "agent_card": {
+    "name": "example-agent",
+    "skills": []
+  }
+}
+```
+
+### WebSocket frame cases (`input_type: websocket_frame`)
+
+```json
+{
+  "url": "wss://example.com/socket",
+  "frames": [
+    {"opcode": "text", "payload": "message"}
   ]
 }
 ```

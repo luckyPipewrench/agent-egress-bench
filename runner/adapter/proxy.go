@@ -14,12 +14,16 @@
 package adapter
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,13 +35,13 @@ import (
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
 // whether the proxy blocked or allowed the request.
 type ProxyAdapter struct {
-	proxyURL  *url.URL
-	scanURL   string // base URL for scan API (e.g. http://127.0.0.1:9990)
-	scanToken string // bearer token for scan API auth
-	mcpCmd    string // MCP proxy command (e.g. "pipelock mcp proxy --config /tmp/bench.yaml -- cat")
-	httpFixtureAddr string                 // HTTP fixture for response-mitm via fetch
+	proxyURL        *url.URL
+	scanURL         string                  // base URL for scan API (e.g. http://127.0.0.1:9990)
+	scanToken       string                  // bearer token for scan API auth
+	mcpCmd          string                  // MCP proxy command (e.g. "pipelock mcp proxy --config /tmp/bench.yaml -- cat")
+	httpFixtureAddr string                  // HTTP fixture for response-mitm via fetch
 	setHTTPRoute    func(path, body string) // callback to register HTTP fixture routes
-	wsAddr          string                 // WS fixture for websocket cases
+	wsAddr          string                  // WS fixture for websocket cases
 }
 
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
@@ -66,16 +70,26 @@ func (p *ProxyAdapter) SetWSFixture(addr string) { p.wsAddr = addr }
 
 // Run sends the case payload through the proxy and returns the verdict.
 func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
+	// Payload-only surfaces should be scanned directly. Sending their fake
+	// upstream URLs over the network turns scanner coverage into DNS/TLS/SSRF
+	// fixture noise and hides whether the tool can inspect the supplied data.
+	switch c.InputType {
+	case "response_content":
+		return p.runResponseContentViaScanAPI(c, timeout)
+	case "request_body", "header":
+		return p.runBodyViaScanAPI(c, timeout)
+	case "websocket_frame":
+		return p.runWebSocketFrameViaProxy(c, timeout)
+	}
 	switch c.Transport {
 	case "fetch_proxy":
-		// Body and header DLP cases route through scan API since
-		// the fetch endpoint only scans URLs, not request bodies.
-		if c.InputType == "request_body" || (c.InputType == "header" && p.scanURL != "") {
-			return p.runBodyViaScanAPI(c, timeout)
-		}
 		return p.runFetchProxy(c, timeout)
 	case "http_proxy":
-		return p.runHTTPProxy(c, timeout)
+		result := p.runHTTPProxy(c, timeout)
+		if result.Verdict == "skip" && c.InputType == "url" {
+			return p.runFetchProxy(c, timeout)
+		}
+		return result
 	case "websocket":
 		return p.runWebSocket(c, timeout)
 	case "mcp_stdio", "mcp_http":
@@ -96,6 +110,116 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 			Verdict:  "skip",
 			Evidence: map[string]interface{}{"reason": fmt.Sprintf("unknown transport %q", c.Transport)},
 		}
+	}
+}
+
+// runResponseContentViaScanAPI scans the response_body field directly. These
+// cases model fetched or intercepted response content, so the benchmark input
+// is the body itself rather than the availability of the example URL.
+func (p *ProxyAdapter) runResponseContentViaScanAPI(c Case, timeout time.Duration) Result {
+	body, ok := payloadString(c.Payload, "response_body")
+	if !ok || body == "" {
+		return Result{Err: fmt.Errorf("case %s: payload missing 'response_body'", c.ID)}
+	}
+	scanCase := Case{
+		ID:              c.ID,
+		ExpectedVerdict: c.ExpectedVerdict,
+		Payload:         map[string]interface{}{"body": body},
+	}
+	result := p.runScanAPIWithKind(scanCase, timeout, "prompt_injection")
+	if result.Verdict == "block" || result.Err != nil {
+		return result
+	}
+	return p.runScanAPIWithKind(scanCase, timeout, "dlp")
+}
+
+// runWebSocketFrameViaProxy performs a real WebSocket upgrade through the
+// proxy and writes the corpus frames on the proxied connection.
+func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) Result {
+	targetURL, _ := payloadString(c.Payload, "url")
+	if targetURL == "" {
+		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
+	}
+	if p.wsAddr != "" {
+		if u, err := url.Parse(targetURL); err == nil {
+			if u.Host == "example.com" || u.Host == "echo.websocket.org" || strings.HasSuffix(u.Host, ".example.com") {
+				targetURL = "ws://" + p.wsAddr + "/echo"
+			}
+		}
+	}
+
+	conn, err := net.DialTimeout("tcp", p.proxyURL.Host, timeout)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: ws proxy unreachable: %w", c.ID, err)}
+	}
+	defer func() { _ = conn.Close() }()
+
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return Result{Err: fmt.Errorf("case %s: ws deadline: %w", c.ID, err)}
+	}
+	br := bufio.NewReader(conn)
+	if err := p.writeWebSocketUpgrade(conn, targetURL); err != nil {
+		return Result{Err: fmt.Errorf("case %s: ws upgrade request: %w", c.ID, err)}
+	}
+	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodGet})
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: ws upgrade response: %w", c.ID, err)}
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		return classifyResponse(resp.StatusCode, string(body))
+	}
+	_ = resp.Body.Close()
+
+	frames, ok := c.Payload["frames"].([]interface{})
+	if !ok || len(frames) == 0 {
+		return Result{Verdict: "allow", Evidence: map[string]interface{}{"reason": "no_frame_payload"}}
+	}
+	for _, raw := range frames {
+		frame, _ := raw.(map[string]interface{})
+		if err := writeCorpusWebSocketFrame(conn, frame); err != nil {
+			return Result{
+				Verdict: "block",
+				Evidence: map[string]interface{}{
+					"scanner": "websocket_proxy",
+					"reason":  "connection_closed_while_writing_frame",
+					"detail":  truncate(err.Error(), 120),
+				},
+			}
+		}
+	}
+
+	opcode, payload, err := readWebSocketFrame(br)
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return Result{Verdict: "allow", Evidence: map[string]interface{}{"scanner": "websocket_proxy", "reason": "no_close_frame"}}
+		}
+		return Result{
+			Verdict: "block",
+			Evidence: map[string]interface{}{
+				"scanner": "websocket_proxy",
+				"reason":  "connection_closed",
+				"detail":  truncate(err.Error(), 120),
+			},
+		}
+	}
+	if opcode == wsOpcodeClose {
+		return Result{
+			Verdict: "block",
+			Evidence: map[string]interface{}{
+				"scanner":      "websocket_proxy",
+				"block_reason": truncate(webSocketCloseReason(payload), 160),
+			},
+		}
+	}
+	return Result{
+		Verdict: "allow",
+		Evidence: map[string]interface{}{
+			"scanner": "websocket_proxy",
+			"opcode":  opcode,
+			"bytes":   len(payload),
+		},
 	}
 }
 
@@ -315,6 +439,151 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	return classifyResponse(resp.StatusCode, string(body))
 }
 
+const (
+	wsOpcodeContinuation = 0
+	wsOpcodeText         = 1
+	wsOpcodeBinary       = 2
+	wsOpcodeClose        = 8
+)
+
+func (p *ProxyAdapter) writeWebSocketUpgrade(conn net.Conn, targetURL string) error {
+	keyBytes := make([]byte, 16)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return fmt.Errorf("generate websocket key: %w", err)
+	}
+	path := "/ws?url=" + url.QueryEscape(targetURL)
+	_, err := fmt.Fprintf(conn,
+		"GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+		path, p.proxyURL.Host, base64.StdEncoding.EncodeToString(keyBytes))
+	return err
+}
+
+func writeCorpusWebSocketFrame(w io.Writer, frame map[string]interface{}) error {
+	var opcode int
+	switch op, _ := frame["opcode"].(string); op {
+	case "continuation":
+		opcode = wsOpcodeContinuation
+	case "binary":
+		opcode = wsOpcodeBinary
+	case "text", "":
+		opcode = wsOpcodeText
+	default:
+		return fmt.Errorf("unsupported websocket opcode %q", op)
+	}
+
+	payload, _ := frame["payload"].(string)
+	data := []byte(payload)
+	if opcode == wsOpcodeBinary {
+		if enc, _ := frame["encoding"].(string); enc == "base64" {
+			decoded, err := base64.StdEncoding.DecodeString(payload)
+			if err != nil {
+				return fmt.Errorf("decode binary frame payload: %w", err)
+			}
+			data = decoded
+		}
+	}
+
+	fin := true
+	if v, ok := frame["fin"].(bool); ok {
+		fin = v
+	}
+	rsv1, _ := frame["rsv1"].(bool)
+	return writeMaskedWebSocketFrame(w, opcode, fin, rsv1, data)
+}
+
+func writeMaskedWebSocketFrame(w io.Writer, opcode int, fin, rsv1 bool, payload []byte) error {
+	header := []byte{byte(opcode)}
+	if fin {
+		header[0] |= 0x80
+	}
+	if rsv1 {
+		header[0] |= 0x40
+	}
+
+	payloadLen := len(payload)
+	switch {
+	case payloadLen < 126:
+		header = append(header, 0x80|byte(payloadLen))
+	case payloadLen <= 0xffff:
+		header = append(header, 0x80|126, byte(payloadLen>>8), byte(payloadLen))
+	default:
+		header = append(header, 0x80|127,
+			byte(uint64(payloadLen)>>56), byte(uint64(payloadLen)>>48),
+			byte(uint64(payloadLen)>>40), byte(uint64(payloadLen)>>32),
+			byte(uint64(payloadLen)>>24), byte(uint64(payloadLen)>>16),
+			byte(uint64(payloadLen)>>8), byte(uint64(payloadLen)))
+	}
+
+	mask := []byte{0, 0, 0, 0}
+	if _, err := rand.Read(mask); err != nil {
+		return fmt.Errorf("generate websocket mask: %w", err)
+	}
+	header = append(header, mask...)
+	masked := make([]byte, len(payload))
+	for i, b := range payload {
+		masked[i] = b ^ mask[i%4]
+	}
+	if _, err := w.Write(header); err != nil {
+		return err
+	}
+	_, err := w.Write(masked)
+	return err
+}
+
+func readWebSocketFrame(r *bufio.Reader) (int, []byte, error) {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return 0, nil, err
+	}
+	opcode := int(header[0] & 0x0f)
+	masked := header[1]&0x80 != 0
+	payloadLen := uint64(header[1] & 0x7f)
+	switch payloadLen {
+	case 126:
+		ext := make([]byte, 2)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return 0, nil, err
+		}
+		payloadLen = uint64(ext[0])<<8 | uint64(ext[1])
+	case 127:
+		ext := make([]byte, 8)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return 0, nil, err
+		}
+		payloadLen = 0
+		for _, b := range ext {
+			payloadLen = payloadLen<<8 | uint64(b)
+		}
+	}
+	var mask []byte
+	if masked {
+		mask = make([]byte, 4)
+		if _, err := io.ReadFull(r, mask); err != nil {
+			return 0, nil, err
+		}
+	}
+	if payloadLen > 1<<20 {
+		return 0, nil, fmt.Errorf("websocket response frame too large: %d", payloadLen)
+	}
+	payload := make([]byte, payloadLen)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return 0, nil, err
+	}
+	if masked {
+		for i := range payload {
+			payload[i] ^= mask[i%4]
+		}
+	}
+	return opcode, payload, nil
+}
+
+func webSocketCloseReason(payload []byte) string {
+	if len(payload) <= 2 {
+		return "websocket closed"
+	}
+	return string(payload[2:])
+}
+
 // runMCPStdio sends JSON-RPC messages through the MCP proxy subprocess.
 //
 // The proxy sits between client (stdin) and server (subprocess backend).
@@ -527,9 +796,16 @@ func (p *ProxyAdapter) runScanAPIWithKind(c Case, timeout time.Duration, kind st
 	}
 
 	var input scanAPIInput
-	if kind == "prompt_injection" {
+	switch kind {
+	case "prompt_injection":
 		input.Content = text
-	} else {
+	case "url":
+		if rawURL, ok := payloadString(c.Payload, "url"); ok {
+			input.URL = rawURL
+		} else {
+			input.URL = text
+		}
+	default:
 		input.Text = text
 	}
 	scanReq := scanAPIRequest{Kind: kind, Input: input}
@@ -626,7 +902,11 @@ func (p *ProxyAdapter) runBodyViaScanAPI(c Case, timeout time.Duration) Result {
 	if result.Verdict == "block" || result.Err != nil {
 		return result
 	}
-	return p.runScanAPIWithKind(scanC, timeout, "prompt_injection")
+	result = p.runScanAPIWithKind(scanC, timeout, "prompt_injection")
+	if result.Verdict == "block" || result.Err != nil || p.mcpCmd == "" {
+		return result
+	}
+	return p.runA2AViaMCP(scanC, timeout)
 }
 
 // runA2AViaMCP wraps A2A content in a fake tools/call message and sends

@@ -3,7 +3,6 @@ package fixture
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -211,7 +210,7 @@ func TestDNSFixture_ResolverIntegration(t *testing.T) {
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("udp", fmt.Sprintf("%s:%s", host, port))
+			return net.Dial("udp", net.JoinHostPort(host, port))
 		},
 	}
 
