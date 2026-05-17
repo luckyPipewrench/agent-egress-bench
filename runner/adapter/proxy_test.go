@@ -3,6 +3,7 @@ package adapter
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -124,6 +125,100 @@ func TestRunFetchProxy_AllowsGET(t *testing.T) {
 	if result.Verdict != "allow" {
 		t.Errorf("expected allow, got %q (err: %v)", result.Verdict, result.Err)
 	}
+}
+
+func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ws" {
+			t.Errorf("expected /ws path, got %s", r.URL.Path)
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server does not support hijacking")
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		_, payload, err := readWebSocketFrame(rw.Reader)
+		if err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if string(payload) != "hello over ws" {
+			t.Fatalf("payload = %q, want websocket frame payload", payload)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo")); err != nil {
+			t.Fatalf("write echo frame: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	result := a.runWebSocketFrameViaProxy(Case{
+		ID:        "ws-frame",
+		Transport: "websocket",
+		InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "hello over ws"}},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+}
+
+func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xe8}, []byte("blocked by policy")...)); err != nil {
+			t.Fatalf("write close frame: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	result := a.runWebSocketFrameViaProxy(Case{
+		ID:        "ws-close",
+		Transport: "websocket",
+		InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "blocked"}},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+}
+
+func writeServerWebSocketFrame(w io.Writer, opcode int, payload []byte) error {
+	header := []byte{0x80 | byte(opcode)}
+	if len(payload) < 126 {
+		header = append(header, byte(len(payload)))
+	} else {
+		return fmt.Errorf("test payload too large: %d", len(payload))
+	}
+	if _, err := w.Write(header); err != nil {
+		return err
+	}
+	_, err := w.Write(payload)
+	return err
 }
 
 func TestRunMCPStdio_NoMCPCmd(t *testing.T) {

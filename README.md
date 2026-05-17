@@ -11,7 +11,7 @@
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
 </p>
 
-A standardized test corpus for evaluating AI agent egress security tools. 143 cases across 16 categories, covering secret exfiltration, prompt injection, SSRF, MCP tool poisoning, chain detection, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
+A standardized test corpus for evaluating AI agent egress security tools. 151 cases across 17 categories, covering secret exfiltration, prompt injection, SSRF, hostname exfiltration, MCP tool poisoning, chain detection, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
 
 **This tests the security tool, not the agent.** Most benchmarks in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) test whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
 
@@ -39,6 +39,7 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 | URL DLP | `cases/url/` | 15 | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF, domain blocklist |
 | Request body DLP | `cases/request-body/` | 10 | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
 | Header DLP | `cases/headers/` | 9 | API keys and tokens in HTTP headers (Bearer, JWT, AWS, multi-header) |
+| Hostname exfiltration | `cases/hostname-exfiltration/` | 8 | Encoded secrets in DNS hostname labels before resolution |
 | Response injection (fetch) | `cases/response-fetch/` | 8 | Prompt injection in fetched web content |
 | Response injection (MITM) | `cases/response-mitm/` | 7 | Injection via tampered TLS-intercepted responses |
 | MCP input scanning | `cases/mcp-input/` | 9 | DLP and injection in MCP tool arguments (base64, hex, scattered, SSH keys) |
@@ -53,7 +54,7 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 | Crypto/financial DLP | `cases/crypto-financial/` | 8 | Wallet addresses, seed phrases, credit cards, IBANs |
 | False positive suite | `cases/false-positive/` | 12 | Benign traffic that must not be blocked |
 
-106 malicious cases (expected: block) and 37 benign cases (expected: allow) to test false positive rates.
+113 malicious cases (expected: block) and 38 benign cases (expected: allow) to test false positive rates.
 
 Each case is a self-contained JSON file with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome.
 
@@ -178,6 +179,7 @@ The 8 case categories map to the [OWASP Top 10 for Agentic Applications (2026)](
 | `url` | ASI02 Tool Misuse | Secret exfiltration via URL query strings and paths |
 | `request_body` | ASI02 Tool Misuse | Secret exfiltration via POST bodies |
 | `headers` | ASI02 Tool Misuse | Secret exfiltration via HTTP headers |
+| `hostname_exfiltration` | ASI02 Tool Misuse | Encoded data in DNS hostname labels |
 | `response_fetch` | ASI01 Goal Hijack + ASI06 Memory Poisoning | Prompt injection in fetched content |
 | `response_mitm` | ASI01 Goal Hijack + ASI04 Supply Chain | Injection via tampered responses |
 | `mcp_input` | ASI02 Tool Misuse | DLP and injection in tool arguments |
@@ -206,7 +208,7 @@ Most AI agent security benchmarks test whether the **model** behaves safely. Thi
 | [CyberSecEval](https://github.com/meta-llama/PurpleLlama) (Meta) | The LLM | Insecure code generation, cyberattack assistance |
 | [ASB](https://github.com/agiresearch/ASB) (ICLR 2025) | The LLM agent | Defense prompts reducing attack success (90K cases) |
 | [AgentShield-bench](https://github.com/doronp/agentshield-benchmark) (Agent Guard) | Security middleware | Prompt injection and jailbreak detection at API layer (537 cases) |
-| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning, A2A, encoding evasion at the network layer (143 cases)** |
+| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning, A2A, hostname exfiltration, encoding evasion at the network layer (151 cases)** |
 
 The model-testing benchmarks assume the LLM is the last line of defense. This corpus assumes models will sometimes fail, and tests the defense-in-depth layer that sits between the agent and the network.
 

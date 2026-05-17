@@ -69,7 +69,7 @@ The corpus contains 17 categories across the `cases/` directory tree.
 | 13 | Encoding evasion | `cases/encoding-evasion/` | Multi-layer encoding chains, Unicode tricks, zero-width insertion |
 | 14 | Shell obfuscation | `cases/shell-obfuscation/` | Backtick substitution, brace expansion, IFS manipulation |
 | 15 | Crypto/financial DLP | `cases/crypto-financial/` | Wallet addresses, seed phrases, credit cards, IBANs |
-| 16 | Hostname exfiltration | `cases/hostname-exfil/` | Secret data encoded in DNS hostname labels |
+| 16 | Hostname exfiltration | `cases/hostname-exfiltration/` | Secret data encoded in DNS hostname labels |
 | 17 | False positive suite | `cases/false-positive/` | Benign traffic that must not be blocked |
 
 Categories 1 through 16 contain malicious cases (expected verdict: `block`). Category 17 contains benign cases (expected verdict: `allow`). Some categories also include benign cases for category-specific false positive testing.
@@ -117,6 +117,12 @@ A case is `not_applicable` when any of these conditions is true (checked in orde
 3. The case's `transport` has `supports.<transport>` set to `false` in the profile.
 
 Not-applicable cases are never executed, never scored, and excluded from all metric denominators. The applicability check is deterministic. No judgment calls.
+
+### Pipelock adapter routing
+
+The Pipelock adapter uses transport routing for network-originated cases such as URL fetches and SSRF probes. Payload-only surfaces are different: `response_content`, `request_body`, and `header` cases are routed through Pipelock's scan API so the benchmark measures scanner behavior for that payload surface without depending on an upstream service to echo exact bytes. `websocket_frame` cases use a raw WebSocket upgrade and frame send path when available.
+
+This means some adapter results measure scanner capability rather than end-to-end proxy enforcement on the declared `transport`. WebSocket cases also need careful interpretation when the fixture address is local: a proxy may block the loopback fixture as SSRF before any frame scan occurs. Such results are valid evidence of SSRF enforcement, but not evidence that the WebSocket frame scanner evaluated the payload.
 
 ## Versioning
 

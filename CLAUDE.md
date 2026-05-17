@@ -1,6 +1,6 @@
 # CLAUDE.md: agent-egress-bench Development Guide
 
-agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egress security tools. 143 cases across 16 categories. JSON case files, a Go validator, a Gauntlet scoring runner, spec docs, and reference runners. This is NOT an application. The validator and runner are build tools, not the product.
+agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egress security tools. 151 cases across 17 categories. JSON case files, a Go validator, a Gauntlet scoring runner, spec docs, and reference runners. This is NOT an application. The validator and runner are build tools, not the product.
 
 ## Hard Rules
 
@@ -41,6 +41,7 @@ cases/
   url/              URL-based exfiltration (DLP, entropy, encoding evasion, SSRF)
   request-body/     Request body secret exfiltration
   headers/          Header-based secret leaks
+  hostname-exfiltration/ Encoded secret data in DNS hostname labels
   response-fetch/   Prompt injection in fetched response content
   response-mitm/    Prompt injection via TLS-intercepted responses
   mcp-input/        MCP tool call argument scanning (DLP, injection)
@@ -102,6 +103,7 @@ The validator enforces these relationships:
 | `url` | `url` | `fetch_proxy`, `http_proxy`, `websocket` |
 | `request_body` | `request_body` | `fetch_proxy`, `http_proxy`, `websocket` |
 | `headers` | `header` | `fetch_proxy`, `http_proxy`, `websocket` |
+| `hostname_exfiltration` | `url` | `fetch_proxy`, `http_proxy` |
 | `response_fetch` | `response_content` | `fetch_proxy`, `http_proxy`, `websocket` |
 | `response_mitm` | `response_content` | `http_proxy` only |
 | `mcp_input` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
@@ -131,7 +133,7 @@ The validator enforces these relationships:
 
 ## Enum Values
 
-**capability_tags:** `url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`
+**capability_tags:** `url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`, `hostname_exfil`
 
 **requires:** `tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `websocket_frame_scanning`, `a2a_scanning`, `shell_analysis`, `dns_rebinding_fixture`
 

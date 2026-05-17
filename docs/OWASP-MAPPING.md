@@ -9,6 +9,7 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 | `url` | ASI02 Tool Misuse & Exploitation | Yes |
 | `request_body` | ASI02 Tool Misuse & Exploitation | Yes |
 | `headers` | ASI02 Tool Misuse & Exploitation | Yes |
+| `hostname_exfiltration` | ASI02 Tool Misuse & Exploitation | Yes |
 | `response_fetch` | ASI01 Agent Goal Hijack + ASI06 Memory & Context Poisoning | Yes |
 | `response_mitm` | ASI01 Agent Goal Hijack + ASI04 Supply Chain Vulnerabilities | Yes |
 | `mcp_input` | ASI02 Tool Misuse & Exploitation | Yes |
@@ -43,6 +44,7 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 - `url` cases test DLP detection of secrets in URL query strings, paths, and subdomains (AWS keys, GitHub tokens, JWTs, base64-encoded data, high-entropy strings).
 - `request_body` cases test DLP detection in POST bodies (JSON fields, multipart uploads, base64 payloads, env variable dumps).
 - `headers` cases test DLP detection of API keys and tokens in HTTP headers.
+- `hostname_exfiltration` cases test encoded data in DNS hostname labels before name resolution.
 - `mcp_input` cases test DLP and injection detection in MCP tool call arguments.
 - `mcp_chain` cases test detection of multi-step exfiltration patterns (read sensitive file, then fetch to external URL).
 
@@ -118,5 +120,5 @@ Several case categories also map to MITRE ATT&CK exfiltration techniques:
 |-----------|-------|
 | T1041 Exfiltration Over C2 Channel | `url`, `request_body`, `headers` (secret exfil via HTTP) |
 | T1567 Exfiltration Over Web Service | `url`, `request_body` (data sent to external services) |
-| T1048 Exfiltration Over Alternative Protocol | `url` encoding cases (base64, hex, URL-encoded secrets) |
+| T1048 Exfiltration Over Alternative Protocol | `url` encoding cases and `hostname_exfiltration` DNS-label cases |
 | T1071.001 Web Protocols | All HTTP-based cases |
