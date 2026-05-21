@@ -1,0 +1,11 @@
+{
+  "fixture_id": "05-ask-hitl-approve",
+  "category": "golden",
+  "input_format": "chain",
+  "verdict": "accept",
+  "description": "Two-receipt chain: ASK verdict followed by HITL operator approval (allow).",
+  "expected_chain_length": 2,
+  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
+  "expected_root_hash": "1ccdfd08846e67c998b58f5e1171236da99e9d1370881c6e28539e2356e1d1b6",
+  "notes": "Verifier MUST accept both receipts and treat them as a single coherent decision sequence linked by chain_prev_hash."
+}

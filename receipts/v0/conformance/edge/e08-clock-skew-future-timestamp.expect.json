@@ -1,0 +1,11 @@
+{
+  "fixture_id": "e08-clock-skew-future-timestamp",
+  "category": "edge",
+  "input_format": "receipt",
+  "verdict": "accept",
+  "description": "Timestamp is 30 seconds in the future relative to the corpus base time.",
+  "expected_chain_length": 1,
+  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
+  "expected_root_hash": "35a4452e15e92792e3f7048e50c53ea14093cd71f449753ada7b55d33ad2457a",
+  "notes": "Verifier MUST accept up to a few minutes of forward skew. Hard-future-rejects break under common NTP drift."
+}

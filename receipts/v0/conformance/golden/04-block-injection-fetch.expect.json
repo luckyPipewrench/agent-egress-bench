@@ -1,0 +1,11 @@
+{
+  "fixture_id": "04-block-injection-fetch",
+  "category": "golden",
+  "input_format": "receipt",
+  "verdict": "accept",
+  "description": "Block on prompt injection detected in a fetched web page.",
+  "expected_chain_length": 1,
+  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
+  "expected_root_hash": "29a27709c2d354cbd70db0bd1cda3d17737e578de92f27e17900df833e97e273",
+  "notes": "Demonstrates a response-side layer firing on inbound content. Verifier MUST accept the receipt and surface layer=response_injection."
+}

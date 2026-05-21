@@ -1,0 +1,11 @@
+{
+  "fixture_id": "08-warn-observe-mode",
+  "category": "golden",
+  "input_format": "receipt",
+  "verdict": "accept",
+  "description": "Warn verdict in observe-mode: action allowed but flagged for review.",
+  "expected_chain_length": 1,
+  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
+  "expected_root_hash": "b3f447d2d03525d3d2e1aca4e3e5826e871e96d3149813007b46d8c38eb24fd0",
+  "notes": "Verifier MUST accept and MUST NOT degrade to allow — the warn signal is the whole point of observe mode."
+}

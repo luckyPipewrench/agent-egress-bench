@@ -1,0 +1,11 @@
+{
+  "fixture_id": "e01-unicode-agent-identifier",
+  "category": "edge",
+  "input_format": "receipt",
+  "verdict": "accept",
+  "description": "Unicode (CJK + Greek) in principal and actor fields.",
+  "expected_chain_length": 1,
+  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
+  "expected_root_hash": "61dc56412c0bbef5df70f8cdbaf26bb541ca82095e862577a8587fd7466a201e",
+  "notes": "Verifier MUST accept and preserve the bytes. Canonical JSON encodes non-ASCII as escaped UTF-16 surrogate pairs in some implementations — pipelock uses Go's default encoding/json which emits the raw UTF-8. Either is acceptable provided the canonical form is stable."
+}

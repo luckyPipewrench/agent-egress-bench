@@ -1,0 +1,11 @@
+{
+  "fixture_id": "03-block-dlp-aws-key",
+  "category": "golden",
+  "input_format": "receipt",
+  "verdict": "accept",
+  "description": "Block on AWS access key detected in URL query string.",
+  "expected_chain_length": 1,
+  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
+  "expected_root_hash": "ed61ff15ea440a2d6ae3d347742aa78251eb5bc5a88fcaf24ea035cf36fb1fa5",
+  "notes": "Verifier MUST accept the signed receipt — the verdict is block, not allow, but the receipt itself is well-formed evidence of the block decision."
+}

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "action_record": {
+    "version": 1,
+    "action_id": "conformance-00000",
+    "action_type": "read",
+    "timestamp": "2026-04-15T12:00:00Z",
+    "principal": "org:conformance-test",
+    "actor": "agent:conformance-runner",
+    "delegation_chain": [
+      "test-policy-v1",
+      "test-grant"
+    ],
+    "target": "https://newsletter.example.com/track?u=user-123",
+    "side_effect_class": "external_write",
+    "reversibility": "compensatable",
+    "policy_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "verdict": "warn",
+    "transport": "https",
+    "method": "GET",
+    "layer": "tracking_detection",
+    "pattern": "marketing_pixel",
+    "severity": "low",
+    "chain_prev_hash": "genesis",
+    "chain_seq": 0
+  },
+  "signature": "ed25519:16e8e4c36834edf8a15722f5e562f57f90ec7451cff3e2ce8330c349f6324bf434a992f2663ab8b7dfa7bf2cc60946e03e4c7426960c5320f3b2d6327fd4310c",
+  "signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678"
+}
