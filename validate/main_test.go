@@ -1173,6 +1173,10 @@ func TestAllExistingCasesValid(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		// Skip multi-file case directories — they have their own schema.
+		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
+			return filepath.SkipDir
+		}
 		if info.IsDir() || filepath.Ext(info.Name()) != ".json" {
 			return nil
 		}

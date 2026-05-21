@@ -66,6 +66,11 @@ func computeCorpusSHA256(casesDir string) (string, error) {
 		if err != nil {
 			return err
 		}
+		// Skip multi-file case directories — they use a different schema and
+		// must not contribute to the single-file-corpus hash.
+		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
+			return filepath.SkipDir
+		}
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
 			return nil
 		}

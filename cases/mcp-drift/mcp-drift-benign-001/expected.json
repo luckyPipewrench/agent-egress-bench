@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "action_record": {
+    "version": 1,
+    "action_id": "<vendor-supplied UUIDv7>",
+    "action_type": "read",
+    "timestamp": "<vendor-supplied RFC 3339>",
+    "principal": "<vendor-supplied>",
+    "actor": "<vendor-supplied>",
+    "delegation_chain": ["<vendor-supplied>"],
+    "target": "mcp://weather-server/tools/list",
+    "side_effect_class": "none",
+    "reversibility": "full",
+    "policy_hash": "<vendor-supplied>",
+    "verdict": "warn",
+    "transport": "mcp_stdio",
+    "layer": "mcp_tool_baseline",
+    "pattern": "baseline_tool_count_increased",
+    "severity": "low",
+    "intent": "drift_observed_addition",
+    "chain_prev_hash": "<vendor-supplied>",
+    "chain_seq": 0
+  },
+  "signature": "<vendor-supplied>",
+  "signer_key": "<vendor-supplied>"
+}

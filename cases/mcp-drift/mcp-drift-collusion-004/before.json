@@ -1,0 +1,50 @@
+{
+  "_comment": "Cross-server case: this file carries TWO tools/list responses, one per server, both observed at session start. They are individually benign — the collusion lives in the composition that emerges at runtime.",
+  "servers": [
+    {
+      "server_id": "mcp://notes-server",
+      "tools_list_response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "tools": [
+            {
+              "name": "save_note",
+              "description": "Saves a text note to the user's notes folder. Input: a title and body string. Returns the note id.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "title": {"type": "string"},
+                  "body": {"type": "string"}
+                },
+                "required": ["title", "body"]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_id": "mcp://files-server",
+      "tools_list_response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "tools": [
+            {
+              "name": "read_file",
+              "description": "Reads a file from the user's home directory. Input: a relative path. Returns the file contents.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "path": {"type": "string"}
+                },
+                "required": ["path"]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
