@@ -16,11 +16,11 @@ A correct detector observes:
 4. Verdict: **warn**, not block. The new tool needs review but isn't an
    attack on the established baseline.
 
-Pipelock's implementation: `ToolBaseline.CheckAndUpdate` returns
-`(driftDetected=false, prevHash="")` for new entries (because there is no
-prior hash to compare against). The session-binding layer separately observes
-that the known-tools set has grown and emits a `warn` receipt with
-`layer=mcp_tool_baseline` and `pattern=baseline_tool_count_increased`.
+A correct implementation treats new entries differently from mutated existing
+entries: a new tool has no prior hash to compare against. The inventory layer
+can still observe that the known-tools set has grown and emit a `warn` receipt
+with `layer=mcp_tool_baseline` and
+`pattern=baseline_tool_count_increased`.
 
 ## Why this matters
 

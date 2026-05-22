@@ -30,7 +30,7 @@ but the receipt itself is verifiable in isolation when extracted.
 ## Test key
 
 All fixtures are signed with a deterministic test key derived from
-`sha256("pipelock-conformance-test-key-v1")`. The keypair is committed in
+`sha256("agent-egress-bench-receipt-conformance-test-key-v1")`. The keypair is committed in
 `_generator/test-key.json` so any verifier can pin it during conformance runs.
 
 **This key is for testing only.** Never use it for production signing.
@@ -160,5 +160,5 @@ without rerunning the suite.
 
 ## Source
 
-Receipt schema and signing protocol: `github.com/luckyPipewrench/pipelock`,
-`internal/receipt/` package and `sdk/audit-packet/v0.json`.
+Receipt schema and signing protocol: the inline schema and generator in this
+directory.

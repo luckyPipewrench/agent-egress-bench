@@ -25,10 +25,10 @@ requires:
   - mcp_tool_baseline
 false_positive_risk: medium
 why_expected: |
-  baseline_tool_count_increased_without_existing_tool_mutation. Pipelock
-  emits a warn-level receipt with layer=mcp_tool_baseline so the operator
-  can decide whether to re-approve. Config that maps drift action to block
-  would over-trigger here; this case is the FP guardrail.
+  baseline_tool_count_increased_without_existing_tool_mutation. A conforming
+  detector emits a warn-level receipt with layer=mcp_tool_baseline so the
+  operator can decide whether to re-approve. Config that maps drift action to
+  block would over-trigger here; this case is the FP guardrail.
 notes: notes.md
 source: |
   Real-world pattern. MCP servers ship features behind feature flags and

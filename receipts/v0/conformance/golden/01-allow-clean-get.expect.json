@@ -5,7 +5,7 @@
   "verdict": "accept",
   "description": "Plain allow on a benign HTTPS GET to an explicitly allowed host.",
   "expected_chain_length": 1,
-  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
-  "expected_root_hash": "edab1d61bae1bdd9c4771bf87e0cd0b1124e01af7c23d87c0000cfab5123a6bb",
-  "notes": "Smoke test: pipelock-vanilla outcome with no DLP layer activity. Verifier MUST accept and surface signer_key."
+  "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
+  "expected_root_hash": "a021c04afca0d8f32a03f9c52623ab4c716e86ea8559598e99cbf4b5f35be1ea",
+  "notes": "Smoke test: clean outcome with no DLP layer activity. Verifier MUST accept and surface signer_key."
 }

@@ -90,11 +90,10 @@ not the signature provenance.
 ## Cross-vendor reactability
 
 These cases are designed to be runnable against multiple MCP-wrapping
-implementations. Vendors with rug-pull detection (pipelock, Docker MCP Gateway,
-Snyk Agent Scan, etc.) should produce receipts on each case and publish their
-results. Cases 1-3 stand alone; case 4 (cross-server collusion) depends on
-chain detection + sensitivity labels — vendors without sensitivity labels
-should disclose that gap rather than silently passing.
+implementations. Tools with rug-pull detection should produce receipts on each
+case and publish their results. Cases 1-3 stand alone; case 4 (cross-server
+collusion) depends on chain detection + sensitivity labels — tools without
+sensitivity labels should disclose that gap rather than silently passing.
 
 ## Source threats
 

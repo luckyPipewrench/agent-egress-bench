@@ -5,7 +5,7 @@
   "verdict": "accept",
   "description": "Allow on a destination that matched DLP but is on the suppression allowlist.",
   "expected_chain_length": 1,
-  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
-  "expected_root_hash": "60f6ae4f2aa2022d48484f79edec98d255f31f347c5bdef168be4f6a0ff9066a",
+  "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
+  "expected_root_hash": "e3a1eeb8b2bcaeb86d90893fb58250608153655d44906cc427db46e8ca7bda89",
   "notes": "Verifier MUST accept and MUST NOT collapse the layer/pattern fields — they are evidence the operator made a deliberate exception."
 }

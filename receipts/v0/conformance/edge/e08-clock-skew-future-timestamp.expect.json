@@ -5,7 +5,7 @@
   "verdict": "accept",
   "description": "Timestamp is 30 seconds in the future relative to the corpus base time.",
   "expected_chain_length": 1,
-  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
-  "expected_root_hash": "35a4452e15e92792e3f7048e50c53ea14093cd71f449753ada7b55d33ad2457a",
+  "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
+  "expected_root_hash": "6997d50de8ff890adbc29baee249582ab16ac43333a357f2245c8836ff4564ba",
   "notes": "Verifier MUST accept up to a few minutes of forward skew. Hard-future-rejects break under common NTP drift."
 }

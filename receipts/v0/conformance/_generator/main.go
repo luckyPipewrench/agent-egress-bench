@@ -1,6 +1,3 @@
-// Copyright 2026 Josh Waldrep
-// SPDX-License-Identifier: Apache-2.0
-//
 // Generator for the agent-egress-bench receipt verifier conformance corpus.
 // Stdlib-only by design — vendors should be able to read this file and
 // implement an equivalent verifier in any language.
@@ -10,10 +7,9 @@
 //	go run . --write    # regenerate all fixtures under ../{golden,malicious,edge}
 //	go run . --verify   # re-derive fixtures in memory, diff against committed files
 //
-// The receipt schema and signing protocol mirror pipelock's internal/receipt
-// package (see github.com/luckyPipewrench/pipelock). The on-the-wire format
-// is intentionally identical so the same fixtures exercise both the pipelock
-// CLI verifier and any third-party verifier implementation.
+// The receipt schema and signing protocol are defined inline here so the
+// corpus remains readable and reproducible without depending on any product
+// implementation.
 package main
 
 import (
@@ -32,7 +28,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Receipt schema (mirrors pipelock internal/receipt).
+// Receipt schema under test.
 // ---------------------------------------------------------------------------
 
 const (
@@ -40,13 +36,12 @@ const (
 	actionRecordVersion  = 1
 	signaturePrefix      = "ed25519:"
 	genesisHash          = "genesis"
-	testSeedPhrase       = "pipelock-conformance-test-key-v1"
+	testSeedPhrase       = "agent-egress-bench-receipt-conformance-test-key-v1"
 	conformanceSessionID = "conformance-session"
 )
 
 // ActionRecord covers every field a v0 verifier may consult. Optional fields
-// are emitted with omitempty so the canonical JSON shape matches the
-// production pipelock encoder.
+// are emitted with omitempty so the canonical JSON shape is stable.
 type ActionRecord struct {
 	Version int `json:"version"`
 
@@ -90,7 +85,7 @@ type Receipt struct {
 }
 
 // canonical marshals the action record in the deterministic shape the signer
-// uses. Pipelock relies on encoding/json's field-tag order, which is stable.
+// uses. The generator relies on encoding/json's field-tag order, which is stable.
 func (ar ActionRecord) canonical() ([]byte, error) {
 	return json.Marshal(ar)
 }
@@ -178,7 +173,7 @@ func kp() (ed25519.PublicKey, ed25519.PrivateKey) {
 // foreignKP returns a different deterministic keypair used to produce signatures
 // that are mathematically valid but unpinned — exercising signer_key_untrusted.
 func foreignKP() (ed25519.PublicKey, ed25519.PrivateKey) {
-	seed := sha256.Sum256([]byte("pipelock-conformance-foreign-key-v1"))
+	seed := sha256.Sum256([]byte("agent-egress-bench-receipt-conformance-foreign-key-v1"))
 	priv := ed25519.NewKeyFromSeed(seed[:])
 	pub, _ := priv.Public().(ed25519.PublicKey)
 	return pub, priv
@@ -322,7 +317,7 @@ func buildGolden() ([]fixture, error) {
 		baseRecord(0, genesisHash, freshTime, "read", "allow",
 			"https://api.example.com/v1/data", "https", "GET"),
 		"Plain allow on a benign HTTPS GET to an explicitly allowed host.",
-		"Smoke test: pipelock-vanilla outcome with no DLP layer activity. Verifier MUST accept and surface signer_key.",
+		"Smoke test: clean outcome with no DLP layer activity. Verifier MUST accept and surface signer_key.",
 	); err != nil {
 		return nil, err
 	} else {
@@ -789,7 +784,7 @@ func buildMalicious() ([]fixture, error) {
 	}
 
 	// M8. Tampered chain — prev_hash of receipt[3] does not match hash of
-	// receipt[2]. Pulled from pipelock's broken-chain fixture pattern.
+	// receipt[2].
 	{
 		chain, _, err := chainOf(priv, func(seq uint64, prev string) ActionRecord {
 			return baseRecord(seq, prev, freshTime.Add(time.Duration(seq)*time.Second),
@@ -821,7 +816,7 @@ func buildMalicious() ([]fixture, error) {
 				Verdict:      "reject",
 				RejectReason: "chain_break",
 				Description:  "Every receipt signature is individually valid, but receipt[3]'s chain_prev_hash does not match the SHA-256 of receipt[2]. Indicates an insert or removal in the chain.",
-				Notes:        "Verifier MUST walk the chain in order, recompute SHA-256(canonical(receipt[N])), and compare against receipt[N+1].action_record.chain_prev_hash. Mirrors pipelock's internal broken-chain conformance test.",
+				Notes:        "Verifier MUST walk the chain in order, recompute SHA-256(canonical(receipt[N])), and compare against receipt[N+1].action_record.chain_prev_hash.",
 			},
 		})
 	}
@@ -996,7 +991,7 @@ func buildEdge() ([]fixture, error) {
 		ar.Actor = "agent:研究員-α"
 		if f, err := makeSingle("e01-unicode-agent-identifier", "edge", priv, pubHex, ar,
 			"Unicode (CJK + Greek) in principal and actor fields.",
-			"Verifier MUST accept and preserve the bytes. Canonical JSON encodes non-ASCII as escaped UTF-16 surrogate pairs in some implementations — pipelock uses Go's default encoding/json which emits the raw UTF-8. Either is acceptable provided the canonical form is stable.",
+			"Verifier MUST accept and preserve the bytes. Canonical JSON encodes non-ASCII differently across implementations; either escaped or raw UTF-8 forms are acceptable provided the canonical form is stable.",
 		); err != nil {
 			return nil, err
 		} else {
@@ -1054,7 +1049,7 @@ func buildEdge() ([]fixture, error) {
 
 	// E5. Multi-byte UTF-8 in policy_hash representation — accepted as-is.
 	// We emulate this by putting the multi-byte content in pattern (a free-form
-	// optional field) since policy_hash must be hex per pipelock convention.
+	// optional field) since policy_hash remains hex-shaped in this corpus.
 	{
 		ar := baseRecord(0, genesisHash, freshTime, "read", "block",
 			"https://api.example.com/v1/data", "https", "GET")
@@ -1137,10 +1132,8 @@ func marshalPretty(r Receipt) ([]byte, error) {
 }
 
 // marshalChainJSONL serializes a slice of receipts as one compact JSON object
-// per line. Matches the production flight-recorder format when stripped of
-// the outer flight-recorder envelope. The pipelock CLI verifier accepts either
-// shape; this corpus uses the raw form so verifiers in non-Go languages do
-// not need to model the recorder envelope.
+// per line. This corpus uses the raw form so verifiers in non-Go languages do
+// not need to model any product-specific recorder envelope.
 func marshalChainJSONL(rs []Receipt) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, r := range rs {
@@ -1155,8 +1148,7 @@ func marshalChainJSONL(rs []Receipt) ([]byte, error) {
 }
 
 // writeAll writes every fixture under outDir/{category}/{name}.json and
-// outDir/{category}/{name}.expect.json. Files are written with 0o600 perms
-// per pipelock convention.
+// outDir/{category}/{name}.expect.json. Files are written with 0o600 perms.
 func writeAll(outDir string, fixtures []fixture) error {
 	for _, f := range fixtures {
 		dir := filepath.Join(outDir, f.Category)

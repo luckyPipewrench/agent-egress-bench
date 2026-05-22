@@ -28,7 +28,7 @@ capability_tags:
 requires:
   - mcp_tool_baseline
   - mcp_chain_memory
-  - sensitivity_labels      # DEPENDS ON v2.6 ITEM B LANDING FIRST
+  - sensitivity_labels
 false_positive_risk: medium
 why_expected: |
   cross_server_toxic_composition_with_sensitive_source. Detection requires

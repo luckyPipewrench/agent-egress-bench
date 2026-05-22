@@ -5,7 +5,7 @@
   "verdict": "accept",
   "description": "Timestamp sits 1 second inside the corpus max_age window of 1 year.",
   "expected_chain_length": 1,
-  "expected_signer_key": "4655a7e605c12ebb00a46037881c33c5bca5eb74b45a02e8e7261a7ff5a21678",
-  "expected_root_hash": "ed0717eef04cacf2e24d86e4fa1575fd95912de19f639741ca32d53ac0087f10",
+  "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
+  "expected_root_hash": "d8355f130155b278f4ed20d56ae050964a539a84a257a54ab2a9bd1bc8defa7c",
   "notes": "Verifier MUST accept. Vendors who use an open-interval (\u003e) comparison instead of inclusive (\u003e=) will fire spurious expired rejects on this fixture."
 }

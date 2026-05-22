@@ -2,13 +2,12 @@
 
 ## Status
 
-**Depends on pipelock v2.6 item B (chain sensitivity labels) landing.** Without
-sensitivity labels on tool outputs, a detector cannot distinguish `read_file`
-returning `~/.bashrc` from `read_file` returning `~/.ssh/id_ed25519`. The
-"lethal trifecta" framing collapses to "any read tool feeds any write tool",
-which would block far too much. This case is published now so the detection
-contract is locked once item B ships; vendors implementing chain detection
-should treat it as forward-spec.
+**Depends on chain sensitivity labels.** Without sensitivity labels on tool
+outputs, a detector cannot distinguish `read_file` returning `~/.bashrc` from
+`read_file` returning `~/.ssh/id_ed25519`. The "lethal trifecta" framing
+collapses to "any read tool feeds any write tool", which would block far too
+much. This case is published as a forward-spec for tools implementing
+cross-server chain detection.
 
 ## Attack pattern
 
@@ -34,7 +33,7 @@ A correct detector requires:
    other tools by name (`read_file`, `save_note`). In `after.json`,
    `save_note`'s description references `read_file` with concrete sensitive
    paths (`.ssh/id_ed25519`, `.aws/credentials`).
-3. **Sensitivity labels on tool outputs** (item B): `read_file` is tagged
+3. **Sensitivity labels on tool outputs**: `read_file` is tagged
    `filesystem_secret` when invoked with paths matching known secret
    locations. `save_note` writes to a user-controlled body field.
 4. **Chain composition rule**: a `read` tool returning `filesystem_secret`
@@ -54,15 +53,15 @@ individual nodes.
 - Vendors with chain memory but no sensitivity labels: may flag as warn (chain
   observed) but cannot prove sensitivity. Block here is over-trigger; warn
   is acceptable.
-- Pipelock after v2.6 item B: emits block as specified.
+- Detectors with chain memory and sensitivity labels: emit block as specified.
 
 ## Forward compatibility
 
-If pipelock's v2.6 design lands with a different field name for sensitivity
-labels, this fixture's `data_classes_in` field should be renamed to match.
-The `expected.json` is intentionally not signed so it can be updated without
-invalidating any cryptographic state — these are decision-semantic
-specifications, not signed receipts.
+If the common receipt vocabulary for sensitivity labels changes, this fixture's
+`data_classes_in` field should be renamed to match. The `expected.json` is
+intentionally not signed so it can be updated without invalidating any
+cryptographic state — these are decision-semantic specifications, not signed
+receipts.
 
 ## Cross-references
 
@@ -74,5 +73,5 @@ specifications, not signed receipts.
 ## Source
 
 Simon Willison "lethal trifecta" (2024). OWASP ASI02 (Excessive Agency) +
-ASI08 (Multi-Step Compromise). Cross-server composition as a category in the
-v2.6 plan.
+ASI08 (Multi-Step Compromise). Cross-server composition as an MCP drift and
+chain-detection attack class.

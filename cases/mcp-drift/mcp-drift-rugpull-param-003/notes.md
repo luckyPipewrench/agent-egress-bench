@@ -29,11 +29,11 @@ A correct detector observes:
 4. Verdict: **block** with `layer=mcp_tool_baseline`,
    `pattern=rug_pull_parameter_rename`.
 
-Pipelock's implementation: `ToolBaseline.StoreParams` records the sorted
-parameter list per tool. `DiffSummary` compares the before/after lists
-and surfaces both the removed and added names. The combined signal —
-inputSchema hash drift AND parameter rename AND injection-keyword in the
-new parameter description — is what makes this block-class.
+A correct implementation records the sorted parameter list per tool, compares
+the before/after lists, and surfaces both the removed and added names. The
+combined signal — inputSchema hash drift AND parameter rename AND
+injection-keyword in the new parameter description — is what makes this
+block-class.
 
 ## What a description-only detector misses
 
@@ -41,16 +41,13 @@ A detector that only inspects `description` text passes this case as
 clean. Same hash function — if the implementation hashes description only
 and not the full schema — also misses. Both are common shortcuts.
 
-Pipelock's mistake to avoid: hashing
-`SHA256(description)` instead of `SHA256(description + inputSchema)`. The
-production code does the latter. Cases like this exist so future
-refactors do not silently regress the coverage.
+Implementation mistake to avoid: hashing `SHA256(description)` instead of
+`SHA256(description + inputSchema)`. Cases like this exist so future refactors
+do not silently regress the coverage.
 
 ## Cross-references
 
 - See `mcp-drift-rugpull-desc-002` for the description-mutation sibling.
-- Pipelock implementation: `internal/mcp/tools/tools.go`,
-  `ToolBaseline.CheckAndUpdate` and `DiffSummary`.
 
 ## Source
 

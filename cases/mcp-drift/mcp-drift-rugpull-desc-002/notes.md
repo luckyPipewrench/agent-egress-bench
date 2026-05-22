@@ -31,11 +31,11 @@ A correct detector observes:
 4. Verdict: **block** with `layer=mcp_tool_baseline`,
    `pattern=rug_pull_description_mutation`, `severity=critical`.
 
-Pipelock's implementation: `CheckAndUpdate` returns
-`(driftDetected=true, prevHash=H_before)`. The proxy then runs the new
-description through the tool-poisoning scanner (which fires on the
-"before returning" / "first call" / imperative-cluster patterns) and emits
-a receipt with the merged signal.
+A correct implementation reports both the baseline drift and the content risk:
+the stored hash changes, then the new description trips tool-poisoning signals
+such as "before returning" / "first call" / imperative-cluster patterns. The
+receipt should preserve the merged signal rather than collapsing it to a generic
+drift finding.
 
 ## What a syntax-only detector misses
 
@@ -51,8 +51,8 @@ the FP cliff.
 
 - Detectors without baseline storage: cannot detect at all. Disclose.
 - Detectors with baseline but no content scan: emit warn, not block.
-- Detectors with both (pipelock): emit block with both signals merged
-  into the receipt's `intent` field.
+- Detectors with both: emit block with both signals merged into the receipt's
+  `intent` field.
 
 ## Cross-references
 
