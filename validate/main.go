@@ -212,6 +212,13 @@ func runCases(casesDir string) int {
 		if err != nil {
 			return err
 		}
+		// Skip directories that use the multi-file case format (case.yaml +
+		// before.json + after.json + expected.json + notes.md). Those have
+		// their own per-directory schema and are not validated by this tool
+		// in v0 — the README in the directory documents the schema.
+		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
+			return filepath.SkipDir
+		}
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
 			return nil
 		}
@@ -571,6 +578,22 @@ func contains(slice []string, val string) bool {
 		}
 	}
 	return false
+}
+
+// multiFileCaseCategories lists case-directory names that use the multi-file
+// case format (per-case directory containing case.yaml, before.json,
+// after.json, expected.json, notes.md). The single-JSON validator skips
+// these — they have their own per-directory schema documented in the
+// directory's README.md. v0 ships with mcp-drift; future categories that
+// need temporal before/after pairs join this list.
+var multiFileCaseCategories = map[string]bool{
+	"mcp-drift": true,
+}
+
+// isMultiFileCaseDir reports whether name (a directory base name immediately
+// under cases/) uses the multi-file case format.
+func isMultiFileCaseDir(name string) bool {
+	return multiFileCaseCategories[name]
 }
 
 // ResultLine represents a single line in a runner results JSONL file.

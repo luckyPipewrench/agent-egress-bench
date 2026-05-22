@@ -1,0 +1,22 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Returns current weather for a city. Input: city name as a string. Output: temperature, conditions, humidity.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "City name, e.g. 'San Francisco'"
+            }
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  }
+}
