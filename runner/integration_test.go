@@ -46,6 +46,24 @@ func TestRunUnknownAdapter(t *testing.T) {
 	}
 }
 
+func TestRunIgnoresReceiptVerifierFileWithoutProfileEmission(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found, skipping")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found, skipping")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "summary.json")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "/nonexistent/verifier.json")
+	if err != nil {
+		t.Fatalf("run should ignore receipt verifier file unless profile emission is enabled: %v", err)
+	}
+}
+
 func TestIntegrationNullAdapter(t *testing.T) {
 	casesDir := filepath.Join("..", "cases")
 	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")

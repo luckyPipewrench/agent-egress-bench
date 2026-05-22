@@ -41,13 +41,6 @@ func main() {
 }
 
 func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile string) error {
-	// Load receipt verifier early so a malformed file fails fast before the
-	// expensive corpus run. An empty path yields a "no verifier" block.
-	receiptVerifier, err := loadReceiptVerifier(receiptVerifierFile)
-	if err != nil {
-		return err
-	}
-
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -212,6 +205,13 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	// tool-profile hashes already computed for the gauntlet summary so
 	// repeated runs are byte-reproducible against the same inputs.
 	if emitReceiptProfile != "" {
+		// Load receipt verifier only when profile emission is requested.
+		// An empty path yields a "no verifier" block; a malformed path fails
+		// before writing the receipt profile.
+		receiptVerifier, err := loadReceiptVerifier(receiptVerifierFile)
+		if err != nil {
+			return err
+		}
 		rp := buildReceiptProfile(
 			profile,
 			applicableResults,

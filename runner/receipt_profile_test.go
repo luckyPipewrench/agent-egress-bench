@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -251,6 +250,18 @@ func TestLoadReceiptVerifier_MalformedFails(t *testing.T) {
 	}
 }
 
+func TestLoadReceiptVerifier_RejectsUnknownField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "verifier.json")
+	data := `{"shipped":true,"open_source":true,"verifier_url":"https://example.invalid","license":"Apache-2.0","exit_code_contract":"0 valid, 1 invalid","extra":true}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadReceiptVerifier(path); err == nil {
+		t.Fatal("expected error for unknown verifier field")
+	}
+}
+
 // TestBuildReceiptProfile_PerCaseShape walks the build function with a
 // synthetic set of results covering all five rubric branches so changes to
 // the mapping logic (blocked / explained / false_positive) break here
@@ -308,7 +319,7 @@ func mustLoadReceiptProfile(t *testing.T, path string) ReceiptProfile {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	var rp ReceiptProfile
-	if err := json.Unmarshal(data, &rp); err != nil {
+	if err := decodeStrictJSON(data, &rp); err != nil {
 		t.Fatalf("parsing %s: %v", path, err)
 	}
 	return rp

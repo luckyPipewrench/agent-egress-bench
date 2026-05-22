@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 )
@@ -77,10 +79,26 @@ func loadReceiptVerifier(path string) (ReceiptVerifier, error) {
 		return ReceiptVerifier{}, fmt.Errorf("reading receipt verifier file: %w", err)
 	}
 	var v ReceiptVerifier
-	if jsonErr := json.Unmarshal(data, &v); jsonErr != nil {
+	if jsonErr := decodeStrictJSON(data, &v); jsonErr != nil {
 		return ReceiptVerifier{}, fmt.Errorf("parsing receipt verifier file: %w", jsonErr)
 	}
 	return v, nil
+}
+
+func decodeStrictJSON(data []byte, dst interface{}) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	var extra struct{}
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
+	}
+	return nil
 }
 
 // buildReceiptProfile assembles the receipt-scoring artifact from runner

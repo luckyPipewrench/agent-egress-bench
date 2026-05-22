@@ -4,7 +4,7 @@ How this corpus is maintained, how decisions are made, and how conflicts are han
 
 ## Neutrality
 
-This corpus is tool-neutral. It was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author, but it is designed for any agent egress security tool. The repo does not produce rankings, leaderboards, scores, or "certified" badges. Each tool publishes its own results independently.
+This corpus is tool-neutral. It was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author, but it is designed for any agent egress security tool. The repo does not produce rankings, leaderboards, or "certified" badges. Optional receipt profiles under `profiles/` are maintainer-published evidence artifacts, not corpus-issued endorsements.
 
 No case is written to favor or penalize a specific tool. Cases test observable behavior on the wire (did the request get blocked?), not implementation internals.
 
