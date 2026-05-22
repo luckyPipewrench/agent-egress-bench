@@ -10,7 +10,7 @@ import (
 
 func TestRunBadCasesDir(t *testing.T) {
 	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false)
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false, "", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -18,7 +18,7 @@ func TestRunBadCasesDir(t *testing.T) {
 
 func TestRunBadProfile(t *testing.T) {
 	err := run(filepath.Join("..", "cases"), "/nonexistent/profile.json",
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false)
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false, "", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent profile")
 	}
@@ -37,12 +37,30 @@ func TestRunUnknownAdapter(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "", "", "", "", false)
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "", "", "", "", false, "", "")
 	if err == nil {
 		t.Fatal("expected error for unknown adapter")
 	}
 	if !strings.Contains(err.Error(), "unknown adapter") {
 		t.Errorf("error should mention unknown adapter, got: %v", err)
+	}
+}
+
+func TestRunIgnoresReceiptVerifierFileWithoutProfileEmission(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found, skipping")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found, skipping")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "summary.json")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "/nonexistent/verifier.json")
+	if err != nil {
+		t.Fatalf("run should ignore receipt verifier file unless profile emission is enabled: %v", err)
 	}
 }
 
@@ -60,7 +78,7 @@ func TestIntegrationNullAdapter(t *testing.T) {
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "", "", "", "", false)
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "", "", "", "", false, "", "")
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -102,7 +120,7 @@ func TestIntegrationRealCases(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
 	// Run the full pipeline.
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false) // 10s
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "") // 10s
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}

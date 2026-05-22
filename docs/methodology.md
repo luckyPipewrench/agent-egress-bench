@@ -160,7 +160,7 @@ Vendors run the Gauntlet locally against their own tool. Results are submitted t
 
 Submitted results start as **self-reported**. A maintainer may verify results by re-running the Gauntlet against the same tool version. Verified results are marked accordingly on the leaderboard.
 
-No results are stored in this repository. This repo contains attack cases and scoring methodology only. Each vendor owns their results.
+Gauntlet leaderboard results are not stored in this repository. This repo contains attack cases, scoring methodology, and optional maintainer-published receipt profiles under `profiles/`. Each vendor owns its results and is expected to document reproduction steps.
 
 ## Dispute Resolution
 
@@ -188,7 +188,7 @@ Neutrality is maintained through design constraints:
 
 - **Cases test observable behavior.** Every case asks "was this traffic blocked?" not "did the tool use this internal technique?" No case requires a specific implementation approach.
 - **Pipelock runner is reference, not privileged.** The Pipelock runner in `examples/pipelock/` is a working example. It has no special status. Any vendor can add a runner in `examples/`.
-- **Pipelock results live on pipelab.org, not in this repo.** No tool's scores are stored in the benchmark repository.
+- **Gauntlet leaderboard results live outside this repo.** Optional receipt profiles may live in `profiles/` as self-reported, reproducible evidence artifacts, not rankings or certifications.
 - **Methodology published before results.** The scoring rules, case corpus, and governance policy are public before any tool publishes Gauntlet results. No retroactive tuning.
 
 Contributions from any vendor, researcher, or individual are welcome. See [GOVERNANCE.md](GOVERNANCE.md) for the full policy and [ADOPTION.md](ADOPTION.md) for how to build a runner and publish results.

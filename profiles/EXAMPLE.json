@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "tool": "example-tool",
+  "tool_version": "0.0.0-example",
+  "corpus_version": "v2.0.0",
+  "corpus_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "tool_profile_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "verifier": {
+    "shipped": true,
+    "open_source": true,
+    "verifier_url": "https://example.invalid/example-verifier",
+    "license": "Apache-2.0",
+    "exit_code_contract": "0 valid, 1 invalid, 2 error, 64 usage"
+  },
+  "summary": {
+    "blocked_yes_count": 1,
+    "blocked_no_count": 1,
+    "explained_yes_count": 2,
+    "receipt_produced_yes_count": 1,
+    "receipt_independently_verifiable_yes_count": 1,
+    "false_positive_yes_count": 1
+  },
+  "per_case": [
+    {
+      "case_id": "a2a-card-poison-hidden-instruction-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "yes",
+      "receipt_independently_verifiable": "yes",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "a2a-msg-benign-data-009",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
+      "case_id": "body-dlp-hex-encoded-007",
+      "blocked": "no",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "fp-quoted-injection-docs-002",
+      "blocked": "n/a",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "yes"
+    }
+  ]
+}

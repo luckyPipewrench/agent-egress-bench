@@ -1,0 +1,7 @@
+{
+  "shipped": true,
+  "open_source": true,
+  "verifier_url": "https://github.com/luckyPipewrench/pipelock/tree/main/cmd/pipelock-verifier",
+  "license": "Apache-2.0",
+  "exit_code_contract": "0 valid, 1 invalid, 2 error, 64 usage"
+}

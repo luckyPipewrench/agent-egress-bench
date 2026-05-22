@@ -28,7 +28,7 @@ Run your runner and save the JSONL output. How you share results is up to you. S
 - A separate GitHub repo with versioned results (tagged per tool version)
 - A blog post walking through your results
 
-**Do not submit results to this repo.** This repo contains attack cases, not tool scores. There is no leaderboard. Each vendor publishes independently.
+**Do not submit Gauntlet leaderboard results to this repo.** This repo contains attack cases, scoring methodology, and optional receipt profiles under `profiles/`. There is no in-repo leaderboard. Each vendor publishes and owns its own results.
 
 When publishing, include:
 - Your tool name and version
