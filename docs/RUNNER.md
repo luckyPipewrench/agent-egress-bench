@@ -121,6 +121,7 @@ Flags:
 
 - `--emit-receipt-profile <path>`: write the profile JSON to `<path>`. Default off.
 - `--receipt-verifier-file <path>`: optional JSON file describing the tool's receipt verifier (shape: the `verifier` object in the receipt-scoring schema). Omitted means "no verifier shipped" and the runner emits a degraded honest verifier block.
+- `--multifile-cases <dir>`: optional directory of multi-file MCP-drift cases. The reference profile uses `cases/mcp-drift`; omitting this flag runs only the single-file JSON corpus.
 
 Reproducibility:
 
@@ -146,6 +147,7 @@ go run ./runner \
   --scan-token bench-test-token \
   --mcp-cmd "pipelock mcp proxy --config examples/pipelock/pipelock-benchmark.yaml -- cat" \
   --cases ./cases \
+  --multifile-cases ./cases/mcp-drift \
   --profile examples/pipelock/tool-profile.json \
   --output /tmp/gauntlet.json \
   --emit-receipt-profile /tmp/pipelock.json \

@@ -8,8 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Multi-file MCP-drift case runner support:** new `--multifile-cases <dir>` flag on the gauntlet runner loads each `cases/mcp-drift/<id>/` directory, converts the `before.json` / `after.json` snapshot pair into a four-message JSON-RPC sequence, and replays the sequence through a single MCP session against the running tool. The verdict on the second `tools/list` response is what scores. Closes the coverage gap previously called out in `profiles/README.md`.
+- **Receipt-scoring corpus hash covers multi-file cases.** `computeCorpusSHA256` includes `case.yaml` plus the three JSON snapshots per multi-file case when the multi-file flag is set, so `corpus_sha256` in the emitted profile pins the full case surface the runner exercised.
+- **Pipelock receipt profile regenerated against the full corpus.** `profiles/pipelock.json` now scores all 155 applicable rows (151 single-file + 4 mcp-drift): 115 of 116 malicious blocked, 0 false positives on 39 benign baselines. `mcp-drift-collusion-004` is the one miss, recorded honestly as `blocked: no` per the rubric.
 - **Gauntlet scoring program:** four independent metrics (containment, false positive rate, detection, evidence) with an 80% containment gate. See `docs/gauntlet.md`.
-- **Gauntlet runner CLI** (`runner/`): Go binary that runs all cases against a tool profile, computes scores, and outputs a machine-readable summary. Dry-run mode for v1. Zero external dependencies.
+- **Gauntlet runner CLI** (`runner/`): Go binary that runs all cases against a tool profile, computes scores, and outputs a machine-readable summary. Dry-run mode for v1.
 - **AI PR review workflow** (`/review` and `/review deep`): slash-command triggered code review via GitHub Actions.
 - 70 new test cases across 8 new categories: a2a-message (10), a2a-agent-card (7), websocket-dlp (8), ssrf-bypass (9), encoding-evasion (9), shell-obfuscation (7), crypto-financial (8), false-positive (12)
 - New input types: `a2a_message`, `a2a_agent_card`, `websocket_frame`
@@ -21,7 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Corpus expanded from 73 to 143 cases (106 malicious, 37 benign)
+- Corpus expanded from 73 to 155 cases: 151 single-file JSON cases plus 4 multi-file MCP-drift fixtures
 - Pipelock reference profile updated with new capability claims
 - Runner template profile updated with new supports fields
 - Tool profile schema: 5 new supports fields (a2a, websocket_frame_scanning, a2a_scanning, shell_analysis, dns_rebinding_fixture)

@@ -89,7 +89,7 @@ func TestBuildToolSupportAllSupported(t *testing.T) {
 }
 
 func TestComputeCorpusSHA256NonexistentDir(t *testing.T) {
-	_, err := computeCorpusSHA256("/nonexistent/dir")
+	_, err := computeCorpusSHA256("/nonexistent/dir", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent directory")
 	}
@@ -105,7 +105,7 @@ func TestWriteSummaryBadPath(t *testing.T) {
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, 0, "/nonexistent/dir", nil, "/nonexistent/profile.json")
+	_, err := buildSummary(p, nil, nil, nil, 0, "/nonexistent/dir", "", nil, "/nonexistent/profile.json")
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -122,7 +122,7 @@ func TestComputeCorpusSHA256(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hash1, err := computeCorpusSHA256(dir)
+	hash1, err := computeCorpusSHA256(dir, "")
 	if err != nil {
 		t.Fatalf("computeCorpusSHA256: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestComputeCorpusSHA256(t *testing.T) {
 	}
 
 	// Same files = same hash.
-	hash2, err := computeCorpusSHA256(dir)
+	hash2, err := computeCorpusSHA256(dir, "")
 	if err != nil {
 		t.Fatalf("computeCorpusSHA256: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestComputeCorpusSHA256(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"changed"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	hash3, err := computeCorpusSHA256(dir)
+	hash3, err := computeCorpusSHA256(dir, "")
 	if err != nil {
 		t.Fatalf("computeCorpusSHA256: %v", err)
 	}
