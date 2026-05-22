@@ -218,6 +218,7 @@ AgentShield-benchmark is the closest comparable, but operates at the application
 
 - [SPEC.md](docs/SPEC.md): case schema, field definitions, enums, payload formats
 - [SCORING.md](docs/SCORING.md): pass/fail/not_applicable/error scoring model
+- [RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md): receipt evidence scoring axis for independently verifiable artifacts
 - [gauntlet.md](docs/gauntlet.md): Gauntlet scoring methodology (containment, FP rate, detection, evidence)
 - [RUNNER.md](docs/RUNNER.md): runner output contract and verdict mapping
 - [ADOPTION.md](docs/ADOPTION.md): guide for vendors adopting the benchmark

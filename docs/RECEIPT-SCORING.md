@@ -1,16 +1,16 @@
 # Receipt-Scoring Axis (v1)
 
 > **Status:** v1 design. Complementary to `docs/SCORING.md`. Where SCORING.md
-> tracks whether a tool produced the expected verdict on a network case, this
+> tracks whether a tool produced the expected verdict on a benchmark case, this
 > file tracks whether the tool produced **signed, independently-verifiable
 > evidence** of that verdict. Both axes are per-tool profiles. Neither
 > axis is a ranking.
 
 ## Why a receipt axis
 
-A tool that blocks an attack but produces no evidence is operationally
-indistinguishable from a tool that logged the attack without blocking. For
-a procurement reviewer or auditor, the question that matters is:
+A tool that blocks an attack but produces no durable evidence is hard to
+distinguish later from a tool that only logged the attack. For a procurement
+reviewer or auditor, the question that matters is:
 
 > Did the tool both stop the attack and emit a signed artifact a third
 > party can verify offline without trusting the vendor?
@@ -35,10 +35,11 @@ The five dimensions are independent. A tool can score `blocked=yes` and
 `receipt_independently_verifiable=no` if the receipt format only verifies
 inside the vendor's own stack.
 
-## Profile format
+## Receipt-profile format
 
-A tool publishes its profile as a JSON file in the
-`profiles/` directory:
+A tool can publish a receipt profile as a JSON file in the `profiles/`
+directory. This is separate from the runner capability profile described
+in `docs/RUNNER.md` and `schemas/tool-profile.schema.json`.
 
 ```json
 {
@@ -72,16 +73,15 @@ A tool publishes its profile as a JSON file in the
 }
 ```
 
-A profile is published by the tool's maintainer, not by this corpus.
-The corpus does not certify or audit profiles. A relying party reads
-profiles directly.
+A receipt profile is published by the tool's maintainer, not by this
+corpus. The corpus does not certify or audit profiles. A relying party
+reads profiles directly and reproduces them before trusting them.
 
 ## What this corpus provides
 
 - The case set (`cases/`) the profiles score against.
-- The receipt conformance corpus (`receipts/v0/conformance/`) any
-  receipt the tool emits must pass before `receipt_independently_verifiable=yes`
-  can honestly be claimed.
+- The receipt conformance corpus (`receipts/v0/conformance/`) for tools
+  that emit the bench's v0 receipt format.
 - This rubric document.
 - A `profiles/` directory where tool maintainers contribute their own
   profile artifacts.
@@ -143,17 +143,23 @@ The strongest dimension. A `yes` requires:
    parameter.
 4. The verifier's receipts conform to a published schema with a
    public conformance corpus.
-5. At least one independently-authored verifier (different organization,
-   different repo) reaches the same accept/reject decision on the same
-   inputs.
+5. Reproduction steps are public enough that a relying party can run the
+   verifier over the published receipts and reach the same accept/reject
+   decision.
 
 `partial` is allowed for receipts that pass internal consistency checks
 (hash chain valid, schema valid) but where no signer key is pinned
-because the tool does not publish one. This is the
-`self_consistent_only` posture in Pipelock's verifier verdict enum.
+because the tool does not publish one.
 
 `no` is the default for any receipt that cannot be verified without
 trusting the vendor's dashboard.
+
+Tools that emit the bench's v0 receipt format should also pass the
+fixtures in `receipts/v0/conformance/` before claiming
+`receipt_independently_verifiable=yes` for those receipts. Tools that
+emit a different format need their own public schema and conformance
+corpus; the claim is still allowed, but the evidence must be reproducible
+without vendor-side services.
 
 ### `false_positive`
 
@@ -176,31 +182,27 @@ high.
 
 ## Publishing a profile
 
-A tool maintainer publishes their profile by submitting a pull request
+A tool maintainer publishes their receipt profile by submitting a pull request
 to this repo adding `profiles/<tool>.json` and (optionally) a `notes.md`
 sibling describing reproduction steps. The PR is reviewed for:
 
-- Profile JSON validates against the published schema (forthcoming
-  `profiles/profile.schema.json`).
+- Profile JSON validates against the published receipt-profile schema
+  once that schema exists under `schemas/`.
 - Per-case results reference real case IDs in `cases/`.
 - The verifier URL, license, and exit-code contract are accurate.
 
 The PR is not reviewed for whether the tool "passes" anything. There
 is nothing to pass. The profile is the published evidence.
 
-## Reference profile: Pipelock
+## Reference and examples
 
-A Pipelock profile lives at `profiles/pipelock.json` and serves as the
-reference shape. Pipelock claims `yes` on all five dimensions for the
-receipt-bearing cases and references the public Audit Packet v0 schema
-plus the four reference verifiers in Go, TypeScript, Rust, and Python.
-The profile is reproducible: a third party clones this repo, runs the
-Pipelock runner over `cases/`, and computes the same per-case values.
+This repo may include example receipt profiles so maintainers can copy
+the shape, but examples are not privileged. A reference runner in
+`examples/` does not give that tool a special scoring position.
 
-If any other tool publishes a profile with `receipt_independently_verifiable=yes`
-that does not match all five criteria above, the profile is wrong and
-the relying party should reject it. The corpus does not enforce this;
-relying parties do.
+If a tool publishes a profile with `receipt_independently_verifiable=yes`
+that does not match the criteria above, the relying party should reject
+that specific claim. The corpus does not enforce this; relying parties do.
 
 ## What this rubric is for
 
@@ -214,9 +216,8 @@ marketing claim.
 
 ## Next steps
 
-- `profiles/profile.schema.json`: JSON Schema for profile validation.
-- `profiles/pipelock.json`: reference profile generated from a Pipelock
-  runner pass over `cases/`.
+- `schemas/receipt-profile.schema.json`: JSON Schema for receipt-profile
+  validation.
 - `profiles/EXAMPLE.json`: a template profile showing the shape with
   fake values.
 - Integration with `runner/main.go` so it can emit a draft profile
