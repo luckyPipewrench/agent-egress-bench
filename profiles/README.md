@@ -73,6 +73,16 @@ The PR is reviewed for:
 The PR is not reviewed for whether the tool "passes" anything. There is
 nothing to pass. The profile is the published evidence.
 
+## Coverage scope
+
+The reference runner exercises the 151 single-file cases under
+[`../cases/`](../cases/). The 4 multi-file cases in
+[`../cases/mcp-drift/`](../cases/mcp-drift/) (12 JSON fixture files
+total: `before.json`, `after.json`, `expected.json` per case) require a
+temporal before-then-after MCP-session replay and a different harness;
+they are out of scope for the single-file runner today. A multi-file
+harness and a companion profile covering those 4 cases is future work.
+
 ## Files in this directory
 
 - [`pipelock.json`](pipelock.json): Pipelock's receipt-scoring profile,

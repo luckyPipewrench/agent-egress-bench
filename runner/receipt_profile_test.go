@@ -199,8 +199,14 @@ func TestReceiptProfile_WriteIsByteDeterministic(t *testing.T) {
 	if err := writeReceiptProfile(rp, b); err != nil {
 		t.Fatalf("writeReceiptProfile b: %v", err)
 	}
-	aData, _ := os.ReadFile(a)
-	bData, _ := os.ReadFile(b)
+	aData, err := os.ReadFile(a)
+	if err != nil {
+		t.Fatalf("read a: %v", err)
+	}
+	bData, err := os.ReadFile(b)
+	if err != nil {
+		t.Fatalf("read b: %v", err)
+	}
 	if string(aData) != string(bData) {
 		t.Fatalf("two writes of the same profile produced different bytes")
 	}
