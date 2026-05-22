@@ -48,6 +48,18 @@ const (
 	NAUnsupportedTransport NAKind = "unsupported_transport"
 )
 
+// multiFileCaseCategories lists case-directory names that use the multi-file
+// case format (per-case directory with case.yaml + before.json + after.json
+// + expected.json + notes.md). The single-JSON runner and corpus hasher skip
+// these — the multi-file schema is documented in each directory's README.md.
+var multiFileCaseCategories = map[string]bool{
+	"mcp-drift": true,
+}
+
+func isMultiFileCaseDir(name string) bool {
+	return multiFileCaseCategories[name]
+}
+
 // loadCases walks a directory recursively and loads all .json files as Cases.
 func loadCases(dir string) ([]Case, error) {
 	var cases []Case
@@ -55,6 +67,10 @@ func loadCases(dir string) ([]Case, error) {
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		// Skip multi-file case directories — they use a different schema.
+		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
+			return filepath.SkipDir
 		}
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
 			return nil

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "action_record": {
+    "version": 1,
+    "action_id": "<vendor-supplied UUIDv7>",
+    "action_type": "read",
+    "timestamp": "<vendor-supplied RFC 3339>",
+    "principal": "<vendor-supplied>",
+    "actor": "<vendor-supplied>",
+    "delegation_chain": ["<vendor-supplied>"],
+    "target": "mcp://notes-server/tools/list",
+    "side_effect_class": "none",
+    "reversibility": "full",
+    "policy_hash": "<vendor-supplied>",
+    "verdict": "block",
+    "transport": "mcp_stdio",
+    "layer": "mcp_chain_detection",
+    "pattern": "cross_server_toxic_composition",
+    "severity": "critical",
+    "intent": "save_note_references_read_file_with_sensitive_path",
+    "chain_prev_hash": "<vendor-supplied>",
+    "chain_seq": 0,
+    "data_classes_in": ["filesystem_secret"],
+    "data_classes_out": ["external_write"]
+  },
+  "signature": "<vendor-supplied>",
+  "signer_key": "<vendor-supplied>"
+}
