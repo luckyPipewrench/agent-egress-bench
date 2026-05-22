@@ -24,6 +24,8 @@ func main() {
 	mcpCmd := flag.String("mcp-cmd", "", "MCP proxy command for MCP/A2A/shell cases (e.g. 'pipelock mcp proxy --config bench.yaml -- cat')")
 	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
+	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile.schema.json) to this path alongside the Gauntlet summary")
+	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
 
 	flag.Parse()
 
@@ -32,13 +34,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile string) error {
+	// Load receipt verifier early so a malformed file fails fast before the
+	// expensive corpus run. An empty path yields a "no verifier" block.
+	receiptVerifier, err := loadReceiptVerifier(receiptVerifierFile)
+	if err != nil {
+		return err
+	}
+
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -199,6 +208,23 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		return err
 	}
 
+	// Emit the receipt-scoring profile if requested. Reuses corpus and
+	// tool-profile hashes already computed for the gauntlet summary so
+	// repeated runs are byte-reproducible against the same inputs.
+	if emitReceiptProfile != "" {
+		rp := buildReceiptProfile(
+			profile,
+			applicableResults,
+			receiptVerifier,
+			summary.CorpusVersion,
+			summary.CorpusSHA256,
+			summary.ToolProfileSHA256,
+		)
+		if err := writeReceiptProfile(rp, emitReceiptProfile); err != nil {
+			return err
+		}
+	}
+
 	// Human-readable summary to stderr.
 	_, _ = fmt.Fprintf(os.Stderr, "\n--- Gauntlet Summary ---\n")
 	_, _ = fmt.Fprintf(os.Stderr, "Tool:       %s %s\n", profile.Tool, profile.ToolVersion)
@@ -211,6 +237,9 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 
 	_, _ = fmt.Fprintf(os.Stderr, "Sufficient:       %v\n", summary.Sufficient)
 	_, _ = fmt.Fprintf(os.Stderr, "Summary written:  %s\n", outputPath)
+	if emitReceiptProfile != "" {
+		_, _ = fmt.Fprintf(os.Stderr, "Receipt profile:  %s\n", emitReceiptProfile)
+	}
 
 	return nil
 }

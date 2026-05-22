@@ -185,6 +185,15 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		}
 	}
 
+	// Refresh the read deadline so the close-frame read gets a full timeout
+	// budget independent of whatever time the dial, upgrade, and frame
+	// writes consumed. Without this, multi-fragment cases flake when the
+	// dial + write phase eats most of the original deadline before pipelock
+	// has finished reassembling fragments and emitting the close.
+	if deadlineErr := conn.SetReadDeadline(time.Now().Add(timeout)); deadlineErr != nil {
+		return Result{Err: fmt.Errorf("case %s: ws read deadline: %w", c.ID, deadlineErr)}
+	}
+
 	opcode, payload, err := readWebSocketFrame(br)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {

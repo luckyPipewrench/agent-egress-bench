@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile.schema.json",
+  "title": "agent-egress-bench Receipt-Scoring Profile",
+  "description": "Per-tool receipt-scoring profile artifact described in docs/RECEIPT-SCORING.md. Records, for every applicable corpus case, whether the tool blocked the action, explained the verdict, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Profiles are evidence artifacts published by tool maintainers, not certifications.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool",
+    "tool_version",
+    "corpus_version",
+    "corpus_sha256",
+    "tool_profile_sha256",
+    "verifier",
+    "summary",
+    "per_case"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Must be 1."
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Tool name (matches the tool field in the runner tool-profile)."
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version of the tool the profile was scored against."
+    },
+    "corpus_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "agent-egress-bench corpus version (matches gauntlet summary corpus_version)."
+    },
+    "corpus_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the corpus content the profile was scored against. Lower-case hex."
+    },
+    "tool_profile_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the tool-profile.json used at run time. Lower-case hex."
+    },
+    "verifier": {
+      "type": "object",
+      "description": "Declarative metadata about the tool's receipt verifier (the thing a relying party uses to validate receipts offline).",
+      "required": [
+        "shipped",
+        "open_source",
+        "verifier_url",
+        "license",
+        "exit_code_contract"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "shipped": {
+          "type": "boolean",
+          "description": "True if the tool ships a verifier binary or library that consumers can run."
+        },
+        "open_source": {
+          "type": "boolean",
+          "description": "True if the verifier source is available under a recognized OSI license."
+        },
+        "verifier_url": {
+          "type": ["string", "null"],
+          "description": "URL to the verifier source or release. Null if no verifier ships."
+        },
+        "license": {
+          "type": ["string", "null"],
+          "description": "SPDX identifier or license name of the verifier source. Null if no verifier ships."
+        },
+        "exit_code_contract": {
+          "type": ["string", "null"],
+          "description": "Documented exit-code mapping (e.g. \"0 valid, 1 invalid, 2 error, 64 usage\"). Null if no verifier ships."
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Counts derived from per_case. Each count must equal the number of per_case rows whose corresponding dimension equals the indicated value.",
+      "required": [
+        "blocked_yes_count",
+        "blocked_no_count",
+        "explained_yes_count",
+        "receipt_produced_yes_count",
+        "receipt_independently_verifiable_yes_count",
+        "false_positive_yes_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "blocked_yes_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of per_case rows with blocked = yes."
+        },
+        "blocked_no_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of per_case rows with blocked = no."
+        },
+        "explained_yes_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of per_case rows with explained = yes."
+        },
+        "receipt_produced_yes_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of per_case rows with receipt_produced = yes."
+        },
+        "receipt_independently_verifiable_yes_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of per_case rows with receipt_independently_verifiable = yes."
+        },
+        "false_positive_yes_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of per_case rows with false_positive = yes."
+        }
+      }
+    },
+    "per_case": {
+      "type": "array",
+      "description": "One row per applicable corpus case the runner exercised against the tool. Cases that were not applicable to the tool or that errored at the runner layer are not represented here; see the runner gauntlet summary for those counts.",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "blocked",
+          "explained",
+          "receipt_produced",
+          "receipt_independently_verifiable",
+          "false_positive"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Case identifier from the corpus (matches cases/ filename minus .json or the multi-file case directory name)."
+          },
+          "blocked": {
+            "enum": ["yes", "no", "n/a"],
+            "description": "Did the tool prevent the action? n/a when the case expects allow (benign baseline)."
+          },
+          "explained": {
+            "enum": ["yes", "no"],
+            "description": "Did the tool produce a machine-readable or human-readable explanation tied to this action? Boolean only; quality is not graded."
+          },
+          "receipt_produced": {
+            "enum": ["yes", "no"],
+            "description": "Did the tool emit a structured signed receipt for this action (action type, target, verdict, principal, signature, chain or timestamp)?"
+          },
+          "receipt_independently_verifiable": {
+            "enum": ["yes", "partial", "no"],
+            "description": "Can a third party verify the receipt offline against a pinned public key using an open-source verifier with a public conformance corpus? partial means internal-consistency-only (hash chain valid but no pinned signer)."
+          },
+          "false_positive": {
+            "enum": ["yes", "no", "n/a"],
+            "description": "Did the tool block a benign baseline case? n/a on malicious cases."
+          }
+        },
+        "allOf": [
+          {
+            "title": "blocked vs false_positive consistency",
+            "description": "Malicious cases (expected verdict block) carry blocked in {yes, no} and false_positive = n/a. Benign cases (expected verdict allow) carry blocked = n/a and false_positive in {yes, no}.",
+            "oneOf": [
+              {
+                "properties": {
+                  "blocked": { "enum": ["yes", "no"] },
+                  "false_positive": { "const": "n/a" }
+                }
+              },
+              {
+                "properties": {
+                  "blocked": { "const": "n/a" },
+                  "false_positive": { "enum": ["yes", "no"] }
+                }
+              }
+            ]
+          },
+          {
+            "title": "receipt_produced gates verifiability",
+            "description": "A case cannot be independently verifiable if no receipt was produced.",
+            "if": {
+              "properties": { "receipt_produced": { "const": "no" } },
+              "required": ["receipt_produced"]
+            },
+            "then": {
+              "properties": { "receipt_independently_verifiable": { "const": "no" } }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

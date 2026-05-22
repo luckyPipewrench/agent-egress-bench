@@ -112,3 +112,49 @@ cd validate && go build -o aeb-validate .
 ```
 
 This checks field presence, enum validity, and score consistency (e.g., `actual_verdict == expected_verdict` should produce `score: "pass"`).
+
+## Receipt-Scoring Profile (optional)
+
+The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Output validates against [`schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).
+
+Flags:
+
+- `--emit-receipt-profile <path>`: write the profile JSON to `<path>`. Default off.
+- `--receipt-verifier-file <path>`: optional JSON file describing the tool's receipt verifier (shape: the `verifier` object in the receipt-scoring schema). Omitted means "no verifier shipped" and the runner emits a degraded honest verifier block.
+
+Reproducibility:
+
+- Per-case rows are sorted by `case_id` and the runner emits no timestamps in the profile. Repeated runs against the same corpus and tool profile produce byte-identical output. A relying party can reproduce a published profile by running the same command and `sha256sum`-comparing the result.
+
+Example (reproduces `profiles/pipelock.json`):
+
+```bash
+# 1. Start a benchmark-configured Pipelock instance. The bench config
+#    listens on 127.0.0.1:18899 (proxy), :9990 (scan API), and enables
+#    every scanner with action=block.
+pipelock run \
+  --config examples/pipelock/pipelock-benchmark.yaml \
+  --listen 127.0.0.1:18899 &
+
+# 2. Run the corpus through it, emitting both the gauntlet summary and
+#    the receipt-scoring profile. The --mcp-cmd is required for MCP
+#    cases; omitting it would skip them and break byte reproducibility.
+go run ./runner \
+  --adapter proxy \
+  --proxy-addr 127.0.0.1:18899 \
+  --scan-addr 127.0.0.1:9990 \
+  --scan-token bench-test-token \
+  --mcp-cmd "pipelock mcp proxy --config examples/pipelock/pipelock-benchmark.yaml -- cat" \
+  --cases ./cases \
+  --profile examples/pipelock/tool-profile.json \
+  --output /tmp/gauntlet.json \
+  --emit-receipt-profile /tmp/pipelock.json \
+  --receipt-verifier-file examples/pipelock/receipt-verifier.json \
+  --timeout 15s
+
+# 3. Compare byte-for-byte with the committed artifact.
+sha256sum /tmp/pipelock.json profiles/pipelock.json
+diff -q /tmp/pipelock.json profiles/pipelock.json
+```
+
+A mismatch means the corpus drifted, the tool drifted, or the runner changed. A relying party reproducing a profile should treat a mismatch as a signal to investigate, not to trust either side blindly.
