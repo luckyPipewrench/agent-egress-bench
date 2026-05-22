@@ -44,8 +44,13 @@ func TestLoadMultiFileCases_ValidFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMultiFileCases: %v", err)
 	}
-	if len(cases) != 4 {
-		t.Fatalf("expected 4 mcp-drift cases, got %d", len(cases))
+	// Corpus is additive: existing case IDs must continue to load with
+	// non-empty snapshots, but new mcp-drift cases may be added over time.
+	// Assert the floor (>= 4) and check each known ID by map lookup rather
+	// than by positional iteration so a fifth case in the future does not
+	// fail this test.
+	if len(cases) < 4 {
+		t.Fatalf("expected at least 4 mcp-drift cases, got %d", len(cases))
 	}
 	wantIDs := []string{
 		"mcp-drift-benign-001",
@@ -53,15 +58,21 @@ func TestLoadMultiFileCases_ValidFixtures(t *testing.T) {
 		"mcp-drift-rugpull-desc-002",
 		"mcp-drift-rugpull-param-003",
 	}
-	for i, want := range wantIDs {
-		if cases[i].ID != want {
-			t.Errorf("case[%d].ID = %q, want %q", i, cases[i].ID, want)
+	byID := make(map[string]MultiFileCase, len(cases))
+	for _, c := range cases {
+		byID[c.ID] = c
+	}
+	for _, want := range wantIDs {
+		c, ok := byID[want]
+		if !ok {
+			t.Errorf("missing expected case ID %q", want)
+			continue
 		}
-		if cases[i].BeforeJSON == nil {
-			t.Errorf("case[%d].BeforeJSON nil for %s", i, cases[i].ID)
+		if c.BeforeJSON == nil {
+			t.Errorf("%s BeforeJSON is nil", want)
 		}
-		if cases[i].AfterJSON == nil {
-			t.Errorf("case[%d].AfterJSON nil for %s", i, cases[i].ID)
+		if c.AfterJSON == nil {
+			t.Errorf("%s AfterJSON is nil", want)
 		}
 	}
 }
