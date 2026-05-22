@@ -15,12 +15,12 @@ agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egres
 |------|-------|
 | Repo | `luckyPipewrench/agent-egress-bench` |
 | License | Apache 2.0 |
-| Go | 1.24+ (validator only) |
+| Go | 1.24+ validator, 1.25+ runner |
 | Validator | stdlib-only Go, zero external deps |
 | Spec | `docs/SPEC.md` (source of truth for case format) |
 | Scoring | `docs/SCORING.md` (pass/fail) + `docs/gauntlet.md` (4-dimension scoring) |
 | Runner contract | `docs/RUNNER.md` |
-| Gauntlet runner | `runner/` (stdlib-only Go, zero deps) |
+| Gauntlet runner | `runner/` (Go module with fixture and multi-file parser deps) |
 | OWASP mapping | `docs/OWASP-MAPPING.md` |
 
 ## Build, Test, Validate
@@ -56,7 +56,7 @@ cases/
   crypto-financial/ Wallet addresses, seed phrases, credit cards
   false-positive/   Benign traffic that must not be blocked
 validate/           Go validator (stdlib-only, zero deps)
-runner/             Gauntlet scoring runner CLI (stdlib-only, zero deps)
+runner/             Gauntlet scoring runner CLI
 examples/           Reference runner implementations
   pipelock/         Pipelock reference runner (harness.sh, config, tool-profile)
 docs/               Spec, scoring, Gauntlet methodology, runner contract, OWASP mapping

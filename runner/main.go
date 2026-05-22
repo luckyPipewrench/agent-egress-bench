@@ -26,6 +26,7 @@ func main() {
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile.schema.json) to this path alongside the Gauntlet summary")
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
+	multiFileCases := flag.String("multifile-cases", "", "directory of multi-file MCP-drift cases (each subdirectory has case.yaml + before.json + after.json + expected.json). Driver replays before then after through a single MCP session and observes the verdict on the second tools/list response.")
 
 	flag.Parse()
 
@@ -34,13 +35,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -49,6 +50,23 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	cases, err := loadCases(casesDir)
 	if err != nil {
 		return err
+	}
+
+	// Load multi-file MCP-drift cases (cases/mcp-drift/<id>/{case.yaml, before.json,
+	// after.json, expected.json}). Each MultiFileCase is converted to a regular Case
+	// whose payload carries the four-message JSON-RPC sequence the mcp_stdio adapter
+	// already understands, so downstream scoring and receipt-profile code does not
+	// need to branch on case format. Cases are appended after the sorted single-file
+	// corpus; the receipt profile sorts per_case by case_id at emission time so
+	// ordering between the two sources does not affect byte-reproducibility.
+	if multiFileCases != "" {
+		mfCases, mfErr := loadMultiFileCases(multiFileCases)
+		if mfErr != nil {
+			return mfErr
+		}
+		for _, mfc := range mfCases {
+			cases = append(cases, mfc.toCase())
+		}
 	}
 
 	// Build case lookup by ID for category scoring.
@@ -192,7 +210,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	}
 
 	// Build and write summary.
-	summary, err := buildSummary(profile, cases, applicableResults, naReasons, errorCount, casesDir, casesByID, profilePath)
+	summary, err := buildSummary(profile, cases, applicableResults, naReasons, errorCount, casesDir, multiFileCases, casesByID, profilePath)
 	if err != nil {
 		return err
 	}

@@ -58,16 +58,22 @@ type ToolSupport struct {
 	UnsupportedRequires   []string `json:"unsupported_requires"`
 }
 
-// computeCorpusSHA256 hashes all case file contents, sorted by path.
-func computeCorpusSHA256(casesDir string) (string, error) {
+// computeCorpusSHA256 hashes case-file contents across both the single-file
+// corpus rooted at casesDir and (optionally) the multi-file case directory
+// at multiFileDir. Files are sorted by absolute path before hashing so the
+// output is deterministic regardless of filesystem ordering. multiFileDir
+// may be empty: the single-file walker skips directories listed in
+// multiFileCaseCategories on its own, so the hash covers exactly the case
+// surface the runner loaded.
+func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
 	var paths []string
 
 	err := filepath.Walk(casesDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		// Skip multi-file case directories — they use a different schema and
-		// must not contribute to the single-file-corpus hash.
+		// Skip multi-file case directories on the single-file walk. The
+		// multiFileDir branch below picks them up under its own schema.
 		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
 			return filepath.SkipDir
 		}
@@ -79,6 +85,14 @@ func computeCorpusSHA256(casesDir string) (string, error) {
 	})
 	if err != nil {
 		return "", fmt.Errorf("walking cases for hash: %w", err)
+	}
+
+	if multiFileDir != "" {
+		mfPaths, mfErr := computeMultiFileSHA256Paths(multiFileDir)
+		if mfErr != nil {
+			return "", mfErr
+		}
+		paths = append(paths, mfPaths...)
 	}
 
 	sort.Strings(paths)
@@ -157,11 +171,11 @@ func buildSummary(
 	applicableResults []CaseResult,
 	naReasons map[NAKind]int,
 	errorCount int,
-	casesDir string,
+	casesDir, multiFileDir string,
 	casesByID map[string]Case,
 	profilePath string,
 ) (GauntletSummary, error) {
-	corpusSHA, err := computeCorpusSHA256(casesDir)
+	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDir)
 	if err != nil {
 		return GauntletSummary{}, err
 	}

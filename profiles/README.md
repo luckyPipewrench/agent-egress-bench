@@ -76,12 +76,15 @@ nothing to pass. The profile is the published evidence.
 ## Coverage scope
 
 The reference runner exercises the 151 single-file cases under
-[`../cases/`](../cases/). The 4 multi-file cases in
+[`../cases/`](../cases/) plus the 4 multi-file cases in
 [`../cases/mcp-drift/`](../cases/mcp-drift/) (12 JSON fixture files
-total: `before.json`, `after.json`, `expected.json` per case) require a
-temporal before-then-after MCP-session replay and a different harness;
-they are out of scope for the single-file runner today. A multi-file
-harness and a companion profile covering those 4 cases is future work.
+total: `before.json`, `after.json`, `expected.json` per case). Multi-file
+cases run via the runner's `--multifile-cases` flag, which loads each case
+directory, converts the before/after snapshot pair into a four-message
+JSON-RPC sequence (two `tools/list` requests interleaved with the two
+snapshots), and replays the sequence through a single MCP session against
+the running tool. The verdict on the second response is what the per-case
+row records.
 
 ## Files in this directory
 
