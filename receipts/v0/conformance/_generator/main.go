@@ -179,8 +179,41 @@ func foreignKP() (ed25519.PublicKey, ed25519.PrivateKey) {
 	return pub, priv
 }
 
-// baseRecord returns an action record with the common fields filled in. Test
-// authors override the verdict-specific fields per fixture.
+// sideEffectFromMethod mirrors pipelock's internal/receipt/classify.go.
+// Keep this in sync with the canonical mapping: GET/HEAD/OPTIONS/TRACE/CONNECT
+// are external_read, POST/PUT/PATCH/DELETE are external_write.
+func sideEffectFromMethod(method string) string {
+	switch method {
+	case "GET", "HEAD", "OPTIONS", "TRACE", "CONNECT":
+		return "external_read"
+	case "POST", "PUT", "PATCH", "DELETE":
+		return "external_write"
+	default:
+		return "none"
+	}
+}
+
+// reversibilityFromMethod mirrors pipelock's internal/receipt/classify.go.
+// DELETE is irreversible, POST/PUT/PATCH are compensatable, reads are full.
+func reversibilityFromMethod(method string) string {
+	switch method {
+	case "GET", "HEAD", "OPTIONS", "TRACE", "CONNECT":
+		return "full"
+	case "DELETE":
+		return "irreversible"
+	case "POST", "PUT", "PATCH":
+		return "compensatable"
+	default:
+		return "unknown"
+	}
+}
+
+// baseRecord returns an action record with the common fields filled in. The
+// side_effect_class and reversibility defaults are method-derived to match
+// what pipelock's classify.go emits in production. Test authors override the
+// verdict-specific fields per fixture and may override side_effect_class or
+// reversibility when the fixture intentionally models a non-canonical policy
+// classification.
 func baseRecord(seq uint64, prev string, ts time.Time, actionType, verdict, target, transport, method string) ActionRecord {
 	return ActionRecord{
 		Version:         actionRecordVersion,
@@ -191,8 +224,8 @@ func baseRecord(seq uint64, prev string, ts time.Time, actionType, verdict, targ
 		Actor:           "agent:conformance-runner",
 		DelegationChain: []string{"test-policy-v1", "test-grant"},
 		Target:          target,
-		SideEffectClass: "external_write",
-		Reversibility:   "compensatable",
+		SideEffectClass: sideEffectFromMethod(method),
+		Reversibility:   reversibilityFromMethod(method),
 		PolicyHash:      "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		Verdict:         verdict,
 		Transport:       transport,
@@ -344,16 +377,18 @@ func buildGolden() ([]fixture, error) {
 
 	// 3. block + DLP — AWS key in URL query.
 	{
-		ar := baseRecord(0, genesisHash, freshTime, "write", "block",
+		// GET with secrets in the query string is still ActionRead under
+		// pipelock's ClassifyHTTP. The exfiltration nature is captured by
+		// verdict=block + layer=dlp + pattern=api_key_aws, not by
+		// reclassifying the method.
+		ar := baseRecord(0, genesisHash, freshTime, "read", "block",
 			"https://attacker.example.net/exfil?key=AKIA...REDACTED", "https", "GET")
 		ar.Layer = "dlp"
 		ar.Pattern = "api_key_aws"
 		ar.Severity = "critical"
-		ar.SideEffectClass = "external_write"
-		ar.Reversibility = "irreversible"
 		if f, err := makeSingle("03-block-dlp-aws-key", "golden", priv, pubHex, ar,
 			"Block on AWS access key detected in URL query string.",
-			"Verifier MUST accept the signed receipt — the verdict is block, not allow, but the receipt itself is well-formed evidence of the block decision.",
+			"Verifier MUST accept the signed receipt. The verdict is block, not allow, but the receipt itself is well-formed evidence of the block decision.",
 		); err != nil {
 			return nil, err
 		} else {

@@ -6,6 +6,6 @@
   "description": "Plain allow on a benign HTTPS GET to an explicitly allowed host.",
   "expected_chain_length": 1,
   "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
-  "expected_root_hash": "a021c04afca0d8f32a03f9c52623ab4c716e86ea8559598e99cbf4b5f35be1ea",
+  "expected_root_hash": "34f2780dcb510c03f55fc31387c993066fad23e328a2bf5f64b630b8d58a0dfb",
   "notes": "Smoke test: clean outcome with no DLP layer activity. Verifier MUST accept and surface signer_key."
 }

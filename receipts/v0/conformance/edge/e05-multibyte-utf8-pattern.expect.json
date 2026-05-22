@@ -6,6 +6,6 @@
   "description": "Multi-byte UTF-8 in the pattern label (free-form field).",
   "expected_chain_length": 1,
   "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
-  "expected_root_hash": "39c8d3def8d69c48aef3cebb091998e95165cf410255cdc542d21f26d34932cc",
+  "expected_root_hash": "425e1d54defa76f7c28ad082a2eaa1222f9292ca94016a32fd2e7dba5e61987d",
   "notes": "Verifier MUST accept. Pattern labels are operator-defined — non-ASCII is legal. Verifiers that try to ASCII-normalize on read will corrupt the canonical bytes and break signature verification on re-serialization."
 }

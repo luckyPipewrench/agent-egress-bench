@@ -37,7 +37,7 @@ All fixtures are signed with a deterministic test key derived from
 
 ## Corpus layout
 
-```
+```text
 receipts/v0/conformance/
 ├── README.md             (this file)
 ├── _generator/           Reproducible generator + test-key material
@@ -53,8 +53,8 @@ receipts/v0/conformance/
 
 Each fixture is two files sharing a base name:
 
-- `<name>.json` — the receipt or chain (the input to the verifier)
-- `<name>.expect.json` — the expected verifier output
+- `<name>.json` for single-receipt fixtures or `<name>.jsonl` for chain fixtures (the input to the verifier). Chains are JSONL with one receipt per line; the generator writes the `.jsonl` extension whenever a fixture contains more than one linked receipt.
+- `<name>.expect.json` for the expected verifier output.
 
 ### `.expect.json` schema
 

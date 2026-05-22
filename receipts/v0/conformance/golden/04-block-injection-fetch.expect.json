@@ -6,6 +6,6 @@
   "description": "Block on prompt injection detected in a fetched web page.",
   "expected_chain_length": 1,
   "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
-  "expected_root_hash": "28813239597a42858bf8a400bab88c5d892bb400d104144064e892b39ebccdb8",
+  "expected_root_hash": "bad2727fa59622ca9c5287e057198039f2f51df87da0d44b5dca3f69492724aa",
   "notes": "Demonstrates a response-side layer firing on inbound content. Verifier MUST accept the receipt and surface layer=response_injection."
 }

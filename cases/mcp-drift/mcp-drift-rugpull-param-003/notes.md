@@ -51,4 +51,4 @@ do not silently regress the coverage.
 
 ## Source
 
-Hidden Layer MCP parameter-abuse research. OWASP ASI04 Supply Chain.
+synthetic: MCP parameter-abuse pattern derived from OWASP ASI04 supply-chain threat model.

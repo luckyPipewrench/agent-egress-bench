@@ -12,8 +12,8 @@
       "test-grant"
     ],
     "target": "https://newsletter.example.com/track?u=user-123",
-    "side_effect_class": "external_write",
-    "reversibility": "compensatable",
+    "side_effect_class": "external_read",
+    "reversibility": "full",
     "policy_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "verdict": "warn",
     "transport": "https",
@@ -24,6 +24,6 @@
     "chain_prev_hash": "genesis",
     "chain_seq": 0
   },
-  "signature": "ed25519:1131b286cfb4974beebca0741fdb6c9b4e28dd1a023c1b5dca869c955ced61026270758d96849d8d9b6bad39f85bd32beda87d7e9b824813a2f2e4ff1739850b",
+  "signature": "ed25519:0df6de77e5d228f5f7053dbf8c7c03eb92c79313255d81c4bc403b00fbd8a52e6ca9080f813ee5c7c8802ccec3ad6f8cce58bb4683840857ab20b3a7221d460c",
   "signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa"
 }

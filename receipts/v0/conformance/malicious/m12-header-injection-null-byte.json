@@ -12,8 +12,8 @@
       "test-grant"
     ],
     "target": "https://api.example.com/v1/data",
-    "side_effect_class": "external_write",
-    "reversibility": "compensatable",
+    "side_effect_class": "external_read",
+    "reversibility": "full",
     "policy_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "verdict": "allow",
     "transport": "https",
@@ -21,6 +21,6 @@
     "chain_prev_hash": "genesis",
     "chain_seq": 0
   },
-  "signature": "ed25519:a63de785138389d9aa3bc115e401482501b550b62459a2e9bb2516ffb45c172c67897c9931e0719ae571b62e3f95bfa51b366501606994b7c724a8aaaad8910a",
+  "signature": "ed25519:6e33e1aa8e1ebdef7893ce399230d9dfea403262356db5db4cc59e8a856a4454308bd2d74a24e1afcc8dfa8e492b9b906256f838580c0db6fffaed9c8a08b908",
   "signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa"
 }

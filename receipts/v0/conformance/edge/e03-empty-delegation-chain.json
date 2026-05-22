@@ -9,8 +9,8 @@
     "actor": "agent:conformance-runner",
     "delegation_chain": [],
     "target": "https://api.example.com/v1/data",
-    "side_effect_class": "external_write",
-    "reversibility": "compensatable",
+    "side_effect_class": "external_read",
+    "reversibility": "full",
     "policy_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "verdict": "allow",
     "transport": "https",
@@ -18,6 +18,6 @@
     "chain_prev_hash": "genesis",
     "chain_seq": 0
   },
-  "signature": "ed25519:33a26d86562ab2e11df7c1475dc4d4e6f2ed121396a7669cd7c6db2a59cb6db665fec5eda0efcbda043fda869d4b6ce88ee54cc2ac59ba67a8502588e1450d05",
+  "signature": "ed25519:f0cb524b91b44109c61308d86dd01369a52a77ce3faf1049aed66a74b999718d0f6a18f2d87b6fe794ebe01bb8a074645bfca23835fefa3d1a10f4d31ef45708",
   "signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa"
 }

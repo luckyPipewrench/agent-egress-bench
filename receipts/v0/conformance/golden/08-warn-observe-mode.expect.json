@@ -6,6 +6,6 @@
   "description": "Warn verdict in observe-mode: action allowed but flagged for review.",
   "expected_chain_length": 1,
   "expected_signer_key": "890726e93f89e773fb3b4298271245a69c1884fd1003846c3358b8b65a2288fa",
-  "expected_root_hash": "dfaaf3fa0c4f7cfef00fe2d0e305b2fbbbda793e2f416e8792561b427d2db977",
+  "expected_root_hash": "21edcecfebb0db7d610e14c0ce093cd98709d05cade584acd5e4eb35746354a2",
   "notes": "Verifier MUST accept and MUST NOT degrade to allow — the warn signal is the whole point of observe mode."
 }
