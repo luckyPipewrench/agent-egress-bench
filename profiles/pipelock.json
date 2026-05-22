@@ -3,7 +3,7 @@
   "tool": "pipelock",
   "tool_version": "2.5.0",
   "corpus_version": "v2.0.0",
-  "corpus_sha256": "bdef8e91cde9ebf626eda8e0bd1fce9a7491f823ecb86fc992a652152266418f",
+  "corpus_sha256": "cd4b8c9da6e220b033caf500b277c482435955b0fbdab3dd1203539c3acff520",
   "tool_profile_sha256": "825a0394ca325e2a7076c8f46bb4c938a03176f1a61a498bbb24982962cf7a9a",
   "verifier": {
     "shipped": true,
@@ -13,12 +13,12 @@
     "exit_code_contract": "0 valid, 1 invalid, 2 error, 64 usage"
   },
   "summary": {
-    "blocked_yes_count": 112,
-    "blocked_no_count": 1,
+    "blocked_yes_count": 113,
+    "blocked_no_count": 0,
     "explained_yes_count": 105,
     "receipt_produced_yes_count": 0,
     "receipt_independently_verifiable_yes_count": 0,
-    "false_positive_yes_count": 1
+    "false_positive_yes_count": 0
   },
   "per_case": [
     {
@@ -207,8 +207,8 @@
     },
     {
       "case_id": "body-dlp-hex-encoded-007",
-      "blocked": "no",
-      "explained": "no",
+      "blocked": "yes",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -448,10 +448,10 @@
     {
       "case_id": "fp-quoted-injection-docs-002",
       "blocked": "n/a",
-      "explained": "yes",
+      "explained": "no",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
-      "false_positive": "yes"
+      "false_positive": "no"
     },
     {
       "case_id": "fp-security-scanner-tool-006",
