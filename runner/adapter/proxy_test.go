@@ -207,6 +207,59 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 	}
 }
 
+// TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock covers the cross-message
+// scenario where the proxy forwards an upstream echo before deciding to close
+// the connection on a later client frame. The single-frame classifier this
+// test guards against would read the echo first and return allow even though
+// the proxy actually wrote a close frame after the echo.
+func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		// Read both client frames.
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read msg1: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read msg2: %v", err)
+		}
+		// Forward an echo of the first frame, then immediately write the
+		// close frame the proxy would send when its cross-message scanner
+		// fires on the second frame.
+		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo of msg1")); err != nil {
+			t.Fatalf("write echo: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xe8}, []byte("DLP violation")...)); err != nil {
+			t.Fatalf("write close: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	result := a.runWebSocketFrameViaProxy(Case{
+		ID:        "ws-block-after-echo",
+		Transport: "websocket",
+		InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url": "wss://example.com/ws",
+			"frames": []interface{}{
+				map[string]interface{}{"opcode": "text", "payload": "part1"},
+				map[string]interface{}{"opcode": "text", "payload": "part2"},
+			},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, err = %v, evidence = %+v — proxy wrote close after echo; runner must drain to the close frame instead of classifying on the first echo", result.Verdict, result.Err, result.Evidence)
+	}
+}
+
 func writeServerWebSocketFrame(w io.Writer, opcode int, payload []byte) error {
 	header := []byte{0x80 | byte(opcode)}
 	if len(payload) < 126 {
