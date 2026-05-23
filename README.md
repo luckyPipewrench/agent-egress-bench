@@ -106,7 +106,7 @@ cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
   --output /tmp/gauntlet.json
 ```
 
-Output is JSONL (one result per case) plus a Gauntlet summary JSON. See [docs/RUNNER.md](docs/RUNNER.md) for the runner contract and [`examples/pipelock/`](examples/pipelock/) for a complete profile and config example.
+The runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, detection, evidence, per-category, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)). See [`examples/pipelock/`](examples/pipelock/) for a complete profile and config example.
 
 > A minimal legacy shell example for fetch-only cases lives at [`examples/pipelock/harness.sh`](examples/pipelock/harness.sh). It covers a single transport (`/fetch?url=...` GET) and is kept for illustration only — it is not the Gauntlet and will misreport every body, header, WebSocket, MCP, and response-content case. Use the Go runner for any real benchmark.
 
