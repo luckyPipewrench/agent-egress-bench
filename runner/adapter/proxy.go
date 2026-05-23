@@ -154,10 +154,10 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 				// dns.host_overrides and grants it trusted_domains, so the
 				// SSRF check permits the connection without exempting raw
 				// IP literals — attacks that hit 127.0.0.1 directly are
-				// still blocked. Pipelock builds without dns.host_overrides
-				// support will fail to resolve the hostname; fall back to
-				// the raw IP rewrite by using wsAddr directly via the
-				// fallback path below if needed.
+				// still blocked. Tools without a hostname-override or
+				// fixture-DNS equivalent should configure their runner
+				// environment to resolve wsFixtureHostname to p.wsAddr's
+				// host address before enabling the fixture-backed WS cases.
 				_, port, splitErr := net.SplitHostPort(p.wsAddr)
 				if splitErr != nil || port == "" {
 					targetURL = "ws://" + p.wsAddr + "/echo"
