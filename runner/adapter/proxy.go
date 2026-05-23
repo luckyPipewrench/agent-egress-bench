@@ -32,6 +32,16 @@ import (
 	"time"
 )
 
+// wsFixtureHostname is the canonical name the runner uses when routing
+// benign WebSocket cases through the proxy. Benchmark configs are expected
+// to map this hostname to 127.0.0.1 (or wherever the runner's WS fixture
+// publishes) via the tool's hostname-resolution override, and to grant it
+// SSRF exemption via the tool's trusted-domain primitive. Keeping the
+// rewrite under a stable hostname instead of a raw loopback IP lets the
+// tool reject SSRF attacks that target loopback directly while still
+// reaching the benign fixture under test.
+const wsFixtureHostname = "aeb-fixture.test"
+
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
 // whether the proxy blocked or allowed the request.
 type ProxyAdapter struct {
@@ -138,7 +148,22 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	if p.wsAddr != "" {
 		if u, err := url.Parse(targetURL); err == nil {
 			if u.Host == "example.com" || u.Host == "echo.websocket.org" || strings.HasSuffix(u.Host, ".example.com") {
-				targetURL = "ws://" + p.wsAddr + "/echo"
+				// Route through the canonical fixture hostname rather than
+				// the literal loopback IP. A correctly-configured benchmark
+				// pipelock instance maps wsFixtureHostname to 127.0.0.1 via
+				// dns.host_overrides and grants it trusted_domains, so the
+				// SSRF check permits the connection without exempting raw
+				// IP literals — attacks that hit 127.0.0.1 directly are
+				// still blocked. Pipelock builds without dns.host_overrides
+				// support will fail to resolve the hostname; fall back to
+				// the raw IP rewrite by using wsAddr directly via the
+				// fallback path below if needed.
+				_, port, splitErr := net.SplitHostPort(p.wsAddr)
+				if splitErr != nil || port == "" {
+					targetURL = "ws://" + p.wsAddr + "/echo"
+				} else {
+					targetURL = "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
+				}
 			}
 		}
 	}

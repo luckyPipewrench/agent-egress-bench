@@ -53,6 +53,21 @@ request_body_scanning:
 
 internal: []
 
+# The Go runner brings up local TLS, WebSocket, and DNS fixtures on 127.0.0.1
+# (see runner/fixture/). For WebSocket DLP cases the adapter rewrites the
+# corpus target hostname to `aeb-fixture.test` and lets pipelock connect via
+# the hostname rather than the literal loopback IP. Combined with the
+# trusted_domains entry below, this lets pipelock reach the fixture while
+# still rejecting SSRF attacks that target the raw loopback IP directly
+# (trusted_domains rejects IP literals at the matcher, and the override
+# map is never consulted for IP-literal lookups).
+dns:
+  host_overrides:
+    aeb-fixture.test:
+      - 127.0.0.1
+trusted_domains:
+  - aeb-fixture.test
+
 dlp:
   patterns:
     # Benchmark calibration overlays:
