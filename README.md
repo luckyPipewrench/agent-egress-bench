@@ -82,18 +82,37 @@ cd validate && go build -o aeb-validate .
 ./aeb-validate profile path/to/tool-profile.json
 ```
 
-**Run against a tool** (using the Pipelock reference runner as an example):
+**Run against a tool.** Each tool ships its own runner. The Go program in [`runner/`](runner/) is the reference implementation; it brings up TLS, WebSocket, and DNS fixtures, wires the scan API and MCP-stdio transports, and emits the Gauntlet summary and an optional receipt-scoring profile.
+
+For Pipelock, the full reproducible invocation is in [docs/RUNNER.md](docs/RUNNER.md#reproducing-a-receipt-profile). The short form:
 
 ```bash
-cd examples/pipelock
-bash harness.sh /path/to/pipelock
+# 1. Start a benchmark-configured tool instance (Pipelock shown):
+pipelock run --config examples/pipelock/pipelock-benchmark.yaml \
+  --listen 127.0.0.1:18899 &
+
+# 2. Build and run the gauntlet against it:
+cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
+/tmp/aeb-gauntlet \
+  --adapter proxy \
+  --proxy-addr 127.0.0.1:18899 \
+  --scan-addr 127.0.0.1:9990 \
+  --scan-token bench-test-token \
+  --mcp-cmd "pipelock mcp proxy --config $PWD/examples/pipelock/pipelock-benchmark.yaml -- cat" \
+  --cases ./cases \
+  --multifile-cases ./cases/mcp-drift \
+  --profile examples/pipelock/tool-profile.json \
+  --fixtures \
+  --output /tmp/gauntlet.json
 ```
 
-Output is JSONL (one result per case). See [docs/RUNNER.md](docs/RUNNER.md) for the runner contract.
+The runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, detection, evidence, per-category, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)). See [`examples/pipelock/`](examples/pipelock/) for a complete profile and config example.
+
+> A minimal legacy shell example for fetch-only cases lives at [`examples/pipelock/harness.sh`](examples/pipelock/harness.sh). It covers a single transport (`/fetch?url=...` GET) and is kept for illustration only — it is not the Gauntlet and will misreport every body, header, WebSocket, MCP, and response-content case. Use the Go runner for any real benchmark.
 
 ## Gauntlet scoring
 
-The Gauntlet is an optional scoring program that evaluates tools on four independent metrics beyond pass/fail:
+The Gauntlet evaluates tools on four independent metrics beyond pass/fail:
 
 | Metric | What it measures |
 |--------|-----------------|
@@ -103,13 +122,6 @@ The Gauntlet is an optional scoring program that evaluates tools on four indepen
 | **Evidence** | Whether the tool emitted structured proof |
 
 Containment has a hard floor: below 80%, the run is marked insufficient. There is no composite score. Each metric is reported independently. Published results are available on the [Gauntlet leaderboard](https://pipelab.org/gauntlet/).
-
-**Run the Gauntlet:**
-
-```bash
-cd runner && go build -o aeb-gauntlet .
-./aeb-gauntlet --cases ../cases --profile ../examples/pipelock/tool-profile.json --output summary.json
-```
 
 Full methodology: [docs/gauntlet.md](docs/gauntlet.md)
 
