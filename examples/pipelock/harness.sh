@@ -1,7 +1,21 @@
 #!/usr/bin/env bash
-# Reference runner for Pipelock against agent-egress-bench corpus.
-# Runs URL, header, and request-body cases through Pipelock's fetch proxy.
-# Response and MCP cases are marked not_applicable (v1 harness limitation).
+# Legacy fetch-only harness for agent-egress-bench. NOT the Gauntlet.
+#
+# This script only exercises URL cases through Pipelock's /fetch?url=... GET
+# endpoint. It will misreport body, header (POST), WebSocket, MCP, and
+# response-content cases. Any published containment number for Pipelock comes
+# from the Go runner in ../../runner/, not this script.
+#
+# For real benchmark scoring use the canonical command in docs/RUNNER.md:
+#   pipelock run --config examples/pipelock/pipelock-benchmark.yaml \
+#     --listen 127.0.0.1:18899 &
+#   cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
+#   /tmp/aeb-gauntlet --adapter proxy --proxy-addr 127.0.0.1:18899 \
+#     --scan-addr 127.0.0.1:9990 --scan-token bench-test-token \
+#     --mcp-cmd "pipelock mcp proxy --config $PWD/examples/pipelock/pipelock-benchmark.yaml -- cat" \
+#     --cases ./cases --multifile-cases ./cases/mcp-drift \
+#     --profile examples/pipelock/tool-profile.json --fixtures \
+#     --output /tmp/gauntlet.json
 #
 # Usage: bash harness.sh [pipelock-binary] [cases-dir]
 #
@@ -12,6 +26,16 @@
 #   - The benchmark config: pipelock-benchmark.yaml in this directory
 
 set -euo pipefail
+
+cat >&2 <<'BANNER'
+=============================================================================
+harness.sh — LEGACY FETCH-ONLY EXAMPLE, NOT THE GAUNTLET
+
+This script only exercises URL cases. Body, header (POST), WebSocket, MCP,
+and response-content cases will be misreported. For real scoring run the Go
+runner: see ../../docs/RUNNER.md or ../../README.md "Run against a tool".
+=============================================================================
+BANNER
 
 PIPELOCK="${1:-pipelock}"
 CASES_DIR="${2:-../../cases}"
