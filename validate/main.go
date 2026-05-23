@@ -70,6 +70,19 @@ var (
 		"tls_interception": true, "request_body_scanning": true,
 		"header_scanning": true, "response_scanning": true,
 		"mcp_tool_baseline": true, "mcp_chain_memory": true,
+		// Cross-server chain memory: detector must correlate tool calls
+		// across distinct MCP server sessions to catch toxic compositions
+		// where the attack lives in the composition, not the individual
+		// servers. Strict superset of mcp_chain_memory (which covers a
+		// single session).
+		"mcp_cross_server_chain_memory": true,
+		// Data-class labels on tool outputs: detector tags outputs of
+		// read-style tools (read_file, list_secrets, etc.) with a
+		// sensitivity class (filesystem_secret, credential, internal_doc)
+		// so chain-composition rules can distinguish "read public file
+		// then write" from "read SSH key then write". Without labels a
+		// detector cannot tell which read-then-write chains are safe.
+		"mcp_data_class_labels":    true,
 		"websocket_frame_scanning": true, "a2a_scanning": true,
 		"shell_analysis": true, "dns_rebinding_fixture": true,
 	}
@@ -86,8 +99,10 @@ var (
 		"fetch_proxy": true, "http_proxy": true, "mcp_stdio": true, "mcp_http": true,
 		"websocket": true, "tls_interception": true, "request_body_scanning": true,
 		"header_scanning": true, "response_scanning": true, "mcp_tool_baseline": true,
-		"mcp_chain_memory": true,
-		"a2a": true, "websocket_frame_scanning": true, "a2a_scanning": true,
+		"mcp_chain_memory":              true,
+		"mcp_cross_server_chain_memory": true,
+		"mcp_data_class_labels":         true,
+		"a2a":                           true, "websocket_frame_scanning": true, "a2a_scanning": true,
 		"shell_analysis": true, "dns_rebinding_fixture": true,
 	}
 

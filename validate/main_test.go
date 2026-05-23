@@ -1242,8 +1242,10 @@ func allSupportsKeys() map[string]interface{} {
 		"mcp_http": false, "websocket": false, "tls_interception": false,
 		"request_body_scanning": false, "header_scanning": false,
 		"response_scanning": false, "mcp_tool_baseline": false,
-		"mcp_chain_memory": false,
-		"a2a": false, "websocket_frame_scanning": false,
+		"mcp_chain_memory":              false,
+		"mcp_cross_server_chain_memory": false,
+		"mcp_data_class_labels":         false,
+		"a2a":                           false, "websocket_frame_scanning": false,
 		"a2a_scanning": false, "shell_analysis": false,
 		"dns_rebinding_fixture": false,
 	}
@@ -1421,7 +1423,7 @@ func TestProfileValidation_NonBooleanSupports(t *testing.T) {
 func TestProfileValidation_File(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
-	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false,"a2a":false,"websocket_frame_scanning":false,"a2a_scanning":false,"shell_analysis":false,"dns_rebinding_fixture":false}}`
+	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false,"mcp_cross_server_chain_memory":false,"mcp_data_class_labels":false,"a2a":false,"websocket_frame_scanning":false,"a2a_scanning":false,"shell_analysis":false,"dns_rebinding_fixture":false}}`
 	_ = os.WriteFile(path, []byte(data), 0o600)
 
 	errors := validateProfileFile(path)
