@@ -81,7 +81,7 @@ Tags describe what the case exercises. Used for reporting and applicability.
 
 ## requires (v1)
 
-`tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `websocket_frame_scanning`, `a2a_scanning`, `shell_analysis`, `dns_rebinding_fixture`
+`tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `websocket_frame_scanning`, `a2a_scanning`, `shell_analysis`, `dns_rebinding_fixture`
 
 Runtime prerequisites. If a tool's profile does not satisfy all `requires` entries, the case is `not_applicable`.
 

@@ -26,20 +26,20 @@ type DualScores struct {
 
 // GauntletSummary is the top-level output written to --output.
 type GauntletSummary struct {
-	GauntletVersion  string                    `json:"gauntlet_version"`
-	ScoringVersion   string                    `json:"scoring_version"`
-	RunnerVersion    string                    `json:"runner_version"`
-	Tool             string                    `json:"tool"`
-	ToolVersion      string                    `json:"tool_version"`
-	CorpusVersion    string                    `json:"corpus_version"`
-	CorpusSHA256     string                    `json:"corpus_sha256"`
-	ToolProfileSHA256 string                   `json:"tool_profile_sha256"`
-	Date             string                    `json:"date"`
-	CaseCount        CaseCount                 `json:"case_count"`
-	ToolSupport      ToolSupport               `json:"tool_support"`
-	Scores           DualScores                `json:"scores"`
-	Sufficient       bool                      `json:"sufficient"`
-	PerCategory      map[string]CategoryScores `json:"per_category"`
+	GauntletVersion   string                    `json:"gauntlet_version"`
+	ScoringVersion    string                    `json:"scoring_version"`
+	RunnerVersion     string                    `json:"runner_version"`
+	Tool              string                    `json:"tool"`
+	ToolVersion       string                    `json:"tool_version"`
+	CorpusVersion     string                    `json:"corpus_version"`
+	CorpusSHA256      string                    `json:"corpus_sha256"`
+	ToolProfileSHA256 string                    `json:"tool_profile_sha256"`
+	Date              string                    `json:"date"`
+	CaseCount         CaseCount                 `json:"case_count"`
+	ToolSupport       ToolSupport               `json:"tool_support"`
+	Scores            DualScores                `json:"scores"`
+	Sufficient        bool                      `json:"sufficient"`
+	PerCategory       map[string]CategoryScores `json:"per_category"`
 }
 
 // CaseCount tracks totals and N/A breakdown.
@@ -127,6 +127,7 @@ func buildToolSupport(p Profile) ToolSupport {
 	requiresKeys := []string{
 		"tls_interception", "request_body_scanning", "header_scanning",
 		"response_scanning", "mcp_tool_baseline", "mcp_chain_memory",
+		"mcp_cross_server_chain_memory", "mcp_data_class_labels",
 		"websocket_frame_scanning", "a2a_scanning", "shell_analysis",
 		"dns_rebinding_fixture",
 	}
