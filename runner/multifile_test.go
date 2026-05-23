@@ -326,7 +326,13 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 		"tool_version": "0.0.0",
 		"runner_version": "test",
 		"claims": ["mcp_tool_poison", "mcp_chain"],
-		"supports": {"mcp_stdio": true, "mcp_tool_baseline": true, "mcp_chain_memory": true}
+		"supports": {
+			"mcp_stdio": true,
+			"mcp_tool_baseline": true,
+			"mcp_chain_memory": true,
+			"mcp_cross_server_chain_memory": true,
+			"mcp_data_class_labels": true
+		}
 	}`), 0o600); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}

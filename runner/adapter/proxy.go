@@ -32,6 +32,16 @@ import (
 	"time"
 )
 
+// wsFixtureHostname is the canonical name the runner uses when routing
+// benign WebSocket cases through the proxy. Benchmark configs are expected
+// to map this hostname to 127.0.0.1 (or wherever the runner's WS fixture
+// publishes) via the tool's hostname-resolution override, and to grant it
+// SSRF exemption via the tool's trusted-domain primitive. Keeping the
+// rewrite under a stable hostname instead of a raw loopback IP lets the
+// tool reject SSRF attacks that target loopback directly while still
+// reaching the benign fixture under test.
+const wsFixtureHostname = "aeb-fixture.test"
+
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
 // whether the proxy blocked or allowed the request.
 type ProxyAdapter struct {
@@ -138,7 +148,22 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	if p.wsAddr != "" {
 		if u, err := url.Parse(targetURL); err == nil {
 			if u.Host == "example.com" || u.Host == "echo.websocket.org" || strings.HasSuffix(u.Host, ".example.com") {
-				targetURL = "ws://" + p.wsAddr + "/echo"
+				// Route through the canonical fixture hostname rather than
+				// the literal loopback IP. A correctly-configured benchmark
+				// pipelock instance maps wsFixtureHostname to 127.0.0.1 via
+				// dns.host_overrides and grants it trusted_domains, so the
+				// SSRF check permits the connection without exempting raw
+				// IP literals — attacks that hit 127.0.0.1 directly are
+				// still blocked. Tools without a hostname-override or
+				// fixture-DNS equivalent should configure their runner
+				// environment to resolve wsFixtureHostname to p.wsAddr's
+				// host address before enabling the fixture-backed WS cases.
+				_, port, splitErr := net.SplitHostPort(p.wsAddr)
+				if splitErr != nil || port == "" {
+					targetURL = "ws://" + p.wsAddr + "/echo"
+				} else {
+					targetURL = "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
+				}
 			}
 		}
 	}
@@ -185,45 +210,87 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		}
 	}
 
-	// Refresh the read deadline so the close-frame read gets a full timeout
-	// budget independent of whatever time the dial, upgrade, and frame
-	// writes consumed. Without this, multi-fragment cases flake when the
-	// dial + write phase eats most of the original deadline before pipelock
-	// has finished reassembling fragments and emitting the close.
-	if deadlineErr := conn.SetReadDeadline(time.Now().Add(timeout)); deadlineErr != nil {
-		return Result{Err: fmt.Errorf("case %s: ws read deadline: %w", c.ID, deadlineErr)}
+	// Drain frames until we either observe a close (definitive block signal)
+	// or the wire goes idle (allow). A single-read classifier races the
+	// upstream echo against the proxy's close frame: if the proxy blocks on
+	// a later client frame (e.g. cross-message DLP firing on frame N), the
+	// echo of an earlier forwarded frame can arrive before the close,
+	// producing a false "allow" verdict. The fix is to keep reading until
+	// the wire actually goes quiet.
+	//
+	// Budget: the first frame gets the full timeout (proxy may need time to
+	// reassemble fragments and run scanners). Subsequent reads use a short
+	// idle window so allow-cases don't pay the full timeout per case.
+	firstReadDeadline := time.Now().Add(timeout)
+	const idleWindow = 500 * time.Millisecond
+	var lastFrame struct {
+		opcode       int
+		payloadBytes int
+		seen         bool
 	}
-
-	opcode, payload, err := readWebSocketFrame(br)
-	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return Result{Verdict: "allow", Evidence: map[string]interface{}{"scanner": "websocket_proxy", "reason": "no_close_frame"}}
+	for {
+		var dl time.Time
+		if lastFrame.seen {
+			dl = time.Now().Add(idleWindow)
+		} else {
+			dl = firstReadDeadline
 		}
-		return Result{
-			Verdict: "block",
-			Evidence: map[string]interface{}{
-				"scanner": "websocket_proxy",
-				"reason":  "connection_closed",
-				"detail":  truncate(err.Error(), 120),
-			},
+		if deadlineErr := conn.SetReadDeadline(dl); deadlineErr != nil {
+			return Result{Err: fmt.Errorf("case %s: ws read deadline: %w", c.ID, deadlineErr)}
 		}
-	}
-	if opcode == wsOpcodeClose {
-		return Result{
-			Verdict: "block",
-			Evidence: map[string]interface{}{
-				"scanner":      "websocket_proxy",
-				"block_reason": truncate(webSocketCloseReason(payload), 160),
-			},
+		opcode, payload, err := readWebSocketFrame(br)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				ev := map[string]interface{}{
+					"scanner": "websocket_proxy",
+					"reason":  "no_close_frame",
+				}
+				if lastFrame.seen {
+					ev["opcode"] = lastFrame.opcode
+					ev["bytes"] = lastFrame.payloadBytes
+				}
+				return Result{Verdict: "allow", Evidence: ev}
+			}
+			// Connection closed without a close frame. If we already
+			// received at least one frame from the proxy, treat the
+			// closure as a clean upstream goaway (allow) — proxies that
+			// permit traffic do not synthesize close frames on behalf of
+			// the upstream, so an EOF after the echo means "the wire ended,
+			// the proxy did not actively block." If we never received any
+			// frame, an abrupt closure suggests the proxy actively dropped
+			// the connection (RST or close without frame) — block.
+			if lastFrame.seen {
+				return Result{
+					Verdict: "allow",
+					Evidence: map[string]interface{}{
+						"scanner": "websocket_proxy",
+						"reason":  "upstream_closed_after_echo",
+						"opcode":  lastFrame.opcode,
+						"bytes":   lastFrame.payloadBytes,
+					},
+				}
+			}
+			return Result{
+				Verdict: "block",
+				Evidence: map[string]interface{}{
+					"scanner": "websocket_proxy",
+					"reason":  "connection_closed",
+					"detail":  truncate(err.Error(), 120),
+				},
+			}
 		}
-	}
-	return Result{
-		Verdict: "allow",
-		Evidence: map[string]interface{}{
-			"scanner": "websocket_proxy",
-			"opcode":  opcode,
-			"bytes":   len(payload),
-		},
+		if opcode == wsOpcodeClose {
+			return Result{
+				Verdict: "block",
+				Evidence: map[string]interface{}{
+					"scanner":      "websocket_proxy",
+					"block_reason": truncate(webSocketCloseReason(payload), 160),
+				},
+			}
+		}
+		lastFrame.opcode = opcode
+		lastFrame.payloadBytes = len(payload)
+		lastFrame.seen = true
 	}
 }
 

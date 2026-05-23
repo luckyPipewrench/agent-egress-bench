@@ -16,6 +16,8 @@
     "response_scanning": false,
     "mcp_tool_baseline": false,
     "mcp_chain_memory": false,
+    "mcp_cross_server_chain_memory": false,
+    "mcp_data_class_labels": false,
     "a2a": false,
     "websocket_frame_scanning": false,
     "a2a_scanning": false,

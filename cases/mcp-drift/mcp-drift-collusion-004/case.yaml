@@ -28,6 +28,17 @@ capability_tags:
 requires:
   - mcp_tool_baseline
   - mcp_chain_memory
+  # Detection requires correlation across distinct MCP server sessions —
+  # a single-session chain memory cannot see that server A's tool description
+  # references a tool from server B (notes.md, "Detection logic" steps 1-2).
+  - mcp_cross_server_chain_memory
+  # Detection also requires sensitivity labels on tool outputs so the chain
+  # rule can distinguish read_file returning ~/.bashrc from read_file
+  # returning ~/.ssh/id_ed25519 (notes.md, "Detection logic" step 3).
+  # Without labels the lethal-trifecta rule collapses to "any read feeds
+  # any write," which over-blocks. A vendor without labels MUST disclose
+  # the gap (notes.md, "Vendor differences").
+  - mcp_data_class_labels
 false_positive_risk: medium
 why_expected: |
   cross_server_toxic_composition_with_sensitive_source. Detection requires

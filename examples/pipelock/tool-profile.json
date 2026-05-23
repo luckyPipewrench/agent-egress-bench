@@ -36,6 +36,8 @@
     "response_scanning": true,
     "mcp_tool_baseline": true,
     "mcp_chain_memory": true,
+    "mcp_cross_server_chain_memory": false,
+    "mcp_data_class_labels": false,
     "a2a": true,
     "websocket_frame_scanning": true,
     "a2a_scanning": true,
