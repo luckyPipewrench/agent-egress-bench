@@ -56,9 +56,9 @@ cases/
   crypto-financial/ Wallet addresses, seed phrases, credit cards
   false-positive/   Benign traffic that must not be blocked
 validate/           Go validator (stdlib-only, zero deps)
-runner/             Gauntlet scoring runner CLI
-examples/           Reference runner implementations
-  pipelock/         Pipelock reference runner (harness.sh, config, tool-profile)
+runner/             Canonical Gauntlet runner (Go, proxy + fixtures + MCP adapters) — emits profiles/<tool>.json
+examples/           Per-tool capability profiles, bench configs, and verifier metadata
+  pipelock/         Pipelock tool-profile.json + pipelock-benchmark.yaml + receipt-verifier.json (harness.sh is legacy fetch-only)
 docs/               Spec, scoring, Gauntlet methodology, runner contract, OWASP mapping
 scripts/            CI tooling (pr-review.py)
 ```

@@ -1,39 +1,49 @@
 # Pipelock Reference Runner
 
-Runs the agent-egress-bench corpus against [Pipelock](https://github.com/luckyPipewrench/pipelock).
+> **For real benchmark scoring use the Go runner in [`../../runner/`](../../runner/).** The Go runner is what produces [`profiles/pipelock.json`](../../profiles/pipelock.json) and the [pipelab.org gauntlet leaderboard](https://pipelab.org/gauntlet/). It covers every transport in the corpus (fetch, forward proxy, WebSocket, MCP stdio, MCP HTTP, A2A) and brings up its own TLS, WebSocket, and DNS fixtures. The shell `harness.sh` in this directory is a minimal fetch-only illustration; it skips body, header (POST), WebSocket, MCP, and response-content cases and will misreport them.
 
-## Prerequisites
+This directory contains the Pipelock-specific artifacts the Go runner needs to score Pipelock:
 
-- `pipelock` binary (v1.0.0+)
-- `jq`
-- `python3` (for URL encoding)
-- `curl`
+- [`tool-profile.json`](tool-profile.json): Pipelock's capability claims (what it supports, what it does not).
+- [`pipelock-benchmark.yaml`](pipelock-benchmark.yaml): bench-only config (every scanner enabled, action=block, test blocklist domain included).
+- [`receipt-verifier.json`](receipt-verifier.json): Pipelock's verifier metadata for the optional receipt-scoring profile.
+- [`harness.sh`](harness.sh): legacy fetch-only example, kept for illustration.
 
-## Usage
+## Canonical run
+
+The full reproducible command lives in [`../../docs/RUNNER.md`](../../docs/RUNNER.md#reproducing-a-receipt-profile). Short form:
 
 ```bash
-# Using pipelock from PATH
-bash harness.sh
+# 1. Start a benchmark-configured Pipelock instance.
+pipelock run --config examples/pipelock/pipelock-benchmark.yaml \
+  --listen 127.0.0.1:18899 &
 
-# Using a specific binary
-bash harness.sh /path/to/pipelock
-
-# Using a specific cases directory
-bash harness.sh pipelock /path/to/cases
+# 2. Build and run the gauntlet.
+cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
+/tmp/aeb-gauntlet \
+  --adapter proxy \
+  --proxy-addr 127.0.0.1:18899 \
+  --scan-addr 127.0.0.1:9990 \
+  --scan-token bench-test-token \
+  --mcp-cmd "pipelock mcp proxy --config $PWD/examples/pipelock/pipelock-benchmark.yaml -- cat" \
+  --cases ./cases \
+  --multifile-cases ./cases/mcp-drift \
+  --profile examples/pipelock/tool-profile.json \
+  --fixtures \
+  --output /tmp/gauntlet.json \
+  --emit-receipt-profile /tmp/pipelock.json \
+  --receipt-verifier-file examples/pipelock/receipt-verifier.json
 ```
 
-## What it runs
+The `pipelock-benchmark.yaml` config listens on 127.0.0.1:18899 (proxy), 127.0.0.1:9990 (scan API, bearer `bench-test-token`), and enables every scanner with `action: block`.
 
-The harness starts Pipelock with `pipelock-benchmark.yaml` (all scanners enabled, actions set to block) and runs HTTP/fetch cases through the fetch proxy endpoint. The benchmark config includes the test blocklist domain (`exfil-collector.example.net`) required by domain blocklist cases.
+## Legacy fetch-only harness
 
-The profile claims `benign` so false-positive cases are included in results. MCP and response-content cases are marked as `not_applicable` in v1 (the runner does not yet support those transports). The cases themselves are valid; the v1 harness only supports `fetch_proxy` transport.
+`harness.sh` runs URL cases through Pipelock's `/fetch?url=...` GET endpoint. It is preserved as a minimal worked example of the runner contract for tools that only implement a fetch-style proxy. **It is not the Gauntlet** — body, header (POST), WebSocket, MCP, and response-content cases are not exercised, and any tool whose containment is reported off this harness alone will be undersold. Use the Go runner for any published score.
 
-## Output
+```bash
+# Minimal fetch-only run (illustration, not a benchmark)
+bash harness.sh /path/to/pipelock
+```
 
-JSONL to stdout (one result per case). Summary to stderr.
-
-## Files
-
-- `harness.sh`: runner script
-- `tool-profile.json`: Pipelock's capability claims
-- `pipelock-benchmark.yaml`: benchmark-specific config (all scanners on, block mode)
+Output is JSONL on stdout, summary on stderr.
