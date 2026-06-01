@@ -1140,7 +1140,7 @@ func buildMalicious() ([]fixture, error) {
 			Expect: Expect{
 				FixtureID:    "m10-receipt-count-mismatch",
 				Category:     "malicious",
-				InputFormat:  "chain",
+				InputFormat:  "receipt_bundle",
 				Verdict:      "reject",
 				RejectReason: "receipt_count_mismatch",
 				Description:  "Wrapper envelope claims declared_receipt_count=5 but only 4 receipts are present in the body.",
@@ -1256,6 +1256,41 @@ func buildMalicious() ([]fixture, error) {
 				RejectReason: "duplicate_key",
 				Description:  "action_record carries two verdict keys (\"allow\" then the signed \"block\"). Valid JSON, last-wins parsing makes the signature verify, so a verifier without duplicate-key rejection silently accepts while a first-occurrence display layer shows the opposite verdict.",
 				Notes:        "Verifier MUST reject duplicate object keys at parse time, at any nesting depth, before signature verification, with explicit duplicate-key detection during raw parsing — last-wins map insertion hides the duplicate. Examples: a Go json.Decoder token loop, a JS pair/key scan, a Rust serde Visitor that tracks map keys (serde_json has no built-in reject-duplicate option; struct fields error on repeats but map-like decoding is last-wins), and Python's object_pairs_hook.",
+			},
+		})
+	}
+
+	// M14. Nested duplicate object key with unicode-escaped equivalent key.
+	// The duplicate lives inside an otherwise-ignored top-level probe field so
+	// signature verification would succeed if the raw duplicate-key scan missed
+	// nested array/object values or failed to normalize \u escapes.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "write", "block",
+			"https://attacker.example.net/exfil", "https", "POST")
+		r, err := signReceipt(ar, priv)
+		if err != nil {
+			return nil, err
+		}
+		good, err := marshalPretty(r)
+		if err != nil {
+			return nil, err
+		}
+		bad, err := addTopLevelRawField(good, "dup_probe", `[{"a":1,"\u0061":2}]`)
+		if err != nil {
+			return nil, fmt.Errorf("m14: %w", err)
+		}
+		out = append(out, fixture{
+			Category: "malicious",
+			Name:     "m14-duplicate-key-nested-unicode",
+			Payload:  bad,
+			Expect: Expect{
+				FixtureID:    "m14-duplicate-key-nested-unicode",
+				Category:     "malicious",
+				InputFormat:  "receipt",
+				Verdict:      "reject",
+				RejectReason: "duplicate_key",
+				Description:  `Ignored top-level probe contains an array element with duplicate keys "a" and "\u0061".`,
+				Notes:        "Verifier MUST reject duplicate object keys at any nesting depth, including unicode-escaped key equivalents inside arrays and fields ignored by signature canonicalization.",
 			},
 		})
 	}
@@ -1403,6 +1438,64 @@ func buildEdge() ([]fixture, error) {
 		}
 	}
 
+	// E9. Exact maximum JSON nesting depth in an ignored top-level field.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "read", "allow",
+			"https://api.example.com/v1/data", "https", "GET")
+		f, err := makeSingle("e09-maximum-json-nesting-depth", "edge", priv, pubHex, ar,
+			"Receipt carries an ignored top-level probe field that brings the whole JSON document to exactly 128 nesting levels.",
+			"Verifier MUST accept. The shared raw-JSON scanner limit allows 128 nested arrays/objects including the receipt root object and rejects the 129th; this fixture catches off-by-one differences between language runtimes.",
+		)
+		if err != nil {
+			return nil, err
+		}
+		f.Payload, err = addTopLevelRawField(f.Payload, "depth_probe", nestedArrayJSON(127))
+		if err != nil {
+			return nil, fmt.Errorf("e09: %w", err)
+		}
+		out = append(out, f)
+	}
+
+	// E10. Non-BMP map keys in redaction.by_class.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "write", "allow",
+			"https://api.example.com/v1/data", "https", "POST")
+		ar.Redaction = &RedactionSummary{
+			Profile:         "strict",
+			Provider:        "provider.example",
+			Parser:          "json",
+			TotalRedactions: 3,
+			ByClass: map[string]int{
+				"api_key":    1,
+				"\uE000":     2,
+				"\U00010000": 3,
+			},
+		}
+		if f, err := makeSingle("e10-non-bmp-map-key-order", "edge", priv, pubHex, ar,
+			"Redaction by_class map contains a non-BMP key and a private-use BMP key.",
+			"Verifier MUST accept. Go orders map keys by UTF-8/code-point order; JavaScript's default UTF-16 sort orders this pair differently, so this fixture catches map-key canonicalization drift.",
+		); err != nil {
+			return nil, err
+		} else {
+			out = append(out, f)
+		}
+	}
+
+	// E11. Go JSON HTML escaping parity.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "read", "allow",
+			"https://api.example.com/v1/data", "https", "GET")
+		ar.Intent = "render <script>alert('x')</script> & preserve \u2028 and \u2029 separators"
+		if f, err := makeSingle("e11-html-escape-canonicalization", "edge", priv, pubHex, ar,
+			"Intent contains characters Go's encoding/json escapes in Marshal output: <, >, &, U+2028, and U+2029.",
+			"Verifier MUST accept. Non-Go verifiers must post-process canonical JSON to match Go's HTMLEscape behavior before hashing.",
+		); err != nil {
+			return nil, err
+		} else {
+			out = append(out, f)
+		}
+	}
+
 	return out, nil
 }
 
@@ -1419,6 +1512,19 @@ func marshalPretty(r Receipt) ([]byte, error) {
 		return nil, err
 	}
 	return append(buf, '\n'), nil
+}
+
+func addTopLevelRawField(payload []byte, name, rawValue string) ([]byte, error) {
+	marker := []byte("\n}\n")
+	if !bytes.HasSuffix(payload, marker) {
+		return nil, fmt.Errorf("payload does not end with top-level object marker")
+	}
+	insert := []byte(fmt.Sprintf(",\n  %q: %s\n}\n", name, rawValue))
+	return append(append([]byte{}, payload[:len(payload)-len(marker)]...), insert...), nil
+}
+
+func nestedArrayJSON(depth int) string {
+	return strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
 }
 
 // marshalChainJSONL serializes a slice of receipts as one compact JSON object
@@ -1448,6 +1554,13 @@ func writeAll(outDir string, fixtures []fixture) error {
 		extJSON := ".json"
 		if f.Expect.InputFormat == "chain" {
 			extJSON = ".jsonl"
+		}
+		staleExt := ".jsonl"
+		if extJSON == ".jsonl" {
+			staleExt = ".json"
+		}
+		if err := os.Remove(filepath.Join(dir, f.Name+staleExt)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale payload %s%s: %w", f.Name, staleExt, err)
 		}
 		payloadPath := filepath.Join(dir, f.Name+extJSON)
 		if err := os.WriteFile(payloadPath, f.Payload, 0o600); err != nil {
