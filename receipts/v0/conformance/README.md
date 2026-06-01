@@ -53,7 +53,7 @@ receipts/v0/conformance/
 
 Each fixture is two files sharing a base name:
 
-- `<name>.json` for single-receipt fixtures or `<name>.jsonl` for chain fixtures (the input to the verifier). Chains are JSONL with one receipt per line; the generator writes the `.jsonl` extension whenever a fixture contains more than one linked receipt.
+- `<name>.json` for single-receipt fixtures and receipt-bundle wrappers, or `<name>.jsonl` for raw chain fixtures (the input to the verifier). Chains are JSONL with one receipt per line.
 - `<name>.expect.json` for the expected verifier output.
 
 ### `.expect.json` schema
@@ -62,7 +62,7 @@ Each fixture is two files sharing a base name:
 {
   "fixture_id": "string, immutable",
   "category": "golden | malicious | edge",
-  "input_format": "receipt | chain",
+  "input_format": "receipt | chain | receipt_bundle",
   "verdict": "accept | reject",
   "reject_reason": "machine-readable enum (omitted when accept)",
   "description": "human prose",
@@ -96,6 +96,7 @@ implement against the enum, and produce identical reject codes.
 | `header_injection`             | Disallowed control byte (NUL, etc.) embedded in a string field         |
 | `unsupported_version`          | `version` or `action_record.version` outside accepted range            |
 | `invalid_action_type`          | `action_type` not in the closed action-model enum                      |
+| `duplicate_key`                | A JSON object contains the same key twice at any nesting depth         |
 
 ### Verifier policy assumptions
 
@@ -107,7 +108,10 @@ Conformance assumes the verifier is configured as follows:
   `expired` until 2027-04-15.
 - **Replay window:** keep the last 10000 `action_id` values per session.
 - **Schema version:** accept `version: 1` and `action_record.version: 1` only.
-- **Strict JSON:** reject BOM, trailing data, embedded NUL bytes in strings.
+- **Strict JSON:** reject BOM, trailing data, embedded NUL bytes in strings,
+  and duplicate object keys at any nesting depth (see the `duplicate_key` reject
+  reason). Last-wins duplicate handling is a parser-differential smuggling
+  vector and MUST be rejected at parse time, before signature verification.
 
 ## Running the corpus
 
@@ -142,6 +146,43 @@ directory's fixtures and expect outputs are frozen. Adding new fixtures to
 `v0` is allowed only if they preserve the verifier-behaviour-already-specified
 property — i.e. an existing correct verifier must still pass without code
 changes.
+
+"Already-specified behaviour" is defined by the receipt schema and signing
+protocol in this directory, whose source of truth is the Go `ActionRecord`
+struct and signer (see *Source* below) — **not** by whatever a given verifier
+happened to accept before. A fixture that exercises a field or rule the schema
+always required, but that earlier fixtures did not cover, is a coverage-gap
+closure and is allowed in `v0`: a verifier that fails it was never conformant
+against production receipts. Frozen means existing fixtures are never edited;
+additions follow the rule above.
+
+### Spec revisions
+
+- **2026-05-31** — Coverage + one new requirement, both non-breaking (no honest
+  receipt changes verdict):
+  - Added golden fixtures `09-allow-shield-summary` and
+    `10-full-field-differential` exercising the full `ActionRecord` field set
+    (notably `parent_action_id` and the nested `shield` object). These are
+    coverage-gap closures: the Go signer has always emitted these fields, but no
+    earlier fixture carried them, so reference verifiers that dropped them
+    verified against a different byte string than Go and silently failed real
+    receipts.
+  - Added the `duplicate_key` reject reason and malicious fixture
+    `m13-duplicate-key-verdict`, and added duplicate-key rejection to the
+    Strict-JSON requirements. No honest receipt has duplicate keys, so this
+    hardens against a parser-differential smuggling vector without changing any
+    honest receipt's verdict — it does not warrant a `v1` fork.
+- **2026-06-01** — Added boundary fixtures that lock down cross-language
+  canonicalization assumptions:
+  - `e09-maximum-json-nesting-depth` accepts an ignored probe field that brings
+    the whole JSON document to exactly 128 levels deep, proving verifiers share
+    the same depth boundary.
+  - `e10-non-bmp-map-key-order` exercises Go-compatible map-key ordering for
+    non-BMP Unicode keys.
+  - `e11-html-escape-canonicalization` exercises Go's JSON HTMLEscape behavior
+    for `<`, `>`, `&`, U+2028, and U+2029.
+  - `m14-duplicate-key-nested-unicode` rejects duplicate keys hidden inside an
+    array using a unicode-escaped equivalent key.
 
 ## What a passing verifier looks like
 
