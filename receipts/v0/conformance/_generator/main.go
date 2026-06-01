@@ -638,20 +638,24 @@ func buildGolden() ([]fixture, error) {
 		}
 	}
 
-	// 10. full-field differential — populates one representative field from
-	// every block that the non-Go verifiers historically dropped:
-	// parent_action_id, the taint block (scalars + a nested recent_taint_sources
-	// entry), the contract block, redaction (nested), and shield (nested). A
-	// verifier whose canonical field list is missing ANY of these recomputes a
+	// 10. full-field differential — populates EVERY omitempty field in the
+	// ActionRecord (parent_action_id, data classes, the taint block incl. a
+	// nested recent_taint_sources entry, the contract block, the jurisdictional
+	// block, and fully-populated nested redaction and shield objects). A verifier
+	// whose canonical field list omits or reorders ANY field recomputes a
 	// different signing hash and fails. This is the four-language differential:
 	// the Go signer includes all of them, so only a verifier that mirrors the
-	// full Go struct verifies it.
+	// full Go struct — every field, in declaration order, with nested object key
+	// order — verifies it.
 	{
 		ar := baseRecord(0, genesisHash, freshTime, "write", "allow",
 			"https://api.example.com/v1/agents/spawn", "https", "POST")
 		ar.ParentActionID = "conformance-parent-00000"
 		ar.Intent = "delegated-subagent-write"
+		ar.DataClassesIn = []string{"prompt", "secret"}
+		ar.DataClassesOut = []string{"summary"}
 		ar.Layer = "tool_policy"
+		ar.Pattern = "spawn_subagent"
 		ar.Severity = "medium"
 		ar.SessionTaintLevel = "suspected"
 		ar.SessionContaminated = true
@@ -662,6 +666,7 @@ func buildGolden() ([]fixture, error) {
 				// session.TaintExternalUntrusted (4); serializes as a number.
 				Level:       4,
 				Timestamp:   freshTime,
+				ReceiptID:   "conformance-taint-00000",
 				MatchReason: "ignore_previous_instructions",
 			},
 		}
@@ -670,6 +675,7 @@ func buildGolden() ([]fixture, error) {
 		ar.AuthorityKind = "delegated"
 		ar.TaintDecision = "allow_with_constraints"
 		ar.TaintDecisionReason = "task_scope_permits_write"
+		ar.TaskOverrideApplied = true
 		ar.ContractWinningSource = "operator_policy"
 		ar.ContractLiveVerdict = "allow"
 		ar.ContractPolicySources = []string{"operator_policy", "org_default"}
@@ -679,20 +685,42 @@ func buildGolden() ([]fixture, error) {
 		ar.ContractSelectorID = "selector-9"
 		ar.ContractGeneration = 4
 		ar.Redaction = &RedactionSummary{
-			Profile:         "strict",
-			Provider:        "provider.example",
-			Parser:          "json",
-			TotalRedactions: 2,
-			ByClass:         map[string]int{"api_key": 1, "email": 1},
+			Profile:           "strict",
+			Provider:          "provider.example",
+			Parser:            "json",
+			TotalRedactions:   2,
+			ByClass:           map[string]int{"api_key": 1, "email": 1},
+			CacheBoundaryKept: true,
 		}
 		ar.Shield = &ShieldSummary{
-			Pipeline:      "browser_shield_v1",
-			TotalRewrites: 1,
-			AgentTraps:    1,
+			Pipeline:                 "browser_shield_v1",
+			TotalRewrites:            5,
+			ExtensionProbes:          1,
+			TrackingBeacons:          2,
+			AgentTraps:               1,
+			FingerprintShimInjected:  true,
+			SVGForeignObjects:        1,
+			SVGEventHandlers:         1,
+			SVGExternalReferences:    1,
+			SVGHiddenText:            1,
+			SVGAnimationInjections:   1,
+			BodyBytes:                4096,
+			ScannedBytes:             4096,
+			Partial:                  true,
+			AdaptiveSignalsRecorded:  3,
+			AdaptiveSignalMaxPerBody: 8,
 		}
 		ar.RequestID = "req-7f3a"
+		// Jurisdictional block — present for forward compatibility; populated
+		// here so the full ActionRecord field set is genuinely exercised.
+		ar.Venue = "us-east"
+		ar.Jurisdiction = "operator-default"
+		ar.RulebookID = "rulebook-v1"
+		ar.RemedyClass = "compensate"
+		ar.ContestationWindow = "24h"
+		ar.PrecedentRefs = []string{"conformance-precedent-1"}
 		if f, err := makeSingle("10-full-field-differential", "golden", priv, pubHex, ar,
-			"Allow on a delegated sub-agent write carrying parent_action_id, taint context (scalars + a nested recent_taint_sources entry), contract context, redaction, and shield. Every block here was missing from at least one reference verifier's canonical field list.",
+			"Allow on a delegated sub-agent write that populates EVERY omitempty field in the ActionRecord — parent_action_id, data classes, the full taint block (scalars + a nested recent_taint_sources entry with receipt_id), the contract block, the jurisdictional block, and fully-populated nested redaction and shield objects. At least one reference verifier historically dropped each of these from its canonical field list.",
 			"Verifier MUST accept. This is the cross-language drift sentinel: a verifier MUST mirror the full Go ActionRecord field set, declaration order, and omitempty semantics — including nested object key order for recent_taint_sources, redaction, and shield. Any omitted or reordered field recomputes a different signing hash and wrongly reports signature_invalid.",
 		); err != nil {
 			return nil, err
@@ -1227,7 +1255,7 @@ func buildMalicious() ([]fixture, error) {
 				Verdict:      "reject",
 				RejectReason: "duplicate_key",
 				Description:  "action_record carries two verdict keys (\"allow\" then the signed \"block\"). Valid JSON, last-wins parsing makes the signature verify, so a verifier without duplicate-key rejection silently accepts while a first-occurrence display layer shows the opposite verdict.",
-				Notes:        "Verifier MUST reject duplicate object keys at parse time, at any nesting depth, before signature verification. Use a raw token/pair scan (Go json.Decoder token loop, JS reviver/pair check, serde_json with reject_duplicate, Python object_pairs_hook) — last-wins map insertion hides the duplicate.",
+				Notes:        "Verifier MUST reject duplicate object keys at parse time, at any nesting depth, before signature verification, with explicit duplicate-key detection during raw parsing — last-wins map insertion hides the duplicate. Examples: a Go json.Decoder token loop, a JS pair/key scan, a Rust serde Visitor that tracks map keys (serde_json has no built-in reject-duplicate option; struct fields error on repeats but map-like decoding is last-wins), and Python's object_pairs_hook.",
 			},
 		})
 	}
