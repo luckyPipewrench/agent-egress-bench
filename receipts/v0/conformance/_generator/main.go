@@ -40,8 +40,14 @@ const (
 	conformanceSessionID = "conformance-session"
 )
 
-// ActionRecord covers every field a v0 verifier may consult. Optional fields
-// are emitted with omitempty so the canonical JSON shape is stable.
+// ActionRecord covers every field a v0 verifier may consult. The field set,
+// declaration order, and omitempty semantics MIRROR THE GO STRUCT EXACTLY at
+// github.com/luckyPipewrench/pipelock/internal/receipt/action.go. The v1
+// signing input is SHA-256(json.Marshal(ActionRecord)) in struct-declaration
+// order (NOT JCS), so any field a verifier omits or reorders recomputes a
+// different canonical byte string and fails signature verification. Keeping
+// this struct a faithful mirror lets the generator emit fixtures that exercise
+// every field, which is what locks the four reference verifiers against drift.
 type ActionRecord struct {
 	Version int `json:"version"`
 
@@ -66,14 +72,90 @@ type ActionRecord struct {
 	PolicyHash string `json:"policy_hash"`
 	Verdict    string `json:"verdict"`
 
-	Transport string `json:"transport"`
-	Method    string `json:"method,omitempty"`
-	Layer     string `json:"layer,omitempty"`
-	Pattern   string `json:"pattern,omitempty"`
-	Severity  string `json:"severity,omitempty"`
+	// Taint-aware policy escalation context.
+	SessionTaintLevel   string           `json:"session_taint_level,omitempty"`
+	SessionContaminated bool             `json:"session_contaminated,omitempty"`
+	RecentTaintSources  []TaintSourceRef `json:"recent_taint_sources,omitempty"`
+	SessionTaskID       string           `json:"session_task_id,omitempty"`
+	SessionTaskLabel    string           `json:"session_task_label,omitempty"`
+	AuthorityKind       string           `json:"authority_kind,omitempty"`
+	TaintDecision       string           `json:"taint_decision,omitempty"`
+	TaintDecisionReason string           `json:"taint_decision_reason,omitempty"`
+	TaskOverrideApplied bool             `json:"task_override_applied,omitempty"`
+
+	// Contract context, populated when live lock evaluates this action.
+	ContractWinningSource string   `json:"contract_winning_source,omitempty"`
+	ContractLiveVerdict   string   `json:"contract_live_verdict,omitempty"`
+	ContractPolicySources []string `json:"contract_policy_sources,omitempty"`
+	ContractRuleID        string   `json:"contract_rule_id,omitempty"`
+	ActiveManifestHash    string   `json:"active_manifest_hash,omitempty"`
+	ContractHash          string   `json:"contract_hash,omitempty"`
+	ContractSelectorID    string   `json:"contract_selector_id,omitempty"`
+	ContractGeneration    uint64   `json:"contract_generation,omitempty"`
+
+	Transport string            `json:"transport"`
+	Method    string            `json:"method,omitempty"`
+	Layer     string            `json:"layer,omitempty"`
+	Pattern   string            `json:"pattern,omitempty"`
+	Severity  string            `json:"severity,omitempty"`
+	Redaction *RedactionSummary `json:"redaction,omitempty"`
+	Shield    *ShieldSummary    `json:"shield,omitempty"`
+	RequestID string            `json:"request_id,omitempty"`
 
 	ChainPrevHash string `json:"chain_prev_hash"`
 	ChainSeq      uint64 `json:"chain_seq"`
+
+	// Jurisdictional fields - present in schema for forward compatibility.
+	Venue              string   `json:"venue,omitempty"`
+	Jurisdiction       string   `json:"jurisdiction,omitempty"`
+	RulebookID         string   `json:"rulebook_id,omitempty"`
+	RemedyClass        string   `json:"remedy_class,omitempty"`
+	ContestationWindow string   `json:"contestation_window,omitempty"`
+	PrecedentRefs      []string `json:"precedent_refs,omitempty"`
+}
+
+// TaintSourceRef mirrors session.TaintSourceRef. Field order and omitempty
+// match the Go source so recent_taint_sources entries canonicalize identically.
+// Level mirrors session.TaintLevel (a uint8 with no custom JSON marshaller), so
+// it serializes as a NUMBER, not a string. The top-level ActionRecord
+// session_taint_level is a separate string field — do not conflate the two.
+type TaintSourceRef struct {
+	URL         string    `json:"url"`
+	Kind        string    `json:"kind"`
+	Level       uint8     `json:"level"`
+	Timestamp   time.Time `json:"timestamp"`
+	ReceiptID   string    `json:"receipt_id,omitempty"`
+	MatchReason string    `json:"match_reason,omitempty"`
+}
+
+// RedactionSummary mirrors receipt.RedactionSummary.
+type RedactionSummary struct {
+	Profile           string         `json:"profile,omitempty"`
+	Provider          string         `json:"provider,omitempty"`
+	Parser            string         `json:"parser,omitempty"`
+	TotalRedactions   int            `json:"total_redactions,omitempty"`
+	ByClass           map[string]int `json:"by_class,omitempty"`
+	CacheBoundaryKept bool           `json:"cache_boundary_kept,omitempty"`
+}
+
+// ShieldSummary mirrors receipt.ShieldSummary.
+type ShieldSummary struct {
+	Pipeline                 string `json:"pipeline,omitempty"`
+	TotalRewrites            int    `json:"total_rewrites,omitempty"`
+	ExtensionProbes          int    `json:"extension_probes,omitempty"`
+	TrackingBeacons          int    `json:"tracking_beacons,omitempty"`
+	AgentTraps               int    `json:"agent_traps,omitempty"`
+	FingerprintShimInjected  bool   `json:"fingerprint_shim_injected,omitempty"`
+	SVGForeignObjects        int    `json:"svg_foreign_objects,omitempty"`
+	SVGEventHandlers         int    `json:"svg_event_handlers,omitempty"`
+	SVGExternalReferences    int    `json:"svg_external_references,omitempty"`
+	SVGHiddenText            int    `json:"svg_hidden_text,omitempty"`
+	SVGAnimationInjections   int    `json:"svg_animation_injections,omitempty"`
+	BodyBytes                int    `json:"body_bytes,omitempty"`
+	ScannedBytes             int    `json:"scanned_bytes,omitempty"`
+	Partial                  bool   `json:"partial,omitempty"`
+	AdaptiveSignalsRecorded  int    `json:"adaptive_signals_recorded,omitempty"`
+	AdaptiveSignalMaxPerBody int    `json:"adaptive_signal_max_per_body,omitempty"`
 }
 
 // Receipt is the v0 signed envelope around an ActionRecord.
@@ -525,6 +607,128 @@ func buildGolden() ([]fixture, error) {
 		}
 	}
 
+	// 9. allow + Browser Shield summary — exercises the nested `shield` object.
+	// Historically the TS and Rust canonical field lists OMITTED `shield`
+	// entirely, so a shield-bearing receipt recomputed a DIFFERENT canonical
+	// byte string in those verifiers and the signature failed to verify. This
+	// fixture is the regression that locks `shield` into every verifier's
+	// canonical field list, in the correct position (after redaction, before
+	// request_id).
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "read", "allow",
+			"https://news.example.com/article/42", "https", "GET")
+		ar.Layer = "browser_shield"
+		ar.Severity = "low"
+		ar.Shield = &ShieldSummary{
+			Pipeline:                "browser_shield_v1",
+			TotalRewrites:           7,
+			TrackingBeacons:         3,
+			AgentTraps:              1,
+			FingerprintShimInjected: true,
+			BodyBytes:               20480,
+			ScannedBytes:            20480,
+		}
+		if f, err := makeSingle("09-allow-shield-summary", "golden", priv, pubHex, ar,
+			"Allow on a fetched page where Browser Shield rewrote tracking beacons and an agent trap.",
+			"Verifier MUST accept. The nested shield object MUST be included in the canonical field list (after redaction, before request_id); a verifier that drops it recomputes a different signing hash and wrongly reports signature_invalid.",
+		); err != nil {
+			return nil, err
+		} else {
+			out = append(out, f)
+		}
+	}
+
+	// 10. full-field differential — populates EVERY omitempty field in the
+	// ActionRecord (parent_action_id, data classes, the taint block incl. a
+	// nested recent_taint_sources entry, the contract block, the jurisdictional
+	// block, and fully-populated nested redaction and shield objects). A verifier
+	// whose canonical field list omits or reorders ANY field recomputes a
+	// different signing hash and fails. This is the four-language differential:
+	// the Go signer includes all of them, so only a verifier that mirrors the
+	// full Go struct — every field, in declaration order, with nested object key
+	// order — verifies it.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "write", "allow",
+			"https://api.example.com/v1/agents/spawn", "https", "POST")
+		ar.ParentActionID = "conformance-parent-00000"
+		ar.Intent = "delegated-subagent-write"
+		ar.DataClassesIn = []string{"prompt", "secret"}
+		ar.DataClassesOut = []string{"summary"}
+		ar.Layer = "tool_policy"
+		ar.Pattern = "spawn_subagent"
+		ar.Severity = "medium"
+		ar.SessionTaintLevel = "suspected"
+		ar.SessionContaminated = true
+		ar.RecentTaintSources = []TaintSourceRef{
+			{
+				URL:  "https://compromised-blog.example/post/9",
+				Kind: "response_injection",
+				// session.TaintExternalUntrusted (4); serializes as a number.
+				Level:       4,
+				Timestamp:   freshTime,
+				ReceiptID:   "conformance-taint-00000",
+				MatchReason: "ignore_previous_instructions",
+			},
+		}
+		ar.SessionTaskID = "task-abc123"
+		ar.SessionTaskLabel = "research-and-summarize"
+		ar.AuthorityKind = "delegated"
+		ar.TaintDecision = "allow_with_constraints"
+		ar.TaintDecisionReason = "task_scope_permits_write"
+		ar.TaskOverrideApplied = true
+		ar.ContractWinningSource = "operator_policy"
+		ar.ContractLiveVerdict = "allow"
+		ar.ContractPolicySources = []string{"operator_policy", "org_default"}
+		ar.ContractRuleID = "rule-write-allow-7"
+		ar.ActiveManifestHash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+		ar.ContractHash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+		ar.ContractSelectorID = "selector-9"
+		ar.ContractGeneration = 4
+		ar.Redaction = &RedactionSummary{
+			Profile:           "strict",
+			Provider:          "provider.example",
+			Parser:            "json",
+			TotalRedactions:   2,
+			ByClass:           map[string]int{"api_key": 1, "email": 1},
+			CacheBoundaryKept: true,
+		}
+		ar.Shield = &ShieldSummary{
+			Pipeline:                 "browser_shield_v1",
+			TotalRewrites:            5,
+			ExtensionProbes:          1,
+			TrackingBeacons:          2,
+			AgentTraps:               1,
+			FingerprintShimInjected:  true,
+			SVGForeignObjects:        1,
+			SVGEventHandlers:         1,
+			SVGExternalReferences:    1,
+			SVGHiddenText:            1,
+			SVGAnimationInjections:   1,
+			BodyBytes:                4096,
+			ScannedBytes:             4096,
+			Partial:                  true,
+			AdaptiveSignalsRecorded:  3,
+			AdaptiveSignalMaxPerBody: 8,
+		}
+		ar.RequestID = "req-7f3a"
+		// Jurisdictional block — present for forward compatibility; populated
+		// here so the full ActionRecord field set is genuinely exercised.
+		ar.Venue = "us-east"
+		ar.Jurisdiction = "operator-default"
+		ar.RulebookID = "rulebook-v1"
+		ar.RemedyClass = "compensate"
+		ar.ContestationWindow = "24h"
+		ar.PrecedentRefs = []string{"conformance-precedent-1"}
+		if f, err := makeSingle("10-full-field-differential", "golden", priv, pubHex, ar,
+			"Allow on a delegated sub-agent write that populates EVERY omitempty field in the ActionRecord — parent_action_id, data classes, the full taint block (scalars + a nested recent_taint_sources entry with receipt_id), the contract block, the jurisdictional block, and fully-populated nested redaction and shield objects. At least one reference verifier historically dropped each of these from its canonical field list.",
+			"Verifier MUST accept. This is the cross-language drift sentinel: a verifier MUST mirror the full Go ActionRecord field set, declaration order, and omitempty semantics — including nested object key order for recent_taint_sources, redaction, and shield. Any omitted or reordered field recomputes a different signing hash and wrongly reports signature_invalid.",
+		); err != nil {
+			return nil, err
+		} else {
+			out = append(out, f)
+		}
+	}
+
 	return out, nil
 }
 
@@ -936,7 +1140,7 @@ func buildMalicious() ([]fixture, error) {
 			Expect: Expect{
 				FixtureID:    "m10-receipt-count-mismatch",
 				Category:     "malicious",
-				InputFormat:  "chain",
+				InputFormat:  "receipt_bundle",
 				Verdict:      "reject",
 				RejectReason: "receipt_count_mismatch",
 				Description:  "Wrapper envelope claims declared_receipt_count=5 but only 4 receipts are present in the body.",
@@ -1001,6 +1205,92 @@ func buildMalicious() ([]fixture, error) {
 				RejectReason: "header_injection",
 				Description:  "principal field contains a NUL byte followed by a second agent identifier. Downstream consumers that string-split on common delimiters could be tricked into trusting the second identifier.",
 				Notes:        "Verifier MUST reject control bytes (0x00-0x1F except whitespace) in identifier fields. This is a transport-level integrity check, not a signature check.",
+			},
+		})
+	}
+
+	// M13. Duplicate object key — verdict smuggling via parser differential.
+	// The receipt is signed normally with verdict="block". The raw bytes are
+	// then rewritten to carry a SECOND, EARLIER verdict key with value "allow":
+	//   "verdict":"allow", ... "verdict":"block"
+	// This is valid JSON (RFC 8259 permits duplicate names but says behaviour
+	// is unpredictable). Go/JS/Rust-serde/Python json all resolve last-wins, so
+	// a verifier WITHOUT duplicate-key rejection parses verdict="block",
+	// recomputes the canonical form, and the signature VERIFIES — it silently
+	// ACCEPTS the receipt while a naive display or log layer that reads the
+	// first occurrence shows "allow". That display-vs-reality divergence is the
+	// attack. A correct verifier MUST reject any duplicate object key (at any
+	// nesting depth) at parse time, before signature verification.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "write", "block",
+			"https://attacker.example.net/exfil", "https", "POST")
+		ar.Layer = "tool_policy"
+		ar.Severity = "high"
+		r, err := signReceipt(ar, priv)
+		if err != nil {
+			return nil, err
+		}
+		good, err := marshalPretty(r)
+		if err != nil {
+			return nil, err
+		}
+		// Inject a duplicate `verdict` key inside the action_record, before the
+		// real (signed) one. marshalPretty indents action_record fields by four
+		// spaces. There is exactly one `verdict` key in the document (the
+		// Receipt envelope has none), so a single targeted replacement is safe.
+		marker := []byte("\"verdict\": \"block\"")
+		dup := []byte("\"verdict\": \"allow\",\n    \"verdict\": \"block\"")
+		if !bytes.Contains(good, marker) {
+			return nil, fmt.Errorf("m13: verdict marker not found in payload")
+		}
+		bad := bytes.Replace(good, marker, dup, 1)
+		out = append(out, fixture{
+			Category: "malicious",
+			Name:     "m13-duplicate-key-verdict",
+			Payload:  bad,
+			Expect: Expect{
+				FixtureID:    "m13-duplicate-key-verdict",
+				Category:     "malicious",
+				InputFormat:  "receipt",
+				Verdict:      "reject",
+				RejectReason: "duplicate_key",
+				Description:  "action_record carries two verdict keys (\"allow\" then the signed \"block\"). Valid JSON, last-wins parsing makes the signature verify, so a verifier without duplicate-key rejection silently accepts while a first-occurrence display layer shows the opposite verdict.",
+				Notes:        "Verifier MUST reject duplicate object keys at parse time, at any nesting depth, before signature verification, with explicit duplicate-key detection during raw parsing — last-wins map insertion hides the duplicate. Examples: a Go json.Decoder token loop, a JS pair/key scan, a Rust serde Visitor that tracks map keys (serde_json has no built-in reject-duplicate option; struct fields error on repeats but map-like decoding is last-wins), and Python's object_pairs_hook.",
+			},
+		})
+	}
+
+	// M14. Nested duplicate object key with unicode-escaped equivalent key.
+	// The duplicate lives inside an otherwise-ignored top-level probe field so
+	// signature verification would succeed if the raw duplicate-key scan missed
+	// nested array/object values or failed to normalize \u escapes.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "write", "block",
+			"https://attacker.example.net/exfil", "https", "POST")
+		r, err := signReceipt(ar, priv)
+		if err != nil {
+			return nil, err
+		}
+		good, err := marshalPretty(r)
+		if err != nil {
+			return nil, err
+		}
+		bad, err := addTopLevelRawField(good, "dup_probe", `[{"a":1,"\u0061":2}]`)
+		if err != nil {
+			return nil, fmt.Errorf("m14: %w", err)
+		}
+		out = append(out, fixture{
+			Category: "malicious",
+			Name:     "m14-duplicate-key-nested-unicode",
+			Payload:  bad,
+			Expect: Expect{
+				FixtureID:    "m14-duplicate-key-nested-unicode",
+				Category:     "malicious",
+				InputFormat:  "receipt",
+				Verdict:      "reject",
+				RejectReason: "duplicate_key",
+				Description:  `Ignored top-level probe contains an array element with duplicate keys "a" and "\u0061".`,
+				Notes:        "Verifier MUST reject duplicate object keys at any nesting depth, including unicode-escaped key equivalents inside arrays and fields ignored by signature canonicalization.",
 			},
 		})
 	}
@@ -1148,6 +1438,64 @@ func buildEdge() ([]fixture, error) {
 		}
 	}
 
+	// E9. Exact maximum JSON nesting depth in an ignored top-level field.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "read", "allow",
+			"https://api.example.com/v1/data", "https", "GET")
+		f, err := makeSingle("e09-maximum-json-nesting-depth", "edge", priv, pubHex, ar,
+			"Receipt carries an ignored top-level probe field that brings the whole JSON document to exactly 128 nesting levels.",
+			"Verifier MUST accept. The shared raw-JSON scanner limit allows 128 nested arrays/objects including the receipt root object and rejects the 129th; this fixture catches off-by-one differences between language runtimes.",
+		)
+		if err != nil {
+			return nil, err
+		}
+		f.Payload, err = addTopLevelRawField(f.Payload, "depth_probe", nestedArrayJSON(127))
+		if err != nil {
+			return nil, fmt.Errorf("e09: %w", err)
+		}
+		out = append(out, f)
+	}
+
+	// E10. Non-BMP map keys in redaction.by_class.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "write", "allow",
+			"https://api.example.com/v1/data", "https", "POST")
+		ar.Redaction = &RedactionSummary{
+			Profile:         "strict",
+			Provider:        "provider.example",
+			Parser:          "json",
+			TotalRedactions: 3,
+			ByClass: map[string]int{
+				"api_key":    1,
+				"\uE000":     2,
+				"\U00010000": 3,
+			},
+		}
+		if f, err := makeSingle("e10-non-bmp-map-key-order", "edge", priv, pubHex, ar,
+			"Redaction by_class map contains a non-BMP key and a private-use BMP key.",
+			"Verifier MUST accept. Go orders map keys by UTF-8/code-point order; JavaScript's default UTF-16 sort orders this pair differently, so this fixture catches map-key canonicalization drift.",
+		); err != nil {
+			return nil, err
+		} else {
+			out = append(out, f)
+		}
+	}
+
+	// E11. Go JSON HTML escaping parity.
+	{
+		ar := baseRecord(0, genesisHash, freshTime, "read", "allow",
+			"https://api.example.com/v1/data", "https", "GET")
+		ar.Intent = "render <script>alert('x')</script> & preserve \u2028 and \u2029 separators"
+		if f, err := makeSingle("e11-html-escape-canonicalization", "edge", priv, pubHex, ar,
+			"Intent contains characters Go's encoding/json escapes in Marshal output: <, >, &, U+2028, and U+2029.",
+			"Verifier MUST accept. Non-Go verifiers must post-process canonical JSON to match Go's HTMLEscape behavior before hashing.",
+		); err != nil {
+			return nil, err
+		} else {
+			out = append(out, f)
+		}
+	}
+
 	return out, nil
 }
 
@@ -1164,6 +1512,19 @@ func marshalPretty(r Receipt) ([]byte, error) {
 		return nil, err
 	}
 	return append(buf, '\n'), nil
+}
+
+func addTopLevelRawField(payload []byte, name, rawValue string) ([]byte, error) {
+	marker := []byte("\n}\n")
+	if !bytes.HasSuffix(payload, marker) {
+		return nil, fmt.Errorf("payload does not end with top-level object marker")
+	}
+	insert := []byte(fmt.Sprintf(",\n  %q: %s\n}\n", name, rawValue))
+	return append(append([]byte{}, payload[:len(payload)-len(marker)]...), insert...), nil
+}
+
+func nestedArrayJSON(depth int) string {
+	return strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
 }
 
 // marshalChainJSONL serializes a slice of receipts as one compact JSON object
@@ -1193,6 +1554,13 @@ func writeAll(outDir string, fixtures []fixture) error {
 		extJSON := ".json"
 		if f.Expect.InputFormat == "chain" {
 			extJSON = ".jsonl"
+		}
+		staleExt := ".jsonl"
+		if extJSON == ".jsonl" {
+			staleExt = ".json"
+		}
+		if err := os.Remove(filepath.Join(dir, f.Name+staleExt)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale payload %s%s: %w", f.Name, staleExt, err)
 		}
 		payloadPath := filepath.Join(dir, f.Name+extJSON)
 		if err := os.WriteFile(payloadPath, f.Payload, 0o600); err != nil {
