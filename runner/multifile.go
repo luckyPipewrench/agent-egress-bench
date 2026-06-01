@@ -283,11 +283,15 @@ func (c MultiFileCase) receiptScoringExpected() string {
 // ExpectedVerdict is normalized through receiptScoringExpected so the
 // downstream receipt-profile mapping does not need to know about the
 // "warn" verdict that mcp-drift benign cases declare.
-func (c MultiFileCase) toCase() Case {
+func (c MultiFileCase) toCase() (Case, error) {
 	messages := make([]interface{}, 0, 4)
 	nextID := float64(1)
-	appendSnapshotMessages := func(snapshot map[string]interface{}) {
-		for _, response := range multiFileSnapshotResponses(snapshot) {
+	appendSnapshotMessages := func(label string, snapshot map[string]interface{}) error {
+		responses, err := multiFileSnapshotResponses(snapshot)
+		if err != nil {
+			return fmt.Errorf("%s snapshot: %w", label, err)
+		}
+		for _, response := range responses {
 			messages = append(messages, map[string]interface{}{
 				"jsonrpc": "2.0",
 				"method":  "tools/list",
@@ -296,9 +300,14 @@ func (c MultiFileCase) toCase() Case {
 			messages = append(messages, withJSONRPCID(response, nextID))
 			nextID++
 		}
+		return nil
 	}
-	appendSnapshotMessages(c.BeforeJSON)
-	appendSnapshotMessages(c.AfterJSON)
+	if err := appendSnapshotMessages("before", c.BeforeJSON); err != nil {
+		return Case{}, err
+	}
+	if err := appendSnapshotMessages("after", c.AfterJSON); err != nil {
+		return Case{}, err
+	}
 
 	return Case{
 		SchemaVersion: c.SchemaVersion,
@@ -319,26 +328,38 @@ func (c MultiFileCase) toCase() Case {
 		WhyExpected:     c.WhyExpected,
 		Notes:           c.Notes,
 		Source:          c.Source,
-	}
+	}, nil
 }
 
-func multiFileSnapshotResponses(snapshot map[string]interface{}) []interface{} {
-	rawServers, ok := snapshot["servers"].([]interface{})
+func multiFileSnapshotResponses(snapshot map[string]interface{}) ([]interface{}, error) {
+	rawServers, hasServers := snapshot["servers"]
+	if !hasServers {
+		return []interface{}{snapshot}, nil
+	}
+	servers, ok := rawServers.([]interface{})
 	if !ok {
-		return []interface{}{snapshot}
+		return nil, fmt.Errorf("servers must be an array")
 	}
-	responses := make([]interface{}, 0, len(rawServers))
-	for _, rawServer := range rawServers {
-		server, _ := rawServer.(map[string]interface{})
-		resp, ok := server["tools_list_response"].(map[string]interface{})
-		if ok {
-			responses = append(responses, resp)
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("servers must contain at least one entry")
+	}
+
+	responses := make([]interface{}, 0, len(servers))
+	for i, rawServer := range servers {
+		server, ok := rawServer.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("servers[%d] must be an object", i)
 		}
+		resp, ok := server["tools_list_response"]
+		if !ok {
+			return nil, fmt.Errorf("servers[%d] missing tools_list_response", i)
+		}
+		if _, ok := resp.(map[string]interface{}); !ok {
+			return nil, fmt.Errorf("servers[%d].tools_list_response must be an object", i)
+		}
+		responses = append(responses, resp)
 	}
-	if len(responses) == 0 {
-		return []interface{}{snapshot}
-	}
-	return responses
+	return responses, nil
 }
 
 func withJSONRPCID(msg interface{}, id float64) interface{} {

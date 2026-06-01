@@ -240,7 +240,10 @@ func TestMultiFileCase_ToCase_BlockExpected(t *testing.T) {
 		t.Fatal("mcp-drift-rugpull-desc-002 not found in mcp-drift fixtures")
 	}
 
-	caseRecord := rugpull.toCase()
+	caseRecord, err := rugpull.toCase()
+	if err != nil {
+		t.Fatalf("toCase: %v", err)
+	}
 	if caseRecord.ExpectedVerdict != "block" {
 		t.Errorf("ExpectedVerdict = %q, want block", caseRecord.ExpectedVerdict)
 	}
@@ -294,7 +297,10 @@ func TestMultiFileCase_ToCase_MultiServerResponses(t *testing.T) {
 		t.Fatal("mcp-drift-collusion-004 not found in mcp-drift fixtures")
 	}
 
-	caseRecord := collusion.toCase()
+	caseRecord, err := collusion.toCase()
+	if err != nil {
+		t.Fatalf("toCase: %v", err)
+	}
 	msgs, ok := caseRecord.Payload["jsonrpc_messages"].([]interface{})
 	if !ok || len(msgs) != 8 {
 		t.Fatalf("payload.jsonrpc_messages = %v, want 8-element slice", caseRecord.Payload["jsonrpc_messages"])
@@ -328,6 +334,66 @@ func TestMultiFileCase_ToCase_MultiServerResponses(t *testing.T) {
 	}
 }
 
+func TestMultiFileSnapshotResponses_RejectsMalformedServers(t *testing.T) {
+	tests := []struct {
+		name     string
+		snapshot map[string]interface{}
+		wantErr  string
+	}{
+		{
+			name: "servers not array",
+			snapshot: map[string]interface{}{
+				"servers": map[string]interface{}{},
+			},
+			wantErr: "servers must be an array",
+		},
+		{
+			name: "empty servers",
+			snapshot: map[string]interface{}{
+				"servers": []interface{}{},
+			},
+			wantErr: "servers must contain at least one entry",
+		},
+		{
+			name: "server not object",
+			snapshot: map[string]interface{}{
+				"servers": []interface{}{"bad"},
+			},
+			wantErr: "servers[0] must be an object",
+		},
+		{
+			name: "missing tools list response",
+			snapshot: map[string]interface{}{
+				"servers": []interface{}{
+					map[string]interface{}{"name": "alpha"},
+				},
+			},
+			wantErr: "servers[0] missing tools_list_response",
+		},
+		{
+			name: "tools list response not object",
+			snapshot: map[string]interface{}{
+				"servers": []interface{}{
+					map[string]interface{}{"tools_list_response": "bad"},
+				},
+			},
+			wantErr: "servers[0].tools_list_response must be an object",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := multiFileSnapshotResponses(tt.snapshot)
+			if err == nil {
+				t.Fatal("expected malformed servers error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want substring %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // TestMultiFileCase_ToCase_WarnNormalizedToAllow verifies the receipt-
 // scoring rubric normalization: a case.yaml with expected_verdict: warn
 // (the mcp-drift-benign-001 FP-guardrail case) is converted to a Case
@@ -352,7 +418,10 @@ func TestMultiFileCase_ToCase_WarnNormalizedToAllow(t *testing.T) {
 	if benign.ExpectedVerdict != "warn" {
 		t.Fatalf("fixture expected_verdict = %q, want warn (rubric mapping assumes this)", benign.ExpectedVerdict)
 	}
-	caseRecord := benign.toCase()
+	caseRecord, err := benign.toCase()
+	if err != nil {
+		t.Fatalf("toCase: %v", err)
+	}
 	if caseRecord.ExpectedVerdict != "allow" {
 		t.Errorf("converted ExpectedVerdict = %q, want allow (warn maps to allow for receipt-scoring)", caseRecord.ExpectedVerdict)
 	}
