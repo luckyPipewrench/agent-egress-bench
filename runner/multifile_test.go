@@ -275,6 +275,59 @@ func TestMultiFileCase_ToCase_BlockExpected(t *testing.T) {
 	}
 }
 
+// TestMultiFileCase_ToCase_MultiServerResponses verifies that multi-server
+// snapshots are converted into one request/response pair per server rather
+// than leaving the fixture-only "servers" wrapper in the adapter payload.
+func TestMultiFileCase_ToCase_MultiServerResponses(t *testing.T) {
+	cases, err := loadMultiFileCases(filepath.Join("..", "cases", "mcp-drift"))
+	if err != nil {
+		t.Fatalf("loadMultiFileCases: %v", err)
+	}
+	var collusion MultiFileCase
+	for _, c := range cases {
+		if c.ID == "mcp-drift-collusion-004" {
+			collusion = c
+			break
+		}
+	}
+	if collusion.ID == "" {
+		t.Fatal("mcp-drift-collusion-004 not found in mcp-drift fixtures")
+	}
+
+	caseRecord := collusion.toCase()
+	msgs, ok := caseRecord.Payload["jsonrpc_messages"].([]interface{})
+	if !ok || len(msgs) != 8 {
+		t.Fatalf("payload.jsonrpc_messages = %v, want 8-element slice", caseRecord.Payload["jsonrpc_messages"])
+	}
+	for idx := 0; idx < len(msgs); idx += 2 {
+		wantID := float64(idx/2 + 1)
+		req, ok := msgs[idx].(map[string]interface{})
+		if !ok {
+			t.Fatalf("msgs[%d] = %T, want request object", idx, msgs[idx])
+		}
+		if req["method"] != "tools/list" {
+			t.Errorf("msgs[%d].method = %v, want tools/list", idx, req["method"])
+		}
+		if req["id"] != wantID {
+			t.Errorf("msgs[%d].id = %v, want %v", idx, req["id"], wantID)
+		}
+
+		resp, ok := msgs[idx+1].(map[string]interface{})
+		if !ok {
+			t.Fatalf("msgs[%d] = %T, want response object", idx+1, msgs[idx+1])
+		}
+		if resp["id"] != wantID {
+			t.Errorf("msgs[%d].id = %v, want matching request id %v", idx+1, resp["id"], wantID)
+		}
+		if _, hasResult := resp["result"]; !hasResult {
+			t.Errorf("msgs[%d] missing result field; not a server response", idx+1)
+		}
+		if _, hasServers := resp["servers"]; hasServers {
+			t.Errorf("msgs[%d] still has servers wrapper", idx+1)
+		}
+	}
+}
+
 // TestMultiFileCase_ToCase_WarnNormalizedToAllow verifies the receipt-
 // scoring rubric normalization: a case.yaml with expected_verdict: warn
 // (the mcp-drift-benign-001 FP-guardrail case) is converted to a Case

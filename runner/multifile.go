@@ -273,28 +273,33 @@ func (c MultiFileCase) receiptScoringExpected() string {
 }
 
 // toCase converts a MultiFileCase into a regular Case the existing runner
-// pipeline can execute. The Payload contains the four-message JSON-RPC
-// sequence the mcp_stdio adapter expects for tool-poisoning scenarios:
-// two client tools/list requests interleaved with two server responses
-// (before.json on request 1, after.json on request 2). Pipelock observes
-// both responses through a single MCP session and the adapter captures the
-// verdict on whichever response triggers a policy block, normally the
-// second.
+// pipeline can execute. The Payload contains an ordered JSON-RPC sequence of
+// client tools/list requests interleaved with server responses. Single-server
+// fixtures become the usual four-message sequence (before request/response,
+// after request/response). Multi-server fixtures become one request/response
+// pair per server snapshot so stdio proxy adapters can replay each observed
+// tools/list response without relying on JSON-RPC batches.
 //
 // ExpectedVerdict is normalized through receiptScoringExpected so the
 // downstream receipt-profile mapping does not need to know about the
 // "warn" verdict that mcp-drift benign cases declare.
 func (c MultiFileCase) toCase() Case {
-	clientReq1 := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "tools/list",
-		"id":      float64(1),
+	messages := make([]interface{}, 0, 4)
+	nextID := float64(1)
+	appendSnapshotMessages := func(snapshot map[string]interface{}) {
+		for _, response := range multiFileSnapshotResponses(snapshot) {
+			messages = append(messages, map[string]interface{}{
+				"jsonrpc": "2.0",
+				"method":  "tools/list",
+				"id":      nextID,
+			})
+			messages = append(messages, withJSONRPCID(response, nextID))
+			nextID++
+		}
 	}
-	clientReq2 := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "tools/list",
-		"id":      float64(2),
-	}
+	appendSnapshotMessages(c.BeforeJSON)
+	appendSnapshotMessages(c.AfterJSON)
+
 	return Case{
 		SchemaVersion: c.SchemaVersion,
 		ID:            c.ID,
@@ -304,12 +309,7 @@ func (c MultiFileCase) toCase() Case {
 		InputType:     c.InputType,
 		Transport:     c.Transport,
 		Payload: map[string]interface{}{
-			"jsonrpc_messages": []interface{}{
-				clientReq1,
-				c.BeforeJSON,
-				clientReq2,
-				c.AfterJSON,
-			},
+			"jsonrpc_messages": messages,
 		},
 		ExpectedVerdict: c.receiptScoringExpected(),
 		Severity:        c.Severity,
@@ -320,6 +320,38 @@ func (c MultiFileCase) toCase() Case {
 		Notes:           c.Notes,
 		Source:          c.Source,
 	}
+}
+
+func multiFileSnapshotResponses(snapshot map[string]interface{}) []interface{} {
+	rawServers, ok := snapshot["servers"].([]interface{})
+	if !ok {
+		return []interface{}{snapshot}
+	}
+	responses := make([]interface{}, 0, len(rawServers))
+	for _, rawServer := range rawServers {
+		server, _ := rawServer.(map[string]interface{})
+		resp, ok := server["tools_list_response"].(map[string]interface{})
+		if ok {
+			responses = append(responses, resp)
+		}
+	}
+	if len(responses) == 0 {
+		return []interface{}{snapshot}
+	}
+	return responses
+}
+
+func withJSONRPCID(msg interface{}, id float64) interface{} {
+	m, ok := msg.(map[string]interface{})
+	if !ok {
+		return msg
+	}
+	cp := make(map[string]interface{}, len(m)+1)
+	for k, v := range m {
+		cp[k] = v
+	}
+	cp["id"] = id
+	return cp
 }
 
 // computeMultiFileSHA256 hashes the multi-file corpus directory contents
