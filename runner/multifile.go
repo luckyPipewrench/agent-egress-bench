@@ -273,28 +273,42 @@ func (c MultiFileCase) receiptScoringExpected() string {
 }
 
 // toCase converts a MultiFileCase into a regular Case the existing runner
-// pipeline can execute. The Payload contains the four-message JSON-RPC
-// sequence the mcp_stdio adapter expects for tool-poisoning scenarios:
-// two client tools/list requests interleaved with two server responses
-// (before.json on request 1, after.json on request 2). Pipelock observes
-// both responses through a single MCP session and the adapter captures the
-// verdict on whichever response triggers a policy block, normally the
-// second.
+// pipeline can execute. The Payload contains an ordered JSON-RPC sequence of
+// client tools/list requests interleaved with server responses. Single-server
+// fixtures become the usual four-message sequence (before request/response,
+// after request/response). Multi-server fixtures become one request/response
+// pair per server snapshot so stdio proxy adapters can replay each observed
+// tools/list response without relying on JSON-RPC batches.
 //
 // ExpectedVerdict is normalized through receiptScoringExpected so the
 // downstream receipt-profile mapping does not need to know about the
 // "warn" verdict that mcp-drift benign cases declare.
-func (c MultiFileCase) toCase() Case {
-	clientReq1 := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "tools/list",
-		"id":      float64(1),
+func (c MultiFileCase) toCase() (Case, error) {
+	messages := make([]interface{}, 0, 4)
+	nextID := float64(1)
+	appendSnapshotMessages := func(label string, snapshot map[string]interface{}) error {
+		responses, err := multiFileSnapshotResponses(snapshot)
+		if err != nil {
+			return fmt.Errorf("%s snapshot: %w", label, err)
+		}
+		for _, response := range responses {
+			messages = append(messages, map[string]interface{}{
+				"jsonrpc": "2.0",
+				"method":  "tools/list",
+				"id":      nextID,
+			})
+			messages = append(messages, withJSONRPCID(response, nextID))
+			nextID++
+		}
+		return nil
 	}
-	clientReq2 := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "tools/list",
-		"id":      float64(2),
+	if err := appendSnapshotMessages("before", c.BeforeJSON); err != nil {
+		return Case{}, err
 	}
+	if err := appendSnapshotMessages("after", c.AfterJSON); err != nil {
+		return Case{}, err
+	}
+
 	return Case{
 		SchemaVersion: c.SchemaVersion,
 		ID:            c.ID,
@@ -304,12 +318,7 @@ func (c MultiFileCase) toCase() Case {
 		InputType:     c.InputType,
 		Transport:     c.Transport,
 		Payload: map[string]interface{}{
-			"jsonrpc_messages": []interface{}{
-				clientReq1,
-				c.BeforeJSON,
-				clientReq2,
-				c.AfterJSON,
-			},
+			"jsonrpc_messages": messages,
 		},
 		ExpectedVerdict: c.receiptScoringExpected(),
 		Severity:        c.Severity,
@@ -319,7 +328,51 @@ func (c MultiFileCase) toCase() Case {
 		WhyExpected:     c.WhyExpected,
 		Notes:           c.Notes,
 		Source:          c.Source,
+	}, nil
+}
+
+func multiFileSnapshotResponses(snapshot map[string]interface{}) ([]interface{}, error) {
+	rawServers, hasServers := snapshot["servers"]
+	if !hasServers {
+		return []interface{}{snapshot}, nil
 	}
+	servers, ok := rawServers.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("servers must be an array")
+	}
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("servers must contain at least one entry")
+	}
+
+	responses := make([]interface{}, 0, len(servers))
+	for i, rawServer := range servers {
+		server, ok := rawServer.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("servers[%d] must be an object", i)
+		}
+		resp, ok := server["tools_list_response"]
+		if !ok {
+			return nil, fmt.Errorf("servers[%d] missing tools_list_response", i)
+		}
+		if _, ok := resp.(map[string]interface{}); !ok {
+			return nil, fmt.Errorf("servers[%d].tools_list_response must be an object", i)
+		}
+		responses = append(responses, resp)
+	}
+	return responses, nil
+}
+
+func withJSONRPCID(msg interface{}, id float64) interface{} {
+	m, ok := msg.(map[string]interface{})
+	if !ok {
+		return msg
+	}
+	cp := make(map[string]interface{}, len(m)+1)
+	for k, v := range m {
+		cp[k] = v
+	}
+	cp["id"] = id
+	return cp
 }
 
 // computeMultiFileSHA256 hashes the multi-file corpus directory contents

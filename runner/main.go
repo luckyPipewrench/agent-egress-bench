@@ -65,7 +65,11 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 			return mfErr
 		}
 		for _, mfc := range mfCases {
-			cases = append(cases, mfc.toCase())
+			converted, convertErr := mfc.toCase()
+			if convertErr != nil {
+				return fmt.Errorf("convert multi-file case %s: %w", mfc.ID, convertErr)
+			}
+			cases = append(cases, converted)
 		}
 	}
 
