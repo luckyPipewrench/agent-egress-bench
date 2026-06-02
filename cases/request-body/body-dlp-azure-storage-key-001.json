@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "body-dlp-azure-storage-key-001",
+  "category": "request_body",
+  "title": "Azure storage account key in JSON request body",
+  "description": "Agent posts an Azure storage connection string whose AccountKey field carries the 88-character base64 account key.",
+  "input_type": "request_body",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://api.example.com/v1/backup",
+    "content_type": "application/json",
+    "body": "{\"conn\": \"DefaultEndpointsProtocol=https;AccountName=demoacct;AccountKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==;EndpointSuffix=core.windows.net\"}"
+  },
+  "expected_verdict": "block",
+  "severity": "critical",
+  "capability_tags": ["request_body_dlp"],
+  "requires": ["request_body_scanning"],
+  "false_positive_risk": "low",
+  "why_expected": "azure_storage_account_key",
+  "notes": "512-bit storage key is 88 base64 chars (86 + '==') in the AccountKey= field. Synthetic value.",
+  "source": "Azure storage connection string format (learn.microsoft.com)"
+}
