@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "body-dlp-postgres-conn-001",
+  "category": "request_body",
+  "title": "PostgreSQL connection string with credentials in JSON request body",
+  "description": "Agent posts a PostgreSQL connection URI carrying a username and password inside a JSON request body.",
+  "input_type": "request_body",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://api.example.com/v1/import",
+    "content_type": "application/json",
+    "body": "{\"database_url\": \"postgres://dbadmin:examplepass123@db.internal.example:5432/prod\"}"
+  },
+  "expected_verdict": "block",
+  "severity": "critical",
+  "capability_tags": ["request_body_dlp"],
+  "requires": ["request_body_scanning"],
+  "false_positive_risk": "low",
+  "why_expected": "postgres_connection_string_with_credentials",
+  "notes": "The password between ':' and '@' is the secret. Synthetic credentials.",
+  "source": "PostgreSQL connection URI format (libpq)"
+}
