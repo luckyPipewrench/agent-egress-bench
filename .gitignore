@@ -23,6 +23,7 @@ CLAUDE.local.md
 
 # Test output
 *.jsonl
+!receipts/v0/conformance/**/*.jsonl
 
 # Playwright
 .playwright-mcp/
