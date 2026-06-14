@@ -1,7 +1,9 @@
 {
-  "attack_class": "unsigned-svid-host",
+  "attack_class": "untrusted-issuer-svid",
   "category": "killsuite",
   "description": "a complete SVID attestation on a receipt signed by an untrusted key: the assertion is unsigned, so the workload-identity claims never attach",
+  "expected_does_not_assert": [],
+  "expected_overclaim_risks": [],
   "fixture_id": "k23-untrusted-issuer-svid",
   "input_format": "envelope",
   "must_not_verify": [
@@ -9,6 +11,7 @@
     "signing_workload_svid_chain_validated",
     "signing_workload_svid_bound"
   ],
+  "must_verify": [],
   "overclaim_narrative": "a valid SVID is attached, so the signing workload identity is verified regardless of the receipt signer",
   "verdict": "appraise"
 }

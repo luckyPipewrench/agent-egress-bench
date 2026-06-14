@@ -81,15 +81,18 @@ for name in sorted(envelopes):
         if not os.path.isfile(required):
             errors.append(f"{name}: missing {os.path.basename(required)}")
     # Every JSON parses.
+    parsed = {}
     for p in (env, expect_p, appraisal_p):
         if os.path.isfile(p):
             try:
-                load(p)
+                parsed[p] = load(p)
             except Exception as e:
                 errors.append(f"{os.path.basename(p)}: invalid JSON: {e}")
     if not os.path.isfile(expect_p):
         continue
-    exp = load(expect_p)
+    exp = parsed.get(expect_p)
+    if exp is None:
+        continue
     if exp.get("verdict") != "appraise":
         errors.append(f"{name}: verdict is {exp.get('verdict')!r}, kill-suite fixtures must be 'appraise'")
     if exp.get("fixture_id") != name:

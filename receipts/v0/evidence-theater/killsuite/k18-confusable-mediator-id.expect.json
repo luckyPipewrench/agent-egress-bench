@@ -2,6 +2,12 @@
   "attack_class": "cross-language-confusable",
   "category": "killsuite",
   "description": "a mediator_id with a Cyrillic homoglyph that pins the Latin mediator identity: the signature verifies but the id does not equal the pinned Latin id, so mediator pinning is withheld across all four verifiers",
+  "expected_does_not_assert": [
+    "mediator_key_pinned"
+  ],
+  "expected_overclaim_risks": [
+    "mediator_pinning"
+  ],
   "fixture_id": "k18-confusable-mediator-id",
   "input_format": "envelope",
   "must_not_verify": [
