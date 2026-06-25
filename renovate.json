@@ -1,88 +1,19 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    ":semanticCommits",
-    ":maintainLockFilesWeekly"
-  ],
+  "extends": ["config:recommended", ":semanticCommits"],
   "minimumReleaseAge": "10 days",
   "internalChecksFilter": "strict",
-  "labels": [
-    "dependencies"
-  ],
-  "prConcurrentLimit": 10,
-  "vulnerabilityAlerts": {
-    "labels": [
-      "security",
-      "fast-track"
-    ],
-    "minimumReleaseAge": "0 days",
-    "schedule": [
-      "at any time"
-    ]
-  },
+  "prCreation": "not-pending",
+  "schedule": ["* * * * 1"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": { "enabled": false },
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": { "labels": ["security", "fast-track"], "minimumReleaseAge": "0 days", "schedule": ["at any time"] },
   "packageRules": [
-    {
-      "matchPackagePatterns": [
-        "^luckyPipewrench/",
-        "^ghcr\\.io/luckypipewrench/"
-      ],
-      "minimumReleaseAge": "0 days",
-      "description": "Own-org packages bypass cooldown (we control the supply chain)"
-    },
-    {
-      "matchManagers": [
-        "github-actions"
-      ],
-      "pinDigests": true,
-      "commitMessagePrefix": "ci:",
-      "addLabels": [
-        "ci"
-      ],
-      "groupName": "ci-actions"
-    },
-    {
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchFileNames": [
-        "validate/**"
-      ],
-      "commitMessagePrefix": "deps:",
-      "groupName": "go-validate"
-    },
-    {
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchFileNames": [
-        "runner/**"
-      ],
-      "commitMessagePrefix": "deps:",
-      "groupName": "go-runner"
-    },
-    {
-      "matchManagers": [
-        "pip_requirements"
-      ],
-      "matchFileNames": [
-        ".github/**"
-      ],
-      "commitMessagePrefix": "ci:",
-      "addLabels": [
-        "ci"
-      ],
-      "groupName": "python-deps"
-    },
-    {
-      "matchUpdateTypes": [
-        "major"
-      ],
-      "addLabels": [
-        "major-update",
-        "needs-review"
-      ],
-      "automerge": false
-    }
+    { "description": "Pin GitHub Actions to digests for the OpenSSF Scorecard pinned-dependencies check. Digest-maintenance PRs batch into the weekly group below.", "matchManagers": ["github-actions"], "pinDigests": true },
+    { "description": "Collapse every non-major update (minor, patch, digest, pin) into ONE weekly batched PR so PR volume stays low.", "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest", "bump"], "groupName": "weekly dependencies" },
+    { "description": "Major updates stay individual and manually reviewed (no automerge), not delayed to the weekly window.", "matchUpdateTypes": ["major"], "addLabels": ["major-update", "needs-review"], "automerge": false, "schedule": ["at any time"] }
   ]
 }

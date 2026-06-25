@@ -211,23 +211,11 @@ The 8 case categories map to the [OWASP Top 10 for Agentic Applications (2026)](
 
 Full mapping with MITRE ATT&CK techniques: [docs/OWASP-MAPPING.md](docs/OWASP-MAPPING.md)
 
-## How this differs from other benchmarks
+## Scope
 
-Most AI agent security benchmarks test whether the **model** behaves safely. This one tests whether the **security tool** catches the attack.
+This corpus evaluates the **security tool** that sits between an AI agent and the network (a proxy, firewall, or MCP wrapper): given an attack, did the tool catch it. It does not evaluate the agent or model's own behavior. Cases test observable outcomes at the wire level, such as whether an exfiltrated secret in a query string was blocked or whether prompt injection in a tool response was detected.
 
-| Benchmark | Tests what? | Focus |
-|-----------|------------|-------|
-| [AgentDojo](https://github.com/ethz-spylab/agentdojo) (ETH Zurich) | The LLM agent | Robustness to prompt injection in realistic tasks |
-| [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) (UIUC) | The LLM agent | Indirect prompt injection success rate |
-| [AgentHarm](https://huggingface.co/datasets/ai-safety-institute/AgentHarm) (UK AISI) | The LLM | Refusal of harmful multi-step tasks |
-| [CyberSecEval](https://github.com/meta-llama/PurpleLlama) (Meta) | The LLM | Insecure code generation, cyberattack assistance |
-| [ASB](https://github.com/agiresearch/ASB) (ICLR 2025) | The LLM agent | Defense prompts reducing attack success |
-| [AgentShield-bench](https://github.com/doronp/agentshield-benchmark) (Agent Guard) | Security middleware | Prompt injection and jailbreak detection at API layer |
-| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning, A2A, hostname exfiltration, encoding evasion at the network layer (165 logical cases)** |
-
-The model-testing benchmarks assume the LLM is the last line of defense. This corpus assumes models will sometimes fail, and tests the defense-in-depth layer that sits between the agent and the network.
-
-AgentShield-benchmark is the closest comparable, but operates at the application/API layer (is this prompt an injection?). agent-egress-bench operates at the wire level (did this HTTP request contain an exfiltrated secret in the query string? did this MCP tool response contain prompt injection?).
+Each tool publishes its own results independently; this repo produces no rankings or cross-tool comparisons.
 
 ## Docs
 
