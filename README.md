@@ -11,7 +11,7 @@
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
 </p>
 
-A standardized test corpus for evaluating AI agent egress security tools. 155 cases across 18 categories, covering secret exfiltration, prompt injection, SSRF, hostname exfiltration, MCP tool poisoning, chain detection, MCP drift, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
+A standardized test corpus for evaluating AI agent egress security tools. 165 logical cases across 18 categories, covering secret exfiltration, prompt injection, SSRF, hostname exfiltration, MCP tool poisoning, chain detection, MCP drift, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
 
 **This tests the security tool, not the agent.** Most benchmarks in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) test whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
 
@@ -36,8 +36,8 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 
 | Category | Directory | Cases | What it tests |
 |----------|-----------|-------|---------------|
-| URL DLP | `cases/url/` | 15 | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF, domain blocklist |
-| Request body DLP | `cases/request-body/` | 10 | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
+| URL DLP | `cases/url/` | 18 | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF, domain blocklist |
+| Request body DLP | `cases/request-body/` | 12 | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
 | Header DLP | `cases/headers/` | 9 | API keys and tokens in HTTP headers (Bearer, JWT, AWS, multi-header) |
 | Hostname exfiltration | `cases/hostname-exfiltration/` | 8 | Encoded secrets in DNS hostname labels before resolution |
 | Response injection (fetch) | `cases/response-fetch/` | 8 | Prompt injection in fetched web content |
@@ -53,9 +53,11 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 | Encoding evasion | `cases/encoding-evasion/` | 9 | Multi-layer encoding chains, Unicode tricks, zero-width insertion |
 | Shell obfuscation | `cases/shell-obfuscation/` | 7 | Backtick substitution, brace expansion, IFS manipulation |
 | Crypto/financial DLP | `cases/crypto-financial/` | 8 | Wallet addresses, seed phrases, credit cards, IBANs |
-| False positive suite | `cases/false-positive/` | 12 | Benign traffic that must not be blocked |
+| False positive suite | `cases/false-positive/` | 17 | Benign traffic that must not be blocked |
 
-116 malicious cases (expected: block) and 39 non-blocking baselines (38 expected: allow, 1 expected: warn) to test false positive rates.
+Counts are logical cases, not fixture files. Most cases are single JSON files; MCP drift cases are multi-file before/after snapshots, and each drift directory counts as one case.
+
+121 block-expected cases, 43 allow-expected baselines, and 1 warn-class MCP drift guardrail test containment and false positive behavior.
 
 Most cases are self-contained JSON files with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome. The 4 MCP drift cases under `cases/mcp-drift/` are multi-file before/after fixtures with `case.yaml` metadata.
 
@@ -215,13 +217,13 @@ Most AI agent security benchmarks test whether the **model** behaves safely. Thi
 
 | Benchmark | Tests what? | Focus |
 |-----------|------------|-------|
-| [AgentDojo](https://github.com/ethz-spylab/agentdojo) (ETH Zurich) | The LLM agent | Robustness to prompt injection (629 cases) |
-| [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) (UIUC) | The LLM agent | Indirect prompt injection success rate (1,054 cases) |
-| [AgentHarm](https://huggingface.co/datasets/ai-safety-institute/AgentHarm) (UK AISI) | The LLM | Refusal of harmful multi-step tasks (440 cases) |
+| [AgentDojo](https://github.com/ethz-spylab/agentdojo) (ETH Zurich) | The LLM agent | Robustness to prompt injection in realistic tasks |
+| [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) (UIUC) | The LLM agent | Indirect prompt injection success rate |
+| [AgentHarm](https://huggingface.co/datasets/ai-safety-institute/AgentHarm) (UK AISI) | The LLM | Refusal of harmful multi-step tasks |
 | [CyberSecEval](https://github.com/meta-llama/PurpleLlama) (Meta) | The LLM | Insecure code generation, cyberattack assistance |
-| [ASB](https://github.com/agiresearch/ASB) (ICLR 2025) | The LLM agent | Defense prompts reducing attack success (90K cases) |
-| [AgentShield-bench](https://github.com/doronp/agentshield-benchmark) (Agent Guard) | Security middleware | Prompt injection and jailbreak detection at API layer (537 cases) |
-| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning, A2A, hostname exfiltration, encoding evasion at the network layer (151 cases)** |
+| [ASB](https://github.com/agiresearch/ASB) (ICLR 2025) | The LLM agent | Defense prompts reducing attack success |
+| [AgentShield-bench](https://github.com/doronp/agentshield-benchmark) (Agent Guard) | Security middleware | Prompt injection and jailbreak detection at API layer |
+| **agent-egress-bench** | **Security tools** | **Secret exfiltration, SSRF, MCP poisoning, A2A, hostname exfiltration, encoding evasion at the network layer (165 logical cases)** |
 
 The model-testing benchmarks assume the LLM is the last line of defense. This corpus assumes models will sometimes fail, and tests the defense-in-depth layer that sits between the agent and the network.
 
