@@ -11,10 +11,10 @@ stats:
 	@echo "categories: $$(find cases -mindepth 1 -maxdepth 1 -type d | wc -l)"
 	@jblk=$$(find cases -name '*.json' -not -path 'cases/mcp-drift/*' -exec grep -l '"expected_verdict"[[:space:]]*:[[:space:]]*"block"' {} \; | wc -l); \
 	dblk=$$(grep -lE 'expected_verdict:[[:space:]]*block' cases/mcp-drift/*/case.yaml 2>/dev/null | wc -l); \
-	echo "malicious: $$((jblk + dblk))"
+	echo "block: $$((jblk + dblk))"
 	@jaln=$$(find cases -name '*.json' -not -path 'cases/mcp-drift/*' -exec grep -l '"expected_verdict"[[:space:]]*:[[:space:]]*"allow"' {} \; | wc -l); \
 	daln=$$(grep -lE 'expected_verdict:[[:space:]]*allow' cases/mcp-drift/*/case.yaml 2>/dev/null | wc -l); \
-	echo "benign: $$((jaln + daln))"
+	echo "allow: $$((jaln + daln))"
 	@echo "warn: $$(grep -lE 'expected_verdict:[[:space:]]*warn' cases/mcp-drift/*/case.yaml 2>/dev/null | wc -l)"
 	@set -- cases/*/; \
 	if [ "$$1" = 'cases/*/' ]; then exit 0; fi; \

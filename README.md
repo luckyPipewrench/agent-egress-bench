@@ -227,8 +227,6 @@ Most AI agent security benchmarks test whether the **model** behaves safely. Thi
 
 The model-testing benchmarks assume the LLM is the last line of defense. This corpus assumes models will sometimes fail, and tests the defense-in-depth layer that sits between the agent and the network.
 
-AgentDojo-style benchmarks run realistic multi-step sessions to see whether the agent gets fooled. agent-egress-bench feeds attacks to the proxy, firewall, scanner, or MCP wrapper and scores whether that security layer catches them. The two approaches are complementary: one tests agent behavior, the other tests the tool that should contain the agent's mistakes.
-
 AgentShield-benchmark is the closest comparable, but operates at the application/API layer (is this prompt an injection?). agent-egress-bench operates at the wire level (did this HTTP request contain an exfiltrated secret in the query string? did this MCP tool response contain prompt injection?).
 
 ## Docs
