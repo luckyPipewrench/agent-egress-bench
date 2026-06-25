@@ -2,87 +2,40 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    ":semanticCommits",
-    ":maintainLockFilesWeekly"
+    ":semanticCommits"
   ],
   "minimumReleaseAge": "10 days",
   "internalChecksFilter": "strict",
-  "labels": [
-    "dependencies"
-  ],
-  "prConcurrentLimit": 10,
+  "prCreation": "not-pending",
+  "schedule": ["* * * * 1"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "enabled": false
+  },
   "vulnerabilityAlerts": {
-    "labels": [
-      "security",
-      "fast-track"
-    ],
+    "labels": ["security", "fast-track"],
     "minimumReleaseAge": "0 days",
-    "schedule": [
-      "at any time"
-    ]
+    "schedule": ["at any time"]
   },
   "packageRules": [
     {
-      "matchPackagePatterns": [
-        "^luckyPipewrench/",
-        "^ghcr\\.io/luckypipewrench/"
-      ],
-      "minimumReleaseAge": "0 days",
-      "description": "Own-org packages bypass cooldown (we control the supply chain)"
+      "description": "Pin GitHub Actions to digests so the OpenSSF Scorecard pinned-dependencies check stays satisfied. The digest-maintenance PRs are batched into the weekly group below.",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
     },
     {
-      "matchManagers": [
-        "github-actions"
-      ],
-      "pinDigests": true,
-      "commitMessagePrefix": "ci:",
-      "addLabels": [
-        "ci"
-      ],
-      "groupName": "ci-actions"
+      "description": "Collapse every non-major update (minor, patch, digest, pin) into ONE weekly batched PR so PR volume stays low. Majors and security alerts are handled separately below.",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest", "bump"],
+      "groupName": "weekly dependencies"
     },
     {
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchFileNames": [
-        "validate/**"
-      ],
-      "commitMessagePrefix": "deps:",
-      "groupName": "go-validate"
-    },
-    {
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchFileNames": [
-        "runner/**"
-      ],
-      "commitMessagePrefix": "deps:",
-      "groupName": "go-runner"
-    },
-    {
-      "matchManagers": [
-        "pip_requirements"
-      ],
-      "matchFileNames": [
-        ".github/**"
-      ],
-      "commitMessagePrefix": "ci:",
-      "addLabels": [
-        "ci"
-      ],
-      "groupName": "python-deps"
-    },
-    {
-      "matchUpdateTypes": [
-        "major"
-      ],
-      "addLabels": [
-        "major-update",
-        "needs-review"
-      ],
-      "automerge": false
+      "description": "Major updates stay individual and manually reviewed (no automerge), and are not delayed to the weekly window.",
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["major-update", "needs-review"],
+      "automerge": false,
+      "schedule": ["at any time"]
     }
   ]
 }
