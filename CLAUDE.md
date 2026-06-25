@@ -1,6 +1,6 @@
 # CLAUDE.md: agent-egress-bench Development Guide
 
-agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egress security tools. 151 cases across 17 categories. JSON case files, a Go validator, a Gauntlet scoring runner, spec docs, and reference runners. This is NOT an application. The validator and runner are build tools, not the product.
+agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egress security tools. 165 logical cases across 18 categories. JSON case files, multi-file MCP drift fixtures, a Go validator, a Gauntlet scoring runner, spec docs, and reference runners. This is NOT an application. The validator and runner are build tools, not the product.
 
 ## Hard Rules
 

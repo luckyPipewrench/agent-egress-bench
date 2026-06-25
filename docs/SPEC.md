@@ -63,7 +63,10 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 
 `block`, `allow`
 
-v1 is binary. No `warn` in case expectations.
+Single-file JSON v1 cases are binary. No `warn` appears in single-file JSON case expectations.
+The multi-file MCP drift fixtures use a separate `case.yaml` contract documented in
+[`cases/mcp-drift/README.md`](../cases/mcp-drift/README.md), where `warn` is allowed for
+benign drift that should be surfaced for operator review without being blocked.
 
 ### severity
 
