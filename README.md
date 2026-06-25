@@ -11,7 +11,7 @@
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
 </p>
 
-A standardized test corpus for evaluating AI agent egress security tools. 195 logical cases across 18 categories, covering secret exfiltration, prompt injection, SSRF, hostname exfiltration, MCP tool poisoning, chain detection, MCP drift, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
+A standardized test corpus for evaluating AI agent egress security tools. 197 logical cases across 18 categories, covering secret exfiltration, prompt injection, SSRF, hostname exfiltration, MCP tool poisoning, chain detection, MCP drift, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
 
 **This tests the security tool, not the agent.** Most benchmarks in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) test whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
 
@@ -37,8 +37,8 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 | Category | Directory | Cases | What it tests |
 |----------|-----------|-------|---------------|
 | URL DLP | `cases/url/` | 20 | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF, domain blocklist |
-| Request body DLP | `cases/request-body/` | 15 | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
-| Header DLP | `cases/headers/` | 10 | API keys and tokens in HTTP headers (Bearer, JWT, AWS, multi-header) |
+| Request body DLP | `cases/request-body/` | 16 | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
+| Header DLP | `cases/headers/` | 11 | API keys and tokens in HTTP headers (Bearer, JWT, AWS, multi-header) |
 | Hostname exfiltration | `cases/hostname-exfiltration/` | 10 | Encoded secrets in DNS hostname labels before resolution |
 | Response injection (fetch) | `cases/response-fetch/` | 8 | Prompt injection in fetched web content |
 | Response injection (MITM) | `cases/response-mitm/` | 9 | Injection via tampered TLS-intercepted responses |
@@ -57,7 +57,7 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 
 Counts are logical cases, not fixture files. Most cases are single JSON files; MCP drift cases are multi-file before/after snapshots, and each drift directory counts as one case.
 
-147 block-expected cases, 47 allow-expected baselines, and 1 warn-class MCP drift guardrail test containment and false positive behavior.
+149 block-expected cases, 47 allow-expected baselines, and 1 warn-class MCP drift guardrail test containment and false positive behavior.
 
 Most cases are self-contained JSON files with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome. The 4 MCP drift cases under `cases/mcp-drift/` are multi-file before/after fixtures with `case.yaml` metadata.
 
