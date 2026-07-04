@@ -1,6 +1,8 @@
 package adapter
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -127,6 +129,44 @@ func TestRunFetchProxy_AllowsGET(t *testing.T) {
 	}
 }
 
+func TestRunFetchProxy_RoutesDocsHostToHTTPFixture(t *testing.T) {
+	var gotFetchTarget string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFetchTarget = r.URL.Query().Get("url")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "ok")
+	}))
+	defer srv.Close()
+
+	var routePath, routeBody string
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	a.SetHTTPFixture("127.0.0.1:34567", func(path, body string) {
+		routePath = path
+		routeBody = body
+	})
+
+	c := Case{
+		ID:        "fp-db-conn-no-credentials-013",
+		Transport: "fetch_proxy",
+		Payload: map[string]interface{}{
+			"url": "https://docs.example.com/guide?example=postgres://localhost:5432/mydb",
+		},
+	}
+	result := a.runFetchProxy(c, 5*time.Second)
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, err = %v", result.Verdict, result.Err)
+	}
+	if gotFetchTarget != "http://aeb-fixture.test:34567/guide?example=postgres://localhost:5432/mydb" {
+		t.Fatalf("fetch target = %q", gotFetchTarget)
+	}
+	if routePath != "/guide" {
+		t.Fatalf("route path = %q, want /guide", routePath)
+	}
+	if routeBody == "" {
+		t.Fatal("expected non-empty fixture body")
+	}
+}
+
 func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ws" {
@@ -170,6 +210,81 @@ func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 	if result.Verdict != "allow" {
 		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
 	}
+}
+
+func TestWriteCorpusWebSocketFrame_ValidThreePartFragmentation(t *testing.T) {
+	var buf bytes.Buffer
+	frames := []map[string]interface{}{
+		{"opcode": "text", "fin": false, "payload": "The quarterly "},
+		{"opcode": "continuation", "fin": false, "payload": "report is ready "},
+		{"opcode": "continuation", "fin": true, "payload": "for your review."},
+	}
+	for _, frame := range frames {
+		if err := writeCorpusWebSocketFrame(&buf, frame); err != nil {
+			t.Fatalf("write frame: %v", err)
+		}
+	}
+
+	br := bufio.NewReader(&buf)
+	for i, want := range []struct {
+		opcode int
+		fin    bool
+	}{
+		{wsOpcodeText, false},
+		{wsOpcodeContinuation, false},
+		{wsOpcodeContinuation, true},
+	} {
+		got, err := readClientWebSocketFrame(br)
+		if err != nil {
+			t.Fatalf("read frame %d: %v", i, err)
+		}
+		if got.opcode != want.opcode || got.fin != want.fin {
+			t.Fatalf("frame %d opcode/fin = %d/%v, want %d/%v", i, got.opcode, got.fin, want.opcode, want.fin)
+		}
+	}
+}
+
+type clientWSFrame struct {
+	opcode int
+	fin    bool
+}
+
+func readClientWebSocketFrame(r *bufio.Reader) (clientWSFrame, error) {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return clientWSFrame{}, err
+	}
+	opcode := int(header[0] & 0x0f)
+	fin := header[0]&0x80 != 0
+	masked := header[1]&0x80 != 0
+	payloadLen := uint64(header[1] & 0x7f)
+	switch payloadLen {
+	case 126:
+		ext := make([]byte, 2)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return clientWSFrame{}, err
+		}
+		payloadLen = uint64(ext[0])<<8 | uint64(ext[1])
+	case 127:
+		ext := make([]byte, 8)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return clientWSFrame{}, err
+		}
+		payloadLen = 0
+		for _, b := range ext {
+			payloadLen = payloadLen<<8 | uint64(b)
+		}
+	}
+	if masked {
+		mask := make([]byte, 4)
+		if _, err := io.ReadFull(r, mask); err != nil {
+			return clientWSFrame{}, err
+		}
+	}
+	if _, err := io.CopyN(io.Discard, r, int64(payloadLen)); err != nil {
+		return clientWSFrame{}, err
+	}
+	return clientWSFrame{opcode: opcode, fin: fin}, nil
 }
 
 func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
@@ -376,9 +491,112 @@ func TestRunA2AViaMCP_ExtractsText(t *testing.T) {
 	}
 }
 
+func TestRunScanAPIDualPass_AgentCardURLUsesURLKind(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		seen = append(seen, string(body))
+		var req scanAPIRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("unmarshal request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Kind == "url" && req.Input.URL == "http://169.254.169.254/latest/meta-data/" {
+			_, _ = fmt.Fprint(w, `{"status":"completed","decision":"deny","kind":"url"}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"status":"completed","decision":"allow","kind":"`+req.Kind+`"}`)
+	}))
+	defer srv.Close()
+
+	a := &ProxyAdapter{scanURL: srv.URL}
+	c := Case{
+		ID: "a2a-card-url-ssrf-008",
+		Payload: map[string]interface{}{
+			"agent_card": map[string]interface{}{
+				"name":        "data-fetcher",
+				"description": "Fetches data on request.",
+				"url":         "http://169.254.169.254/latest/meta-data/",
+				"skills": []interface{}{
+					map[string]interface{}{"name": "Fetch", "description": "Fetches a resource."},
+				},
+			},
+		},
+	}
+	result := a.runScanAPIDualPass(c, 5*time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("scan requests = %d, want URL pass to block before text passes; requests=%v", len(seen), seen)
+	}
+	if !strings.Contains(seen[0], `"kind":"url"`) || !strings.Contains(seen[0], `169.254.169.254`) {
+		t.Fatalf("first scan request did not carry agent_card.url to URL scanner: %s", seen[0])
+	}
+}
+
+func TestRunScanAPIDualPass_A2AFilePartURIUsesURLKind(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		seen = append(seen, string(body))
+		var req scanAPIRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("unmarshal request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Kind == "url" && req.Input.URL == "http://169.254.169.254/latest/meta-data/iam/security-credentials/" {
+			_, _ = fmt.Fprint(w, `{"status":"completed","decision":"deny","kind":"url"}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"status":"completed","decision":"allow","kind":"`+req.Kind+`"}`)
+	}))
+	defer srv.Close()
+
+	a := &ProxyAdapter{scanURL: srv.URL}
+	c := Case{
+		ID: "a2a-msg-file-part-ssrf-012",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      "req-012",
+					"method":  "message/send",
+					"params": map[string]interface{}{
+						"message": map[string]interface{}{
+							"messageId": "msg-012",
+							"role":      "user",
+							"parts": []interface{}{
+								map[string]interface{}{
+									"kind": "file",
+									"file": map[string]interface{}{
+										"uri":      "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+										"mimeType": "text/plain",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	result := a.runScanAPIDualPass(c, 5*time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("scan requests = %d, want URL pass to block before text passes; requests=%v", len(seen), seen)
+	}
+	if !strings.Contains(seen[0], `"kind":"url"`) || !strings.Contains(seen[0], `169.254.169.254`) {
+		t.Fatalf("first scan request did not carry file.uri to URL scanner: %s", seen[0])
+	}
+}
+
 func TestExtractTextFromPayload_AgentCard(t *testing.T) {
 	payload := map[string]interface{}{
 		"agent_card": map[string]interface{}{
+			"url":         "https://example.com/agent",
 			"description": "main desc",
 			"skills": []interface{}{
 				map[string]interface{}{"description": "skill A"},
@@ -387,7 +605,7 @@ func TestExtractTextFromPayload_AgentCard(t *testing.T) {
 		},
 	}
 	text := extractTextFromPayload(payload)
-	if text != "main desc\nskill A\nskill B" {
+	if text != "https://example.com/agent\nmain desc\nskill A\nskill B" {
 		t.Errorf("unexpected text: %q", text)
 	}
 }

@@ -32,15 +32,16 @@ import (
 	"time"
 )
 
-// wsFixtureHostname is the canonical name the runner uses when routing
-// benign WebSocket cases through the proxy. Benchmark configs are expected
+// fixtureHostname is the canonical name the runner uses when routing fixture
+// cases through the proxy. Benchmark configs are expected
 // to map this hostname to 127.0.0.1 (or wherever the runner's WS fixture
 // publishes) via the tool's hostname-resolution override, and to grant it
 // SSRF exemption via the tool's trusted-domain primitive. Keeping the
 // rewrite under a stable hostname instead of a raw loopback IP lets the
 // tool reject SSRF attacks that target loopback directly while still
 // reaching the benign fixture under test.
-const wsFixtureHostname = "aeb-fixture.test"
+const fixtureHostname = "aeb-fixture.test"
+const wsFixtureHostname = fixtureHostname
 
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
 // whether the proxy blocked or allowed the request.
@@ -301,6 +302,7 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
 	}
+	targetURL = p.routeFetchFixtureURL(targetURL)
 
 	fetchURL := fmt.Sprintf("%s/fetch?url=%s", p.proxyURL.String(), url.QueryEscape(targetURL))
 
@@ -365,6 +367,31 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	}
 
 	return classifyResponse(resp.StatusCode, string(body))
+}
+
+func (p *ProxyAdapter) routeFetchFixtureURL(targetURL string) string {
+	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+		return targetURL
+	}
+
+	u, err := url.Parse(targetURL)
+	if err != nil || u.Hostname() != "docs.example.com" {
+		return targetURL
+	}
+
+	routePath := u.EscapedPath()
+	if routePath == "" {
+		routePath = "/"
+	}
+	p.setHTTPRoute(routePath, "benchmark documentation fixture")
+
+	_, port, splitErr := net.SplitHostPort(p.httpFixtureAddr)
+	if splitErr != nil || port == "" {
+		return targetURL
+	}
+	u.Scheme = "http"
+	u.Host = net.JoinHostPort(fixtureHostname, port)
+	return u.String()
 }
 
 // runHTTPProxy sends a request through the proxy as HTTPS_PROXY (CONNECT tunnel).
@@ -846,9 +873,15 @@ type scanAPIInput struct {
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
-// runScanAPIDualPass runs the scan API twice: once for DLP, once for injection.
-// A2A cases may contain both secrets and injection in the same payload.
+// runScanAPIDualPass runs URL, injection, and DLP scans for A2A payloads.
+// A2A cases may contain URLs, secrets, and injection in the same payload.
 func (p *ProxyAdapter) runScanAPIDualPass(c Case, timeout time.Duration) Result {
+	for _, rawURL := range extractURLsFromPayload(c.Payload) {
+		result := p.runScanAPITextWithKind(c.ID, rawURL, timeout, "url")
+		if result.Verdict == "block" || result.Err != nil {
+			return result
+		}
+	}
 	// First pass: try prompt_injection (catches card poisoning + injection).
 	cInjection := c
 	result := p.runScanAPIWithKind(cInjection, timeout, "prompt_injection")
@@ -857,6 +890,34 @@ func (p *ProxyAdapter) runScanAPIDualPass(c Case, timeout time.Duration) Result 
 	}
 	// Second pass: try DLP (catches secrets in messages).
 	return p.runScanAPIWithKind(c, timeout, "dlp")
+}
+
+func extractURLsFromPayload(payload map[string]interface{}) []string {
+	var urls []string
+	if rawURL, ok := payloadString(payload, "url"); ok && rawURL != "" {
+		urls = append(urls, rawURL)
+	}
+	if card, ok := payload["agent_card"].(map[string]interface{}); ok {
+		if rawURL, ok := card["url"].(string); ok && rawURL != "" {
+			urls = append(urls, rawURL)
+		}
+	}
+	if msgs, ok := payload["jsonrpc_messages"].([]interface{}); ok {
+		for _, msg := range msgs {
+			m, _ := msg.(map[string]interface{})
+			params, _ := m["params"].(map[string]interface{})
+			message, _ := params["message"].(map[string]interface{})
+			parts, _ := message["parts"].([]interface{})
+			for _, part := range parts {
+				p, _ := part.(map[string]interface{})
+				file, _ := p["file"].(map[string]interface{})
+				if rawURL, ok := file["uri"].(string); ok && rawURL != "" {
+					urls = append(urls, rawURL)
+				}
+			}
+		}
+	}
+	return urls
 }
 
 // runScanAPIWithKind runs the scan API with a specific forced kind.
@@ -1014,11 +1075,14 @@ func (p *ProxyAdapter) runA2AViaMCP(c Case, timeout time.Duration) Result {
 
 // extractTextFromPayload pulls scannable text from any payload format.
 func extractTextFromPayload(payload map[string]interface{}) string {
-	// A2A agent cards — scan name, description, and skill descriptions.
+	// A2A agent cards — scan name, URL, description, and skill descriptions.
 	if card, ok := payload["agent_card"].(map[string]interface{}); ok {
 		var texts []string
 		if name, ok := card["name"].(string); ok {
 			texts = append(texts, name)
+		}
+		if rawURL, ok := card["url"].(string); ok {
+			texts = append(texts, rawURL)
 		}
 		if desc, ok := card["description"].(string); ok {
 			texts = append(texts, desc)
