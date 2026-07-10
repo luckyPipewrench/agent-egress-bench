@@ -105,6 +105,13 @@ type ActionRecord struct {
 	ChainPrevHash string `json:"chain_prev_hash"`
 	ChainSeq      uint64 `json:"chain_seq"`
 
+	// RunNonce mirrors receipt.ActionRecord.RunNonce: generated once per
+	// process run and bound into every signed receipt so an otherwise
+	// repeatable decision is tied to a single run. Declared immediately after
+	// chain_seq to match the Go source's struct-order slot; omitempty, so
+	// fixtures that do not set it canonicalize byte-for-byte unchanged.
+	RunNonce string `json:"run_nonce,omitempty"`
+
 	// Jurisdictional fields - present in schema for forward compatibility.
 	Venue              string   `json:"venue,omitempty"`
 	Jurisdiction       string   `json:"jurisdiction,omitempty"`
@@ -729,6 +736,28 @@ func buildGolden() ([]fixture, error) {
 		}
 	}
 
+	// 11. run-nonce bound — a standalone allow receipt whose action_record
+	// carries run_nonce. The nonce is part of the signed preimage, binding an
+	// otherwise repeatable decision to one process run. Cross-language drift
+	// sentinel: run_nonce must canonicalize in the same struct-order slot
+	// (immediately after chain_seq) in every verifier. action_id is set to
+	// conformance-00010 (the eleventh fixture) while chain_seq stays 0 because
+	// this is a standalone receipt, not a chain link.
+	{
+		ar := baseRecord(0, genesisHash, baseTime.Add(10*time.Minute), "read", "allow",
+			"https://api.example.com/v1/data?nonce=bound", "https", "GET")
+		ar.ActionID = "conformance-00010"
+		ar.RunNonce = "0123456789abcdef0123456789abcdef"
+		if f, err := makeSingle("11-run-nonce-bound", "golden", priv, pubHex, ar,
+			"Allow receipt carrying action_record.run_nonce. The nonce is part of the signed ActionRecord preimage, binding an otherwise repeatable decision to one process run.",
+			"Verifier MUST accept. This is the run-nonce cross-language drift sentinel: action_record.run_nonce must be canonicalized in the same Go struct-order slot by every verifier.",
+		); err != nil {
+			return nil, err
+		} else {
+			out = append(out, f)
+		}
+	}
+
 	return out, nil
 }
 
@@ -1291,6 +1320,41 @@ func buildMalicious() ([]fixture, error) {
 				RejectReason: "duplicate_key",
 				Description:  `Ignored top-level probe contains an array element with duplicate keys "a" and "\u0061".`,
 				Notes:        "Verifier MUST reject duplicate object keys at any nesting depth, including unicode-escaped key equivalents inside arrays and fields ignored by signature canonicalization.",
+			},
+		})
+	}
+
+	// M15. run-nonce tampered after signing — the signature was valid for the
+	// original run_nonce, but action_record.run_nonce was rewritten post-sign,
+	// so SHA-256(canonical(action_record)) no longer matches. Mirrors the
+	// m11 body-tamper shape, aimed at the run_nonce slot.
+	{
+		ar := baseRecord(0, genesisHash, baseTime.Add(10*time.Minute), "read", "allow",
+			"https://api.example.com/v1/data?nonce=bound", "https", "GET")
+		ar.ActionID = "conformance-00010"
+		ar.RunNonce = "0123456789abcdef0123456789abcdef"
+		r, err := signReceipt(ar, priv)
+		if err != nil {
+			return nil, err
+		}
+		// Tamper the run_nonce after signing.
+		r.ActionRecord.RunNonce = "1123456789abcdef0123456789abcdef"
+		payload, err := marshalPretty(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, fixture{
+			Category: "malicious",
+			Name:     "m15-run-nonce-tampered",
+			Payload:  payload,
+			Expect: Expect{
+				FixtureID:    "m15-run-nonce-tampered",
+				Category:     "malicious",
+				InputFormat:  "receipt",
+				Verdict:      "reject",
+				RejectReason: "run_nonce_tampered",
+				Description:  "Signature was valid for the original run_nonce, but action_record.run_nonce has been rewritten post-signing. SHA-256(canonical(action_record)) no longer matches.",
+				Notes:        "Verifier MUST recompute the canonical ActionRecord including run_nonce. Accepting this fixture means the nonce is being treated as an unsigned cosmetic sidecar.",
 			},
 		})
 	}
