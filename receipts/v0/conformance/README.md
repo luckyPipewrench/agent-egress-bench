@@ -97,6 +97,7 @@ implement against the enum, and produce identical reject codes.
 | `unsupported_version`          | `version` or `action_record.version` outside accepted range            |
 | `invalid_action_type`          | `action_type` not in the closed action-model enum                      |
 | `duplicate_key`                | A JSON object contains the same key twice at any nesting depth         |
+| `unknown_field`                | A receipt object contains an unrecognized field outside allowed `ext`  |
 
 ### Verifier policy assumptions
 
