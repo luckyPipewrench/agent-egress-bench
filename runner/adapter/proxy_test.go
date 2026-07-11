@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -762,5 +766,111 @@ func classifyMCPOutput(lines []string, caseID string) Result {
 	return Result{
 		Verdict:  "allow",
 		Evidence: map[string]interface{}{"response_lines": len(lines)},
+	}
+}
+
+func TestPreflightMockScriptExec_HappyPath(t *testing.T) {
+	// The test machine's real TMPDIR must support creating and executing a
+	// #!/bin/bash script for the corpus to have any chance of running MCP
+	// tool-poisoning cases. If this fails in CI, it means CI itself cannot
+	// run the benchmark's MCP cases, which is worth knowing loudly rather
+	// than discovering via 47 silently misclassified case results.
+	if err := PreflightMockScriptExec(); err != nil {
+		t.Fatalf("expected preflight to succeed in the test environment, got: %v", err)
+	}
+}
+
+func TestPreflightMockScriptExec_BashMissingFromPATH(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on PATH to build a bash-free PATH with")
+	}
+	shDir := shOnlyPATHDir(t)
+	t.Setenv("PATH", shDir)
+
+	err := PreflightMockScriptExec()
+	if err == nil {
+		t.Fatal("expected an error when bash is not on PATH")
+	}
+	if !strings.Contains(err.Error(), "bash not found in PATH") {
+		t.Errorf("expected a bash-not-found message, got: %v", err)
+	}
+}
+
+// shOnlyPATHDir returns a directory containing only a "sh" symlink (copied
+// from the real sh on PATH), so PATH can be pointed at an environment with
+// a shell but no bash, without disturbing the real PATH for other tests.
+func shOnlyPATHDir(t *testing.T) string {
+	t.Helper()
+	shPath, err := exec.LookPath("sh")
+	if err != nil {
+		t.Fatalf("look up sh: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(shPath, dir+"/sh"); err != nil {
+		t.Fatalf("symlink sh into isolated PATH dir: %v", err)
+	}
+	return dir
+}
+
+func TestClassifyPreflightExecErr_PermissionDenied(t *testing.T) {
+	wrapped := fmt.Errorf("fork/exec /tmp/x.sh: %w", fs.ErrPermission)
+	err := classifyPreflightExecErr("/tmp", wrapped, "")
+	if err == nil {
+		t.Fatal("expected a non-nil error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "noexec") {
+		t.Errorf("expected the noexec/permission message, got: %v", msg)
+	}
+	if !strings.Contains(msg, "TMPDIR") {
+		t.Errorf("expected a TMPDIR remediation hint, got: %v", msg)
+	}
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Error("expected classifyPreflightExecErr to preserve the wrapped error for errors.Is")
+	}
+}
+
+func TestClassifyPreflightExecErr_InterpreterMissing(t *testing.T) {
+	wrapped := fmt.Errorf("fork/exec /tmp/x.sh: %w", fs.ErrNotExist)
+	err := classifyPreflightExecErr("/tmp", wrapped, "some stderr detail")
+	if err == nil {
+		t.Fatal("expected a non-nil error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "/bin/bash") {
+		t.Errorf("expected a missing-interpreter message, got: %v", msg)
+	}
+	if !strings.Contains(msg, "some stderr detail") {
+		t.Errorf("expected the captured stderr to be included, got: %v", msg)
+	}
+}
+
+func TestClassifyPreflightExecErr_UnknownFailure_UsesNoneForEmptyStderr(t *testing.T) {
+	wrapped := errors.New("boom")
+	err := classifyPreflightExecErr("/tmp", wrapped, "")
+	if err == nil {
+		t.Fatal("expected a non-nil error")
+	}
+	if !strings.Contains(err.Error(), "(none)") {
+		t.Errorf("expected the fallback branch to render empty stderr as (none), got: %v", err.Error())
+	}
+}
+
+func TestRunMCPStdio_StderrSurfacedOnSubprocessFailure(t *testing.T) {
+	// A command that writes to stderr and exits non-zero, with no stdout,
+	// must surface the stderr text in the returned error instead of
+	// discarding it (the exact class of bug this test guards against: a
+	// silently swallowed mock-backend spawn failure).
+	a := &ProxyAdapter{mcpCmd: `echo boom-diagnostic 1>&2; exit 3`}
+	c := Case{
+		ID:      "test-stderr-surfaced",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{"method": "tools/call"}}},
+	}
+	result := a.runMCPStdio(c, 5*time.Second)
+	if result.Err == nil {
+		t.Fatal("expected an error result for a non-zero exit with no stdout")
+	}
+	if !strings.Contains(result.Err.Error(), "boom-diagnostic") {
+		t.Errorf("expected the captured stderr to be surfaced in the error, got: %v", result.Err)
 	}
 }

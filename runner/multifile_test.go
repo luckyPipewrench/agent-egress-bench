@@ -462,7 +462,7 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	casesDir := filepath.Join("..", "cases")
 	multiFileDir := filepath.Join("..", "cases", "mcp-drift")
 
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, receiptPath, "", multiFileDir)
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, receiptPath, "", multiFileDir, false)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

@@ -28,6 +28,12 @@ func main() {
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
 	multiFileCases := flag.String("multifile-cases", "", "directory of multi-file MCP-drift cases (each subdirectory has case.yaml + before.json + after.json + expected.json). Driver replays before then after through a single MCP session and observes the verdict on the second tools/list response.")
 
+	// --debug / -v: emit verbose per-case diagnostics to stderr. Both
+	// flag names point at the same variable so either can be used.
+	var debug bool
+	flag.BoolVar(&debug, "debug", false, "emit verbose per-case diagnostics to stderr")
+	flag.BoolVar(&debug, "v", false, "alias for --debug")
+
 	flag.Parse()
 
 	if *casesDir == "" || *profilePath == "" {
@@ -35,13 +41,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases); err != nil {
+	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string) error {
+func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -90,6 +96,18 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		if proxyAddr == "" {
 			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
 		}
+		if mcpCmd != "" {
+			// MCP tool-poisoning cases inject a mock backend by writing an
+			// executable script to the OS temp directory (see
+			// adapter.PreflightMockScriptExec). Verify that mechanism works
+			// BEFORE running the corpus: a noexec temp dir, a permissions
+			// mismatch, or a missing bash silently breaks every one of those
+			// cases (opaque exit codes or a hang-until-timeout that scores as
+			// a false "block") instead of failing loudly right here.
+			if preflightErr := adapter.PreflightMockScriptExec(); preflightErr != nil {
+				return fmt.Errorf("mcp mock-backend preflight: %w", preflightErr)
+			}
+		}
 		pa, proxyErr := adapter.NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd)
 		if proxyErr != nil {
 			return proxyErr
@@ -119,6 +137,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		// Check applicability.
 		reason, applicable := checkApplicability(c, profile)
 		if !applicable {
+			debugf(debug, "case %s: not_applicable (%s)", c.ID, reason)
 			naReasons[reason]++
 			result := CaseResult{
 				CaseID:          c.ID,
@@ -148,6 +167,8 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 
 		if adapterResult.Err != nil {
 			errorCount++
+			debugf(debug, "case %s: ERROR expected=%s err=%v evidence=%v",
+				c.ID, c.ExpectedVerdict, adapterResult.Err, adapterResult.Evidence)
 			result := CaseResult{
 				CaseID:          c.ID,
 				Tool:            profile.Tool,
@@ -166,6 +187,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 
 		// Adapter returned skip (transport not supported or infrastructure issue).
 		if adapterResult.Verdict == "skip" {
+			debugf(debug, "case %s: skip (adapter: %v)", c.ID, adapterResult.Evidence)
 			naReasons[NAUnsupportedTransport]++
 			skipReason := "adapter skip"
 			if adapterResult.Evidence != nil {
@@ -193,6 +215,13 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		evidence := adapterResult.Evidence
 		if evidence == nil {
 			evidence = map[string]interface{}{}
+		}
+
+		if score == "pass" {
+			debugf(debug, "case %s: PASS expected=%s actual=%s", c.ID, c.ExpectedVerdict, adapterResult.Verdict)
+		} else {
+			debugf(debug, "case %s: FAIL expected=%s actual=%s evidence=%v",
+				c.ID, c.ExpectedVerdict, adapterResult.Verdict, evidence)
 		}
 
 		result := CaseResult{
@@ -264,6 +293,21 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	}
 
 	return nil
+}
+
+// debugPrefix is the marker written at the start of every debug line.
+// Tests match on this to distinguish debug output from the normal summary.
+const debugPrefix = "[DEBUG] "
+
+// debugf is a gated debug logger. When debug is false, it is a no-op and
+// adds zero cost. When debug is true, it writes a single prefixed line to
+// stderr. It is deliberately NOT a method — it is called from the loop
+// body with a captured bool, keeping the structure simple (no new types).
+func debugf(debug bool, format string, args ...interface{}) {
+	if !debug {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, debugPrefix+format+"\n", args...)
 }
 
 // printScores writes a score block with a label to the given writer.

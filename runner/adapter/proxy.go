@@ -21,8 +21,10 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -682,6 +684,118 @@ func webSocketCloseReason(payload []byte) string {
 	return string(payload[2:])
 }
 
+// PreflightMockScriptExec verifies that the current environment can create
+// and execute a shell script from the OS temp directory (os.TempDir()) the
+// same way runMCPStdio does when it injects a mock MCP backend for
+// tool-poisoning cases (see the mockScript handling below): write a
+// "#!/bin/bash" script to a fresh os.CreateTemp file, chmod it 0750, and
+// execute it directly.
+//
+// If the temp directory is mounted noexec, the current user lacks execute
+// permission on files it creates there, or bash is missing, that exact
+// mechanism silently breaks for every MCP tool-poisoning case in the corpus:
+// with stderr discarded (the bug this preflight exists to catch — see the
+// stderr capture in runMCPStdio) the failure surfaces, if at all, as a bare
+// unexplained exit code, or the case simply times out and gets scored as a
+// "block" with no indication that nothing was ever actually run. Call this
+// once, before the corpus runs, so that failure is loud, specific, and
+// actionable instead of silently corrupting dozens of case results.
+//
+// Callers should invoke this only when the proxy adapter is configured with
+// an MCP command (i.e. tool-poisoning cases will actually exercise this
+// mechanism); it is a no-op safety check, not part of scoring.
+func PreflightMockScriptExec() error {
+	tmpDir := os.TempDir()
+
+	if _, lookErr := exec.LookPath("bash"); lookErr != nil {
+		return fmt.Errorf(
+			"preflight failed: bash not found in PATH (%w).\n"+
+				"the proxy adapter's MCP mock-backend script (used for tool-poisoning\n"+
+				"cases) is a \"#!/bin/bash\" script; install bash or ensure it is on PATH\n"+
+				"and retry",
+			lookErr)
+	}
+
+	f, err := os.CreateTemp(tmpDir, "aeb-preflight-mock-*.sh")
+	if err != nil {
+		return fmt.Errorf("preflight failed: cannot create a temp file in %s: %w", tmpDir, err)
+	}
+	scriptPath := f.Name()
+	defer func() { _ = os.Remove(scriptPath) }()
+
+	if _, writeErr := f.WriteString("#!/bin/bash\nexit 0\n"); writeErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("preflight failed: cannot write temp script %s: %w", scriptPath, writeErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("preflight failed: cannot close temp script %s: %w", scriptPath, closeErr)
+	}
+	if chmodErr := os.Chmod(scriptPath, 0o750); chmodErr != nil {
+		return fmt.Errorf("preflight failed: cannot chmod temp script %s executable: %w", scriptPath, chmodErr)
+	}
+
+	var stderrBuf bytes.Buffer
+	cmd := exec.Command(scriptPath) //nolint:gosec // fixed path to a script this function just created
+	cmd.Stderr = &stderrBuf
+	runErr := cmd.Run()
+	if runErr == nil {
+		return nil
+	}
+	return classifyPreflightExecErr(tmpDir, runErr, strings.TrimSpace(stderrBuf.String()))
+}
+
+// classifyPreflightExecErr turns a failed exec of the preflight script into
+// a specific, actionable error message, keyed off the wrapped OS error so
+// the message names the likely root cause (noexec/permission vs a missing
+// interpreter) instead of a bare exit code. Split out from
+// PreflightMockScriptExec so the classification can be unit-tested with
+// synthetic errors, since reliably reproducing an actual noexec mount or a
+// missing /bin/bash in a portable test is impractical.
+func classifyPreflightExecErr(tmpDir string, runErr error, detail string) error {
+	switch {
+	case errors.Is(runErr, fs.ErrPermission):
+		return fmt.Errorf(
+			"preflight failed: cannot execute a script written to the temp directory\n"+
+				"%s (%w).\n"+
+				"this directory is most likely mounted noexec, or the current user lacks\n"+
+				"execute permission on files it creates there. The proxy adapter spawns a\n"+
+				"mock MCP backend script from a freshly created temp file for tool-poisoning\n"+
+				"cases; if it cannot be executed here, those cases will silently misclassify\n"+
+				"or hang until timeout instead of producing a real verdict, with no\n"+
+				"indication why.\n"+
+				"Fix: point TMPDIR at a writable, executable directory and retry, e.g.:\n"+
+				"  mkdir -p \"$HOME/.cache/aeb-tmp\" && TMPDIR=\"$HOME/.cache/aeb-tmp\" <run command>\n"+
+				"stderr from the failed script: %s",
+			tmpDir, runErr, orNoneIfEmpty(detail))
+	case errors.Is(runErr, fs.ErrNotExist):
+		return fmt.Errorf(
+			"preflight failed: cannot execute a \"#!/bin/bash\" script in %s (%w).\n"+
+				"bash was found on PATH but the script's interpreter (/bin/bash) could not\n"+
+				"be loaded — bash is likely missing at that exact path. Install bash at\n"+
+				"/bin/bash (or symlink it there) and retry.\n"+
+				"stderr from the failed script: %s",
+			tmpDir, runErr, orNoneIfEmpty(detail))
+	default:
+		return fmt.Errorf(
+			"preflight failed: could not execute a test script in the temp directory\n"+
+				"%s (%w).\n"+
+				"the proxy adapter's MCP mock-backend mechanism needs to create and execute\n"+
+				"shell scripts in this directory for tool-poisoning cases; fix the\n"+
+				"underlying environment issue and retry.\n"+
+				"stderr from the failed script: %s",
+			tmpDir, runErr, orNoneIfEmpty(detail))
+	}
+}
+
+// orNoneIfEmpty returns "(none)" for an empty diagnostic string so error
+// messages never end with a dangling, easy-to-miss empty field.
+func orNoneIfEmpty(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
+}
+
 // runMCPStdio sends JSON-RPC messages through the MCP proxy subprocess.
 //
 // The proxy sits between client (stdin) and server (subprocess backend).
@@ -780,7 +894,15 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", mcpCmd) //nolint:gosec // command from trusted CLI flag
-	cmd.Stderr = io.Discard
+	// Capture stderr instead of discarding it. Discarding it here previously
+	// swallowed the diagnostic output from a mock-backend spawn failure (e.g.
+	// the temp directory being mounted noexec, or bash missing), leaving
+	// nothing but a bare, unexplained exit code or a silent timeout — see
+	// PreflightMockScriptExec for the guard that catches this class of
+	// failure loudly before the corpus runs, and the two branches below that
+	// now surface this buffer's contents when a case comes back empty.
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -813,15 +935,30 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		_ = os.Remove(tf)
 	}
 	output := <-outputCh
+	stderrOutput := strings.TrimSpace(stderrBuf.String())
 
 	// Context timeout is expected (subprocess runs until stdin closes).
 	// But other wait errors with no output indicate a real failure.
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
 		if waitErr != nil && ctx.Err() == nil {
+			if stderrOutput != "" {
+				return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
+			}
 			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
 		}
-		return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "no_output"}}
+		// No output and no reported wait error (or a timeout) is treated as a
+		// block, since many proxies express "block" by simply closing the
+		// connection without writing anything. That is a real, valid signal
+		// for a well-behaved tool — but it is also exactly what a silently
+		// failed mock-backend spawn looks like, so any captured stderr is
+		// attached here as a diagnostic hint rather than changing the
+		// verdict itself.
+		evidence := map[string]interface{}{"reason": "no_output"}
+		if stderrOutput != "" {
+			evidence["stderr"] = stderrOutput
+		}
+		return Result{Verdict: "block", Evidence: evidence}
 	}
 
 	// Check response lines for policy-block JSON-RPC errors.
