@@ -96,14 +96,11 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		if proxyAddr == "" {
 			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
 		}
-		if mcpCmd != "" {
-			// MCP tool-poisoning cases inject a mock backend by writing an
-			// executable script to the OS temp directory (see
-			// adapter.PreflightMockScriptExec). Verify that mechanism works
-			// BEFORE running the corpus: a noexec temp dir, a permissions
-			// mismatch, or a missing bash silently breaks every one of those
-			// cases (opaque exit codes or a hang-until-timeout that scores as
-			// a false "block") instead of failing loudly right here.
+		if mcpCmd != "" && needsMCPMockBackendPreflight(cases, profile) {
+			// MCP tool-poisoning cases inject a mock backend by writing a
+			// temp script and running it with bash. Verify that mechanism only
+			// when an applicable selected case will use it, so a fetch-only or
+			// scan-API-only run does not fail on an irrelevant MCP prerequisite.
 			if preflightErr := adapter.PreflightMockScriptExec(); preflightErr != nil {
 				return fmt.Errorf("mcp mock-backend preflight: %w", preflightErr)
 			}
@@ -293,6 +290,51 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	}
 
 	return nil
+}
+
+func needsMCPMockBackendPreflight(cases []Case, profile Profile) bool {
+	for _, c := range cases {
+		if _, applicable := checkApplicability(c, profile); !applicable {
+			continue
+		}
+		if c.Transport != "mcp_stdio" && c.Transport != "mcp_http" {
+			continue
+		}
+		if payloadHasServerResponse(c.Payload) {
+			return true
+		}
+	}
+	return false
+}
+
+func payloadHasServerResponse(payload map[string]interface{}) bool {
+	if _, ok := payload["result"]; ok {
+		return true
+	}
+	if _, ok := payload["error"]; ok {
+		return true
+	}
+	rawMsgs, ok := payload["jsonrpc_messages"]
+	if !ok {
+		return false
+	}
+	msgs, ok := rawMsgs.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, raw := range msgs {
+		msg, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, ok := msg["result"]; ok {
+			return true
+		}
+		if _, ok := msg["error"]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // debugPrefix is the marker written at the start of every debug line.
