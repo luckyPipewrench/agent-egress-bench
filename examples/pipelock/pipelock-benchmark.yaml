@@ -51,6 +51,11 @@ request_body_scanning:
   scan_headers: true
   header_mode: all
 
+a2a_scanning:
+  enabled: true
+  action: block
+  scan_agent_cards: true
+
 # Enable private-IP SSRF scoring for the ssrf-bypass cases (loopback, RFC1918,
 # link-local). The runner's fixtures reach pipelock via the allowlisted
 # aeb-fixture.test hostname below, so raw-IP-literal SSRF attacks are still
