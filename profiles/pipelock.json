@@ -14,8 +14,8 @@
   },
   "summary": {
     "blocked_yes_count": 148,
-    "blocked_no_count": 1,
-    "explained_yes_count": 143,
+    "blocked_no_count": 0,
+    "explained_yes_count": 148,
     "receipt_produced_yes_count": 0,
     "receipt_independently_verifiable_yes_count": 0,
     "false_positive_yes_count": 0
@@ -352,7 +352,7 @@
     {
       "case_id": "crypto-eth-raw-privkey-009",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -664,7 +664,7 @@
     {
       "case_id": "header-dlp-basic-auth-007",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -792,7 +792,7 @@
     {
       "case_id": "hostname-exfil-punycode-009",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -892,14 +892,6 @@
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "no"
-    },
-    {
-      "case_id": "mcp-drift-collusion-004",
-      "blocked": "no",
-      "explained": "no",
-      "receipt_produced": "no",
-      "receipt_independently_verifiable": "no",
-      "false_positive": "n/a"
     },
     {
       "case_id": "mcp-drift-rugpull-desc-002",
@@ -1352,7 +1344,7 @@
     {
       "case_id": "ssrf-short-octet-011",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -1472,7 +1464,7 @@
     {
       "case_id": "url-dlp-userinfo-cred-012",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"

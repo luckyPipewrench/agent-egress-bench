@@ -1,0 +1,192 @@
+{
+  "gauntlet_version": "1.0",
+  "scoring_version": "2.0",
+  "runner_version": "0.2.0",
+  "tool": "pipelock",
+  "tool_version": "3.1.0",
+  "corpus_version": "v2.0.0",
+  "corpus_sha256": "cb0c11b1ba74f75b891b9706ae3e87116bfb2ef05b1920959011035ac62ed778",
+  "tool_profile_sha256": "dc5b702f76de05a38dc209344febd1081e2c9a16aa282b92668503dad8cdc7cd",
+  "date": "2026-07-12T22:22:26Z",
+  "case_count": {
+    "total": 197,
+    "applicable": 196,
+    "not_applicable": 1,
+    "not_applicable_reasons": {
+      "missing_requires": 1
+    },
+    "errors": 0
+  },
+  "tool_support": {
+    "claims": [
+      "url_dlp",
+      "request_body_dlp",
+      "header_dlp",
+      "response_injection",
+      "mcp_input_scan",
+      "mcp_tool_poison",
+      "mcp_chain",
+      "ssrf",
+      "ssrf_bypass",
+      "domain_blocklist",
+      "entropy",
+      "encoding_evasion",
+      "websocket_dlp",
+      "shell_obfuscation",
+      "crypto_dlp",
+      "hostname_exfil",
+      "a2a_card_poison",
+      "a2a_scan",
+      "benign"
+    ],
+    "unsupported_transports": [],
+    "unsupported_requires": [
+      "mcp_cross_server_chain_memory",
+      "mcp_data_class_labels",
+      "dns_rebinding_fixture"
+    ]
+  },
+  "scores": {
+    "full": {
+      "containment": 0.9932885906040269,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "applicable": {
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    }
+  },
+  "sufficient": true,
+  "per_category": {
+    "a2a_agent_card": {
+      "applicable": 8,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "a2a_message": {
+      "applicable": 12,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "crypto_financial": {
+      "applicable": 11,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "encoding_evasion": {
+      "applicable": 9,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "false_positive": {
+      "applicable": 20,
+      "containment": null,
+      "false_positive_rate": 0,
+      "detection": null,
+      "evidence": null
+    },
+    "headers": {
+      "applicable": 11,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "hostname_exfiltration": {
+      "applicable": 10,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "mcp_chain": {
+      "applicable": 10,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "mcp_drift": {
+      "applicable": 3,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "mcp_input": {
+      "applicable": 11,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "mcp_tool": {
+      "applicable": 8,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "request_body": {
+      "applicable": 16,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "response_fetch": {
+      "applicable": 8,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "response_mitm": {
+      "applicable": 9,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "shell_obfuscation": {
+      "applicable": 10,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "ssrf_bypass": {
+      "applicable": 11,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "url": {
+      "applicable": 20,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
+    "websocket_dlp": {
+      "applicable": 9,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    }
+  }
+}
