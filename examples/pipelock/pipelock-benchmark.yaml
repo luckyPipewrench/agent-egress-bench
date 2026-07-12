@@ -104,6 +104,18 @@ dlp:
     - name: "Credential in URL"
       regex: '\b(?:password|passwd|secret|token|apikey|api_key|api-key)\s*=\s*[^\s&]{4,}'
       severity: high
+    - name: "Credential in URL Userinfo"
+      regex: '(?i)https?://[^\s/?#@:]+:[^\s/?#@]{8,}@'
+      severity: high
+    - name: "Raw Secp256k1 Private Key Parameter"
+      regex: '(?i)[?&;](?:pk|priv(?:ate)?_?key|key)=[0-9a-f]{64}\b'
+      severity: critical
+    - name: "Suspicious Punycode Host Label"
+      regex: '(?i)(?:^|[./])xn--[a-z0-9-]{32,}(?:[./:?#]|$)'
+      severity: high
+    - name: "Basic Authorization Credentials"
+      regex: '(?i)\bBasic\s+[A-Za-z0-9+/]{16,}={0,2}\b'
+      severity: high
 
 mcp_input_scanning:
   enabled: true
