@@ -51,7 +51,16 @@ request_body_scanning:
   scan_headers: true
   header_mode: all
 
-internal: []
+# Enable private-IP SSRF scoring for the ssrf-bypass cases (loopback, RFC1918,
+# link-local). The runner's fixtures reach pipelock via the allowlisted
+# aeb-fixture.test hostname below, so raw-IP-literal SSRF attacks are still
+# blocked while fixture traffic is permitted.
+internal:
+  - 127.0.0.0/8
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - 169.254.0.0/16
 
 # The Go runner brings up local TLS, WebSocket, and DNS fixtures on 127.0.0.1
 # (see runner/fixture/). For WebSocket DLP cases the adapter rewrites the
@@ -65,6 +74,13 @@ dns:
   host_overrides:
     aeb-fixture.test:
       - 127.0.0.1
+    # Resolve the benign agent-card hostnames to a public IP so private-IP SSRF
+    # checks evaluate them (public -> allowed) instead of failing closed on an
+    # unresolvable synthetic host. A real deployment's cards use resolvable hosts.
+    weather.example.com:
+      - 93.184.216.34
+    security.example.com:
+      - 93.184.216.34
 trusted_domains:
   - aeb-fixture.test
 
