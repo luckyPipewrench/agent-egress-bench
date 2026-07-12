@@ -807,9 +807,9 @@ func shOnlyPATHDir(t *testing.T) string {
 	return dir
 }
 
-func TestClassifyPreflightExecErr_PermissionDenied(t *testing.T) {
-	wrapped := fmt.Errorf("fork/exec /tmp/x.sh: %w", fs.ErrPermission)
-	err := classifyPreflightExecErr("/tmp", wrapped, "")
+func TestClassifyPreflightScriptAccessErr_PermissionDenied(t *testing.T) {
+	wrapped := fmt.Errorf("open /tmp/x.sh: %w", fs.ErrPermission)
+	err := classifyPreflightScriptAccessErr("/tmp", wrapped)
 	if err == nil {
 		t.Fatal("expected a non-nil error")
 	}
@@ -821,22 +821,22 @@ func TestClassifyPreflightExecErr_PermissionDenied(t *testing.T) {
 		t.Errorf("expected a TMPDIR remediation hint, got: %v", msg)
 	}
 	if !errors.Is(err, fs.ErrPermission) {
-		t.Error("expected classifyPreflightExecErr to preserve the wrapped error for errors.Is")
+		t.Error("expected classifyPreflightScriptAccessErr to preserve the wrapped error for errors.Is")
 	}
 }
 
-func TestClassifyPreflightExecErr_BashOrScriptMissing(t *testing.T) {
-	wrapped := fmt.Errorf("fork/exec /tmp/x.sh: %w", fs.ErrNotExist)
-	err := classifyPreflightExecErr("/tmp", wrapped, "some stderr detail")
+func TestClassifyPreflightScriptAccessErr_ScriptMissing(t *testing.T) {
+	wrapped := fmt.Errorf("open /tmp/x.sh: %w", fs.ErrNotExist)
+	err := classifyPreflightScriptAccessErr("/tmp", wrapped)
 	if err == nil {
 		t.Fatal("expected a non-nil error")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "bash with a temp script") {
-		t.Errorf("expected a missing-bash-or-script message, got: %v", msg)
+	if !strings.Contains(msg, "temp script disappeared") {
+		t.Errorf("expected a missing-script message, got: %v", msg)
 	}
-	if !strings.Contains(msg, "some stderr detail") {
-		t.Errorf("expected the captured stderr to be included, got: %v", msg)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Error("expected classifyPreflightScriptAccessErr to preserve the wrapped error for errors.Is")
 	}
 }
 

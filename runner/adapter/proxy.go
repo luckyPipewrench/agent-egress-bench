@@ -727,6 +727,9 @@ func PreflightMockScriptExec() error {
 	if closeErr := f.Close(); closeErr != nil {
 		return fmt.Errorf("preflight failed: cannot close temp script %s: %w", scriptPath, closeErr)
 	}
+	if accessErr := validatePreflightScriptReadable(tmpDir, scriptPath); accessErr != nil {
+		return accessErr
+	}
 
 	var stderrBuf bytes.Buffer
 	cmd := exec.Command(bashPath, scriptPath) //nolint:gosec // fixed bash path and a script this function just created
@@ -738,17 +741,26 @@ func PreflightMockScriptExec() error {
 	return classifyPreflightExecErr(tmpDir, runErr, strings.TrimSpace(stderrBuf.String()))
 }
 
-// classifyPreflightExecErr turns a failed exec of the preflight script into
-// a specific, actionable error message, keyed off the wrapped OS error so
-// the message names the likely root cause instead of a bare exit code. Split
-// out from PreflightMockScriptExec so the classification can be unit-tested
-// with synthetic errors, since reliably reproducing permission and path races
-// in a portable test is impractical.
-func classifyPreflightExecErr(tmpDir string, runErr error, detail string) error {
+func validatePreflightScriptReadable(tmpDir, scriptPath string) error {
+	f, err := os.Open(scriptPath)
+	if err != nil {
+		return classifyPreflightScriptAccessErr(tmpDir, err)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("preflight failed: cannot close readable temp script %s: %w", scriptPath, closeErr)
+	}
+	return nil
+}
+
+// classifyPreflightScriptAccessErr turns a failed pre-exec readability probe
+// into TMPDIR-specific guidance. Bash reports an unreadable or missing script
+// as an ordinary process exit, so probing from Go before exec preserves the
+// wrapped filesystem error that makes the diagnosis reliable.
+func classifyPreflightScriptAccessErr(tmpDir string, accessErr error) error {
 	switch {
-	case errors.Is(runErr, fs.ErrPermission):
+	case errors.Is(accessErr, fs.ErrPermission):
 		return fmt.Errorf(
-			"preflight failed: bash cannot read a script written to the temp directory\n"+
+			"preflight failed: cannot read a script written to the temp directory\n"+
 				"%s (%w).\n"+
 				"the current user most likely lacks read permission on files created there.\n"+
 				"The proxy adapter runs a mock MCP backend script from a freshly created\n"+
@@ -756,15 +768,44 @@ func classifyPreflightExecErr(tmpDir string, runErr error, detail string) error 
 				"will silently misclassify or hang until timeout instead of producing a\n"+
 				"real verdict, with no indication why.\n"+
 				"Fix: point TMPDIR at a writable directory and retry, e.g.:\n"+
-				"  mkdir -p \"$HOME/.cache/aeb-tmp\" && TMPDIR=\"$HOME/.cache/aeb-tmp\" <run command>\n"+
+				"  mkdir -p \"$HOME/.cache/aeb-tmp\" && TMPDIR=\"$HOME/.cache/aeb-tmp\" <run command>",
+			tmpDir, accessErr)
+	case errors.Is(accessErr, fs.ErrNotExist):
+		return fmt.Errorf(
+			"preflight failed: temp script disappeared before bash could run it\n"+
+				"from %s (%w).\n"+
+				"check TMPDIR and filesystem cleanup policy, then retry",
+			tmpDir, accessErr)
+	default:
+		return fmt.Errorf(
+			"preflight failed: cannot verify a temp script is readable from %s (%w).\n"+
+				"the proxy adapter's MCP mock-backend mechanism needs to create temp\n"+
+				"scripts and run them with bash for tool-poisoning cases; fix the\n"+
+				"underlying environment issue and retry",
+			tmpDir, accessErr)
+	}
+}
+
+// classifyPreflightExecErr turns a failed bash execution into a specific,
+// actionable error message where Go still exposes the wrapped OS error.
+// Script read/missing errors are handled before exec by
+// validatePreflightScriptReadable because Bash converts them into ExitError.
+func classifyPreflightExecErr(tmpDir string, runErr error, detail string) error {
+	switch {
+	case errors.Is(runErr, fs.ErrPermission):
+		return fmt.Errorf(
+			"preflight failed: cannot execute bash for a temp script in\n"+
+				"%s (%w).\n"+
+				"bash was found on PATH but could not be executed by the current user.\n"+
+				"Check the bash executable permissions and retry.\n"+
 				"stderr from the failed script: %s",
 			tmpDir, runErr, orNoneIfEmpty(detail))
 	case errors.Is(runErr, fs.ErrNotExist):
 		return fmt.Errorf(
 			"preflight failed: cannot run bash with a temp script in %s (%w).\n"+
-				"bash was found on PATH, but either that executable or the temp script was\n"+
-				"not available when preflight tried to run it; check PATH, TMPDIR, and\n"+
-				"filesystem cleanup policy, then retry.\n"+
+				"bash was found on PATH, but that executable was not available when\n"+
+				"preflight tried to run it; check PATH and filesystem cleanup policy,\n"+
+				"then retry.\n"+
 				"stderr from the failed script: %s",
 			tmpDir, runErr, orNoneIfEmpty(detail))
 	default:
