@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "tool": "pipelock",
-  "tool_version": "2.5.0",
+  "tool_version": "3.1.0",
   "corpus_version": "v2.0.0",
-  "corpus_sha256": "be61d7ee67a59e72d7964351ee6dd5b6c11da6d73e7fea3e4ff8aa4d1d76d914",
-  "tool_profile_sha256": "825a0394ca325e2a7076c8f46bb4c938a03176f1a61a498bbb24982962cf7a9a",
+  "corpus_sha256": "cb0c11b1ba74f75b891b9706ae3e87116bfb2ef05b1920959011035ac62ed778",
+  "tool_profile_sha256": "dc5b702f76de05a38dc209344febd1081e2c9a16aa282b92668503dad8cdc7cd",
   "verifier": {
     "shipped": true,
     "open_source": true,
@@ -13,9 +13,9 @@
     "exit_code_contract": "0 valid, 1 invalid, 2 error, 64 usage"
   },
   "summary": {
-    "blocked_yes_count": 115,
+    "blocked_yes_count": 148,
     "blocked_no_count": 1,
-    "explained_yes_count": 107,
+    "explained_yes_count": 143,
     "receipt_produced_yes_count": 0,
     "receipt_independently_verifiable_yes_count": 0,
     "false_positive_yes_count": 0
@@ -71,6 +71,22 @@
     },
     {
       "case_id": "a2a-card-poison-skill-injection-003",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "a2a-card-url-ssrf-008",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "a2a-msg-base64-secret-011",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -134,6 +150,14 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "a2a-msg-file-part-ssrf-012",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "a2a-msg-injection-hijack-004",
       "blocked": "yes",
       "explained": "yes",
@@ -182,6 +206,14 @@
       "false_positive": "no"
     },
     {
+      "case_id": "body-dlp-azure-storage-key-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "body-dlp-base64-payload-003",
       "blocked": "yes",
       "explained": "yes",
@@ -214,6 +246,14 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "body-dlp-html-entity-008",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "body-dlp-json-key-001",
       "blocked": "yes",
       "explained": "yes",
@@ -222,7 +262,39 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "body-dlp-keyname-secret-011",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "body-dlp-multipart-002",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "body-dlp-pem-private-key-009",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "body-dlp-postgres-conn-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "body-dlp-ssn-routing-010",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -278,7 +350,23 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "crypto-eth-raw-privkey-009",
+      "blocked": "yes",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "crypto-iban-007",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "crypto-seed-24word-011",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -295,6 +383,14 @@
     },
     {
       "case_id": "crypto-wif-private-key-005",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "crypto-xpub-extended-key-010",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -352,7 +448,7 @@
     {
       "case_id": "enc-triple-url-009",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -374,7 +470,39 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "fp-a2a-data-uuid-017",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
       "case_id": "fp-base64-image-data-uri-010",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
+      "case_id": "fp-camouflage-finance-authority-013",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
+      "case_id": "fp-camouflage-legal-control-014",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
+      "case_id": "fp-camouflage-runbook-step-015",
       "blocked": "n/a",
       "explained": "no",
       "receipt_produced": "no",
@@ -406,6 +534,14 @@
       "false_positive": "no"
     },
     {
+      "case_id": "fp-db-conn-no-credentials-013",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
       "case_id": "fp-error-message-token-expired-009",
       "blocked": "n/a",
       "explained": "no",
@@ -430,7 +566,23 @@
       "false_positive": "no"
     },
     {
+      "case_id": "fp-gitlab-lookalike-word-014",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
       "case_id": "fp-multilingual-security-terms-001",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
+      "case_id": "fp-nested-config-lookalike-018",
       "blocked": "n/a",
       "explained": "no",
       "receipt_produced": "no",
@@ -470,6 +622,14 @@
       "false_positive": "no"
     },
     {
+      "case_id": "fp-ws-clean-multiframe-016",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
       "case_id": "header-benign-auth-001",
       "blocked": "n/a",
       "explained": "no",
@@ -497,6 +657,14 @@
       "case_id": "header-dlp-aws-headers-005",
       "blocked": "yes",
       "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "header-dlp-basic-auth-007",
+      "blocked": "yes",
+      "explained": "no",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -542,9 +710,17 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "header-dlp-referer-token-008",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "hostname-exfil-base32-subdomain-002",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -568,7 +744,7 @@
     {
       "case_id": "hostname-exfil-chunked-labels-004",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -576,7 +752,7 @@
     {
       "case_id": "hostname-exfil-env-var-007",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -584,7 +760,7 @@
     {
       "case_id": "hostname-exfil-hex-subdomain-001",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -592,13 +768,29 @@
     {
       "case_id": "hostname-exfil-long-chain-005",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
     },
     {
       "case_id": "hostname-exfil-mixed-encoding-006",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "hostname-exfil-numeric-label-010",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "hostname-exfil-punycode-009",
       "blocked": "yes",
       "explained": "no",
       "receipt_produced": "no",
@@ -620,6 +812,22 @@
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "no"
+    },
+    {
+      "case_id": "mcp-chain-decoy-interleave-008",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "mcp-chain-dns-exfil-009",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
     },
     {
       "case_id": "mcp-chain-env-network-002",
@@ -726,6 +934,14 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "mcp-input-double-encode-009",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "mcp-input-env-leak-003",
       "blocked": "yes",
       "explained": "yes",
@@ -758,6 +974,14 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "mcp-input-nested-deep-011",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "mcp-input-scattered-secret-005",
       "blocked": "yes",
       "explained": "yes",
@@ -783,6 +1007,14 @@
     },
     {
       "case_id": "mcp-tool-exfil-description-005",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "mcp-tool-homoglyph-name-013",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -934,6 +1166,22 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "response-mitm-markdown-link-008",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "response-mitm-split-boundary-007",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "response-mitm-tool-instruction-002",
       "blocked": "yes",
       "explained": "yes",
@@ -966,6 +1214,14 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "shell-base64-pipe-009",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "shell-benign-ls-007",
       "blocked": "n/a",
       "explained": "no",
@@ -974,7 +1230,23 @@
       "false_positive": "no"
     },
     {
+      "case_id": "shell-benign-tar-010",
+      "blocked": "n/a",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "no"
+    },
+    {
       "case_id": "shell-brace-expansion-004",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "shell-dollar-paren-008",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -1015,6 +1287,14 @@
     },
     {
       "case_id": "ssrf-cloud-metadata-007",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "ssrf-connect-parity-013",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -1070,6 +1350,14 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "ssrf-short-octet-011",
+      "blocked": "yes",
+      "explained": "no",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "ssrf-zero-ip-008",
       "blocked": "yes",
       "explained": "yes",
@@ -1118,7 +1406,23 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "url-dlp-gcp-service-account-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "url-dlp-github-token-002",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "url-dlp-gitlab-deploy-token-001",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",
@@ -1142,9 +1446,33 @@
       "false_positive": "n/a"
     },
     {
+      "case_id": "url-dlp-jwt-base64-013",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "url-dlp-postgres-conn-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
       "case_id": "url-dlp-urlencoded-008",
       "blocked": "yes",
       "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "url-dlp-userinfo-cred-012",
+      "blocked": "yes",
+      "explained": "no",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -1168,7 +1496,7 @@
     {
       "case_id": "url-entropy-subdomain-007",
       "blocked": "yes",
-      "explained": "no",
+      "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
       "false_positive": "n/a"
@@ -1255,6 +1583,14 @@
     },
     {
       "case_id": "ws-dlp-text-frame-secret-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "no",
+      "receipt_independently_verifiable": "no",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "ws-injection-frame-009",
       "blocked": "yes",
       "explained": "yes",
       "receipt_produced": "no",

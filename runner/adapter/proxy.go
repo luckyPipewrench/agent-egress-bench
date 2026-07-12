@@ -21,8 +21,10 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -682,6 +684,155 @@ func webSocketCloseReason(payload []byte) string {
 	return string(payload[2:])
 }
 
+// PreflightMockScriptExec verifies that the current environment can create a
+// temp script and run it with bash from PATH, matching runMCPStdio's mock MCP
+// backend injection for tool-poisoning cases.
+//
+// If bash is missing or the temp script cannot be created/read, that mechanism
+// silently breaks every in-scope MCP tool-poisoning case: with stderr discarded
+// (the bug this preflight exists to catch; see the stderr capture in
+// runMCPStdio) the failure surfaces, if at all, as a bare unexplained exit
+// code, or the case simply times out and gets scored as a "block" with no
+// indication that nothing was ever actually run. Call this once, before those
+// cases run, so that failure is loud, specific, and actionable instead of
+// silently corrupting case results.
+//
+// Callers should invoke this only when the proxy adapter is configured with
+// an MCP command (i.e. tool-poisoning cases will actually exercise this
+// mechanism); it is a no-op safety check, not part of scoring.
+func PreflightMockScriptExec() error {
+	tmpDir := os.TempDir()
+
+	bashPath, lookErr := exec.LookPath("bash")
+	if lookErr != nil {
+		return fmt.Errorf(
+			"preflight failed: bash not found in PATH (%w).\n"+
+				"the proxy adapter's MCP mock-backend script (used for tool-poisoning\n"+
+				"cases) is run as \"bash <temp-script>\"; install bash or ensure it is\n"+
+				"on PATH and retry",
+			lookErr)
+	}
+
+	f, err := os.CreateTemp(tmpDir, "aeb-preflight-mock-*.sh")
+	if err != nil {
+		return fmt.Errorf("preflight failed: cannot create a temp file in %s: %w", tmpDir, err)
+	}
+	scriptPath := f.Name()
+	defer func() { _ = os.Remove(scriptPath) }()
+
+	if _, writeErr := f.WriteString("exit 0\n"); writeErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("preflight failed: cannot write temp script %s: %w", scriptPath, writeErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("preflight failed: cannot close temp script %s: %w", scriptPath, closeErr)
+	}
+	if accessErr := validatePreflightScriptReadable(tmpDir, scriptPath); accessErr != nil {
+		return accessErr
+	}
+
+	var stderrBuf bytes.Buffer
+	cmd := exec.Command(bashPath, scriptPath) //nolint:gosec // fixed bash path and a script this function just created
+	cmd.Stderr = &stderrBuf
+	runErr := cmd.Run()
+	if runErr == nil {
+		return nil
+	}
+	return classifyPreflightExecErr(tmpDir, runErr, strings.TrimSpace(stderrBuf.String()))
+}
+
+func validatePreflightScriptReadable(tmpDir, scriptPath string) error {
+	f, err := os.Open(scriptPath)
+	if err != nil {
+		return classifyPreflightScriptAccessErr(tmpDir, err)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("preflight failed: cannot close readable temp script %s: %w", scriptPath, closeErr)
+	}
+	return nil
+}
+
+// classifyPreflightScriptAccessErr turns a failed pre-exec readability probe
+// into TMPDIR-specific guidance. Bash reports an unreadable or missing script
+// as an ordinary process exit, so probing from Go before exec preserves the
+// wrapped filesystem error that makes the diagnosis reliable.
+func classifyPreflightScriptAccessErr(tmpDir string, accessErr error) error {
+	switch {
+	case errors.Is(accessErr, fs.ErrPermission):
+		return fmt.Errorf(
+			"preflight failed: cannot read a script written to the temp directory\n"+
+				"%s (%w).\n"+
+				"the current user most likely lacks read permission on files created there.\n"+
+				"The proxy adapter runs a mock MCP backend script from a freshly created\n"+
+				"temp file for tool-poisoning cases; if bash cannot read it, those cases\n"+
+				"will silently misclassify or hang until timeout instead of producing a\n"+
+				"real verdict, with no indication why.\n"+
+				"Fix: point TMPDIR at a writable directory and retry, e.g.:\n"+
+				"  mkdir -p \"$HOME/.cache/aeb-tmp\" && TMPDIR=\"$HOME/.cache/aeb-tmp\" <run command>",
+			tmpDir, accessErr)
+	case errors.Is(accessErr, fs.ErrNotExist):
+		return fmt.Errorf(
+			"preflight failed: temp script disappeared before bash could run it\n"+
+				"from %s (%w).\n"+
+				"check TMPDIR and filesystem cleanup policy, then retry",
+			tmpDir, accessErr)
+	default:
+		return fmt.Errorf(
+			"preflight failed: cannot verify a temp script is readable from %s (%w).\n"+
+				"the proxy adapter's MCP mock-backend mechanism needs to create temp\n"+
+				"scripts and run them with bash for tool-poisoning cases; fix the\n"+
+				"underlying environment issue and retry",
+			tmpDir, accessErr)
+	}
+}
+
+// classifyPreflightExecErr turns a failed bash execution into a specific,
+// actionable error message where Go still exposes the wrapped OS error.
+// Script read/missing errors are handled before exec by
+// validatePreflightScriptReadable because Bash converts them into ExitError.
+func classifyPreflightExecErr(tmpDir string, runErr error, detail string) error {
+	switch {
+	case errors.Is(runErr, fs.ErrPermission):
+		return fmt.Errorf(
+			"preflight failed: cannot execute bash for a temp script in\n"+
+				"%s (%w).\n"+
+				"bash was found on PATH but could not be executed by the current user.\n"+
+				"Check the bash executable permissions and retry.\n"+
+				"stderr from the failed script: %s",
+			tmpDir, runErr, orNoneIfEmpty(detail))
+	case errors.Is(runErr, fs.ErrNotExist):
+		return fmt.Errorf(
+			"preflight failed: cannot run bash with a temp script in %s (%w).\n"+
+				"bash was found on PATH, but that executable was not available when\n"+
+				"preflight tried to run it; check PATH and filesystem cleanup policy,\n"+
+				"then retry.\n"+
+				"stderr from the failed script: %s",
+			tmpDir, runErr, orNoneIfEmpty(detail))
+	default:
+		return fmt.Errorf(
+			"preflight failed: could not run a test script from the temp directory\n"+
+				"%s (%w).\n"+
+				"the proxy adapter's MCP mock-backend mechanism needs to create temp\n"+
+				"scripts and run them with bash for tool-poisoning cases; fix the\n"+
+				"underlying environment issue and retry.\n"+
+				"stderr from the failed script: %s",
+			tmpDir, runErr, orNoneIfEmpty(detail))
+	}
+}
+
+// orNoneIfEmpty returns "(none)" for an empty diagnostic string so error
+// messages never end with a dangling, easy-to-miss empty field.
+func orNoneIfEmpty(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // runMCPStdio sends JSON-RPC messages through the MCP proxy subprocess.
 //
 // The proxy sits between client (stdin) and server (subprocess backend).
@@ -754,14 +905,14 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			return Result{Err: fmt.Errorf("case %s: create temp script: %w", c.ID, scriptErr)}
 		}
 		tempFiles = append(tempFiles, mockScript.Name())
-		_, _ = fmt.Fprintf(mockScript, "#!/bin/bash\n_n=0\nwhile IFS= read -r _input; do\n  _n=$((_n+1))\n  sed -n \"${_n}p\" '%s'\ndone\n",
+		_, _ = fmt.Fprintf(mockScript, "_n=0\nwhile IFS= read -r _input; do\n  _n=$((_n+1))\n  sed -n \"${_n}p\" '%s'\ndone\n",
 			respFile.Name())
 		_ = mockScript.Close()
-		_ = os.Chmod(mockScript.Name(), 0o750)
 
-		// Replace the backend command with our custom mock script.
+		// Replace the backend command with our custom mock script. Invoke it
+		// through bash from PATH instead of relying on a hardcoded shebang path.
 		if idx := strings.Index(mcpCmd, " -- "); idx >= 0 {
-			mcpCmd = mcpCmd[:idx] + " -- " + mockScript.Name()
+			mcpCmd = mcpCmd[:idx] + " -- bash " + shellQuote(mockScript.Name())
 		} else {
 			return Result{Err: fmt.Errorf("case %s: --mcp-cmd missing ' -- ' separator, cannot inject mock backend", c.ID)}
 		}
@@ -780,7 +931,15 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", mcpCmd) //nolint:gosec // command from trusted CLI flag
-	cmd.Stderr = io.Discard
+	// Capture stderr instead of discarding it. Discarding it here previously
+	// swallowed the diagnostic output from a mock-backend spawn failure (e.g.
+	// bash missing), leaving nothing but a bare, unexplained exit code or a
+	// silent timeout. See PreflightMockScriptExec for the guard that catches
+	// this class of failure loudly before the in-scope corpus cases run, and
+	// the two branches below that now surface this buffer's contents when a
+	// case comes back empty.
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -813,15 +972,30 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		_ = os.Remove(tf)
 	}
 	output := <-outputCh
+	stderrOutput := strings.TrimSpace(stderrBuf.String())
 
 	// Context timeout is expected (subprocess runs until stdin closes).
 	// But other wait errors with no output indicate a real failure.
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
 		if waitErr != nil && ctx.Err() == nil {
+			if stderrOutput != "" {
+				return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
+			}
 			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
 		}
-		return Result{Verdict: "block", Evidence: map[string]interface{}{"reason": "no_output"}}
+		// No output and no reported wait error (or a timeout) is treated as a
+		// block, since many proxies express "block" by simply closing the
+		// connection without writing anything. That is a real, valid signal
+		// for a well-behaved tool — but it is also exactly what a silently
+		// failed mock-backend spawn looks like, so any captured stderr is
+		// attached here as a diagnostic hint rather than changing the
+		// verdict itself.
+		evidence := map[string]interface{}{"reason": "no_output"}
+		if stderrOutput != "" {
+			evidence["stderr"] = stderrOutput
+		}
+		return Result{Verdict: "block", Evidence: evidence}
 	}
 
 	// Check response lines for policy-block JSON-RPC errors.

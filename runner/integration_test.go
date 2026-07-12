@@ -10,7 +10,7 @@ import (
 
 func TestRunBadCasesDir(t *testing.T) {
 	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false, "", "", "")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false, "", "", "", false)
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -18,9 +18,38 @@ func TestRunBadCasesDir(t *testing.T) {
 
 func TestRunBadProfile(t *testing.T) {
 	err := run(filepath.Join("..", "cases"), "/nonexistent/profile.json",
-		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false, "", "", "")
+		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false, "", "", "", false)
 	if err == nil {
 		t.Fatal("expected error for nonexistent profile")
+	}
+}
+
+func TestRunProxyAdapterPreflightFailsFast(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+
+	// Skip if cases or profile don't exist.
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found, skipping")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found, skipping")
+	}
+
+	// Point TMPDIR at a directory that does not exist, so the mock-backend
+	// preflight cannot even create a temp file there. This proves run()
+	// actually invokes the preflight check when --mcp-cmd is set for the
+	// proxy adapter, and fails fast with a specific, wrapped error instead
+	// of proceeding to run (and silently misclassify) the whole corpus.
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "does-not-exist"))
+
+	outputPath := filepath.Join(t.TempDir(), "summary.json")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "proxy", "127.0.0.1:1", "", "", "echo hi", false, "", "", "", false)
+	if err == nil {
+		t.Fatal("expected the mock-backend preflight to fail with an unusable TMPDIR")
+	}
+	if !strings.Contains(err.Error(), "mcp mock-backend preflight") {
+		t.Errorf("expected the preflight-wrapped error, got: %v", err)
 	}
 }
 
@@ -37,7 +66,7 @@ func TestRunUnknownAdapter(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "", "", "", "", false, "", "", "")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "nonexistent", "", "", "", "", false, "", "", "", false)
 	if err == nil {
 		t.Fatal("expected error for unknown adapter")
 	}
@@ -58,7 +87,7 @@ func TestRunIgnoresReceiptVerifierFileWithoutProfileEmission(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "/nonexistent/verifier.json", "")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "/nonexistent/verifier.json", "", false)
 	if err != nil {
 		t.Fatalf("run should ignore receipt verifier file unless profile emission is enabled: %v", err)
 	}
@@ -78,7 +107,7 @@ func TestIntegrationNullAdapter(t *testing.T) {
 
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "", "", "", "", false, "", "", "")
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "null", "", "", "", "", false, "", "", "", false)
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -120,7 +149,7 @@ func TestIntegrationRealCases(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
 
 	// Run the full pipeline.
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", "") // 10s
+	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", "", false) // 10s
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
@@ -220,4 +249,88 @@ func TestIntegrationRealCases(t *testing.T) {
 	t.Logf("Summary: %d total, %d applicable, %d N/A, sufficient=%v",
 		summary.CaseCount.Total, summary.CaseCount.Applicable,
 		summary.CaseCount.NotApplicable, summary.Sufficient)
+}
+
+func TestDebugFlag_EmitsPerCaseDiagnostics(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found, skipping")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found, skipping")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "summary.json")
+	stderrStr := captureStderr(t, func() error {
+		return run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", "", true)
+	})
+
+	// With debug=true, every case should produce at least one [DEBUG]
+	// line. The dryrun adapter returns expected_verdict for every case,
+	// so applicable cases produce PASS lines and N/A cases produce
+	// not_applicable lines.
+	if !strings.Contains(stderrStr, debugPrefix) {
+		t.Error("expected at least one [DEBUG] line on stderr with debug=true, got none")
+	}
+	if !strings.Contains(stderrStr, "PASS") && !strings.Contains(stderrStr, "not_applicable") {
+		t.Error("expected per-case diagnostic (PASS or not_applicable) in debug output")
+	}
+}
+
+func TestDebugFlag_OffByDefault_NoDebugLines(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found, skipping")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found, skipping")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "summary.json")
+	stderrStr := captureStderr(t, func() error {
+		return run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", "", false)
+	})
+
+	// With debug=false, there must be ZERO [DEBUG] lines.
+	if strings.Contains(stderrStr, debugPrefix) {
+		t.Errorf("expected no [DEBUG] lines on stderr with debug=false, but found:\n%s",
+			stderrStr)
+	}
+}
+
+// captureStderr temporarily redirects os.Stderr to a temp file for the
+// duration of fn, then returns the captured content as a string. Not
+// parallel-safe (swaps a global), but run() is synchronous and these
+// tests do not use t.Parallel.
+func captureStderr(t *testing.T, fn func() error) string {
+	t.Helper()
+
+	tmp, tmpErr := os.CreateTemp(t.TempDir(), "stderr-capture-*.txt")
+	if tmpErr != nil {
+		t.Fatalf("create stderr capture file: %v", tmpErr)
+	}
+	tmpPath := tmp.Name()
+
+	origStderr := os.Stderr
+	os.Stderr = tmp
+
+	err := fn()
+
+	// Restore before reading / asserting so t.Fatal goes to the real stderr.
+	_ = tmp.Close()
+	os.Stderr = origStderr
+
+	if err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+
+	data, readErr := os.ReadFile(tmpPath)
+	if readErr != nil {
+		t.Fatalf("read captured stderr: %v", readErr)
+	}
+	return string(data)
 }

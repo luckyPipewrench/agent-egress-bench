@@ -159,36 +159,36 @@ func TestCheckApplicability(t *testing.T) {
 	profile := Profile{
 		Claims: []string{"url_dlp", "benign"},
 		Supports: map[string]bool{
-			"fetch_proxy":              true,
-			"http_proxy":               true,
-			"mcp_stdio":               false,
-			"tls_interception":         true,
-			"request_body_scanning":    false,
-			"dns_rebinding_fixture":    false,
+			"fetch_proxy":           true,
+			"http_proxy":            true,
+			"mcp_stdio":             false,
+			"tls_interception":      true,
+			"request_body_scanning": false,
+			"dns_rebinding_fixture": false,
 		},
 	}
 
 	tests := []struct {
-		name       string
-		c          Case
-		wantNA     NAKind
-		wantApply  bool
+		name      string
+		c         Case
+		wantNA    NAKind
+		wantApply bool
 	}{
 		{
 			name: "fully applicable",
 			c: Case{
-				CapabilityTags:  []string{"url_dlp"},
-				Requires:        []string{"tls_interception"},
-				Transport:       "fetch_proxy",
+				CapabilityTags: []string{"url_dlp"},
+				Requires:       []string{"tls_interception"},
+				Transport:      "fetch_proxy",
 			},
 			wantApply: true,
 		},
 		{
 			name: "missing capability",
 			c: Case{
-				CapabilityTags:  []string{"mcp_input_scan"},
-				Requires:        []string{},
-				Transport:       "fetch_proxy",
+				CapabilityTags: []string{"mcp_input_scan"},
+				Requires:       []string{},
+				Transport:      "fetch_proxy",
 			},
 			wantNA:    NAMissingCapability,
 			wantApply: false,
@@ -196,9 +196,9 @@ func TestCheckApplicability(t *testing.T) {
 		{
 			name: "missing requires",
 			c: Case{
-				CapabilityTags:  []string{"url_dlp"},
-				Requires:        []string{"request_body_scanning"},
-				Transport:       "fetch_proxy",
+				CapabilityTags: []string{"url_dlp"},
+				Requires:       []string{"request_body_scanning"},
+				Transport:      "fetch_proxy",
 			},
 			wantNA:    NAMissingRequires,
 			wantApply: false,
@@ -206,9 +206,9 @@ func TestCheckApplicability(t *testing.T) {
 		{
 			name: "unsupported transport",
 			c: Case{
-				CapabilityTags:  []string{"url_dlp"},
-				Requires:        []string{},
-				Transport:       "mcp_stdio",
+				CapabilityTags: []string{"url_dlp"},
+				Requires:       []string{},
+				Transport:      "mcp_stdio",
 			},
 			wantNA:    NAUnsupportedTransport,
 			wantApply: false,
@@ -216,9 +216,9 @@ func TestCheckApplicability(t *testing.T) {
 		{
 			name: "capability checked before requires",
 			c: Case{
-				CapabilityTags:  []string{"mcp_input_scan"},
-				Requires:        []string{"request_body_scanning"},
-				Transport:       "mcp_stdio",
+				CapabilityTags: []string{"mcp_input_scan"},
+				Requires:       []string{"request_body_scanning"},
+				Transport:      "mcp_stdio",
 			},
 			wantNA:    NAMissingCapability,
 			wantApply: false,
@@ -226,9 +226,9 @@ func TestCheckApplicability(t *testing.T) {
 		{
 			name: "requires checked before transport",
 			c: Case{
-				CapabilityTags:  []string{"url_dlp"},
-				Requires:        []string{"dns_rebinding_fixture"},
-				Transport:       "mcp_stdio",
+				CapabilityTags: []string{"url_dlp"},
+				Requires:       []string{"dns_rebinding_fixture"},
+				Transport:      "mcp_stdio",
 			},
 			wantNA:    NAMissingRequires,
 			wantApply: false,
@@ -243,6 +243,80 @@ func TestCheckApplicability(t *testing.T) {
 			}
 			if !applicable && reason != tt.wantNA {
 				t.Errorf("reason = %q, want %q", reason, tt.wantNA)
+			}
+		})
+	}
+}
+
+func TestNeedsMCPMockBackendPreflight(t *testing.T) {
+	profile := Profile{
+		Claims: []string{"mcp_tool_poison", "url_dlp"},
+		Supports: map[string]bool{
+			"fetch_proxy": true,
+			"mcp_stdio":   true,
+			"mcp_http":    true,
+		},
+	}
+
+	tests := []struct {
+		name  string
+		cases []Case
+		want  bool
+	}{
+		{
+			name: "mcp server response in scope",
+			cases: []Case{{
+				CapabilityTags: []string{"mcp_tool_poison"},
+				Transport:      "mcp_stdio",
+				Payload: map[string]interface{}{
+					"jsonrpc_messages": []interface{}{
+						map[string]interface{}{"result": map[string]interface{}{"tools": []interface{}{}}},
+					},
+				},
+			}},
+			want: true,
+		},
+		{
+			name: "fetch-only case does not need mcp preflight",
+			cases: []Case{{
+				CapabilityTags: []string{"url_dlp"},
+				Transport:      "fetch_proxy",
+				Payload:        map[string]interface{}{"url": "https://example.com"},
+			}},
+			want: false,
+		},
+		{
+			name: "unsupported mcp case does not need preflight",
+			cases: []Case{{
+				CapabilityTags: []string{"unsupported_capability"},
+				Transport:      "mcp_stdio",
+				Payload: map[string]interface{}{
+					"jsonrpc_messages": []interface{}{
+						map[string]interface{}{"result": map[string]interface{}{"tools": []interface{}{}}},
+					},
+				},
+			}},
+			want: false,
+		},
+		{
+			name: "mcp client-only request does not inject mock backend",
+			cases: []Case{{
+				CapabilityTags: []string{"mcp_tool_poison"},
+				Transport:      "mcp_stdio",
+				Payload: map[string]interface{}{
+					"jsonrpc_messages": []interface{}{
+						map[string]interface{}{"method": "tools/call"},
+					},
+				},
+			}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := needsMCPMockBackendPreflight(tt.cases, profile); got != tt.want {
+				t.Fatalf("needsMCPMockBackendPreflight() = %v, want %v", got, tt.want)
 			}
 		})
 	}
