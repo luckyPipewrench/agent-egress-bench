@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["url_dlp"],
-  "requires": [],
+  "requires":["url_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "postgres_connection_string_with_credentials",
   "notes": "The secret is the password between ':' and '@'. Synthetic credentials.",

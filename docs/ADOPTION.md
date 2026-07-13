@@ -18,7 +18,7 @@ The [Pipelock reference runner](../examples/pipelock/) is a working example you 
 
 ### What to claim
 
-Your tool profile declares what your tool detects (`claims`) and how it intercepts traffic (`supports`). Be honest. Cases that fall outside your claims are scored `not_applicable`, not `fail`. Over-claiming produces `error` scores when your runner cannot actually test those cases.
+Your tool profile declares what your tool detects (`claims`, for reporting) and what it can actually evaluate (`supports`, for applicability). Be honest. Cases whose `requires` entries or transport are unsupported are scored `not_applicable`, not `fail`. Overstating `supports` produces `error` scores when your runner cannot actually test those cases.
 
 ## Publish results
 

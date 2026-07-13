@@ -22,6 +22,7 @@ severity: low
 capability_tags:
   - mcp_tool_poison
 requires:
+  - mcp_tool_poison_scanning
   - mcp_tool_baseline
 false_positive_risk: medium
 why_expected: |

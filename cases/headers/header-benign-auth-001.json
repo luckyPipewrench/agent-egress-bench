@@ -19,7 +19,7 @@
     "header_dlp",
     "benign"
   ],
-  "requires": [],
+  "requires":["header_dlp_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "short_opaque_bearer_token",
   "safe_example": true,

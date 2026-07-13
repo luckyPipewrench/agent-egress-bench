@@ -80,11 +80,11 @@ benign drift that should be surfaced for operator review without being blocked.
 
 `url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`, `hostname_exfil`
 
-Tags describe what the case exercises. Used for reporting and applicability.
+Tags describe what the case exercises. Used for reporting and result interpretation.
 
 ## requires (v1)
 
-`tls_interception`, `request_body_scanning`, `header_scanning`, `response_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `websocket_frame_scanning`, `a2a_scanning`, `shell_analysis`, `dns_rebinding_fixture`
+`tls_interception`, `url_dlp_scanning`, `request_body_dlp_scanning`, `header_dlp_scanning`, `response_prompt_injection_scanning`, `mcp_input_dlp_scanning`, `mcp_input_prompt_injection_scanning`, `mcp_tool_policy`, `mcp_tool_result_prompt_injection_scanning`, `mcp_tool_poison_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `a2a_dlp_scanning`, `a2a_prompt_injection_scanning`, `a2a_card_prompt_injection_scanning`, `a2a_card_drift_scanning`, `a2a_ssrf_scanning`, `websocket_dlp_scanning`, `websocket_prompt_injection_scanning`, `ssrf_scanning`, `ssrf_bypass_scanning`, `domain_blocklist`, `entropy_scanning`, `encoding_evasion_scanning`, `shell_analysis`, `crypto_dlp_scanning`, `hostname_exfil_scanning`, `dns_rebinding_fixture`
 
 Runtime prerequisites. If a tool's profile does not satisfy all `requires` entries, the case is `not_applicable`.
 
@@ -177,8 +177,8 @@ Runtime prerequisites. If a tool's profile does not satisfy all `requires` entri
 
 A case is `not_applicable` for a tool if either:
 
-1. Any entry in `capability_tags` is not in the tool's `claims`, or
-2. Any entry in `requires` is not supported by the tool's profile
+1. Any entry in `requires` is not supported by the tool's profile, or
+2. The case `transport` is not supported by the tool's profile
 
 This is deterministic. No judgment calls.
 

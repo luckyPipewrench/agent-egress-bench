@@ -15,9 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [
-    "response_scanning"
-  ],
+  "requires":["response_prompt_injection_scanning"],
   "false_positive_risk": "high",
   "why_expected": "authoritative_finance_prose_resembles_camouflaged_injection",
   "safe_example": true,

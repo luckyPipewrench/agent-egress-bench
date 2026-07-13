@@ -16,7 +16,7 @@
     "hostname_exfil",
     "benign"
   ],
-  "requires": [],
+  "requires":["hostname_exfil_scanning"],
   "false_positive_risk": "high",
   "why_expected": "legitimate_cdn_content_hash",
   "safe_example": true,

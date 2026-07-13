@@ -16,7 +16,7 @@
     "response_injection",
     "benign"
   ],
-  "requires": [],
+  "requires":["response_prompt_injection_scanning"],
   "false_positive_risk": "high",
   "why_expected": "meta_discussion_of_injection_not_actual_injection",
   "safe_example": true,

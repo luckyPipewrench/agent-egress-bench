@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [],
+  "requires":["crypto_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "documentation_about_crypto_formats",
   "safe_example": true,

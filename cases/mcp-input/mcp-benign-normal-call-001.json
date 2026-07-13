@@ -27,7 +27,7 @@
     "mcp_input_scan",
     "benign"
   ],
-  "requires": [],
+  "requires":["mcp_tool_policy"],
   "false_positive_risk": "low",
   "why_expected": "normal_file_read_of_safe_path",
   "safe_example": true,

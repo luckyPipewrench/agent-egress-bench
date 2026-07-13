@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "medium",
   "capability_tags": ["entropy"],
-  "requires": [],
+  "requires":["entropy_scanning"],
   "false_positive_risk": "high",
   "why_expected": "high_entropy_path_segment",
   "notes": "Shannon entropy of the path segment exceeds typical threshold (~4.5 bits/char). Some legitimate APIs use similar identifiers, so false positive risk is high.",

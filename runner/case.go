@@ -31,19 +31,20 @@ type Case struct {
 
 // Profile represents a tool profile JSON file.
 type Profile struct {
-	SchemaVersion int              `json:"schema_version"`
-	Tool          string           `json:"tool"`
-	ToolVersion   string           `json:"tool_version"`
-	RunnerVersion string           `json:"runner_version"`
-	Claims        []string         `json:"claims"`
-	Supports      map[string]bool  `json:"supports"`
+	SchemaVersion int    `json:"schema_version"`
+	Tool          string `json:"tool"`
+	ToolVersion   string `json:"tool_version"`
+	RunnerVersion string `json:"runner_version"`
+	// Claims are reporting labels retained for backward compatibility.
+	// Deprecated for applicability: use Supports plus case Requires instead.
+	Claims   []string        `json:"claims"`
+	Supports map[string]bool `json:"supports"`
 }
 
 // NAKind describes why a case is not applicable.
 type NAKind string
 
 const (
-	NAMissingCapability    NAKind = "missing_capability"
 	NAMissingRequires      NAKind = "missing_requires"
 	NAUnsupportedTransport NAKind = "unsupported_transport"
 )
@@ -117,28 +118,17 @@ func loadProfile(path string) (Profile, error) {
 
 // checkApplicability determines if a case is applicable given a profile.
 // Returns ("", true) if applicable, or (reason, false) if not.
-// Checks are ordered: capability_tags first, then requires, then transport.
+// Checks are ordered: requires first, then transport. capability_tags are
+// reporting labels only; applicability is driven by requires ⊆ supports.
 func checkApplicability(c Case, p Profile) (NAKind, bool) {
-	claimsSet := make(map[string]bool, len(p.Claims))
-	for _, claim := range p.Claims {
-		claimsSet[claim] = true
-	}
-
-	// 1. Any capability_tag not in tool's claims
-	for _, tag := range c.CapabilityTags {
-		if !claimsSet[tag] {
-			return NAMissingCapability, false
-		}
-	}
-
-	// 2. Any requires value where supports.<value> is false
+	// 1. Any requires value where supports.<value> is false
 	for _, req := range c.Requires {
 		if supported, exists := p.Supports[req]; !exists || !supported {
 			return NAMissingRequires, false
 		}
 	}
 
-	// 3. Transport not supported
+	// 2. Transport not supported
 	if supported, exists := p.Supports[c.Transport]; !exists || !supported {
 		return NAUnsupportedTransport, false
 	}

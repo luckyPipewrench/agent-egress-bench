@@ -66,7 +66,7 @@
     "mcp_tool_poison",
     "benign"
   ],
-  "requires": [],
+  "requires":["mcp_tool_poison_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "verbose_but_legitimate_tool_description",
   "notes": "Tests that verbose tool descriptions with technical jargon, usage examples, and caveats are not falsely flagged as poisoned. Important for avoiding false positives on real-world MCP servers that include detailed documentation in tool descriptions.",

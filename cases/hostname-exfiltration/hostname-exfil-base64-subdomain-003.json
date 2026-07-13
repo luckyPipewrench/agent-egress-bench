@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["hostname_exfil"],
-  "requires": [],
+  "requires":["hostname_exfil_scanning"],
   "false_positive_risk": "low",
   "why_expected": "base64url_encoded_secret_in_subdomain",
   "notes": "URL-safe base64 of 'secret_token_1234567890'.",

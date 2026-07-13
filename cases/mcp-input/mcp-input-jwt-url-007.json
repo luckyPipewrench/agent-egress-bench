@@ -25,7 +25,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["mcp_input_scan", "url_dlp"],
-  "requires": [],
+  "requires":["mcp_input_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "jwt_token_in_url_query_parameter",
   "notes": "A JWT (the well-known jwt.io example token) is passed as a URL query parameter. DLP should detect the three-part base64url.base64url.base64url JWT pattern.",

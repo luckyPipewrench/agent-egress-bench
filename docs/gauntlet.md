@@ -33,7 +33,6 @@ A case is skipped when any of these conditions is true (checked in this order):
 
 | Condition | Reason reported |
 |-----------|----------------|
-| Any `capability_tags` value is not in the tool's `claims` | `missing_capability` |
 | Any `requires` value has `supports.<value>` = `false` | `missing_requires` |
 | Case `transport` has `supports.<transport>` = `false` | `unsupported_transport` |
 
@@ -93,8 +92,7 @@ A single JSON file with the full scoring breakdown:
     "applicable": 120,
     "not_applicable": 22,
     "not_applicable_reasons": {
-      "missing_capability": 15,
-      "missing_requires": 4,
+      "missing_requires": 19,
       "unsupported_transport": 3
     },
     "errors": 0
@@ -127,6 +125,7 @@ Key fields:
 
 - `corpus_sha256`: SHA-256 hash of all case file contents sorted by path. Identifies the exact corpus used.
 - `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, fully identifies a reproducible run.
+- `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.
 - `not_applicable_reasons`: breakdown of why cases were skipped, summing to `not_applicable`.
 - `tool_support`: echo of the tool's support vector for auditability.
 - `null` in per-category scores: metric is N/A for that category.

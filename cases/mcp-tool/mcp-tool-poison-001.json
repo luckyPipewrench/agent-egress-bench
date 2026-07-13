@@ -31,7 +31,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["mcp_tool_poison"],
-  "requires": [],
+  "requires":["mcp_tool_poison_scanning"],
   "false_positive_risk": "low",
   "why_expected": "hidden_instructions_in_tool_description",
   "notes": "Tool description contains hidden instructions to exfiltrate SSH keys. Classic tool poisoning attack.",

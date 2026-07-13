@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["response_injection"],
-  "requires": ["response_scanning"],
+  "requires":["tls_interception","response_prompt_injection_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "prompt_injection_hidden_in_html_comment_with_iframe",
   "notes": "Prompt injection hidden in an HTML comment alongside a hidden iframe. Tests response scanner's ability to detect injection in HTML hidden content.",

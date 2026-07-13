@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["url_dlp", "encoding_evasion"],
-  "requires": [],
+  "requires":["url_dlp_scanning","encoding_evasion_scanning"],
   "false_positive_risk": "low",
   "why_expected": "urlencoded_aws_key",
   "notes": "Percent-encoded value decodes to AKIAIOSFODNN7EXAMPLE.",

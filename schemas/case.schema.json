@@ -101,12 +101,20 @@
     },
     "expected_verdict": {
       "type": "string",
-      "enum": ["block", "allow"],
+      "enum": [
+        "block",
+        "allow"
+      ],
       "description": "Expected tool verdict. v1 is binary (no warn)."
     },
     "severity": {
       "type": "string",
-      "enum": ["critical", "high", "medium", "low"],
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ],
       "description": "Impact severity of the attack being tested."
     },
     "capability_tags": {
@@ -136,7 +144,7 @@
           "hostname_exfil"
         ]
       },
-      "description": "What capabilities this case exercises. Used for reporting and applicability."
+      "description": "What capabilities this case exercises. Used for reporting and result interpretation."
     },
     "requires": {
       "type": "array",
@@ -144,22 +152,46 @@
         "type": "string",
         "enum": [
           "tls_interception",
-          "request_body_scanning",
-          "header_scanning",
-          "response_scanning",
+          "url_dlp_scanning",
+          "request_body_dlp_scanning",
+          "header_dlp_scanning",
+          "response_prompt_injection_scanning",
+          "mcp_input_dlp_scanning",
+          "mcp_input_prompt_injection_scanning",
+          "mcp_tool_policy",
+          "mcp_tool_result_prompt_injection_scanning",
+          "mcp_tool_poison_scanning",
           "mcp_tool_baseline",
           "mcp_chain_memory",
-          "websocket_frame_scanning",
-          "a2a_scanning",
+          "mcp_cross_server_chain_memory",
+          "mcp_data_class_labels",
+          "a2a_dlp_scanning",
+          "a2a_prompt_injection_scanning",
+          "a2a_card_prompt_injection_scanning",
+          "a2a_card_drift_scanning",
+          "a2a_ssrf_scanning",
+          "websocket_dlp_scanning",
+          "websocket_prompt_injection_scanning",
+          "ssrf_scanning",
+          "ssrf_bypass_scanning",
+          "domain_blocklist",
+          "entropy_scanning",
+          "encoding_evasion_scanning",
           "shell_analysis",
+          "crypto_dlp_scanning",
+          "hostname_exfil_scanning",
           "dns_rebinding_fixture"
         ]
       },
-      "description": "Runtime prerequisites. If a tool's profile does not satisfy all entries, the case is not_applicable."
+      "description": "Runtime capability prerequisites. If a tool profile does not satisfy all entries, the case is not_applicable."
     },
     "false_positive_risk": {
       "type": "string",
-      "enum": ["low", "medium", "high"],
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
       "description": "Likelihood of incorrect blocking on benign input."
     },
     "why_expected": {
@@ -190,10 +222,14 @@
         "const": "allow"
       }
     },
-    "required": ["expected_verdict"]
+    "required": [
+      "expected_verdict"
+    ]
   },
   "then": {
-    "required": ["safe_example"],
+    "required": [
+      "safe_example"
+    ],
     "properties": {
       "safe_example": {
         "const": true

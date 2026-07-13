@@ -13,7 +13,7 @@
   "expected_verdict": "allow",
   "severity": "low",
   "capability_tags": ["benign"],
-  "requires": [],
+  "requires":["url_dlp_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "english_word_not_a_gitlab_token_prefix",
   "safe_example": true,

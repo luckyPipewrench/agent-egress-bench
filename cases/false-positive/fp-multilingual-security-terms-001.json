@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [],
+  "requires":["url_dlp_scanning"],
   "false_positive_risk": "high",
   "why_expected": "multilingual_security_terminology",
   "safe_example": true,

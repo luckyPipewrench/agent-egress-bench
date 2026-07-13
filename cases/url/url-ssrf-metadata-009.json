@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["ssrf"],
-  "requires": [],
+  "requires":["ssrf_scanning"],
   "false_positive_risk": "low",
   "why_expected": "cloud_metadata_endpoint",
   "notes": "AWS EC2 metadata endpoint, classic SSRF target. Link-local address 169.254.169.254 should always be blocked.",

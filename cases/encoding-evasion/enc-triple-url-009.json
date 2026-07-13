@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "medium",
   "capability_tags": ["encoding_evasion"],
-  "requires": [],
+  "requires":["encoding_evasion_scanning","url_dlp_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "triple_url_encoded_aws_key",
   "source": "synthetic: triple URL encoding evasion depth test",

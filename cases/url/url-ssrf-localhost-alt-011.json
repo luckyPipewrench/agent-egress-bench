@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["ssrf"],
-  "requires": [],
+  "requires":["ssrf_scanning"],
   "false_positive_risk": "low",
   "why_expected": "decimal_ip_ssrf_bypass",
   "notes": "2130706433 is the decimal representation of 127.0.0.1 (0x7F000001). Most browsers and HTTP libraries resolve this to localhost.",

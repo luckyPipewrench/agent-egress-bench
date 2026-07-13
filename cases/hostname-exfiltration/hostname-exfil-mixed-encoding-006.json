@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["hostname_exfil", "encoding_evasion"],
-  "requires": [],
+  "requires":["hostname_exfil_scanning","encoding_evasion_scanning"],
   "false_positive_risk": "low",
   "why_expected": "mixed_encoding_exfiltration_in_subdomains",
   "notes": "First two labels are hex-encoded, second two are base32. Tests whether the tool can detect exfiltration across encoding schemes.",

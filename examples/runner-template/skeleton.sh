@@ -24,7 +24,6 @@ command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; exit 1; }
 # Read tool identity from profile
 TOOL=$(jq -r '.tool' "$PROFILE")
 TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
-CLAIMS=$(jq -r '.claims[]' "$PROFILE")
 SUPPORTS=$(jq -r '.supports | to_entries[] | select(.value == true) | .key' "$PROFILE")
 
 # --- Applicability check ---
@@ -32,15 +31,6 @@ SUPPORTS=$(jq -r '.supports | to_entries[] | select(.value == true) | .key' "$PR
 # Returns 0 if the case applies to this tool, 1 if not.
 check_applicable() {
     local case_file="$1"
-
-    # Every capability_tag must be in the tool's claims
-    local tags
-    tags=$(jq -r '.capability_tags[]' "$case_file")
-    for tag in $tags; do
-        if ! echo "$CLAIMS" | grep -qx "$tag"; then
-            return 1
-        fi
-    done
 
     # Every requires entry must be in the tool's supports
     local reqs
@@ -51,6 +41,13 @@ check_applicable() {
             return 1
         fi
     done
+
+    # The case transport must be in the tool's supports
+    local transport
+    transport=$(jq -r '.transport' "$case_file")
+    if ! echo "$SUPPORTS" | grep -qx "$transport"; then
+        return 1
+    fi
 
     return 0
 }

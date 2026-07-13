@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [],
+  "requires":["entropy_scanning"],
   "false_positive_risk": "high",
   "why_expected": "uuid_v4_is_not_a_secret",
   "safe_example": true,

@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [],
+  "requires":["encoding_evasion_scanning"],
   "false_positive_risk": "high",
   "why_expected": "legitimate_base64_image_data",
   "safe_example": true,

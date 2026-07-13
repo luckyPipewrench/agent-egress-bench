@@ -160,7 +160,7 @@ Each case is a self-contained JSON file. Here's what one looks like:
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["url_dlp"],
-  "requires": [],
+  "requires": ["url_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "aws_access_key_pattern"
 }
@@ -171,10 +171,10 @@ A runner feeds each case to the security tool and records whether it blocked or 
 ```json
 {"case_id":"url-dlp-aws-key-001","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{},"notes":""}
 {"case_id":"url-benign-api-call-001","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"allow","actual_verdict":"allow","score":"pass","evidence":{},"notes":""}
-{"case_id":"a2a-msg-dlp-api-key-001","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"block","actual_verdict":"not_applicable","score":"not_applicable","evidence":{},"notes":"not applicable: missing_capability"}
+{"case_id":"mcp-drift-collusion-004","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"block","actual_verdict":"not_applicable","score":"not_applicable","evidence":{},"notes":"not applicable: missing_requires"}
 ```
 
-Cases the tool can't handle (missing capabilities) score `not_applicable`, not `fail`. Nobody gets penalized for features they don't claim to support. See [docs/SCORING.md](docs/SCORING.md).
+Cases the tool can't handle (missing `requires` support or unsupported transport) score `not_applicable`, not `fail`. Nobody gets penalized for features they don't claim to support. See [docs/SCORING.md](docs/SCORING.md).
 
 ## Writing a runner for your tool
 

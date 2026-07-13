@@ -15,9 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [
-    "response_scanning"
-  ],
+  "requires":["response_prompt_injection_scanning"],
   "false_positive_risk": "high",
   "why_expected": "quoted_attack_in_educational_content",
   "safe_example": true,

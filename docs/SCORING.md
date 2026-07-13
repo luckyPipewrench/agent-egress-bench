@@ -15,8 +15,8 @@ Each case produces one of four scores:
 
 A case is `not_applicable` if either:
 
-1. Any `capability_tags` value is not in the tool profile's `claims`
-2. Any `requires` value is not in the tool profile's `supports`
+1. Any `requires` value is not in the tool profile's `supports`
+2. The case `transport` is not in the tool profile's `supports`
 
 This is checked before running the case. Not-applicable cases are never executed.
 

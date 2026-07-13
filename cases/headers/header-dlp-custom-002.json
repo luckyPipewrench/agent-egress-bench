@@ -16,7 +16,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["header_dlp"],
-  "requires": ["header_scanning"],
+  "requires":["header_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "api_key_in_header",
   "notes": "SendGrid-style API key in a custom header.",

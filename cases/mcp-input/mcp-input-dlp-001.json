@@ -24,7 +24,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["mcp_input_scan"],
-  "requires": [],
+  "requires":["mcp_input_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "aws_key_in_tool_arguments",
   "notes": "AWS access key embedded in a web search query tool argument.",

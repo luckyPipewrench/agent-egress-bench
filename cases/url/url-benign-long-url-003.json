@@ -16,7 +16,7 @@
     "url_dlp",
     "benign"
   ],
-  "requires": [],
+  "requires":["url_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "long_url_with_normal_params",
   "safe_example": true,

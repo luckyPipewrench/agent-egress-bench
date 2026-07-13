@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["url_dlp", "encoding_evasion"],
-  "requires": [],
+  "requires":["url_dlp_scanning","encoding_evasion_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "hex_encoded_aws_key",
   "notes": "414b4941494f53464f444e4e374558414d504c45 is hex for AKIAIOSFODNN7EXAMPLE.",

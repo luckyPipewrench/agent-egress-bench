@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["entropy"],
-  "requires": [],
+  "requires":["entropy_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "high_entropy_subdomain_labels",
   "notes": "Subdomain labels decode (hex) to JohnDoe and Secret1. Classic DNS exfiltration technique.",

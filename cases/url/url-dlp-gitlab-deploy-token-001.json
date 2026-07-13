@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["url_dlp"],
-  "requires": [],
+  "requires":["url_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "gitlab_deploy_token",
   "notes": "GitLab deploy tokens use the documented gldt- prefix. Synthetic value.",

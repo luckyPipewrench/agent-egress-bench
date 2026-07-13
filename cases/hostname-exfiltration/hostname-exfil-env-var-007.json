@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["hostname_exfil", "url_dlp"],
-  "requires": [],
+  "requires":["hostname_exfil_scanning"],
   "false_positive_risk": "low",
   "why_expected": "env_variable_hex_encoded_in_subdomain",
   "notes": "Hex of 'postgres://user:pass@db'. Combines hostname exfiltration with credential content.",

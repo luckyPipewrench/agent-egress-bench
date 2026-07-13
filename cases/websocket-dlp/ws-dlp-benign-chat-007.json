@@ -20,9 +20,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [
-    "websocket_frame_scanning"
-  ],
+  "requires":["websocket_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "normal_chat_message",
   "safe_example": true,

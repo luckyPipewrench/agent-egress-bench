@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["url_dlp", "encoding_evasion"],
-  "requires": [],
+  "requires":["url_dlp_scanning","encoding_evasion_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "base64_encoded_aws_key",
   "notes": "QUtJQUlPU0ZPRE5ON0VYQU1QTEU= decodes to AKIAIOSFODNN7EXAMPLE.",
