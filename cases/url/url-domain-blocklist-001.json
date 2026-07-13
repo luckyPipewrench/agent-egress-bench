@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-domain-blocklist-001",
   "category": "url",
   "title": "Request to blocklisted exfiltration domain",

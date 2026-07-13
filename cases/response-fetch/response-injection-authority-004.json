@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "response-injection-authority-004",
   "category": "response_fetch",
   "title": "Authority escalation in fetched page",

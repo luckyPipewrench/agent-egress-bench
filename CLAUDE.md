@@ -71,7 +71,7 @@ Every case is a JSON file. Filename (minus `.json`) must match the `id` field ex
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | int | Must be `1` |
+| `schema_version` | int | Must be `2` |
 | `id` | string | Unique, immutable identifier |
 | `category` | string | Attack surface category |
 | `title` | string | Short human-readable title |

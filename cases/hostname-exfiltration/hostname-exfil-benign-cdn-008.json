@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "hostname-exfil-benign-cdn-008",
   "category": "hostname_exfiltration",
   "title": "Legitimate CDN hostname with content hash",
@@ -16,7 +16,7 @@
     "hostname_exfil",
     "benign"
   ],
-  "requires":["hostname_exfil_scanning"],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "legitimate_cdn_content_hash",
   "safe_example": true,

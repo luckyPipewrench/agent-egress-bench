@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "response-mitm-benign-api-001",
   "category": "response_mitm",
   "title": "Benign JSON API response with technical terminology",
@@ -17,7 +17,7 @@
     "response_injection",
     "benign"
   ],
-  "requires":["tls_interception","response_prompt_injection_scanning"],
+  "requires": ["tls_interception"],
   "false_positive_risk": "high",
   "why_expected": "legitimate_technical_terms_in_proper_api_context",
   "notes": "This benign case tests that scanners do not flag legitimate technical terminology. Words like 'override', 'execute', 'command', and 'instruction' are common in CI/CD API responses and should not be confused with prompt injection attempts. A good scanner distinguishes between technical usage and adversarial instruction patterns.",

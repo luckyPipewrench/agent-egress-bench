@@ -65,6 +65,8 @@ Before running a case, the runner must check applicability:
 
 If either check fails, emit `score: "not_applicable"` and `actual_verdict: "not_applicable"` without running the case.
 
+Do not use detector-specific `requires` to skip benign `allow` controls. Those cases measure false positives and should run whenever the transport and any true runtime prerequisites are available.
+
 ## Observable Verdict Rules
 
 ### HTTP and fetch cases

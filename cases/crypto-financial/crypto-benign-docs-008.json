@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "crypto-benign-docs-008",
   "category": "crypto_financial",
   "title": "Benign cryptocurrency documentation",
@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires":["crypto_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "documentation_about_crypto_formats",
   "safe_example": true,

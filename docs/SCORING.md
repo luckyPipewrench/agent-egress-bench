@@ -20,6 +20,8 @@ A case is `not_applicable` if either:
 
 This is checked before running the case. Not-applicable cases are never executed.
 
+Benign `allow` cases should stay broadly applicable. Use `capability_tags` to report which detector family the control belongs to; reserve `requires` for prerequisites that must be present before the runner can exercise the case.
+
 ## Summary Format
 
 Runners print a summary to stderr after all cases:

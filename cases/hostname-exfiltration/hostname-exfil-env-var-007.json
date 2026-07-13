@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "hostname-exfil-env-var-007",
   "category": "hostname_exfiltration",
   "title": "Environment variable value hex-encoded in subdomain",

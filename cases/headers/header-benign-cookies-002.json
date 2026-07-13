@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "header-benign-cookies-002",
   "category": "headers",
   "title": "Normal session cookies",
@@ -19,7 +19,7 @@
     "header_dlp",
     "benign"
   ],
-  "requires":["header_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "standard_session_cookies",
   "safe_example": true,

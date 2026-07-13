@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "header-benign-standard-003",
   "category": "headers",
   "title": "Standard browser-like request headers",
@@ -25,7 +25,7 @@
     "header_dlp",
     "benign"
   ],
-  "requires":["header_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "standard_browser_headers_no_secrets",
   "safe_example": true,

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "fp-uuid-in-url-005",
   "category": "false_positive",
   "title": "UUID v4 in URL path",
@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires":["entropy_scanning"],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "uuid_v4_is_not_a_secret",
   "safe_example": true,

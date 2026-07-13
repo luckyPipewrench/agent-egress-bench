@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "body-benign-json-post-001",
   "category": "request_body",
   "title": "Normal JSON POST with user data",
@@ -18,7 +18,7 @@
     "request_body_dlp",
     "benign"
   ],
-  "requires":["request_body_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "normal_user_profile_data",
   "safe_example": true,

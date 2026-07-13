@@ -10,7 +10,7 @@ import (
 )
 
 func validMultiFileCaseYAML(id string) string {
-	return fmt.Sprintf(`schema_version: 1
+	return fmt.Sprintf(`schema_version: 2
 id: %s
 category: mcp_drift
 title: Test multi-file case

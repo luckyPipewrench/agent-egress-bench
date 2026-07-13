@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-benign-long-url-003",
   "category": "url",
   "title": "Long but clean URL with many query parameters",
@@ -16,7 +16,7 @@
     "url_dlp",
     "benign"
   ],
-  "requires":["url_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "long_url_with_normal_params",
   "safe_example": true,

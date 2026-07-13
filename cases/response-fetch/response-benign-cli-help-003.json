@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "response-benign-cli-help-003",
   "category": "response_fetch",
   "title": "Benign CLI help text with security-adjacent vocabulary",
@@ -16,7 +16,7 @@
     "response_injection",
     "benign"
   ],
-  "requires":["response_prompt_injection_scanning"],
+  "requires": [],
   "false_positive_risk": "medium",
   "safe_example": true,
   "why_expected": "legitimate_cli_documentation",

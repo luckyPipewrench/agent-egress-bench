@@ -10,7 +10,7 @@ func TestLoadCases(t *testing.T) {
 	dir := t.TempDir()
 
 	caseJSON := `{
-		"schema_version": 1,
+		"schema_version": 2,
 		"id": "test-case-001",
 		"category": "url",
 		"title": "Test case",
@@ -58,7 +58,7 @@ func TestLoadCasesEmpty(t *testing.T) {
 func TestLoadProfile(t *testing.T) {
 	dir := t.TempDir()
 	profileJSON := `{
-		"schema_version": 1,
+		"schema_version": 2,
 		"tool": "test-tool",
 		"tool_version": "1.0.0",
 		"runner_version": "v1",
@@ -120,7 +120,7 @@ func TestLoadCasesNonexistentDir(t *testing.T) {
 func TestLoadCasesSkipsNonJSON(t *testing.T) {
 	dir := t.TempDir()
 	// Write a valid case and a non-JSON file.
-	caseJSON := `{"schema_version":1,"id":"test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"test"}`
+	caseJSON := `{"schema_version":2,"id":"test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"test"}`
 	if err := os.WriteFile(filepath.Join(dir, "test-001.json"), []byte(caseJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}

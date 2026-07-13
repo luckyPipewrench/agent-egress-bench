@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: mcp-drift-rugpull-param-003
 category: mcp_drift
 title: Parameter-name rug-pull — schema field renamed to coerce extra data

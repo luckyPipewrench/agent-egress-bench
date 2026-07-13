@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-dlp-gitlab-deploy-token-001",
   "category": "url",
   "title": "GitLab deploy token in query parameter",

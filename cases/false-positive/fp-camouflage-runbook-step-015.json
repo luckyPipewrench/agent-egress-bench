@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "fp-camouflage-runbook-step-015",
   "category": "false_positive",
   "title": "Authoritative incident runbook resembling camouflaged injection",
@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires":["response_prompt_injection_scanning"],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "authoritative_runbook_prose_resembles_camouflaged_injection",
   "safe_example": true,

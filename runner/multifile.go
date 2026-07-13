@@ -158,8 +158,8 @@ func loadMultiFileCase(caseDir string) (MultiFileCase, error) {
 }
 
 func validateMultiFileCaseMetadata(c MultiFileCase, caseYAMLPath string) error {
-	if c.SchemaVersion != 1 {
-		return fmt.Errorf("%s: schema_version must be 1, got %d", caseYAMLPath, c.SchemaVersion)
+	if c.SchemaVersion != 2 {
+		return fmt.Errorf("%s: schema_version must be 2, got %d", caseYAMLPath, c.SchemaVersion)
 	}
 	if strings.TrimSpace(c.ID) == "" {
 		return fmt.Errorf("%s: id must be non-empty", caseYAMLPath)

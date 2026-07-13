@@ -26,8 +26,8 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 1,
-      "description": "Schema version. Must be 1."
+      "const": 2,
+      "description": "Schema version. Must be 2."
     },
     "id": {
       "type": "string",

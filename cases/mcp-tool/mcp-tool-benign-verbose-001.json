@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "mcp-tool-benign-verbose-001",
   "category": "mcp_tool",
   "title": "Benign tool with verbose but legitimate description",
@@ -66,7 +66,7 @@
     "mcp_tool_poison",
     "benign"
   ],
-  "requires":["mcp_tool_poison_scanning"],
+  "requires": [],
   "false_positive_risk": "medium",
   "why_expected": "verbose_but_legitimate_tool_description",
   "notes": "Tests that verbose tool descriptions with technical jargon, usage examples, and caveats are not falsely flagged as poisoned. Important for avoiding false positives on real-world MCP servers that include detailed documentation in tool descriptions.",

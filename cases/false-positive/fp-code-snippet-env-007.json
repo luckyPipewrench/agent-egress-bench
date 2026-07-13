@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "fp-code-snippet-env-007",
   "category": "false_positive",
   "title": "Code snippet showing environment variable usage",
@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires":["response_prompt_injection_scanning"],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "code_example_not_actual_secrets",
   "safe_example": true,

@@ -330,8 +330,8 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 
 	// Required fields
-	if c.SchemaVersion != 1 {
-		addErr(fmt.Sprintf("schema_version must be 1, got %d", c.SchemaVersion))
+	if c.SchemaVersion != 2 {
+		addErr(fmt.Sprintf("schema_version must be 2, got %d", c.SchemaVersion))
 	}
 	if c.ID == "" {
 		addErr("missing id")

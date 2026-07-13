@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "fp-gitlab-lookalike-word-014",
   "category": "false_positive",
   "title": "English word starting with gl is not a GitLab token",
@@ -13,7 +13,7 @@
   "expected_verdict": "allow",
   "severity": "low",
   "capability_tags": ["benign"],
-  "requires":["url_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "medium",
   "why_expected": "english_word_not_a_gitlab_token_prefix",
   "safe_example": true,

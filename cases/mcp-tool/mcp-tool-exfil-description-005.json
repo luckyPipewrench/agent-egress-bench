@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "mcp-tool-exfil-description-005",
   "category": "mcp_tool",
   "title": "Tool result contains hidden exfiltration instructions",

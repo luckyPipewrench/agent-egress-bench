@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "response-benign-code-snippet-001",
   "category": "response_fetch",
   "title": "Technical article mentioning system prompts",
@@ -16,7 +16,7 @@
     "response_injection",
     "benign"
   ],
-  "requires":["response_prompt_injection_scanning"],
+  "requires": [],
   "false_positive_risk": "medium",
   "why_expected": "educational_content_about_prompts",
   "safe_example": true,

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "body-dlp-csv-pii-006",
   "category": "request_body",
   "title": "CSV export with credit card numbers",

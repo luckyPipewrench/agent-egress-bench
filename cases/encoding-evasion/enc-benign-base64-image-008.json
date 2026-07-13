@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "enc-benign-base64-image-008",
   "category": "encoding_evasion",
   "title": "Benign base64-encoded image data",
@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires":["encoding_evasion_scanning"],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "legitimate_base64_image_data",
   "safe_example": true,

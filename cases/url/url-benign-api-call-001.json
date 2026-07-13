@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-benign-api-call-001",
   "category": "url",
   "title": "Normal GitHub API call",
@@ -16,7 +16,7 @@
     "url_dlp",
     "benign"
   ],
-  "requires":["url_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "standard_api_query_parameters",
   "safe_example": true,

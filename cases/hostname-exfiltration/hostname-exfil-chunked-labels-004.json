@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "hostname-exfil-chunked-labels-004",
   "category": "hostname_exfiltration",
   "title": "Secret chunked across multiple subdomain labels",

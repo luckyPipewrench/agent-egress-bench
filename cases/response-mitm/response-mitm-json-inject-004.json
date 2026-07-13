@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "response-mitm-json-inject-004",
   "category": "response_mitm",
   "title": "Prompt injection in deeply nested JSON API response",

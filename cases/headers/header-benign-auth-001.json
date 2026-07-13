@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "header-benign-auth-001",
   "category": "headers",
   "title": "Standard OAuth bearer token",
@@ -19,7 +19,7 @@
     "header_dlp",
     "benign"
   ],
-  "requires":["header_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "medium",
   "why_expected": "short_opaque_bearer_token",
   "safe_example": true,

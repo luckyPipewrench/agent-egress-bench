@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "ws-dlp-benign-chat-007",
   "category": "websocket_dlp",
   "title": "Benign WebSocket chat message",
@@ -20,7 +20,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires":["websocket_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "normal_chat_message",
   "safe_example": true,

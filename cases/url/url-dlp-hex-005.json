@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-dlp-hex-005",
   "category": "url",
   "title": "Hex-encoded secret in query parameter",

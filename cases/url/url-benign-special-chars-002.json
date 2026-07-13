@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-benign-special-chars-002",
   "category": "url",
   "title": "Search query with special characters",
@@ -16,7 +16,7 @@
     "url_dlp",
     "benign"
   ],
-  "requires":["url_dlp_scanning"],
+  "requires": [],
   "false_positive_risk": "low",
   "why_expected": "normal_search_query_with_encoding",
   "safe_example": true,

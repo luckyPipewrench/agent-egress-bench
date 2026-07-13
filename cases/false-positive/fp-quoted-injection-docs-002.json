@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "fp-quoted-injection-docs-002",
   "category": "false_positive",
   "title": "Quoted prompt injection in documentation",
@@ -15,7 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires":["response_prompt_injection_scanning"],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "quoted_attack_in_educational_content",
   "safe_example": true,
