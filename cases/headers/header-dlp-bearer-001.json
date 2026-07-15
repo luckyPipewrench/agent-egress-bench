@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "header-dlp-bearer-001",
   "category": "headers",
   "title": "AWS key leaked as Bearer token",
@@ -16,7 +16,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["header_dlp"],
-  "requires": ["header_scanning"],
+  "requires":["header_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "aws_key_in_auth_header",
   "notes": "AWS access key format in Authorization header value.",

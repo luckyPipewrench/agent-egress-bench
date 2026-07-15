@@ -4,32 +4,44 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
+func summaryTestSupports(v bool) map[string]bool {
+	keys := []string{
+		"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a",
+		"tls_interception",
+		"url_dlp_scanning", "request_body_dlp_scanning", "header_dlp_scanning",
+		"response_prompt_injection_scanning",
+		"mcp_input_dlp_scanning", "mcp_input_prompt_injection_scanning",
+		"mcp_tool_policy", "mcp_tool_result_prompt_injection_scanning",
+		"mcp_tool_poison_scanning", "mcp_tool_baseline", "mcp_chain_memory",
+		"mcp_cross_server_chain_memory", "mcp_data_class_labels",
+		"a2a_dlp_scanning", "a2a_prompt_injection_scanning",
+		"a2a_card_prompt_injection_scanning", "a2a_card_drift_scanning",
+		"a2a_ssrf_scanning",
+		"websocket_dlp_scanning", "websocket_prompt_injection_scanning",
+		"ssrf_scanning", "ssrf_bypass_scanning", "domain_blocklist",
+		"entropy_scanning", "encoding_evasion_scanning", "shell_analysis",
+		"crypto_dlp_scanning", "hostname_exfil_scanning", "dns_rebinding_fixture",
+	}
+	out := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		out[k] = v
+	}
+	return out
+}
+
 func TestBuildToolSupport(t *testing.T) {
+	supports := summaryTestSupports(false)
+	supports["fetch_proxy"] = true
+	supports["http_proxy"] = true
+	supports["tls_interception"] = true
+
 	p := Profile{
-		Claims: []string{"url_dlp", "ssrf"},
-		Supports: map[string]bool{
-			"fetch_proxy":                   true,
-			"http_proxy":                    true,
-			"mcp_stdio":                     false,
-			"mcp_http":                      false,
-			"websocket":                     false,
-			"a2a":                           false,
-			"tls_interception":              true,
-			"request_body_scanning":         false,
-			"header_scanning":               false,
-			"response_scanning":             false,
-			"mcp_tool_baseline":             false,
-			"mcp_chain_memory":              false,
-			"mcp_cross_server_chain_memory": false,
-			"mcp_data_class_labels":         false,
-			"websocket_frame_scanning":      false,
-			"a2a_scanning":                  false,
-			"shell_analysis":                false,
-			"dns_rebinding_fixture":         false,
-		},
+		Claims:   []string{"url_dlp", "ssrf"},
+		Supports: supports,
 	}
 
 	ts := buildToolSupport(p)
@@ -71,16 +83,7 @@ func TestBuildToolSupportNilClaims(t *testing.T) {
 }
 
 func TestBuildToolSupportAllSupported(t *testing.T) {
-	supports := map[string]bool{
-		"fetch_proxy": true, "http_proxy": true, "mcp_stdio": true,
-		"mcp_http": true, "websocket": true, "a2a": true,
-		"tls_interception": true, "request_body_scanning": true,
-		"header_scanning": true, "response_scanning": true,
-		"mcp_tool_baseline": true, "mcp_chain_memory": true,
-		"mcp_cross_server_chain_memory": true, "mcp_data_class_labels": true,
-		"websocket_frame_scanning": true, "a2a_scanning": true,
-		"shell_analysis": true, "dns_rebinding_fixture": true,
-	}
+	supports := summaryTestSupports(true)
 	p := Profile{Claims: []string{"url_dlp"}, Supports: supports}
 	ts := buildToolSupport(p)
 	if len(ts.UnsupportedTransports) != 0 {
@@ -111,6 +114,82 @@ func TestBuildSummaryErrorPath(t *testing.T) {
 	_, err := buildSummary(p, nil, nil, nil, 0, "/nonexistent/dir", "", nil, "/nonexistent/profile.json")
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
+	}
+}
+
+func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
+	t.Setenv(summaryDateEnv, "2026-07-13T20:00:00Z")
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		nil,
+		nil,
+		0,
+		dir,
+		"",
+		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		profilePath,
+	)
+	if err != nil {
+		t.Fatalf("buildSummary: %v", err)
+	}
+	if summary.Date != "2026-07-13T20:00:00Z" {
+		t.Fatalf("date = %q, want fixed env date", summary.Date)
+	}
+}
+
+func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
+	t.Setenv(summaryDateEnv, "not-rfc3339")
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		nil,
+		nil,
+		0,
+		dir,
+		"",
+		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		profilePath,
+	)
+	if err == nil || !strings.Contains(err.Error(), "must be empty or RFC3339") {
+		t.Fatalf("buildSummary error = %v, want invalid fixed-date rejection", err)
+	}
+}
+
+func TestWriteSummaryOmitsEmptyDate(t *testing.T) {
+	t.Setenv(summaryDateEnv, "")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "summary.json")
+	if err := writeSummary(GauntletSummary{Tool: "test", Date: ""}, path); err != nil {
+		t.Fatalf("writeSummary: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading summary: %v", err)
+	}
+	if strings.Contains(string(data), `"date"`) {
+		t.Fatalf("date field should be omitted when empty: %s", string(data))
 	}
 }
 
@@ -202,7 +281,7 @@ func TestWriteSummary(t *testing.T) {
 		RunnerVersion:     runnerVersion,
 		Tool:              "test-tool",
 		ToolVersion:       "1.0.0",
-		CorpusVersion:     "v2.0.0",
+		CorpusVersion:     corpusVersion,
 		CorpusSHA256:      "abc123",
 		ToolProfileSHA256: "def456",
 		Date:              "2026-03-28T00:00:00Z",
@@ -211,8 +290,7 @@ func TestWriteSummary(t *testing.T) {
 			Applicable:    90,
 			NotApplicable: 10,
 			NotApplicableReasons: map[string]int{
-				"missing_capability":    5,
-				"missing_requires":      3,
+				"missing_requires":      8,
 				"unsupported_transport": 2,
 			},
 			Errors: 0,

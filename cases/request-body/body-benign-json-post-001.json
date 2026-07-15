@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "body-benign-json-post-001",
   "category": "request_body",
   "title": "Normal JSON POST with user data",

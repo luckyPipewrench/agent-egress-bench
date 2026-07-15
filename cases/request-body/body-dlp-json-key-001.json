@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "body-dlp-json-key-001",
   "category": "request_body",
   "title": "API key in JSON POST body",
@@ -15,7 +15,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["request_body_dlp"],
-  "requires": ["request_body_scanning"],
+  "requires":["request_body_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "aws_access_key_in_body",
   "notes": "Secret embedded in JSON structure within POST body.",

@@ -10,7 +10,7 @@ import (
 )
 
 func validMultiFileCaseYAML(id string) string {
-	return fmt.Sprintf(`schema_version: 1
+	return fmt.Sprintf(`schema_version: 2
 id: %s
 category: mcp_drift
 title: Test multi-file case
@@ -450,6 +450,7 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 		"claims": ["mcp_tool_poison", "mcp_chain"],
 		"supports": {
 			"mcp_stdio": true,
+			"mcp_tool_poison_scanning": true,
 			"mcp_tool_baseline": true,
 			"mcp_chain_memory": true,
 			"mcp_cross_server_chain_memory": true,

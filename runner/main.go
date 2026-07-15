@@ -17,7 +17,7 @@ func main() {
 	casesDir := flag.String("cases", "", "directory of case JSON files (required)")
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
-	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null, proxy")
+	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null, blockall, proxy")
 	proxyAddr := flag.String("proxy-addr", "", "proxy address for proxy adapter (e.g. 127.0.0.1:8888)")
 	scanAddr := flag.String("scan-addr", "", "scan API address for MCP/A2A cases (defaults to proxy-addr)")
 	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
@@ -92,6 +92,8 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		adapt = adapter.DryRunAdapter{}
 	case "null":
 		adapt = adapter.NullAdapter{}
+	case "blockall":
+		adapt = adapter.BlockAllAdapter{}
 	case "proxy":
 		if proxyAddr == "" {
 			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
@@ -122,7 +124,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		}
 		adapt = pa
 	default:
-		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, proxy)", adapterName)
+		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, blockall, proxy)", adapterName)
 	}
 
 	var applicableResults []CaseResult

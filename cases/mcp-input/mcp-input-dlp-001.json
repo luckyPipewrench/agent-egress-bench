@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "mcp-input-dlp-001",
   "category": "mcp_input",
   "title": "Secret in MCP tool call arguments",
@@ -24,7 +24,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["mcp_input_scan"],
-  "requires": [],
+  "requires":["mcp_input_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "aws_key_in_tool_arguments",
   "notes": "AWS access key embedded in a web search query tool argument.",

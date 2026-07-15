@@ -14,8 +14,10 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	scoringVersion  = "2.0"
-	runnerVersion   = "0.2.0"
+	scoringVersion  = "2.1"
+	runnerVersion   = "0.3.0"
+	corpusVersion   = "v2.1.0"
+	summaryDateEnv  = "AEB_GAUNTLET_SUMMARY_DATE"
 )
 
 // DualScores holds both full-corpus and applicable-only score views.
@@ -34,7 +36,7 @@ type GauntletSummary struct {
 	CorpusVersion     string                    `json:"corpus_version"`
 	CorpusSHA256      string                    `json:"corpus_sha256"`
 	ToolProfileSHA256 string                    `json:"tool_profile_sha256"`
-	Date              string                    `json:"date"`
+	Date              string                    `json:"date,omitempty"`
 	CaseCount         CaseCount                 `json:"case_count"`
 	ToolSupport       ToolSupport               `json:"tool_support"`
 	Scores            DualScores                `json:"scores"`
@@ -125,10 +127,20 @@ func buildToolSupport(p Profile) ToolSupport {
 	transportKeys := []string{"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"}
 	// Known requires keys in supports.
 	requiresKeys := []string{
-		"tls_interception", "request_body_scanning", "header_scanning",
-		"response_scanning", "mcp_tool_baseline", "mcp_chain_memory",
+		"tls_interception",
+		"url_dlp_scanning", "request_body_dlp_scanning", "header_dlp_scanning",
+		"response_prompt_injection_scanning",
+		"mcp_input_dlp_scanning", "mcp_input_prompt_injection_scanning",
+		"mcp_tool_policy", "mcp_tool_result_prompt_injection_scanning",
+		"mcp_tool_poison_scanning", "mcp_tool_baseline", "mcp_chain_memory",
 		"mcp_cross_server_chain_memory", "mcp_data_class_labels",
-		"websocket_frame_scanning", "a2a_scanning", "shell_analysis",
+		"a2a_dlp_scanning", "a2a_prompt_injection_scanning",
+		"a2a_card_prompt_injection_scanning", "a2a_card_drift_scanning",
+		"a2a_ssrf_scanning",
+		"websocket_dlp_scanning", "websocket_prompt_injection_scanning",
+		"ssrf_scanning", "ssrf_bypass_scanning",
+		"domain_blocklist", "entropy_scanning", "encoding_evasion_scanning",
+		"shell_analysis", "crypto_dlp_scanning", "hostname_exfil_scanning",
 		"dns_rebinding_fixture",
 	}
 
@@ -165,6 +177,19 @@ func buildToolSupport(p Profile) ToolSupport {
 	}
 }
 
+func summaryDate() (string, error) {
+	if date, ok := os.LookupEnv(summaryDateEnv); ok {
+		if date == "" {
+			return "", nil
+		}
+		if _, err := time.Parse(time.RFC3339, date); err != nil {
+			return "", fmt.Errorf("%s must be empty or RFC3339: %w", summaryDateEnv, err)
+		}
+		return date, nil
+	}
+	return time.Now().UTC().Format(time.RFC3339), nil
+}
+
 // buildSummary assembles the GauntletSummary from run results.
 func buildSummary(
 	p Profile,
@@ -182,6 +207,10 @@ func buildSummary(
 	}
 
 	profileSHA, err := computeProfileSHA256(profilePath)
+	if err != nil {
+		return GauntletSummary{}, err
+	}
+	date, err := summaryDate()
 	if err != nil {
 		return GauntletSummary{}, err
 	}
@@ -206,10 +235,10 @@ func buildSummary(
 		RunnerVersion:     runnerVersion,
 		Tool:              p.Tool,
 		ToolVersion:       p.ToolVersion,
-		CorpusVersion:     "v2.0.0",
+		CorpusVersion:     corpusVersion,
 		CorpusSHA256:      corpusSHA,
 		ToolProfileSHA256: profileSHA,
-		Date:              time.Now().UTC().Format(time.RFC3339),
+		Date:              date,
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),

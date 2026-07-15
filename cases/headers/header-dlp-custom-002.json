@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "header-dlp-custom-002",
   "category": "headers",
   "title": "API key in custom X-Api-Key header",
@@ -16,7 +16,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["header_dlp"],
-  "requires": ["header_scanning"],
+  "requires":["header_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "api_key_in_header",
   "notes": "SendGrid-style API key in a custom header.",

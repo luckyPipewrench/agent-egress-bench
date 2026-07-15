@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "hostname-exfil-hex-subdomain-001",
   "category": "hostname_exfiltration",
   "title": "Hex-encoded secret in subdomain label",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["hostname_exfil"],
-  "requires": [],
+  "requires":["hostname_exfil_scanning"],
   "false_positive_risk": "low",
   "why_expected": "hex_encoded_secret_in_subdomain",
   "notes": "Payload is hex('secret_api_key_12345'). Long hex subdomain labels are a strong exfiltration signal.",

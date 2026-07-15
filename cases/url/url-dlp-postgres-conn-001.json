@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-dlp-postgres-conn-001",
   "category": "url",
   "title": "PostgreSQL connection string with embedded credentials in query parameter",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["url_dlp"],
-  "requires": [],
+  "requires":["url_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "postgres_connection_string_with_credentials",
   "notes": "The secret is the password between ':' and '@'. Synthetic credentials.",

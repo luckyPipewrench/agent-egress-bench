@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "mcp-tool-benign-verbose-001",
   "category": "mcp_tool",
   "title": "Benign tool with verbose but legitimate description",

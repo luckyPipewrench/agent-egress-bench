@@ -18,7 +18,7 @@ Existing case semantics do not change silently. This includes the expected verdi
 
 ## Versioning
 
-The spec uses `schema_version`. v1 is the current schema. Future versions are additive where possible: new fields are optional, new enum values extend existing lists. Breaking changes (removing fields, changing field semantics, altering scoring rules) increment the schema version. The validator enforces the active schema version.
+The spec uses `schema_version`. v2 is the current case schema. Future versions are additive where possible: new fields are optional, new enum values extend existing lists. Breaking changes (removing fields, changing field semantics, altering scoring rules) increment the schema version. The validator enforces the active schema version.
 
 ## Contribution acceptance
 

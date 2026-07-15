@@ -93,7 +93,7 @@ Combining these into a single number would hide real trade-offs. A tool with 99%
 
 **Full corpus (primary).** All cases in the denominator. This is the procurement view. If a tool does not claim a capability, unclaimed cases count as failures. A tool that claims to handle 40% of attack surfaces gets scored on 100% of them.
 
-**Applicable (diagnostic).** Only cases matching the tool's declared capabilities are in the denominator. This is the engineering view. Useful for understanding how well a tool performs within its stated scope. Not suitable for cross-tool procurement decisions because it hides coverage gaps.
+**Applicable (diagnostic).** Only cases matching the tool's declared `supports` map are in the denominator. This is the engineering view. Useful for understanding how well a tool performs within its stated scope. Not suitable for cross-tool procurement decisions because it hides coverage gaps.
 
 The full corpus view is primary. Published results on pipelab.org use full corpus scoring. Applicable scoring is available in the summary JSON for diagnostic use.
 
@@ -105,16 +105,15 @@ If containment falls below 80%, the run is marked `insufficient`. A tool that bl
 
 Each tool declares a **tool profile** (`tool-profile.json`) with two sections:
 
-- **claims**: which `capability_tags` the tool handles (e.g., `url_dlp`, `mcp_input_scan`, `ssrf`)
-- **supports**: which transports and prerequisites the tool satisfies (e.g., `fetch_proxy: true`, `tls_interception: true`)
+- **claims**: reporting labels that help interpret results (e.g., `url_dlp`, `mcp_input_scan`, `ssrf`)
+- **supports**: which transports and fine-grained prerequisites the tool satisfies (e.g., `fetch_proxy: true`, `url_dlp_scanning: true`, `tls_interception: true`)
 
 ### Applicability filtering
 
 A case is `not_applicable` when any of these conditions is true (checked in order, first match wins):
 
-1. Any value in the case's `capability_tags` is absent from the tool's `claims`.
-2. Any value in the case's `requires` has `supports.<value>` set to `false` in the profile.
-3. The case's `transport` has `supports.<transport>` set to `false` in the profile.
+1. Any value in the case's `requires` has `supports.<value>` set to `false` in the profile.
+2. The case's `transport` has `supports.<transport>` set to `false` in the profile.
 
 Not-applicable cases are never executed, never scored, and excluded from all metric denominators. The applicability check is deterministic. No judgment calls.
 
@@ -131,14 +130,14 @@ Five provenance fields identify a Gauntlet run:
 | Field | What it tracks | Source |
 |-------|---------------|--------|
 | `corpus_version` | Tag or commit of the case corpus | Repository tag |
-| `scoring_version` | Version of the Gauntlet scoring rules | `gauntlet_version` in summary JSON |
+| `scoring_version` | Version of the Gauntlet scoring rules | `scoring_version` in summary JSON |
 | `corpus_sha256` | Hash of all case file contents (sorted by path) | Computed at runtime |
 | `runner_version` | Version of the runner binary | Hardcoded in runner |
 | `tool_profile_sha256` | Hash of the tool profile used | Computed at runtime |
 
 **Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other three fields are informational: they support reproducibility and audit trails but do not trigger staleness.
 
-`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which capability claims were active. Together, these five fields make any run fully reproducible.
+`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which supports map was active. Together, these five fields make any run fully reproducible.
 
 ## Running the Gauntlet
 

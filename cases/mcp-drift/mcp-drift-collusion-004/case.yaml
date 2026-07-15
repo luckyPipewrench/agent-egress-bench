@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: mcp-drift-collusion-004
 category: mcp_drift
 title: Cross-server collusion — toxic composition across two MCP servers
@@ -26,6 +26,7 @@ capability_tags:
   - mcp_tool_poison
   - mcp_chain
 requires:
+  - mcp_tool_poison_scanning
   - mcp_tool_baseline
   - mcp_chain_memory
   # Detection requires correlation across distinct MCP server sessions —

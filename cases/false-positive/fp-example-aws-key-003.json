@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "fp-example-aws-key-003",
   "category": "false_positive",
   "title": "AWS example key in documentation",
@@ -15,9 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [
-    "response_scanning"
-  ],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "official_aws_example_credentials_in_docs",
   "safe_example": true,

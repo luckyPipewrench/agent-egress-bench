@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: mcp-drift-benign-001
 category: mcp_drift
 title: Benign drift — server adds a new tool between sessions
@@ -22,6 +22,7 @@ severity: low
 capability_tags:
   - mcp_tool_poison
 requires:
+  - mcp_tool_poison_scanning
   - mcp_tool_baseline
 false_positive_risk: medium
 why_expected: |

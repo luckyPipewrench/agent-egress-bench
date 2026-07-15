@@ -54,16 +54,18 @@ Cases with `capability_tags: ["domain_blocklist"]` require the runner to configu
 
 - `exfil-collector.example.net` (IANA-reserved, no real DNS resolution)
 
-If your tool does not support domain blocklisting, omit `domain_blocklist` from your profile's `claims` and these cases will be scored `not_applicable`.
+If your tool does not support domain blocklisting, set `supports.domain_blocklist` to `false` and these cases will be scored `not_applicable`.
 
 ## Applicability Check
 
 Before running a case, the runner must check applicability:
 
-1. Every `capability_tags` value must be in the tool profile's `claims`
-2. Every `requires` value must be satisfied by the tool profile's `supports`
+1. Every `requires` value must be satisfied by the tool profile's `supports`
+2. The case `transport` must be satisfied by the tool profile's `supports`
 
 If either check fails, emit `score: "not_applicable"` and `actual_verdict: "not_applicable"` without running the case.
+
+Do not use detector-specific `requires` to skip benign `allow` controls. Those cases measure false positives and should run whenever the transport and any true runtime prerequisites are available.
 
 ## Observable Verdict Rules
 
@@ -126,6 +128,7 @@ Flags:
 Reproducibility:
 
 - Per-case rows are sorted by `case_id` and the runner emits no timestamps in the profile. Repeated runs against the same corpus and tool profile produce byte-identical output. A relying party can reproduce a published profile by running the same command and `sha256sum`-comparing the result.
+- The Gauntlet summary includes a `date` by default. For byte-stable summary JSON, set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value, or set it to an empty string to omit the field.
 
 Example (reproduces `profiles/pipelock.json`):
 

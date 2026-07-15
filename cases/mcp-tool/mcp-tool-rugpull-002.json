@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "mcp-tool-rugpull-002",
   "category": "mcp_tool",
   "title": "Tool description change between sessions (rug-pull)",
@@ -31,7 +31,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["mcp_tool_poison"],
-  "requires": ["mcp_tool_baseline"],
+  "requires":["mcp_tool_poison_scanning","mcp_tool_baseline"],
   "false_positive_risk": "low",
   "why_expected": "description_drift_with_malicious_content",
   "notes": "Tests rug-pull detection: tool description changed from benign to malicious after baseline was established.",

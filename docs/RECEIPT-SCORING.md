@@ -51,7 +51,7 @@ This is separate from the runner capability profile described in
   "schema_version": 1,
   "tool": "example-tool",
   "tool_version": "1.2.3",
-  "corpus_version": "v2.0.0",
+  "corpus_version": "v2.1.0",
   "corpus_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "tool_profile_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "verifier": {

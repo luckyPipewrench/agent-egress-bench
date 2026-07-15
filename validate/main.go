@@ -67,9 +67,13 @@ var (
 	}
 
 	validRequires = map[string]bool{
-		"tls_interception": true, "request_body_scanning": true,
-		"header_scanning": true, "response_scanning": true,
-		"mcp_tool_baseline": true, "mcp_chain_memory": true,
+		"tls_interception": true,
+		"url_dlp_scanning": true, "request_body_dlp_scanning": true,
+		"header_dlp_scanning": true, "response_prompt_injection_scanning": true,
+		"mcp_input_dlp_scanning": true, "mcp_input_prompt_injection_scanning": true,
+		"mcp_tool_policy": true, "mcp_tool_result_prompt_injection_scanning": true,
+		"mcp_tool_poison_scanning": true, "mcp_tool_baseline": true,
+		"mcp_chain_memory": true,
 		// Cross-server chain memory: detector must correlate tool calls
 		// across distinct MCP server sessions to catch toxic compositions
 		// where the attack lives in the composition, not the individual
@@ -82,9 +86,16 @@ var (
 		// so chain-composition rules can distinguish "read public file
 		// then write" from "read SSH key then write". Without labels a
 		// detector cannot tell which read-then-write chains are safe.
-		"mcp_data_class_labels":    true,
-		"websocket_frame_scanning": true, "a2a_scanning": true,
-		"shell_analysis": true, "dns_rebinding_fixture": true,
+		"mcp_data_class_labels": true,
+		"a2a_dlp_scanning":      true, "a2a_prompt_injection_scanning": true,
+		"a2a_card_prompt_injection_scanning": true, "a2a_card_drift_scanning": true,
+		"a2a_ssrf_scanning":      true,
+		"websocket_dlp_scanning": true, "websocket_prompt_injection_scanning": true,
+		"ssrf_scanning": true, "ssrf_bypass_scanning": true,
+		"domain_blocklist": true, "entropy_scanning": true,
+		"encoding_evasion_scanning": true, "shell_analysis": true,
+		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
+		"dns_rebinding_fixture": true,
 	}
 
 	validActualVerdicts = map[string]bool{
@@ -97,13 +108,24 @@ var (
 
 	validSupportsKeys = map[string]bool{
 		"fetch_proxy": true, "http_proxy": true, "mcp_stdio": true, "mcp_http": true,
-		"websocket": true, "tls_interception": true, "request_body_scanning": true,
-		"header_scanning": true, "response_scanning": true, "mcp_tool_baseline": true,
+		"websocket": true, "a2a": true, "tls_interception": true,
+		"url_dlp_scanning": true, "request_body_dlp_scanning": true,
+		"header_dlp_scanning": true, "response_prompt_injection_scanning": true,
+		"mcp_input_dlp_scanning": true, "mcp_input_prompt_injection_scanning": true,
+		"mcp_tool_policy": true, "mcp_tool_result_prompt_injection_scanning": true,
+		"mcp_tool_poison_scanning": true, "mcp_tool_baseline": true,
 		"mcp_chain_memory":              true,
 		"mcp_cross_server_chain_memory": true,
 		"mcp_data_class_labels":         true,
-		"a2a":                           true, "websocket_frame_scanning": true, "a2a_scanning": true,
-		"shell_analysis": true, "dns_rebinding_fixture": true,
+		"a2a_dlp_scanning":              true, "a2a_prompt_injection_scanning": true,
+		"a2a_card_prompt_injection_scanning": true, "a2a_card_drift_scanning": true,
+		"a2a_ssrf_scanning":      true,
+		"websocket_dlp_scanning": true, "websocket_prompt_injection_scanning": true,
+		"ssrf_scanning": true, "ssrf_bypass_scanning": true,
+		"domain_blocklist": true, "entropy_scanning": true,
+		"encoding_evasion_scanning": true, "shell_analysis": true,
+		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
+		"dns_rebinding_fixture": true,
 	}
 
 	// Valid category → input_type combinations per SPEC.md.
@@ -117,14 +139,14 @@ var (
 		"mcp_tool":       {"mcp_tool_result", "mcp_tool_definition"},
 		"mcp_chain":      {"mcp_tool_sequence"},
 		// Gauntlet categories:
-		"a2a_message":       {"a2a_message"},
-		"a2a_agent_card":    {"a2a_agent_card"},
-		"websocket_dlp":     {"websocket_frame"},
-		"ssrf_bypass":       {"url"},
-		"encoding_evasion":  {"url", "request_body", "mcp_tool_call"},
-		"shell_obfuscation": {"mcp_tool_call"},
-		"crypto_financial":  {"url", "request_body", "header", "mcp_tool_call"},
-		"false_positive":         {"url", "request_body", "header", "response_content", "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "websocket_frame", "a2a_message"},
+		"a2a_message":           {"a2a_message"},
+		"a2a_agent_card":        {"a2a_agent_card"},
+		"websocket_dlp":         {"websocket_frame"},
+		"ssrf_bypass":           {"url"},
+		"encoding_evasion":      {"url", "request_body", "mcp_tool_call"},
+		"shell_obfuscation":     {"mcp_tool_call"},
+		"crypto_financial":      {"url", "request_body", "header", "mcp_tool_call"},
+		"false_positive":        {"url", "request_body", "header", "response_content", "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "websocket_frame", "a2a_message"},
 		"hostname_exfiltration": {"url"},
 	}
 
@@ -142,14 +164,14 @@ var (
 		"mcp_tool":       {"mcp_stdio", "mcp_http"},
 		"mcp_chain":      {"mcp_stdio", "mcp_http"},
 		// Gauntlet categories:
-		"a2a_message":       {"a2a"},
-		"a2a_agent_card":    {"a2a"},
-		"websocket_dlp":     {"websocket"},
-		"ssrf_bypass":       {"fetch_proxy", "http_proxy"},
-		"encoding_evasion":  {"fetch_proxy", "mcp_stdio"},
-		"shell_obfuscation": {"mcp_stdio", "mcp_http"},
-		"crypto_financial":  {"fetch_proxy", "mcp_stdio"},
-		"false_positive":         {"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"},
+		"a2a_message":           {"a2a"},
+		"a2a_agent_card":        {"a2a"},
+		"websocket_dlp":         {"websocket"},
+		"ssrf_bypass":           {"fetch_proxy", "http_proxy"},
+		"encoding_evasion":      {"fetch_proxy", "mcp_stdio"},
+		"shell_obfuscation":     {"mcp_stdio", "mcp_http"},
+		"crypto_financial":      {"fetch_proxy", "mcp_stdio"},
+		"false_positive":        {"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"},
 		"hostname_exfiltration": {"fetch_proxy", "http_proxy"},
 	}
 )
@@ -308,8 +330,8 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 
 	// Required fields
-	if c.SchemaVersion != 1 {
-		addErr(fmt.Sprintf("schema_version must be 1, got %d", c.SchemaVersion))
+	if c.SchemaVersion != 2 {
+		addErr(fmt.Sprintf("schema_version must be 2, got %d", c.SchemaVersion))
 	}
 	if c.ID == "" {
 		addErr("missing id")

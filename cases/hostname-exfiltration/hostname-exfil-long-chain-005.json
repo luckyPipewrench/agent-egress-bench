@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "hostname-exfil-long-chain-005",
   "category": "hostname_exfiltration",
   "title": "10+ subdomain labels encoding a full API key",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["hostname_exfil", "entropy"],
-  "requires": [],
+  "requires":["hostname_exfil_scanning"],
   "false_positive_risk": "low",
   "why_expected": "excessive_subdomain_depth_with_high_entropy",
   "notes": "10 hex-like labels totaling ~120 chars of payload. Normal hostnames rarely exceed 3-4 labels.",

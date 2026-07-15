@@ -57,7 +57,7 @@
           "hostname_exfil"
         ]
       },
-      "description": "Capability tags this tool claims to support. Cases with tags outside this list are not_applicable."
+      "description": "Capability tags this tool claims for reporting and result interpretation. Applicability is determined by supports and case requires."
     },
     "supports": {
       "type": "object",
@@ -68,16 +68,36 @@
         "mcp_stdio",
         "mcp_http",
         "websocket",
+        "a2a",
         "tls_interception",
-        "request_body_scanning",
-        "header_scanning",
-        "response_scanning",
+        "url_dlp_scanning",
+        "request_body_dlp_scanning",
+        "header_dlp_scanning",
+        "response_prompt_injection_scanning",
+        "mcp_input_dlp_scanning",
+        "mcp_input_prompt_injection_scanning",
+        "mcp_tool_policy",
+        "mcp_tool_result_prompt_injection_scanning",
+        "mcp_tool_poison_scanning",
         "mcp_tool_baseline",
         "mcp_chain_memory",
-        "a2a",
-        "websocket_frame_scanning",
-        "a2a_scanning",
+        "mcp_cross_server_chain_memory",
+        "mcp_data_class_labels",
+        "a2a_dlp_scanning",
+        "a2a_prompt_injection_scanning",
+        "a2a_card_prompt_injection_scanning",
+        "a2a_card_drift_scanning",
+        "a2a_ssrf_scanning",
+        "websocket_dlp_scanning",
+        "websocket_prompt_injection_scanning",
+        "ssrf_scanning",
+        "ssrf_bypass_scanning",
+        "domain_blocklist",
+        "entropy_scanning",
+        "encoding_evasion_scanning",
         "shell_analysis",
+        "crypto_dlp_scanning",
+        "hostname_exfil_scanning",
         "dns_rebinding_fixture"
       ],
       "additionalProperties": false,
@@ -102,45 +122,125 @@
           "type": "boolean",
           "description": "Tool supports WebSocket proxy transport."
         },
-        "tls_interception": {
-          "type": "boolean",
-          "description": "Tool supports TLS interception for CONNECT tunnel scanning."
-        },
-        "request_body_scanning": {
-          "type": "boolean",
-          "description": "Tool scans HTTP request bodies for secrets and exfiltration."
-        },
-        "header_scanning": {
-          "type": "boolean",
-          "description": "Tool scans HTTP headers for secrets and exfiltration."
-        },
-        "response_scanning": {
-          "type": "boolean",
-          "description": "Tool scans HTTP response content for prompt injection."
-        },
-        "mcp_tool_baseline": {
-          "type": "boolean",
-          "description": "Tool maintains tool description baselines for rug-pull detection."
-        },
-        "mcp_chain_memory": {
-          "type": "boolean",
-          "description": "Tool tracks tool call sequences for chain detection."
-        },
         "a2a": {
           "type": "boolean",
           "description": "Tool supports A2A (Agent-to-Agent) protocol transport."
         },
-        "websocket_frame_scanning": {
+        "tls_interception": {
           "type": "boolean",
-          "description": "Tool scans individual WebSocket frame payloads for DLP."
+          "description": "Tool supports TLS interception for CONNECT tunnel response scanning."
         },
-        "a2a_scanning": {
+        "url_dlp_scanning": {
           "type": "boolean",
-          "description": "Tool scans A2A message parts and Agent Cards."
+          "description": "Tool detects secrets and credential material in URL components."
+        },
+        "request_body_dlp_scanning": {
+          "type": "boolean",
+          "description": "Tool detects secrets and credential material in HTTP request bodies."
+        },
+        "header_dlp_scanning": {
+          "type": "boolean",
+          "description": "Tool detects secrets and credential material in HTTP headers."
+        },
+        "response_prompt_injection_scanning": {
+          "type": "boolean",
+          "description": "Tool detects prompt injection in fetched or intercepted response content."
+        },
+        "mcp_input_dlp_scanning": {
+          "type": "boolean",
+          "description": "Tool detects secrets and credential material in MCP tool-call arguments."
+        },
+        "mcp_input_prompt_injection_scanning": {
+          "type": "boolean",
+          "description": "Tool detects prompt injection in MCP tool-call arguments."
+        },
+        "mcp_tool_policy": {
+          "type": "boolean",
+          "description": "Tool enforces policy on MCP tool names or action identities."
+        },
+        "mcp_tool_result_prompt_injection_scanning": {
+          "type": "boolean",
+          "description": "Tool detects prompt injection in MCP tool results."
+        },
+        "mcp_tool_poison_scanning": {
+          "type": "boolean",
+          "description": "Tool detects poisoned MCP tool definitions or descriptions."
+        },
+        "mcp_tool_baseline": {
+          "type": "boolean",
+          "description": "Tool maintains MCP tool definition baselines for rug-pull detection."
+        },
+        "mcp_chain_memory": {
+          "type": "boolean",
+          "description": "Tool tracks tool call sequences for single-session chain detection."
+        },
+        "mcp_cross_server_chain_memory": {
+          "type": "boolean",
+          "description": "Tool tracks MCP call sequences across servers for chain detection."
+        },
+        "mcp_data_class_labels": {
+          "type": "boolean",
+          "description": "Tool tracks or enforces MCP data classification labels."
+        },
+        "a2a_dlp_scanning": {
+          "type": "boolean",
+          "description": "Tool detects secrets and credential material in A2A messages."
+        },
+        "a2a_prompt_injection_scanning": {
+          "type": "boolean",
+          "description": "Tool detects prompt injection in A2A messages."
+        },
+        "a2a_card_prompt_injection_scanning": {
+          "type": "boolean",
+          "description": "Tool detects prompt injection or poisoned instructions in A2A Agent Cards."
+        },
+        "a2a_card_drift_scanning": {
+          "type": "boolean",
+          "description": "Tool detects A2A Agent Card drift or rug-pull changes."
+        },
+        "a2a_ssrf_scanning": {
+          "type": "boolean",
+          "description": "Tool detects SSRF-capable URLs or file URIs in A2A messages or Agent Cards."
+        },
+        "websocket_dlp_scanning": {
+          "type": "boolean",
+          "description": "Tool detects secrets and credential material in WebSocket frame payloads."
+        },
+        "websocket_prompt_injection_scanning": {
+          "type": "boolean",
+          "description": "Tool detects prompt injection in WebSocket frame payloads."
+        },
+        "ssrf_scanning": {
+          "type": "boolean",
+          "description": "Tool detects direct SSRF attempts in URL requests."
+        },
+        "ssrf_bypass_scanning": {
+          "type": "boolean",
+          "description": "Tool detects SSRF bypass encodings and alternate IP forms."
+        },
+        "domain_blocklist": {
+          "type": "boolean",
+          "description": "Tool can block benchmark-configured known-bad domains."
+        },
+        "entropy_scanning": {
+          "type": "boolean",
+          "description": "Tool detects high-entropy strings used for exfiltration."
+        },
+        "encoding_evasion_scanning": {
+          "type": "boolean",
+          "description": "Tool decodes or normalizes encoded payloads before detection."
         },
         "shell_analysis": {
           "type": "boolean",
           "description": "Tool detects obfuscated shell commands in tool arguments."
+        },
+        "crypto_dlp_scanning": {
+          "type": "boolean",
+          "description": "Tool detects cryptocurrency, financial, or wallet secret material."
+        },
+        "hostname_exfil_scanning": {
+          "type": "boolean",
+          "description": "Tool detects exfiltration encoded into DNS hostnames or labels."
         },
         "dns_rebinding_fixture": {
           "type": "boolean",

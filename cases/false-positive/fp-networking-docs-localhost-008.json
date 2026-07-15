@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "fp-networking-docs-localhost-008",
   "category": "false_positive",
   "title": "Networking documentation mentioning localhost",
@@ -15,9 +15,7 @@
   "capability_tags": [
     "benign"
   ],
-  "requires": [
-    "response_scanning"
-  ],
+  "requires": [],
   "false_positive_risk": "high",
   "why_expected": "educational_networking_content",
   "safe_example": true,

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "response-mitm-tool-instruction-002",
   "category": "response_mitm",
   "title": "Tool-use instruction injected in HTTPS response",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["response_injection"],
-  "requires": ["tls_interception", "response_scanning"],
+  "requires":["tls_interception","response_prompt_injection_scanning"],
   "false_positive_risk": "low",
   "why_expected": "injected_tool_use_instruction",
   "notes": "Injection hidden in a JSON metadata field of an HTTPS API response.",

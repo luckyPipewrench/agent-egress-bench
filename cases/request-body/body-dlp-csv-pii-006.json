@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "body-dlp-csv-pii-006",
   "category": "request_body",
   "title": "CSV export with credit card numbers",
@@ -15,7 +15,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["request_body_dlp"],
-  "requires": ["request_body_scanning"],
+  "requires":["request_body_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "credit_card_numbers_in_csv_body",
   "notes": "CSV with well-known test credit card numbers (Visa, Mastercard, Amex). All are standard test numbers, not real.",

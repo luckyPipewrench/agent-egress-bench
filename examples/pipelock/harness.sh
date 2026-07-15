@@ -75,22 +75,12 @@ for i in $(seq 1 30); do
 done
 echo "pipelock ready." >&2
 
-# Read tool profile claims and supports
-CLAIMS=$(jq -r '.claims[]' "$PROFILE")
+# Read tool profile supports
 SUPPORTS=$(jq -r '.supports | to_entries[] | select(.value == true) | .key' "$PROFILE")
 
-# Check if case is applicable based on capability_tags and requires
+# Check if case is applicable based on requires and transport support.
 check_applicable() {
     local case_file="$1"
-
-    # Check capability_tags against claims
-    local tags
-    tags=$(jq -r '.capability_tags[]' "$case_file")
-    for tag in $tags; do
-        if ! echo "$CLAIMS" | grep -qx "$tag"; then
-            return 1
-        fi
-    done
 
     # Check requires against supports
     local reqs
@@ -101,6 +91,13 @@ check_applicable() {
             return 1
         fi
     done
+
+    # Check declared transport against supports
+    local transport
+    transport=$(jq -r '.transport' "$case_file")
+    if ! echo "$SUPPORTS" | grep -qx "$transport"; then
+        return 1
+    fi
 
     return 0
 }
@@ -228,11 +225,11 @@ while read -r case_file; do
     case_id=$(jq -r '.id' "$case_file")
     transport=$(jq -r '.transport' "$case_file")
 
-    # Applicability check (capability_tags + requires)
+    # Applicability check (requires + transport supports)
     if ! check_applicable "$case_file"; then
         emit_result "$case_id" "$(jq -r '.expected_verdict' "$case_file")" \
             "not_applicable" "not_applicable" \
-            '{"reason": "case requires capabilities not claimed by tool profile"}' "" >> "$RESULTS_FILE"
+            '{"reason": "case requires unsupported capability or transport"}' "" >> "$RESULTS_FILE"
         na=$((na + 1))
         echo "  SKIP  $case_id (not applicable)" >&2
         continue

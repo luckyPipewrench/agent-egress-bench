@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: mcp-drift-rugpull-param-003
 category: mcp_drift
 title: Parameter-name rug-pull — schema field renamed to coerce extra data
@@ -24,6 +24,7 @@ severity: critical
 capability_tags:
   - mcp_tool_poison
 requires:
+  - mcp_tool_poison_scanning
   - mcp_tool_baseline
 false_positive_risk: low
 why_expected: |

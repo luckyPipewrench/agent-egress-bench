@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-domain-blocklist-001",
   "category": "url",
   "title": "Request to blocklisted exfiltration domain",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["domain_blocklist"],
-  "requires": [],
+  "requires":["domain_blocklist"],
   "false_positive_risk": "low",
   "why_expected": "domain_on_blocklist",
   "notes": "Uses .example.net (IANA reserved for documentation) to avoid real DNS resolution. Runners must add exfil-collector.example.net to their tool's blocklist configuration before running this case.",

@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: mcp-drift-rugpull-desc-002
 category: mcp_drift
 title: Description-mutation rug-pull — benign description swapped for malicious post-approval
@@ -25,6 +25,7 @@ severity: critical
 capability_tags:
   - mcp_tool_poison
 requires:
+  - mcp_tool_poison_scanning
   - mcp_tool_baseline
 false_positive_risk: low
 why_expected: |

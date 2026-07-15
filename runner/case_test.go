@@ -10,7 +10,7 @@ func TestLoadCases(t *testing.T) {
 	dir := t.TempDir()
 
 	caseJSON := `{
-		"schema_version": 1,
+		"schema_version": 2,
 		"id": "test-case-001",
 		"category": "url",
 		"title": "Test case",
@@ -58,7 +58,7 @@ func TestLoadCasesEmpty(t *testing.T) {
 func TestLoadProfile(t *testing.T) {
 	dir := t.TempDir()
 	profileJSON := `{
-		"schema_version": 1,
+		"schema_version": 2,
 		"tool": "test-tool",
 		"tool_version": "1.0.0",
 		"runner_version": "v1",
@@ -71,13 +71,13 @@ func TestLoadProfile(t *testing.T) {
 			"websocket": false,
 			"a2a": false,
 			"tls_interception": false,
-			"request_body_scanning": false,
-			"header_scanning": false,
-			"response_scanning": false,
+			"request_body_dlp_scanning": false,
+			"header_dlp_scanning": false,
+			"response_prompt_injection_scanning": false,
 			"mcp_tool_baseline": false,
 			"mcp_chain_memory": false,
-			"websocket_frame_scanning": false,
-			"a2a_scanning": false,
+			"websocket_dlp_scanning": false,
+			"a2a_dlp_scanning": false,
 			"shell_analysis": false,
 			"dns_rebinding_fixture": false
 		}
@@ -120,7 +120,7 @@ func TestLoadCasesNonexistentDir(t *testing.T) {
 func TestLoadCasesSkipsNonJSON(t *testing.T) {
 	dir := t.TempDir()
 	// Write a valid case and a non-JSON file.
-	caseJSON := `{"schema_version":1,"id":"test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"test"}`
+	caseJSON := `{"schema_version":2,"id":"test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"test"}`
 	if err := os.WriteFile(filepath.Join(dir, "test-001.json"), []byte(caseJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -159,12 +159,12 @@ func TestCheckApplicability(t *testing.T) {
 	profile := Profile{
 		Claims: []string{"url_dlp", "benign"},
 		Supports: map[string]bool{
-			"fetch_proxy":           true,
-			"http_proxy":            true,
-			"mcp_stdio":             false,
-			"tls_interception":      true,
-			"request_body_scanning": false,
-			"dns_rebinding_fixture": false,
+			"fetch_proxy":               true,
+			"http_proxy":                true,
+			"mcp_stdio":                 false,
+			"tls_interception":          true,
+			"request_body_dlp_scanning": false,
+			"dns_rebinding_fixture":     false,
 		},
 	}
 
@@ -184,20 +184,19 @@ func TestCheckApplicability(t *testing.T) {
 			wantApply: true,
 		},
 		{
-			name: "missing capability",
+			name: "capability tags do not affect applicability",
 			c: Case{
 				CapabilityTags: []string{"mcp_input_scan"},
 				Requires:       []string{},
 				Transport:      "fetch_proxy",
 			},
-			wantNA:    NAMissingCapability,
-			wantApply: false,
+			wantApply: true,
 		},
 		{
 			name: "missing requires",
 			c: Case{
 				CapabilityTags: []string{"url_dlp"},
-				Requires:       []string{"request_body_scanning"},
+				Requires:       []string{"request_body_dlp_scanning"},
 				Transport:      "fetch_proxy",
 			},
 			wantNA:    NAMissingRequires,
@@ -214,17 +213,17 @@ func TestCheckApplicability(t *testing.T) {
 			wantApply: false,
 		},
 		{
-			name: "capability checked before requires",
+			name: "requires checked before transport",
 			c: Case{
 				CapabilityTags: []string{"mcp_input_scan"},
-				Requires:       []string{"request_body_scanning"},
+				Requires:       []string{"request_body_dlp_scanning"},
 				Transport:      "mcp_stdio",
 			},
-			wantNA:    NAMissingCapability,
+			wantNA:    NAMissingRequires,
 			wantApply: false,
 		},
 		{
-			name: "requires checked before transport",
+			name: "requires checked before transport with claimed tag",
 			c: Case{
 				CapabilityTags: []string{"url_dlp"},
 				Requires:       []string{"dns_rebinding_fixture"},
@@ -252,9 +251,10 @@ func TestNeedsMCPMockBackendPreflight(t *testing.T) {
 	profile := Profile{
 		Claims: []string{"mcp_tool_poison", "url_dlp"},
 		Supports: map[string]bool{
-			"fetch_proxy": true,
-			"mcp_stdio":   true,
-			"mcp_http":    true,
+			"fetch_proxy":              true,
+			"mcp_stdio":                true,
+			"mcp_http":                 true,
+			"mcp_tool_poison_scanning": true,
 		},
 	}
 
@@ -267,6 +267,7 @@ func TestNeedsMCPMockBackendPreflight(t *testing.T) {
 			name: "mcp server response in scope",
 			cases: []Case{{
 				CapabilityTags: []string{"mcp_tool_poison"},
+				Requires:       []string{"mcp_tool_poison_scanning"},
 				Transport:      "mcp_stdio",
 				Payload: map[string]interface{}{
 					"jsonrpc_messages": []interface{}{
@@ -289,6 +290,7 @@ func TestNeedsMCPMockBackendPreflight(t *testing.T) {
 			name: "unsupported mcp case does not need preflight",
 			cases: []Case{{
 				CapabilityTags: []string{"unsupported_capability"},
+				Requires:       []string{"unsupported_capability"},
 				Transport:      "mcp_stdio",
 				Payload: map[string]interface{}{
 					"jsonrpc_messages": []interface{}{
@@ -302,6 +304,7 @@ func TestNeedsMCPMockBackendPreflight(t *testing.T) {
 			name: "mcp client-only request does not inject mock backend",
 			cases: []Case{{
 				CapabilityTags: []string{"mcp_tool_poison"},
+				Requires:       []string{"mcp_tool_poison_scanning"},
 				Transport:      "mcp_stdio",
 				Payload: map[string]interface{}{
 					"jsonrpc_messages": []interface{}{

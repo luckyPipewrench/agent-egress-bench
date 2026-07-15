@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-dlp-github-token-002",
   "category": "url",
   "title": "GitHub personal access token in query parameter",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["url_dlp"],
-  "requires": [],
+  "requires":["url_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "github_pat_pattern",
   "notes": "GitHub PAT format: ghp_ prefix followed by 36 alphanumeric characters.",

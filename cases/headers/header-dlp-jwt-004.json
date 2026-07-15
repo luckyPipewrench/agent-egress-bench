@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "header-dlp-jwt-004",
   "category": "headers",
   "title": "Full JWT token in Authorization header",
@@ -16,7 +16,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["header_dlp"],
-  "requires": ["header_scanning"],
+  "requires":["header_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "jwt_token_in_auth_header",
   "notes": "Complete RS256 JWT token. The signature portion contains high-entropy data that should trigger DLP detection.",

@@ -31,7 +31,7 @@ Edit the file. Here is what each field means:
 
 ### `claims` array
 
-Which attack categories your tool detects. Only cases matching your claims will run. Pick from:
+Reporting labels for what your tool detects. Applicability is controlled by `supports`, not by `claims`. Pick from:
 
 | Claim | What it means |
 |-------|---------------|
@@ -47,8 +47,15 @@ Which attack categories your tool detects. Only cases matching your claims will 
 | `entropy` | Detect high-entropy strings (potential encoded secrets) |
 | `encoding_evasion` | Detect encoded/obfuscated secrets |
 | `benign` | Required to run benign (false-positive) cases |
+| `a2a_scan` | Detect attacks in A2A messages |
+| `a2a_card_poison` | Detect poisoned A2A Agent Cards |
+| `websocket_dlp` | Detect secrets in WebSocket frames |
+| `ssrf_bypass` | Detect alternate SSRF encodings and IP forms |
+| `shell_obfuscation` | Detect obfuscated shell commands |
+| `crypto_dlp` | Detect cryptocurrency, wallet, or financial material |
+| `hostname_exfil` | Detect exfiltration encoded into hostnames |
 
-Only claim what your tool actually does. Unclaimed cases are scored `not_applicable`, not `fail`.
+Only claim what your tool actually does; these labels help readers interpret results.
 
 ### `supports` object
 
@@ -61,12 +68,37 @@ Which transport and scanning modes your tool supports. These map to the `require
 | `mcp_stdio` | Tool can wrap MCP servers via stdio |
 | `mcp_http` | Tool can proxy MCP over HTTP |
 | `websocket` | Tool can proxy WebSocket connections |
+| `a2a` | Tool can inspect A2A protocol traffic |
 | `tls_interception` | Tool can intercept and inspect TLS traffic |
-| `request_body_scanning` | Tool inspects HTTP request bodies |
-| `header_scanning` | Tool inspects HTTP headers |
-| `response_scanning` | Tool inspects HTTP response content |
+| `url_dlp_scanning` | Tool detects secrets in URL components |
+| `request_body_dlp_scanning` | Tool detects secrets in HTTP request bodies |
+| `header_dlp_scanning` | Tool detects secrets in HTTP headers |
+| `response_prompt_injection_scanning` | Tool detects prompt injection in response content |
+| `mcp_input_dlp_scanning` | Tool detects secrets in MCP tool arguments |
+| `mcp_input_prompt_injection_scanning` | Tool detects prompt injection in MCP tool arguments |
+| `mcp_tool_policy` | Tool enforces policy on MCP tool names/actions |
+| `mcp_tool_result_prompt_injection_scanning` | Tool detects prompt injection in MCP tool results |
+| `mcp_tool_poison_scanning` | Tool detects poisoned MCP tool definitions |
 | `mcp_tool_baseline` | Tool tracks MCP tool definitions over time (rug-pull detection) |
 | `mcp_chain_memory` | Tool tracks sequences of MCP tool calls |
+| `mcp_cross_server_chain_memory` | Tool correlates MCP chains across server sessions |
+| `mcp_data_class_labels` | Tool tracks sensitivity labels on MCP tool outputs |
+| `a2a_dlp_scanning` | Tool detects secrets in A2A messages |
+| `a2a_prompt_injection_scanning` | Tool detects prompt injection in A2A messages |
+| `a2a_card_prompt_injection_scanning` | Tool detects poisoned A2A Agent Cards |
+| `a2a_card_drift_scanning` | Tool detects A2A Agent Card drift |
+| `a2a_ssrf_scanning` | Tool detects SSRF-capable A2A URLs or file URIs |
+| `websocket_dlp_scanning` | Tool detects secrets in WebSocket frames |
+| `websocket_prompt_injection_scanning` | Tool detects prompt injection in WebSocket frames |
+| `ssrf_scanning` | Tool detects direct SSRF attempts in URL requests |
+| `ssrf_bypass_scanning` | Tool detects SSRF bypass encodings and alternate IP forms |
+| `domain_blocklist` | Tool can block benchmark-configured known-bad domains |
+| `entropy_scanning` | Tool detects high-entropy exfiltration strings |
+| `encoding_evasion_scanning` | Tool decodes or normalizes encoded payloads before detection |
+| `shell_analysis` | Tool detects obfuscated shell commands in tool arguments |
+| `crypto_dlp_scanning` | Tool detects cryptocurrency, wallet, or financial material |
+| `hostname_exfil_scanning` | Tool detects exfiltration encoded into DNS hostnames or labels |
+| `dns_rebinding_fixture` | Runner provides controlled DNS for rebinding tests |
 
 ## Step 2: Write the runner
 
@@ -205,13 +237,13 @@ wc -l < results.jsonl
 
 ## Common mistakes
 
-**Claiming capabilities you do not test.** If your tool claims `mcp_chain` but your runner does not support `mcp_stdio`, those cases will try to run and produce `error` instead of `not_applicable`. Either support the transport or remove the claim.
+**Claiming supports you do not test.** If your profile sets `mcp_chain_memory` and `mcp_stdio` to `true`, those cases will run and produce `error` if your runner cannot actually test them. Set unsupported capabilities or transports to `false`.
 
 **Hardcoding verdicts.** Every verdict must come from observing your tool's actual behavior. If you return `block` without sending the request through your tool, the result is meaningless.
 
 **Mixing stdout and stderr.** JSONL goes to stdout. Status messages, progress, and summaries go to stderr. If you print status to stdout, the JSONL will be unparseable.
 
-**Forgetting benign cases.** Add `benign` to your `claims` array. If you skip it, all false-positive test cases are marked `not_applicable` and your results will not show whether your tool over-blocks.
+**Forgetting false-positive coverage.** Benign cases use the same `requires` taxonomy as attack cases. If you set the relevant supports to `false`, those false-positive cases are marked `not_applicable` and your results will not show whether your tool over-blocks.
 
 ## Reference
 

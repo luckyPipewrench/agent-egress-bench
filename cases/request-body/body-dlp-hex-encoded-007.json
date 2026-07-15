@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "body-dlp-hex-encoded-007",
   "category": "request_body",
   "title": "Hex-encoded blob with embedded AWS secret key",
@@ -15,7 +15,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["request_body_dlp", "encoding_evasion"],
-  "requires": ["request_body_scanning"],
+  "requires":["request_body_dlp_scanning","encoding_evasion_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "hex_encoded_aws_secret_key_in_body",
   "notes": "Hex blob decodes to padding bytes around wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY (AWS example secret key). Tests hex decoding in DLP scanning. The corpus hex was patched 2026-05-22 to insert a missing 0x41 ('A') byte; the prior bytes decoded to 'EXMPLEKEY' and made the case's expected_verdict unreachable for any scanner that hex-decodes bodies.",

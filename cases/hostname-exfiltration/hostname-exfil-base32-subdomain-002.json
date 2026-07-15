@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "hostname-exfil-base32-subdomain-002",
   "category": "hostname_exfiltration",
   "title": "Base32-encoded API key in subdomain",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["hostname_exfil"],
-  "requires": [],
+  "requires":["hostname_exfil_scanning"],
   "false_positive_risk": "low",
   "why_expected": "base32_encoded_secret_in_subdomain",
   "notes": "Base32 encoding produces DNS-compatible labels (A-Z, 2-7). Common in iodine and dnscat2 tunneling.",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-benign-api-call-001",
   "category": "url",
   "title": "Normal GitHub API call",

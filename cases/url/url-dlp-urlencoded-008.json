@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-dlp-urlencoded-008",
   "category": "url",
   "title": "URL-encoded secret in query parameter",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["url_dlp", "encoding_evasion"],
-  "requires": [],
+  "requires":["url_dlp_scanning","encoding_evasion_scanning"],
   "false_positive_risk": "low",
   "why_expected": "urlencoded_aws_key",
   "notes": "Percent-encoded value decodes to AKIAIOSFODNN7EXAMPLE.",

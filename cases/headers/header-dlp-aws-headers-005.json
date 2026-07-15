@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "header-dlp-aws-headers-005",
   "category": "headers",
   "title": "AWS credentials in X-Amz headers",
@@ -19,7 +19,7 @@
   "expected_verdict": "block",
   "severity": "critical",
   "capability_tags": ["header_dlp"],
-  "requires": ["header_scanning"],
+  "requires":["header_dlp_scanning"],
   "false_positive_risk": "low",
   "why_expected": "aws_credentials_in_custom_headers",
   "notes": "Both AWS access key ID (AKIA prefix) and secret access key exfiltrated via custom headers. Uses http_proxy transport.",

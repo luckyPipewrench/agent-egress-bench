@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-entropy-subdomain-007",
   "category": "url",
   "title": "Subdomain-based DNS exfiltration",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["entropy"],
-  "requires": [],
+  "requires":["entropy_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "high_entropy_subdomain_labels",
   "notes": "Subdomain labels decode (hex) to JohnDoe and Secret1. Classic DNS exfiltration technique.",

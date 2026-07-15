@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "url-ssrf-ipv6-mapped-010",
   "category": "url",
   "title": "SSRF via IPv6-mapped IPv4 address",
@@ -13,7 +13,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["ssrf"],
-  "requires": [],
+  "requires":["ssrf_scanning"],
   "false_positive_risk": "low",
   "why_expected": "ipv6_mapped_private_ip",
   "notes": "::ffff:127.0.0.1 is the IPv6-mapped form of localhost. Firewalls that only check for 127.0.0.1 string literals will miss this.",
