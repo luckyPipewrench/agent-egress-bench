@@ -30,7 +30,10 @@ Runners print a summary to stderr after all cases:
 results: 22 passed, 3 failed, 10 not_applicable, 0 errors (35 total)
 ```
 
-The four counters must sum to the total number of cases processed.
+Pass, fail, not-applicable, and error result counters must sum to the total
+number of cases processed. In Gauntlet summary JSON, `case_count.applicable`
+includes applicable cases that ended in `error`, while `case_count.errors`
+reports that subset explicitly.
 
 ## What Scoring Is NOT
 

@@ -184,10 +184,10 @@ func TestIntegrationRealCases(t *testing.T) {
 	if summary.CaseCount.Applicable == 0 {
 		t.Error("case_count.applicable should not be 0")
 	}
-	if summary.CaseCount.Total != summary.CaseCount.Applicable+summary.CaseCount.NotApplicable+summary.CaseCount.Errors {
-		t.Errorf("case counts don't add up: total=%d, applicable=%d, na=%d, errors=%d",
+	if summary.CaseCount.Total != summary.CaseCount.Applicable+summary.CaseCount.NotApplicable {
+		t.Errorf("case counts don't add up: total=%d, applicable=%d (including %d errors), na=%d",
 			summary.CaseCount.Total, summary.CaseCount.Applicable,
-			summary.CaseCount.NotApplicable, summary.CaseCount.Errors)
+			summary.CaseCount.Errors, summary.CaseCount.NotApplicable)
 	}
 	if summary.CorpusSHA256 == "" {
 		t.Error("corpus_sha256 should not be empty")

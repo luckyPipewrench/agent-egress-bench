@@ -178,6 +178,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 				Evidence:        map[string]interface{}{},
 				Notes:           fmt.Sprintf("adapter error: %v", adapterResult.Err),
 			}
+			applicableResults = append(applicableResults, result)
 			if encErr := enc.Encode(result); encErr != nil {
 				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
 			}
@@ -207,6 +208,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 				Evidence:        adapterResult.Evidence,
 				Notes:           skipReason,
 			}
+			applicableResults = append(applicableResults, result)
 			if encErr := enc.Encode(result); encErr != nil {
 				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
 			}

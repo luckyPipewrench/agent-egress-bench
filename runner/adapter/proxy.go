@@ -9,8 +9,9 @@
 //   - websocket    → GET /ws?url=... (connection attempt)
 //   - mcp_stdio    → configured MCP stdio proxy command
 //
-// Unsupported transports return skip. They are never substituted with a
-// different transport because that would turn a scanner result into false
+// Unimplemented execution paths return skip. The runner upgrades that to an
+// error when the tool profile declared the case applicable. Transports are
+// never substituted because that would turn a scanner result into false
 // evidence that the requested transport was exercised.
 package adapter
 
@@ -32,6 +33,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -58,6 +60,7 @@ type ProxyAdapter struct {
 	httpFixtureAddr string                  // HTTP fixture for response-mitm via fetch
 	setHTTPRoute    func(path, body string) // callback to register HTTP fixture routes
 	wsAddr          string                  // WS fixture for websocket cases
+	responseRouteID atomic.Uint64           // unique low-entropy response fixture route
 }
 
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
@@ -116,7 +119,17 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 	if result.Evidence == nil {
 		result.Evidence = make(map[string]interface{})
 	}
-	result.Evidence["observed_transport"] = c.Transport
+	result.Evidence["requested_transport"] = c.Transport
+	// A normal verdict proves the concrete transport ran. Skip/error results do
+	// not: they include missing fixtures, unsupported paths, and malformed input.
+	// Individual transport methods can explicitly mark an attempted transport
+	// when the attempt itself ends in a skip (for example an upstream timeout).
+	if result.Err == nil && result.Verdict != "skip" {
+		result.Evidence["observed_transport"] = c.Transport
+	} else if attempted, _ := result.Evidence["transport_attempted"].(bool); attempted {
+		result.Evidence["observed_transport"] = c.Transport
+	}
+	delete(result.Evidence, "transport_attempted")
 	return result
 }
 
@@ -145,11 +158,10 @@ func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Dura
 	if err != nil || port == "" {
 		return Result{Err: fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)}
 	}
-	// Keep the fixture path deliberately low-entropy. A path derived from the
-	// case ID can trigger the product's URL-entropy scanner before it ever sees
-	// the response body, turning a benign response case into a runner-created
-	// false positive. Cases execute sequentially, so one stable route is enough.
-	path := "/response/content"
+	// Keep the fixture path unique but deliberately low-entropy. A path derived
+	// from the case ID can trigger URL-entropy scanning, while a stable shared
+	// path races if execution becomes concurrent or a retry overlaps a request.
+	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
 	p.setHTTPRoute(path, responseBody)
 	fixtureCase := c
 	fixtureCase.Payload = map[string]interface{}{
@@ -375,7 +387,7 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 		if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline") {
 			return Result{
 				Verdict:  "skip",
-				Evidence: map[string]interface{}{"reason": "fetch_timeout", "detail": truncate(errStr, 120)},
+				Evidence: map[string]interface{}{"reason": "fetch_timeout", "detail": truncate(errStr, 120), "transport_attempted": true},
 			}
 		}
 		return Result{Err: fmt.Errorf("case %s: fetch proxy: %w", c.ID, err)}
@@ -383,10 +395,6 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode == http.StatusMethodNotAllowed && method != http.MethodGet {
-		return unsupportedTransport(c, fmt.Sprintf("fetch proxy does not support %s requests", method))
-	}
-
 	// The fetch endpoint returns JSON with blocked, block_reason, and scanner fields.
 	var fetchResp struct {
 		Blocked     bool   `json:"blocked"`
@@ -499,7 +507,7 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		// CONNECT but the upstream doesn't exist. Skip, not error.
 		return Result{
 			Verdict:  "skip",
-			Evidence: map[string]interface{}{"reason": "upstream_unreachable", "detail": truncate(errStr, 120)},
+			Evidence: map[string]interface{}{"reason": "upstream_unreachable", "detail": truncate(errStr, 120), "transport_attempted": true},
 		}
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -550,7 +558,7 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 		// Upstream WS server unreachable (timeout, DNS). Skip, not error.
 		return Result{
 			Verdict:  "skip",
-			Evidence: map[string]interface{}{"reason": "ws_upstream_unreachable", "detail": truncate(errStr, 120)},
+			Evidence: map[string]interface{}{"reason": "ws_upstream_unreachable", "detail": truncate(errStr, 120), "transport_attempted": true},
 		}
 	}
 	defer func() { _ = resp.Body.Close() }()
