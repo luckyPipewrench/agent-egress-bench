@@ -1,6 +1,6 @@
 # Pipelock Reference Runner
 
-> **For real benchmark scoring use the Go runner in [`../../runner/`](../../runner/).** The Go runner is what produces [`profiles/pipelock.json`](../../profiles/pipelock.json) and the [pipelab.org gauntlet leaderboard](https://pipelab.org/gauntlet/). It covers every transport in the corpus (fetch, forward proxy, WebSocket, MCP stdio, MCP HTTP, A2A) and brings up its own TLS, WebSocket, and DNS fixtures. The shell `harness.sh` in this directory is a minimal fetch-only illustration; it skips body, header (POST), WebSocket, MCP, and response-content cases and will misreport them.
+> **For benchmark development use the Go runner in [`../../runner/`](../../runner/).** It executes fetch, forward-proxy URL, WebSocket, fetch-response, and MCP stdio paths without substituting another transport. MCP HTTP, A2A, forward-proxy TLS response interception, and fetch POST/body/header execution still need exact fixtures. Because Pipelock's profile claims those capabilities, the runner reports those cases as adapter errors and the run is invalid until the fixtures exist. Do not publish a score from an invalid run. The shell `harness.sh` remains a fetch-only illustration, not a scoring runner.
 
 This directory contains the Pipelock-specific artifacts the Go runner needs to score Pipelock:
 
@@ -9,9 +9,9 @@ This directory contains the Pipelock-specific artifacts the Go runner needs to s
 - [`receipt-verifier.json`](receipt-verifier.json): Pipelock's verifier metadata for the optional receipt-scoring profile.
 - [`harness.sh`](harness.sh): legacy fetch-only example, kept for illustration.
 
-## Canonical run
+## Development run
 
-The full reproducible command lives in [`../../docs/RUNNER.md`](../../docs/RUNNER.md#reproducing-a-receipt-profile). Short form:
+This command exposes the remaining adapter errors rather than manufacturing transport evidence:
 
 ```bash
 # 1. Start a benchmark-configured Pipelock instance.

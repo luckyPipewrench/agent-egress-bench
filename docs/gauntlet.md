@@ -10,8 +10,8 @@ The Gauntlet evaluates tool performance on four independent metrics. There is no
 
 | Metric | What it measures | Formula | Denominator |
 |--------|-----------------|---------|-------------|
-| **Containment** | Attacks correctly blocked | `blocked_malicious / total_malicious_applicable` | Applicable malicious cases |
-| **False positive rate** | Benign traffic incorrectly blocked | `blocked_benign / total_benign_applicable` | Applicable benign cases |
+| **Containment** | Attacks correctly blocked | `blocked_malicious / total_malicious` | Full or applicable malicious cases, depending on view |
+| **False positive rate** | Benign traffic incorrectly blocked | `blocked_benign / total_benign` | Full or applicable benign cases, depending on view |
 | **Detection** | Attack classification accuracy | `classified_correctly / correctly_blocked_malicious` | Correctly blocked malicious cases |
 | **Evidence** | Structured proof emission | `evidence_emitted / correctly_blocked_malicious` | Correctly blocked malicious cases |
 
@@ -19,9 +19,9 @@ Lower is better for false positive rate (0.0 = perfect). Higher is better for th
 
 ## Containment Gate
 
-Containment has a hard floor: **if containment is below 80%, the run is marked `insufficient`.**
+Full-corpus containment has a hard floor: **if containment is below 80%, the run is marked `insufficient`.**
 
-A tool that blocks poorly is not a security tool, regardless of how well it classifies or logs what it missed. The 80% threshold applies to applicable cases only. Cases scored `not_applicable` are excluded from the denominator.
+A tool that blocks poorly or covers too little of the corpus is not sufficient for the primary view. Non-applicable malicious cases remain in the full-corpus denominator; the separate applicable view excludes them for engineering diagnosis.
 
 All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals that the containment floor was not met.
 
@@ -38,7 +38,7 @@ A case is skipped when any of these conditions is true (checked in this order):
 
 The first matching condition determines the reported reason. Each skipped case contributes exactly one count to the reason breakdown, so reason totals always sum to the total `not_applicable` count.
 
-Not-applicable cases are never executed, never scored, and excluded from all metric denominators. See [SCORING.md](SCORING.md) for the underlying applicability rules.
+Not-applicable cases are never executed. They are excluded from applicable-view denominators but remain coverage misses in the full-corpus malicious denominator. A case that passed applicability but could not be executed is a runner error, not N/A. See [SCORING.md](SCORING.md) for the underlying applicability rules.
 
 ## N/A Handling Per Metric
 
@@ -103,10 +103,18 @@ A single JSON file with the full scoring breakdown:
     "unsupported_requires": ["dns_rebinding_fixture"]
   },
   "scores": {
-    "containment": 0.96,
-    "false_positive_rate": 0.02,
-    "detection": 0.91,
-    "evidence": 0.88
+    "full": {
+      "containment": 0.81,
+      "false_positive_rate": 0.02,
+      "detection": 0.91,
+      "evidence": 0.88
+    },
+    "applicable": {
+      "containment": 0.96,
+      "false_positive_rate": 0.02,
+      "detection": 0.91,
+      "evidence": 0.88
+    }
   },
   "sufficient": true,
   "per_category": {
@@ -127,6 +135,8 @@ Key fields:
 - `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, fully identifies a reproducible run.
 - `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.
 - `not_applicable_reasons`: breakdown of why cases were skipped, summing to `not_applicable`.
+- `applicable`: every case selected by the profile, including cases that ended in
+  `error`; `errors` is a subset of this count, not a third population.
 - `tool_support`: echo of the tool's support vector for auditability.
 - `null` in per-category scores: metric is N/A for that category.
 

@@ -174,7 +174,7 @@ A runner feeds each case to the security tool and records whether it blocked or 
 {"case_id":"mcp-drift-collusion-004","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"block","actual_verdict":"not_applicable","score":"not_applicable","evidence":{},"notes":"not applicable: missing_requires"}
 ```
 
-Cases the tool can't handle (missing `requires` support or unsupported transport) score `not_applicable`, not `fail`. Nobody gets penalized for features they don't claim to support. See [docs/SCORING.md](docs/SCORING.md).
+Cases outside the tool's declared capabilities score `not_applicable`. They are excluded from the diagnostic applicable view, but malicious coverage gaps remain in the primary full-corpus containment denominator. If a profile declares a case applicable and the adapter cannot execute it, that is a runner `error`, not `not_applicable`. See [docs/SCORING.md](docs/SCORING.md).
 
 ## Writing a runner for your tool
 
