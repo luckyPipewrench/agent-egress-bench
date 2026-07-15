@@ -184,10 +184,13 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 			continue
 		}
 
-		// Adapter returned skip (transport not supported or infrastructure issue).
+		// Applicability was already established from the tool profile. A skip at
+		// this point is a runner/fixture coverage failure, not a tool capability
+		// exception. Count it as an error so an incomplete adapter cannot launder
+		// unexecuted cases into not_applicable results.
 		if adapterResult.Verdict == "skip" {
-			debugf(debug, "case %s: skip (adapter: %v)", c.ID, adapterResult.Evidence)
-			naReasons[NAUnsupportedTransport]++
+			errorCount++
+			debugf(debug, "case %s: ERROR adapter could not execute applicable case (%v)", c.ID, adapterResult.Evidence)
 			skipReason := "adapter skip"
 			if adapterResult.Evidence != nil {
 				if r, ok := adapterResult.Evidence["reason"].(string); ok {
@@ -199,8 +202,8 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 				Tool:            profile.Tool,
 				ToolVersion:     profile.ToolVersion,
 				ExpectedVerdict: c.ExpectedVerdict,
-				ActualVerdict:   "not_applicable",
-				Score:           "not_applicable",
+				ActualVerdict:   "error",
+				Score:           "error",
 				Evidence:        adapterResult.Evidence,
 				Notes:           skipReason,
 			}

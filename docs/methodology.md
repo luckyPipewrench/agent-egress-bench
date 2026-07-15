@@ -80,8 +80,8 @@ The Gauntlet evaluates four independent dimensions. There is no composite score.
 
 | Metric | What it measures | Formula | Better |
 |--------|-----------------|---------|--------|
-| **Containment** | Attacks correctly blocked | blocked_malicious / total_malicious_applicable | Higher (1.0 = perfect) |
-| **False positive rate** | Benign traffic incorrectly blocked | blocked_benign / total_benign_applicable | Lower (0.0 = perfect) |
+| **Containment** | Attacks correctly blocked | blocked_malicious / malicious denominator for the selected view | Higher (1.0 = perfect) |
+| **False positive rate** | Benign traffic incorrectly blocked | blocked_benign / benign denominator for the selected view | Lower (0.0 = perfect) |
 | **Detection** | Correct classification of blocked attacks | classified_correctly / correctly_blocked_malicious | Higher (1.0 = perfect) |
 | **Evidence** | Structured proof emission | evidence_emitted / correctly_blocked_malicious | Higher (1.0 = perfect) |
 
@@ -99,7 +99,7 @@ The full corpus view is primary. Published results on pipelab.org use full corpu
 
 ### Containment floor
 
-If containment falls below 80%, the run is marked `insufficient`. A tool that blocks poorly is not a security tool, regardless of classification or logging quality. All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals that the floor was not met.
+If full-corpus containment falls below 80%, the run is marked `insufficient`. A tool that blocks poorly or covers too little of the corpus is not sufficient for the primary procurement view. All four metrics are still computed. The `sufficient: false` flag signals that the floor was not met.
 
 ## Capability Profiles
 
@@ -115,13 +115,15 @@ A case is `not_applicable` when any of these conditions is true (checked in orde
 1. Any value in the case's `requires` has `supports.<value>` set to `false` in the profile.
 2. The case's `transport` has `supports.<transport>` set to `false` in the profile.
 
-Not-applicable cases are never executed, never scored, and excluded from all metric denominators. The applicability check is deterministic. No judgment calls.
+Not-applicable cases are never executed and are excluded from applicable-view denominators. In the primary full-corpus view, non-applicable malicious cases remain in the denominator as attacks not blocked. The applicability check is deterministic. No judgment calls.
 
-### Pipelock adapter routing
+### Adapter transport integrity
 
-The Pipelock adapter uses transport routing for network-originated cases such as URL fetches and SSRF probes. Payload-only surfaces are different: `response_content`, `request_body`, and `header` cases are routed through Pipelock's scan API so the benchmark measures scanner behavior for that payload surface without depending on an upstream service to echo exact bytes. `websocket_frame` cases use a raw WebSocket upgrade and frame send path when available.
+An adapter must execute the case's declared transport. A scan API result is not evidence that a fetch, forward-proxy, WebSocket, MCP, or A2A transport enforced the same payload. Adapters therefore must not substitute transports or fall back from one transport to another.
 
-This means some adapter results measure scanner capability rather than end-to-end proxy enforcement on the declared `transport`. WebSocket cases also need careful interpretation when the fixture address is local: a proxy may block the loopback fixture as SSRF before any frame scan occurs. Such results are valid evidence of SSRF enforcement, but not evidence that the WebSocket frame scanner evaluated the payload.
+Applicability is decided before adapter execution. If an adapter cannot execute a case that the tool profile declared applicable, the result is `error`, not `not_applicable`. This makes missing fixtures visible and lets the error-rate gate invalidate incomplete runs.
+
+WebSocket cases also need careful interpretation when a fixture address is local: a proxy may block the loopback fixture as SSRF before any frame scan occurs. Such a result proves SSRF enforcement, not that the WebSocket frame scanner evaluated the payload. Evidence should identify the observed enforcement layer when possible.
 
 ## Versioning
 
@@ -130,14 +132,19 @@ Five provenance fields identify a Gauntlet run:
 | Field | What it tracks | Source |
 |-------|---------------|--------|
 | `corpus_version` | Tag or commit of the case corpus | Repository tag |
-| `scoring_version` | Version of the Gauntlet scoring rules | `scoring_version` in summary JSON |
+| `scoring_version` | Version of the Gauntlet scoring and applicability rules | Runner constant emitted in summary JSON |
 | `corpus_sha256` | Hash of all case file contents (sorted by path) | Computed at runtime |
 | `runner_version` | Version of the runner binary | Hardcoded in runner |
 | `tool_profile_sha256` | Hash of the tool profile used | Computed at runtime |
 
 **Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other three fields are informational: they support reproducibility and audit trails but do not trigger staleness.
 
-`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which supports map was active. Together, these five fields make any run fully reproducible.
+Scoring version 2.1 makes full-corpus scores primary, treats applicable-only
+scores as diagnostic, and counts an adapter's inability to execute a declared
+applicable transport as an error. Results from 2.0 are stale even when the case
+corpus bytes are unchanged.
+
+`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which capability claims were active. Together, these five fields make any run fully reproducible.
 
 ## Running the Gauntlet
 

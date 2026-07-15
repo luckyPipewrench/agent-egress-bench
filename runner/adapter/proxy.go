@@ -1,16 +1,17 @@
 // Package adapter — proxy adapter sends cases through an HTTP proxy.
 //
-// Works with any tool that operates as an HTTP/HTTPS proxy with a scan API
-// (pipelock, or any tool implementing the same endpoints). Point --proxy-addr
+// Works with any tool that operates as an HTTP/HTTPS proxy. Point --proxy-addr
 // at the tool's listen address and the adapter sends real traffic through it.
 //
 // Transport mapping:
 //   - fetch_proxy  → GET /fetch?url=...
 //   - http_proxy   → CONNECT tunnel via HTTPS_PROXY
 //   - websocket    → GET /ws?url=... (connection attempt)
-//   - mcp_stdio    → POST /api/v1/scan (kind: tool_call or text)
-//   - mcp_http     → POST /api/v1/scan (kind: tool_call or text)
-//   - a2a          → POST /api/v1/scan (kind: text)
+//   - mcp_stdio    → configured MCP stdio proxy command
+//
+// Unsupported transports return skip. They are never substituted with a
+// different transport because that would turn a scanner result into false
+// evidence that the requested transport was exercised.
 package adapter
 
 import (
@@ -42,8 +43,10 @@ import (
 // rewrite under a stable hostname instead of a raw loopback IP lets the
 // tool reject SSRF attacks that target loopback directly while still
 // reaching the benign fixture under test.
-const fixtureHostname = "aeb-fixture.test"
-const wsFixtureHostname = fixtureHostname
+const (
+	fixtureHostname   = "aeb-fixture.test"
+	wsFixtureHostname = fixtureHostname
+)
 
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
 // whether the proxy blocked or allowed the request.
@@ -83,47 +86,77 @@ func (p *ProxyAdapter) SetWSFixture(addr string) { p.wsAddr = addr }
 
 // Run sends the case payload through the proxy and returns the verdict.
 func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
-	// Payload-only surfaces should be scanned directly. Sending their fake
-	// upstream URLs over the network turns scanner coverage into DNS/TLS/SSRF
-	// fixture noise and hides whether the tool can inspect the supplied data.
-	switch c.InputType {
-	case "response_content":
-		return p.runResponseContentViaScanAPI(c, timeout)
-	case "request_body", "header":
-		return p.runBodyViaScanAPI(c, timeout)
-	case "websocket_frame":
-		return p.runWebSocketFrameViaProxy(c, timeout)
-	}
+	var result Result
 	switch c.Transport {
 	case "fetch_proxy":
-		return p.runFetchProxy(c, timeout)
+		if c.InputType == "response_content" {
+			result = p.runResponseContentViaFetchProxy(c, timeout)
+		} else {
+			result = p.runFetchProxy(c, timeout)
+		}
 	case "http_proxy":
-		result := p.runHTTPProxy(c, timeout)
-		if result.Verdict == "skip" && c.InputType == "url" {
-			return p.runFetchProxy(c, timeout)
-		}
-		return result
+		result = p.runHTTPProxy(c, timeout)
 	case "websocket":
-		return p.runWebSocket(c, timeout)
-	case "mcp_stdio", "mcp_http":
-		return p.runMCPStdio(c, timeout)
+		if c.InputType == "websocket_frame" {
+			result = p.runWebSocketFrameViaProxy(c, timeout)
+		} else if c.InputType == "url" || c.InputType == "header" {
+			result = p.runWebSocket(c, timeout)
+		} else {
+			result = unsupportedTransport(c, "websocket payload execution is not implemented for this input type")
+		}
+	case "mcp_stdio":
+		result = p.runMCPStdio(c, timeout)
+	case "mcp_http":
+		result = unsupportedTransport(c, "MCP HTTP execution is not implemented")
 	case "a2a":
-		// A2A: scan API first (fast), then MCP proxy (deeper DLP with encoding decode).
-		result := p.runScanAPIDualPass(c, timeout)
-		if result.Verdict == "block" || result.Err != nil {
-			return result
-		}
-		// Scan API allowed — try routing through MCP proxy for wider coverage.
-		if p.mcpCmd != "" {
-			return p.runA2AViaMCP(c, timeout)
-		}
-		return result
+		result = unsupportedTransport(c, "A2A execution is not implemented")
 	default:
-		return Result{
-			Verdict:  "skip",
-			Evidence: map[string]interface{}{"reason": fmt.Sprintf("unknown transport %q", c.Transport)},
-		}
+		result = unsupportedTransport(c, fmt.Sprintf("unknown transport %q", c.Transport))
 	}
+	if result.Evidence == nil {
+		result.Evidence = make(map[string]interface{})
+	}
+	result.Evidence["observed_transport"] = c.Transport
+	return result
+}
+
+func unsupportedTransport(c Case, reason string) Result {
+	return Result{
+		Verdict: "skip",
+		Evidence: map[string]interface{}{
+			"reason":              reason,
+			"requested_transport": c.Transport,
+		},
+	}
+}
+
+// runResponseContentViaFetchProxy serves the corpus response from the local
+// fixture and fetches it through the requested transport. A direct scan API
+// call is not equivalent evidence because it bypasses response interception.
+func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Duration) Result {
+	responseBody, ok := payloadString(c.Payload, "response_body")
+	if !ok || responseBody == "" {
+		return Result{Err: fmt.Errorf("case %s: payload missing 'response_body'", c.ID)}
+	}
+	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+		return unsupportedTransport(c, "no HTTP response fixture configured")
+	}
+	_, port, err := net.SplitHostPort(p.httpFixtureAddr)
+	if err != nil || port == "" {
+		return Result{Err: fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)}
+	}
+	// Keep the fixture path deliberately low-entropy. A path derived from the
+	// case ID can trigger the product's URL-entropy scanner before it ever sees
+	// the response body, turning a benign response case into a runner-created
+	// false positive. Cases execute sequentially, so one stable route is enough.
+	path := "/response/content"
+	p.setHTTPRoute(path, responseBody)
+	fixtureCase := c
+	fixtureCase.Payload = map[string]interface{}{
+		"method": http.MethodGet,
+		"url":    "http://" + net.JoinHostPort(fixtureHostname, port) + path,
+	}
+	return p.runFetchProxy(fixtureCase, timeout)
 }
 
 // runResponseContentViaScanAPI scans the response_body field directly. These
@@ -350,6 +383,9 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode == http.StatusMethodNotAllowed && method != http.MethodGet {
+		return unsupportedTransport(c, fmt.Sprintf("fetch proxy does not support %s requests", method))
+	}
 
 	// The fetch endpoint returns JSON with blocked, block_reason, and scanner fields.
 	var fetchResp struct {
@@ -403,26 +439,10 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
 	}
 
-	// Response-MITM cases have a response_body field. Route through the
-	// fetch endpoint + HTTP fixture so the proxy scans the response content.
+	// Response-MITM requires a TLS origin trusted by the benchmark client and
+	// interception by the product. The HTTP fixture cannot prove that path.
 	if respBody, ok := payloadString(c.Payload, "response_body"); ok && respBody != "" {
-		if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
-			return Result{
-				Verdict:  "skip",
-				Evidence: map[string]interface{}{"reason": "no_response_fixture"},
-			}
-		}
-		path := "/" + c.ID
-		p.setHTTPRoute(path, respBody)
-		// Route through fetch endpoint instead of CONNECT tunnel.
-		fixtureURL := "http://" + p.httpFixtureAddr + path
-		fetchCase := Case{
-			ID:              c.ID,
-			ExpectedVerdict: c.ExpectedVerdict,
-			Transport:       "fetch_proxy",
-			Payload:         map[string]interface{}{"url": fixtureURL},
-		}
-		return p.runFetchProxy(fetchCase, timeout)
+		return unsupportedTransport(c, "HTTP response interception fixture is not implemented")
 	}
 
 	method, _ := payloadString(c.Payload, "method")
