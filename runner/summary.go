@@ -14,8 +14,9 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	scoringVersion  = "2.0"
-	runnerVersion   = "0.2.0"
+	scoringVersion  = "2.1"
+	runnerVersion   = "0.3.0"
+	corpusVersion   = "v2.1.0"
 	summaryDateEnv  = "AEB_GAUNTLET_SUMMARY_DATE"
 )
 
@@ -176,11 +177,17 @@ func buildToolSupport(p Profile) ToolSupport {
 	}
 }
 
-func summaryDate() string {
+func summaryDate() (string, error) {
 	if date, ok := os.LookupEnv(summaryDateEnv); ok {
-		return date
+		if date == "" {
+			return "", nil
+		}
+		if _, err := time.Parse(time.RFC3339, date); err != nil {
+			return "", fmt.Errorf("%s must be empty or RFC3339: %w", summaryDateEnv, err)
+		}
+		return date, nil
 	}
-	return time.Now().UTC().Format(time.RFC3339)
+	return time.Now().UTC().Format(time.RFC3339), nil
 }
 
 // buildSummary assembles the GauntletSummary from run results.
@@ -200,6 +207,10 @@ func buildSummary(
 	}
 
 	profileSHA, err := computeProfileSHA256(profilePath)
+	if err != nil {
+		return GauntletSummary{}, err
+	}
+	date, err := summaryDate()
 	if err != nil {
 		return GauntletSummary{}, err
 	}
@@ -224,10 +235,10 @@ func buildSummary(
 		RunnerVersion:     runnerVersion,
 		Tool:              p.Tool,
 		ToolVersion:       p.ToolVersion,
-		CorpusVersion:     "v2.0.0",
+		CorpusVersion:     corpusVersion,
 		CorpusSHA256:      corpusSHA,
 		ToolProfileSHA256: profileSHA,
-		Date:              summaryDate(),
+		Date:              date,
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),

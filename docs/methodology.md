@@ -130,7 +130,7 @@ Five provenance fields identify a Gauntlet run:
 | Field | What it tracks | Source |
 |-------|---------------|--------|
 | `corpus_version` | Tag or commit of the case corpus | Repository tag |
-| `scoring_version` | Version of the Gauntlet scoring rules | `gauntlet_version` in summary JSON |
+| `scoring_version` | Version of the Gauntlet scoring rules | `scoring_version` in summary JSON |
 | `corpus_sha256` | Hash of all case file contents (sorted by path) | Computed at runtime |
 | `runner_version` | Version of the runner binary | Hardcoded in runner |
 | `tool_profile_sha256` | Hash of the tool profile used | Computed at runtime |

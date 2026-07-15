@@ -148,6 +148,34 @@ func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 	}
 }
 
+func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
+	t.Setenv(summaryDateEnv, "not-rfc3339")
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		nil,
+		nil,
+		0,
+		dir,
+		"",
+		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		profilePath,
+	)
+	if err == nil || !strings.Contains(err.Error(), "must be empty or RFC3339") {
+		t.Fatalf("buildSummary error = %v, want invalid fixed-date rejection", err)
+	}
+}
+
 func TestWriteSummaryOmitsEmptyDate(t *testing.T) {
 	t.Setenv(summaryDateEnv, "")
 
@@ -253,7 +281,7 @@ func TestWriteSummary(t *testing.T) {
 		RunnerVersion:     runnerVersion,
 		Tool:              "test-tool",
 		ToolVersion:       "1.0.0",
-		CorpusVersion:     "v2.0.0",
+		CorpusVersion:     corpusVersion,
 		CorpusSHA256:      "abc123",
 		ToolProfileSHA256: "def456",
 		Date:              "2026-03-28T00:00:00Z",
