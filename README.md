@@ -85,7 +85,7 @@ cd validate && go build -o aeb-validate .
 ./aeb-validate profile path/to/tool-profile.json
 ```
 
-**Run against a tool.** Each tool ships its own runner. The Go program in [`runner/`](runner/) is the reference implementation; it brings up TLS, WebSocket, and DNS fixtures, wires the scan API and MCP-stdio transports, and emits the Gauntlet summary and an optional receipt-scoring profile.
+**Run against a tool.** Each tool ships its own runner. The Go program in [`runner/`](runner/) is the reference implementation; it brings up HTTP, TLS, WebSocket, DNS, and MCP HTTP fixtures, executes declared transports through the selected adapter, and emits the Gauntlet summary and an optional receipt-scoring profile.
 
 For Pipelock, the full reproducible invocation is in [docs/RUNNER.md](docs/RUNNER.md#reproducing-a-receipt-profile). The short form:
 

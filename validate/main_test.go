@@ -876,6 +876,75 @@ func TestRequestBodyValidPayload(t *testing.T) {
 	}
 }
 
+func TestCryptoFinancialCreditCardRequestBodyContract(t *testing.T) {
+	path := filepath.Join("..", "cases", "crypto-financial", "crypto-credit-card-006.json")
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		t.Skip("crypto financial corpus case not found (running outside repo)")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var c Case
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("unmarshal case: %v", err)
+	}
+	if c.SchemaVersion != 2 {
+		t.Fatalf("schema_version = %d, want 2", c.SchemaVersion)
+	}
+	if len(c.Requires) != 1 || c.Requires[0] != "crypto_dlp_scanning" {
+		t.Fatalf("requires = %v, want [crypto_dlp_scanning]", c.Requires)
+	}
+	if c.Category != "crypto_financial" || c.InputType != "request_body" || c.Transport != "http_proxy" {
+		t.Fatalf("case route = %s/%s/%s, want crypto_financial/request_body/http_proxy", c.Category, c.InputType, c.Transport)
+	}
+
+	ids := make(map[string]string)
+	if errors := validateFile(path, ids); len(errors) > 0 {
+		t.Errorf("expected no errors for crypto financial credit-card request body case, got: %v", errors)
+	}
+}
+
+func TestCryptoFinancialHTTPProxyHeaderContract(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "crypto-financial", "crypto-header-valid-001.json", `{
+		"schema_version": 2, "id": "crypto-header-valid-001", "category": "crypto_financial",
+		"title": "T", "description": "D", "input_type": "header",
+		"transport": "http_proxy",
+		"payload": {"method": "GET", "url": "https://example.com", "headers": {"X-Wallet": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"}},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["crypto_dlp"], "requires": ["crypto_dlp_scanning"],
+		"false_positive_risk": "medium", "why_expected": "test",
+		"notes": "", "source": "synthetic: crypto header"
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "crypto-financial", "crypto-header-valid-001.json")
+	if errors := validateFile(path, ids); len(errors) > 0 {
+		t.Errorf("expected no errors for crypto financial header http_proxy case, got: %v", errors)
+	}
+}
+
+func TestCryptoFinancialHTTPProxyRejectsURLInput(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "crypto-financial", "crypto-url-http-proxy-invalid-001.json", `{
+		"schema_version": 2, "id": "crypto-url-http-proxy-invalid-001", "category": "crypto_financial",
+		"title": "T", "description": "D", "input_type": "url",
+		"transport": "http_proxy",
+		"payload": {"method": "GET", "url": "https://example.com/?wallet=bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["crypto_dlp"], "requires": ["crypto_dlp_scanning"],
+		"false_positive_risk": "medium", "why_expected": "test",
+		"notes": "", "source": "synthetic: crypto url"
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "crypto-financial", "crypto-url-http-proxy-invalid-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, `category "crypto_financial" allows http_proxy only for request_body or header input_type`)
+}
+
 func TestHeaderValidPayload(t *testing.T) {
 	dir := t.TempDir()
 	writeCase(t, dir, "headers", "headers-valid-001.json", `{

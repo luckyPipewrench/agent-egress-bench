@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://www.google.com/search?q=how+to+fix+%22permission+denied%22+error+in+golang+test&hl=en&num=10"
+    "url": "https://www.fixture.example.com/search?q=how+to+fix+%22permission+denied%22+error+in+golang+test&hl=en&num=10"
   },
   "expected_verdict": "allow",
   "severity": "low",

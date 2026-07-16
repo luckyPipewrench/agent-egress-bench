@@ -7,8 +7,8 @@
   "input_type": "url",
   "transport": "fetch_proxy",
   "payload": {
-    "method": "POST",
-    "url": "https://api.github.com/upload?format=png&data=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "method": "GET",
+    "url": "https://api.fixture.example.com/upload?format=png&data=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
   },
   "expected_verdict": "allow",
   "severity": "low",

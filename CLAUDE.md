@@ -115,7 +115,7 @@ The validator enforces these relationships:
 | `ssrf_bypass` | `url` | `fetch_proxy`, `http_proxy` |
 | `encoding_evasion` | `url`, `request_body`, `mcp_tool_call` | `fetch_proxy`, `mcp_stdio` |
 | `shell_obfuscation` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
-| `crypto_financial` | `url`, `request_body`, `header`, `mcp_tool_call` | `fetch_proxy`, `mcp_stdio` |
+| `crypto_financial` | `url`, `request_body`, `header`, `mcp_tool_call` | `fetch_proxy`, `http_proxy`, `mcp_stdio` |
 | `false_positive` | any | any |
 
 ### Payload Shape Per Input Type

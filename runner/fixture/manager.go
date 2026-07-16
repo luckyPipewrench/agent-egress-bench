@@ -9,6 +9,7 @@ type Manager struct {
 	tls  *TLSFixture
 	ws   *WSFixture
 	dns  *DNSFixture
+	mcp  *MCPHTTPFixture
 }
 
 // StartAll starts all fixtures. Call Close() when done.
@@ -39,7 +40,16 @@ func StartAll() (*Manager, error) {
 		return nil, fmt.Errorf("DNS fixture: %w", err)
 	}
 
-	return &Manager{http: h, tls: t, ws: w, dns: d}, nil
+	m, err := StartMCPHTTP()
+	if err != nil {
+		h.Close()
+		t.Close()
+		w.Close()
+		d.Close()
+		return nil, fmt.Errorf("MCP HTTP fixture: %w", err)
+	}
+
+	return &Manager{http: h, tls: t, ws: w, dns: d, mcp: m}, nil
 }
 
 // HTTP returns the HTTP response fixture.
@@ -54,6 +64,9 @@ func (m *Manager) WS() *WSFixture { return m.ws }
 // DNS returns the DNS fixture.
 func (m *Manager) DNS() *DNSFixture { return m.dns }
 
+// MCPHTTP returns the MCP Streamable HTTP fixture.
+func (m *Manager) MCPHTTP() *MCPHTTPFixture { return m.mcp }
+
 // Close stops all fixtures and cleans up temp files.
 func (m *Manager) Close() {
 	if m.http != nil {
@@ -67,5 +80,8 @@ func (m *Manager) Close() {
 	}
 	if m.dns != nil {
 		m.dns.Close()
+	}
+	if m.mcp != nil {
+		m.mcp.Close()
 	}
 }

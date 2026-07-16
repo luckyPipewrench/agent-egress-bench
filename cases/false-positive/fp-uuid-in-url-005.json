@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://api.github.com/resources/550e8400-e29b-41d4-a716-446655440000/details"
+    "url": "https://api.fixture.example.com/resources/550e8400-e29b-41d4-a716-446655440000/details"
   },
   "expected_verdict": "allow",
   "severity": "low",

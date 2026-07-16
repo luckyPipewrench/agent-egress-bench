@@ -30,7 +30,7 @@ type TLSFixture struct {
 	caFile   string // path to CA cert PEM (for pipelock config)
 	keyFile  string // path to CA key PEM (for pipelock config)
 	mu       sync.Mutex
-	routes   map[string]string // path → response body
+	routes   map[string]HTTPRoute // path -> response metadata
 }
 
 // TLSFixtureAddr returns the listener address (host:port).
@@ -46,9 +46,14 @@ func (f *TLSFixture) KeyFile() string { return f.keyFile }
 
 // SetRoute configures a response body for a given URL path.
 func (f *TLSFixture) SetRoute(path, body string) {
+	f.SetRouteWithContentType(path, body, "application/json")
+}
+
+// SetRouteWithContentType configures a response for a given URL path.
+func (f *TLSFixture) SetRouteWithContentType(path, body, contentType string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.routes[path] = body
+	f.routes[path] = HTTPRoute{Body: body, ContentType: contentType}
 }
 
 // StartTLS creates a TLS fixture with a self-signed CA and starts serving.
@@ -123,22 +128,22 @@ func StartTLS() (*TLSFixture, error) {
 	}
 
 	f := &TLSFixture{
-		caFile: caFile.Name(),
+		caFile:  caFile.Name(),
 		keyFile: keyFile.Name(),
-		routes: make(map[string]string),
+		routes:  make(map[string]HTTPRoute),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
-		body, ok := f.routes[r.URL.Path]
+		route, ok := f.routes[r.URL.Path]
 		f.mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, body)
+		w.Header().Set("Content-Type", route.ContentType)
+		_, _ = fmt.Fprint(w, route.Body)
 	})
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

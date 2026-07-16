@@ -8,11 +8,13 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://example.com/search?q=glance-2026-summary-report-final"
+    "url": "https://www.fixture.example.com/search?q=glance-2026-summary-report-final"
   },
   "expected_verdict": "allow",
   "severity": "low",
-  "capability_tags": ["benign"],
+  "capability_tags": [
+    "benign"
+  ],
   "requires": [],
   "false_positive_risk": "medium",
   "why_expected": "english_word_not_a_gitlab_token_prefix",

@@ -5,10 +5,10 @@
   "title": "Normal JSON API request with no secrets",
   "description": "Standard API call to create a calendar event. Body contains only non-sensitive data.",
   "input_type": "request_body",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
-    "url": "https://api.github.com/v1/events",
+    "url": "https://api.fixture.example.com/v1/events",
     "content_type": "application/json",
     "body": "{\"title\": \"Team standup\", \"start\": \"2026-03-10T09:00:00Z\", \"end\": \"2026-03-10T09:30:00Z\", \"location\": \"Conference Room B\", \"attendees\": [\"alice@example.com\", \"bob@example.com\"], \"reminder_minutes\": 15}"
   },

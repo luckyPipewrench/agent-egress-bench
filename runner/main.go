@@ -22,6 +22,9 @@ func main() {
 	scanAddr := flag.String("scan-addr", "", "scan API address for MCP/A2A cases (defaults to proxy-addr)")
 	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
 	mcpCmd := flag.String("mcp-cmd", "", "MCP proxy command for MCP/A2A/shell cases (e.g. 'pipelock mcp proxy --config bench.yaml -- cat')")
+	mcpHTTPURL := flag.String("mcp-http-url", "", "MCP HTTP listener URL for mcp_http cases")
+	managedProxyCmd := flag.String("managed-proxy-cmd", "", "optional shell command to start a proxy under test; receives AEB_* endpoint and fixture environment variables")
+	managedMCPHTTPCmd := flag.String("managed-mcp-http-cmd", "", "optional shell command to start an MCP HTTP endpoint under test; receives AEB_* endpoint and fixture environment variables")
 	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile.schema.json) to this path alongside the Gauntlet summary")
@@ -41,13 +44,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug); err != nil {
+	if err := runWithOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool) error {
+	return runWithOptions(casesDir, profilePath, outputPath, timeout, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, "", "", "", useFixtures, emitReceiptProfile, receiptVerifierFile, multiFileCases, debug)
+}
+
+func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -87,6 +94,33 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 
 	// Select adapter based on flag.
 	var adapt adapter.Adapter
+	var fm *fixture.Manager
+	if useFixtures || managedProxyCmd != "" || managedMCPHTTPCmd != "" {
+		var fErr error
+		fm, fErr = fixture.StartAll()
+		if fErr != nil {
+			return fmt.Errorf("starting fixtures: %w", fErr)
+		}
+		defer fm.Close()
+	}
+	var managed *managedProcesses
+	if managedProxyCmd != "" || managedMCPHTTPCmd != "" {
+		var managedErr error
+		managed, managedErr = startManagedProcesses(managedProxyCmd, managedMCPHTTPCmd, fm, timeout)
+		if managedErr != nil {
+			return managedErr
+		}
+		defer managed.Close()
+		if managed.proxyAddr != "" {
+			proxyAddr = managed.proxyAddr
+		}
+		if managed.scanAddr != "" {
+			scanAddr = managed.scanAddr
+		}
+		if managed.mcpHTTPURL != "" {
+			mcpHTTPURL = managed.mcpHTTPURL
+		}
+	}
 	switch adapterName {
 	case "dryrun":
 		adapt = adapter.DryRunAdapter{}
@@ -111,16 +145,15 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 		if proxyErr != nil {
 			return proxyErr
 		}
-		if useFixtures {
-			fm, fErr := fixture.StartAll()
-			if fErr != nil {
-				return fmt.Errorf("starting fixtures: %w", fErr)
-			}
-			defer fm.Close()
-			pa.SetHTTPFixture(fm.HTTP().Addr(), fm.HTTP().SetRoute)
+		if fm != nil {
+			pa.SetHTTPFixtureWithContentType(fm.HTTP().Addr(), fm.HTTP().SetRouteWithContentType)
+			pa.SetTLSFixtureWithContentType(fm.TLS().Addr(), fm.TLS().CAFile(), fm.TLS().SetRouteWithContentType)
 			pa.SetWSFixture(fm.WS().Addr())
-			_, _ = fmt.Fprintf(os.Stderr, "Fixtures: HTTP=%s WS=%s DNS=%s\n",
-				fm.HTTP().Addr(), fm.WS().Addr(), fm.DNS().Addr())
+			_, _ = fmt.Fprintf(os.Stderr, "Fixtures: HTTP=%s TLS=%s WS=%s DNS=%s MCP_HTTP=%s\n",
+				fm.HTTP().Addr(), fm.TLS().Addr(), fm.WS().Addr(), fm.DNS().Addr(), fm.MCPHTTP().Addr())
+		}
+		if mcpHTTPURL != "" {
+			pa.SetMCPHTTPURL(mcpHTTPURL)
 		}
 		adapt = pa
 	default:

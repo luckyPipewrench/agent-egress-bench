@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://api.github.com/repos/golang/go/issues?state=open&page=2&per_page=30&sort=updated"
+    "url": "https://api.fixture.example.com/repos/golang/go/issues?state=open&page=2&per_page=30&sort=updated"
   },
   "expected_verdict": "allow",
   "severity": "low",
