@@ -22,7 +22,7 @@ trap 'rm -f "$tmp_config"' EXIT
 
 awk -v scan_addr="$AEB_SCAN_ADDR" '
   /^scan_api:/ { in_scan_api = 1 }
-  in_scan_api && /^[[:space:]]listen:/ {
+  in_scan_api && /^[[:space:]]+listen:/ {
     print "  listen: \"" scan_addr "\""
     in_scan_api = 0
     next
