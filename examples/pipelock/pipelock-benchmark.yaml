@@ -18,6 +18,9 @@ fetch_proxy:
   monitoring:
     max_url_length: 2000
     entropy_threshold: 4.0
+    # Use an effectively unbounded request rate for deterministic benchmark
+    # runs. In Pipelock, zero is normalized to the product default rather than
+    # disabling the limiter.
     max_requests_per_minute: 10000
     max_data_per_minute: 0
     blocklist:

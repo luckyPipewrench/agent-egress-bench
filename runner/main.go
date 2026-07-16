@@ -23,8 +23,8 @@ func main() {
 	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
 	mcpCmd := flag.String("mcp-cmd", "", "MCP proxy command for MCP/A2A/shell cases (e.g. 'pipelock mcp proxy --config bench.yaml -- cat')")
 	mcpHTTPURL := flag.String("mcp-http-url", "", "MCP HTTP listener URL for mcp_http cases")
-	pipelockBin := flag.String("pipelock-bin", "", "if set, start this Pipelock binary with managed benchmark fixtures")
-	pipelockConfig := flag.String("pipelock-config", "", "Pipelock benchmark config used with --pipelock-bin")
+	managedProxyCmd := flag.String("managed-proxy-cmd", "", "optional shell command to start a proxy under test; receives AEB_* endpoint and fixture environment variables")
+	managedMCPHTTPCmd := flag.String("managed-mcp-http-cmd", "", "optional shell command to start an MCP HTTP endpoint under test; receives AEB_* endpoint and fixture environment variables")
 	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile.schema.json) to this path alongside the Gauntlet summary")
@@ -44,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := runWithOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *pipelockBin, *pipelockConfig, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug); err != nil {
+	if err := runWithOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -54,7 +54,7 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 	return runWithOptions(casesDir, profilePath, outputPath, timeout, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, "", "", "", useFixtures, emitReceiptProfile, receiptVerifierFile, multiFileCases, debug)
 }
 
-func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, pipelockBin, pipelockConfig string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool) error {
+func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -95,7 +95,7 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 	// Select adapter based on flag.
 	var adapt adapter.Adapter
 	var fm *fixture.Manager
-	if useFixtures || pipelockBin != "" {
+	if useFixtures || managedProxyCmd != "" || managedMCPHTTPCmd != "" {
 		var fErr error
 		fm, fErr = fixture.StartAll()
 		if fErr != nil {
@@ -103,17 +103,23 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 		}
 		defer fm.Close()
 	}
-	var managed *managedPipelock
-	if pipelockBin != "" {
+	var managed *managedProcesses
+	if managedProxyCmd != "" || managedMCPHTTPCmd != "" {
 		var managedErr error
-		managed, managedErr = startManagedPipelock(pipelockBin, pipelockConfig, fm, timeout)
+		managed, managedErr = startManagedProcesses(managedProxyCmd, managedMCPHTTPCmd, fm, timeout)
 		if managedErr != nil {
 			return managedErr
 		}
 		defer managed.Close()
-		proxyAddr = managed.proxyAddr
-		scanAddr = managed.scanAddr
-		mcpHTTPURL = managed.mcpHTTPURL
+		if managed.proxyAddr != "" {
+			proxyAddr = managed.proxyAddr
+		}
+		if managed.scanAddr != "" {
+			scanAddr = managed.scanAddr
+		}
+		if managed.mcpHTTPURL != "" {
+			mcpHTTPURL = managed.mcpHTTPURL
+		}
 	}
 	switch adapterName {
 	case "dryrun":

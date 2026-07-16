@@ -164,6 +164,9 @@ func TestRunA2AMessageUsesCanonicalForwardProxyEndpoint(t *testing.T) {
 			},
 		},
 	}, time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block; err = %v", result.Verdict, result.Err)
+	}
 	if scanCalls != 0 {
 		t.Fatalf("scan API called %d times; A2A message must use forward proxy", scanCalls)
 	}
@@ -214,6 +217,9 @@ func TestRunA2AAgentCardUsesCanonicalForwardProxyEndpoint(t *testing.T) {
 			"agent_card": map[string]interface{}{"name": "proof", "description": "clean"},
 		},
 	}, time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block; err = %v", result.Verdict, result.Err)
+	}
 	if scanCalls != 0 {
 		t.Fatalf("scan API called %d times; A2A Agent Card must use forward proxy", scanCalls)
 	}
@@ -324,6 +330,40 @@ func TestRunHTTPProxyResponseContentRequiresTLSFixture(t *testing.T) {
 	}
 }
 
+func TestRunHTTPProxyResponseContentPreservesContentType(t *testing.T) {
+	a, _ := NewProxyAdapter("127.0.0.1:1", "", "", "")
+	a.tlsFixtureAddr = "127.0.0.1:34567"
+	a.tlsCAFile = "/does/not/exist"
+
+	var gotPath, gotBody, gotContentType string
+	a.setTLSRoute = func(path, body string) {
+		gotPath, gotBody, gotContentType = path, body, "fallback"
+	}
+	a.setTLSRouteCT = func(path, body, contentType string) {
+		gotPath, gotBody, gotContentType = path, body, contentType
+	}
+
+	result := a.Run(Case{
+		ID:        "tls-response-content-type",
+		Transport: "http_proxy",
+		InputType: "response_content",
+		Payload: map[string]interface{}{
+			"url":           "https://api.vendor.example/response",
+			"response_body": "plain text injection",
+			"content_type":  "text/plain; charset=utf-8",
+		},
+	}, time.Second)
+	if result.Err == nil {
+		t.Fatal("expected fixture CA load error after route setup")
+	}
+	if gotPath != "/response/c1" || gotBody != "plain text injection" {
+		t.Fatalf("fixture path/body = %q/%q", gotPath, gotBody)
+	}
+	if gotContentType != "text/plain; charset=utf-8" {
+		t.Fatalf("content-type = %q, want text/plain; charset=utf-8", gotContentType)
+	}
+}
+
 func TestRunFetchProxyMethodNotSupportedIsObservedVerdict(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -371,6 +411,16 @@ func TestRunMissingFixtureIsNotObserved(t *testing.T) {
 	}
 	if got, ok := result.Evidence["observed_transport"]; ok {
 		t.Fatalf("observed_transport = %v, want absent", got)
+	}
+}
+
+func TestClassifyMCPHTTPBlock_UnmatchedJSONRPCErrorFails(t *testing.T) {
+	result := classifyMCPHTTPBlock([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"custom error"}}`))
+	if result == nil || result.Err == nil {
+		t.Fatalf("expected unmatched JSON-RPC error to fail, got %+v", result)
+	}
+	if !strings.Contains(result.Err.Error(), "JSON-RPC error -1: custom error") {
+		t.Fatalf("error = %v", result.Err)
 	}
 }
 

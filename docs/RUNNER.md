@@ -130,25 +130,19 @@ Reproducibility:
 - Per-case rows are sorted by `case_id` and the runner emits no timestamps in the profile. Repeated runs against the same corpus and tool profile produce byte-identical output. A relying party can reproduce a published profile by running the same command and `sha256sum`-comparing the result.
 - The Gauntlet summary includes a `date` by default. For byte-stable summary JSON, set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value, or set it to an empty string to omit the field.
 
-Example (reproduces `profiles/pipelock.json`):
+Example shape for a tool-specific benchmark run:
 
 ```bash
-# 1. Start a benchmark-configured Pipelock instance. The bench config
-#    listens on 127.0.0.1:18899 (proxy), :9990 (scan API), and enables
-#    every scanner with action=block.
-pipelock run \
-  --config examples/pipelock/pipelock-benchmark.yaml \
-  --listen 127.0.0.1:18899 &
-
-# 2. Run the corpus through it, emitting both the gauntlet summary and
-#    the receipt-scoring profile. The --mcp-cmd is required for MCP
-#    cases; omitting it would skip them and break byte reproducibility.
-go run ./runner \
+cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
+export PIPELOCK_BIN=/path/to/pipelock
+export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
+/tmp/aeb-gauntlet \
   --adapter proxy \
-  --proxy-addr 127.0.0.1:18899 \
-  --scan-addr 127.0.0.1:9990 \
   --scan-token bench-test-token \
-  --mcp-cmd "pipelock mcp proxy --config examples/pipelock/pipelock-benchmark.yaml -- cat" \
+  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" -- cat" \
+  --managed-proxy-cmd './examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"' \
+  --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
+  --fixtures \
   --cases ./cases \
   --multifile-cases ./cases/mcp-drift \
   --profile examples/pipelock/tool-profile.json \
@@ -162,4 +156,7 @@ sha256sum /tmp/pipelock.json profiles/pipelock.json
 diff -q /tmp/pipelock.json profiles/pipelock.json
 ```
 
-A mismatch means the corpus drifted, the tool drifted, or the runner changed. A relying party reproducing a profile should treat a mismatch as a signal to investigate, not to trust either side blindly.
+Published profile reproduction should name the exact tool binary and corpus commit
+used for the run. A mismatch means the corpus drifted, the tool drifted, or the
+runner changed. A relying party reproducing a profile should treat a mismatch as a
+signal to investigate, not to trust either side blindly.

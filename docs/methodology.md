@@ -123,6 +123,9 @@ An adapter must execute the case's declared transport. A scan API result is not 
 
 Applicability is decided before adapter execution. If an adapter cannot execute a case that the tool profile declared applicable, the result is `error`, not `not_applicable`. This makes missing fixtures visible and lets the error-rate gate invalidate incomplete runs.
 
+`mcp_http` cases target the tool's MCP HTTP listener directly. They are a
+distinct MCP ingress surface, not evidence for HTTP forward-proxy enforcement.
+
 WebSocket cases also need careful interpretation when a fixture address is local: a proxy may block the loopback fixture as SSRF before any frame scan occurs. Such a result proves SSRF enforcement, not that the WebSocket frame scanner evaluated the payload. Evidence should identify the observed enforcement layer when possible.
 
 ## Versioning

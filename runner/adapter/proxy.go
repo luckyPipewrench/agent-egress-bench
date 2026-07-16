@@ -565,7 +565,11 @@ func (p *ProxyAdapter) runResponseContentViaTLSIntercept(c Case, timeout time.Du
 		return Result{Err: fmt.Errorf("case %s: invalid TLS fixture address %q", c.ID, p.tlsFixtureAddr)}
 	}
 	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
-	p.setTLSRoute(path, responseBody)
+	if contentType, _ := payloadString(c.Payload, "content_type"); contentType != "" && p.setTLSRouteCT != nil {
+		p.setTLSRouteCT(path, responseBody, contentType)
+	} else {
+		p.setTLSRoute(path, responseBody)
+	}
 	target := "https://" + net.JoinHostPort(fixtureHostname, port) + path
 	return p.doHTTPProxyRequest(c.ID, http.MethodGet, target, nil, nil, timeout, p.tlsCAFile)
 }
@@ -1323,6 +1327,7 @@ func classifyMCPHTTPBlock(body []byte) *Result {
 			if code <= -32600 {
 				return &Result{Err: fmt.Errorf("JSON-RPC protocol error %d: %s", code, rpcResp.Error.Message)}
 			}
+			return &Result{Err: fmt.Errorf("JSON-RPC error %d: %s", code, rpcResp.Error.Message)}
 		}
 	}
 	return nil

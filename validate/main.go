@@ -429,6 +429,10 @@ func validateFile(path string, ids map[string]string) []string {
 				c.Category, c.Transport, strings.Join(allowed, ", ")))
 		}
 	}
+	if c.Category == "crypto_financial" && c.Transport == "http_proxy" &&
+		c.InputType != "request_body" && c.InputType != "header" {
+		addErr("category \"crypto_financial\" allows http_proxy only for request_body or header input_type")
+	}
 
 	// Payload shape validation per input_type
 	if c.Payload != nil && validInputTypes[c.InputType] {
