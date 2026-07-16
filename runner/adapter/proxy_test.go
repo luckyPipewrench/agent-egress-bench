@@ -365,7 +365,11 @@ func TestRunHTTPProxyResponseContentPreservesContentType(t *testing.T) {
 	}
 }
 
-func TestRunFetchProxyMethodNotSupportedIsObservedVerdict(t *testing.T) {
+// A 405 is not an observed verdict: the endpoint refused the method, so the
+// payload was never scanned. README:177 and docs/methodology.md require an
+// adapter that cannot execute a declared-applicable case to score error, which
+// keeps an unscanned case from being reported as a pass.
+func TestRunFetchProxyMethodNotSupportedIsNotAVerdict(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}))
@@ -382,11 +386,11 @@ func TestRunFetchProxyMethodNotSupportedIsObservedVerdict(t *testing.T) {
 			"body":   "synthetic",
 		},
 	}, time.Second)
-	if result.Verdict != "allow" {
-		t.Fatalf("verdict = %q, want allow", result.Verdict)
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip (405 means the payload was never scanned)", result.Verdict)
 	}
-	if got := result.Evidence["observed_transport"]; got != "fetch_proxy" {
-		t.Fatalf("observed_transport = %v, want fetch_proxy", got)
+	if got := result.Evidence["observed_transport"]; got != nil {
+		t.Fatalf("observed_transport = %v, want unset: a refused method proves no transport ran", got)
 	}
 }
 

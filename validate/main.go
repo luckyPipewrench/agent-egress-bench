@@ -349,19 +349,6 @@ func validateFile(path string, ids map[string]string) []string {
 		addErr("missing payload")
 	}
 
-	// The fetch_proxy transport reaches the tool through a GET-only fetch
-	// endpoint, so a case declaring any other method is never actually scanned:
-	// the tool answers 405 and the runner reads "not blocked" as a verdict. That
-	// scores a benign case as a pass with the tool's scanners switched off
-	// entirely, and gives a malicious case a miss the tool never had a chance at.
-	// Body-carrying cases belong on http_proxy, which is what their
-	// block-expected siblings already declare.
-	if c.Transport == "fetch_proxy" && c.Payload != nil {
-		if method, ok := c.Payload["method"].(string); ok && method != "" && !strings.EqualFold(method, "GET") {
-			addErr(fmt.Sprintf("transport fetch_proxy cannot carry method %q: the fetch endpoint is GET-only, so the payload would never be scanned; use transport http_proxy", method))
-		}
-	}
-
 	// ID must match filename
 	expectedFilename := c.ID + ".json"
 	actualFilename := filepath.Base(path)

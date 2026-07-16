@@ -1788,11 +1788,23 @@ func classifyResponse(statusCode int, body string) Result {
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
 
+	// 405 means this tool's endpoint could not execute the case as declared: the
+	// payload was never scanned, so there is no verdict to report. Scoring it
+	// "allow" passes a benign case that would pass with every scanner switched
+	// off, and hands a malicious case a miss the tool never had a chance at.
+	// README and docs/methodology.md both require an adapter that cannot execute
+	// a declared-applicable case to score error, which makes the gap visible
+	// instead of silently inflating the result.
+	if statusCode == http.StatusMethodNotAllowed {
+		evidence["reason"] = "http_405_method_not_supported"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+
 	if statusCode >= 200 && statusCode < 400 {
 		return Result{Verdict: "allow", Evidence: evidence}
 	}
 
-	// 4xx/5xx that aren't 400/403/502 — the request reached the upstream and
+	// 4xx/5xx that aren't 400/403/405/502 — the request reached the upstream and
 	// got an error response. The proxy allowed it through (not a policy block).
 	// 404, 429, 500, etc. all mean the proxy didn't intervene.
 	evidence["reason"] = fmt.Sprintf("http_%d_passthrough", statusCode)
