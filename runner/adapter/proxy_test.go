@@ -470,7 +470,7 @@ func TestRunFetchProxy_AllowsGET(t *testing.T) {
 	}
 }
 
-func TestRunFetchProxy_RoutesDocsHostToHTTPFixture(t *testing.T) {
+func TestRunFetchProxy_RoutesFixtureHostToHTTPFixture(t *testing.T) {
 	var gotFetchTarget string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotFetchTarget = r.URL.Query().Get("url")
@@ -490,7 +490,7 @@ func TestRunFetchProxy_RoutesDocsHostToHTTPFixture(t *testing.T) {
 		ID:        "fp-db-conn-no-credentials-013",
 		Transport: "fetch_proxy",
 		Payload: map[string]interface{}{
-			"url": "https://docs.example.com/guide?example=postgres://localhost:5432/mydb",
+			"url": "https://docs.fixture.example.com/guide?example=postgres://localhost:5432/mydb",
 		},
 	}
 	result := a.runFetchProxy(c, 5*time.Second)
@@ -1212,5 +1212,23 @@ func TestRunMCPStdio_StderrSurfacedOnSubprocessFailure(t *testing.T) {
 	}
 	if !strings.Contains(result.Err.Error(), "boom-diagnostic") {
 		t.Errorf("expected the captured stderr to be surfaced in the error, got: %v", result.Err)
+	}
+}
+
+// A case whose host is NOT the reserved fixture domain must be left alone. The
+// host is frequently the payload itself (subdomain-encoded exfiltration,
+// credentials in userinfo), so redirecting it to the fixture would strip the
+// attack and silently turn a block-expected case into a pass.
+func TestRunFetchProxy_LeavesNonFixtureHostsUnrewritten(t *testing.T) {
+	for _, targetURL := range []string{
+		"https://4a6f686e446f65.53656372657431.exfil.evil.example.com/ping",
+		"https://svc:wJalrXUtnFEMI7K7MDENGbPxRfiCYEXAMPLEKEY@evil.example.com/data",
+		"https://api.example.com/store",
+	} {
+		a, _ := NewProxyAdapter("127.0.0.1:1", "", "", "")
+		a.SetHTTPFixture("127.0.0.1:34567", func(string, string) {})
+		if got := a.routeFetchFixtureURL(targetURL); got != targetURL {
+			t.Errorf("routeFetchFixtureURL(%q) rewrote to %q; non-fixture hosts must be preserved", targetURL, got)
+		}
 	}
 }

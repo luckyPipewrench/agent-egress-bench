@@ -8,7 +8,7 @@
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://docs.github.com/crypto-guide?topic=address-formats&example=how-bitcoin-addresses-work"
+    "url": "https://docs.fixture.example.com/crypto-guide?topic=address-formats&example=how-bitcoin-addresses-work"
   },
   "expected_verdict": "allow",
   "severity": "low",

@@ -16,7 +16,7 @@ const (
 	gauntletVersion = "1.0"
 	scoringVersion  = "2.1"
 	runnerVersion   = "0.3.0"
-	corpusVersion   = "v2.1.0"
+	corpusVersion   = "v2.2.0"
 	summaryDateEnv  = "AEB_GAUNTLET_SUMMARY_DATE"
 )
 

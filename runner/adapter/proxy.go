@@ -451,13 +451,31 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	return classifyResponse(resp.StatusCode, string(body))
 }
 
+// isBenchmarkFixtureHost reports whether a case's declared host is one of the
+// reserved benchmark domains served by the local HTTP fixture. Benign cases must
+// not reach live third-party hosts: an outside verifier's DNS, routing, rate
+// limits and a vendor's uptime would otherwise move the score without the tool
+// under test changing at all.
+//
+// The match is deliberately scoped to a dedicated fixture subdomain rather than
+// example.com generally. Rewriting a case's host is destructive when the host IS
+// the payload (url-entropy-subdomain-007 hides data in labels of
+// exfil.evil.example.com; url-dlp-userinfo-cred-012 carries a credential in the
+// userinfo of evil.example.com), and example.com is also the destination of
+// block-expected body-dlp cases. A broader match silently neuters those attacks
+// into passes, so only this reserved subdomain is ever redirected.
+func isBenchmarkFixtureHost(host string) bool {
+	host = strings.ToLower(host)
+	return host == "fixture.example.com" || strings.HasSuffix(host, ".fixture.example.com")
+}
+
 func (p *ProxyAdapter) routeFetchFixtureURL(targetURL string) string {
 	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
 		return targetURL
 	}
 
 	u, err := url.Parse(targetURL)
-	if err != nil || u.Hostname() != "docs.example.com" {
+	if err != nil || !isBenchmarkFixtureHost(u.Hostname()) {
 		return targetURL
 	}
 
