@@ -169,13 +169,16 @@ run_fetch_case() {
     local http_status
     http_status=$(curl "${curl_args[@]}" 2>/dev/null) || http_status="000"
 
-    # Determine verdict from HTTP status
+    # Determine verdict from HTTP status. 502 is deliberately NOT a block: the
+    # proxy returns it for a plain upstream failure as well as for a policy
+    # block, and 405 means this GET-only endpoint never saw the payload. Scoring
+    # either as a verdict invents a result the tool never produced.
     local actual_verdict score
     case "$http_status" in
-        403|502)
+        403)
             actual_verdict="block"
             ;;
-        000)
+        000|405|502)
             actual_verdict="error"
             ;;
         *)

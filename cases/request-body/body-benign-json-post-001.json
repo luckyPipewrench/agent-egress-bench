@@ -5,7 +5,7 @@
   "title": "Normal JSON POST with user data",
   "description": "Standard JSON POST body with normal user profile data.",
   "input_type": "request_body",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://api.fixture.example.com/users/profile",

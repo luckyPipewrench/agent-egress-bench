@@ -27,7 +27,8 @@ func TestClassifyResponse(t *testing.T) {
 		{"403 blocked", http.StatusForbidden, `{"blocked":true}`, "block"},
 		{"403 plain", http.StatusForbidden, "Forbidden", "block"},
 		{"400 bad request", http.StatusBadRequest, "", "block"},
-		{"502 bad gateway", http.StatusBadGateway, "", "block"},
+		{"502 bare upstream failure", http.StatusBadGateway, "", "skip"},
+		{"502 with deny marker", http.StatusBadGateway, `{"block_reason":"DLP match","scanner":"dlp"}`, "block"},
 		{"200 ok", http.StatusOK, "ok", "allow"},
 		{"301 redirect", http.StatusMovedPermanently, "", "allow"},
 		{"404 passthrough", http.StatusNotFound, "not found", "allow"},
@@ -1230,5 +1231,21 @@ func TestRunFetchProxy_LeavesNonFixtureHostsUnrewritten(t *testing.T) {
 		if got := a.routeFetchFixtureURL(targetURL); got != targetURL {
 			t.Errorf("routeFetchFixtureURL(%q) rewrote to %q; non-fixture hosts must be preserved", targetURL, got)
 		}
+	}
+}
+
+// A bare upstream failure must never be scored as a tool decision. The proxy
+// returns 502 both for a policy block and for a dial/TLS/timeout failure, so
+// only a structured deny marker proves the tool decided anything. Without this,
+// a broken fixture manufactures a false positive against the tool.
+func TestClassifyResponse_BareUpstream502IsNotABlock(t *testing.T) {
+	got := classifyResponse(502, "upstream error\n")
+	if got.Verdict != "skip" {
+		t.Errorf("bare 502 verdict = %q, want skip (an upstream failure is not a block)", got.Verdict)
+	}
+	// A 502 that carries a real deny marker is still a genuine block.
+	blocked := classifyResponse(502, `{"block_reason":"DLP match: AWS Access ID","scanner":"dlp"}`)
+	if blocked.Verdict != "block" {
+		t.Errorf("502 with block_reason verdict = %q, want block", blocked.Verdict)
 	}
 }

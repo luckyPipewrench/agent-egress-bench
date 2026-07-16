@@ -5,7 +5,7 @@
   "title": "Normal JSON API request with no secrets",
   "description": "Standard API call to create a calendar event. Body contains only non-sensitive data.",
   "input_type": "request_body",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://api.fixture.example.com/v1/events",

@@ -494,6 +494,37 @@ func (p *ProxyAdapter) routeFetchFixtureURL(targetURL string) string {
 	return u.String()
 }
 
+// routeProxyFixtureURL redirects a reserved fixture host to the local TLS
+// fixture and reports the CA the client must trust to reach it.
+//
+// A block-expected case never needs this: the tool denies it before any dial,
+// so the origin is irrelevant. A benign case must actually reach an origin, and
+// with no fixture behind the name the dial fails and the tool's refusal is
+// scored as a false positive against it. Only the reserved fixture subdomain is
+// redirected, for the same reason as routeFetchFixtureURL: a case's host is
+// frequently the payload.
+func (p *ProxyAdapter) routeProxyFixtureURL(targetURL string) (string, string) {
+	if p.tlsFixtureAddr == "" || p.tlsCAFile == "" || p.setTLSRoute == nil {
+		return targetURL, ""
+	}
+	u, err := url.Parse(targetURL)
+	if err != nil || !isBenchmarkFixtureHost(u.Hostname()) {
+		return targetURL, ""
+	}
+	_, port, splitErr := net.SplitHostPort(p.tlsFixtureAddr)
+	if splitErr != nil || port == "" {
+		return targetURL, ""
+	}
+	routePath := u.EscapedPath()
+	if routePath == "" {
+		routePath = "/"
+	}
+	p.setTLSRoute(routePath, "benchmark fixture origin")
+	u.Scheme = "https"
+	u.Host = net.JoinHostPort(fixtureHostname, port)
+	return u.String(), p.tlsCAFile
+}
+
 // runHTTPProxy sends a request through the proxy as HTTPS_PROXY (CONNECT tunnel).
 func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	targetURL, _ := payloadString(c.Payload, "url")
@@ -505,6 +536,29 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	// interception by the product. The HTTP fixture cannot prove that path.
 	if respBody, ok := payloadString(c.Payload, "response_body"); ok && respBody != "" {
 		return p.runResponseContentViaTLSIntercept(c, timeout, respBody)
+	}
+
+	if routed, caFile := p.routeProxyFixtureURL(targetURL); caFile != "" {
+		method, _ := payloadString(c.Payload, "method")
+		if method == "" {
+			method = http.MethodGet
+		}
+		var fixtureBody io.Reader
+		if b, ok := c.Payload["body"].(string); ok && b != "" {
+			fixtureBody = strings.NewReader(b)
+		}
+		headers := http.Header{}
+		if ct, ok := payloadString(c.Payload, "content_type"); ok && ct != "" {
+			headers.Set("Content-Type", ct)
+		}
+		if hdrs, ok := c.Payload["headers"].(map[string]interface{}); ok {
+			for k, v := range hdrs {
+				if s, ok := v.(string); ok {
+					headers.Set(k, s)
+				}
+			}
+		}
+		return p.doHTTPProxyRequest(c.ID, method, routed, fixtureBody, headers, timeout, caFile)
 	}
 
 	method, _ := payloadString(c.Payload, "method")
@@ -1672,17 +1726,66 @@ func extractBlockEvidence(body string, ev map[string]interface{}) {
 	}
 }
 
+// hasDenyMarker reports whether a response body carries positive evidence that
+// the tool made a deny decision, as opposed to merely being non-empty.
+//
+// This is deliberately NOT extractBlockEvidence: that helper ends in a
+// `len(body) > 0` catch-all which stuffs any body into block_reason, so an
+// upstream's "upstream error" string would read as a policy block. Ambiguous
+// statuses must key off a real marker, never off the presence of some text.
+func hasDenyMarker(body string) bool {
+	var jsonResp struct {
+		Blocked     *bool  `json:"blocked"`
+		BlockReason string `json:"block_reason"`
+		Scanner     string `json:"scanner"`
+	}
+	if json.Unmarshal([]byte(body), &jsonResp) == nil {
+		if jsonResp.Blocked != nil {
+			return *jsonResp.Blocked
+		}
+		return jsonResp.BlockReason != "" || jsonResp.Scanner != ""
+	}
+	lower := strings.ToLower(body)
+	for _, marker := range []string{
+		"dlp", "secret", "credential", "ssrf", "private ip", "metadata",
+		"injection", "prompt", "entropy", "blocklist", "blocked domain",
+		"kill switch", "airlock",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // classifyResponse determines block vs allow from the HTTP response.
 func classifyResponse(statusCode int, body string) Result {
 	evidence := map[string]interface{}{
 		"status_code": statusCode,
 	}
 
-	if statusCode == http.StatusForbidden || statusCode == http.StatusBadRequest || statusCode == http.StatusBadGateway {
+	if statusCode == http.StatusForbidden || statusCode == http.StatusBadRequest {
 		evidence["reason"] = fmt.Sprintf("http_%d", statusCode)
 		// Extract structured block details from response body.
 		extractBlockEvidence(body, evidence)
 		return Result{Verdict: "block", Evidence: evidence}
+	}
+
+	// 502 is ambiguous: the proxy returns it both for a policy block and for a
+	// plain upstream failure (dial, TLS, timeout). Only a structured deny marker
+	// proves the tool actually made a decision. Scoring a bare "upstream error"
+	// as a block manufactures a false positive against the tool out of nothing
+	// but a broken fixture, and docs/SCORING.md requires an infrastructure
+	// failure to score error rather than fail.
+	if statusCode == http.StatusBadGateway {
+		if hasDenyMarker(body) {
+			evidence["reason"] = "http_502"
+			extractBlockEvidence(body, evidence)
+			return Result{Verdict: "block", Evidence: evidence}
+		}
+		evidence["reason"] = "http_502_upstream_failure"
+		evidence["upstream_error"] = truncate(body, 120)
+		return Result{Verdict: "skip", Evidence: evidence}
 	}
 
 	if statusCode >= 200 && statusCode < 400 {

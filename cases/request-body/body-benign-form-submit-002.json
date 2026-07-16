@@ -5,7 +5,7 @@
   "title": "Standard HTML form submission",
   "description": "Normal search form POST body.",
   "input_type": "request_body",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://echo.fixture.example.com/search",

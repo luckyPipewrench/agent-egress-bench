@@ -37,4 +37,12 @@ awk -v scan_addr="$AEB_SCAN_ADDR" '
   }
 ' "$config" > "$tmp_config"
 
+# The benchmark's TLS response-interception fixture serves a leaf signed by the
+# benchmark CA. Pipelock intercepts the connection and then verifies the origin
+# itself, so without this the upstream handshake fails and the proxy answers 502.
+# A 502 is indistinguishable from a policy block by status alone, so an untrusted
+# fixture silently scores every response-interception case as "blocked" while the
+# response is never actually scanned.
+export SSL_CERT_FILE="$AEB_TLS_CA_FILE"
+
 exec "$pipelock_bin" run --config "$tmp_config" --listen "$AEB_PROXY_ADDR"
