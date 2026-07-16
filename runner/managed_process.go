@@ -89,7 +89,7 @@ func (m *managedProcesses) startShellCommand(ctx context.Context, name, command 
 		return fmt.Errorf("start %s command: %w", name, err)
 	}
 	m.cmds = append(m.cmds, cmd)
-	if err := waitForTCPAddrs(readyAddrs, timeout); err != nil {
+	if err := waitForTCPAddrs(ctx, readyAddrs, timeout); err != nil {
 		stopStartedCommand(cmd)
 		return fmt.Errorf("%s command did not listen on %s: %w; output: %s", name, strings.Join(readyAddrs, ", "), err, output.String())
 	}
@@ -124,11 +124,7 @@ func freeLoopbackAddr() (string, error) {
 	return addr, nil
 }
 
-func waitForTCP(addr string, timeout time.Duration) error {
-	return waitForTCPAddrs([]string{addr}, timeout)
-}
-
-func waitForTCPAddrs(addrs []string, timeout time.Duration) error {
+func waitForTCPAddrs(ctx context.Context, addrs []string, timeout time.Duration) error {
 	if len(addrs) == 0 {
 		return fmt.Errorf("no listeners configured")
 	}
@@ -136,6 +132,9 @@ func waitForTCPAddrs(addrs []string, timeout time.Duration) error {
 	ready := make(map[string]bool, len(addrs))
 	lastErrs := make(map[string]error, len(addrs))
 	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("canceled waiting for %s: %w", strings.Join(addrs, ", "), err)
+		}
 		for _, addr := range addrs {
 			if ready[addr] {
 				continue
@@ -149,7 +148,13 @@ func waitForTCPAddrs(addrs []string, timeout time.Duration) error {
 		if len(ready) == len(addrs) {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		// Sleep, but surrender immediately if the run is torn down: a canceled
+		// benchmark should not sit here until the full timeout expires.
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("canceled waiting for %s: %w", strings.Join(addrs, ", "), ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 
 	var pending []string

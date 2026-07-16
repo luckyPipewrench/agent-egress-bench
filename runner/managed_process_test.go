@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -77,4 +78,24 @@ func TestManagedProcessHelper(t *testing.T) {
 
 func managedProcessHelperCommand() string {
 	return fmt.Sprintf("exec %s -test.run=TestManagedProcessHelper", strconv.Quote(os.Args[0]))
+}
+
+// A torn-down run must abandon the readiness wait at once. Without honouring the
+// context the poll loop blocks for the full timeout, so a canceled benchmark
+// hangs instead of exiting.
+func TestWaitForTCPAddrs_HonoursCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	err := waitForTCPAddrs(ctx, []string{"127.0.0.1:1"}, 10*time.Second)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected an error when the context is already canceled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want it to wrap context.Canceled", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("waited %v before returning; a canceled run must not block for the timeout", elapsed)
+	}
 }
