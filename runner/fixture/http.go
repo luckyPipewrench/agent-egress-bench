@@ -16,17 +16,28 @@ type HTTPFixture struct {
 	listener net.Listener
 	server   *http.Server
 	mu       sync.Mutex
-	routes   map[string]string // path → response body
+	routes   map[string]HTTPRoute // path -> response metadata
 }
 
 // Addr returns the listener address (host:port).
 func (f *HTTPFixture) Addr() string { return f.listener.Addr().String() }
 
+// HTTPRoute is a fixture response.
+type HTTPRoute struct {
+	Body        string
+	ContentType string
+}
+
 // SetRoute configures a response body for a given URL path.
 func (f *HTTPFixture) SetRoute(path, body string) {
+	f.SetRouteWithContentType(path, body, "text/html; charset=utf-8")
+}
+
+// SetRouteWithContentType configures a response for a given URL path.
+func (f *HTTPFixture) SetRouteWithContentType(path, body, contentType string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.routes[path] = body
+	f.routes[path] = HTTPRoute{Body: body, ContentType: contentType}
 }
 
 // StartHTTP creates and starts an HTTP response fixture on a random port.
@@ -38,20 +49,20 @@ func StartHTTP() (*HTTPFixture, error) {
 
 	f := &HTTPFixture{
 		listener: ln,
-		routes:   make(map[string]string),
+		routes:   make(map[string]HTTPRoute),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
-		body, ok := f.routes[r.URL.Path]
+		route, ok := f.routes[r.URL.Path]
 		f.mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = fmt.Fprint(w, body)
+		w.Header().Set("Content-Type", route.ContentType)
+		_, _ = fmt.Fprint(w, route.Body)
 	})
 
 	f.server = &http.Server{

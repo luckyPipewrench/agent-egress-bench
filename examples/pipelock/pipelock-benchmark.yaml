@@ -18,7 +18,7 @@ fetch_proxy:
   monitoring:
     max_url_length: 2000
     entropy_threshold: 4.0
-    max_requests_per_minute: 0
+    max_requests_per_minute: 10000
     max_data_per_minute: 0
     blocklist:
       - "*.pastebin.com"

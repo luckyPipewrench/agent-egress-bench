@@ -170,7 +170,7 @@ var (
 		"ssrf_bypass":           {"fetch_proxy", "http_proxy"},
 		"encoding_evasion":      {"fetch_proxy", "mcp_stdio"},
 		"shell_obfuscation":     {"mcp_stdio", "mcp_http"},
-		"crypto_financial":      {"fetch_proxy", "mcp_stdio"},
+		"crypto_financial":      {"fetch_proxy", "http_proxy", "mcp_stdio"},
 		"false_positive":        {"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"},
 		"hostname_exfiltration": {"fetch_proxy", "http_proxy"},
 	}

