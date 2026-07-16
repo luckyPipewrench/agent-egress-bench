@@ -1,16 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
+
+const maxManagedOutputBytes = 2048
 
 type managedProcesses struct {
 	proxyAddr  string
@@ -42,7 +45,7 @@ func startManagedProcesses(proxyCmd, mcpHTTPCmd string, fm *fixture.Manager, tim
 		managed.proxyAddr = proxyAddr
 		managed.scanAddr = scanAddr
 		proxyEnv := append(env, "AEB_PROXY_ADDR="+proxyAddr, "AEB_SCAN_ADDR="+scanAddr)
-		if err := managed.startShellCommand(ctx, "managed proxy", proxyCmd, proxyEnv, proxyAddr, timeout); err != nil {
+		if err := managed.startShellCommand(ctx, "managed proxy", proxyCmd, proxyEnv, timeout, proxyAddr, scanAddr); err != nil {
 			managed.Close()
 			return nil, err
 		}
@@ -55,7 +58,7 @@ func startManagedProcesses(proxyCmd, mcpHTTPCmd string, fm *fixture.Manager, tim
 		}
 		managed.mcpHTTPURL = "http://" + mcpAddr + "/"
 		mcpEnv := append(env, "AEB_MCP_HTTP_ADDR="+mcpAddr, "AEB_MCP_HTTP_URL="+managed.mcpHTTPURL)
-		if err := managed.startShellCommand(ctx, "managed MCP HTTP", mcpHTTPCmd, mcpEnv, mcpAddr, timeout); err != nil {
+		if err := managed.startShellCommand(ctx, "managed MCP HTTP", mcpHTTPCmd, mcpEnv, timeout, mcpAddr); err != nil {
 			managed.Close()
 			return nil, err
 		}
@@ -76,18 +79,19 @@ func managedFixtureEnv(fm *fixture.Manager) []string {
 	}
 }
 
-func (m *managedProcesses) startShellCommand(ctx context.Context, name, command string, extraEnv []string, readyAddr string, timeout time.Duration) error {
+func (m *managedProcesses) startShellCommand(ctx context.Context, name, command string, extraEnv []string, timeout time.Duration, readyAddrs ...string) error {
 	cmd := exec.CommandContext(ctx, "sh", "-c", command) //nolint:gosec // command supplied by benchmark operator
 	cmd.Env = append(os.Environ(), extraEnv...)
-	var stderr bytes.Buffer
-	cmd.Stdout = &stderr
-	cmd.Stderr = &stderr
+	output := newManagedOutputTail(maxManagedOutputBytes)
+	cmd.Stdout = output
+	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s command: %w", name, err)
 	}
 	m.cmds = append(m.cmds, cmd)
-	if err := waitForTCP(readyAddr, timeout); err != nil {
-		return fmt.Errorf("%s command did not listen on %s: %w; output: %s", name, readyAddr, err, truncateManagedOutput(stderr.String()))
+	if err := waitForTCPAddrs(readyAddrs, timeout); err != nil {
+		stopStartedCommand(cmd)
+		return fmt.Errorf("%s command did not listen on %s: %w; output: %s", name, strings.Join(readyAddrs, ", "), err, output.String())
 	}
 	return nil
 }
@@ -99,6 +103,13 @@ func (m *managedProcesses) Close() {
 	for _, cmd := range m.cmds {
 		_ = cmd.Wait()
 	}
+}
+
+func stopStartedCommand(cmd *exec.Cmd) {
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	_ = cmd.Wait()
 }
 
 func freeLoopbackAddr() (string, error) {
@@ -114,23 +125,89 @@ func freeLoopbackAddr() (string, error) {
 }
 
 func waitForTCP(addr string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		lastErr = err
-		time.Sleep(100 * time.Millisecond)
-	}
-	return lastErr
+	return waitForTCPAddrs([]string{addr}, timeout)
 }
 
-func truncateManagedOutput(s string) string {
-	if len(s) <= 2048 {
-		return s
+func waitForTCPAddrs(addrs []string, timeout time.Duration) error {
+	if len(addrs) == 0 {
+		return fmt.Errorf("no listeners configured")
 	}
-	return s[len(s)-2048:]
+	deadline := time.Now().Add(timeout)
+	ready := make(map[string]bool, len(addrs))
+	lastErrs := make(map[string]error, len(addrs))
+	for time.Now().Before(deadline) {
+		for _, addr := range addrs {
+			if ready[addr] {
+				continue
+			}
+			if err := probeTCP(addr); err != nil {
+				lastErrs[addr] = err
+				continue
+			}
+			ready[addr] = true
+		}
+		if len(ready) == len(addrs) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	var pending []string
+	for _, addr := range addrs {
+		if ready[addr] {
+			continue
+		}
+		if lastErrs[addr] != nil {
+			pending = append(pending, fmt.Sprintf("%s (%v)", addr, lastErrs[addr]))
+		} else {
+			pending = append(pending, addr)
+		}
+	}
+	return fmt.Errorf("timed out waiting for %s", strings.Join(pending, ", "))
+}
+
+func probeTCP(addr string) error {
+	conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	_ = conn.Close()
+	return nil
+}
+
+type managedOutputTail struct {
+	mu    sync.Mutex
+	limit int
+	buf   []byte
+}
+
+func newManagedOutputTail(limit int) *managedOutputTail {
+	return &managedOutputTail{limit: limit}
+}
+
+func (b *managedOutputTail) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	written := len(p)
+	if b.limit <= 0 {
+		return written, nil
+	}
+	if len(p) >= b.limit {
+		b.buf = append(b.buf[:0], p[len(p)-b.limit:]...)
+		return written, nil
+	}
+	b.buf = append(b.buf, p...)
+	if over := len(b.buf) - b.limit; over > 0 {
+		copy(b.buf, b.buf[over:])
+		b.buf = b.buf[:b.limit]
+	}
+	return written, nil
+}
+
+func (b *managedOutputTail) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return string(append([]byte(nil), b.buf...))
 }
