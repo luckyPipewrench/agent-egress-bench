@@ -193,6 +193,7 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 			ExpectedVerdict: c.ExpectedVerdict,
 			Transport:       c.Transport,
 			InputType:       c.InputType,
+			Requires:        c.Requires,
 			Payload:         c.Payload,
 		}
 		adapterResult := adapt.Run(adapterCase, timeout)

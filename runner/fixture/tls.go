@@ -1,6 +1,6 @@
 // Package fixture provides test infrastructure servers for the gauntlet runner.
 // These fixtures enable testing of capabilities that require real backends:
-// TLS interception (response-mitm cases), WebSocket relay (ws-dlp cases),
+// TLS interception (request and response cases), WebSocket relay (ws-dlp cases),
 // and DNS rebinding (ssrf-bypass cases).
 package fixture
 
@@ -22,7 +22,7 @@ import (
 )
 
 // TLSFixture runs a mock HTTPS server that returns configurable responses.
-// Used with pipelock's TLS interception to test response-mitm cases.
+// Used with a tool's TLS interception to test request and response cases.
 // The fixture generates a self-signed CA and server cert on startup.
 type TLSFixture struct {
 	listener net.Listener
@@ -113,8 +113,14 @@ func StartTLS() (*TLSFixture, error) {
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{"localhost", "*.example.com", "*.test"},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames: []string{
+			"localhost",
+			"*.example.com",
+			"*.test",
+			"api.github.com",
+			"hooks.slack.com",
+		},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
 	serverCertDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKey)

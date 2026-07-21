@@ -82,6 +82,13 @@ dns:
   host_overrides:
     aeb-fixture.test:
       - 127.0.0.1
+    # TLS-required allowed-channel cases preserve these real destination
+    # hostnames while the runner replaces only the port with its local HTTPS
+    # fixture. These overrides keep benchmark traffic off the public services.
+    api.github.com:
+      - 127.0.0.1
+    hooks.slack.com:
+      - 127.0.0.1
     # Resolve the benign agent-card hostnames to a public IP so private-IP SSRF
     # checks evaluate them (public -> allowed) instead of failing closed on an
     # unresolvable synthetic host. A real deployment's cards use resolvable hosts.
@@ -91,6 +98,8 @@ dns:
       - 93.184.216.34
 trusted_domains:
   - aeb-fixture.test
+  - api.github.com
+  - hooks.slack.com
 
 dlp:
   patterns:

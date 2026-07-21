@@ -525,6 +525,42 @@ func (p *ProxyAdapter) routeProxyFixtureURL(targetURL string) (string, string) {
 	return u.String(), p.tlsCAFile
 }
 
+// routeTLSInterceptRequestURL sends a TLS-required request-body or header case
+// to the local HTTPS origin while preserving the case's declared hostname. The
+// proxy therefore observes the realistic CONNECT authority and SNI, while its
+// benchmark DNS override resolves that authority to the deterministic fixture.
+func (p *ProxyAdapter) routeTLSInterceptRequestURL(c Case, targetURL string) (string, string) {
+	if !caseRequires(c, "tls_interception") ||
+		(c.InputType != "request_body" && c.InputType != "header") ||
+		p.tlsFixtureAddr == "" || p.tlsCAFile == "" || p.setTLSRoute == nil {
+		return targetURL, ""
+	}
+	u, err := url.Parse(targetURL)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
+		return targetURL, ""
+	}
+	_, port, splitErr := net.SplitHostPort(p.tlsFixtureAddr)
+	if splitErr != nil || port == "" {
+		return targetURL, ""
+	}
+	routePath := u.EscapedPath()
+	if routePath == "" {
+		routePath = "/"
+	}
+	p.setTLSRoute(routePath, "benchmark fixture origin")
+	u.Host = net.JoinHostPort(u.Hostname(), port)
+	return u.String(), p.tlsCAFile
+}
+
+func caseRequires(c Case, requirement string) bool {
+	for _, candidate := range c.Requires {
+		if candidate == requirement {
+			return true
+		}
+	}
+	return false
+}
+
 // runHTTPProxy sends a request through the proxy as HTTPS_PROXY (CONNECT tunnel).
 func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	targetURL, _ := payloadString(c.Payload, "url")
@@ -538,7 +574,15 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		return p.runResponseContentViaTLSIntercept(c, timeout, respBody)
 	}
 
-	if routed, caFile := p.routeProxyFixtureURL(targetURL); caFile != "" {
+	routed, caFile := p.routeTLSInterceptRequestURL(c, targetURL)
+	if caseRequires(c, "tls_interception") &&
+		(c.InputType == "request_body" || c.InputType == "header") && caFile == "" {
+		return unsupportedTransport(c, "no TLS request interception fixture configured")
+	}
+	if caFile == "" {
+		routed, caFile = p.routeProxyFixtureURL(targetURL)
+	}
+	if caFile != "" {
 		method, _ := payloadString(c.Payload, "method")
 		if method == "" {
 			method = http.MethodGet

@@ -1,6 +1,6 @@
 # Pipelock Reference Runner
 
-> **For benchmark development use the Go runner in [`../../runner/`](../../runner/).** It executes the declared fetch, forward-proxy, WebSocket, MCP stdio, MCP HTTP, A2A, and TLS-intercepted response transports without substituting scan APIs or other surfaces. The shell `harness.sh` remains a fetch-only illustration, not a scoring runner.
+> **For benchmark development use the Go runner in [`../../runner/`](../../runner/).** It executes the declared fetch, forward-proxy, WebSocket, MCP stdio, MCP HTTP, A2A, and TLS-intercepted request/response transports without substituting scan APIs or other surfaces. The shell `harness.sh` remains a fetch-only illustration, not a scoring runner.
 
 This directory contains the Pipelock-specific artifacts the Go runner needs to score Pipelock:
 
@@ -26,7 +26,7 @@ Available managed-command environment variables:
 | `AEB_MCP_HTTP_ADDR` | Host:port the managed MCP HTTP command should listen on |
 | `AEB_MCP_HTTP_URL` | URL corresponding to `AEB_MCP_HTTP_ADDR` |
 | `AEB_HTTP_FIXTURE_ADDR` | HTTP fixture address |
-| `AEB_TLS_FIXTURE_ADDR` | HTTPS fixture address for intercepted response cases |
+| `AEB_TLS_FIXTURE_ADDR` | HTTPS fixture address for intercepted request/response cases |
 | `AEB_TLS_CA_FILE` | Fixture CA certificate path |
 | `AEB_TLS_CA_KEY_FILE` | Fixture CA private-key path |
 | `AEB_WS_FIXTURE_ADDR` | WebSocket fixture address |

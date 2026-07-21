@@ -9,6 +9,7 @@ type Case struct {
 	ExpectedVerdict string
 	Transport       string
 	InputType       string
+	Requires        []string
 	Payload         map[string]interface{}
 }
 
