@@ -82,6 +82,14 @@ dns:
   host_overrides:
     aeb-fixture.test:
       - 127.0.0.1
+    # TLS-required allowed-channel cases preserve these benchmark-owned synthetic
+    # hostnames while the runner replaces only the port with its local HTTPS
+    # fixture. The hosts stand in for commonly-allowed destinations and resolve
+    # to loopback so benchmark traffic never leaves the machine.
+    allowed-code-api.test:
+      - 127.0.0.1
+    allowed-chat-webhook.test:
+      - 127.0.0.1
     # Resolve the benign agent-card hostnames to a public IP so private-IP SSRF
     # checks evaluate them (public -> allowed) instead of failing closed on an
     # unresolvable synthetic host. A real deployment's cards use resolvable hosts.
@@ -91,6 +99,8 @@ dns:
       - 93.184.216.34
 trusted_domains:
   - aeb-fixture.test
+  - allowed-code-api.test
+  - allowed-chat-webhook.test
 
 dlp:
   patterns:

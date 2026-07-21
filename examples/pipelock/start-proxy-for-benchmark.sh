@@ -37,7 +37,7 @@ awk -v scan_addr="$AEB_SCAN_ADDR" '
   }
 ' "$config" > "$tmp_config"
 
-# The benchmark's TLS response-interception fixture serves a leaf signed by the
+# The benchmark's TLS interception fixture serves a leaf signed by the
 # benchmark CA. Pipelock intercepts the connection and then verifies the origin
 # itself, so without this the upstream handshake fails and the proxy answers 502.
 # A 502 is indistinguishable from a policy block by status alone, so an untrusted

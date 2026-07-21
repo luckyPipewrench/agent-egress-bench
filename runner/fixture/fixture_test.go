@@ -3,9 +3,11 @@ package fixture
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -57,6 +59,47 @@ func TestTLSFixture(t *testing.T) {
 	// CA files exist.
 	if f.CAFile() == "" || f.KeyFile() == "" {
 		t.Error("CA/key file paths should not be empty")
+	}
+}
+
+func TestTLSFixtureAllowedChannelHostnames(t *testing.T) {
+	f, err := StartTLS()
+	if err != nil {
+		t.Fatalf("StartTLS: %v", err)
+	}
+	defer f.Close()
+	f.SetRoute("/ok", "ok")
+
+	caPEM, err := os.ReadFile(f.CAFile())
+	if err != nil {
+		t.Fatalf("read fixture CA: %v", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		t.Fatal("fixture CA did not contain a certificate")
+	}
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "tcp", f.Addr())
+			},
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+				RootCAs:    pool,
+			},
+		},
+	}
+	for _, host := range []string{"allowed-code-api.test", "allowed-chat-webhook.test"} {
+		resp, getErr := client.Get("https://" + host + "/ok")
+		if getErr != nil {
+			t.Fatalf("GET through fixture as %s: %v", host, getErr)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET through fixture as %s: status %d", host, resp.StatusCode)
+		}
 	}
 }
 
