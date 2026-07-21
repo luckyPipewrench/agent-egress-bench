@@ -370,9 +370,12 @@ func TestRouteTLSInterceptRequestPreservesDeclaredHost(t *testing.T) {
 	a, _ := NewProxyAdapter("127.0.0.1:1", "", "", "")
 	a.tlsFixtureAddr = "127.0.0.1:34567"
 	a.tlsCAFile = "/tmp/benchmark-ca.pem"
-	var gotPath, gotResponse string
-	a.setTLSRoute = func(path, body string) {
-		gotPath, gotResponse = path, body
+	var gotHost, gotPath, gotResponse string
+	a.setTLSRouteHost = func(host, path, body, _ string) {
+		gotHost, gotPath, gotResponse = host, path, body
+	}
+	a.setTLSRoute = func(_, _ string) {
+		t.Fatal("host-scoped route must be preferred when a host setter is configured")
 	}
 
 	c := Case{
@@ -381,15 +384,15 @@ func TestRouteTLSInterceptRequestPreservesDeclaredHost(t *testing.T) {
 		InputType: "request_body",
 		Requires:  []string{"tls_interception", "request_body_dlp_scanning"},
 	}
-	gotURL, gotCA := a.routeTLSInterceptRequestURL(c, "https://api.github.com/gists?source=agent")
-	if gotURL != "https://api.github.com:34567/gists?source=agent" {
+	gotURL, gotCA := a.routeTLSInterceptRequestURL(c, "https://allowed-code-api.test/gists?source=agent")
+	if gotURL != "https://allowed-code-api.test:34567/gists?source=agent" {
 		t.Fatalf("routed URL = %q", gotURL)
 	}
 	if gotCA != "/tmp/benchmark-ca.pem" {
 		t.Fatalf("CA file = %q", gotCA)
 	}
-	if gotPath != "/gists" || gotResponse != "benchmark fixture origin" {
-		t.Fatalf("fixture route = %q/%q", gotPath, gotResponse)
+	if gotHost != "allowed-code-api.test" || gotPath != "/gists" || gotResponse != "benchmark fixture origin" {
+		t.Fatalf("fixture route = %q/%q/%q", gotHost, gotPath, gotResponse)
 	}
 }
 
@@ -400,9 +403,12 @@ func TestRouteTLSInterceptRequestRequiresExplicitPrerequisite(t *testing.T) {
 	a.setTLSRoute = func(_, _ string) {
 		t.Fatal("case without tls_interception must not register a TLS fixture route")
 	}
+	a.setTLSRouteHost = func(_, _, _, _ string) {
+		t.Fatal("case without tls_interception must not register a host-scoped TLS fixture route")
+	}
 
 	c := Case{ID: "ordinary-request", Transport: "http_proxy", InputType: "request_body"}
-	const original = "https://api.github.com/gists"
+	const original = "https://allowed-code-api.test/gists"
 	gotURL, gotCA := a.routeTLSInterceptRequestURL(c, original)
 	if gotURL != original || gotCA != "" {
 		t.Fatalf("route without prerequisite = %q, %q", gotURL, gotCA)
@@ -425,7 +431,7 @@ func TestRunTLSInterceptRequestRequiresFixture(t *testing.T) {
 		Requires:  []string{"tls_interception", "request_body_dlp_scanning"},
 		Payload: map[string]interface{}{
 			"method": "POST",
-			"url":    "https://api.github.com/gists",
+			"url":    "https://allowed-code-api.test/gists",
 			"body":   `{}`,
 		},
 	}, time.Second)

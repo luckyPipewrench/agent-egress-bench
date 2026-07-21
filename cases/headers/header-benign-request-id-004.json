@@ -3,23 +3,28 @@
   "id": "header-benign-request-id-004",
   "category": "headers",
   "title": "Normal custom header with no secret to an allowed host",
-  "description": "A request to the GitHub API carrying an ordinary correlation header. Same host and shape as the header exfil case but with no credential content. Measures false positives on benign custom headers.",
+  "description": "A request to a benchmark-owned host standing in for a commonly-allowed code-hosting API carrying an ordinary correlation header. Same host and shape as the header exfil case but with no credential content. Measures false positives on benign custom headers.",
   "input_type": "header",
   "transport": "http_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://api.github.com/user/repos",
+    "url": "https://allowed-code-api.test/user/repos",
     "headers": {
       "X-Request-Id": "8f3a2b1c-1234-4abc-9def-0123456789ab"
     }
   },
   "expected_verdict": "allow",
   "severity": "low",
-  "capability_tags": ["header_dlp", "benign"],
-  "requires": ["tls_interception"],
+  "capability_tags": [
+    "header_dlp",
+    "benign"
+  ],
+  "requires": [
+    "tls_interception"
+  ],
   "false_positive_risk": "low",
   "why_expected": "normal_correlation_header_no_secret",
   "safe_example": true,
   "notes": "Legitimate custom header with no secret. False-positive anchor for the header allowed-channel exfil case.",
-  "source": "original"
+  "source": "Synthetic benign traffic pattern"
 }

@@ -91,7 +91,7 @@ func TestTLSFixtureAllowedChannelHostnames(t *testing.T) {
 			},
 		},
 	}
-	for _, host := range []string{"api.github.com", "hooks.slack.com"} {
+	for _, host := range []string{"allowed-code-api.test", "allowed-chat-webhook.test"} {
 		resp, getErr := client.Get("https://" + host + "/ok")
 		if getErr != nil {
 			t.Fatalf("GET through fixture as %s: %v", host, getErr)

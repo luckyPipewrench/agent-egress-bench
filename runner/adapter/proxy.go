@@ -66,6 +66,7 @@ type ProxyAdapter struct {
 	tlsCAFile       string
 	setTLSRoute     func(path, body string)
 	setTLSRouteCT   func(path, body, contentType string)
+	setTLSRouteHost func(host, path, body, contentType string)
 	wsAddr          string        // WS fixture for websocket cases
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
 }
@@ -108,10 +109,13 @@ func (p *ProxyAdapter) SetTLSFixture(addr, caFile string, setRoute func(path, bo
 }
 
 // SetTLSFixtureWithContentType configures the HTTPS fixture with content types.
-func (p *ProxyAdapter) SetTLSFixtureWithContentType(addr, caFile string, setRoute func(path, body, contentType string)) {
+// setRouteHost registers a host-scoped route so TLS-intercept request cases that
+// preserve their declared hostname cannot collide on path alone.
+func (p *ProxyAdapter) SetTLSFixtureWithContentType(addr, caFile string, setRoute func(path, body, contentType string), setRouteHost func(host, path, body, contentType string)) {
 	p.tlsFixtureAddr = addr
 	p.tlsCAFile = caFile
 	p.setTLSRouteCT = setRoute
+	p.setTLSRouteHost = setRouteHost
 	p.setTLSRoute = func(path, body string) {
 		setRoute(path, body, "application/json")
 	}
@@ -547,7 +551,11 @@ func (p *ProxyAdapter) routeTLSInterceptRequestURL(c Case, targetURL string) (st
 	if routePath == "" {
 		routePath = "/"
 	}
-	p.setTLSRoute(routePath, "benchmark fixture origin")
+	if p.setTLSRouteHost != nil {
+		p.setTLSRouteHost(u.Hostname(), routePath, "benchmark fixture origin", "application/json")
+	} else {
+		p.setTLSRoute(routePath, "benchmark fixture origin")
+	}
 	u.Host = net.JoinHostPort(u.Hostname(), port)
 	return u.String(), p.tlsCAFile
 }

@@ -56,6 +56,25 @@ func (f *TLSFixture) SetRouteWithContentType(path, body, contentType string) {
 	f.routes[path] = HTTPRoute{Body: body, ContentType: contentType}
 }
 
+// SetRouteForHostWithContentType configures a response scoped to a specific
+// host and URL path. Host-scoped routes take precedence over path-only routes
+// for the same path, so two cases that share a path but declare different hosts
+// cannot silently overwrite each other's fixture response.
+func (f *TLSFixture) SetRouteForHostWithContentType(host, path, body, contentType string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.routes[tlsRouteKey(host, path)] = HTTPRoute{Body: body, ContentType: contentType}
+}
+
+// tlsRouteKey namespaces a route by host when one is given, so host-scoped and
+// path-only registrations share one map without colliding.
+func tlsRouteKey(host, path string) string {
+	if host == "" {
+		return path
+	}
+	return host + "\x00" + path
+}
+
 // StartTLS creates a TLS fixture with a self-signed CA and starts serving.
 func StartTLS() (*TLSFixture, error) {
 	// Generate CA key pair.
@@ -113,14 +132,8 @@ func StartTLS() (*TLSFixture, error) {
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames: []string{
-			"localhost",
-			"*.example.com",
-			"*.test",
-			"api.github.com",
-			"hooks.slack.com",
-		},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:     []string{"localhost", "*.example.com", "*.test"},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
 	serverCertDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKey)
@@ -141,8 +154,15 @@ func StartTLS() (*TLSFixture, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, splitErr := net.SplitHostPort(host); splitErr == nil {
+			host = h
+		}
 		f.mu.Lock()
-		route, ok := f.routes[r.URL.Path]
+		route, ok := f.routes[tlsRouteKey(host, r.URL.Path)]
+		if !ok {
+			route, ok = f.routes[r.URL.Path]
+		}
 		f.mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)
