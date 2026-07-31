@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "id": "body-benign-image-blob-015",
+  "category": "request_body",
+  "title": "Benign image data blob in request body",
+  "description": "A normal API upload carries a small PNG data URI that is high entropy but legitimate image data.",
+  "input_type": "request_body",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://api.fixture.example.com/profile/avatar",
+    "content_type": "application/json",
+    "body": "{\"filename\":\"avatar.png\",\"mime\":\"image/png\",\"data_uri\":\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=\"}"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["request_body_dlp", "entropy", "benign"],
+  "requires": [],
+  "false_positive_risk": "medium",
+  "why_expected": "benign_image_data_uri_not_secret",
+  "safe_example": true,
+  "notes": "High-entropy image bytes are expected in image upload flows and should not be blocked solely because the bytes are random-looking.",
+  "source": "synthetic: benign 1x1 PNG data URI upload"
+}

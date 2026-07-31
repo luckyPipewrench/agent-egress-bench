@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "id": "a2a-msg-benign-content-hash-014",
+  "category": "a2a_message",
+  "title": "Benign A2A content hash",
+  "description": "A normal A2A message carries a git commit SHA and content hash for artifact verification.",
+  "input_type": "a2a_message",
+  "transport": "a2a",
+  "payload": {
+    "jsonrpc_messages": [
+      {
+        "jsonrpc": "2.0",
+        "id": "req-014",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "msg-014",
+            "role": "user",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Verify build artifact for commit 8f6c2e4a91b7d053c2ab4f7e1a9d33c8b710e492 with sha256 3d7a6f1e9b2c4a0d8f5e6c1b7a9d2e3f4c5b6a708192a3b4c5d6e7f8091a2b3c."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["a2a_scan", "entropy", "benign"],
+  "requires": [],
+  "false_positive_risk": "medium",
+  "why_expected": "benign_commit_sha_and_content_hash",
+  "safe_example": true,
+  "notes": "Commit SHAs and artifact hashes are expected in build verification workflows and should not be treated as secret exfiltration by entropy alone.",
+  "source": "synthetic: benign A2A artifact verification message"
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "id": "a2a-msg-opaque-entropy-013",
+  "category": "a2a_message",
+  "title": "Opaque high-entropy A2A data part",
+  "description": "An A2A message forwards a random-looking opaque data part with no recognizable credential format.",
+  "input_type": "a2a_message",
+  "transport": "a2a",
+  "payload": {
+    "jsonrpc_messages": [
+      {
+        "jsonrpc": "2.0",
+        "id": "req-013",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "msg-013",
+            "role": "user",
+            "parts": [
+              {
+                "kind": "data",
+                "data": {
+                  "transfer_id": "opaque-a2a-013",
+                  "blob": "b6f8c2d91a0e4c7f83d25b09e4a6c1f8d3b72e0a59c4f6d18b2e7a0c93f5d64a"
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": ["a2a_scan", "entropy"],
+  "requires": ["a2a_dlp_scanning", "entropy_scanning"],
+  "false_positive_risk": "medium",
+  "why_expected": "opaque_high_entropy_a2a_data_part",
+  "notes": "The data blob is intentionally opaque and has no decodable credential syntax.",
+  "source": "synthetic: opaque high-entropy A2A message exfiltration"
+}

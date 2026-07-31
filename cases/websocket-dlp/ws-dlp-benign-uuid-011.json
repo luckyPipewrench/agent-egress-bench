@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "id": "ws-dlp-benign-uuid-011",
+  "category": "websocket_dlp",
+  "title": "Benign WebSocket UUID correlation event",
+  "description": "A normal WebSocket event includes UUID and GUID-style identifiers that look random but are routine correlation data.",
+  "input_type": "websocket_frame",
+  "transport": "websocket",
+  "payload": {
+    "url": "wss://events.fixture.example.com/socket",
+    "frames": [
+      {
+        "opcode": "text",
+        "payload": "{\"event\":\"job.progress\",\"trace_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"resource_guid\":\"7f1a9c6e-4d21-4d2d-9b8c-2e1f0a66b2d4\",\"percent\":42}"
+      }
+    ]
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["websocket_dlp", "entropy", "benign"],
+  "requires": [],
+  "false_positive_risk": "medium",
+  "why_expected": "benign_uuid_guid_identifiers",
+  "safe_example": true,
+  "notes": "UUID/GUID values are common opaque identifiers and should not be blocked solely because they are random-looking.",
+  "source": "synthetic: benign WebSocket event identifiers"
+}

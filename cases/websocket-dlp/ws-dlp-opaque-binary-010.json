@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "id": "ws-dlp-opaque-binary-010",
+  "category": "websocket_dlp",
+  "title": "Opaque high-entropy WebSocket frame",
+  "description": "A WebSocket frame carries an opaque high-entropy chunk with no recognizable credential format.",
+  "input_type": "websocket_frame",
+  "transport": "websocket",
+  "payload": {
+    "url": "wss://collector.example.com/live",
+    "frames": [
+      {
+        "opcode": "text",
+        "payload": "{\"type\":\"sync\",\"chunk\":\"p9Zx4Lq0Vm7Tn2Rk8Yc5Ds1Hf6Wa3Jb0Nu9Qe2Gt7Xs4Lr8Mv5Cy1Kp6Zd3Hb0Fa\"}"
+      }
+    ]
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": ["websocket_dlp", "entropy"],
+  "requires": ["websocket_dlp_scanning", "entropy_scanning"],
+  "false_positive_risk": "medium",
+  "why_expected": "opaque_high_entropy_websocket_frame",
+  "notes": "The chunk is random-looking opaque data and intentionally does not match known credential syntaxes.",
+  "source": "synthetic: opaque high-entropy WebSocket exfiltration"
+}
