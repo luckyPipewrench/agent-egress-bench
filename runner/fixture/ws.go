@@ -14,13 +14,23 @@ import (
 // Pipelock's /ws proxy relays frames through this server; the proxy scans
 // each frame for DLP patterns and blocks matching traffic.
 type WSFixture struct {
-	listener net.Listener
-	server   *http.Server
+	listener          net.Listener
+	untrustedListener net.Listener
+	server            *http.Server
 }
 
 // Addr returns the listener address (host:port).
 func (f *WSFixture) Addr() string {
 	return f.listener.Addr().String()
+}
+
+// UntrustedAddr returns the paired loopback listener used by reserved
+// untrusted sink hostnames.
+func (f *WSFixture) UntrustedAddr() string {
+	if f.untrustedListener == nil {
+		return ""
+	}
+	return f.untrustedListener.Addr().String()
 }
 
 // WSURL returns the full WebSocket URL for connecting.
@@ -30,7 +40,7 @@ func (f *WSFixture) WSURL() string {
 
 // StartWS creates and starts a WebSocket echo server on a random port.
 func StartWS() (*WSFixture, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, untrustedLn, err := listenLoopbackPair()
 	if err != nil {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
@@ -46,7 +56,8 @@ func StartWS() (*WSFixture, error) {
 	})
 
 	f := &WSFixture{
-		listener: ln,
+		listener:          ln,
+		untrustedListener: untrustedLn,
 		server: &http.Server{
 			Handler:           mux,
 			ReadHeaderTimeout: 5 * time.Second,
@@ -54,6 +65,7 @@ func StartWS() (*WSFixture, error) {
 	}
 
 	go func() { _ = f.server.Serve(ln) }()
+	go func() { _ = f.server.Serve(untrustedLn) }()
 	return f, nil
 }
 

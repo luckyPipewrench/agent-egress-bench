@@ -69,6 +69,22 @@ The scoring boundary is off-by-one sensitive: a limit of `N` must allow the firs
 
 Weighted fields such as `cost_units` and `budget_limit_units` are intentionally not part of the contract because call-count budget tools cannot score them.
 
+### Reserved untrusted sinks
+
+Some opaque-entropy cases must be sent to a reachable destination that is not in
+the tool's trusted-destination set. The corpus reserves these synthetic hosts for
+that purpose:
+
+- `ws-exfil-sink.test` for WebSocket frame cases
+- `a2a-exfil-sink.test` for A2A message cases using `payload.target_url`
+
+A runner should route these hosts deterministically to a local or otherwise
+controlled sink, but the routing mechanism must not make the hostname trusted.
+For tools with an SSRF floor, use an IP-scoped reachability exception or
+equivalent local fixture route rather than adding the sink hostname to trusted
+domains. This keeps benign trusted-fixture controls allowed while still scoring
+whether opaque high-entropy content is blocked when sent to an untrusted sink.
+
 ## Applicability Check
 
 Before running a case, the runner must check applicability:

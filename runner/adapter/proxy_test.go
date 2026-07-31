@@ -189,6 +189,43 @@ func TestRunA2AMessageUsesCanonicalForwardProxyEndpoint(t *testing.T) {
 	}
 }
 
+func TestRunA2AMessageRoutesReservedSinkWithoutTrustedFixtureHost(t *testing.T) {
+	var gotHost, gotPath string
+	var gotRoutePath string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, `{"blocked":true}`)
+	}))
+	defer proxy.Close()
+
+	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), proxy.Listener.Addr().String(), "", "")
+	a.SetHTTPFixtureWithContentType("127.0.0.1:34567", func(path, _, _ string) {
+		gotRoutePath = path
+	})
+	result := a.Run(Case{
+		ID:        "a2a-untrusted-sink-proof",
+		Transport: "a2a",
+		InputType: "a2a_message",
+		Payload: map[string]interface{}{
+			"target_url": "http://a2a-exfil-sink.test/message:send",
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "message/send"},
+			},
+		},
+	}, time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block; err = %v", result.Verdict, result.Err)
+	}
+	if gotHost != "a2a-exfil-sink.test:34567" {
+		t.Fatalf("host = %q, want reserved untrusted sink with fixture port", gotHost)
+	}
+	if gotPath != "/message:send" || gotRoutePath != "/message:send" {
+		t.Fatalf("path/route = %q/%q, want canonical /message:send", gotPath, gotRoutePath)
+	}
+}
+
 func TestRunA2AAgentCardUsesCanonicalForwardProxyEndpoint(t *testing.T) {
 	var gotPath, gotMethod, gotAccept, gotRoutePath string
 	var scanCalls int
@@ -639,6 +676,50 @@ func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 	}, 5*time.Second)
 	if result.Verdict != "allow" {
 		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+}
+
+func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
+	var gotTarget string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTarget = r.URL.Query().Get("url")
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server does not support hijacking")
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo")); err != nil {
+			t.Fatalf("write echo frame: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	a.SetWSFixture("127.0.0.1:34567")
+	result := a.runWebSocketFrameViaProxy(Case{
+		ID:        "ws-untrusted-sink-proof",
+		Transport: "websocket",
+		InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://ws-exfil-sink.test/live",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "hello over ws"}},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+	if gotTarget != "ws://ws-exfil-sink.test:34567/echo" {
+		t.Fatalf("target = %q, want reserved sink hostname with fixture port", gotTarget)
 	}
 }
 

@@ -13,14 +13,24 @@ import (
 // the proxy's fetch endpoint pointing at this server. The proxy fetches
 // the content and scans it for injection before returning to the agent.
 type HTTPFixture struct {
-	listener net.Listener
-	server   *http.Server
-	mu       sync.Mutex
-	routes   map[string]HTTPRoute // path -> response metadata
+	listener          net.Listener
+	untrustedListener net.Listener
+	server            *http.Server
+	mu                sync.Mutex
+	routes            map[string]HTTPRoute // path -> response metadata
 }
 
 // Addr returns the listener address (host:port).
 func (f *HTTPFixture) Addr() string { return f.listener.Addr().String() }
+
+// UntrustedAddr returns the paired loopback listener used by reserved
+// untrusted sink hostnames.
+func (f *HTTPFixture) UntrustedAddr() string {
+	if f.untrustedListener == nil {
+		return ""
+	}
+	return f.untrustedListener.Addr().String()
+}
 
 // HTTPRoute is a fixture response.
 type HTTPRoute struct {
@@ -42,14 +52,15 @@ func (f *HTTPFixture) SetRouteWithContentType(path, body, contentType string) {
 
 // StartHTTP creates and starts an HTTP response fixture on a random port.
 func StartHTTP() (*HTTPFixture, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, untrustedLn, err := listenLoopbackPair()
 	if err != nil {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
 
 	f := &HTTPFixture{
-		listener: ln,
-		routes:   make(map[string]HTTPRoute),
+		listener:          ln,
+		untrustedListener: untrustedLn,
+		routes:            make(map[string]HTTPRoute),
 	}
 
 	mux := http.NewServeMux()
@@ -71,6 +82,7 @@ func StartHTTP() (*HTTPFixture, error) {
 	}
 
 	go func() { _ = f.server.Serve(ln) }()
+	go func() { _ = f.server.Serve(untrustedLn) }()
 	return f, nil
 }
 

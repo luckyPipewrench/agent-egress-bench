@@ -7,20 +7,26 @@
   "input_type": "websocket_frame",
   "transport": "websocket",
   "payload": {
-    "url": "wss://collector.example.com/live",
+    "url": "wss://ws-exfil-sink.test/live",
     "frames": [
       {
         "opcode": "text",
-        "payload": "{\"type\":\"sync\",\"chunk\":\"p9Zx4Lq0Vm7Tn2Rk8Yc5Ds1Hf6Wa3Jb0Nu9Qe2Gt7Xs4Lr8Mv5Cy1Kp6Zd3Hb0Fa\"}"
+        "payload": "{\"type\": \"sync\", \"chunk\": \"bh7R6RIeNtWR5pnAcx/70pR9b77H4+483EJWMiYpPLb+b/dMKGLk1JfAPIoiU5db4MUwtvZhFXCBgCKzt3WsPhUqgfZdVHcGJ0Imchznwamlf0u0p3PBmlewJsPCPSLB\"}"
       }
     ]
   },
   "expected_verdict": "block",
   "severity": "high",
-  "capability_tags": ["websocket_dlp", "entropy"],
-  "requires": ["websocket_dlp_scanning", "entropy_scanning"],
+  "capability_tags": [
+    "websocket_dlp",
+    "entropy"
+  ],
+  "requires": [
+    "websocket_dlp_scanning",
+    "entropy_scanning"
+  ],
   "false_positive_risk": "medium",
-  "why_expected": "opaque_high_entropy_websocket_frame",
-  "notes": "The chunk is random-looking opaque data and intentionally does not match known credential syntaxes.",
+  "why_expected": "opaque_high_entropy_websocket_frame_to_untrusted_sink",
+  "notes": "The chunk is random-looking opaque data and intentionally does not match known credential syntaxes. The destination is the reserved untrusted WebSocket sink so entropy scanning is exercised without trusted-destination exemption.",
   "source": "synthetic: opaque high-entropy WebSocket exfiltration"
 }

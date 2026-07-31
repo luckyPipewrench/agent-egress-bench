@@ -47,8 +47,11 @@ import (
 // tool reject SSRF attacks that target loopback directly while still
 // reaching the benign fixture under test.
 const (
-	fixtureHostname   = "aeb-fixture.test"
-	wsFixtureHostname = fixtureHostname
+	fixtureHostname           = "aeb-fixture.test"
+	wsFixtureHostname         = fixtureHostname
+	wsUntrustedSinkHostname   = "ws-exfil-sink.test"
+	a2aUntrustedSinkHostname  = "a2a-exfil-sink.test"
+	a2aMessageDefaultEndpoint = "/message:send"
 )
 
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
@@ -233,28 +236,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
 	}
-	if p.wsAddr != "" {
-		if u, err := url.Parse(targetURL); err == nil {
-			if u.Host == "example.com" || u.Host == "echo.websocket.org" || strings.HasSuffix(u.Host, ".example.com") {
-				// Route through the canonical fixture hostname rather than
-				// the literal loopback IP. A correctly-configured benchmark
-				// pipelock instance maps wsFixtureHostname to 127.0.0.1 via
-				// dns.host_overrides and grants it trusted_domains, so the
-				// SSRF check permits the connection without exempting raw
-				// IP literals — attacks that hit 127.0.0.1 directly are
-				// still blocked. Tools without a hostname-override or
-				// fixture-DNS equivalent should configure their runner
-				// environment to resolve wsFixtureHostname to p.wsAddr's
-				// host address before enabling the fixture-backed WS cases.
-				_, port, splitErr := net.SplitHostPort(p.wsAddr)
-				if splitErr != nil || port == "" {
-					targetURL = "ws://" + p.wsAddr + "/echo"
-				} else {
-					targetURL = "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
-				}
-			}
-		}
-	}
+	targetURL = p.routeWebSocketFixtureURL(targetURL)
 
 	conn, err := net.DialTimeout("tcp", p.proxyURL.Host, timeout)
 	if err != nil {
@@ -379,6 +361,46 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		lastFrame.opcode = opcode
 		lastFrame.payloadBytes = len(payload)
 		lastFrame.seen = true
+	}
+}
+
+func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
+	if p.wsAddr == "" {
+		return targetURL
+	}
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return targetURL
+	}
+	host := strings.ToLower(u.Hostname())
+	shouldRouteTrusted := host == "example.com" || host == "echo.websocket.org" || strings.HasSuffix(host, ".example.com")
+	shouldRouteUntrusted := host == wsUntrustedSinkHostname
+	if !shouldRouteTrusted && !shouldRouteUntrusted {
+		return targetURL
+	}
+	_, port, splitErr := net.SplitHostPort(p.wsAddr)
+	if splitErr != nil || port == "" {
+		return "ws://" + p.wsAddr + "/echo"
+	}
+	switch host {
+	case wsUntrustedSinkHostname:
+		// Preserve the reserved untrusted sink hostname so destination-trust
+		// policy is exercised. The DNS fixture/config maps it to a reachable
+		// loopback listener separately from the trusted fixture hostname.
+		u.Scheme = "ws"
+		u.Host = net.JoinHostPort(wsUntrustedSinkHostname, port)
+		u.Path = "/echo"
+		u.RawQuery = ""
+		return u.String()
+	case "example.com", "echo.websocket.org":
+		return "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
+	default:
+		// Route through the canonical fixture hostname rather than the literal
+		// loopback IP. A correctly-configured benchmark instance maps
+		// wsFixtureHostname to 127.0.0.1 via DNS override and grants it trusted
+		// destination status, so the SSRF check permits the connection without
+		// exempting raw IP literals.
+		return "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
 	}
 }
 
@@ -710,25 +732,24 @@ func (p *ProxyAdapter) runA2A(c Case, timeout time.Duration) Result {
 }
 
 func (p *ProxyAdapter) runA2AMessageViaForwardProxy(c Case, timeout time.Duration) Result {
-	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+	targetURL, _ := payloadString(c.Payload, "target_url")
+	if targetURL == "" && (p.httpFixtureAddr == "" || p.setHTTPRoute == nil) {
 		return unsupportedTransport(c, "no HTTP fixture configured for A2A forward-proxy execution")
-	}
-	_, port, err := net.SplitHostPort(p.httpFixtureAddr)
-	if err != nil || port == "" {
-		return Result{Err: fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)}
 	}
 	rawMsgs, ok := c.Payload["jsonrpc_messages"].([]interface{})
 	if !ok || len(rawMsgs) == 0 {
 		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in A2A payload", c.ID)}
 	}
 	body, _ := json.Marshal(rawMsgs[0])
-	path := "/message:send"
+	target, path, err := p.routeA2AMessageTargetURL(c)
+	if err != nil {
+		return Result{Err: err}
+	}
 	if p.setHTTPRouteCT != nil {
 		p.setHTTPRouteCT(path, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`, "application/a2a+json")
-	} else {
+	} else if p.setHTTPRoute != nil {
 		p.setHTTPRoute(path, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
 	}
-	target := "http://" + net.JoinHostPort(fixtureHostname, port) + path
 	headers := http.Header{"Content-Type": []string{"application/a2a+json"}}
 	result := p.doHTTPProxyRequest(c.ID, http.MethodPost, target, strings.NewReader(string(body)), headers, timeout, "")
 	if result.Evidence == nil {
@@ -736,6 +757,42 @@ func (p *ProxyAdapter) runA2AMessageViaForwardProxy(c Case, timeout time.Duratio
 	}
 	result.Evidence["product_surface"] = "forward_proxy_a2a_request"
 	return result
+}
+
+func (p *ProxyAdapter) routeA2AMessageTargetURL(c Case) (string, string, error) {
+	targetURL, _ := payloadString(c.Payload, "target_url")
+	if targetURL != "" {
+		u, err := url.Parse(targetURL)
+		if err != nil || u.Hostname() == "" {
+			return "", "", fmt.Errorf("case %s: invalid A2A target_url %q", c.ID, targetURL)
+		}
+		if strings.ToLower(u.Hostname()) != a2aUntrustedSinkHostname {
+			return "", "", fmt.Errorf("case %s: A2A target_url host %q is not a reserved benchmark sink", c.ID, u.Hostname())
+		}
+		path := u.EscapedPath()
+		if path == "" {
+			path = a2aMessageDefaultEndpoint
+			u.Path = path
+		}
+		if p.httpFixtureAddr != "" {
+			_, port, splitErr := net.SplitHostPort(p.httpFixtureAddr)
+			if splitErr != nil || port == "" {
+				return "", "", fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)
+			}
+			u.Scheme = "http"
+			u.Host = net.JoinHostPort(a2aUntrustedSinkHostname, port)
+		}
+		return u.String(), path, nil
+	}
+
+	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+		return "", "", fmt.Errorf("case %s: no HTTP fixture configured for A2A forward-proxy execution", c.ID)
+	}
+	_, port, err := net.SplitHostPort(p.httpFixtureAddr)
+	if err != nil || port == "" {
+		return "", "", fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)
+	}
+	return "http://" + net.JoinHostPort(fixtureHostname, port) + a2aMessageDefaultEndpoint, a2aMessageDefaultEndpoint, nil
 }
 
 func (p *ProxyAdapter) runA2AAgentCardViaForwardProxy(c Case, timeout time.Duration) Result {

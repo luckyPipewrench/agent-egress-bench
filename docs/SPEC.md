@@ -160,11 +160,19 @@ call `N+1` is the first over-budget call. Do not use weighted `cost_units` or
 
 ```json
 {
+  "target_url": "http://a2a-exfil-sink.test/message:send",
   "jsonrpc_messages": [
     {"jsonrpc": "2.0", "method": "message/send", "params": {"message": {"parts": []}}, "id": 1}
   ]
 }
 ```
+
+`target_url` is optional. When present, it identifies the A2A HTTP endpoint the
+runner should send the JSON-RPC message to. The reserved host
+`a2a-exfil-sink.test` is an untrusted benchmark sink for cases that must exercise
+destination-sensitive detectors such as opaque entropy scanning. Runners may make
+the sink reachable with local DNS or IP allowlisting, but must not treat the
+hostname itself as trusted.
 
 ### A2A Agent Card cases (`input_type: a2a_agent_card`)
 
@@ -187,6 +195,11 @@ call `N+1` is the first over-budget call. Do not use weighted `cost_units` or
   ]
 }
 ```
+
+The reserved host `ws-exfil-sink.test` is an untrusted benchmark sink for
+WebSocket cases that must exercise destination-sensitive detectors such as opaque
+entropy scanning. Runners may route it to a local reachable fixture, but must not
+rewrite it to a trusted fixture hostname or add it to a trusted-destination list.
 
 ## Applicability
 
