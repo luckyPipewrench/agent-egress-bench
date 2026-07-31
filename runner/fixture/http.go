@@ -16,6 +16,7 @@ type HTTPFixture struct {
 	listener          net.Listener
 	untrustedListener net.Listener
 	server            *http.Server
+	untrustedServer   *http.Server
 	mu                sync.Mutex
 	routes            map[string]HTTPRoute // path -> response metadata
 }
@@ -76,17 +77,19 @@ func StartHTTP() (*HTTPFixture, error) {
 		_, _ = fmt.Fprint(w, route.Body)
 	})
 
-	f.server = &http.Server{
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	// Separate *http.Server per listener: net/http tolerates one server across
+	// multiple listeners, but two independent servers keep the trusted and
+	// untrusted sink listeners fully isolated and unambiguously shut down.
+	f.server = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	f.untrustedServer = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 
 	go func() { _ = f.server.Serve(ln) }()
-	go func() { _ = f.server.Serve(untrustedLn) }()
+	go func() { _ = f.untrustedServer.Serve(untrustedLn) }()
 	return f, nil
 }
 
-// Close stops the HTTP server.
+// Close stops both HTTP listeners.
 func (f *HTTPFixture) Close() {
 	_ = f.server.Close()
+	_ = f.untrustedServer.Close()
 }

@@ -17,6 +17,7 @@ type WSFixture struct {
 	listener          net.Listener
 	untrustedListener net.Listener
 	server            *http.Server
+	untrustedServer   *http.Server
 }
 
 // Addr returns the listener address (host:port).
@@ -55,21 +56,22 @@ func StartWS() (*WSFixture, error) {
 		_, _ = fmt.Fprint(w, "ok")
 	})
 
+	// Separate *http.Server per listener keeps the trusted and untrusted sink
+	// listeners fully isolated and unambiguously shut down.
 	f := &WSFixture{
 		listener:          ln,
 		untrustedListener: untrustedLn,
-		server: &http.Server{
-			Handler:           mux,
-			ReadHeaderTimeout: 5 * time.Second,
-		},
+		server:            &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second},
+		untrustedServer:   &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second},
 	}
 
 	go func() { _ = f.server.Serve(ln) }()
-	go func() { _ = f.server.Serve(untrustedLn) }()
+	go func() { _ = f.untrustedServer.Serve(untrustedLn) }()
 	return f, nil
 }
 
-// Close stops the WebSocket server.
+// Close stops both WebSocket listeners.
 func (f *WSFixture) Close() {
 	_ = f.server.Close()
+	_ = f.untrustedServer.Close()
 }

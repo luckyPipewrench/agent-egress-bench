@@ -832,6 +832,13 @@ func hasCaseSpecificFailureEvidence(r ResultLine) bool {
 	if r.Score != "fail" || r.Evidence == nil {
 		return false
 	}
+	// Gate on a budget-specific evidence field so only a genuine
+	// budget-enforcement result (which always carries over_budget_call_id
+	// alongside before-over-budget timing) can bypass the
+	// matching-verdict-must-pass rule; a non-budget result line cannot.
+	if _, ok := r.Evidence["over_budget_call_id"]; !ok {
+		return false
+	}
 	return r.Evidence["budget_block_timing"] == "before_over_budget"
 }
 
