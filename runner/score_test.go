@@ -44,6 +44,19 @@ func TestScoreCaseWithEvidence_BudgetEarlyBlockFails(t *testing.T) {
 	if score != "pass" {
 		t.Fatalf("score = %q, want pass", score)
 	}
+
+	// Missing timing evidence cannot prove the first budget_limit_calls calls
+	// were allowed, so an unattributed block must not pass as a budget block.
+	if score := scoreCaseWithEvidence(c, "block", nil); score != "fail" {
+		t.Fatalf("missing-evidence score = %q, want fail", score)
+	}
+	if score := scoreCaseWithEvidence(c, "block", map[string]interface{}{}); score != "fail" {
+		t.Fatalf("empty-evidence score = %q, want fail", score)
+	}
+	// Unknown timing value is not proof of at-or-after ordering.
+	if score := scoreCaseWithEvidence(c, "block", map[string]interface{}{"budget_block_timing": "unknown"}); score != "fail" {
+		t.Fatalf("unknown-timing score = %q, want fail", score)
+	}
 }
 
 func TestComputeScores(t *testing.T) {

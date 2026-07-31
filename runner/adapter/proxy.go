@@ -774,14 +774,15 @@ func (p *ProxyAdapter) routeA2AMessageTargetURL(c Case) (string, string, error) 
 			path = a2aMessageDefaultEndpoint
 			u.Path = path
 		}
-		if p.httpFixtureAddr != "" {
-			_, port, splitErr := net.SplitHostPort(p.httpFixtureAddr)
-			if splitErr != nil || port == "" {
-				return "", "", fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)
-			}
-			u.Scheme = "http"
-			u.Host = net.JoinHostPort(a2aUntrustedSinkHostname, port)
+		if p.httpFixtureAddr == "" {
+			return "", "", fmt.Errorf("case %s: no HTTP fixture configured for A2A sink target_url %q", c.ID, targetURL)
 		}
+		_, port, splitErr := net.SplitHostPort(p.httpFixtureAddr)
+		if splitErr != nil || port == "" {
+			return "", "", fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)
+		}
+		u.Scheme = "http"
+		u.Host = net.JoinHostPort(a2aUntrustedSinkHostname, port)
 		return u.String(), path, nil
 	}
 

@@ -118,7 +118,7 @@ Do not use detector-specific `requires` to skip benign `allow` controls. Those c
 | Message forwarded without block signal | `allow` |
 | Transport or runner failure | `error` |
 
-For budget-enforcement MCP sequences, runners should include evidence fields such as `budget_limit_calls`, `blocked_call_id`, `blocked_call_index`, `over_budget_call_id`, and `budget_block_timing` (`at_or_after_over_budget` or `before_over_budget`) when a block is observed.
+For budget-enforcement MCP sequences, runners should include evidence fields such as `budget_limit_calls`, `blocked_call_id`, `blocked_call_index`, and `over_budget_call_id` when a block is observed. When a budget block is observed, the runner must include `budget_block_timing` (`at_or_after_over_budget` or `before_over_budget`); a budget-block case scores `pass` only when the timing is `at_or_after_over_budget`, so a block that cannot prove it allowed the first `budget_limit_calls` calls does not pass.
 
 ## Verdict Mapping
 

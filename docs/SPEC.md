@@ -150,7 +150,7 @@ carry these payload fields alongside `jsonrpc_messages`:
 | `budget_scope` | string | Must be `per_subject` for current budget cases. |
 | `subject_id` | string | Neutral subject label used by the case payload. |
 | `budget_limit_calls` | integer | Maximum allowed MCP tool calls for the subject in the benchmark window. |
-| `over_budget_call_id` | integer or string | Required for `block` cases; identifies the first call that exceeds `budget_limit_calls`. Omit for `allow` controls. |
+| `over_budget_call_id` | integer | Required for `block` cases; identifies the first call that exceeds `budget_limit_calls`. Omit for `allow` controls. |
 
 For a limit of `N`, the intended boundary is: calls `1..N` are allowed, and
 call `N+1` is the first over-budget call. Do not use weighted `cost_units` or
@@ -168,7 +168,8 @@ call `N+1` is the first over-budget call. Do not use weighted `cost_units` or
 ```
 
 `target_url` is optional. When present, it identifies the A2A HTTP endpoint the
-runner should send the JSON-RPC message to. The reserved host
+runner should send the JSON-RPC message to, and its host must be the reserved
+benchmark sink `a2a-exfil-sink.test`. The reserved host
 `a2a-exfil-sink.test` is an untrusted benchmark sink for cases that must exercise
 destination-sensitive detectors such as opaque entropy scanning. Runners may make
 the sink reachable with local DNS or IP allowlisting, but must not treat the
