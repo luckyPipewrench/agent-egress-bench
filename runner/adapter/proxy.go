@@ -47,8 +47,11 @@ import (
 // tool reject SSRF attacks that target loopback directly while still
 // reaching the benign fixture under test.
 const (
-	fixtureHostname   = "aeb-fixture.test"
-	wsFixtureHostname = fixtureHostname
+	fixtureHostname           = "aeb-fixture.test"
+	wsFixtureHostname         = fixtureHostname
+	wsUntrustedSinkHostname   = "ws-exfil-sink.test"
+	a2aUntrustedSinkHostname  = "a2a-exfil-sink.test"
+	a2aMessageDefaultEndpoint = "/message:send"
 )
 
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
@@ -67,7 +70,8 @@ type ProxyAdapter struct {
 	setTLSRoute     func(path, body string)
 	setTLSRouteCT   func(path, body, contentType string)
 	setTLSRouteHost func(host, path, body, contentType string)
-	wsAddr          string        // WS fixture for websocket cases
+	wsAddr          string        // trusted WS fixture for websocket cases
+	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
 }
 
@@ -122,7 +126,13 @@ func (p *ProxyAdapter) SetTLSFixtureWithContentType(addr, caFile string, setRout
 }
 
 // SetWSFixture configures the WS fixture address for websocket cases.
-func (p *ProxyAdapter) SetWSFixture(addr string) { p.wsAddr = addr }
+func (p *ProxyAdapter) SetWSFixture(addr string) { p.SetWSFixtures(addr, "") }
+
+// SetWSFixtures configures trusted and untrusted WS fixture addresses.
+func (p *ProxyAdapter) SetWSFixtures(trustedAddr, untrustedAddr string) {
+	p.wsAddr = trustedAddr
+	p.wsUntrustedAddr = untrustedAddr
+}
 
 // SetMCPHTTPURL configures the Pipelock MCP HTTP listener URL.
 func (p *ProxyAdapter) SetMCPHTTPURL(rawURL string) { p.mcpHTTPURL = rawURL }
@@ -233,28 +243,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
 	}
-	if p.wsAddr != "" {
-		if u, err := url.Parse(targetURL); err == nil {
-			if u.Host == "example.com" || u.Host == "echo.websocket.org" || strings.HasSuffix(u.Host, ".example.com") {
-				// Route through the canonical fixture hostname rather than
-				// the literal loopback IP. A correctly-configured benchmark
-				// pipelock instance maps wsFixtureHostname to 127.0.0.1 via
-				// dns.host_overrides and grants it trusted_domains, so the
-				// SSRF check permits the connection without exempting raw
-				// IP literals — attacks that hit 127.0.0.1 directly are
-				// still blocked. Tools without a hostname-override or
-				// fixture-DNS equivalent should configure their runner
-				// environment to resolve wsFixtureHostname to p.wsAddr's
-				// host address before enabling the fixture-backed WS cases.
-				_, port, splitErr := net.SplitHostPort(p.wsAddr)
-				if splitErr != nil || port == "" {
-					targetURL = "ws://" + p.wsAddr + "/echo"
-				} else {
-					targetURL = "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
-				}
-			}
-		}
-	}
+	targetURL = p.routeWebSocketFixtureURL(targetURL)
 
 	conn, err := net.DialTimeout("tcp", p.proxyURL.Host, timeout)
 	if err != nil {
@@ -379,6 +368,58 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		lastFrame.opcode = opcode
 		lastFrame.payloadBytes = len(payload)
 		lastFrame.seen = true
+	}
+}
+
+func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
+	if p.wsAddr == "" {
+		return targetURL
+	}
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return targetURL
+	}
+	host := strings.ToLower(u.Hostname())
+	shouldRouteTrusted := host == "example.com" || host == "echo.websocket.org" || strings.HasSuffix(host, ".example.com")
+	shouldRouteUntrusted := host == wsUntrustedSinkHostname
+	if !shouldRouteTrusted && !shouldRouteUntrusted {
+		return targetURL
+	}
+	switch host {
+	case wsUntrustedSinkHostname:
+		untrustedAddr := p.wsUntrustedAddr
+		if untrustedAddr == "" {
+			untrustedAddr = p.wsAddr
+		}
+		_, port, splitErr := net.SplitHostPort(untrustedAddr)
+		if splitErr != nil || port == "" {
+			return "ws://" + untrustedAddr + "/echo"
+		}
+		// Preserve the reserved untrusted sink hostname so destination-trust
+		// policy is exercised. The DNS fixture/config maps it to a reachable
+		// loopback listener separately from the trusted fixture hostname.
+		u.Scheme = "ws"
+		u.Host = net.JoinHostPort(wsUntrustedSinkHostname, port)
+		u.Path = "/echo"
+		u.RawQuery = ""
+		return u.String()
+	case "example.com", "echo.websocket.org":
+		_, port, splitErr := net.SplitHostPort(p.wsAddr)
+		if splitErr != nil || port == "" {
+			return "ws://" + p.wsAddr + "/echo"
+		}
+		return "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
+	default:
+		_, port, splitErr := net.SplitHostPort(p.wsAddr)
+		if splitErr != nil || port == "" {
+			return "ws://" + p.wsAddr + "/echo"
+		}
+		// Route through the canonical fixture hostname rather than the literal
+		// loopback IP. A correctly-configured benchmark instance maps
+		// wsFixtureHostname to 127.0.0.1 via DNS override and grants it trusted
+		// destination status, so the SSRF check permits the connection without
+		// exempting raw IP literals.
+		return "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
 	}
 }
 
@@ -710,25 +751,24 @@ func (p *ProxyAdapter) runA2A(c Case, timeout time.Duration) Result {
 }
 
 func (p *ProxyAdapter) runA2AMessageViaForwardProxy(c Case, timeout time.Duration) Result {
-	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+	targetURL, _ := payloadString(c.Payload, "target_url")
+	if targetURL == "" && (p.httpFixtureAddr == "" || p.setHTTPRoute == nil) {
 		return unsupportedTransport(c, "no HTTP fixture configured for A2A forward-proxy execution")
-	}
-	_, port, err := net.SplitHostPort(p.httpFixtureAddr)
-	if err != nil || port == "" {
-		return Result{Err: fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)}
 	}
 	rawMsgs, ok := c.Payload["jsonrpc_messages"].([]interface{})
 	if !ok || len(rawMsgs) == 0 {
 		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in A2A payload", c.ID)}
 	}
 	body, _ := json.Marshal(rawMsgs[0])
-	path := "/message:send"
+	target, path, err := p.routeA2AMessageTargetURL(c)
+	if err != nil {
+		return Result{Err: err}
+	}
 	if p.setHTTPRouteCT != nil {
 		p.setHTTPRouteCT(path, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`, "application/a2a+json")
-	} else {
+	} else if p.setHTTPRoute != nil {
 		p.setHTTPRoute(path, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
 	}
-	target := "http://" + net.JoinHostPort(fixtureHostname, port) + path
 	headers := http.Header{"Content-Type": []string{"application/a2a+json"}}
 	result := p.doHTTPProxyRequest(c.ID, http.MethodPost, target, strings.NewReader(string(body)), headers, timeout, "")
 	if result.Evidence == nil {
@@ -736,6 +776,43 @@ func (p *ProxyAdapter) runA2AMessageViaForwardProxy(c Case, timeout time.Duratio
 	}
 	result.Evidence["product_surface"] = "forward_proxy_a2a_request"
 	return result
+}
+
+func (p *ProxyAdapter) routeA2AMessageTargetURL(c Case) (string, string, error) {
+	targetURL, _ := payloadString(c.Payload, "target_url")
+	if targetURL != "" {
+		u, err := url.Parse(targetURL)
+		if err != nil || u.Hostname() == "" {
+			return "", "", fmt.Errorf("case %s: invalid A2A target_url %q", c.ID, targetURL)
+		}
+		if strings.ToLower(u.Hostname()) != a2aUntrustedSinkHostname {
+			return "", "", fmt.Errorf("case %s: A2A target_url host %q is not a reserved benchmark sink", c.ID, u.Hostname())
+		}
+		path := u.EscapedPath()
+		if path == "" {
+			path = a2aMessageDefaultEndpoint
+			u.Path = path
+		}
+		if p.httpFixtureAddr == "" {
+			return "", "", fmt.Errorf("case %s: no HTTP fixture configured for A2A sink target_url %q", c.ID, targetURL)
+		}
+		_, port, splitErr := net.SplitHostPort(p.httpFixtureAddr)
+		if splitErr != nil || port == "" {
+			return "", "", fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)
+		}
+		u.Scheme = "http"
+		u.Host = net.JoinHostPort(a2aUntrustedSinkHostname, port)
+		return u.String(), path, nil
+	}
+
+	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
+		return "", "", fmt.Errorf("case %s: no HTTP fixture configured for A2A forward-proxy execution", c.ID)
+	}
+	_, port, err := net.SplitHostPort(p.httpFixtureAddr)
+	if err != nil || port == "" {
+		return "", "", fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)
+	}
+	return "http://" + net.JoinHostPort(fixtureHostname, port) + a2aMessageDefaultEndpoint, a2aMessageDefaultEndpoint, nil
 }
 
 func (p *ProxyAdapter) runA2AAgentCardViaForwardProxy(c Case, timeout time.Duration) Result {
@@ -1197,6 +1274,9 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	if !ok || len(msgList) == 0 {
 		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in payload", c.ID)}
 	}
+	if isBudgetEnforcementCase(c) {
+		return p.runMCPStdioBudgetSequence(c, msgList, timeout)
+	}
 
 	// Separate client requests from server responses.
 	var clientMsgs []interface{}
@@ -1368,6 +1448,303 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		Verdict:  "allow",
 		Evidence: map[string]interface{}{"response_lines": len(lines)},
 	}
+}
+
+func isBudgetEnforcementCase(c Case) bool {
+	if _, ok := c.Payload["budget_limit_calls"]; ok {
+		return true
+	}
+	for _, req := range c.Requires {
+		if req == "budget_enforcement" {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, timeout time.Duration) Result {
+	limit, ok := positivePayloadInt(c.Payload["budget_limit_calls"])
+	if !ok {
+		return Result{Err: fmt.Errorf("case %s: budget_enforcement payload missing positive integer budget_limit_calls", c.ID)}
+	}
+	scope, _ := c.Payload["budget_scope"].(string)
+	subjectID, _ := c.Payload["subject_id"].(string)
+
+	overBudgetID, hasOverBudgetID := positivePayloadInt(c.Payload["over_budget_call_id"])
+	overBudgetIndex := -1
+	if c.ExpectedVerdict == "block" {
+		if !hasOverBudgetID {
+			return Result{Err: fmt.Errorf("case %s: block budget case missing positive integer over_budget_call_id", c.ID)}
+		}
+		for i, msg := range msgList {
+			if messageIDString(msg) == fmt.Sprint(overBudgetID) {
+				overBudgetIndex = i + 1
+				break
+			}
+		}
+		if overBudgetIndex == -1 {
+			return Result{Err: fmt.Errorf("case %s: over_budget_call_id %d does not match any JSON-RPC message id", c.ID, overBudgetID)}
+		}
+	}
+
+	for _, msg := range msgList {
+		m, ok := msg.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, hasResult := m["result"]; hasResult {
+			return Result{Err: fmt.Errorf("case %s: budget_enforcement sequences must contain client tool-call requests only", c.ID)}
+		}
+		if _, hasError := m["error"]; hasError {
+			return Result{Err: fmt.Errorf("case %s: budget_enforcement sequences must contain client tool-call requests only", c.ID)}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: stdin pipe: %w", c.ID, err)}
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: stdout pipe: %w", c.ID, err)}
+	}
+	if startErr := cmd.Start(); startErr != nil {
+		return Result{Err: fmt.Errorf("case %s: start MCP cmd: %w", c.ID, startErr)}
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for i, msg := range msgList {
+		line, _ := json.Marshal(msg)
+		if _, writeErr := stdin.Write(append(line, '\n')); writeErr != nil {
+			_ = stdin.Close()
+			waitErr := cmd.Wait()
+			if waitErr != nil && ctx.Err() == nil {
+				stderrOutput := strings.TrimSpace(stderrBuf.String())
+				if stderrOutput != "" {
+					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed while writing call %d: %w (stderr: %s)", c.ID, i+1, waitErr, stderrOutput)}
+				}
+			}
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "write_failed"})
+		}
+
+		if !scanner.Scan() {
+			_ = stdin.Close()
+			waitErr := cmd.Wait()
+			if scanErr := scanner.Err(); scanErr != nil {
+				return Result{Err: fmt.Errorf("case %s: reading MCP output for call %d: %w", c.ID, i+1, scanErr)}
+			}
+			if waitErr != nil && ctx.Err() == nil {
+				stderrOutput := strings.TrimSpace(stderrBuf.String())
+				if stderrOutput != "" {
+					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
+				}
+			}
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "no_output"})
+		}
+
+		respLine := scanner.Text()
+		if result, handled, responseID := classifyMCPBudgetErrorLine(respLine, c.ID); handled {
+			if result.Err != nil {
+				_ = stdin.Close()
+				_ = cmd.Wait()
+				return result
+			}
+			_ = stdin.Close()
+			_ = cmd.Wait()
+			blockedID := responseID
+			if blockedID == "" {
+				blockedID = messageIDString(msg)
+			}
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, blockedID, result.Evidence)
+		}
+	}
+
+	_ = stdin.Close()
+	waitErr := cmd.Wait()
+	if waitErr != nil && ctx.Err() == nil {
+		stderrOutput := strings.TrimSpace(stderrBuf.String())
+		if stderrOutput != "" {
+			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
+		}
+		return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
+	}
+
+	return Result{
+		Verdict: "allow",
+		Evidence: map[string]interface{}{
+			"budget_limit_calls": limit,
+			"budget_scope":       scope,
+			"subject_id":         subjectID,
+			"calls_observed":     len(msgList),
+		},
+	}
+}
+
+func budgetBlockResult(c Case, limit int, scope, subjectID string, overBudgetID, overBudgetIndex, blockedIndex int, blockedID string, evidence map[string]interface{}) Result {
+	if evidence == nil {
+		evidence = map[string]interface{}{}
+	}
+	evidence["budget_limit_calls"] = limit
+	evidence["budget_scope"] = scope
+	evidence["subject_id"] = subjectID
+	evidence["blocked_call_index"] = blockedIndex
+	if blockedID != "" {
+		evidence["blocked_call_id"] = blockedID
+	}
+	if overBudgetID > 0 {
+		evidence["over_budget_call_id"] = overBudgetID
+		if overBudgetIndex > 0 {
+			evidence["over_budget_call_index"] = overBudgetIndex
+			if blockedIndex < overBudgetIndex {
+				evidence["budget_block_timing"] = "before_over_budget"
+			} else {
+				evidence["budget_block_timing"] = "at_or_after_over_budget"
+			}
+		}
+	}
+	return Result{Verdict: "block", Evidence: evidence}
+}
+
+func positivePayloadInt(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, n > 0
+	case int64:
+		return int(n), n > 0
+	case float64:
+		i := int(n)
+		return i, n > 0 && float64(i) == n
+	case json.Number:
+		i, err := n.Int64()
+		return int(i), err == nil && i > 0
+	default:
+		return 0, false
+	}
+}
+
+func messageIDString(msg interface{}) string {
+	m, ok := msg.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	return jsonRPCIDString(m["id"])
+}
+
+func jsonRPCIDString(id interface{}) string {
+	switch v := id.(type) {
+	case string:
+		return v
+	case float64:
+		i := int(v)
+		if float64(i) == v {
+			return fmt.Sprint(i)
+		}
+		return fmt.Sprint(v)
+	case int:
+		return fmt.Sprint(v)
+	case int64:
+		return fmt.Sprint(v)
+	case json.Number:
+		return v.String()
+	default:
+		return ""
+	}
+}
+
+func classifyMCPErrorLine(respLine, caseID string) (Result, bool, string) {
+	var rpcResp struct {
+		ID    interface{} `json:"id"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(respLine), &rpcResp); jsonErr != nil || rpcResp.Error == nil {
+		return Result{}, false, ""
+	}
+	code := rpcResp.Error.Code
+	responseID := jsonRPCIDString(rpcResp.ID)
+	if code >= -32099 && code <= -32000 {
+		return Result{
+			Verdict: "block",
+			Evidence: map[string]interface{}{
+				"error_code":    code,
+				"error_message": rpcResp.Error.Message,
+			},
+		}, true, responseID
+	}
+	if code <= -32600 {
+		return Result{Err: fmt.Errorf("case %s: JSON-RPC protocol error %d: %s", caseID, code, rpcResp.Error.Message)}, true, responseID
+	}
+	return Result{}, false, responseID
+}
+
+func classifyMCPBudgetErrorLine(respLine, caseID string) (Result, bool, string) {
+	result, handled, responseID := classifyMCPErrorLine(respLine, caseID)
+	if !handled || result.Err == nil {
+		return result, handled, responseID
+	}
+
+	var rpcResp struct {
+		ID    interface{} `json:"id"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(respLine), &rpcResp); jsonErr != nil || rpcResp.Error == nil {
+		return result, handled, responseID
+	}
+	if !isBudgetLimitProtocolError(rpcResp.Error.Code, rpcResp.Error.Message) {
+		return result, handled, responseID
+	}
+	return Result{
+		Verdict: "block",
+		Evidence: map[string]interface{}{
+			"error_code":    rpcResp.Error.Code,
+			"error_message": rpcResp.Error.Message,
+		},
+	}, true, jsonRPCIDString(rpcResp.ID)
+}
+
+func isBudgetLimitProtocolError(code int, message string) bool {
+	if code > -32600 {
+		return false
+	}
+	msg := normalizeBudgetErrorMessage(message)
+	hasBudgetPhrase := strings.Contains(msg, "budget") || strings.Contains(msg, "quota")
+	hasCallLimitPhrase := strings.Contains(msg, "call limit") ||
+		strings.Contains(msg, "call limits") ||
+		strings.Contains(msg, "too many tool calls") ||
+		strings.Contains(msg, "too many calls")
+	hasExceeded := strings.Contains(msg, "exceed") ||
+		strings.Contains(msg, "over") ||
+		strings.Contains(msg, "too many") ||
+		strings.Contains(msg, "maximum") ||
+		strings.Contains(msg, "max ") ||
+		strings.Contains(msg, "reached")
+	return hasExceeded && (hasBudgetPhrase || hasCallLimitPhrase)
+}
+
+func normalizeBudgetErrorMessage(message string) string {
+	msg := strings.ToLower(message)
+	replacer := strings.NewReplacer(
+		"-", " ",
+		"_", " ",
+		":", " ",
+		"/", " ",
+		"\t", " ",
+		"\n", " ",
+		"\r", " ",
+	)
+	return strings.Join(strings.Fields(replacer.Replace(msg)), " ")
 }
 
 func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {

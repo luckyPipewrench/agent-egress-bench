@@ -30,6 +30,35 @@ func TestScoreCase(t *testing.T) {
 	}
 }
 
+func TestScoreCaseWithEvidence_BudgetEarlyBlockFails(t *testing.T) {
+	c := Case{
+		ExpectedVerdict: "block",
+		Payload:         map[string]interface{}{"budget_limit_calls": float64(3)},
+	}
+	score := scoreCaseWithEvidence(c, "block", map[string]interface{}{"budget_block_timing": "before_over_budget"})
+	if score != "fail" {
+		t.Fatalf("score = %q, want fail", score)
+	}
+
+	score = scoreCaseWithEvidence(c, "block", map[string]interface{}{"budget_block_timing": "at_or_after_over_budget"})
+	if score != "pass" {
+		t.Fatalf("score = %q, want pass", score)
+	}
+
+	// Missing timing evidence cannot prove the first budget_limit_calls calls
+	// were allowed, so an unattributed block must not pass as a budget block.
+	if score := scoreCaseWithEvidence(c, "block", nil); score != "fail" {
+		t.Fatalf("missing-evidence score = %q, want fail", score)
+	}
+	if score := scoreCaseWithEvidence(c, "block", map[string]interface{}{}); score != "fail" {
+		t.Fatalf("empty-evidence score = %q, want fail", score)
+	}
+	// Unknown timing value is not proof of at-or-after ordering.
+	if score := scoreCaseWithEvidence(c, "block", map[string]interface{}{"budget_block_timing": "unknown"}); score != "fail" {
+		t.Fatalf("unknown-timing score = %q, want fail", score)
+	}
+}
+
 func TestComputeScores(t *testing.T) {
 	t.Run("all malicious blocked", func(t *testing.T) {
 		results := []CaseResult{
@@ -153,8 +182,8 @@ func TestIsSufficient(t *testing.T) {
 		{"79%", floatPtr(0.79), 10, 0, false},
 		{"0%", floatPtr(0.0), 10, 0, false},
 		{"high error rate", floatPtr(1.0), 4, 2, false},       // 2/(4+2)=33% > 20%
-		{"acceptable error rate", floatPtr(1.0), 10, 1, true},  // 1/(10+1)=9% < 20%
-		{"boundary error rate", floatPtr(1.0), 4, 1, true},     // 1/(4+1)=20% = 20% (not >)
+		{"acceptable error rate", floatPtr(1.0), 10, 1, true}, // 1/(10+1)=9% < 20%
+		{"boundary error rate", floatPtr(1.0), 4, 1, true},    // 1/(4+1)=20% = 20% (not >)
 	}
 
 	for _, tt := range tests {

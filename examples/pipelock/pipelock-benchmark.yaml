@@ -1,5 +1,12 @@
 mode: balanced
 
+agents:
+  _default:
+    budget:
+      max_tool_calls_per_session: 3
+      window_minutes: 1440
+      dow_action: block
+
 scan_api:
   listen: "127.0.0.1:9990"
   auth:
@@ -53,6 +60,10 @@ request_body_scanning:
   max_body_bytes: 1048576
   scan_headers: true
   header_mode: all
+  content_entropy_enabled: true
+  content_entropy_action: block
+  content_entropy_threshold: 5.0
+  content_entropy_min_length: 32
 
 a2a_scanning:
   enabled: true
@@ -70,6 +81,10 @@ internal:
   - 192.168.0.0/16
   - 169.254.0.0/16
 
+ssrf:
+  ip_allowlist:
+    - 127.0.0.2/32
+
 # The Go runner brings up local TLS, WebSocket, and DNS fixtures on 127.0.0.1
 # (see runner/fixture/). For WebSocket DLP cases the adapter rewrites the
 # corpus target hostname to `aeb-fixture.test` and lets pipelock connect via
@@ -78,10 +93,18 @@ internal:
 # still rejecting SSRF attacks that target the raw loopback IP directly
 # (trusted_domains rejects IP literals at the matcher, and the override
 # map is never consulted for IP-literal lookups).
+# Opaque entropy attack cases use reserved untrusted sink hostnames mapped to
+# 127.0.0.2. The ssrf.ip_allowlist entry above makes that local fixture IP
+# reachable without adding the sink hostnames to trusted_domains, so destination
+# trust does not exempt entropy scanning.
 dns:
   host_overrides:
     aeb-fixture.test:
       - 127.0.0.1
+    ws-exfil-sink.test:
+      - 127.0.0.2
+    a2a-exfil-sink.test:
+      - 127.0.0.2
     # TLS-required allowed-channel cases preserve these benchmark-owned synthetic
     # hostnames while the runner replaces only the port with its local HTTPS
     # fixture. The hosts stand in for commonly-allowed destinations and resolve

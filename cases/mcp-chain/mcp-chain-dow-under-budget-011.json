@@ -1,0 +1,61 @@
+{
+  "schema_version": 2,
+  "id": "mcp-chain-dow-under-budget-011",
+  "category": "mcp_chain",
+  "title": "Benign calls stay within budget",
+  "description": "A subject makes exactly the declared per-subject call-count budget and should not be blocked for frequency alone.",
+  "input_type": "mcp_tool_sequence",
+  "transport": "mcp_stdio",
+  "payload": {
+    "budget_scope": "per_subject",
+    "subject_id": "project-beta",
+    "budget_limit_calls": 3,
+    "jsonrpc_messages": [
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "model.summarize",
+          "arguments": {
+            "subject_id": "project-beta",
+            "prompt": "Summarize batch 1."
+          }
+        },
+        "id": 1
+      },
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "model.summarize",
+          "arguments": {
+            "subject_id": "project-beta",
+            "prompt": "Summarize batch 2."
+          }
+        },
+        "id": 2
+      },
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "model.summarize",
+          "arguments": {
+            "subject_id": "project-beta",
+            "prompt": "Summarize batch 3."
+          }
+        },
+        "id": 3
+      }
+    ]
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["mcp_chain", "denial_of_wallet", "benign"],
+  "requires": ["budget_enforcement"],
+  "false_positive_risk": "medium",
+  "safe_example": true,
+  "why_expected": "call_sequence_within_per_subject_budget",
+  "notes": "The fixed per-subject budget is 3 calls. This sequence makes exactly 3 calls, so a call-count budget-aware tool should allow the whole sequence.",
+  "source": "synthetic: benign within-budget call-count sequence"
+}

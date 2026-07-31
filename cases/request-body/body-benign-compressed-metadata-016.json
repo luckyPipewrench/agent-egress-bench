@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "id": "body-benign-compressed-metadata-016",
+  "category": "request_body",
+  "title": "Benign compressed payload metadata",
+  "description": "A normal telemetry request describes a compressed payload with random-looking digest and chunk identifiers.",
+  "input_type": "request_body",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://telemetry.fixture.example.com/batches",
+    "content_type": "application/json",
+    "body": "{\"compression\":\"zstd\",\"content_encoding\":\"zstd\",\"uncompressed_bytes\":184320,\"compressed_bytes\":23117,\"chunk_id\":\"zstd:8f6c2e4a91b7d053\",\"payload_sha256\":\"6f1e8a8bc3d44a92f7c2e91d6b05ac8a0a33d720e2a6c8b9df3a91e4c7b0d112\"}"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["request_body_dlp", "entropy", "benign"],
+  "requires": [],
+  "false_positive_risk": "medium",
+  "why_expected": "benign_compressed_payload_metadata",
+  "safe_example": true,
+  "notes": "Compression metadata and content hashes can look random but are not themselves credential material.",
+  "source": "synthetic: benign compressed telemetry metadata"
+}

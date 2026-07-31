@@ -25,6 +25,7 @@ func summaryTestSupports(v bool) map[string]bool {
 		"ssrf_scanning", "ssrf_bypass_scanning", "domain_blocklist",
 		"entropy_scanning", "encoding_evasion_scanning", "shell_analysis",
 		"crypto_dlp_scanning", "hostname_exfil_scanning", "dns_rebinding_fixture",
+		"budget_enforcement",
 	}
 	out := make(map[string]bool, len(keys))
 	for _, k := range keys {

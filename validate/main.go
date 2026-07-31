@@ -63,7 +63,7 @@ var (
 		"entropy": true, "encoding_evasion": true, "benign": true,
 		"a2a_scan": true, "a2a_card_poison": true, "websocket_dlp": true,
 		"ssrf_bypass": true, "shell_obfuscation": true, "crypto_dlp": true,
-		"hostname_exfil": true,
+		"hostname_exfil": true, "denial_of_wallet": true,
 	}
 
 	validRequires = map[string]bool{
@@ -95,7 +95,7 @@ var (
 		"domain_blocklist": true, "entropy_scanning": true,
 		"encoding_evasion_scanning": true, "shell_analysis": true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
-		"dns_rebinding_fixture": true,
+		"dns_rebinding_fixture": true, "budget_enforcement": true,
 	}
 
 	validActualVerdicts = map[string]bool{
@@ -125,7 +125,7 @@ var (
 		"domain_blocklist": true, "entropy_scanning": true,
 		"encoding_evasion_scanning": true, "shell_analysis": true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
-		"dns_rebinding_fixture": true,
+		"dns_rebinding_fixture": true, "budget_enforcement": true,
 	}
 
 	// Valid category → input_type combinations per SPEC.md.
@@ -440,6 +440,9 @@ func validateFile(path string, ids map[string]string) []string {
 		for _, pe := range payloadErrors {
 			addErr(pe)
 		}
+		for _, pe := range validateBudgetPayload(c) {
+			addErr(pe)
+		}
 	}
 
 	// Gauntlet categories require a non-empty source field.
@@ -448,6 +451,135 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 
 	return errors
+}
+
+func validateBudgetPayload(c Case) []string {
+	if !contains(c.Requires, "budget_enforcement") && !contains(c.CapabilityTags, "denial_of_wallet") {
+		return nil
+	}
+	var errors []string
+	payload := c.Payload
+
+	if _, hasOldUnits := payload["budget_limit_units"]; hasOldUnits {
+		errors = append(errors, "payload.budget_limit_units is not scoreable; use budget_limit_calls")
+	}
+	if containsCostUnits(payload["jsonrpc_messages"]) {
+		errors = append(errors, "payload jsonrpc_messages must not use weighted cost_units for budget_enforcement cases")
+	}
+	if c.InputType != "mcp_tool_sequence" {
+		errors = append(errors, "budget_enforcement cases must use input_type mcp_tool_sequence")
+	}
+	if scope, ok := payload["budget_scope"].(string); !ok || scope != "per_subject" {
+		errors = append(errors, "payload.budget_scope must be \"per_subject\" for budget_enforcement cases")
+	}
+	subjectID, ok := payload["subject_id"].(string)
+	if !ok || subjectID == "" {
+		errors = append(errors, "payload.subject_id must be a non-empty string for budget_enforcement cases")
+	}
+	limit, ok := positiveInt(payload["budget_limit_calls"])
+	if !ok {
+		errors = append(errors, "payload.budget_limit_calls must be a positive integer for budget_enforcement cases")
+	}
+
+	msgs, _ := payload["jsonrpc_messages"].([]interface{})
+	if len(msgs) == 0 || !ok || subjectID == "" {
+		return errors
+	}
+
+	subjectCalls := 0
+	overBudgetIndex := -1
+	overBudgetID, hasOverBudgetID := positiveInt(payload["over_budget_call_id"])
+	for _, raw := range msgs {
+		msg, isObj := raw.(map[string]interface{})
+		if !isObj {
+			continue
+		}
+		params, _ := msg["params"].(map[string]interface{})
+		args, _ := params["arguments"].(map[string]interface{})
+		if argsSubject, _ := args["subject_id"].(string); argsSubject == subjectID {
+			subjectCalls++
+			if hasOverBudgetID && jsonValueIDString(msg["id"]) == fmt.Sprint(overBudgetID) {
+				overBudgetIndex = subjectCalls
+			}
+		}
+	}
+
+	switch c.ExpectedVerdict {
+	case "block":
+		if !hasOverBudgetID {
+			errors = append(errors, "block budget_enforcement cases must set payload.over_budget_call_id")
+		} else if overBudgetIndex == -1 {
+			errors = append(errors, "payload.over_budget_call_id must identify a call by payload.subject_id")
+		} else if overBudgetIndex != limit+1 {
+			errors = append(errors, fmt.Sprintf("payload.over_budget_call_id must identify subject call %d for budget_limit_calls=%d", limit+1, limit))
+		}
+		if subjectCalls <= limit {
+			errors = append(errors, fmt.Sprintf("block budget_enforcement cases must include more than %d calls by payload.subject_id", limit))
+		}
+	case "allow":
+		if _, hasOver := payload["over_budget_call_id"]; hasOver {
+			errors = append(errors, "allow budget_enforcement cases must not set payload.over_budget_call_id")
+		}
+		if subjectCalls > limit {
+			errors = append(errors, fmt.Sprintf("allow budget_enforcement cases must not exceed budget_limit_calls=%d for payload.subject_id", limit))
+		}
+	}
+
+	return errors
+}
+
+func containsCostUnits(v interface{}) bool {
+	switch x := v.(type) {
+	case []interface{}:
+		for _, elem := range x {
+			if containsCostUnits(elem) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		if _, ok := x["cost_units"]; ok {
+			return true
+		}
+		for _, elem := range x {
+			if containsCostUnits(elem) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func positiveInt(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, n > 0
+	case int64:
+		return int(n), n > 0
+	case float64:
+		i := int(n)
+		return i, n > 0 && float64(i) == n
+	default:
+		return 0, false
+	}
+}
+
+func jsonValueIDString(v interface{}) string {
+	switch id := v.(type) {
+	case string:
+		return id
+	case float64:
+		i := int(id)
+		if float64(i) == id {
+			return fmt.Sprint(i)
+		}
+		return fmt.Sprint(id)
+	case int:
+		return fmt.Sprint(id)
+	case int64:
+		return fmt.Sprint(id)
+	default:
+		return ""
+	}
 }
 
 // validatePayload checks that the payload has the required fields for the given input_type.
@@ -683,7 +815,7 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	// Score consistency checks.
 	if validActualVerdicts[r.ActualVerdict] && validVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
 		switch {
-		case r.ActualVerdict == r.ExpectedVerdict && r.Score != "pass":
+		case r.ActualVerdict == r.ExpectedVerdict && r.Score != "pass" && !hasCaseSpecificFailureEvidence(r):
 			addErr(fmt.Sprintf("inconsistent score: actual_verdict matches expected_verdict (%q) but score is %q (should be pass)",
 				r.ActualVerdict, r.Score))
 		case r.ActualVerdict == "not_applicable" && r.Score != "not_applicable":
@@ -694,6 +826,20 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	}
 
 	return errors
+}
+
+func hasCaseSpecificFailureEvidence(r ResultLine) bool {
+	if r.Score != "fail" || r.Evidence == nil {
+		return false
+	}
+	// Gate on a budget-specific evidence field so only a genuine
+	// budget-enforcement result (which always carries over_budget_call_id
+	// alongside before-over-budget timing) can bypass the
+	// matching-verdict-must-pass rule; a non-budget result line cannot.
+	if _, ok := r.Evidence["over_budget_call_id"]; !ok {
+		return false
+	}
+	return r.Evidence["budget_block_timing"] == "before_over_budget"
 }
 
 func validateResultsFile(path string) []string {

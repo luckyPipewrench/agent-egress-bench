@@ -54,7 +54,8 @@
           "ssrf_bypass",
           "shell_obfuscation",
           "crypto_dlp",
-          "hostname_exfil"
+          "hostname_exfil",
+          "denial_of_wallet"
         ]
       },
       "description": "Capability tags this tool claims for reporting and result interpretation. Applicability is determined by supports and case requires."
@@ -98,7 +99,8 @@
         "shell_analysis",
         "crypto_dlp_scanning",
         "hostname_exfil_scanning",
-        "dns_rebinding_fixture"
+        "dns_rebinding_fixture",
+        "budget_enforcement"
       ],
       "additionalProperties": false,
       "properties": {
@@ -245,6 +247,10 @@
         "dns_rebinding_fixture": {
           "type": "boolean",
           "description": "Runner provides controlled DNS for rebinding tests."
+        },
+        "budget_enforcement": {
+          "type": "boolean",
+          "description": "Tool can enforce per-subject MCP tool-call count budgets during a run."
         }
       }
     }

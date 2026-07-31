@@ -119,6 +119,18 @@ func TestWSFixture(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("health status = %d", resp.StatusCode)
 	}
+	noProxyClient := &http.Client{
+		Transport: &http.Transport{Proxy: nil},
+		Timeout:   5 * time.Second,
+	}
+	respUntrusted, err := noProxyClient.Get("http://" + f.UntrustedAddr() + "/health")
+	if err != nil {
+		t.Fatalf("untrusted health check: %v", err)
+	}
+	_ = respUntrusted.Body.Close()
+	if respUntrusted.StatusCode != http.StatusOK {
+		t.Fatalf("untrusted health status = %d", respUntrusted.StatusCode)
+	}
 
 	// WebSocket echo.
 	ws, err := websocket.Dial("ws://"+f.Addr()+"/echo", "", "http://localhost/")
@@ -140,6 +152,12 @@ func TestWSFixture(t *testing.T) {
 	if string(buf[:n]) != msg {
 		t.Errorf("echo = %q, want %q", buf[:n], msg)
 	}
+
+	ws2, err := websocket.Dial("ws://"+f.UntrustedAddr()+"/echo", "", "http://localhost/")
+	if err != nil {
+		t.Fatalf("dial untrusted listener: %v", err)
+	}
+	_ = ws2.Close()
 }
 
 func TestHTTPFixture(t *testing.T) {
@@ -163,6 +181,19 @@ func TestHTTPFixture(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != `{"result": "test payload"}` {
 		t.Errorf("body = %q, want test payload", body)
+	}
+
+	noProxyClient := &http.Client{
+		Transport: &http.Transport{Proxy: nil},
+		Timeout:   5 * time.Second,
+	}
+	respUntrusted, err := noProxyClient.Get("http://" + f.UntrustedAddr() + "/api/data")
+	if err != nil {
+		t.Fatalf("GET untrusted listener: %v", err)
+	}
+	defer func() { _ = respUntrusted.Body.Close() }()
+	if respUntrusted.StatusCode != http.StatusOK {
+		t.Errorf("untrusted status = %d, want 200", respUntrusted.StatusCode)
 	}
 
 	// Unregistered route returns 404.

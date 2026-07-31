@@ -834,6 +834,71 @@ func TestMCPChainPayload(t *testing.T) {
 	}
 }
 
+func TestBudgetPayloadCallCountValid(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-chain", "mcp-chain-dow-valid-001.json", `{
+		"schema_version": 2, "id": "mcp-chain-dow-valid-001", "category": "mcp_chain",
+		"title": "T", "description": "D", "input_type": "mcp_tool_sequence",
+		"transport": "mcp_stdio",
+		"payload": {
+			"budget_scope": "per_subject",
+			"subject_id": "project-alpha",
+			"budget_limit_calls": 3,
+			"over_budget_call_id": 4,
+			"jsonrpc_messages": [
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha"}}, "id": 1},
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha"}}, "id": 2},
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha"}}, "id": 3},
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha"}}, "id": 4}
+			]
+		},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_chain", "denial_of_wallet"], "requires": ["budget_enforcement"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": "synthetic: test"
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-chain", "mcp-chain-dow-valid-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) > 0 {
+		t.Errorf("expected no errors for call-count budget case, got: %v", errors)
+	}
+}
+
+func TestBudgetPayloadRejectsWeightedUnits(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-chain", "mcp-chain-dow-weighted-001.json", `{
+		"schema_version": 2, "id": "mcp-chain-dow-weighted-001", "category": "mcp_chain",
+		"title": "T", "description": "D", "input_type": "mcp_tool_sequence",
+		"transport": "mcp_stdio",
+		"payload": {
+			"budget_scope": "per_subject",
+			"subject_id": "project-alpha",
+			"budget_limit_units": 100,
+			"budget_limit_calls": 3,
+			"over_budget_call_id": 4,
+			"jsonrpc_messages": [
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha", "cost_units": 35}}, "id": 1},
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha"}}, "id": 2},
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha"}}, "id": 3},
+				{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "summarize", "arguments": {"subject_id": "project-alpha"}}, "id": 4}
+			]
+		},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_chain", "denial_of_wallet"], "requires": ["budget_enforcement"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": "synthetic: test"
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "mcp-chain", "mcp-chain-dow-weighted-001.json")
+	errors := validateFile(path, ids)
+	if len(errors) < 2 {
+		t.Fatalf("expected weighted budget errors, got: %v", errors)
+	}
+}
+
 func TestResponseMITMValidPayload(t *testing.T) {
 	dir := t.TempDir()
 	writeCase(t, dir, "response-mitm", "response-mitm-valid-001.json", `{
@@ -1335,6 +1400,7 @@ func allSupportsKeys() map[string]interface{} {
 		"crypto_dlp_scanning":                 false,
 		"hostname_exfil_scanning":             false,
 		"dns_rebinding_fixture":               false,
+		"budget_enforcement":                  false,
 	}
 }
 
@@ -1370,6 +1436,8 @@ func TestResultValidation_InconsistentScore(t *testing.T) {
 	}{
 		{"match should be pass", "block", "block", "pass", false},
 		{"match but fail", "block", "block", "fail", true},
+		{"match but budget timing fail", "block", "block", "fail", false},
+		{"match but bare timing no budget id", "block", "block", "fail", true},
 		{"na verdict na score", "not_applicable", "block", "not_applicable", false},
 		{"na verdict wrong score", "not_applicable", "block", "pass", true},
 		{"error verdict error score", "error", "block", "error", false},
@@ -1381,6 +1449,17 @@ func TestResultValidation_InconsistentScore(t *testing.T) {
 				CaseID: "t", Tool: "t", ToolVersion: "1",
 				ExpectedVerdict: tt.expected, ActualVerdict: tt.actual, Score: tt.score,
 				Evidence: map[string]interface{}{}, Notes: strPtr(""),
+			}
+			if strings.Contains(tt.name, "budget timing") {
+				// A genuine budget-enforcement result carries over_budget_call_id
+				// alongside before-over-budget timing.
+				r.Evidence["budget_block_timing"] = "before_over_budget"
+				r.Evidence["over_budget_call_id"] = float64(4)
+			}
+			if strings.Contains(tt.name, "bare timing") {
+				// Timing evidence without the budget id must NOT bypass the
+				// matching-verdict-must-pass rule.
+				r.Evidence["budget_block_timing"] = "before_over_budget"
 			}
 			errors := validateResultLine(1, r)
 			hasErr := len(errors) > 0

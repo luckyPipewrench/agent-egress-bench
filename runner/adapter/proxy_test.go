@@ -189,6 +189,43 @@ func TestRunA2AMessageUsesCanonicalForwardProxyEndpoint(t *testing.T) {
 	}
 }
 
+func TestRunA2AMessageRoutesReservedSinkWithoutTrustedFixtureHost(t *testing.T) {
+	var gotHost, gotPath string
+	var gotRoutePath string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, `{"blocked":true}`)
+	}))
+	defer proxy.Close()
+
+	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), proxy.Listener.Addr().String(), "", "")
+	a.SetHTTPFixtureWithContentType("127.0.0.1:34567", func(path, _, _ string) {
+		gotRoutePath = path
+	})
+	result := a.Run(Case{
+		ID:        "a2a-untrusted-sink-proof",
+		Transport: "a2a",
+		InputType: "a2a_message",
+		Payload: map[string]interface{}{
+			"target_url": "http://a2a-exfil-sink.test/message:send",
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "message/send"},
+			},
+		},
+	}, time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block; err = %v", result.Verdict, result.Err)
+	}
+	if gotHost != "a2a-exfil-sink.test:34567" {
+		t.Fatalf("host = %q, want reserved untrusted sink with fixture port", gotHost)
+	}
+	if gotPath != "/message:send" || gotRoutePath != "/message:send" {
+		t.Fatalf("path/route = %q/%q, want canonical /message:send", gotPath, gotRoutePath)
+	}
+}
+
 func TestRunA2AAgentCardUsesCanonicalForwardProxyEndpoint(t *testing.T) {
 	var gotPath, gotMethod, gotAccept, gotRoutePath string
 	var scanCalls int
@@ -642,6 +679,50 @@ func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 	}
 }
 
+func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
+	var gotTarget string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTarget = r.URL.Query().Get("url")
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server does not support hijacking")
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo")); err != nil {
+			t.Fatalf("write echo frame: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	a.SetWSFixtures("127.0.0.1:34567", "127.0.0.2:45678")
+	result := a.runWebSocketFrameViaProxy(Case{
+		ID:        "ws-untrusted-sink-proof",
+		Transport: "websocket",
+		InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://ws-exfil-sink.test/live",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "hello over ws"}},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+	if gotTarget != "ws://ws-exfil-sink.test:45678/echo" {
+		t.Fatalf("target = %q, want reserved sink hostname with untrusted fixture port", gotTarget)
+	}
+}
+
 func TestWriteCorpusWebSocketFrame_ValidThreePartFragmentation(t *testing.T) {
 	var buf bytes.Buffer
 	frames := []map[string]interface{}{
@@ -829,6 +910,237 @@ func TestRunMCPStdio_NoMCPCmd(t *testing.T) {
 	if result.Verdict != "skip" {
 		t.Errorf("expected skip without mcp-cmd, got %q", result.Verdict)
 	}
+}
+
+func TestRunMCPStdioBudgetSequence_BlockAtOverBudgetCall(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 4))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-block", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["blocked_call_index"]; got != 4 {
+		t.Fatalf("blocked_call_index = %v, want 4", got)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_ProtocolBudgetErrorBlocks(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32600, "tool call limit exceeded: 4/3"))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-protocol-block", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["blocked_call_index"]; got != 4 {
+		t.Fatalf("blocked_call_index = %v, want 4", got)
+	}
+	if got := result.Evidence["error_code"]; got != -32600 {
+		t.Fatalf("error_code = %v, want -32600", got)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	}
+}
+
+func TestIsBudgetLimitProtocolError_TightBudgetPhrases(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    bool
+	}{
+		{
+			name:    "pipelock tool call limit",
+			message: "pipelock: tool call limit exceeded: 4/3",
+			want:    true,
+		},
+		{
+			name:    "plain call limit",
+			message: "call limit exceeded",
+			want:    true,
+		},
+		{
+			name:    "budget",
+			message: "budget exceeded",
+			want:    true,
+		},
+		{
+			name:    "quota",
+			message: "quota exceeded",
+			want:    true,
+		},
+		{
+			name:    "request size",
+			message: "Internal error: maximum request size exceeded",
+			want:    false,
+		},
+		{
+			name:    "recursion",
+			message: "recursion limit exceeded for call",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBudgetLimitProtocolError(-32600, tt.message); got != tt.want {
+				t.Fatalf("isBudgetLimitProtocolError(-32600, %q) = %v, want %v", tt.message, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_NonBudgetProtocolErrorFails(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32601, "method not found"))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-protocol-error", "block"), 5*time.Second)
+	if result.Err == nil {
+		t.Fatalf("expected adapter error, got verdict=%q evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if !strings.Contains(result.Err.Error(), "JSON-RPC protocol error -32601: method not found") {
+		t.Fatalf("error = %v", result.Err)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_RecordsEarlyBlock(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 2))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-early", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["blocked_call_index"]; got != 2 {
+		t.Fatalf("blocked_call_index = %v, want 2", got)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "before_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want before_over_budget", got)
+	}
+}
+
+func TestBudgetBlockResult_OmitsTimingWhenOverBudgetIndexUnknown(t *testing.T) {
+	result := budgetBlockResult(Case{ID: "unknown-index"}, 3, "per_subject", "project-alpha", 4, -1, 2, "2", nil)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block", result.Verdict)
+	}
+	if _, ok := result.Evidence["over_budget_call_index"]; ok {
+		t.Fatalf("over_budget_call_index = %v, want omitted", result.Evidence["over_budget_call_index"])
+	}
+	if _, ok := result.Evidence["budget_block_timing"]; ok {
+		t.Fatalf("budget_block_timing = %v, want omitted", result.Evidence["budget_block_timing"])
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_UnderBudgetAllowed(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 0))}
+	c := budgetSequenceCase("dow-allow", "allow")
+	delete(c.Payload, "over_budget_call_id")
+	c.Payload["jsonrpc_messages"] = []interface{}{
+		budgetToolCall(1, "project-alpha"),
+		budgetToolCall(2, "project-alpha"),
+		budgetToolCall(3, "project-alpha"),
+	}
+	result := a.runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["calls_observed"]; got != 3 {
+		t.Fatalf("calls_observed = %v, want 3", got)
+	}
+}
+
+func budgetSequenceCase(id, expected string) Case {
+	return Case{
+		ID:              id,
+		ExpectedVerdict: expected,
+		Transport:       "mcp_stdio",
+		InputType:       "mcp_tool_sequence",
+		Requires:        []string{"budget_enforcement"},
+		Payload: map[string]interface{}{
+			"budget_scope":        "per_subject",
+			"subject_id":          "project-alpha",
+			"budget_limit_calls":  3,
+			"over_budget_call_id": 4,
+			"jsonrpc_messages": []interface{}{
+				budgetToolCall(1, "project-alpha"),
+				budgetToolCall(2, "project-alpha"),
+				budgetToolCall(3, "project-alpha"),
+				budgetToolCall(4, "project-alpha"),
+			},
+		},
+	}
+}
+
+func budgetToolCall(id int, subject string) map[string]interface{} {
+	return map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "tools/call",
+		"params": map[string]interface{}{
+			"name": "model.summarize",
+			"arguments": map[string]interface{}{
+				"subject_id": subject,
+				"prompt":     fmt.Sprintf("Summarize batch %d.", id),
+			},
+		},
+		"id": id,
+	}
+}
+
+func writeBudgetMCPResponder(t *testing.T, blockAt int) string {
+	t.Helper()
+	script, err := os.CreateTemp(t.TempDir(), "budget-mcp-*.sh")
+	if err != nil {
+		t.Fatalf("create script: %v", err)
+	}
+	_, _ = fmt.Fprintf(script, `n=0
+while IFS= read -r line; do
+  n=$((n+1))
+  if [ %d -gt 0 ] && [ "$n" -ge %d ]; then
+    printf '{"jsonrpc":"2.0","id":%%d,"error":{"code":-32001,"message":"budget exceeded"}}\n' "$n"
+    exit 0
+  fi
+  printf '{"jsonrpc":"2.0","id":%%d,"result":{"content":[]}}\n' "$n"
+done
+`, blockAt, blockAt)
+	if err := script.Close(); err != nil {
+		t.Fatalf("close script: %v", err)
+	}
+	return script.Name()
+}
+
+func writeBudgetMCPProtocolErrorResponder(t *testing.T, blockAt, code int, message string) string {
+	t.Helper()
+	script, err := os.CreateTemp(t.TempDir(), "budget-mcp-protocol-*.sh")
+	if err != nil {
+		t.Fatalf("create script: %v", err)
+	}
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	_, _ = fmt.Fprintf(script, `n=0
+while IFS= read -r line; do
+  n=$((n+1))
+  if [ %d -gt 0 ] && [ "$n" -ge %d ]; then
+    printf '{"jsonrpc":"2.0","id":%%d,"error":{"code":%d,"message":%s}}\n' "$n"
+    exit 0
+  fi
+  printf '{"jsonrpc":"2.0","id":%%d,"result":{"content":[]}}\n' "$n"
+done
+`, blockAt, blockAt, code, string(messageJSON))
+	if err := script.Close(); err != nil {
+		t.Fatalf("close script: %v", err)
+	}
+	return script.Name()
 }
 
 func TestRunMCPStdio_MockInjectionFailFast(t *testing.T) {

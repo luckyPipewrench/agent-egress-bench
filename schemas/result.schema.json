@@ -41,7 +41,7 @@
     "score": {
       "type": "string",
       "enum": ["pass", "fail", "not_applicable", "error"],
-      "description": "pass if actual matches expected, fail if not, not_applicable if case was skipped, error if runner/tool failure."
+      "description": "pass if the observed behavior satisfies the case scoring contract, fail if not, not_applicable if case was skipped, error if runner/tool failure."
     },
     "evidence": {
       "type": "object",

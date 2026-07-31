@@ -14,7 +14,7 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 | `response_mitm` | ASI01 Agent Goal Hijack + ASI04 Supply Chain Vulnerabilities | Yes |
 | `mcp_input` | ASI02 Tool Misuse & Exploitation | Yes |
 | `mcp_tool` | ASI04 Agentic Supply Chain Vulnerabilities | Yes |
-| `mcp_chain` | ASI02 Tool Misuse + ASI08 Cascading Failures | Yes |
+| `mcp_chain` | ASI02 Tool Misuse + ASI08 Cascading Failures; OWASP LLM Top 10 Unbounded Consumption for `denial_of_wallet` cases | Yes |
 | `a2a_message` | ASI07 Insecure Inter-Agent Communication | Yes |
 | `a2a_agent_card` | ASI04 Supply Chain + ASI07 Inter-Agent Communication | Yes |
 | `websocket_dlp` | ASI02 Tool Misuse & Exploitation | Yes |
@@ -23,6 +23,8 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 | `shell_obfuscation` | ASI02 Tool Misuse + ASI05 Unexpected Code Execution | Yes |
 | `crypto_financial` | ASI02 Tool Misuse & Exploitation | Yes |
 | `false_positive` | N/A (benign baseline) | Yes |
+
+The `denial_of_wallet` capability tag maps to OWASP LLM Top 10 Unbounded Consumption. In this corpus it is expressed through `mcp_chain` call-count budget sequences rather than a separate category.
 
 ## Detailed mapping
 

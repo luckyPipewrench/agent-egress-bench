@@ -141,7 +141,8 @@
           "ssrf_bypass",
           "shell_obfuscation",
           "crypto_dlp",
-          "hostname_exfil"
+          "hostname_exfil",
+          "denial_of_wallet"
         ]
       },
       "description": "What capabilities this case exercises. Used for reporting and result interpretation."
@@ -180,7 +181,8 @@
           "shell_analysis",
           "crypto_dlp_scanning",
           "hostname_exfil_scanning",
-          "dns_rebinding_fixture"
+          "dns_rebinding_fixture",
+          "budget_enforcement"
         ]
       },
       "description": "Runtime capability prerequisites. If a tool profile does not satisfy all entries, the case is not_applicable."

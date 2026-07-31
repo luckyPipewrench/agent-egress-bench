@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "id": "ws-dlp-opaque-binary-010",
+  "category": "websocket_dlp",
+  "title": "Opaque high-entropy WebSocket frame",
+  "description": "A WebSocket frame carries an opaque high-entropy chunk with no recognizable credential format.",
+  "input_type": "websocket_frame",
+  "transport": "websocket",
+  "payload": {
+    "url": "wss://ws-exfil-sink.test/live",
+    "frames": [
+      {
+        "opcode": "text",
+        "payload": "{\"type\": \"sync\", \"chunk\": \"bh7R6RIeNtWR5pnAcx/70pR9b77H4+483EJWMiYpPLb+b/dMKGLk1JfAPIoiU5db4MUwtvZhFXCBgCKzt3WsPhUqgfZdVHcGJ0Imchznwamlf0u0p3PBmlewJsPCPSLB\"}"
+      }
+    ]
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": [
+    "websocket_dlp",
+    "entropy"
+  ],
+  "requires": [
+    "websocket_dlp_scanning",
+    "entropy_scanning"
+  ],
+  "false_positive_risk": "medium",
+  "why_expected": "opaque_high_entropy_websocket_frame_to_untrusted_sink",
+  "notes": "The chunk is random-looking opaque data and intentionally does not match known credential syntaxes. The destination is the reserved untrusted WebSocket sink so entropy scanning is exercised without trusted-destination exemption.",
+  "source": "synthetic: opaque high-entropy WebSocket exfiltration"
+}

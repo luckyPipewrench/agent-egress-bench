@@ -20,6 +20,7 @@
     "shell_obfuscation",
     "crypto_dlp",
     "hostname_exfil",
+    "denial_of_wallet",
     "a2a_card_poison",
     "a2a_scan",
     "benign"
@@ -60,6 +61,7 @@
     "shell_analysis": true,
     "crypto_dlp_scanning": true,
     "hostname_exfil_scanning": true,
-    "dns_rebinding_fixture": false
+    "dns_rebinding_fixture": false,
+    "budget_enforcement": true
   }
 }
