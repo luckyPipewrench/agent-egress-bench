@@ -705,7 +705,7 @@ func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
 	defer srv.Close()
 
 	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
-	a.SetWSFixture("127.0.0.1:34567")
+	a.SetWSFixtures("127.0.0.1:34567", "127.0.0.2:45678")
 	result := a.runWebSocketFrameViaProxy(Case{
 		ID:        "ws-untrusted-sink-proof",
 		Transport: "websocket",
@@ -718,8 +718,8 @@ func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
 	if result.Verdict != "allow" {
 		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
 	}
-	if gotTarget != "ws://ws-exfil-sink.test:34567/echo" {
-		t.Fatalf("target = %q, want reserved sink hostname with fixture port", gotTarget)
+	if gotTarget != "ws://ws-exfil-sink.test:45678/echo" {
+		t.Fatalf("target = %q, want reserved sink hostname with untrusted fixture port", gotTarget)
 	}
 }
 
@@ -949,6 +949,53 @@ func TestRunMCPStdioBudgetSequence_ProtocolBudgetErrorBlocks(t *testing.T) {
 	}
 }
 
+func TestIsBudgetLimitProtocolError_TightBudgetPhrases(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    bool
+	}{
+		{
+			name:    "pipelock tool call limit",
+			message: "pipelock: tool call limit exceeded: 4/3",
+			want:    true,
+		},
+		{
+			name:    "plain call limit",
+			message: "call limit exceeded",
+			want:    true,
+		},
+		{
+			name:    "budget",
+			message: "budget exceeded",
+			want:    true,
+		},
+		{
+			name:    "quota",
+			message: "quota exceeded",
+			want:    true,
+		},
+		{
+			name:    "request size",
+			message: "Internal error: maximum request size exceeded",
+			want:    false,
+		},
+		{
+			name:    "recursion",
+			message: "recursion limit exceeded for call",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBudgetLimitProtocolError(-32600, tt.message); got != tt.want {
+				t.Fatalf("isBudgetLimitProtocolError(-32600, %q) = %v, want %v", tt.message, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunMCPStdioBudgetSequence_NonBudgetProtocolErrorFails(t *testing.T) {
 	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32601, "method not found"))}
 	result := a.runMCPStdio(budgetSequenceCase("dow-protocol-error", "block"), 5*time.Second)
@@ -974,6 +1021,19 @@ func TestRunMCPStdioBudgetSequence_RecordsEarlyBlock(t *testing.T) {
 	}
 	if got := result.Evidence["budget_block_timing"]; got != "before_over_budget" {
 		t.Fatalf("budget_block_timing = %v, want before_over_budget", got)
+	}
+}
+
+func TestBudgetBlockResult_OmitsTimingWhenOverBudgetIndexUnknown(t *testing.T) {
+	result := budgetBlockResult(Case{ID: "unknown-index"}, 3, "per_subject", "project-alpha", 4, -1, 2, "2", nil)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block", result.Verdict)
+	}
+	if _, ok := result.Evidence["over_budget_call_index"]; ok {
+		t.Fatalf("over_budget_call_index = %v, want omitted", result.Evidence["over_budget_call_index"])
+	}
+	if _, ok := result.Evidence["budget_block_timing"]; ok {
+		t.Fatalf("budget_block_timing = %v, want omitted", result.Evidence["budget_block_timing"])
 	}
 }
 

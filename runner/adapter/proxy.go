@@ -70,7 +70,8 @@ type ProxyAdapter struct {
 	setTLSRoute     func(path, body string)
 	setTLSRouteCT   func(path, body, contentType string)
 	setTLSRouteHost func(host, path, body, contentType string)
-	wsAddr          string        // WS fixture for websocket cases
+	wsAddr          string        // trusted WS fixture for websocket cases
+	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
 }
 
@@ -125,7 +126,13 @@ func (p *ProxyAdapter) SetTLSFixtureWithContentType(addr, caFile string, setRout
 }
 
 // SetWSFixture configures the WS fixture address for websocket cases.
-func (p *ProxyAdapter) SetWSFixture(addr string) { p.wsAddr = addr }
+func (p *ProxyAdapter) SetWSFixture(addr string) { p.SetWSFixtures(addr, "") }
+
+// SetWSFixtures configures trusted and untrusted WS fixture addresses.
+func (p *ProxyAdapter) SetWSFixtures(trustedAddr, untrustedAddr string) {
+	p.wsAddr = trustedAddr
+	p.wsUntrustedAddr = untrustedAddr
+}
 
 // SetMCPHTTPURL configures the Pipelock MCP HTTP listener URL.
 func (p *ProxyAdapter) SetMCPHTTPURL(rawURL string) { p.mcpHTTPURL = rawURL }
@@ -378,12 +385,16 @@ func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
 	if !shouldRouteTrusted && !shouldRouteUntrusted {
 		return targetURL
 	}
-	_, port, splitErr := net.SplitHostPort(p.wsAddr)
-	if splitErr != nil || port == "" {
-		return "ws://" + p.wsAddr + "/echo"
-	}
 	switch host {
 	case wsUntrustedSinkHostname:
+		untrustedAddr := p.wsUntrustedAddr
+		if untrustedAddr == "" {
+			untrustedAddr = p.wsAddr
+		}
+		_, port, splitErr := net.SplitHostPort(untrustedAddr)
+		if splitErr != nil || port == "" {
+			return "ws://" + untrustedAddr + "/echo"
+		}
 		// Preserve the reserved untrusted sink hostname so destination-trust
 		// policy is exercised. The DNS fixture/config maps it to a reachable
 		// loopback listener separately from the trusted fixture hostname.
@@ -393,8 +404,16 @@ func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
 		u.RawQuery = ""
 		return u.String()
 	case "example.com", "echo.websocket.org":
+		_, port, splitErr := net.SplitHostPort(p.wsAddr)
+		if splitErr != nil || port == "" {
+			return "ws://" + p.wsAddr + "/echo"
+		}
 		return "ws://" + net.JoinHostPort(wsFixtureHostname, port) + "/echo"
 	default:
+		_, port, splitErr := net.SplitHostPort(p.wsAddr)
+		if splitErr != nil || port == "" {
+			return "ws://" + p.wsAddr + "/echo"
+		}
 		// Route through the canonical fixture hostname rather than the literal
 		// loopback IP. A correctly-configured benchmark instance maps
 		// wsFixtureHostname to 127.0.0.1 via DNS override and grants it trusted
@@ -1581,11 +1600,13 @@ func budgetBlockResult(c Case, limit int, scope, subjectID string, overBudgetID,
 	}
 	if overBudgetID > 0 {
 		evidence["over_budget_call_id"] = overBudgetID
-		evidence["over_budget_call_index"] = overBudgetIndex
-		if overBudgetIndex > 0 && blockedIndex < overBudgetIndex {
-			evidence["budget_block_timing"] = "before_over_budget"
-		} else {
-			evidence["budget_block_timing"] = "at_or_after_over_budget"
+		if overBudgetIndex > 0 {
+			evidence["over_budget_call_index"] = overBudgetIndex
+			if blockedIndex < overBudgetIndex {
+				evidence["budget_block_timing"] = "before_over_budget"
+			} else {
+				evidence["budget_block_timing"] = "at_or_after_over_budget"
+			}
 		}
 	}
 	return Result{Verdict: "block", Evidence: evidence}
@@ -1697,19 +1718,33 @@ func isBudgetLimitProtocolError(code int, message string) bool {
 	if code > -32600 {
 		return false
 	}
-	msg := strings.ToLower(message)
-	hasBudget := strings.Contains(msg, "budget") || strings.Contains(msg, "quota")
-	hasLimit := strings.Contains(msg, "limit")
-	hasCall := strings.Contains(msg, "tool call") ||
-		strings.Contains(msg, "tool-call") ||
-		strings.Contains(msg, "call") ||
-		strings.Contains(msg, "request")
+	msg := normalizeBudgetErrorMessage(message)
+	hasBudgetPhrase := strings.Contains(msg, "budget") || strings.Contains(msg, "quota")
+	hasCallLimitPhrase := strings.Contains(msg, "call limit") ||
+		strings.Contains(msg, "call limits") ||
+		strings.Contains(msg, "too many tool calls") ||
+		strings.Contains(msg, "too many calls")
 	hasExceeded := strings.Contains(msg, "exceed") ||
 		strings.Contains(msg, "over") ||
 		strings.Contains(msg, "too many") ||
 		strings.Contains(msg, "maximum") ||
-		strings.Contains(msg, "max ")
-	return hasExceeded && (hasBudget || (hasLimit && hasCall))
+		strings.Contains(msg, "max ") ||
+		strings.Contains(msg, "reached")
+	return hasExceeded && (hasBudgetPhrase || hasCallLimitPhrase)
+}
+
+func normalizeBudgetErrorMessage(message string) string {
+	msg := strings.ToLower(message)
+	replacer := strings.NewReplacer(
+		"-", " ",
+		"_", " ",
+		":", " ",
+		"/", " ",
+		"\t", " ",
+		"\n", " ",
+		"\r", " ",
+	)
+	return strings.Join(strings.Fields(replacer.Replace(msg)), " ")
 }
 
 func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
