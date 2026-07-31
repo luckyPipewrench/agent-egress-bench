@@ -1437,6 +1437,7 @@ func TestResultValidation_InconsistentScore(t *testing.T) {
 		{"match should be pass", "block", "block", "pass", false},
 		{"match but fail", "block", "block", "fail", true},
 		{"match but budget timing fail", "block", "block", "fail", false},
+		{"match but bare timing no budget id", "block", "block", "fail", true},
 		{"na verdict na score", "not_applicable", "block", "not_applicable", false},
 		{"na verdict wrong score", "not_applicable", "block", "pass", true},
 		{"error verdict error score", "error", "block", "error", false},
@@ -1450,6 +1451,14 @@ func TestResultValidation_InconsistentScore(t *testing.T) {
 				Evidence: map[string]interface{}{}, Notes: strPtr(""),
 			}
 			if strings.Contains(tt.name, "budget timing") {
+				// A genuine budget-enforcement result carries over_budget_call_id
+				// alongside before-over-budget timing.
+				r.Evidence["budget_block_timing"] = "before_over_budget"
+				r.Evidence["over_budget_call_id"] = float64(4)
+			}
+			if strings.Contains(tt.name, "bare timing") {
+				// Timing evidence without the budget id must NOT bypass the
+				// matching-verdict-must-pass rule.
 				r.Evidence["budget_block_timing"] = "before_over_budget"
 			}
 			errors := validateResultLine(1, r)
