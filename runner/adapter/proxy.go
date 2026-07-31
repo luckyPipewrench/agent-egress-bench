@@ -1473,7 +1473,7 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 		}
 
 		respLine := scanner.Text()
-		if result, handled, responseID := classifyMCPErrorLine(respLine, c.ID); handled {
+		if result, handled, responseID := classifyMCPBudgetErrorLine(respLine, c.ID); handled {
 			if result.Err != nil {
 				_ = stdin.Close()
 				_ = cmd.Wait()
@@ -1605,6 +1605,53 @@ func classifyMCPErrorLine(respLine, caseID string) (Result, bool, string) {
 		return Result{Err: fmt.Errorf("case %s: JSON-RPC protocol error %d: %s", caseID, code, rpcResp.Error.Message)}, true, responseID
 	}
 	return Result{}, false, responseID
+}
+
+func classifyMCPBudgetErrorLine(respLine, caseID string) (Result, bool, string) {
+	result, handled, responseID := classifyMCPErrorLine(respLine, caseID)
+	if !handled || result.Err == nil {
+		return result, handled, responseID
+	}
+
+	var rpcResp struct {
+		ID    interface{} `json:"id"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(respLine), &rpcResp); jsonErr != nil || rpcResp.Error == nil {
+		return result, handled, responseID
+	}
+	if !isBudgetLimitProtocolError(rpcResp.Error.Code, rpcResp.Error.Message) {
+		return result, handled, responseID
+	}
+	return Result{
+		Verdict: "block",
+		Evidence: map[string]interface{}{
+			"error_code":    rpcResp.Error.Code,
+			"error_message": rpcResp.Error.Message,
+		},
+	}, true, jsonRPCIDString(rpcResp.ID)
+}
+
+func isBudgetLimitProtocolError(code int, message string) bool {
+	if code > -32600 {
+		return false
+	}
+	msg := strings.ToLower(message)
+	hasBudget := strings.Contains(msg, "budget") || strings.Contains(msg, "quota")
+	hasLimit := strings.Contains(msg, "limit")
+	hasCall := strings.Contains(msg, "tool call") ||
+		strings.Contains(msg, "tool-call") ||
+		strings.Contains(msg, "call") ||
+		strings.Contains(msg, "request")
+	hasExceeded := strings.Contains(msg, "exceed") ||
+		strings.Contains(msg, "over") ||
+		strings.Contains(msg, "too many") ||
+		strings.Contains(msg, "maximum") ||
+		strings.Contains(msg, "max ")
+	return hasExceeded && (hasBudget || (hasLimit && hasCall))
 }
 
 func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {

@@ -60,6 +60,10 @@ request_body_scanning:
   max_body_bytes: 1048576
   scan_headers: true
   header_mode: all
+  content_entropy_enabled: true
+  content_entropy_action: block
+  content_entropy_threshold: 5.0
+  content_entropy_min_length: 32
 
 a2a_scanning:
   enabled: true

@@ -848,6 +848,37 @@ func TestRunMCPStdioBudgetSequence_BlockAtOverBudgetCall(t *testing.T) {
 	}
 }
 
+func TestRunMCPStdioBudgetSequence_ProtocolBudgetErrorBlocks(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32600, "tool call limit exceeded: 4/3"))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-protocol-block", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["blocked_call_index"]; got != 4 {
+		t.Fatalf("blocked_call_index = %v, want 4", got)
+	}
+	if got := result.Evidence["error_code"]; got != -32600 {
+		t.Fatalf("error_code = %v, want -32600", got)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_NonBudgetProtocolErrorFails(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32601, "method not found"))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-protocol-error", "block"), 5*time.Second)
+	if result.Err == nil {
+		t.Fatalf("expected adapter error, got verdict=%q evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if !strings.Contains(result.Err.Error(), "JSON-RPC protocol error -32601: method not found") {
+		t.Fatalf("error = %v", result.Err)
+	}
+}
+
 func TestRunMCPStdioBudgetSequence_RecordsEarlyBlock(t *testing.T) {
 	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 2))}
 	result := a.runMCPStdio(budgetSequenceCase("dow-early", "block"), 5*time.Second)
@@ -939,6 +970,32 @@ while IFS= read -r line; do
   printf '{"jsonrpc":"2.0","id":%%d,"result":{"content":[]}}\n' "$n"
 done
 `, blockAt, blockAt)
+	if err := script.Close(); err != nil {
+		t.Fatalf("close script: %v", err)
+	}
+	return script.Name()
+}
+
+func writeBudgetMCPProtocolErrorResponder(t *testing.T, blockAt, code int, message string) string {
+	t.Helper()
+	script, err := os.CreateTemp(t.TempDir(), "budget-mcp-protocol-*.sh")
+	if err != nil {
+		t.Fatalf("create script: %v", err)
+	}
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	_, _ = fmt.Fprintf(script, `n=0
+while IFS= read -r line; do
+  n=$((n+1))
+  if [ %d -gt 0 ] && [ "$n" -ge %d ]; then
+    printf '{"jsonrpc":"2.0","id":%%d,"error":{"code":%d,"message":%s}}\n' "$n"
+    exit 0
+  fi
+  printf '{"jsonrpc":"2.0","id":%%d,"result":{"content":[]}}\n' "$n"
+done
+`, blockAt, blockAt, code, string(messageJSON))
 	if err := script.Close(); err != nil {
 		t.Fatalf("close script: %v", err)
 	}
