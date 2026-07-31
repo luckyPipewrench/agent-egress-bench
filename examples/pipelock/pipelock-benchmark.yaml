@@ -1,5 +1,12 @@
 mode: balanced
 
+agents:
+  _default:
+    budget:
+      max_tool_calls_per_session: 3
+      window_minutes: 1440
+      dow_action: block
+
 scan_api:
   listen: "127.0.0.1:9990"
   auth:

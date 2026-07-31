@@ -58,7 +58,16 @@ If your tool does not support domain blocklisting, set `supports.domain_blocklis
 
 ### Budget enforcement
 
-Cases with `requires: ["budget_enforcement"]` require the runner or tool under test to enforce the budget metadata carried in the case payload. The current single-session cases use MCP `mcp_tool_sequence` payloads with neutral fields such as `budget_scope`, `budget_limit_units`, per-call `cost_units`, and `over_budget_call_id`. A conforming runner must treat the named over-budget call as the action that should be blocked, while earlier in-budget calls should be allowed.
+Cases with `requires: ["budget_enforcement"]` require the runner or tool under test to enforce the call-count budget metadata carried in the case payload. The current single-session cases use MCP `mcp_tool_sequence` payloads with neutral fields:
+
+- `budget_scope: "per_subject"`
+- `subject_id`
+- `budget_limit_calls`
+- `over_budget_call_id` for block-expected cases
+
+The scoring boundary is off-by-one sensitive: a limit of `N` must allow the first `N` subject calls and block the `N+1` call. A conforming runner must drive the MCP sequence to the tool's MCP proxy in order and score the block case as detected only when the first block occurs at or after `over_budget_call_id`. A block before `over_budget_call_id` is a failure for the budget case because another policy or an incorrect budget boundary blocked too early. Benign controls that make exactly `budget_limit_calls` calls must not be blocked.
+
+Weighted fields such as `cost_units` and `budget_limit_units` are intentionally not part of the contract because call-count budget tools cannot score them.
 
 ## Applicability Check
 
@@ -93,6 +102,8 @@ Do not use detector-specific `requires` to skip benign `allow` controls. Those c
 | Message forwarded without block signal | `allow` |
 | Transport or runner failure | `error` |
 
+For budget-enforcement MCP sequences, runners should include evidence fields such as `budget_limit_calls`, `blocked_call_id`, `blocked_call_index`, `over_budget_call_id`, and `budget_block_timing` (`at_or_after_over_budget` or `before_over_budget`) when a block is observed.
+
 ## Verdict Mapping
 
 Tools may use different mechanisms to express blocking. Runners must document their mapping. For example, Pipelock returns HTTP 403 for blocked proxy requests and a JSON-RPC error for blocked MCP calls.
@@ -117,7 +128,7 @@ cd validate && go build -o aeb-validate .
 ./aeb-validate profile path/to/tool-profile.json
 ```
 
-This checks field presence, enum validity, and score consistency (e.g., `actual_verdict == expected_verdict` should produce `score: "pass"`).
+This checks field presence, enum validity, and score consistency. Most cases pass when `actual_verdict == expected_verdict`; sequence-boundary cases such as budget enforcement may still fail when evidence shows the tool blocked at the wrong step.
 
 ## Receipt-Scoring Profile (optional)
 

@@ -1197,6 +1197,9 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	if !ok || len(msgList) == 0 {
 		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in payload", c.ID)}
 	}
+	if isBudgetEnforcementCase(c) {
+		return p.runMCPStdioBudgetSequence(c, msgList, timeout)
+	}
 
 	// Separate client requests from server responses.
 	var clientMsgs []interface{}
@@ -1368,6 +1371,240 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		Verdict:  "allow",
 		Evidence: map[string]interface{}{"response_lines": len(lines)},
 	}
+}
+
+func isBudgetEnforcementCase(c Case) bool {
+	if _, ok := c.Payload["budget_limit_calls"]; ok {
+		return true
+	}
+	for _, req := range c.Requires {
+		if req == "budget_enforcement" {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, timeout time.Duration) Result {
+	limit, ok := positivePayloadInt(c.Payload["budget_limit_calls"])
+	if !ok {
+		return Result{Err: fmt.Errorf("case %s: budget_enforcement payload missing positive integer budget_limit_calls", c.ID)}
+	}
+	scope, _ := c.Payload["budget_scope"].(string)
+	subjectID, _ := c.Payload["subject_id"].(string)
+
+	overBudgetID, hasOverBudgetID := positivePayloadInt(c.Payload["over_budget_call_id"])
+	overBudgetIndex := -1
+	if c.ExpectedVerdict == "block" {
+		if !hasOverBudgetID {
+			return Result{Err: fmt.Errorf("case %s: block budget case missing positive integer over_budget_call_id", c.ID)}
+		}
+		for i, msg := range msgList {
+			if messageIDString(msg) == fmt.Sprint(overBudgetID) {
+				overBudgetIndex = i + 1
+				break
+			}
+		}
+		if overBudgetIndex == -1 {
+			return Result{Err: fmt.Errorf("case %s: over_budget_call_id %d does not match any JSON-RPC message id", c.ID, overBudgetID)}
+		}
+	}
+
+	for _, msg := range msgList {
+		m, ok := msg.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, hasResult := m["result"]; hasResult {
+			return Result{Err: fmt.Errorf("case %s: budget_enforcement sequences must contain client tool-call requests only", c.ID)}
+		}
+		if _, hasError := m["error"]; hasError {
+			return Result{Err: fmt.Errorf("case %s: budget_enforcement sequences must contain client tool-call requests only", c.ID)}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: stdin pipe: %w", c.ID, err)}
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: stdout pipe: %w", c.ID, err)}
+	}
+	if startErr := cmd.Start(); startErr != nil {
+		return Result{Err: fmt.Errorf("case %s: start MCP cmd: %w", c.ID, startErr)}
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for i, msg := range msgList {
+		line, _ := json.Marshal(msg)
+		if _, writeErr := stdin.Write(append(line, '\n')); writeErr != nil {
+			_ = stdin.Close()
+			waitErr := cmd.Wait()
+			if waitErr != nil && ctx.Err() == nil {
+				stderrOutput := strings.TrimSpace(stderrBuf.String())
+				if stderrOutput != "" {
+					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed while writing call %d: %w (stderr: %s)", c.ID, i+1, waitErr, stderrOutput)}
+				}
+			}
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "write_failed"})
+		}
+
+		if !scanner.Scan() {
+			_ = stdin.Close()
+			waitErr := cmd.Wait()
+			if scanErr := scanner.Err(); scanErr != nil {
+				return Result{Err: fmt.Errorf("case %s: reading MCP output for call %d: %w", c.ID, i+1, scanErr)}
+			}
+			if waitErr != nil && ctx.Err() == nil {
+				stderrOutput := strings.TrimSpace(stderrBuf.String())
+				if stderrOutput != "" {
+					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
+				}
+			}
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "no_output"})
+		}
+
+		respLine := scanner.Text()
+		if result, handled, responseID := classifyMCPErrorLine(respLine, c.ID); handled {
+			if result.Err != nil {
+				_ = stdin.Close()
+				_ = cmd.Wait()
+				return result
+			}
+			_ = stdin.Close()
+			_ = cmd.Wait()
+			blockedID := responseID
+			if blockedID == "" {
+				blockedID = messageIDString(msg)
+			}
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, blockedID, result.Evidence)
+		}
+	}
+
+	_ = stdin.Close()
+	waitErr := cmd.Wait()
+	if waitErr != nil && ctx.Err() == nil {
+		stderrOutput := strings.TrimSpace(stderrBuf.String())
+		if stderrOutput != "" {
+			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
+		}
+		return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
+	}
+
+	return Result{
+		Verdict: "allow",
+		Evidence: map[string]interface{}{
+			"budget_limit_calls": limit,
+			"budget_scope":       scope,
+			"subject_id":         subjectID,
+			"calls_observed":     len(msgList),
+		},
+	}
+}
+
+func budgetBlockResult(c Case, limit int, scope, subjectID string, overBudgetID, overBudgetIndex, blockedIndex int, blockedID string, evidence map[string]interface{}) Result {
+	if evidence == nil {
+		evidence = map[string]interface{}{}
+	}
+	evidence["budget_limit_calls"] = limit
+	evidence["budget_scope"] = scope
+	evidence["subject_id"] = subjectID
+	evidence["blocked_call_index"] = blockedIndex
+	if blockedID != "" {
+		evidence["blocked_call_id"] = blockedID
+	}
+	if overBudgetID > 0 {
+		evidence["over_budget_call_id"] = overBudgetID
+		evidence["over_budget_call_index"] = overBudgetIndex
+		if overBudgetIndex > 0 && blockedIndex < overBudgetIndex {
+			evidence["budget_block_timing"] = "before_over_budget"
+		} else {
+			evidence["budget_block_timing"] = "at_or_after_over_budget"
+		}
+	}
+	return Result{Verdict: "block", Evidence: evidence}
+}
+
+func positivePayloadInt(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, n > 0
+	case int64:
+		return int(n), n > 0
+	case float64:
+		i := int(n)
+		return i, n > 0 && float64(i) == n
+	case json.Number:
+		i, err := n.Int64()
+		return int(i), err == nil && i > 0
+	default:
+		return 0, false
+	}
+}
+
+func messageIDString(msg interface{}) string {
+	m, ok := msg.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	return jsonRPCIDString(m["id"])
+}
+
+func jsonRPCIDString(id interface{}) string {
+	switch v := id.(type) {
+	case string:
+		return v
+	case float64:
+		i := int(v)
+		if float64(i) == v {
+			return fmt.Sprint(i)
+		}
+		return fmt.Sprint(v)
+	case int:
+		return fmt.Sprint(v)
+	case int64:
+		return fmt.Sprint(v)
+	case json.Number:
+		return v.String()
+	default:
+		return ""
+	}
+}
+
+func classifyMCPErrorLine(respLine, caseID string) (Result, bool, string) {
+	var rpcResp struct {
+		ID    interface{} `json:"id"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(respLine), &rpcResp); jsonErr != nil || rpcResp.Error == nil {
+		return Result{}, false, ""
+	}
+	code := rpcResp.Error.Code
+	responseID := jsonRPCIDString(rpcResp.ID)
+	if code >= -32099 && code <= -32000 {
+		return Result{
+			Verdict: "block",
+			Evidence: map[string]interface{}{
+				"error_code":    code,
+				"error_message": rpcResp.Error.Message,
+			},
+		}, true, responseID
+	}
+	if code <= -32600 {
+		return Result{Err: fmt.Errorf("case %s: JSON-RPC protocol error %d: %s", caseID, code, rpcResp.Error.Message)}, true, responseID
+	}
+	return Result{}, false, responseID
 }
 
 func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {

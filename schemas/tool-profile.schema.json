@@ -250,7 +250,7 @@
         },
         "budget_enforcement": {
           "type": "boolean",
-          "description": "Tool can enforce per-subject resource or cost budgets during a run."
+          "description": "Tool can enforce per-subject MCP tool-call count budgets during a run."
         }
       }
     }

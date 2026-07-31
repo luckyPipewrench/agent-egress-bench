@@ -249,11 +249,11 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 			continue
 		}
 
-		score := scoreCase(c.ExpectedVerdict, adapterResult.Verdict)
 		evidence := adapterResult.Evidence
 		if evidence == nil {
 			evidence = map[string]interface{}{}
 		}
+		score := scoreCaseWithEvidence(c, adapterResult.Verdict, evidence)
 
 		if score == "pass" {
 			debugf(debug, "case %s: PASS expected=%s actual=%s", c.ID, c.ExpectedVerdict, adapterResult.Verdict)

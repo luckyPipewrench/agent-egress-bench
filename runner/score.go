@@ -44,6 +44,35 @@ func scoreCase(expected, actual string) string {
 	}
 }
 
+func scoreCaseWithEvidence(c Case, actual string, evidence map[string]interface{}) string {
+	if actual == "not_applicable" {
+		return "not_applicable"
+	}
+	if actual == "error" {
+		return "error"
+	}
+	if isBudgetTimingFailure(c, actual, evidence) {
+		return "fail"
+	}
+	if actual == c.ExpectedVerdict {
+		return "pass"
+	}
+	return "fail"
+}
+
+func isBudgetTimingFailure(c Case, actual string, evidence map[string]interface{}) bool {
+	if c.ExpectedVerdict != "block" || actual != "block" {
+		return false
+	}
+	if _, ok := c.Payload["budget_limit_calls"]; !ok {
+		return false
+	}
+	if evidence == nil {
+		return false
+	}
+	return evidence["budget_block_timing"] == "before_over_budget"
+}
+
 // hasClassification checks if the evidence contains scanner/kind information
 // that demonstrates the tool identified what KIND of attack it blocked.
 func hasClassification(ev map[string]interface{}) bool {

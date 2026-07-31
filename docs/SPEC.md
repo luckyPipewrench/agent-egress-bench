@@ -141,6 +141,21 @@ Runtime prerequisites. If a tool's profile does not satisfy all `requires` entri
 }
 ```
 
+Denial-of-wallet budget cases are MCP tool-call sequences that use a
+scoreable call-count model. They set `requires: ["budget_enforcement"]` and
+carry these payload fields alongside `jsonrpc_messages`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `budget_scope` | string | Must be `per_subject` for current budget cases. |
+| `subject_id` | string | Neutral subject label used by the case payload. |
+| `budget_limit_calls` | integer | Maximum allowed MCP tool calls for the subject in the benchmark window. |
+| `over_budget_call_id` | integer or string | Required for `block` cases; identifies the first call that exceeds `budget_limit_calls`. Omit for `allow` controls. |
+
+For a limit of `N`, the intended boundary is: calls `1..N` are allowed, and
+call `N+1` is the first over-budget call. Do not use weighted `cost_units` or
+`budget_limit_units`; those are not scoreable against call-count budget tools.
+
 ### A2A message cases (`input_type: a2a_message`)
 
 ```json

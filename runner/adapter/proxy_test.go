@@ -831,6 +831,120 @@ func TestRunMCPStdio_NoMCPCmd(t *testing.T) {
 	}
 }
 
+func TestRunMCPStdioBudgetSequence_BlockAtOverBudgetCall(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 4))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-block", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["blocked_call_index"]; got != 4 {
+		t.Fatalf("blocked_call_index = %v, want 4", got)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_RecordsEarlyBlock(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 2))}
+	result := a.runMCPStdio(budgetSequenceCase("dow-early", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["blocked_call_index"]; got != 2 {
+		t.Fatalf("blocked_call_index = %v, want 2", got)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "before_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want before_over_budget", got)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_UnderBudgetAllowed(t *testing.T) {
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 0))}
+	c := budgetSequenceCase("dow-allow", "allow")
+	delete(c.Payload, "over_budget_call_id")
+	c.Payload["jsonrpc_messages"] = []interface{}{
+		budgetToolCall(1, "project-alpha"),
+		budgetToolCall(2, "project-alpha"),
+		budgetToolCall(3, "project-alpha"),
+	}
+	result := a.runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["calls_observed"]; got != 3 {
+		t.Fatalf("calls_observed = %v, want 3", got)
+	}
+}
+
+func budgetSequenceCase(id, expected string) Case {
+	return Case{
+		ID:              id,
+		ExpectedVerdict: expected,
+		Transport:       "mcp_stdio",
+		InputType:       "mcp_tool_sequence",
+		Requires:        []string{"budget_enforcement"},
+		Payload: map[string]interface{}{
+			"budget_scope":        "per_subject",
+			"subject_id":          "project-alpha",
+			"budget_limit_calls":  3,
+			"over_budget_call_id": 4,
+			"jsonrpc_messages": []interface{}{
+				budgetToolCall(1, "project-alpha"),
+				budgetToolCall(2, "project-alpha"),
+				budgetToolCall(3, "project-alpha"),
+				budgetToolCall(4, "project-alpha"),
+			},
+		},
+	}
+}
+
+func budgetToolCall(id int, subject string) map[string]interface{} {
+	return map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "tools/call",
+		"params": map[string]interface{}{
+			"name": "model.summarize",
+			"arguments": map[string]interface{}{
+				"subject_id": subject,
+				"prompt":     fmt.Sprintf("Summarize batch %d.", id),
+			},
+		},
+		"id": id,
+	}
+}
+
+func writeBudgetMCPResponder(t *testing.T, blockAt int) string {
+	t.Helper()
+	script, err := os.CreateTemp(t.TempDir(), "budget-mcp-*.sh")
+	if err != nil {
+		t.Fatalf("create script: %v", err)
+	}
+	_, _ = fmt.Fprintf(script, `n=0
+while IFS= read -r line; do
+  n=$((n+1))
+  if [ %d -gt 0 ] && [ "$n" -ge %d ]; then
+    printf '{"jsonrpc":"2.0","id":%%d,"error":{"code":-32001,"message":"budget exceeded"}}\n' "$n"
+    exit 0
+  fi
+  printf '{"jsonrpc":"2.0","id":%%d,"result":{"content":[]}}\n' "$n"
+done
+`, blockAt, blockAt)
+	if err := script.Close(); err != nil {
+		t.Fatalf("close script: %v", err)
+	}
+	return script.Name()
+}
+
 func TestRunMCPStdio_MockInjectionFailFast(t *testing.T) {
 	a := &ProxyAdapter{mcpCmd: "some-command-without-separator"}
 	c := Case{
