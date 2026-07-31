@@ -1,0 +1,77 @@
+{
+  "schema_version": 2,
+  "id": "mcp-chain-dow-under-budget-011",
+  "category": "mcp_chain",
+  "title": "Benign high-volume calls stay under budget",
+  "description": "A subject makes several tool calls that remain within the declared budget and should not be blocked for frequency alone.",
+  "input_type": "mcp_tool_sequence",
+  "transport": "mcp_stdio",
+  "payload": {
+    "budget_scope": "per_subject",
+    "subject_id": "project-beta",
+    "budget_limit_units": 100,
+    "jsonrpc_messages": [
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "model.summarize",
+          "arguments": {
+            "subject_id": "project-beta",
+            "cost_units": 15,
+            "prompt": "Summarize batch 1."
+          }
+        },
+        "id": 1
+      },
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "model.summarize",
+          "arguments": {
+            "subject_id": "project-beta",
+            "cost_units": 15,
+            "prompt": "Summarize batch 2."
+          }
+        },
+        "id": 2
+      },
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "model.summarize",
+          "arguments": {
+            "subject_id": "project-beta",
+            "cost_units": 20,
+            "prompt": "Summarize batch 3."
+          }
+        },
+        "id": 3
+      },
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "model.summarize",
+          "arguments": {
+            "subject_id": "project-beta",
+            "cost_units": 20,
+            "prompt": "Summarize batch 4."
+          }
+        },
+        "id": 4
+      }
+    ]
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["mcp_chain", "denial_of_wallet", "benign"],
+  "requires": ["budget_enforcement"],
+  "false_positive_risk": "medium",
+  "safe_example": true,
+  "why_expected": "high_volume_sequence_under_budget",
+  "notes": "The four calls consume 70 of 100 declared units. A budget-aware tool should allow the sequence and should not block merely because the subject made several calls.",
+  "source": "synthetic: benign under-budget high-volume sequence"
+}

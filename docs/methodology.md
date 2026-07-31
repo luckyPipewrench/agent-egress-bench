@@ -95,7 +95,7 @@ Combining these into a single number would hide real trade-offs. A tool with 99%
 
 **Applicable (diagnostic).** Only cases matching the tool's declared `supports` map are in the denominator. This is the engineering view. Useful for understanding how well a tool performs within its stated scope. Not suitable for cross-tool procurement decisions because it hides coverage gaps.
 
-The full corpus view is primary. Published results on pipelab.org use full corpus scoring. Applicable scoring is available in the summary JSON for diagnostic use.
+The full corpus view is primary. Published results should use full corpus scoring. Applicable scoring is available in the summary JSON for diagnostic use.
 
 ### Containment floor
 
@@ -165,7 +165,7 @@ Per-case JSONL results are written to stdout. The summary JSON file is written t
 
 ## Submission
 
-Vendors run the Gauntlet locally against their own tool. Results are submitted to the [pipelab.org](https://pipelab.org) leaderboard.
+Vendors run the Gauntlet locally against their own tool. Results may be submitted to a public leaderboard or published independently.
 
 Submitted results start as **self-reported**. A maintainer may verify results by re-running the Gauntlet against the same tool version. Verified results are marked accordingly on the leaderboard.
 

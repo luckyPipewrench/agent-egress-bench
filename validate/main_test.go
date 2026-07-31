@@ -1335,6 +1335,7 @@ func allSupportsKeys() map[string]interface{} {
 		"crypto_dlp_scanning":                 false,
 		"hostname_exfil_scanning":             false,
 		"dns_rebinding_fixture":               false,
+		"budget_enforcement":                  false,
 	}
 }
 

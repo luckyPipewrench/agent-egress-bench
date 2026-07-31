@@ -24,6 +24,8 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 | `crypto_financial` | ASI02 Tool Misuse & Exploitation | Yes |
 | `false_positive` | N/A (benign baseline) | Yes |
 
+The `denial_of_wallet` capability tag maps to OWASP LLM Top 10 Unbounded Consumption. In this corpus it is currently expressed through `mcp_chain` resource-abuse sequences rather than a separate category.
+
 ## Detailed mapping
 
 ### ASI01: Agent Goal Hijack

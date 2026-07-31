@@ -141,7 +141,7 @@ func buildToolSupport(p Profile) ToolSupport {
 		"ssrf_scanning", "ssrf_bypass_scanning",
 		"domain_blocklist", "entropy_scanning", "encoding_evasion_scanning",
 		"shell_analysis", "crypto_dlp_scanning", "hostname_exfil_scanning",
-		"dns_rebinding_fixture",
+		"dns_rebinding_fixture", "budget_enforcement",
 	}
 
 	var unsupportedTransports, unsupportedRequires []string

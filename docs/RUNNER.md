@@ -56,6 +56,10 @@ Cases with `capability_tags: ["domain_blocklist"]` require the runner to configu
 
 If your tool does not support domain blocklisting, set `supports.domain_blocklist` to `false` and these cases will be scored `not_applicable`.
 
+### Budget enforcement
+
+Cases with `requires: ["budget_enforcement"]` require the runner or tool under test to enforce the budget metadata carried in the case payload. The current single-session cases use MCP `mcp_tool_sequence` payloads with neutral fields such as `budget_scope`, `budget_limit_units`, per-call `cost_units`, and `over_budget_call_id`. A conforming runner must treat the named over-budget call as the action that should be blocked, while earlier in-budget calls should be allowed.
+
 ## Applicability Check
 
 Before running a case, the runner must check applicability:

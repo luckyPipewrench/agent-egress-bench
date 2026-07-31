@@ -63,7 +63,7 @@ var (
 		"entropy": true, "encoding_evasion": true, "benign": true,
 		"a2a_scan": true, "a2a_card_poison": true, "websocket_dlp": true,
 		"ssrf_bypass": true, "shell_obfuscation": true, "crypto_dlp": true,
-		"hostname_exfil": true,
+		"hostname_exfil": true, "denial_of_wallet": true,
 	}
 
 	validRequires = map[string]bool{
@@ -95,7 +95,7 @@ var (
 		"domain_blocklist": true, "entropy_scanning": true,
 		"encoding_evasion_scanning": true, "shell_analysis": true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
-		"dns_rebinding_fixture": true,
+		"dns_rebinding_fixture": true, "budget_enforcement": true,
 	}
 
 	validActualVerdicts = map[string]bool{
@@ -125,7 +125,7 @@ var (
 		"domain_blocklist": true, "entropy_scanning": true,
 		"encoding_evasion_scanning": true, "shell_analysis": true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
-		"dns_rebinding_fixture": true,
+		"dns_rebinding_fixture": true, "budget_enforcement": true,
 	}
 
 	// Valid category → input_type combinations per SPEC.md.

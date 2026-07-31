@@ -60,6 +60,7 @@
     "shell_analysis": true,
     "crypto_dlp_scanning": true,
     "hostname_exfil_scanning": true,
-    "dns_rebinding_fixture": false
+    "dns_rebinding_fixture": false,
+    "budget_enforcement": false
   }
 }

@@ -54,6 +54,7 @@ Reporting labels for what your tool detects. Applicability is controlled by `sup
 | `shell_obfuscation` | Detect obfuscated shell commands |
 | `crypto_dlp` | Detect cryptocurrency, wallet, or financial material |
 | `hostname_exfil` | Detect exfiltration encoded into hostnames |
+| `denial_of_wallet` | Detect resource-abuse sequences that exceed a declared budget |
 
 Only claim what your tool actually does; these labels help readers interpret results.
 
@@ -99,6 +100,7 @@ Which transport and scanning modes your tool supports. These map to the `require
 | `crypto_dlp_scanning` | Tool detects cryptocurrency, wallet, or financial material |
 | `hostname_exfil_scanning` | Tool detects exfiltration encoded into DNS hostnames or labels |
 | `dns_rebinding_fixture` | Runner provides controlled DNS for rebinding tests |
+| `budget_enforcement` | Tool can enforce per-subject resource or cost budgets during a run |
 
 ## Step 2: Write the runner
 
