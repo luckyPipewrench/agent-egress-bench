@@ -3,6 +3,7 @@ package adapter
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -635,7 +636,9 @@ func TestRunFetchProxy_ProxyOrigin500IsNotAllow(t *testing.T) {
 }
 
 func TestDoHTTPProxyRequest_AllowsConfirmedUpstream500(t *testing.T) {
+	var upstreamHits atomic.Int64
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprint(w, "upstream application error")
 	}))
@@ -687,12 +690,142 @@ func TestDoHTTPProxyRequest_AllowsConfirmedUpstream500(t *testing.T) {
 	defer proxy.Close()
 
 	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
+	a.SetTLSRequestCounter(upstreamHits.Load)
 	result := a.doHTTPProxyRequest("confirmed-upstream-500", http.MethodGet, upstream.URL, nil, nil, 5*time.Second, caFile.Name())
 	if result.Verdict != "allow" {
 		t.Fatalf("confirmed upstream 500 verdict = %q, want allow; err = %v; evidence = %+v", result.Verdict, result.Err, result.Evidence)
 	}
 	if result.Evidence["reason"] != "http_500_passthrough" {
 		t.Fatalf("reason = %v, want http_500_passthrough", result.Evidence["reason"])
+	}
+	if upstreamHits.Load() == 0 {
+		t.Fatal("upstream was never reached, so this case proves nothing about passthrough")
+	}
+}
+
+// A proxy can answer after CONNECT without ever forwarding. The status code and
+// the configured CA look identical to the confirmed case above, so only the
+// fixture counter distinguishes them. Without it the runner would score a
+// proxy-generated error as a passthrough allow and inflate containment.
+func TestDoHTTPProxyRequest_SkipsUnforwardedProxyError(t *testing.T) {
+	var upstreamHits atomic.Int64
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	caFile, err := os.CreateTemp(t.TempDir(), "unforwarded-ca-*.pem")
+	if err != nil {
+		t.Fatalf("create CA file: %v", err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: upstream.Certificate().Raw})
+	if _, err := caFile.Write(certPEM); err != nil {
+		t.Fatalf("write CA file: %v", err)
+	}
+	if err := caFile.Close(); err != nil {
+		t.Fatalf("close CA file: %v", err)
+	}
+
+	// This proxy accepts CONNECT and then serves its own 500 over the tunnel
+	// using the upstream's certificate, never dialing the upstream.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "CONNECT only", http.StatusMethodNotAllowed)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("test proxy does not support hijacking")
+			return
+		}
+		clientConn, _, hijackErr := hj.Hijack()
+		if hijackErr != nil {
+			t.Errorf("hijack: %v", hijackErr)
+			return
+		}
+		_, _ = io.WriteString(clientConn, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		go func() {
+			defer func() { _ = clientConn.Close() }()
+			tlsConn := tls.Server(clientConn, upstream.TLS)
+			if hsErr := tlsConn.Handshake(); hsErr != nil {
+				return
+			}
+			defer func() { _ = tlsConn.Close() }()
+			buf := make([]byte, 1024)
+			_, _ = tlsConn.Read(buf)
+			_, _ = io.WriteString(tlsConn,
+				"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 21\r\nConnection: close\r\n\r\nproxy synthesized 500")
+		}()
+	}))
+	defer proxy.Close()
+
+	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
+	a.SetTLSRequestCounter(upstreamHits.Load)
+	result := a.doHTTPProxyRequest("unforwarded-500", http.MethodGet, upstream.URL, nil, nil, 5*time.Second, caFile.Name())
+
+	if upstreamHits.Load() != 0 {
+		t.Fatalf("upstream was reached %d times; this case requires it never be reached", upstreamHits.Load())
+	}
+	if result.Verdict == "allow" {
+		t.Fatalf("proxy-synthesized 500 scored as %q, which credits an allow the traffic never earned; evidence = %+v", result.Verdict, result.Evidence)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; err = %v; evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+}
+
+// With no counter wired the adapter cannot prove upstream contact, so it must
+// withhold the verdict rather than assume the favourable one.
+func TestDoHTTPProxyRequest_NoCounterFailsClosed(t *testing.T) {
+	a, _ := NewProxyAdapter("127.0.0.1:1", "", "", "")
+	if a.tlsFixtureServed(0) {
+		t.Fatal("tlsFixtureServed reported upstream contact with no counter wired")
+	}
+}
+
+func TestCountCorpusWebSocketMessages_TracksFragmentation(t *testing.T) {
+	frame := func(op string, fin bool) interface{} {
+		return map[string]interface{}{"opcode": op, "fin": fin}
+	}
+	// A frame with no explicit fin defaults to true, which is how the corpus
+	// expresses a single complete message.
+	bare := func(op string) interface{} {
+		return map[string]interface{}{"opcode": op}
+	}
+
+	cases := []struct {
+		name   string
+		frames []interface{}
+		want   int
+	}{
+		{"single complete text", []interface{}{bare("text")}, 1},
+		{"two complete texts", []interface{}{bare("text"), bare("text")}, 2},
+		{
+			"one fragmented message",
+			[]interface{}{frame("text", false), frame("continuation", false), frame("continuation", true)},
+			1,
+		},
+		{
+			// The shape a corpus case produces when it omits fin: the first
+			// frame reads as complete, so the continuations that follow it
+			// continue nothing. Counting them would claim three upstream
+			// messages where a conforming peer assembles one and rejects the rest.
+			"complete text followed by orphan continuations",
+			[]interface{}{bare("text"), frame("continuation", true), frame("continuation", true)},
+			1,
+		},
+		{"orphan continuation alone", []interface{}{frame("continuation", true)}, 0},
+		{"unterminated fragment", []interface{}{frame("text", false), frame("continuation", false)}, 0},
+		{"control frames are not messages", []interface{}{bare("ping"), bare("close")}, 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := countCorpusWebSocketMessages(tc.frames); got != tc.want {
+				t.Fatalf("countCorpusWebSocketMessages = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 

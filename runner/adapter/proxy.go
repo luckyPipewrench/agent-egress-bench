@@ -78,6 +78,7 @@ type ProxyAdapter struct {
 	setTLSRoute     func(path, body string)
 	setTLSRouteCT   func(path, body, contentType string)
 	setTLSRouteHost func(host, path, body, contentType string)
+	tlsRequests     func() int64 // requests the TLS fixture has served
 	wsAddr          string        // trusted WS fixture for websocket cases
 	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
@@ -134,6 +135,31 @@ func (p *ProxyAdapter) SetTLSFixtureWithContentType(addr, caFile string, setRout
 	p.setTLSRoute = func(path, body string) {
 		setRoute(path, body, "application/json")
 	}
+}
+
+// SetTLSRequestCounter supplies a runner-managed counter of requests the TLS
+// fixture has served. Without it, a response carrying an error status cannot be
+// distinguished from one the proxy synthesized without ever forwarding, so the
+// adapter withholds the verdict rather than crediting a passthrough allow.
+func (p *ProxyAdapter) SetTLSRequestCounter(count func() int64) {
+	p.tlsRequests = count
+}
+
+// tlsFixtureServed reports whether the TLS fixture served a request since the
+// supplied baseline. It fails closed: with no counter wired, the answer is no.
+func (p *ProxyAdapter) tlsFixtureServed(before int64) bool {
+	if p.tlsRequests == nil {
+		return false
+	}
+	return p.tlsRequests() > before
+}
+
+// tlsRequestBaseline snapshots the fixture counter before a request is sent.
+func (p *ProxyAdapter) tlsRequestBaseline() int64 {
+	if p.tlsRequests == nil {
+		return 0
+	}
+	return p.tlsRequests()
 }
 
 // SetWSFixture configures the WS fixture address for websocket cases.
@@ -422,8 +448,17 @@ func (p *ProxyAdapter) classifyWebSocketAllow(evidence map[string]interface{}, u
 	return Result{Verdict: "allow", Evidence: evidence}
 }
 
+// countCorpusWebSocketMessages counts the complete application messages a
+// corpus case sends, tracking fragmentation state so the count matches what a
+// conforming upstream would actually assemble.
+//
+// This gates scoring, so it fails closed: a frame sequence that violates the
+// protocol earns no credit rather than inflating the expected message count.
+// A continuation with no started message, and a data frame that abandons an
+// unfinished one, are both violations an upstream would reject.
 func countCorpusWebSocketMessages(frames []interface{}) int {
 	messages := 0
+	fragmentStarted := false
 	for _, raw := range frames {
 		frame, _ := raw.(map[string]interface{})
 		op, _ := frame["opcode"].(string)
@@ -433,13 +468,23 @@ func countCorpusWebSocketMessages(frames []interface{}) int {
 		}
 		switch strings.ToLower(op) {
 		case "continuation":
+			if !fragmentStarted {
+				// Unexpected continuation: no message is open to continue.
+				continue
+			}
 			if fin {
 				messages++
+				fragmentStarted = false
 			}
 		case "text", "binary", "":
 			if fin {
+				// A complete single-frame message. Any unfinished fragment it
+				// interrupts is abandoned and counts for nothing.
 				messages++
+				fragmentStarted = false
+				continue
 			}
+			fragmentStarted = true
 		}
 	}
 	return messages
@@ -945,6 +990,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 			TLSClientConfig: tlsCfg,
 		},
 	}
+	fixtureBaseline := p.tlsRequestBaseline()
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
@@ -963,7 +1009,11 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 	}
 	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if caFile != "" {
+	// A configured CA proves only that the client was prepared to validate the
+	// fixture's certificate. It does not prove the fixture answered: the proxy
+	// can synthesize a response after CONNECT without ever forwarding. Credit a
+	// passthrough allow only when the runner-managed fixture counter advanced.
+	if caFile != "" && p.tlsFixtureServed(fixtureBaseline) {
 		return classifyUpstreamResponse(resp.StatusCode, string(respBody))
 	}
 	return classifyResponse(resp.StatusCode, string(respBody))
