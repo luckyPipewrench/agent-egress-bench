@@ -253,6 +253,94 @@
           "description": "Tool can enforce per-subject MCP tool-call count budgets during a run."
         }
       }
+    },
+    "receipt_evidence": {
+      "type": "object",
+      "description": "Optional declaration telling the runner where the tool emits structured receipt evidence and how to invoke the tool's own offline verifier. If omitted, receipt_produced and receipt_independently_verifiable remain no for every receipt-profile row.",
+      "additionalProperties": false,
+      "required": [
+        "evidence_dir",
+        "file_glob",
+        "jsonl_record_type",
+        "detail_json_pointer",
+        "detail_encoding",
+        "record_identifier_json_pointer",
+        "case_identifier_json_pointer",
+        "verify_command",
+        "verify_timeout_seconds",
+        "valid_exit_codes"
+      ],
+      "properties": {
+        "evidence_dir": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Directory containing evidence files. Relative paths are resolved relative to the tool-profile JSON file."
+        },
+        "file_glob": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Glob for evidence files inside evidence_dir, for example evidence-*.jsonl."
+        },
+        "jsonl_record_type": {
+          "type": "string",
+          "description": "Optional top-level type value to select records from JSONL evidence files, for example action_receipt. Empty string means every JSONL row is considered."
+        },
+        "detail_json_pointer": {
+          "type": "string",
+          "pattern": "^(/.*)?$",
+          "description": "JSON Pointer to the receipt detail object or JSON-encoded detail string within each JSONL row."
+        },
+        "detail_encoding": {
+          "enum": ["object", "json_string", "object_or_json_string"],
+          "description": "How to decode the value at detail_json_pointer."
+        },
+        "record_case_id_json_pointer": {
+          "type": "string",
+          "pattern": "^(/.*)?$",
+          "description": "Optional JSON Pointer, relative to the decoded detail object, that carries the benchmark case_id for exact correlation."
+        },
+        "record_identifier_json_pointer": {
+          "type": "string",
+          "pattern": "^(/.*)?$",
+          "description": "JSON Pointer, relative to the decoded detail object, that carries the action identifier to correlate with the case, usually the action target URL."
+        },
+        "case_identifier_json_pointer": {
+          "type": "string",
+          "pattern": "^(/.*)?$",
+          "description": "JSON Pointer, relative to the case object, that carries the expected action identifier, for example /payload/url."
+        },
+        "verify_command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Command argv used to verify an evidence file. The runner replaces {evidence_file} with the selected evidence file path and expands environment variables."
+        },
+        "verify_timeout_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Timeout for each verifier invocation. 0 means the runner default."
+        },
+        "valid_exit_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Verifier exit codes that mean the evidence file is independently valid."
+        },
+        "partial_exit_codes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Optional verifier exit codes that mean internal consistency only, producing receipt_independently_verifiable=partial."
+        }
+      }
     }
   }
 }
