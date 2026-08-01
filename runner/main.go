@@ -148,7 +148,10 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 		if fm != nil {
 			pa.SetHTTPFixtureWithContentType(fm.HTTP().Addr(), fm.HTTP().SetRouteWithContentType)
 			pa.SetTLSFixtureWithContentType(fm.TLS().Addr(), fm.TLS().CAFile(), fm.TLS().SetRouteWithContentType, fm.TLS().SetRouteForHostWithContentType)
+			pa.SetTLSRequestCounter(fm.TLS().Requests)
 			pa.SetWSFixtures(fm.WS().Addr(), fm.WS().UntrustedAddr())
+			pa.SetWSUpstreamMessageCounter(fm.WS().Messages)
+			pa.SetMCPHTTPUpstreamCallCounter(fm.MCPHTTP().Calls)
 			_, _ = fmt.Fprintf(os.Stderr, "Fixtures: HTTP=%s TLS=%s WS=%s DNS=%s MCP_HTTP=%s\n",
 				fm.HTTP().Addr(), fm.TLS().Addr(), fm.WS().Addr(), fm.DNS().Addr(), fm.MCPHTTP().Addr())
 		}

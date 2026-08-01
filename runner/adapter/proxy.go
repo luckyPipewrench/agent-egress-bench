@@ -78,9 +78,13 @@ type ProxyAdapter struct {
 	setTLSRoute     func(path, body string)
 	setTLSRouteCT   func(path, body, contentType string)
 	setTLSRouteHost func(host, path, body, contentType string)
+	tlsRequests     func() int64 // requests the TLS fixture has served
 	wsAddr          string        // trusted WS fixture for websocket cases
 	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
+
+	wsUpstreamMessages   func() int64 // runner-managed WS fixture message counter
+	mcpHTTPUpstreamCalls func() int64 // runner-managed MCP HTTP fixture request counter
 }
 
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
@@ -133,6 +137,31 @@ func (p *ProxyAdapter) SetTLSFixtureWithContentType(addr, caFile string, setRout
 	}
 }
 
+// SetTLSRequestCounter supplies a runner-managed counter of requests the TLS
+// fixture has served. Without it, a response carrying an error status cannot be
+// distinguished from one the proxy synthesized without ever forwarding, so the
+// adapter withholds the verdict rather than crediting a passthrough allow.
+func (p *ProxyAdapter) SetTLSRequestCounter(count func() int64) {
+	p.tlsRequests = count
+}
+
+// tlsFixtureServed reports whether the TLS fixture served a request since the
+// supplied baseline. It fails closed: with no counter wired, the answer is no.
+func (p *ProxyAdapter) tlsFixtureServed(before int64) bool {
+	if p.tlsRequests == nil {
+		return false
+	}
+	return p.tlsRequests() > before
+}
+
+// tlsRequestBaseline snapshots the fixture counter before a request is sent.
+func (p *ProxyAdapter) tlsRequestBaseline() int64 {
+	if p.tlsRequests == nil {
+		return 0
+	}
+	return p.tlsRequests()
+}
+
 // SetWSFixture configures the WS fixture address for websocket cases.
 func (p *ProxyAdapter) SetWSFixture(addr string) { p.SetWSFixtures(addr, "") }
 
@@ -142,8 +171,20 @@ func (p *ProxyAdapter) SetWSFixtures(trustedAddr, untrustedAddr string) {
 	p.wsUntrustedAddr = untrustedAddr
 }
 
+// SetWSUpstreamMessageCounter lets the adapter prove a WebSocket payload reached
+// the runner-managed upstream fixture before scoring an allow.
+func (p *ProxyAdapter) SetWSUpstreamMessageCounter(counter func() int64) {
+	p.wsUpstreamMessages = counter
+}
+
 // SetMCPHTTPURL configures the MCP-over-HTTP JSON-RPC listener URL.
 func (p *ProxyAdapter) SetMCPHTTPURL(rawURL string) { p.mcpHTTPURL = rawURL }
+
+// SetMCPHTTPUpstreamCallCounter lets the adapter prove the protected MCP HTTP
+// backend handled the request before scoring an allow.
+func (p *ProxyAdapter) SetMCPHTTPUpstreamCallCounter(counter func() int64) {
+	p.mcpHTTPUpstreamCalls = counter
+}
 
 // Run sends the case payload through the proxy and returns the verdict.
 func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
@@ -279,8 +320,16 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 
 	frames, ok := c.Payload["frames"].([]interface{})
 	if !ok || len(frames) == 0 {
-		return Result{Verdict: "allow", Evidence: map[string]interface{}{"reason": "no_frame_payload"}}
+		return Result{
+			Verdict: "skip",
+			Evidence: map[string]interface{}{
+				"reason":           "no_frame_payload",
+				"upstream_reached": false,
+			},
+		}
 	}
+	expectedUpstreamMessages := countCorpusWebSocketMessages(frames)
+	upstreamBefore, _ := p.webSocketUpstreamMessageCount()
 	for _, raw := range frames {
 		frame, _ := raw.(map[string]interface{})
 		if err := writeCorpusWebSocketFrame(conn, frame); err != nil {
@@ -334,26 +383,22 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 					ev["opcode"] = lastFrame.opcode
 					ev["bytes"] = lastFrame.payloadBytes
 				}
-				return Result{Verdict: "allow", Evidence: ev}
+				return p.classifyWebSocketAllow(ev, upstreamBefore, expectedUpstreamMessages)
 			}
-			// Connection closed without a close frame. If we already
-			// received at least one frame from the proxy, treat the
-			// closure as a clean upstream goaway (allow); proxies that
-			// permit traffic do not synthesize close frames on behalf of
-			// the upstream, so an EOF after the echo means "the wire ended,
-			// the proxy did not actively block." If we never received any
-			// frame, an abrupt closure suggests the proxy actively dropped
-			// the connection (RST or close without frame): block.
+			// Connection closed without a close frame. A received frame is
+			// useful wire evidence, but it is only an allow when the
+			// runner-managed upstream fixture also observed the corpus
+			// message. If we never received any frame, an abrupt closure
+			// suggests the proxy actively dropped the connection (RST or
+			// close without frame): block.
 			if lastFrame.seen {
-				return Result{
-					Verdict: "allow",
-					Evidence: map[string]interface{}{
-						"scanner": "websocket_proxy",
-						"reason":  "upstream_closed_after_echo",
-						"opcode":  lastFrame.opcode,
-						"bytes":   lastFrame.payloadBytes,
-					},
+				ev := map[string]interface{}{
+					"scanner": "websocket_proxy",
+					"reason":  "upstream_closed_after_echo",
+					"opcode":  lastFrame.opcode,
+					"bytes":   lastFrame.payloadBytes,
 				}
+				return p.classifyWebSocketAllow(ev, upstreamBefore, expectedUpstreamMessages)
 			}
 			return Result{
 				Verdict: "block",
@@ -377,6 +422,72 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		lastFrame.payloadBytes = len(payload)
 		lastFrame.seen = true
 	}
+}
+
+func (p *ProxyAdapter) webSocketUpstreamMessageCount() (int64, bool) {
+	if p.wsUpstreamMessages == nil {
+		return 0, false
+	}
+	return p.wsUpstreamMessages(), true
+}
+
+func (p *ProxyAdapter) classifyWebSocketAllow(evidence map[string]interface{}, upstreamBefore int64, expectedMessages int) Result {
+	upstreamAfter, ok := p.webSocketUpstreamMessageCount()
+	if ok {
+		evidence["upstream_messages_before"] = upstreamBefore
+		evidence["upstream_messages_after"] = upstreamAfter
+	}
+	if !ok || expectedMessages == 0 || upstreamAfter-upstreamBefore < int64(expectedMessages) {
+		evidence["upstream_reached"] = false
+		if !ok {
+			evidence["upstream_proof"] = "unavailable"
+		}
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	evidence["upstream_reached"] = true
+	return Result{Verdict: "allow", Evidence: evidence}
+}
+
+// countCorpusWebSocketMessages counts the complete application messages a
+// corpus case sends, tracking fragmentation state so the count matches what a
+// conforming upstream would actually assemble.
+//
+// This gates scoring, so it fails closed: a frame sequence that violates the
+// protocol earns no credit rather than inflating the expected message count.
+// A continuation with no started message, and a data frame that abandons an
+// unfinished one, are both violations an upstream would reject.
+func countCorpusWebSocketMessages(frames []interface{}) int {
+	messages := 0
+	fragmentStarted := false
+	for _, raw := range frames {
+		frame, _ := raw.(map[string]interface{})
+		op, _ := frame["opcode"].(string)
+		fin := true
+		if v, ok := frame["fin"].(bool); ok {
+			fin = v
+		}
+		switch strings.ToLower(op) {
+		case "continuation":
+			if !fragmentStarted {
+				// Unexpected continuation: no message is open to continue.
+				continue
+			}
+			if fin {
+				messages++
+				fragmentStarted = false
+			}
+		case "text", "binary", "":
+			if fin {
+				// A complete single-frame message. Any unfinished fragment it
+				// interrupts is abandoned and counts for nothing.
+				messages++
+				fragmentStarted = false
+				continue
+			}
+			fragmentStarted = true
+		}
+	}
+	return messages
 }
 
 func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
@@ -879,6 +990,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 			TLSClientConfig: tlsCfg,
 		},
 	}
+	fixtureBaseline := p.tlsRequestBaseline()
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
@@ -897,6 +1009,13 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 	}
 	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// A configured CA proves only that the client was prepared to validate the
+	// fixture's certificate. It does not prove the fixture answered: the proxy
+	// can synthesize a response after CONNECT without ever forwarding. Credit a
+	// passthrough allow only when the runner-managed fixture counter advanced.
+	if caFile != "" && p.tlsFixtureServed(fixtureBaseline) {
+		return classifyUpstreamResponse(resp.StatusCode, string(respBody))
+	}
 	return classifyResponse(resp.StatusCode, string(respBody))
 }
 
@@ -1776,6 +1895,7 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 
 	client := &http.Client{Timeout: timeout}
 	var responses int
+	upstreamBefore, _ := p.mcpHTTPUpstreamCallCount()
 	for _, msg := range msgList {
 		line, _ := json.Marshal(msg)
 		req, err := http.NewRequest(http.MethodPost, p.mcpHTTPURL, bytes.NewReader(line))
@@ -1801,13 +1921,34 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 			return *verdict
 		}
 	}
-	return Result{
-		Verdict: "allow",
-		Evidence: map[string]interface{}{
-			"product_surface": "mcp_http_listener",
-			"response_count":  responses,
-		},
+	upstreamAfter, proofAvailable := p.mcpHTTPUpstreamCallCount()
+	evidence := map[string]interface{}{
+		"product_surface": "mcp_http_listener",
+		"response_count":  responses,
 	}
+	if proofAvailable {
+		evidence["upstream_calls_before"] = upstreamBefore
+		evidence["upstream_calls_after"] = upstreamAfter
+	}
+	if !proofAvailable || upstreamAfter-upstreamBefore < int64(len(msgList)) {
+		evidence["upstream_reached"] = false
+		if !proofAvailable {
+			evidence["upstream_proof"] = "unavailable"
+		}
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	evidence["upstream_reached"] = true
+	return Result{
+		Verdict:  "allow",
+		Evidence: evidence,
+	}
+}
+
+func (p *ProxyAdapter) mcpHTTPUpstreamCallCount() (int64, bool) {
+	if p.mcpHTTPUpstreamCalls == nil {
+		return 0, false
+	}
+	return p.mcpHTTPUpstreamCalls(), true
 }
 
 func classifyMCPHTTPBlock(body []byte) *Result {
@@ -2198,8 +2339,21 @@ func hasDenyMarker(body string) bool {
 	return false
 }
 
-// classifyResponse determines block vs allow from the HTTP response.
+// classifyResponse determines block vs allow from an HTTP response whose origin
+// has not been proven. Context-free 4xx/5xx responses are not containment
+// evidence because they may have been generated by the harness or proxy before
+// any upstream contact.
 func classifyResponse(statusCode int, body string) Result {
+	return classifyHTTPResponse(statusCode, body, false)
+}
+
+// classifyUpstreamResponse determines block vs allow from an HTTP response
+// after the transport path has proven the upstream endpoint answered.
+func classifyUpstreamResponse(statusCode int, body string) Result {
+	return classifyHTTPResponse(statusCode, body, true)
+}
+
+func classifyHTTPResponse(statusCode int, body string, upstreamReached bool) Result {
 	evidence := map[string]interface{}{
 		"status_code": statusCode,
 	}
@@ -2244,9 +2398,20 @@ func classifyResponse(statusCode int, body string) Result {
 		return Result{Verdict: "allow", Evidence: evidence}
 	}
 
-	// 4xx/5xx that aren't 400/403/405/502 mean the request reached the upstream and
-	// got an error response. The proxy allowed it through (not a policy block).
-	// 404, 429, 500, etc. all mean the proxy didn't intervene.
+	if !upstreamReached {
+		// 4xx/5xx that aren't 400/403/405/502 only prove passthrough when the
+		// caller knows an upstream origin answered. At this layer, proxy-local
+		// fixture failures and true upstream responses are indistinguishable, so
+		// fail away from allow.
+		evidence["reason"] = fmt.Sprintf("http_%d_origin_unconfirmed", statusCode)
+		evidence["upstream_error"] = truncate(body, 120)
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+
+	// From a confirmed upstream origin, a 4xx/5xx that isn't 400/403/405/502 means
+	// the request reached upstream and the error came from there. The proxy allowed
+	// it through rather than blocking it: 404, 429, 500 and friends all mean the
+	// proxy did not intervene.
 	evidence["reason"] = fmt.Sprintf("http_%d_passthrough", statusCode)
 	return Result{Verdict: "allow", Evidence: evidence}
 }

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,7 +32,13 @@ type TLSFixture struct {
 	keyFile  string // path to CA key PEM (for pipelock config)
 	mu       sync.Mutex
 	routes   map[string]HTTPRoute // path -> response metadata
+	requests atomic.Int64         // requests this fixture actually served
 }
+
+// Requests returns how many requests this fixture has served. A caller compares
+// the value before and after a request to learn whether the protected upstream
+// answered, rather than inferring it from configuration.
+func (f *TLSFixture) Requests() int64 { return f.requests.Load() }
 
 // TLSFixtureAddr returns the listener address (host:port).
 func (f *TLSFixture) Addr() string {
@@ -154,6 +161,10 @@ func StartTLS() (*TLSFixture, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Count on entry, before routing. Reaching this handler is the proof
+		// that the request traversed the proxy and arrived at the upstream,
+		// which is true whether or not a route is configured for it.
+		f.requests.Add(1)
 		host := r.Host
 		if h, _, splitErr := net.SplitHostPort(host); splitErr == nil {
 			host = h
