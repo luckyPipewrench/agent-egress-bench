@@ -735,6 +735,7 @@ func TestRunFetchProxy_RoutesFixtureHostToHTTPFixture(t *testing.T) {
 }
 
 func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
+	var upstreamMessages atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ws" {
 			t.Errorf("expected /ws path, got %s", r.URL.Path)
@@ -758,6 +759,7 @@ func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 		if string(payload) != "hello over ws" {
 			t.Fatalf("payload = %q, want websocket frame payload", payload)
 		}
+		upstreamMessages.Add(1)
 		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo")); err != nil {
 			t.Fatalf("write echo frame: %v", err)
 		}
@@ -765,6 +767,7 @@ func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 	defer srv.Close()
 
 	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
 	result := a.runWebSocketFrameViaProxy(Case{
 		ID:        "ws-frame",
 		Transport: "websocket",
@@ -779,8 +782,80 @@ func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 	}
 }
 
+func TestRunWebSocketFrameViaProxy_NoFramePayloadIsUnproven(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server does not support hijacking")
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	result := a.runWebSocketFrameViaProxy(Case{
+		ID:        "ws-no-frame-payload",
+		Transport: "websocket",
+		InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; evidence = %+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestRunWebSocketFrameViaProxy_ProxySynthesizedFrameIsUnproven(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test server does not support hijacking")
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("synthetic proxy echo")); err != nil {
+			t.Fatalf("write synthetic frame: %v", err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	result := a.runWebSocketFrameViaProxy(Case{
+		ID:        "ws-synthetic-frame",
+		Transport: "websocket",
+		InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "hello over ws"}},
+		},
+	}, time.Second)
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip for proxy-origin frame; evidence = %+v", result.Verdict, result.Evidence)
+	}
+}
+
 func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
 	var gotTarget string
+	var upstreamMessages atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTarget = r.URL.Query().Get("url")
 		hj, ok := w.(http.Hijacker)
@@ -798,6 +873,7 @@ func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
 			t.Fatalf("read websocket frame: %v", err)
 		}
+		upstreamMessages.Add(1)
 		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo")); err != nil {
 			t.Fatalf("write echo frame: %v", err)
 		}
@@ -806,6 +882,7 @@ func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
 
 	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
 	a.SetWSFixtures("127.0.0.1:34567", "127.0.0.2:45678")
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
 	result := a.runWebSocketFrameViaProxy(Case{
 		ID:        "ws-untrusted-sink-proof",
 		Transport: "websocket",
@@ -1009,6 +1086,57 @@ func TestRunMCPStdio_NoMCPCmd(t *testing.T) {
 	result := a.runMCPStdio(c, 5*time.Second)
 	if result.Verdict != "skip" {
 		t.Errorf("expected skip without mcp-cmd, got %q", result.Verdict)
+	}
+}
+
+func TestRunMCPHTTP_NonForwardingListenerAllowIsUnproven(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
+	}))
+	defer srv.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(srv.URL)
+	result := a.runMCPHTTP(Case{
+		ID:        "mcp-http-local-200",
+		Transport: "mcp_http",
+		InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "example"}},
+			},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip for listener-local response; evidence = %+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestRunMCPHTTP_ForwardedListenerAllowsWithUpstreamProof(t *testing.T) {
+	var upstreamCalls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
+	}))
+	defer srv.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(srv.URL)
+	a.SetMCPHTTPUpstreamCallCounter(upstreamCalls.Load)
+	result := a.runMCPHTTP(Case{
+		ID:        "mcp-http-proven-200",
+		Transport: "mcp_http",
+		InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "example"}},
+			},
+		},
+	}, 5*time.Second)
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow with upstream proof; evidence = %+v", result.Verdict, result.Evidence)
 	}
 }
 

@@ -2,9 +2,9 @@ package fixture
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/websocket"
@@ -18,6 +18,31 @@ type WSFixture struct {
 	untrustedListener net.Listener
 	server            *http.Server
 	untrustedServer   *http.Server
+	messages          atomic.Int64
+}
+
+type wsFixtureMessage struct {
+	payload     []byte
+	payloadType byte
+}
+
+var wsFixtureCodec = websocket.Codec{
+	Marshal: func(v interface{}) ([]byte, byte, error) {
+		msg, ok := v.(wsFixtureMessage)
+		if !ok {
+			return nil, websocket.UnknownFrame, fmt.Errorf("unsupported websocket fixture message type %T", v)
+		}
+		return msg.payload, msg.payloadType, nil
+	},
+	Unmarshal: func(data []byte, payloadType byte, v interface{}) error {
+		msg, ok := v.(*wsFixtureMessage)
+		if !ok {
+			return fmt.Errorf("unsupported websocket fixture receive target %T", v)
+		}
+		msg.payload = append(msg.payload[:0], data...)
+		msg.payloadType = payloadType
+		return nil
+	},
 }
 
 // Addr returns the listener address (host:port).
@@ -39,6 +64,9 @@ func (f *WSFixture) WSURL() string {
 	return fmt.Sprintf("ws://%s/echo", f.listener.Addr().String())
 }
 
+// Messages returns the number of application messages that reached the fixture.
+func (f *WSFixture) Messages() int64 { return f.messages.Load() }
+
 // StartWS creates and starts a WebSocket echo server on a random port.
 func StartWS() (*WSFixture, error) {
 	ln, untrustedLn, err := listenLoopbackPair()
@@ -46,10 +74,22 @@ func StartWS() (*WSFixture, error) {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
 
+	f := &WSFixture{
+		listener:          ln,
+		untrustedListener: untrustedLn,
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/echo", websocket.Handler(func(ws *websocket.Conn) {
-		// Echo all frames back to sender.
-		_, _ = io.Copy(ws, ws)
+		for {
+			var msg wsFixtureMessage
+			if err := wsFixtureCodec.Receive(ws, &msg); err != nil {
+				return
+			}
+			f.messages.Add(1)
+			if err := wsFixtureCodec.Send(ws, msg); err != nil {
+				return
+			}
+		}
 	}))
 	// Health check for readiness.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -58,12 +98,8 @@ func StartWS() (*WSFixture, error) {
 
 	// Separate *http.Server per listener keeps the trusted and untrusted sink
 	// listeners fully isolated and unambiguously shut down.
-	f := &WSFixture{
-		listener:          ln,
-		untrustedListener: untrustedLn,
-		server:            &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second},
-		untrustedServer:   &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second},
-	}
+	f.server = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	f.untrustedServer = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 
 	go func() { _ = f.server.Serve(ln) }()
 	go func() { _ = f.untrustedServer.Serve(untrustedLn) }()
