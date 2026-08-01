@@ -436,34 +436,27 @@ func stringValue(v interface{}) string {
 	}
 }
 
+// caseAsDocument renders a Case as the JSON document its case file describes, so
+// that a profile's case_identifier_json_pointer addresses the same field names a
+// maintainer sees on disk. Marshaling through encoding/json rather than listing
+// the fields by hand keeps the two definitions from drifting apart when the Case
+// schema changes, and it renders numbers and omitted optional fields exactly as
+// the on-disk case does.
+//
+// A marshaling failure yields a nil document, which produces an empty case
+// identifier and therefore no correlation. That matches the caller's existing
+// fail-closed strategy: an unusable document scores receipt_produced=no rather
+// than correlating against a partially-built one.
 func caseAsDocument(c Case) map[string]interface{} {
-	return map[string]interface{}{
-		"schema_version":      c.SchemaVersion,
-		"id":                  c.ID,
-		"category":            c.Category,
-		"title":               c.Title,
-		"description":         c.Description,
-		"input_type":          c.InputType,
-		"transport":           c.Transport,
-		"payload":             c.Payload,
-		"expected_verdict":    c.ExpectedVerdict,
-		"severity":            c.Severity,
-		"capability_tags":     stringsSliceAsInterface(c.CapabilityTags),
-		"requires":            stringsSliceAsInterface(c.Requires),
-		"false_positive_risk": c.FPRisk,
-		"why_expected":        c.WhyExpected,
-		"safe_example":        c.SafeExample,
-		"notes":               c.Notes,
-		"source":              c.Source,
+	data, err := json.Marshal(c)
+	if err != nil {
+		return nil
 	}
-}
-
-func stringsSliceAsInterface(in []string) []interface{} {
-	out := make([]interface{}, len(in))
-	for i, v := range in {
-		out[i] = v
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil
 	}
-	return out
+	return doc
 }
 
 func commandExitCode(err error) (int, bool) {

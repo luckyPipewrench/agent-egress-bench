@@ -410,6 +410,35 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 			wantVerifiable: "yes",
 		},
 		{
+			// A declared partial exit code is the only route to
+			// receipt_independently_verifiable=partial. The shared assertion
+			// block runs ValidateReceiptProfile on every case, so this also
+			// covers the schema rule that partial requires receipt_produced=yes.
+			name: "declared partial exit code yields partial",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				decl.VerifyCommand = []string{helper, "2"}
+				decl.PartialExitCodes = []int{2}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "partial",
+		},
+		{
+			// Documented correlation order puts the case-ID pointer first. The
+			// receipt's target deliberately does NOT match the case URL, so a
+			// pass here can only come from the case-ID path and not from
+			// identifier matching falling through.
+			name: "case id pointer correlates without a matching identifier",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidenceCaseID(t, filepath.Join(dir, "evidence.jsonl"),
+					"url-dlp-token-001", "https://example.test/unrelated")
+				decl.RecordCaseIDJSONPointer = "/action_record/case_id"
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "yes",
+		},
+		{
 			// A receipt carrying a redacted body easily exceeds bufio.Scanner's
 			// 64 KiB default. Without an enlarged buffer the scan stops with
 			// bufio.ErrTooLong and the row reports unreadable evidence.
@@ -537,6 +566,32 @@ func writeReceiptEvidence(t *testing.T, path, target string) {
 	t.Helper()
 	detail := map[string]interface{}{
 		"action_record": map[string]interface{}{
+			"target":  target,
+			"verdict": "block",
+		},
+		"signature": "ed25519:synthetic",
+	}
+	entry := map[string]interface{}{
+		"type":   "action_receipt",
+		"detail": detail,
+	}
+	data, err := jsonMarshalLine(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeReceiptEvidenceCaseID writes one receipt that carries an explicit case ID
+// alongside a target. Callers pass a target that does not match the case URL so
+// that correlation can only succeed through the case-ID pointer.
+func writeReceiptEvidenceCaseID(t *testing.T, path, caseID, target string) {
+	t.Helper()
+	detail := map[string]interface{}{
+		"action_record": map[string]interface{}{
+			"case_id": caseID,
 			"target":  target,
 			"verdict": "block",
 		},
