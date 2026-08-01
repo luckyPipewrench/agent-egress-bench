@@ -205,48 +205,79 @@ jobs:
             echo "STATS_PATH=$stats_path"
           } >> "$GITHUB_ENV"
 
-      - name: Gate expected phase 1 result shape
+      - name: Gate result against the recorded baseline
         shell: bash
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
           import json
-          import math
           import os
 
           with open(os.environ["SUMMARY_PATH"], encoding="utf-8") as fh:
               summary = json.load(fh)
+          with open("ci/gauntlet-baseline.json", encoding="utf-8") as fh:
+              baseline = json.load(fh)
 
-          expected_counts = {
-              "total": 213,
-              "applicable": 212,
-              "not_applicable": 1,
-              "errors": 0,
-          }
-          for key, expected in expected_counts.items():
-              actual = summary["case_count"].get(key)
-              if actual != expected:
-                  raise SystemExit(f"case_count.{key}={actual}, want {expected}; setup is not the verified 2026-08-01 gauntlet shape")
+          failures = []
+          notes = []
 
-          reasons = summary["case_count"].get("not_applicable_reasons", {})
-          if reasons != {"missing_requires": 1}:
-              raise SystemExit(f"not_applicable_reasons={reasons!r}, want {{'missing_requires': 1}}; setup is not trustworthy")
-
-          expected_scores = {
-              ("full", "containment"): 0.9936708860759493,
-              ("applicable", "containment"): 1.0,
-              ("applicable", "false_positive_rate"): 0.0,
-              ("applicable", "detection"): 1.0,
-              ("applicable", "evidence"): 1.0,
-          }
-          for (scope, metric), expected in expected_scores.items():
-              actual = summary["scores"][scope].get(metric)
-              if actual is None or not math.isclose(float(actual), expected, rel_tol=0.0, abs_tol=1e-15):
-                  raise SystemExit(f"scores.{scope}.{metric}={actual}, want {expected}; treat as setup drift, not a new score")
-
+          # Trustworthiness of the RUN is a hard gate. These say the measurement
+          # itself is not usable, regardless of what the numbers are.
           if summary.get("sufficient") is not True:
-              raise SystemExit(f"sufficient={summary.get('sufficient')!r}, want true")
+              failures.append(f"sufficient={summary.get('sufficient')!r}, want true")
+          errors = summary["case_count"].get("errors")
+          if errors != 0:
+              failures.append(f"case_count.errors={errors}, want 0")
+
+          # Scores are compared against floors and ceilings, never equalities.
+          # An exact-match gate would red this lane the moment the corpus grows,
+          # which is the normal and desired state of a growing benchmark.
+          for scope, metrics in baseline.get("score_floors", {}).items():
+              for metric, floor in metrics.items():
+                  actual = summary["scores"].get(scope, {}).get(metric)
+                  if actual is None:
+                      failures.append(f"scores.{scope}.{metric} missing from summary")
+                  elif float(actual) < float(floor) - 1e-12:
+                      failures.append(
+                          f"REGRESSION scores.{scope}.{metric}={actual}, below baseline floor {floor}"
+                      )
+                  elif float(actual) > float(floor) + 1e-12:
+                      notes.append(
+                          f"scores.{scope}.{metric}={actual} is ABOVE the baseline floor {floor}; "
+                          "refresh ci/gauntlet-baseline.json in a reviewed commit to lock the gain in"
+                      )
+
+          for scope, metrics in baseline.get("score_ceilings", {}).items():
+              for metric, ceiling in metrics.items():
+                  actual = summary["scores"].get(scope, {}).get(metric)
+                  if actual is None:
+                      failures.append(f"scores.{scope}.{metric} missing from summary")
+                  elif float(actual) > float(ceiling) + 1e-12:
+                      failures.append(
+                          f"REGRESSION scores.{scope}.{metric}={actual}, above baseline ceiling {ceiling}"
+                      )
+
+          # Case counts are REPORTED, not gated. The corpus is meant to grow, and
+          # a lane that fails on growth gets switched off by whoever adds a case.
+          observed = baseline.get("observed_case_count", {})
+          for key in ("total", "applicable", "not_applicable"):
+              was = observed.get(key)
+              now = summary["case_count"].get(key)
+              if was is not None and now != was:
+                  notes.append(f"case_count.{key} moved {was} -> {now} since the baseline was recorded")
+          was_reasons = observed.get("not_applicable_reasons")
+          now_reasons = summary["case_count"].get("not_applicable_reasons", {})
+          if was_reasons is not None and now_reasons != was_reasons:
+              notes.append(f"not_applicable_reasons moved {was_reasons!r} -> {now_reasons!r}")
+
+          for note in notes:
+              print(f"::notice::{note}")
+          for failure in failures:
+              print(f"::error::{failure}")
+          if failures:
+              raise SystemExit(f"{len(failures)} baseline gate failure(s)")
+          print("baseline gate: OK")
           PY
 
       - name: Wrap provenance artifact

@@ -154,12 +154,19 @@ corpus bytes are unchanged.
 Build and run the Gauntlet runner:
 
 ```bash
-cd runner && go build -o aeb-gauntlet .
-./aeb-gauntlet \
-  --cases ../cases \
-  --profile ../examples/pipelock/tool-profile.json \
+cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
+/tmp/aeb-gauntlet \
+  --adapter proxy --scan-token bench-test-token \
+  --managed-proxy-cmd './examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"' \
+  --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
+  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" -- cat" \
+  --cases ./cases --multifile-cases ./cases/mcp-drift \
+  --profile examples/pipelock/tool-profile.json \
+  --fixtures \
   --output summary.json
 ```
+
+`--fixtures` and `--multifile-cases` are not optional for a comparable score. Without `--fixtures` the runner starts no local HTTP, TLS, WebSocket, DNS or MCP endpoints, so cases that target them fail for lack of a server rather than on policy, and the false-positive rate becomes meaningless. The managed-command flags start the tool under test with TLS interception wired up; a plain listening proxy scores the response-interception cases incorrectly. Confirm the run printed a line beginning `Fixtures:` before trusting any number it produces.
 
 Per-case JSONL results are written to stdout. The summary JSON file is written to the path specified by `--output`. See [RUNNER.md](RUNNER.md) for the full runner contract and verdict mapping rules.
 
