@@ -345,6 +345,16 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 			wantVerifiable: "yes",
 		},
 		{
+			name: "no matching receipt fails closed",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/other?token=secret")
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "no",
+			wantVerifiable: "no",
+			wantReason:     "no matching receipt found",
+		},
+		{
 			name: "receipt present and verify fails",
 			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
 				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=secret")
