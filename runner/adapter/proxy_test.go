@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,15 +34,30 @@ func TestClassifyResponse(t *testing.T) {
 		{"502 with deny marker", http.StatusBadGateway, `{"block_reason":"DLP match","scanner":"dlp"}`, "block"},
 		{"200 ok", http.StatusOK, "ok", "allow"},
 		{"301 redirect", http.StatusMovedPermanently, "", "allow"},
-		{"404 passthrough", http.StatusNotFound, "not found", "allow"},
-		{"500 passthrough", http.StatusInternalServerError, "", "allow"},
-		{"429 passthrough", http.StatusTooManyRequests, "", "allow"},
+		{"404 unconfirmed origin", http.StatusNotFound, "not found", "skip"},
+		{"500 unconfirmed origin", http.StatusInternalServerError, "", "skip"},
+		{"429 unconfirmed origin", http.StatusTooManyRequests, "", "skip"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := classifyResponse(tt.status, tt.body)
 			if result.Verdict != tt.verdict {
 				t.Errorf("classifyResponse(%d) verdict = %q, want %q", tt.status, result.Verdict, tt.verdict)
+			}
+		})
+	}
+}
+
+func TestClassifyUpstreamResponse_AllowsConfirmedHTTPError(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError} {
+		t.Run(fmt.Sprintf("status_%d", status), func(t *testing.T) {
+			result := classifyUpstreamResponse(status, "upstream response")
+			if result.Verdict != "allow" {
+				t.Fatalf("confirmed upstream status %d verdict = %q, want allow", status, result.Verdict)
+			}
+			wantReason := fmt.Sprintf("http_%d_passthrough", status)
+			if result.Evidence["reason"] != wantReason {
+				t.Fatalf("reason = %v, want %s", result.Evidence["reason"], wantReason)
 			}
 		})
 	}
@@ -593,6 +610,89 @@ func TestRunFetchProxy_AllowsGET(t *testing.T) {
 	// The mock server acts as the proxy's /fetch endpoint. It returns 200.
 	if result.Verdict != "allow" {
 		t.Errorf("expected allow, got %q (err: %v)", result.Verdict, result.Err)
+	}
+}
+
+func TestRunFetchProxy_ProxyOrigin500IsNotAllow(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fetch" {
+			t.Errorf("expected /fetch path, got %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprint(w, "proxy failed before upstream contact")
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	result := a.runFetchProxy(Case{
+		ID:        "proxy-local-500",
+		Transport: "fetch_proxy",
+		Payload:   map[string]interface{}{"url": "https://example.com"},
+	}, 5*time.Second)
+	if result.Verdict != "skip" {
+		t.Fatalf("proxy-origin 500 verdict = %q, want skip; evidence = %+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestDoHTTPProxyRequest_AllowsConfirmedUpstream500(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprint(w, "upstream application error")
+	}))
+	defer upstream.Close()
+
+	caFile, err := os.CreateTemp(t.TempDir(), "upstream-ca-*.pem")
+	if err != nil {
+		t.Fatalf("create CA file: %v", err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: upstream.Certificate().Raw})
+	if _, err := caFile.Write(certPEM); err != nil {
+		t.Fatalf("write CA file: %v", err)
+	}
+	if err := caFile.Close(); err != nil {
+		t.Fatalf("close CA file: %v", err)
+	}
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			t.Errorf("expected CONNECT, got %s", r.Method)
+			http.Error(w, "CONNECT only", http.StatusMethodNotAllowed)
+			return
+		}
+		dst, err := net.Dial("tcp", r.Host)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("test proxy does not support hijacking")
+		}
+		clientConn, _, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		_, _ = io.WriteString(clientConn, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		go func() {
+			defer func() { _ = dst.Close() }()
+			defer func() { _ = clientConn.Close() }()
+			_, _ = io.Copy(dst, clientConn)
+		}()
+		go func() {
+			defer func() { _ = dst.Close() }()
+			defer func() { _ = clientConn.Close() }()
+			_, _ = io.Copy(clientConn, dst)
+		}()
+	}))
+	defer proxy.Close()
+
+	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
+	result := a.doHTTPProxyRequest("confirmed-upstream-500", http.MethodGet, upstream.URL, nil, nil, 5*time.Second, caFile.Name())
+	if result.Verdict != "allow" {
+		t.Fatalf("confirmed upstream 500 verdict = %q, want allow; err = %v; evidence = %+v", result.Verdict, result.Err, result.Evidence)
+	}
+	if result.Evidence["reason"] != "http_500_passthrough" {
+		t.Fatalf("reason = %v, want http_500_passthrough", result.Evidence["reason"])
 	}
 }
 
