@@ -27,3 +27,6 @@ CLAUDE.local.md
 
 # Playwright
 .playwright-mcp/
+
+# Opt-in receipt-axis evidence and its runtime signing key. Never commit keys.
+examples/pipelock/.receipt-evidence/

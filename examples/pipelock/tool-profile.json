@@ -63,5 +63,26 @@
     "hostname_exfil_scanning": true,
     "dns_rebinding_fixture": false,
     "budget_enforcement": true
+  },
+  "receipt_evidence": {
+    "evidence_dir": ".receipt-evidence",
+    "file_glob": "evidence-*.jsonl",
+    "jsonl_record_type": "action_receipt",
+    "detail_json_pointer": "/detail",
+    "detail_encoding": "object_or_json_string",
+    "record_case_id_json_pointer": "",
+    "record_identifier_json_pointer": "/action_record/target",
+    "case_identifier_json_pointer": "/payload/url",
+    "verify_command": [
+      "$PIPELOCK_BIN",
+      "verify-receipt",
+      "{evidence_file}",
+      "--key",
+      "$AEB_RECEIPT_PUBKEY"
+    ],
+    "verify_timeout_seconds": 30,
+    "valid_exit_codes": [
+      0
+    ]
   }
 }
