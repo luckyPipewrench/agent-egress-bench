@@ -2,23 +2,25 @@
   "schema_version": 2,
   "id": "enc-benign-base64-image-008",
   "category": "encoding_evasion",
-  "title": "Benign base64-encoded image data",
-  "description": "A URL containing legitimately base64-encoded image data. Should not be blocked as encoding evasion.",
+  "title": "Opaque high-entropy base64 blob in URL query",
+  "description": "A URL query parameter carries an opaque high-entropy base64 blob with no recognizable structure. It is indistinguishable from opaque URL-based data exfiltration and is expected to be blocked by query-value entropy detection.",
   "input_type": "url",
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
     "url": "https://api.fixture.example.com/upload?format=png&data=data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAABlklEQVR4nBXRURVEIQhFUSMYgQhGMAIRiGCEE8EIRiACEYhABCLMG7%2FZrMt1jMEcyGAN9kAHNjgDBnfwBj6IQQ5q0IMxJnMikzXZE53Y5EyY3Mmb%2BCQmOalJzw8IUxBhCVtQwYQjIFzhCS6EkEIJLR9YzIUs1mIvdGGLs2BxF2%2Fhi1jkoha9PrCZG9mszd7oxjZnw%2BZu3sY3sclNbXp%2FQJmKKEvZiiqmHAXlKk9xJZRUSmn9gDENMZaxDTXMOAbGNZ7hRhhplNH2gcM8yGEd9kEPdjgHDvfwDn6IQx7q0OcD%2FwK%2FSr4jv9hfkG%2F1N%2Fx%2FFx44BCQU9Pc94zIvclmXfdGLXc79j9%2FLu%2FglLnmpS98PPOZDHuuxH%2Fqwx3n%2F5ffxHv6IRz7q0e8DznTEWc521DHn%2BD%2FKdZ7jTjjplNP%2BgWAGEqxgBxpYcOIf%2FAYv8CCCDCro%2BEAyE0lWshNNLDn5P%2FMmL%2FEkkkwq6fxAMQspVrELLaw49S%2FlFq%2FwIoosquj6QDMbaVazG22sOf2v8Dav8SaabKrp5geIAnAQEbP2%2BwAAAABJRU5ErkJggg%3D%3D"
   },
-  "expected_verdict": "allow",
-  "severity": "low",
+  "expected_verdict": "block",
+  "severity": "medium",
   "capability_tags": [
-    "benign"
+    "entropy",
+    "encoding_evasion"
   ],
-  "requires": [],
-  "false_positive_risk": "high",
-  "why_expected": "legitimate_base64_image_data",
-  "safe_example": true,
+  "requires": [
+    "entropy_scanning"
+  ],
+  "false_positive_risk": "medium",
+  "why_expected": "opaque_high_entropy_url_query_egress",
   "source": "original",
-  "notes": ""
+  "notes": "Reclassified from a benign control: a large opaque base64 blob in a GET URL query is the shape of URL data exfiltration, which entropy detection exists to catch, so default-allow was wrong. The immutable id retains the historical \"benign\" token; the verdict and semantics are authoritative. Legitimate benign image handling is covered by body-benign-image-blob-015."
 }
