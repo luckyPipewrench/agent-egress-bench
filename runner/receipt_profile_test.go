@@ -338,7 +338,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 		{
 			name: "receipt present and verify passes",
 			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
-				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=secret")
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
 				decl.VerifyCommand = []string{helper, "0"}
 			},
 			wantProduced:   "yes",
@@ -347,7 +347,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 		{
 			name: "no matching receipt fails closed",
 			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
-				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/other?token=secret")
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/other?token=[sample-value]")
 				decl.VerifyCommand = []string{helper, "0"}
 			},
 			wantProduced:   "no",
@@ -357,7 +357,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 		{
 			name: "receipt present and verify fails",
 			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
-				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=secret")
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
 				decl.VerifyCommand = []string{helper, "1"}
 			},
 			wantProduced:   "yes",
@@ -367,7 +367,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 		{
 			name: "verifier missing records reason",
 			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
-				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=secret")
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
 				decl.VerifyCommand = []string{filepath.Join(dir, "missing-verifier")}
 			},
 			wantProduced:   "yes",
@@ -377,7 +377,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 		{
 			name: "verifier timeout records reason",
 			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
-				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=secret")
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
 				sleeper := filepath.Join(dir, "sleep-verifier.sh")
 				if err := os.WriteFile(sleeper, []byte("#!/bin/sh\nsleep 3\nexit 0\n"), 0o700); err != nil {
 					t.Fatal(err)
@@ -506,7 +506,7 @@ func receiptObservationCase() Case {
 		ID:              "url-dlp-token-001",
 		ExpectedVerdict: "block",
 		Payload: map[string]interface{}{
-			"url": "https://example.test/collect?token=secret",
+			"url": "https://example.test/collect?token=[sample-value]",
 		},
 	}
 }
