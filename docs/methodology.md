@@ -154,6 +154,10 @@ corpus bytes are unchanged.
 Build and run the Gauntlet runner:
 
 ```bash
+# Path to the tool under test, and the config the managed harness starts it with.
+export PIPELOCK_BIN=/path/to/pipelock
+export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
+
 cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
 /tmp/aeb-gauntlet \
   --adapter proxy --scan-token bench-test-token \

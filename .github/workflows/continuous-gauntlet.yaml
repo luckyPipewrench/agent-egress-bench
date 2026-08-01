@@ -185,15 +185,18 @@ jobs:
           run_status=$?
           set -e
 
-          if ! grep -Eq '^Fixtures: HTTP=.* TLS=.* WS=.* DNS=.* MCP_HTTP=' "$stderr_path"; then
-            echo "Runner did not report fixture startup; refusing untrusted benchmark." >&2
-            cat "$stderr_path" >&2
-            exit 1
-          fi
+          # Exit status first. A flag-parse or startup failure also produces no
+          # Fixtures line, and reporting the missing line instead of the real
+          # exit code hides why the run actually died.
           if [[ "$run_status" -ne 0 ]]; then
             echo "Gauntlet runner failed with exit code $run_status." >&2
             cat "$stderr_path" >&2
             exit "$run_status"
+          fi
+          if ! grep -Eq '^Fixtures: HTTP=.* TLS=.* WS=.* DNS=.* MCP_HTTP=' "$stderr_path"; then
+            echo "Runner did not report fixture startup; refusing untrusted benchmark." >&2
+            cat "$stderr_path" >&2
+            exit 1
           fi
 
           jq -e '.case_count.errors == 0' "$summary_path" >/dev/null
@@ -349,9 +352,9 @@ jobs:
       - name: Upload provenance artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: continuous-gauntlet-pipelock-v3.3.0
+          name: continuous-gauntlet-pipelock-${{ env.PIPELOCK_TAG }}
           path: |
-            ${{ env.GAUNTLET_ARTIFACT_DIR }}/continuous-gauntlet-pipelock-v3.3.0.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/continuous-gauntlet-pipelock-${{ env.PIPELOCK_TAG }}.json
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/raw-summary.json
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/command.txt
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/make-stats.txt
