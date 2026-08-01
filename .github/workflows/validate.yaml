@@ -33,14 +33,10 @@ jobs:
       - name: Validate all cases
         run: /tmp/aeb-validate cases cases
 
-      - name: Check case count
+      - name: Check case count matches README
         run: |
-          count=$(find cases -name '*.json' -type f | wc -l)
-          echo "Total cases: $count"
-          if [ "$count" -eq 0 ]; then
-            echo "ERROR: no case files found"
-            exit 1
-          fi
+          make stats
+          make check-stats
 
       - name: Scan for personal information
         run: |
