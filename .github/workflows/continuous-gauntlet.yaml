@@ -1,0 +1,361 @@
+# Copyright 2026 agent-egress-bench contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Continuous Gauntlet
+
+on:
+  workflow_dispatch:
+    inputs:
+      corpus_ref:
+        description: "Corpus ref to benchmark. Must resolve to origin/main or a tag."
+        required: false
+        default: main
+  schedule:
+    - cron: '17 6 * * *'
+
+concurrency:
+  group: continuous-gauntlet-${{ github.event.inputs.corpus_ref || 'main' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pipelock-release:
+    name: Pipelock release benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PIPELOCK_REPO: luckyPipewrench/pipelock
+      PIPELOCK_TAG: v3.3.0
+      PIPELOCK_VERSION: "3.3.0"
+      GAUNTLET_ARTIFACT_DIR: continuous-gauntlet-artifacts
+    steps:
+      - name: Check out corpus
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.inputs.corpus_ref || 'main' }}
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+
+      - name: Gate corpus provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin '+refs/heads/main:refs/remotes/origin/main'
+
+          dirty_output="$(git status --porcelain=v1 --untracked-files=all)"
+          if [[ -n "$dirty_output" ]]; then
+            echo "Corpus checkout is dirty; refusing to benchmark untrusted contents." >&2
+            printf '%s\n' "$dirty_output" >&2
+            exit 1
+          fi
+
+          head_sha="$(git rev-parse HEAD)"
+          origin_main_sha="$(git rev-parse origin/main)"
+          pointed_tags="$(git tag --points-at HEAD)"
+
+          if [[ "$head_sha" == "$origin_main_sha" ]]; then
+            corpus_ref_kind="origin/main"
+          elif [[ -n "$pointed_tags" ]]; then
+            corpus_ref_kind="tag"
+          else
+            echo "Corpus checkout is neither origin/main nor a tag; refusing detached/stale benchmark." >&2
+            echo "HEAD:        $head_sha" >&2
+            echo "origin/main: $origin_main_sha" >&2
+            exit 1
+          fi
+
+          {
+            echo "CORPUS_GIT_SHA=$head_sha"
+            echo "CORPUS_DIRTY=false"
+            echo "CORPUS_REF_KIND=$corpus_ref_kind"
+          } >> "$GITHUB_ENV"
+
+      - name: Download pinned Pipelock release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          asset="pipelock_${PIPELOCK_VERSION}_linux_amd64.tar.gz"
+          download_dir="$RUNNER_TEMP/pipelock-release"
+          mkdir -p "$download_dir"
+
+          release_json="$(gh release view "$PIPELOCK_TAG" --repo "$PIPELOCK_REPO" --json tagName,isDraft,isPrerelease)"
+          actual_tag="$(jq -r '.tagName' <<<"$release_json")"
+          is_draft="$(jq -r '.isDraft' <<<"$release_json")"
+          is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
+          if [[ "$actual_tag" != "$PIPELOCK_TAG" || "$is_draft" != "false" || "$is_prerelease" != "false" ]]; then
+            echo "Pipelock release provenance failed: expected stable released tag $PIPELOCK_TAG, got tag=$actual_tag draft=$is_draft prerelease=$is_prerelease" >&2
+            exit 1
+          fi
+
+          gh release download "$PIPELOCK_TAG" --repo "$PIPELOCK_REPO" --pattern "$asset" --dir "$download_dir" --clobber
+          gh release download "$PIPELOCK_TAG" --repo "$PIPELOCK_REPO" --pattern checksums.txt --dir "$download_dir" --clobber
+          (
+            cd "$download_dir"
+            grep "  $asset\$" checksums.txt | sha256sum --check -
+          )
+
+          tar -xzf "$download_dir/$asset" -C "$download_dir"
+          chmod 0755 "$download_dir/pipelock"
+
+          version_output="$("$download_dir/pipelock" --version)"
+          reported_version="$(awk '/^pipelock version / { print $3 }' <<<"$version_output")"
+          if [[ "$reported_version" != "$PIPELOCK_VERSION" ]]; then
+            echo "Pipelock version mismatch: expected $PIPELOCK_VERSION, got ${reported_version:-<none>} from: $version_output" >&2
+            exit 1
+          fi
+
+          {
+            echo "PIPELOCK_BIN=$download_dir/pipelock"
+            echo "PIPELOCK_ASSET=$asset"
+          } >> "$GITHUB_ENV"
+
+      - name: Build runner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd runner
+          go build -o "$RUNNER_TEMP/aeb-gauntlet" .
+
+      - name: Run canonical benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_dir="$GAUNTLET_ARTIFACT_DIR"
+          mkdir -p "$artifact_dir"
+
+          export PIPELOCK_BIN
+          export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
+
+          summary_path="$artifact_dir/raw-summary.json"
+          jsonl_path="$artifact_dir/results.jsonl"
+          stderr_path="$artifact_dir/runner.stderr"
+          command_path="$artifact_dir/command.txt"
+          stats_path="$artifact_dir/make-stats.txt"
+
+          mcp_cmd="\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" -- cat"
+          managed_proxy_cmd='./examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"'
+          managed_mcp_http_cmd='./examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"'
+
+          cmd=(
+            "$RUNNER_TEMP/aeb-gauntlet"
+            --adapter proxy
+            --scan-token bench-test-token
+            --mcp-cmd "$mcp_cmd"
+            --managed-proxy-cmd "$managed_proxy_cmd"
+            --managed-mcp-http-cmd "$managed_mcp_http_cmd"
+            --cases ./cases
+            --multifile-cases ./cases/mcp-drift
+            --profile examples/pipelock/tool-profile.json
+            --fixtures
+            --output "$summary_path"
+          )
+
+          printf '%q ' "${cmd[@]}" > "$command_path"
+          printf '\n' >> "$command_path"
+          command_string="$(<"$command_path")"
+
+          if ! grep -Eq '(^|[[:space:]])--fixtures($|[[:space:]])' "$command_path"; then
+            echo "Recorded command does not include --fixtures." >&2
+            echo "$command_string" >&2
+            exit 1
+          fi
+          if ! grep -Eq '(^|[[:space:]])--multifile-cases($|[[:space:]])' "$command_path"; then
+            echo "Recorded command does not include --multifile-cases." >&2
+            echo "$command_string" >&2
+            exit 1
+          fi
+
+          make stats > "$stats_path"
+
+          set +e
+          "${cmd[@]}" > "$jsonl_path" 2> "$stderr_path"
+          run_status=$?
+          set -e
+
+          # Exit status first. A flag-parse or startup failure also produces no
+          # Fixtures line, and reporting the missing line instead of the real
+          # exit code hides why the run actually died.
+          if [[ "$run_status" -ne 0 ]]; then
+            echo "Gauntlet runner failed with exit code $run_status." >&2
+            cat "$stderr_path" >&2
+            exit "$run_status"
+          fi
+          if ! grep -Eq '^Fixtures: HTTP=.* TLS=.* WS=.* DNS=.* MCP_HTTP=' "$stderr_path"; then
+            echo "Runner did not report fixture startup; refusing untrusted benchmark." >&2
+            cat "$stderr_path" >&2
+            exit 1
+          fi
+
+          jq -e '.case_count.errors == 0' "$summary_path" >/dev/null
+
+          {
+            echo "ARTIFACT_DIR=$artifact_dir"
+            echo "SUMMARY_PATH=$summary_path"
+            echo "COMMAND_PATH=$command_path"
+            echo "STATS_PATH=$stats_path"
+          } >> "$GITHUB_ENV"
+
+      - name: Gate result against the recorded baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["SUMMARY_PATH"], encoding="utf-8") as fh:
+              summary = json.load(fh)
+          with open("ci/gauntlet-baseline.json", encoding="utf-8") as fh:
+              baseline = json.load(fh)
+
+          failures = []
+          notes = []
+
+          # Trustworthiness of the RUN is a hard gate. These say the measurement
+          # itself is not usable, regardless of what the numbers are.
+          if summary.get("sufficient") is not True:
+              failures.append(f"sufficient={summary.get('sufficient')!r}, want true")
+          errors = summary["case_count"].get("errors")
+          if errors != 0:
+              failures.append(f"case_count.errors={errors}, want 0")
+
+          # Scores are compared against floors and ceilings, never equalities.
+          # An exact-match gate would red this lane the moment the corpus grows,
+          # which is the normal and desired state of a growing benchmark.
+          for scope, metrics in baseline.get("score_floors", {}).items():
+              for metric, floor in metrics.items():
+                  actual = summary["scores"].get(scope, {}).get(metric)
+                  if actual is None:
+                      failures.append(f"scores.{scope}.{metric} missing from summary")
+                  elif float(actual) < float(floor) - 1e-12:
+                      failures.append(
+                          f"REGRESSION scores.{scope}.{metric}={actual}, below baseline floor {floor}"
+                      )
+                  elif float(actual) > float(floor) + 1e-12:
+                      notes.append(
+                          f"scores.{scope}.{metric}={actual} is ABOVE the baseline floor {floor}; "
+                          "refresh ci/gauntlet-baseline.json in a reviewed commit to lock the gain in"
+                      )
+
+          for scope, metrics in baseline.get("score_ceilings", {}).items():
+              for metric, ceiling in metrics.items():
+                  actual = summary["scores"].get(scope, {}).get(metric)
+                  if actual is None:
+                      failures.append(f"scores.{scope}.{metric} missing from summary")
+                  elif float(actual) > float(ceiling) + 1e-12:
+                      failures.append(
+                          f"REGRESSION scores.{scope}.{metric}={actual}, above baseline ceiling {ceiling}"
+                      )
+
+          # Case counts are REPORTED, not gated. The corpus is meant to grow, and
+          # a lane that fails on growth gets switched off by whoever adds a case.
+          observed = baseline.get("observed_case_count", {})
+          for key in ("total", "applicable", "not_applicable"):
+              was = observed.get(key)
+              now = summary["case_count"].get(key)
+              if was is not None and now != was:
+                  notes.append(f"case_count.{key} moved {was} -> {now} since the baseline was recorded")
+          was_reasons = observed.get("not_applicable_reasons")
+          now_reasons = summary["case_count"].get("not_applicable_reasons", {})
+          if was_reasons is not None and now_reasons != was_reasons:
+              notes.append(f"not_applicable_reasons moved {was_reasons!r} -> {now_reasons!r}")
+
+          for note in notes:
+              print(f"::notice::{note}")
+          for failure in failures:
+              print(f"::error::{failure}")
+          if failures:
+              raise SystemExit(f"{len(failures)} baseline gate failure(s)")
+          print("baseline gate: OK")
+          PY
+
+      - name: Wrap provenance artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          export ARTIFACT_JSON="$ARTIFACT_DIR/continuous-gauntlet-pipelock-${PIPELOCK_TAG}.json"
+
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["SUMMARY_PATH"], encoding="utf-8") as fh:
+              summary = json.load(fh)
+          with open(os.environ["COMMAND_PATH"], encoding="utf-8") as fh:
+              command = fh.read().strip()
+          with open(os.environ["STATS_PATH"], encoding="utf-8") as fh:
+              make_stats = fh.read()
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          corpus_sha = os.environ["CORPUS_GIT_SHA"]
+          pipelock_tag = os.environ["PIPELOCK_TAG"]
+
+          artifact = {
+              "schema_version": 1,
+              "generated_at": os.environ["GENERATED_AT"],
+              "canonical_url": f"https://github.com/{repo}/actions/runs/{run_id}",
+              "corpus_ref_kind": os.environ["CORPUS_REF_KIND"],
+              "corpus_git_sha": corpus_sha,
+              "corpus_commit_url": f"https://github.com/{repo}/commit/{corpus_sha}",
+              "dirty": os.environ["CORPUS_DIRTY"].lower() == "true",
+              "pipelock_tag": pipelock_tag,
+              "pipelock_version": os.environ["PIPELOCK_VERSION"],
+              "pipelock_asset": os.environ["PIPELOCK_ASSET"],
+              "pipelock_release_url": f"https://github.com/{os.environ['PIPELOCK_REPO']}/releases/tag/{pipelock_tag}",
+              "gauntlet_version": summary["gauntlet_version"],
+              "scoring_version": summary["scoring_version"],
+              "runner_version": summary["runner_version"],
+              "tool": summary["tool"],
+              "tool_version": summary["tool_version"],
+              "corpus_version": summary["corpus_version"],
+              "corpus_sha256": summary["corpus_sha256"],
+              "tool_profile_sha256": summary["tool_profile_sha256"],
+              "case_count": {
+                  "total": summary["case_count"]["total"],
+                  "applicable": summary["case_count"]["applicable"],
+                  "not_applicable": summary["case_count"]["not_applicable"],
+                  "not_applicable_reasons": summary["case_count"]["not_applicable_reasons"],
+                  "errors": summary["case_count"]["errors"],
+              },
+              "scores": summary["scores"],
+              "sufficient": summary["sufficient"],
+              "fixtures": True,
+              "multifile_cases": True,
+              "command": command,
+              "make_stats": make_stats,
+          }
+
+          with open(os.environ["ARTIFACT_JSON"], "w", encoding="utf-8") as fh:
+              json.dump(artifact, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+
+          jq empty "$ARTIFACT_JSON"
+
+      - name: Upload provenance artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: continuous-gauntlet-pipelock-${{ env.PIPELOCK_TAG }}
+          path: |
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/continuous-gauntlet-pipelock-${{ env.PIPELOCK_TAG }}.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/raw-summary.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/command.txt
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/make-stats.txt
+          retention-days: 14
