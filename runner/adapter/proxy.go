@@ -1,18 +1,24 @@
-// Package adapter — proxy adapter sends cases through an HTTP proxy.
+// Package adapter implements the runner's built-in proxy-shaped adapter.
 //
-// Works with any tool that operates as an HTTP/HTTPS proxy. Point --proxy-addr
-// at the tool's listen address and the adapter sends real traffic through it.
+// The proxy adapter is not a generic integration layer for every HTTP-facing
+// tool. It can drive a tool that exposes the concrete benchmark surfaces below:
 //
 // Transport mapping:
-//   - fetch_proxy  → GET /fetch?url=...
-//   - http_proxy   → CONNECT tunnel via HTTPS_PROXY
-//   - websocket    → GET /ws?url=... (connection attempt)
-//   - mcp_stdio    → configured MCP stdio proxy command
+//   - fetch_proxy: HTTP request to /fetch?url=... on the configured proxy address
+//   - http_proxy: CONNECT-capable forward proxy via HTTPS_PROXY
+//   - websocket: GET /ws?url=... plus runner-managed WebSocket fixtures
+//   - mcp_stdio: configured MCP stdio proxy command with JSON-RPC on stdio
+//   - mcp_http: JSON-RPC POST endpoint set with SetMCPHTTPURL
+//
+// Tool-specific block signals are normalized by the runner after the requested
+// transport has been exercised. A reverse proxy or API gateway with
+// listen/upstream routing semantics is not drivable by this adapter today, nor
+// is an in-process SDK without a runner that presents one of these surfaces.
 //
 // Unimplemented execution paths return skip. The runner upgrades that to an
-// error when the tool profile declared the case applicable. Transports are
-// never substituted because that would turn a scanner result into false
-// evidence that the requested transport was exercised.
+// error when the tool profile declared the case applicable. Transports are never
+// substituted because that would turn a scanner result into false evidence that
+// the requested transport was exercised.
 package adapter
 
 import (
@@ -60,8 +66,8 @@ type ProxyAdapter struct {
 	proxyURL        *url.URL
 	scanURL         string                  // base URL for scan API (e.g. http://127.0.0.1:9990)
 	scanToken       string                  // bearer token for scan API auth
-	mcpCmd          string                  // MCP proxy command (e.g. "pipelock mcp proxy --config /tmp/bench.yaml -- cat")
-	mcpHTTPURL      string                  // Pipelock MCP HTTP listener URL
+	mcpCmd          string                  // MCP proxy command that wraps an upstream stdio server
+	mcpHTTPURL      string                  // MCP-over-HTTP JSON-RPC listener URL
 	httpFixtureAddr string                  // HTTP fixture for response-mitm via fetch
 	setHTTPRoute    func(path, body string) // callback to register HTTP fixture routes
 	setHTTPRouteCT  func(path, body, contentType string)
@@ -134,7 +140,7 @@ func (p *ProxyAdapter) SetWSFixtures(trustedAddr, untrustedAddr string) {
 	p.wsUntrustedAddr = untrustedAddr
 }
 
-// SetMCPHTTPURL configures the Pipelock MCP HTTP listener URL.
+// SetMCPHTTPURL configures the MCP-over-HTTP JSON-RPC listener URL.
 func (p *ProxyAdapter) SetMCPHTTPURL(rawURL string) { p.mcpHTTPURL = rawURL }
 
 // Run sends the case payload through the proxy and returns the verdict.
@@ -330,12 +336,12 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 			}
 			// Connection closed without a close frame. If we already
 			// received at least one frame from the proxy, treat the
-			// closure as a clean upstream goaway (allow) — proxies that
+			// closure as a clean upstream goaway (allow); proxies that
 			// permit traffic do not synthesize close frames on behalf of
 			// the upstream, so an EOF after the echo means "the wire ended,
 			// the proxy did not actively block." If we never received any
 			// frame, an abrupt closure suggests the proxy actively dropped
-			// the connection (RST or close without frame) — block.
+			// the connection (RST or close without frame): block.
 			if lastFrame.seen {
 				return Result{
 					Verdict: "allow",
@@ -698,17 +704,17 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 			extractBlockEvidence(errStr, ev)
 			return Result{Verdict: "block", Evidence: ev}
 		}
-		// Proxy or upstream connection reset — may be an active block.
+		// Proxy or upstream connection reset may be an active block.
 		if strings.Contains(errStr, "reset by peer") {
 			ev := map[string]interface{}{"reason": "connection_reset"}
 			extractBlockEvidence(errStr, ev)
 			return Result{Verdict: "block", Evidence: ev}
 		}
-		// Proxy unreachable — adapter infrastructure problem.
+		// Proxy unreachable means adapter infrastructure problem.
 		if strings.Contains(errStr, "connection refused") {
 			return Result{Err: fmt.Errorf("case %s: proxy unreachable: %w", c.ID, err)}
 		}
-		// Upstream unreachable (DNS, TLS, timeout) — the proxy allowed the
+		// Upstream unreachable (DNS, TLS, timeout) means the proxy allowed the
 		// CONNECT but the upstream doesn't exist. Skip, not error.
 		return Result{
 			Verdict:  "skip",
@@ -937,7 +943,7 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
-		// Proxy unreachable — adapter infrastructure problem.
+		// Proxy unreachable means adapter infrastructure problem.
 		if strings.Contains(errStr, "connection refused") {
 			return Result{Err: fmt.Errorf("case %s: ws proxy unreachable: %w", c.ID, err)}
 		}
@@ -1404,7 +1410,7 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		// No output and no reported wait error (or a timeout) is treated as a
 		// block, since many proxies express "block" by simply closing the
 		// connection without writing anything. That is a real, valid signal
-		// for a well-behaved tool — but it is also exactly what a silently
+		// for a well-behaved tool, but it is also exactly what a silently
 		// failed mock-backend spawn looks like, so any captured stderr is
 		// attached here as a diagnostic hint rather than changing the
 		// verdict itself.
@@ -1416,7 +1422,7 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	}
 
 	// Check response lines for policy-block JSON-RPC errors.
-	// Pipelock uses -32000 to -32009 for policy decisions (scan block, chain, etc.).
+	// Tool-specific policy errors use the JSON-RPC server-error range.
 	// Standard JSON-RPC errors (-32700 to -32600) are protocol issues, not blocks.
 	for _, respLine := range lines {
 		var rpcResp struct {
@@ -1438,7 +1444,7 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 				}
 			}
 			if code <= -32600 {
-				// Standard JSON-RPC protocol error — not a policy decision.
+				// Standard JSON-RPC protocol error, not a policy decision.
 				return Result{Err: fmt.Errorf("case %s: JSON-RPC protocol error %d: %s", c.ID, code, rpcResp.Error.Message)}
 			}
 		}
@@ -2050,7 +2056,7 @@ func (p *ProxyAdapter) runA2AViaMCP(c Case, timeout time.Duration) Result {
 
 // extractTextFromPayload pulls scannable text from any payload format.
 func extractTextFromPayload(payload map[string]interface{}) string {
-	// A2A agent cards — scan name, URL, description, and skill descriptions.
+	// A2A agent cards: scan name, URL, description, and skill descriptions.
 	if card, ok := payload["agent_card"].(map[string]interface{}); ok {
 		var texts []string
 		if name, ok := card["name"].(string); ok {
@@ -2106,7 +2112,7 @@ func extractTextFromPayload(payload map[string]interface{}) string {
 }
 
 // extractBlockEvidence parses a block response body for scanner and reason fields.
-// Pipelock returns these in multiple formats depending on transport:
+// Supported block response formats include:
 //   - Fetch JSON: {"blocked":true,"block_reason":"DLP match: AWS","scanner":"dlp"}
 //   - Forward proxy text: "blocked by DLP: AWS Access ID" or "SSRF: private IP"
 //   - Kill switch: "kill switch active"
@@ -2233,7 +2239,7 @@ func classifyResponse(statusCode int, body string) Result {
 		return Result{Verdict: "allow", Evidence: evidence}
 	}
 
-	// 4xx/5xx that aren't 400/403/405/502 — the request reached the upstream and
+	// 4xx/5xx that aren't 400/403/405/502 mean the request reached the upstream and
 	// got an error response. The proxy allowed it through (not a policy block).
 	// 404, 429, 500, etc. all mean the proxy didn't intervene.
 	evidence["reason"] = fmt.Sprintf("http_%d_passthrough", statusCode)
@@ -2257,7 +2263,7 @@ func truncate(s string, n int) string {
 }
 
 // isScanDeny returns true if the verdict string indicates a block/deny.
-// Pipelock's scan API uses "deny"; older or alternative engines may use "block".
+// Scan-style APIs commonly return either "deny" or "block".
 func isScanDeny(v string) bool {
 	return v == "deny" || v == "block"
 }

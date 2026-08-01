@@ -6,6 +6,25 @@ A runner connects a specific tool to the benchmark corpus. This document defines
 
 **Starter template:** [`examples/runner-template/`](../examples/runner-template/)
 
+## Can my tool be integrated?
+
+The built-in proxy adapter can drive a tool only when the tool exposes one of
+the transport shapes the runner knows how to exercise. A custom runner can
+support other shapes, but it must still produce the same JSONL output and must
+not substitute one transport for another.
+
+| Tool shape | Current status | What the runner can prove |
+|------------|----------------|---------------------------|
+| Forward proxy with a fetch endpoint such as `/fetch?url=...` | Supported by the proxy adapter as `fetch_proxy` | URL, request-body, header, response-content, and fetch-routed cases when the tool exposes the expected endpoint, accepts the case method/body/headers, and returns an observable block signal |
+| CONNECT-capable forward proxy | Supported by the proxy adapter as `http_proxy` | HTTP CONNECT and TLS-interception cases when the tool can be configured as an HTTPS forward proxy |
+| Reverse proxy or API gateway with `listen` and `upstream` routing semantics | Not supported by the proxy adapter today | A custom runner is required; the current adapter cannot route arbitrary case URLs through this shape |
+| In-process SDK or library | Not supported by the proxy adapter today | A custom runner or wrapper service is required, and the result should declare only the transports it can actually exercise |
+| MCP gateway | Not supported by a generic adapter today | Tool-specific MCP stdio or MCP HTTP commands can be driven now; a protocol-first MCP gateway adapter is planned |
+
+If none of the supported shapes match your architecture, mark the unmatched
+transports as unsupported in `supports` or write a tool-specific runner. Do not
+force a tool through the wrong shape just to get a numeric result.
+
 ## Input
 
 1. A directory of case JSON files
@@ -47,6 +66,29 @@ One JSON object per case, written to stdout (one per line, JSONL):
 ## Runner Setup
 
 Some cases require tool-specific configuration before running. These requirements are documented in each case's `notes` field and in this section.
+
+### Managed command hooks
+
+The Go runner can either target already-running endpoints or start
+operator-provided commands with managed command hooks. Managed commands receive
+endpoint and fixture values through environment variables. The runner does not
+parse or mutate tool configuration.
+
+Available managed-command environment variables:
+
+| Variable | Meaning |
+| --- | --- |
+| `AEB_PROXY_ADDR` | Host:port the managed forward/fetch proxy command should listen on |
+| `AEB_SCAN_ADDR` | Host:port the managed scan API command should listen on |
+| `AEB_MCP_HTTP_ADDR` | Host:port the managed MCP HTTP command should listen on |
+| `AEB_MCP_HTTP_URL` | URL corresponding to `AEB_MCP_HTTP_ADDR` |
+| `AEB_HTTP_FIXTURE_ADDR` | HTTP fixture address |
+| `AEB_TLS_FIXTURE_ADDR` | HTTPS fixture address for intercepted request/response cases |
+| `AEB_TLS_CA_FILE` | Fixture CA certificate path |
+| `AEB_TLS_CA_KEY_FILE` | Fixture CA private-key path |
+| `AEB_WS_FIXTURE_ADDR` | WebSocket fixture address |
+| `AEB_DNS_FIXTURE_ADDR` | DNS fixture address |
+| `AEB_MCP_HTTP_FIXTURE_URL` | MCP HTTP upstream fixture URL |
 
 ### Domain blocklist seeding
 
@@ -96,9 +138,25 @@ If either check fails, emit `score: "not_applicable"` and `actual_verdict: "not_
 
 Do not use detector-specific `requires` to skip benign `allow` controls. Those cases measure false positives and should run whenever the transport and any true runtime prerequisites are available.
 
+A tool is scored only on capabilities it claims through `supports`. Cases outside
+that declared surface are `not_applicable`, not failures. A mostly
+`not_applicable` result is a statement about the integration and tool scope that
+was measured, not a statement about the tool's overall quality.
+
 ## Observable Verdict Rules
 
-### HTTP and fetch cases
+### HTTP-shaped cases
+
+HTTP-facing tools can expose several different shapes. They are not
+interchangeable:
+
+| Shape | Corpus transport | Current runner support |
+|-------|------------------|------------------------|
+| Fetch-style endpoint | `fetch_proxy` | Supported by the proxy adapter as an HTTP request to `/fetch?url=...` on the configured proxy address |
+| CONNECT forward proxy | `http_proxy` | Supported by the proxy adapter through HTTPS proxy settings and runner-managed fixtures |
+| Reverse proxy or API gateway | No generic transport today | Not supported by the proxy adapter; write a custom runner or mark the unmatched transports unsupported |
+
+For supported HTTP-shaped cases, map observations to verdicts this way:
 
 | Observation | Verdict |
 |-------------|---------|

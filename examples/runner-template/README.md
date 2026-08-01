@@ -10,6 +10,23 @@ A practical guide for building a runner that connects your security tool to the 
 - A `tool-profile.json` declaring your tool's capabilities
 - `bash` (the skeleton is a bash script, but you can write your runner in any language)
 
+## Can my tool be integrated?
+
+Use this check before writing code:
+
+| Tool shape | Current status | What to do |
+|------------|----------------|------------|
+| Forward proxy with a fetch endpoint such as `/fetch?url=...` | Yes | Use `supports.fetch_proxy: true` if your runner can call that endpoint with the case method/body/headers and observe block signals |
+| CONNECT-capable forward proxy | Yes | Use `supports.http_proxy: true` if your runner can send requests through it as an HTTPS forward proxy |
+| Reverse proxy or API gateway with `listen` and `upstream` routing | Not today | Write a custom runner or leave the unmatched transports unsupported |
+| In-process SDK or library | Not today | Wrap it in a runner-owned service or leave the unmatched transports unsupported |
+| MCP gateway | Not as a generic adapter today | Tool-specific MCP stdio or MCP HTTP commands can be driven now; a protocol-first MCP gateway adapter is planned |
+
+A result is scored only on capabilities you declare in `supports`. Cases outside
+that surface are `not_applicable`, not failures. A mostly `not_applicable` result
+is a statement about what was in scope for the run, not a statement about your
+tool's overall quality.
+
 ## Step 1: Create your tool profile
 
 Copy `tool-profile-template.json` to your runner directory and fill it in.
@@ -64,8 +81,8 @@ Which transport and scanning modes your tool supports. These map to the `require
 
 | Key | What it means |
 |-----|---------------|
-| `fetch_proxy` | Tool provides an HTTP fetch endpoint (like `/fetch?url=...`) |
-| `http_proxy` | Tool works as a CONNECT/forward proxy |
+| `fetch_proxy` | Tool provides a runner-drivable HTTP fetch endpoint such as `/fetch?url=...` |
+| `http_proxy` | Tool works as a CONNECT-capable forward proxy |
 | `mcp_stdio` | Tool can wrap MCP servers via stdio |
 | `mcp_http` | Tool can proxy MCP over HTTP |
 | `websocket` | Tool can proxy WebSocket connections |
@@ -131,16 +148,42 @@ Look for `TODO` markers in `skeleton.sh`. There are three:
 2. **Check transport support.** Skip cases with transports your runner can't handle yet (even if your tool supports them in theory, your runner might not have the plumbing).
 3. **Feed and observe.** Send the case payload to your tool and determine the verdict.
 
+The Go runner can start managed commands and pass runner-owned fixture addresses
+through environment variables. The full managed-command contract is documented
+in [docs/RUNNER.md](../../docs/RUNNER.md#managed-command-hooks).
+
 ## Step 3: Handle each transport
 
-### HTTP cases (fetch_proxy, http_proxy)
+### Fetch endpoint cases (`fetch_proxy`)
 
-For tools that act as HTTP proxies, the pattern is:
+`fetch_proxy` cases are for tools that expose a fetch-style endpoint. The
+built-in proxy adapter calls `/fetch?url=...` on the configured proxy address
+using the method, body, and headers from the case payload. These cases exercise
+URL, request-body, header, response-content, and some blocklist or SSRF checks
+when the runner can express the case through that endpoint.
+
+The pattern is:
 
 1. Start your tool on a local port
-2. For each case, build an HTTP request from the payload
-3. Send it through your tool (via curl, wget, or direct HTTP)
-4. Check the response status code and body
+2. For each case, build the request expected by your fetch endpoint
+3. Send it to your tool's fetch endpoint
+4. Check the response status code and body for the tool's block signal
+
+### CONNECT forward-proxy cases (`http_proxy`)
+
+`http_proxy` cases are for CONNECT-capable forward proxies. The runner drives
+these by configuring the tool as an HTTPS proxy and sending requests to
+runner-managed fixtures. These cases exercise forward-proxy and TLS-intercepted
+request/response paths. A reverse proxy or API gateway is not equivalent to this
+shape because the runner cannot currently rewrite arbitrary case URLs into a
+fixed upstream route.
+
+The pattern is:
+
+1. Start your forward proxy on a local port
+2. Configure the client request to use that port as the HTTPS proxy
+3. Send the case payload through the proxy to the runner fixture
+4. Check the proxy response status code and body for the tool's block signal
 
 Verdict mapping from HTTP status codes:
 
@@ -176,12 +219,15 @@ Verdict mapping for MCP:
 Response cases (`input_type: response_content`) include a `response_body` in the payload. These are harder to test because you need to simulate a server returning that content. Options:
 
 - Start a local HTTP server that returns the `response_body`
-- Use your tool's API directly if it has a scan-content endpoint
+- Use a tool-specific runner only if it can prove the case exercised the declared transport
 - Mark as `not_applicable` in v1 and add support later
 
 ### Cases you cannot handle
 
-If your runner does not support a transport or input type, emit `not_applicable` with a reason. This is normal. The Pipelock reference runner (v1) only supports `fetch_proxy` and marks everything else `not_applicable`.
+If your runner does not support a transport or input type, emit `not_applicable`
+with a reason. This is normal. A narrow v1 runner can support one transport and
+mark the rest `not_applicable` while still producing honest results for the
+surface it actually exercises.
 
 Do not fake results. If you cannot observe the verdict, say so.
 

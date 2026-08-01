@@ -17,6 +17,10 @@ tool-neutral managed command hooks. Managed commands receive endpoint and
 fixture values through environment variables; the runner does not parse or
 mutate Pipelock configuration.
 
+The canonical tool-neutral managed-command contract is documented in
+[`../../docs/RUNNER.md`](../../docs/RUNNER.md#managed-command-hooks). This
+example uses the same variables.
+
 Available managed-command environment variables:
 
 | Variable | Meaning |
@@ -60,7 +64,7 @@ or candidate commit they executed.
 
 ## Legacy fetch-only harness
 
-`harness.sh` runs URL cases through Pipelock's `/fetch?url=...` GET endpoint. It is preserved as a minimal worked example of the runner contract for tools that only implement a fetch-style proxy. **It is not the Gauntlet** — body, header (POST), WebSocket, MCP, and response-content cases are not exercised, and any tool whose containment is reported off this harness alone will be undersold. Use the Go runner for any published score.
+`harness.sh` runs URL cases through Pipelock's `/fetch?url=...` GET endpoint. It is preserved as a minimal worked example of the runner contract for tools that only implement a fetch-style proxy. **It is not the Gauntlet**: body, header (POST), WebSocket, MCP, and response-content cases are not exercised, and any tool whose containment is reported off this harness alone will be undersold. Use the Go runner for any published score.
 
 ```bash
 # Minimal fetch-only run (illustration, not a benchmark)
