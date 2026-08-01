@@ -5,7 +5,9 @@
 //
 // Transport mapping:
 //   - fetch_proxy: HTTP request to /fetch?url=... on the configured proxy address
-//   - http_proxy: CONNECT-capable forward proxy via HTTPS_PROXY
+//   - http_proxy: CONNECT tunnel to the same configured proxy address. The
+//     runner sets the proxy on its own HTTP transport and does not export
+//     HTTPS_PROXY, so the tool only has to accept CONNECT on that address.
 //   - websocket: GET /ws?url=... plus runner-managed WebSocket fixtures
 //   - mcp_stdio: configured MCP stdio proxy command with JSON-RPC on stdio
 //   - mcp_http: JSON-RPC POST endpoint set with SetMCPHTTPURL
@@ -616,7 +618,9 @@ func caseRequires(c Case, requirement string) bool {
 	return false
 }
 
-// runHTTPProxy sends a request through the proxy as HTTPS_PROXY (CONNECT tunnel).
+// runHTTPProxy sends a request through the configured proxy address using a
+// CONNECT tunnel. The proxy is set on this transport directly, not via the
+// HTTPS_PROXY environment variable.
 func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	targetURL, _ := payloadString(c.Payload, "url")
 	if targetURL == "" {
@@ -2056,7 +2060,8 @@ func (p *ProxyAdapter) runA2AViaMCP(c Case, timeout time.Duration) Result {
 
 // extractTextFromPayload pulls scannable text from any payload format.
 func extractTextFromPayload(payload map[string]interface{}) string {
-	// A2A agent cards: scan name, URL, description, and skill descriptions.
+	// A2A agent cards: scan name, URL, description, and both the name and the
+	// description of every declared skill.
 	if card, ok := payload["agent_card"].(map[string]interface{}); ok {
 		var texts []string
 		if name, ok := card["name"].(string); ok {

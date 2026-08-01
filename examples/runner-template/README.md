@@ -77,7 +77,7 @@ Only claim what your tool actually does; these labels help readers interpret res
 
 ### `supports` object
 
-Which transport and scanning modes your tool supports. These map to the `requires` field in case files. If a case requires a capability you don't support, it is skipped.
+Which transport and scanning modes your tool supports. These map to the `requires` field in case files. If a case requires a capability you don't support, it is not executed and is reported as `not_applicable`, which is a statement about scope rather than a failure.
 
 | Key | What it means |
 |-----|---------------|
