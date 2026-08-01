@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -155,15 +156,44 @@ func evidenceFiles(profileDir string, decl ReceiptEvidenceDeclaration) ([]string
 	if err != nil {
 		return nil, fmt.Errorf("expanding file_glob %q: %w", decl.FileGlob, err)
 	}
-	entryNames := make(map[string]bool, len(entries))
+	// file_glob is documented as a pattern INSIDE evidence_dir, so containment
+	// is enforced here rather than left to the pattern. Restricting matches to
+	// the directory's own entries already defeats a traversal or absolute
+	// pattern, because filepath.Join cleans "../x" to a path outside dir and an
+	// absolute pattern back under dir, and neither lands on a listed entry.
+	// A symlink IS listed, though, so the resolved target is checked too:
+	// without that, a link planted in evidence_dir would pull an arbitrary file
+	// into the record set as if the tool had emitted it. Only regular files
+	// count; a directory or device named by the glob is not evidence.
+	entryTypes := make(map[string]os.DirEntry, len(entries))
 	for _, entry := range entries {
-		entryNames[filepath.Join(dir, entry.Name())] = true
+		entryTypes[filepath.Join(dir, entry.Name())] = entry
+	}
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving evidence_dir %q: %w", dir, err)
 	}
 	filtered := matches[:0]
 	for _, match := range matches {
-		if entryNames[match] {
-			filtered = append(filtered, match)
+		entry, listed := entryTypes[match]
+		if !listed {
+			continue
 		}
+		info, err := os.Stat(match) // follows symlinks; we want the target's mode
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			resolved, err := filepath.EvalSymlinks(match)
+			if err != nil {
+				continue
+			}
+			rel, err := filepath.Rel(resolvedDir, resolved)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+				continue
+			}
+		}
+		filtered = append(filtered, match)
 	}
 	sort.Strings(filtered)
 	return filtered, nil
@@ -273,6 +303,17 @@ func runReceiptVerifier(evidenceFile string, decl ReceiptEvidenceDeclaration) ve
 	}
 	if strings.TrimSpace(args[0]) == "" {
 		return verifyResult{verifiable: "no", reason: "verifier command is empty"}
+	}
+	// A profile that references environment variables is declaring a setup
+	// contract the runner cannot enforce. Left unreported, an unset variable
+	// expands to an empty argument and the verifier fails for a reason that
+	// looks like a bad receipt rather than a missing launcher variable. Name the
+	// variable instead, so the row says what to fix.
+	if unset := unsetVerifierEnvVars(decl.VerifyCommand); len(unset) > 0 {
+		return verifyResult{
+			verifiable: "no",
+			reason:     "verifier environment not set: " + strings.Join(unset, ", "),
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -474,6 +515,32 @@ func expandVerifierArg(arg, evidenceFile string) string {
 	arg = os.ExpandEnv(arg)
 	arg = strings.ReplaceAll(arg, "{evidence_file}", evidenceFile)
 	return arg
+}
+
+// verifierEnvRef matches the $NAME and ${NAME} forms os.ExpandEnv understands.
+var verifierEnvRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)`)
+
+// unsetVerifierEnvVars returns, in declaration order and without duplicates, the
+// environment variables a verify_command references that are unset or empty.
+func unsetVerifierEnvVars(command []string) []string {
+	var unset []string
+	seen := make(map[string]bool)
+	for _, arg := range command {
+		for _, m := range verifierEnvRef.FindAllStringSubmatch(arg, -1) {
+			name := m[1]
+			if name == "" {
+				name = m[2]
+			}
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			if strings.TrimSpace(os.Getenv(name)) == "" {
+				unset = append(unset, name)
+			}
+		}
+	}
+	return unset
 }
 
 func resolveProfilePath(profileDir, path string) string {

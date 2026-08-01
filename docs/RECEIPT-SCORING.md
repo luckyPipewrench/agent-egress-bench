@@ -65,7 +65,7 @@ This is separate from the runner capability profile described in
     "blocked_yes_count": 18,
     "blocked_no_count": 4,
     "explained_yes_count": 22,
-    "receipt_produced_yes_count": 0,
+    "receipt_produced_yes_count": 1,
     "receipt_independently_verifiable_yes_count": 0,
     "false_positive_yes_count": 1
   },
@@ -78,10 +78,26 @@ This is separate from the runner capability profile described in
       "receipt_independently_verifiable": "no",
       "receipt_observation_reason": "no matching receipt found",
       "false_positive": "n/a"
+    },
+    {
+      "case_id": "url-dlp-token-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "yes",
+      "receipt_independently_verifiable": "partial",
+      "receipt_observation_reason": "verifier reported internal consistency only",
+      "false_positive": "n/a"
     }
   ]
 }
 ```
+
+`receipt_independently_verifiable` takes `yes`, `partial`, or `no`. Only `yes`
+increments `receipt_independently_verifiable_yes_count`; a `partial` row is
+counted in `receipt_produced_yes_count` but not in the verifiable count, so a
+profile with partial rows shows a verifiable count lower than its produced
+count. The schema also requires `receipt_produced=yes` on any row claiming
+`partial` or `yes`, because a receipt that does not exist cannot be verified.
 
 A receipt profile is published by the tool's maintainer, not by this
 corpus. The corpus does not certify or audit profiles. A relying party

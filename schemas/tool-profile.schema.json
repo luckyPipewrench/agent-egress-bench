@@ -261,13 +261,9 @@
       "required": [
         "evidence_dir",
         "file_glob",
-        "jsonl_record_type",
         "detail_json_pointer",
         "detail_encoding",
-        "record_identifier_json_pointer",
-        "case_identifier_json_pointer",
         "verify_command",
-        "verify_timeout_seconds",
         "valid_exit_codes"
       ],
       "properties": {
@@ -302,12 +298,12 @@
         "record_identifier_json_pointer": {
           "type": "string",
           "pattern": "^(/.*)?$",
-          "description": "JSON Pointer, relative to the decoded detail object, that carries the action identifier to correlate with the case, usually the action target URL."
+          "description": "JSON Pointer, relative to the decoded detail object, that carries the action identifier to correlate with the case, usually the action target URL. Required unless record_case_id_json_pointer is declared."
         },
         "case_identifier_json_pointer": {
           "type": "string",
           "pattern": "^(/.*)?$",
-          "description": "JSON Pointer, relative to the case object, that carries the expected action identifier, for example /payload/url."
+          "description": "JSON Pointer, relative to the case object, that carries the expected action identifier, for example /payload/url. Required unless record_case_id_json_pointer is declared."
         },
         "verify_command": {
           "type": "array",
@@ -321,7 +317,7 @@
         "verify_timeout_seconds": {
           "type": "integer",
           "minimum": 0,
-          "description": "Timeout for each verifier invocation. 0 means the runner default."
+          "description": "Timeout for each verifier invocation. Optional; omitted or 0 means the runner default of 10 seconds."
         },
         "valid_exit_codes": {
           "type": "array",
@@ -340,7 +336,33 @@
           },
           "description": "Optional verifier exit codes that mean internal consistency only, producing receipt_independently_verifiable=partial."
         }
-      }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "record_case_id_json_pointer"
+          ],
+          "properties": {
+            "record_case_id_json_pointer": {
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "record_identifier_json_pointer",
+            "case_identifier_json_pointer"
+          ],
+          "properties": {
+            "record_identifier_json_pointer": {
+              "minLength": 1
+            },
+            "case_identifier_json_pointer": {
+              "minLength": 1
+            }
+          }
+        }
+      ]
     }
   }
 }

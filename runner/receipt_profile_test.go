@@ -424,6 +424,20 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 			wantVerifiable: "partial",
 		},
 		{
+			// A profile that references environment variables declares a setup
+			// contract the runner cannot enforce. An unset variable must name
+			// itself rather than expanding to an empty argument and failing as
+			// though the receipt were bad.
+			name: "unset verifier environment variable names itself",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				decl.VerifyCommand = []string{helper, "--key", "$AEB_TEST_PUBKEY_UNSET"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "no",
+			wantReason:     "verifier environment not set: AEB_TEST_PUBKEY_UNSET",
+		},
+		{
 			// Documented correlation order puts the case-ID pointer first. The
 			// receipt's target deliberately does NOT match the case URL, so a
 			// pass here can only come from the case-ID path and not from
