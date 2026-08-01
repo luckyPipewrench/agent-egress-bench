@@ -37,8 +37,30 @@ type Profile struct {
 	RunnerVersion string `json:"runner_version"`
 	// Claims are reporting labels retained for backward compatibility.
 	// Deprecated for applicability: use Supports plus case Requires instead.
-	Claims   []string        `json:"claims"`
-	Supports map[string]bool `json:"supports"`
+	Claims          []string                    `json:"claims"`
+	Supports        map[string]bool             `json:"supports"`
+	ReceiptEvidence *ReceiptEvidenceDeclaration `json:"receipt_evidence,omitempty"`
+
+	profileDir string
+}
+
+// ReceiptEvidenceDeclaration is the optional tool-profile block that tells
+// the runner where a tool writes structured receipt evidence and how to run
+// the tool's own verifier over that evidence. The runner treats the block as
+// declarative metadata; it does not implement any tool-specific verifier.
+type ReceiptEvidenceDeclaration struct {
+	EvidenceDir                 string   `json:"evidence_dir"`
+	FileGlob                    string   `json:"file_glob"`
+	JSONLRecordType             string   `json:"jsonl_record_type"`
+	DetailJSONPointer           string   `json:"detail_json_pointer"`
+	DetailEncoding              string   `json:"detail_encoding"`
+	RecordCaseIDJSONPointer     string   `json:"record_case_id_json_pointer,omitempty"`
+	RecordIdentifierJSONPointer string   `json:"record_identifier_json_pointer"`
+	CaseIdentifierJSONPointer   string   `json:"case_identifier_json_pointer"`
+	VerifyCommand               []string `json:"verify_command"`
+	VerifyTimeoutSeconds        int      `json:"verify_timeout_seconds"`
+	ValidExitCodes              []int    `json:"valid_exit_codes"`
+	PartialExitCodes            []int    `json:"partial_exit_codes,omitempty"`
 }
 
 // NAKind describes why a case is not applicable.
@@ -109,9 +131,10 @@ func loadProfile(path string) (Profile, error) {
 	}
 
 	var p Profile
-	if jsonErr := json.Unmarshal(data, &p); jsonErr != nil {
+	if jsonErr := decodeStrictJSON(data, &p); jsonErr != nil {
 		return Profile{}, fmt.Errorf("parsing profile: %w", jsonErr)
 	}
+	p.profileDir = filepath.Dir(path)
 
 	return p, nil
 }

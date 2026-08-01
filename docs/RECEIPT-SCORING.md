@@ -65,7 +65,7 @@ This is separate from the runner capability profile described in
     "blocked_yes_count": 18,
     "blocked_no_count": 4,
     "explained_yes_count": 22,
-    "receipt_produced_yes_count": 0,
+    "receipt_produced_yes_count": 1,
     "receipt_independently_verifiable_yes_count": 0,
     "false_positive_yes_count": 1
   },
@@ -76,15 +76,109 @@ This is separate from the runner capability profile described in
       "explained": "yes",
       "receipt_produced": "no",
       "receipt_independently_verifiable": "no",
+      "receipt_observation_reason": "no matching receipt found",
+      "false_positive": "n/a"
+    },
+    {
+      "case_id": "url-dlp-token-001",
+      "blocked": "yes",
+      "explained": "yes",
+      "receipt_produced": "yes",
+      "receipt_independently_verifiable": "partial",
+      "receipt_observation_reason": "verifier reported internal consistency only",
       "false_positive": "n/a"
     }
   ]
 }
 ```
 
+`receipt_independently_verifiable` takes `yes`, `partial`, or `no`. Only `yes`
+increments `receipt_independently_verifiable_yes_count`; a `partial` row is
+counted in `receipt_produced_yes_count` but not in the verifiable count, so a
+profile with partial rows shows a verifiable count lower than its produced
+count. The schema also requires `receipt_produced=yes` on any row claiming
+`partial` or `yes`, because a receipt that does not exist cannot be verified.
+
 A receipt profile is published by the tool's maintainer, not by this
 corpus. The corpus does not certify or audit profiles. A relying party
 reads profiles directly and reproduces them before trusting them.
+
+## Runner observation contract
+
+The runner only marks `receipt_produced=yes` or
+`receipt_independently_verifiable=yes` from observed evidence. Tool profiles can
+declare an optional `receipt_evidence` block in
+[`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json):
+
+```json
+{
+  "receipt_evidence": {
+    "evidence_dir": "/var/tmp/tool-receipts",
+    "file_glob": "evidence-*.jsonl",
+    "jsonl_record_type": "action_receipt",
+    "detail_json_pointer": "/detail",
+    "detail_encoding": "object_or_json_string",
+    "record_case_id_json_pointer": "",
+    "record_identifier_json_pointer": "/action_record/target",
+    "case_identifier_json_pointer": "/payload/url",
+    "verify_command": ["tool-verify-receipt", "{evidence_file}", "--key", "/var/tmp/tool.pub"],
+    "verify_timeout_seconds": 10,
+    "valid_exit_codes": [0],
+    "partial_exit_codes": []
+  }
+}
+```
+
+If the block is omitted, the runner preserves the v1 behavior:
+`receipt_produced=no` and `receipt_independently_verifiable=no` for every row.
+Relative `evidence_dir` values are resolved relative to the tool-profile file.
+`verify_command` is argv, not a shell string; the runner expands environment
+variables and replaces `{evidence_file}` with the evidence file being checked.
+
+A profile that references environment variables in `verify_command` is declaring
+a setup contract, and the runner cannot enforce it: an unset variable expands to
+an empty string, so the verifier is invoked with an empty argument and every row
+scores `receipt_independently_verifiable=no` without any configuration error
+being reported. A profile that uses environment variables should name them, and
+whatever launches the tool should export them. The committed Pipelock profile
+uses two, both exported by
+[`examples/pipelock/start-proxy-for-benchmark.sh`](../examples/pipelock/start-proxy-for-benchmark.sh):
+
+| Variable | Meaning |
+|---|---|
+| `PIPELOCK_BIN` | path to the `pipelock` binary that runs `verify-receipt` |
+| `AEB_RECEIPT_PUBKEY` | path to the receipt-signing public key the verifier pins against |
+
+Prefer absolute paths in a profile where the launcher is not guaranteed.
+
+The runner treats the declared verifier as authoritative. It does not
+reimplement signature, chain, timestamp, or key verification. A valid exit code
+from the declared command yields `receipt_independently_verifiable=yes`; a
+declared partial exit code yields `partial`; any other exit code, missing
+binary, timeout, or unreadable evidence yields `no` with
+`receipt_observation_reason` on the affected row.
+
+## Receipt correlation
+
+Correlation is deliberately conservative because exact URL matching fails when a
+tool redacts credential values in receipts. The runner uses this order:
+
+1. If `record_case_id_json_pointer` is declared and exactly one record carries
+   the case ID, that record is the match.
+2. Otherwise the runner extracts the case identifier from
+   `case_identifier_json_pointer` and the receipt identifier from
+   `record_identifier_json_pointer`.
+3. Non-URL identifiers must match exactly.
+4. URL identifiers match when scheme, host, path, and query keys agree. Query
+   values may differ only when either side is visibly redacted, such as
+   `[redacted-value]`.
+
+If no record matches, the row is `receipt_produced=no`. If multiple records
+match, the row is also `receipt_produced=no` with an ambiguous-correlation
+reason. The runner does not fall back to sequence or ordering guesses; tools
+that need stronger correlation should emit the benchmark case ID or another
+stable per-action identifier in the receipt and declare the corresponding JSON
+Pointer.
 
 ## What this corpus provides
 

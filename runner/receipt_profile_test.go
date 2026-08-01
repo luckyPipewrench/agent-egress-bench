@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -283,7 +284,7 @@ func TestBuildReceiptProfile_PerCaseShape(t *testing.T) {
 		{CaseID: "benign-allowed", ExpectedVerdict: "allow", ActualVerdict: "allow", Evidence: map[string]interface{}{}},
 		{CaseID: "benign-fp", ExpectedVerdict: "allow", ActualVerdict: "block", Evidence: map[string]interface{}{"block_reason": "fp"}},
 	}
-	rp := buildReceiptProfile(profile, applicable, verifier, "v2.0.0", zeros, zeros)
+	rp := buildReceiptProfile(profile, applicable, nil, verifier, "v2.0.0", zeros, zeros)
 
 	if got, want := len(rp.PerCase), len(applicable); got != want {
 		t.Fatalf("per_case length: got %d want %d", got, want)
@@ -316,6 +317,357 @@ func TestBuildReceiptProfile_PerCaseShape(t *testing.T) {
 	if rp.Summary.FalsePositiveYesCount != 1 {
 		t.Errorf("false_positive_yes_count = %d, want 1", rp.Summary.FalsePositiveYesCount)
 	}
+}
+
+func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
+	helper := receiptVerifierHelper(t)
+
+	tests := []struct {
+		name           string
+		configure      func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration)
+		wantProduced   string
+		wantVerifiable string
+		wantReason     string
+	}{
+		{
+			name:           "no declaration preserves existing no/no",
+			configure:      nil,
+			wantProduced:   "no",
+			wantVerifiable: "no",
+		},
+		{
+			name: "receipt present and verify passes",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "yes",
+		},
+		{
+			name: "no matching receipt fails closed",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/other?token=[sample-value]")
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "no",
+			wantVerifiable: "no",
+			wantReason:     "no matching receipt found",
+		},
+		{
+			name: "receipt present and verify fails",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				decl.VerifyCommand = []string{helper, "1"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "no",
+			wantReason:     "verifier exit code 1",
+		},
+		{
+			name: "verifier missing records reason",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				decl.VerifyCommand = []string{filepath.Join(dir, "missing-verifier")}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "no",
+			wantReason:     "verifier could not run",
+		},
+		{
+			name: "verifier timeout records reason",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				sleeper := filepath.Join(dir, "sleep-verifier.sh")
+				if err := os.WriteFile(sleeper, []byte("#!/bin/sh\nsleep 3\nexit 0\n"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				decl.VerifyCommand = []string{sleeper}
+				decl.VerifyTimeoutSeconds = 1
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "no",
+			wantReason:     "verifier timed out",
+		},
+		{
+			name: "correlation ambiguous fails closed",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "a.jsonl"), "https://example.test/collect?token=[redacted-value]")
+				writeReceiptEvidence(t, filepath.Join(dir, "b.jsonl"), "https://example.test/collect?token=[redacted-value]")
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "no",
+			wantVerifiable: "no",
+			wantReason:     "ambiguous receipt correlation",
+		},
+		{
+			name: "redacted target correlates",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[redacted-value]")
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "yes",
+		},
+		{
+			// A declared partial exit code is the only route to
+			// receipt_independently_verifiable=partial. The shared assertion
+			// block runs ValidateReceiptProfile on every case, so this also
+			// covers the schema rule that partial requires receipt_produced=yes.
+			name: "declared partial exit code yields partial",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				decl.VerifyCommand = []string{helper, "2"}
+				decl.PartialExitCodes = []int{2}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "partial",
+		},
+		{
+			// A profile that references environment variables declares a setup
+			// contract the runner cannot enforce. An unset variable must name
+			// itself rather than expanding to an empty argument and failing as
+			// though the receipt were bad.
+			name: "unset verifier environment variable names itself",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+				decl.VerifyCommand = []string{helper, "--key", "$AEB_TEST_PUBKEY_UNSET"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "no",
+			wantReason:     "verifier environment not set: AEB_TEST_PUBKEY_UNSET",
+		},
+		{
+			// Documented correlation order puts the case-ID pointer first. The
+			// receipt's target deliberately does NOT match the case URL, so a
+			// pass here can only come from the case-ID path and not from
+			// identifier matching falling through.
+			name: "case id pointer correlates without a matching identifier",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidenceCaseID(t, filepath.Join(dir, "evidence.jsonl"),
+					"url-dlp-token-001", "https://example.test/unrelated")
+				decl.RecordCaseIDJSONPointer = "/action_record/case_id"
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "yes",
+		},
+		{
+			// A receipt carrying a redacted body easily exceeds bufio.Scanner's
+			// 64 KiB default. Without an enlarged buffer the scan stops with
+			// bufio.ErrTooLong and the row reports unreadable evidence.
+			name: "record larger than the default scanner buffer is read",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidencePadded(t, filepath.Join(dir, "evidence.jsonl"),
+					"https://example.test/collect?token=[sample-value]", 256*1024)
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "yes",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+			if tt.configure != nil {
+				decl := baseReceiptEvidenceDeclaration(dir, helper)
+				tt.configure(t, dir, &decl)
+				profile.ReceiptEvidence = &decl
+			}
+			rp := buildReceiptProfile(
+				profile,
+				[]CaseResult{receiptObservationCaseResult()},
+				map[string]Case{"url-dlp-token-001": receiptObservationCase()},
+				ReceiptVerifier{},
+				"v2.0.0",
+				strings.Repeat("0", 64),
+				strings.Repeat("0", 64),
+			)
+			if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+				t.Fatalf("profile validation failed:\n%s", strings.Join(issues, "\n"))
+			}
+			row := rp.PerCase[0]
+			if row.ReceiptProduced != tt.wantProduced {
+				t.Fatalf("receipt_produced = %q, want %q (row=%+v)", row.ReceiptProduced, tt.wantProduced, row)
+			}
+			if row.ReceiptIndependentlyVerifiable != tt.wantVerifiable {
+				t.Fatalf("receipt_independently_verifiable = %q, want %q (row=%+v)", row.ReceiptIndependentlyVerifiable, tt.wantVerifiable, row)
+			}
+			if tt.wantReason != "" && !strings.Contains(row.ReceiptObservationReason, tt.wantReason) {
+				t.Fatalf("receipt_observation_reason = %q, want substring %q", row.ReceiptObservationReason, tt.wantReason)
+			}
+			if tt.wantProduced == "yes" && rp.Summary.ReceiptProducedYesCount != 1 {
+				t.Fatalf("receipt_produced_yes_count = %d, want 1", rp.Summary.ReceiptProducedYesCount)
+			}
+			if tt.wantVerifiable == "yes" && rp.Summary.ReceiptIndependentlyVerifiableYesCount != 1 {
+				t.Fatalf("receipt_independently_verifiable_yes_count = %d, want 1", rp.Summary.ReceiptIndependentlyVerifiableYesCount)
+			}
+		})
+	}
+}
+
+func TestBuildReceiptProfile_EvidenceDirUnreadableFailsClosed(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can read chmod 000 directories")
+	}
+	dir := t.TempDir()
+	evidenceDir := filepath.Join(dir, "evidence")
+	if err := os.Mkdir(evidenceDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(evidenceDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(evidenceDir, 0o700) })
+
+	decl := baseReceiptEvidenceDeclaration(evidenceDir, receiptVerifierHelper(t))
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", ReceiptEvidence: &decl}
+	rp := buildReceiptProfile(
+		profile,
+		[]CaseResult{receiptObservationCaseResult()},
+		map[string]Case{"url-dlp-token-001": receiptObservationCase()},
+		ReceiptVerifier{},
+		"v2.0.0",
+		strings.Repeat("0", 64),
+		strings.Repeat("0", 64),
+	)
+	row := rp.PerCase[0]
+	if row.ReceiptProduced != "no" || row.ReceiptIndependentlyVerifiable != "no" {
+		t.Fatalf("unreadable evidence dir should fail closed, got row=%+v", row)
+	}
+	if !strings.Contains(row.ReceiptObservationReason, "receipt evidence unavailable") {
+		t.Fatalf("receipt_observation_reason = %q, want unavailable reason", row.ReceiptObservationReason)
+	}
+}
+
+func baseReceiptEvidenceDeclaration(dir, helper string) ReceiptEvidenceDeclaration {
+	return ReceiptEvidenceDeclaration{
+		EvidenceDir:                 dir,
+		FileGlob:                    "*.jsonl",
+		JSONLRecordType:             "action_receipt",
+		DetailJSONPointer:           "/detail",
+		DetailEncoding:              "object_or_json_string",
+		RecordIdentifierJSONPointer: "/action_record/target",
+		CaseIdentifierJSONPointer:   "/payload/url",
+		VerifyCommand:               []string{helper, "0"},
+		VerifyTimeoutSeconds:        2,
+		ValidExitCodes:              []int{0},
+	}
+}
+
+func receiptObservationCase() Case {
+	return Case{
+		ID:              "url-dlp-token-001",
+		ExpectedVerdict: "block",
+		Payload: map[string]interface{}{
+			"url": "https://example.test/collect?token=[sample-value]",
+		},
+	}
+}
+
+func receiptObservationCaseResult() CaseResult {
+	return CaseResult{
+		CaseID:          "url-dlp-token-001",
+		ExpectedVerdict: "block",
+		ActualVerdict:   "block",
+		Evidence:        map[string]interface{}{"scanner": "dlp"},
+	}
+}
+
+func writeReceiptEvidence(t *testing.T, path, target string) {
+	t.Helper()
+	detail := map[string]interface{}{
+		"action_record": map[string]interface{}{
+			"target":  target,
+			"verdict": "block",
+		},
+		"signature": "ed25519:synthetic",
+	}
+	entry := map[string]interface{}{
+		"type":   "action_receipt",
+		"detail": detail,
+	}
+	data, err := jsonMarshalLine(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeReceiptEvidenceCaseID writes one receipt that carries an explicit case ID
+// alongside a target. Callers pass a target that does not match the case URL so
+// that correlation can only succeed through the case-ID pointer.
+func writeReceiptEvidenceCaseID(t *testing.T, path, caseID, target string) {
+	t.Helper()
+	detail := map[string]interface{}{
+		"action_record": map[string]interface{}{
+			"case_id": caseID,
+			"target":  target,
+			"verdict": "block",
+		},
+		"signature": "ed25519:synthetic",
+	}
+	entry := map[string]interface{}{
+		"type":   "action_receipt",
+		"detail": detail,
+	}
+	data, err := jsonMarshalLine(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeReceiptEvidencePadded writes one receipt whose serialized line exceeds
+// padBytes, so the record is larger than bufio.Scanner's default buffer.
+func writeReceiptEvidencePadded(t *testing.T, path, target string, padBytes int) {
+	t.Helper()
+	detail := map[string]interface{}{
+		"action_record": map[string]interface{}{
+			"target":  target,
+			"verdict": "block",
+		},
+		"signature":     "ed25519:synthetic",
+		"redacted_body": strings.Repeat("x", padBytes),
+	}
+	entry := map[string]interface{}{
+		"type":   "action_receipt",
+		"detail": detail,
+	}
+	data, err := jsonMarshalLine(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) <= padBytes {
+		t.Fatalf("padded record is %d bytes, want more than %d", len(data), padBytes)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func jsonMarshalLine(v interface{}) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+func receiptVerifierHelper(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "receipt-verifier-helper.sh")
+	script := "#!/bin/sh\nif [ \"$1\" = \"0\" ]; then exit 0; fi\necho verifier failed\nexit \"$1\"\n"
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func mustLoadReceiptProfile(t *testing.T, path string) ReceiptProfile {

@@ -155,6 +155,39 @@ func TestLoadProfileInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestLoadProfileRejectsUnknownReceiptEvidenceField(t *testing.T) {
+	dir := t.TempDir()
+	profileJSON := `{
+		"schema_version": 1,
+		"tool": "test-tool",
+		"tool_version": "1.0.0",
+		"runner_version": "v1",
+		"claims": [],
+		"supports": {},
+		"receipt_evidence": {
+			"evidence_dir": "/tmp/evidence",
+			"file_glob": "*.jsonl",
+			"jsonl_record_type": "action_receipt",
+			"detail_json_pointer": "/detail",
+			"detail_encoding": "object_or_json_string",
+			"record_identifier_json_pointer": "/action_record/target",
+			"case_identifier_json_pointer": "/payload/url",
+			"verify_command": ["receipt-verify", "{evidence_file}"],
+			"verify_timeout_seconds": 10,
+			"valid_exit_codes": [0],
+			"unexpected": true
+		}
+	}`
+	path := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadProfile(path)
+	if err == nil {
+		t.Fatal("expected error for unknown receipt_evidence field")
+	}
+}
+
 func TestCheckApplicability(t *testing.T) {
 	profile := Profile{
 		Claims: []string{"url_dlp", "benign"},

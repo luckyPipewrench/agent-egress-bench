@@ -307,6 +307,7 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 		rp := buildReceiptProfile(
 			profile,
 			applicableResults,
+			casesByID,
 			receiptVerifier,
 			summary.CorpusVersion,
 			summary.CorpusSHA256,

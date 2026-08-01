@@ -166,6 +166,11 @@
           "false_positive": {
             "enum": ["yes", "no", "n/a"],
             "description": "Did the tool block a benign baseline case? n/a on malicious cases."
+          },
+          "receipt_observation_reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional runner-observed reason when receipt production or independent verification could not be established, for example no matching receipt, ambiguous correlation, unreadable evidence, verifier timeout, or verifier non-zero exit."
           }
         },
         "allOf": [

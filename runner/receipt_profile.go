@@ -57,6 +57,7 @@ type ReceiptPerCase struct {
 	ReceiptProduced                string `json:"receipt_produced"`
 	ReceiptIndependentlyVerifiable string `json:"receipt_independently_verifiable"`
 	FalsePositive                  string `json:"false_positive"`
+	ReceiptObservationReason       string `json:"receipt_observation_reason,omitempty"`
 }
 
 // loadReceiptVerifier reads a JSON file containing the verifier block. The
@@ -106,22 +107,17 @@ func decodeStrictJSON(data []byte, dst interface{}) error {
 // not-applicable and error cases are excluded by construction (they are
 // not in the applicable slice). per_case rows are sorted by case_id so
 // repeated runs produce byte-identical output for the same inputs.
-//
-// receipt_produced and receipt_independently_verifiable are both "no" for
-// every row in this version: the runner does not currently observe a
-// signed-receipt emission channel from any adapter, and the rubric forbids
-// claiming verifiability without an emitted receipt. Tools that emit
-// per-action receipts can extend the runner (or the adapter) to set these
-// dimensions; until then, an honest profile is one that records no.
 func buildReceiptProfile(
 	p Profile,
 	applicable []CaseResult,
+	casesByID map[string]Case,
 	verifier ReceiptVerifier,
 	corpusVersion, corpusSHA, profileSHA string,
 ) ReceiptProfile {
 	sorted := make([]CaseResult, len(applicable))
 	copy(sorted, applicable)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].CaseID < sorted[j].CaseID })
+	receiptObservations := observeReceipts(p, casesByID, sorted)
 
 	rows := make([]ReceiptPerCase, 0, len(sorted))
 	var summary ReceiptSummary
@@ -131,6 +127,17 @@ func buildReceiptProfile(
 			CaseID:                         r.CaseID,
 			ReceiptProduced:                "no",
 			ReceiptIndependentlyVerifiable: "no",
+		}
+		if observation, ok := receiptObservations[r.CaseID]; ok {
+			row.ReceiptProduced = observation.produced
+			row.ReceiptIndependentlyVerifiable = observation.verifiable
+			row.ReceiptObservationReason = observation.reason
+			if row.ReceiptProduced == "" {
+				row.ReceiptProduced = "no"
+			}
+			if row.ReceiptIndependentlyVerifiable == "" {
+				row.ReceiptIndependentlyVerifiable = "no"
+			}
 		}
 
 		switch r.ExpectedVerdict {
@@ -176,6 +183,12 @@ func buildReceiptProfile(
 			row.Explained = "no"
 			row.FalsePositive = "n/a"
 			summary.BlockedNoCount++
+		}
+		if row.ReceiptProduced == "yes" {
+			summary.ReceiptProducedYesCount++
+		}
+		if row.ReceiptIndependentlyVerifiable == "yes" {
+			summary.ReceiptIndependentlyVerifiableYesCount++
 		}
 
 		rows = append(rows, row)
