@@ -33,7 +33,19 @@ if [[ -n "${AEB_RECEIPT_EVIDENCE_DIR:-}" ]]; then
   if [[ ! -s "$receipt_key" ]]; then
     "$pipelock_bin" signing key generate --purpose receipt-signing --out "$receipt_key" >/dev/null
     "$pipelock_bin" signing pubkey --key-file "$receipt_key" --out "${receipt_key}.pub" >/dev/null
+    # Set the modes here rather than relying on whatever the signing tool chose.
+    # The evidence directory is group-readable, so an unrestricted private key
+    # would be readable by any member of that group.
+    chmod 600 "$receipt_key"
+    chmod 644 "${receipt_key}.pub"
   fi
+  # The tool profile's verify_command references $AEB_RECEIPT_PUBKEY. The runner
+  # expands an unset variable to an empty string, so leaving this unexported
+  # hands the verifier an empty --key and scores every row
+  # receipt_independently_verifiable=no without reporting a configuration error.
+  export AEB_RECEIPT_PUBKEY="${AEB_RECEIPT_PUBKEY:-${receipt_key}.pub}"
+  # The same profile references $PIPELOCK_BIN for the verifier argv.
+  export PIPELOCK_BIN="${PIPELOCK_BIN:-$pipelock_bin}"
   receipt_yaml=$(
     printf 'flight_recorder:\n'
     printf '  enabled: true\n'

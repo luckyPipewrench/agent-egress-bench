@@ -409,6 +409,19 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 			wantProduced:   "yes",
 			wantVerifiable: "yes",
 		},
+		{
+			// A receipt carrying a redacted body easily exceeds bufio.Scanner's
+			// 64 KiB default. Without an enlarged buffer the scan stops with
+			// bufio.ErrTooLong and the row reports unreadable evidence.
+			name: "record larger than the default scanner buffer is read",
+			configure: func(t *testing.T, dir string, decl *ReceiptEvidenceDeclaration) {
+				writeReceiptEvidencePadded(t, filepath.Join(dir, "evidence.jsonl"),
+					"https://example.test/collect?token=[sample-value]", 256*1024)
+				decl.VerifyCommand = []string{helper, "0"}
+			},
+			wantProduced:   "yes",
+			wantVerifiable: "yes",
+		},
 	}
 
 	for _, tt := range tests {
@@ -536,6 +549,34 @@ func writeReceiptEvidence(t *testing.T, path, target string) {
 	data, err := jsonMarshalLine(entry)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeReceiptEvidencePadded writes one receipt whose serialized line exceeds
+// padBytes, so the record is larger than bufio.Scanner's default buffer.
+func writeReceiptEvidencePadded(t *testing.T, path, target string, padBytes int) {
+	t.Helper()
+	detail := map[string]interface{}{
+		"action_record": map[string]interface{}{
+			"target":  target,
+			"verdict": "block",
+		},
+		"signature":     "ed25519:synthetic",
+		"redacted_body": strings.Repeat("x", padBytes),
+	}
+	entry := map[string]interface{}{
+		"type":   "action_receipt",
+		"detail": detail,
+	}
+	data, err := jsonMarshalLine(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) <= padBytes {
+		t.Fatalf("padded record is %d bytes, want more than %d", len(data), padBytes)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)

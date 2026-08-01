@@ -119,6 +119,22 @@ Relative `evidence_dir` values are resolved relative to the tool-profile file.
 `verify_command` is argv, not a shell string; the runner expands environment
 variables and replaces `{evidence_file}` with the evidence file being checked.
 
+A profile that references environment variables in `verify_command` is declaring
+a setup contract, and the runner cannot enforce it: an unset variable expands to
+an empty string, so the verifier is invoked with an empty argument and every row
+scores `receipt_independently_verifiable=no` without any configuration error
+being reported. A profile that uses environment variables should name them, and
+whatever launches the tool should export them. The committed Pipelock profile
+uses two, both exported by
+[`examples/pipelock/start-proxy-for-benchmark.sh`](../examples/pipelock/start-proxy-for-benchmark.sh):
+
+| Variable | Meaning |
+|---|---|
+| `PIPELOCK_BIN` | path to the `pipelock` binary that runs `verify-receipt` |
+| `AEB_RECEIPT_PUBKEY` | path to the receipt-signing public key the verifier pins against |
+
+Prefer absolute paths in a profile where the launcher is not guaranteed.
+
 The runner treats the declared verifier as authoritative. It does not
 reimplement signature, chain, timestamp, or key verification. A valid exit code
 from the declared command yields `receipt_independently_verifiable=yes`; a

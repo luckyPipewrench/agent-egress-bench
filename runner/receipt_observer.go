@@ -169,6 +169,16 @@ func evidenceFiles(profileDir string, decl ReceiptEvidenceDeclaration) ([]string
 	return filtered, nil
 }
 
+// maxReceiptLineBytes bounds a single JSONL evidence record. bufio.Scanner
+// defaults to 64 KiB, which a legitimate receipt can exceed once it carries a
+// redacted request or response body, and the scan would then stop with
+// bufio.ErrTooLong partway through the file. The read stays bounded rather than
+// unbounded so a corrupt or hostile evidence file cannot exhaust memory; a
+// record larger than this still surfaces as a hard error through scanner.Err(),
+// which the caller reports as unreadable evidence rather than as absent
+// receipts.
+const maxReceiptLineBytes = 8 << 20 // 8 MiB
+
 func readReceiptRecords(files []string, decl ReceiptEvidenceDeclaration) ([]receiptRecord, error) {
 	var records []receiptRecord
 	for _, file := range files {
@@ -177,6 +187,7 @@ func readReceiptRecords(files []string, decl ReceiptEvidenceDeclaration) ([]rece
 			return nil, fmt.Errorf("opening %s: %w", file, err)
 		}
 		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), maxReceiptLineBytes)
 		lineNo := 0
 		for scanner.Scan() {
 			lineNo++
