@@ -88,19 +88,20 @@ func (p *GatewayPlugin) interpolateAEBEnvironment() error {
 	interpolate(&p.FixtureRegistration.ConfigTemplatePath)
 	interpolate(&p.FixtureRegistration.APIEndpoint)
 	interpolate(&p.Client.Endpoint)
-	for key, value := range p.Client.Headers {
-		interpolatedKey, keyErr := interpolateAEBString(key)
-		if keyErr != nil {
-			return keyErr
+	if len(p.Client.Headers) > 0 {
+		rebuilt := make(map[string]string, len(p.Client.Headers))
+		for key, value := range p.Client.Headers {
+			interpolatedKey, keyErr := interpolateAEBString(key)
+			if keyErr != nil {
+				return keyErr
+			}
+			interpolatedValue, valueErr := interpolateAEBString(value)
+			if valueErr != nil {
+				return valueErr
+			}
+			rebuilt[interpolatedKey] = interpolatedValue
 		}
-		interpolatedValue, valueErr := interpolateAEBString(value)
-		if valueErr != nil {
-			return valueErr
-		}
-		if interpolatedKey != key {
-			delete(p.Client.Headers, key)
-		}
-		p.Client.Headers[interpolatedKey] = interpolatedValue
+		p.Client.Headers = rebuilt
 	}
 	for i := range p.DenySignals.CustomBodyMarkers {
 		interpolate(&p.DenySignals.CustomBodyMarkers[i])

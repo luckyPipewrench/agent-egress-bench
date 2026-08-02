@@ -13,8 +13,8 @@ import (
 
 // MCPHTTPFixture runs a minimal Streamable HTTP MCP upstream.
 type MCPHTTPFixture struct {
-	listener net.Listener
-	server   *http.Server
+	listener  net.Listener
+	server    *http.Server
 	calls     atomic.Int64
 	toolCalls atomic.Int64
 	toolsMu   sync.RWMutex
@@ -77,7 +77,11 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"aeb-mcp-fixture","version":"1"}}}`, id)
 		case "tools/list":
 			f.toolsMu.RLock()
-			tools, err := json.Marshal(f.tools)
+			toolList := f.tools
+			if toolList == nil {
+				toolList = []json.RawMessage{}
+			}
+			tools, err := json.Marshal(toolList)
 			f.toolsMu.RUnlock()
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
