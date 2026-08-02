@@ -1478,14 +1478,32 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	}
 
 	// Build the MCP command. For tool poisoning (server responses in payload),
-	// create a temp-file-based mock that returns the poisoned responses.
-	// This avoids shell escaping issues with complex JSON payloads.
+	// create a temp-file-based mock that returns the poisoned responses. The
+	// mock also writes a per-run receipt to an inherited pipe after it receives
+	// its first request. Stdout equality alone is forgeable because both the
+	// expected response and JSON-RPC ids are case-controlled; the runner-owned
+	// pipe gives allow scoring a separate upstream-reach proof channel.
 	mcpCmd := p.mcpCmd
 	var tempFiles []string // cleaned up after cmd.Wait
+	var proofReader, proofWriter *os.File
+	var receipt string
 	if len(serverResponses) > 0 {
+		receiptBytes := make([]byte, 32)
+		if _, err := rand.Read(receiptBytes); err != nil {
+			return Result{Err: fmt.Errorf("case %s: generate MCP stdio receipt: %w", c.ID, err)}
+		}
+		receipt = base64.RawURLEncoding.EncodeToString(receiptBytes)
+		var pipeErr error
+		proofReader, proofWriter, pipeErr = os.Pipe()
+		if pipeErr != nil {
+			return Result{Err: fmt.Errorf("case %s: create MCP stdio receipt pipe: %w", c.ID, pipeErr)}
+		}
+
 		// Write server responses to a temp file (one JSON line per response).
 		respFile, respErr := os.CreateTemp("", "mock-responses-*.jsonl")
 		if respErr != nil {
+			_ = proofReader.Close()
+			_ = proofWriter.Close()
 			return Result{Err: fmt.Errorf("case %s: create temp response file: %w", c.ID, respErr)}
 		}
 		tempFiles = append(tempFiles, respFile.Name())
@@ -1500,11 +1518,13 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		// For each input line, output the next line from the response file.
 		mockScript, scriptErr := os.CreateTemp("", "mock-script-*.sh")
 		if scriptErr != nil {
+			_ = proofReader.Close()
+			_ = proofWriter.Close()
 			return Result{Err: fmt.Errorf("case %s: create temp script: %w", c.ID, scriptErr)}
 		}
 		tempFiles = append(tempFiles, mockScript.Name())
-		_, _ = fmt.Fprintf(mockScript, "_n=0\nwhile IFS= read -r _input; do\n  _n=$((_n+1))\n  sed -n \"${_n}p\" '%s'\ndone\n",
-			respFile.Name())
+		_, _ = fmt.Fprintf(mockScript, "_n=0\nwhile IFS= read -r _input; do\n  _n=$((_n+1))\n  if [ \"$_n\" -eq 1 ]; then\n    printf '%%s\\n' %s >&3\n  fi\n  sed -n \"${_n}p\" '%s'\ndone\n",
+			shellQuote(receipt), respFile.Name())
 		_ = mockScript.Close()
 
 		// Replace the backend command with our custom mock script. Invoke it
@@ -1530,6 +1550,11 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", mcpCmd) //nolint:gosec // command from trusted CLI flag
 	configureMCPCommand(cmd)
+	if proofWriter != nil {
+		// ExtraFiles starts at fd 3. The injected backend emits the receipt to
+		// that descriptor; normal JSON-RPC output remains exclusively on stdout.
+		cmd.ExtraFiles = []*os.File{proofWriter}
+	}
 	// Capture stderr instead of discarding it. Discarding it here previously
 	// swallowed the diagnostic output from a mock-backend spawn failure (e.g.
 	// bash missing), leaving nothing but a bare, unexplained exit code or a
@@ -1550,7 +1575,14 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	}
 
 	if startErr := cmd.Start(); startErr != nil {
+		if proofReader != nil {
+			_ = proofReader.Close()
+			_ = proofWriter.Close()
+		}
 		return Result{Err: fmt.Errorf("case %s: start MCP cmd: %w", c.ID, startErr)}
+	}
+	if proofWriter != nil {
+		_ = proofWriter.Close()
 	}
 
 	outputCh := make(chan []byte, 1)
@@ -1569,6 +1601,11 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	waitErr := cmd.Wait()
 	for _, tf := range tempFiles {
 		_ = os.Remove(tf)
+	}
+	var proof []byte
+	if proofReader != nil {
+		proof, _ = io.ReadAll(proofReader)
+		_ = proofReader.Close()
 	}
 	output := <-outputCh
 	stderrOutput := strings.TrimSpace(stderrBuf.String())
@@ -1628,11 +1665,23 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 
 	// At this point there are no policy blocks or protocol errors. An allow must
 	// be backed by positive proof that the response came from the upstream
-	// listener, not a proxy-local JSON-RPC success. For cases with expected
-	// server responses we verify the actual output matches them; otherwise we
-	// require a non-empty JSON-RPC result. A synthesized bare success is treated
-	// as unproven and fails closed to skip.
-	return verifyMCPStdioResponses(c.ID, lines, serverResponses)
+	// listener, not a proxy-local JSON-RPC success. Cases without an injected
+	// upstream have no independently verifiable provenance and fail closed.
+	verified := verifyMCPStdioResponses(c.ID, lines, serverResponses)
+	if verified.Verdict != "allow" {
+		return verified
+	}
+	if !mcpStdioReceiptObserved(proof, receipt) {
+		return Result{
+			Verdict: "skip",
+			Evidence: map[string]interface{}{
+				"reason":               "mcp_stdio_upstream_receipt_missing",
+				"synthesized_response": true,
+			},
+		}
+	}
+	verified.Evidence["upstream_reached"] = true
+	return verified
 }
 
 func isBudgetEnforcementCase(c Case) bool {
@@ -2370,12 +2419,15 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			continue
 		}
-		if _, hasResult := m["result"]; hasResult {
-			actual = append(actual, m)
-		} else if _, hasError := m["error"]; !hasError {
-			// Not a response line (e.g. a stray notification). Ignore.
+		_, hasResult := m["result"]
+		_, hasError := m["error"]
+		if hasResult == hasError {
+			// A JSON-RPC response contains exactly one of result or error. Ignore
+			// notifications and malformed lines rather than treating either as
+			// comparable upstream evidence.
 			continue
 		}
+		actual = append(actual, m)
 	}
 
 	if len(expected) > 0 {
@@ -2396,7 +2448,7 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 				mismatched = append(mismatched, act)
 				continue
 			}
-			if !mcpResultsEqual(exp["result"], act["result"]) {
+			if !mcpResponseMatches(exp, act) {
 				mismatched = append(mismatched, act)
 				continue
 			}
@@ -2421,36 +2473,48 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 		}
 	}
 
-	// No expected responses: require at least one non-empty JSON-RPC result so a
-	// bare proxy-synthesized {} success is not treated as proof.
-	for _, act := range actual {
-		switch r := act["result"].(type) {
-		case map[string]interface{}:
-			if len(r) > 0 {
-				return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
-			}
-		case []interface{}:
-			if len(r) > 0 {
-				return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
-			}
-		case string:
-			if r != "" {
-				return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
-			}
-		case bool:
-			return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
-		case float64:
-			return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
-		}
-	}
-
+	// Without an injected mock response there is no runner-controlled receipt
+	// channel. A non-empty JSON-RPC response can always be synthesized by the
+	// proxy under test, so it must never score allow.
 	return Result{
 		Verdict: "skip",
 		Evidence: map[string]interface{}{
-			"reason":               "mcp_stdio_unverified_response",
+			"reason":               "mcp_stdio_upstream_proof_unavailable",
 			"synthesized_response": true,
 		},
 	}
+}
+
+func mcpStdioReceiptObserved(proof []byte, receipt string) bool {
+	if receipt == "" {
+		return false
+	}
+	for _, line := range strings.Split(string(proof), "\n") {
+		if line == receipt {
+			return true
+		}
+	}
+	return false
+}
+
+func mcpResponseMatches(expected, actual map[string]interface{}) bool {
+	_, expectedResult := expected["result"]
+	_, expectedError := expected["error"]
+	_, actualResult := actual["result"]
+	_, actualError := actual["error"]
+	if expectedResult == expectedError || actualResult == actualError {
+		return false
+	}
+	if expectedResult != actualResult {
+		return false
+	}
+	if expectedResult {
+		return mcpResultsEqual(expected["result"], actual["result"])
+	}
+	// Compare the complete error object, including code and message. This also
+	// preserves future JSON-RPC error data fields instead of accepting any error
+	// with a matching id.
+	return mcpResultsEqual(expected["error"], actual["error"])
 }
 
 func mcpResultsEqual(a, b interface{}) bool {

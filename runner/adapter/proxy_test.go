@@ -103,14 +103,13 @@ func TestRunWebSocket_LegacyHTTPResponseRequiresFrameProof(t *testing.T) {
 	}
 }
 
-func TestRunMCPStdio_SynthesizedSuccessDoesNotAllow(t *testing.T) {
-	// A proxy that returns a bare JSON-RPC success without forwarding to the
-	// upstream listener must not score allow. The runner verifies the response
-	// against the expected server responses in the case payload.
+func TestRunMCPStdio_ForgedMatchedResponseSkips(t *testing.T) {
+	// Matching a case-controlled response is not evidence that the injected
+	// upstream received the request: a proxy can synthesize this exact line.
 	dir := t.TempDir()
 
 	fakeProxy := dir + "/fake-mcp-proxy.sh"
-	if err := os.WriteFile(fakeProxy, []byte("#!/bin/sh\n# Simulate a proxy that synthesizes a success without reaching upstream.\nprintf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\\n'\n"), 0o700); err != nil {
+	if err := os.WriteFile(fakeProxy, []byte("#!/bin/sh\n# Simulate a proxy that synthesizes the complete expected response.\nprintf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"read_file\",\"inputSchema\":{}}]}}\\n'\n"), 0o700); err != nil {
 		t.Fatalf("write fake proxy: %v", err)
 	}
 
@@ -140,13 +139,13 @@ func TestRunMCPStdio_SynthesizedSuccessDoesNotAllow(t *testing.T) {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
 	if result.Verdict != "skip" {
-		t.Fatalf("verdict = %q, want skip; synthesized JSON-RPC success must not satisfy allow", result.Verdict)
+		t.Fatalf("verdict = %q, want skip; static response equality is forgeable", result.Verdict)
 	}
 }
 
-func TestRunMCPStdio_MatchedServerResponseAllows(t *testing.T) {
-	// When the listener returns the exact expected server response, the allow
-	// is proven. The passthrough "proxy" simply execs the injected mock backend.
+func TestRunMCPStdio_ForwardedResponseWithReceiptAllows(t *testing.T) {
+	// The passthrough proxy executes the injected mock backend. Its per-run
+	// receipt is independent of stdout and proves the mock received a request.
 	dir := t.TempDir()
 
 	passthrough := dir + "/passthrough-mcp-proxy.sh"
@@ -180,7 +179,72 @@ func TestRunMCPStdio_MatchedServerResponseAllows(t *testing.T) {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
 	if result.Verdict != "allow" {
-		t.Fatalf("verdict = %q, want allow; matched server response must prove upstream reach", result.Verdict)
+		t.Fatalf("verdict = %q, want allow; upstream receipt must prove reach", result.Verdict)
+	}
+}
+
+func TestRunMCPStdio_UnprovenNonEmptyResponseSkips(t *testing.T) {
+	dir := t.TempDir()
+	fakeProxy := dir + "/fake-mcp-proxy.sh"
+	if err := os.WriteFile(fakeProxy, []byte("#!/bin/sh\nprintf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\\n'\n"), 0o700); err != nil {
+		t.Fatalf("write fake proxy: %v", err)
+	}
+
+	result := (&ProxyAdapter{mcpCmd: "sh " + shellQuote(fakeProxy)}).runMCPStdio(Case{
+		ID: "mcp-stdio-unproven-non-empty-result",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/call", "id": 1},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; a non-empty local result has no upstream proof", result.Verdict)
+	}
+}
+
+func TestVerifyMCPStdioResponses_ExpectedErrorRequiresMatchingError(t *testing.T) {
+	result := verifyMCPStdioResponses("mcp-stdio-error-content", []string{
+		`{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"forged error"}}`,
+	}, []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "error": map[string]interface{}{"code": -1, "message": "upstream error"}},
+	})
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; an arbitrary error must not match an expected error", result.Verdict)
+	}
+}
+
+func TestVerifyMCPStdioResponses_RejectsResultErrorKindMismatch(t *testing.T) {
+	result := verifyMCPStdioResponses("mcp-stdio-kind-mismatch", []string{
+		`{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"error"}}`,
+	}, []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"ok": true}},
+	})
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; result/error kind mismatch must be rejected", result.Verdict)
+	}
+}
+
+func TestRunMCPStdio_ForwardedErrorWithReceiptAllows(t *testing.T) {
+	dir := t.TempDir()
+	passthrough := dir + "/passthrough-mcp-proxy.sh"
+	if err := os.WriteFile(passthrough, []byte("#!/bin/sh\nshift 1\nexec \"$@\"\n"), 0o700); err != nil {
+		t.Fatalf("write passthrough: %v", err)
+	}
+
+	result := (&ProxyAdapter{mcpCmd: "sh " + shellQuote(passthrough) + " -- placeholder"}).runMCPStdio(Case{
+		ID: "mcp-stdio-forwarded-error",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "error": map[string]interface{}{"code": -1, "message": "upstream error"}},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow; forwarded matching error needs the same provenance proof", result.Verdict)
 	}
 }
 
