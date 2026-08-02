@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -200,6 +202,131 @@ func TestMCPGatewayAdapterBlocksConfiguredJSONRPCDenyForToolsList(t *testing.T) 
 	result := a.Run(gatewayToolDefinitionCase("gateway-tools-list-deny", "poisoned_tool"), time.Second)
 	if result.Err != nil || result.Verdict != "block" {
 		t.Fatalf("result = %+v, want configured JSON-RPC deny block", result)
+	}
+}
+
+func TestMCPGatewayAdapterSkipsMalformedToolsListInventory(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result map[string]interface{}
+	}{
+		{name: "missing tools", result: map[string]interface{}{}},
+		{name: "null tools", result: map[string]interface{}{"tools": nil}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fm, err := fixture.StartAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer fm.Close()
+
+			server := transformingToolsListGateway(t, fm.MCPHTTP().URL(), func(response map[string]interface{}) {
+				response["result"] = tc.result
+			})
+			defer server.Close()
+			a, err := NewMCPGatewayAdapter(GatewayPlugin{
+				Name: "malformed list gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+			}, fm)
+			if err != nil {
+				t.Fatalf("NewMCPGatewayAdapter: %v", err)
+			}
+
+			result := a.Run(gatewayToolDefinitionCase("gateway-malformed-tools-list", "poisoned_tool"), time.Second)
+			if result.Err != nil || result.Verdict != "skip" {
+				t.Fatalf("result = %+v, want malformed tools/list skip", result)
+			}
+			if got := result.Evidence["reason"]; got != "malformed_tools_list" {
+				t.Fatalf("reason = %v, want malformed_tools_list; evidence=%+v", got, result.Evidence)
+			}
+		})
+	}
+}
+
+func TestMCPGatewayAdapterAllowsSSEToolsListResponse(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := sseToolsListGateway(t, fm.MCPHTTP().URL())
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "SSE forwarder", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolDefinitionCase("gateway-sse-tools-list", "poisoned_tool"), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want SSE tools/list allow", result)
+	}
+}
+
+func TestMCPGatewayAdapterSkipsUnclassifiedJSONRPCErrorForToolsList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if method := requestMethod(t, r); method == "tools/list" {
+			writeJSONRPC(t, w, json.RawMessage(`1`), map[string]interface{}{"code": -32603, "message": "upstream unavailable"})
+			return
+		}
+		writeJSONRPC(t, w, json.RawMessage(`1`), nil)
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "unclassified error gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{JSONRPCErrorCodeRange: [2]int{-32099, -32000}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolDefinitionCase("gateway-unclassified-error", "poisoned_tool"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unclassified JSON-RPC error skip", result)
+	}
+	if got := result.Evidence["reason"]; got != "unclassified_jsonrpc_error" {
+		t.Fatalf("reason = %v, want unclassified_jsonrpc_error; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestMCPGatewayAdapterToolDefinitionRunsDoNotShareFixtureInventory(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := sequencedInventoryGateway(t, fm.MCPHTTP().URL())
+	defer server.Close()
+	newAdapter := func(caseName string) *MCPGatewayAdapter {
+		t.Helper()
+		a, err := NewMCPGatewayAdapter(GatewayPlugin{
+			Name: "concurrent inventory forwarder", Transport: "streamable_http",
+			Client: GatewayClient{Endpoint: server.URL(), Headers: map[string]string{"X-AEB-Case": caseName}},
+		}, fm)
+		if err != nil {
+			t.Fatalf("NewMCPGatewayAdapter: %v", err)
+		}
+		return a
+	}
+
+	adapterA := newAdapter("A")
+	adapterB := newAdapter("B")
+	results := make(chan Result, 2)
+	go func() {
+		results <- adapterA.Run(gatewayToolDefinitionCase("gateway-inventory-A", "tool_a"), time.Second)
+	}()
+	server.waitForAInitialize(t)
+	go func() {
+		results <- adapterB.Run(gatewayToolDefinitionCase("gateway-inventory-B", "tool_b"), time.Second)
+	}()
+
+	for range 2 {
+		result := <-results
+		if result.Err != nil || result.Verdict != "allow" {
+			t.Fatalf("result = %+v, want each case to receive its own inventory", result)
+		}
 	}
 }
 
@@ -439,4 +566,115 @@ func transformingToolsListGateway(t *testing.T, upstreamURL string, transform fu
 			t.Fatal(err)
 		}
 	}))
+}
+
+func sseToolsListGateway(t *testing.T, upstreamURL string) *httptest.Server {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		responseBody := forwardMCPGatewayRequest(t, client, r.Context(), upstreamURL, body)
+		if request.Method == "tools/list" {
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"other-request\",\"result\":{\"tools\":[]}}\n\nevent: message\ndata: %s\n\n", responseBody)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(responseBody); err != nil {
+			t.Fatal(err)
+		}
+	}))
+}
+
+type inventoryGateway struct {
+	server       *httptest.Server
+	aInitialized chan struct{}
+	bListDone    chan struct{}
+	aOnce        sync.Once
+	bOnce        sync.Once
+}
+
+func sequencedInventoryGateway(t *testing.T, upstreamURL string) *inventoryGateway {
+	t.Helper()
+	gateway := &inventoryGateway{
+		aInitialized: make(chan struct{}),
+		bListDone:    make(chan struct{}),
+	}
+	client := &http.Client{Timeout: time.Second}
+	gateway.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		caseName := r.Header.Get("X-AEB-Case")
+		if caseName == "A" && request.Method == "initialize" {
+			gateway.aOnce.Do(func() { close(gateway.aInitialized) })
+			// Without a fixture lease, B has already installed and observed its
+			// inventory before A reaches tools/list. With the lease, B cannot
+			// enter until A's complete sequence has released it.
+			select {
+			case <-gateway.bListDone:
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+		responseBody := forwardMCPGatewayRequest(t, client, r.Context(), upstreamURL, body)
+		if caseName == "B" && request.Method == "tools/list" {
+			gateway.bOnce.Do(func() { close(gateway.bListDone) })
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(responseBody); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	return gateway
+}
+
+func (g *inventoryGateway) Close() { g.server.Close() }
+
+func (g *inventoryGateway) URL() string { return g.server.URL }
+
+func (g *inventoryGateway) waitForAInitialize(t *testing.T) {
+	t.Helper()
+	select {
+	case <-g.aInitialized:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for case A initialize")
+	}
+}
+
+func forwardMCPGatewayRequest(t *testing.T, client *http.Client, ctx context.Context, upstreamURL string, body []byte) []byte {
+	t.Helper()
+	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(upstream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upstream status = %d, body=%s", resp.StatusCode, responseBody)
+	}
+	return responseBody
 }

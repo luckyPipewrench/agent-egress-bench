@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -126,7 +128,8 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 		return gatewaySkip(c, "gateway tools/list requires one tools/list-style tool definition: "+err.Error())
 	}
 	if upstream := a.mcpHTTPFixture(); upstream != nil {
-		upstream.SetTools(tools)
+		release := upstream.AcquireToolDefinitionLease(tools)
+		defer release()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -163,9 +166,11 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
 
-	returnedNames, err := toolsListNames(responseBody)
-	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: parse tools/list response: %w", c.ID, err)}
+	returnedNames, validInventory := toolsListNames(responseBody)
+	if !validInventory {
+		evidence["upstream_reached"] = true
+		evidence["reason"] = "malformed_tools_list"
+		return Result{Verdict: "skip", Evidence: evidence}
 	}
 	for _, declaredName := range declaredNames {
 		if !containsNormalizedToolName(returnedNames, declaredName) {
@@ -261,27 +266,36 @@ func declaredTools(c Case) ([]json.RawMessage, []string, error) {
 	return tools, names, nil
 }
 
-func toolsListNames(body []byte) ([]string, error) {
+func toolsListNames(body []byte) ([]string, bool) {
 	var response struct {
-		Result *struct {
-			Tools []struct {
-				Name string `json:"name"`
-			} `json:"tools"`
-		} `json:"result"`
+		Result json.RawMessage `json:"result"`
 	}
-	if err := json.Unmarshal(bytes.TrimSpace(body), &response); err != nil {
-		return nil, err
+	if err := json.Unmarshal(bytes.TrimSpace(body), &response); err != nil || len(response.Result) == 0 || bytes.Equal(bytes.TrimSpace(response.Result), []byte("null")) {
+		return nil, false
 	}
-	if response.Result == nil {
-		return nil, fmt.Errorf("missing JSON-RPC result")
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(response.Result, &result); err != nil {
+		return nil, false
 	}
-	names := make([]string, 0, len(response.Result.Tools))
-	for _, tool := range response.Result.Tools {
-		if tool.Name != "" {
-			names = append(names, tool.Name)
+	rawTools, ok := result["tools"]
+	if !ok || bytes.Equal(bytes.TrimSpace(rawTools), []byte("null")) {
+		return nil, false
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(rawTools, &tools); err != nil || tools == nil {
+		return nil, false
+	}
+	names := make([]string, 0, len(tools))
+	for _, rawTool := range tools {
+		var tool struct {
+			Name string `json:"name"`
 		}
+		if err := json.Unmarshal(rawTool, &tool); err != nil || tool.Name == "" {
+			return nil, false
+		}
+		names = append(names, tool.Name)
 	}
-	return names, nil
+	return names, true
 }
 
 func containsNormalizedToolName(names []string, wanted string) bool {
@@ -341,7 +355,13 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 			"body_marker":     marker,
 		}}
 	}
-	if result := classifyMCPHTTPBlockForRange(responseBody, a.plugin.DenySignals.JSONRPCErrorCodeRange, "mcp_gateway_streamable_http"); result != nil {
+	if requireResponse {
+		responseBody, err = decodeGatewayResponse(resp.Header.Get("Content-Type"), responseBody, message["id"])
+		if err != nil {
+			return nil, &Result{Err: fmt.Errorf("case %s: decode MCP gateway response: %w", caseID, err)}
+		}
+	}
+	if result := classifyGatewayJSONRPCError(responseBody, a.plugin.DenySignals.JSONRPCErrorCodeRange); result != nil {
 		return nil, result
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -359,6 +379,87 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 		}}
 	}
 	return responseBody, nil
+}
+
+func classifyGatewayJSONRPCError(body []byte, denyRange [2]int) *Result {
+	var response struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(body), &response); err != nil || response.Error == nil {
+		return nil
+	}
+	evidence := map[string]interface{}{
+		"product_surface": "mcp_gateway_streamable_http",
+		"error_code":      response.Error.Code,
+		"error_message":   response.Error.Message,
+	}
+	if denyRange != [2]int{} && response.Error.Code >= denyRange[0] && response.Error.Code <= denyRange[1] {
+		return &Result{Verdict: "block", Evidence: evidence}
+	}
+	evidence["reason"] = "unclassified_jsonrpc_error"
+	return &Result{Verdict: "skip", Evidence: evidence}
+}
+
+func decodeGatewayResponse(contentType string, body []byte, requestID interface{}) ([]byte, error) {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "text/event-stream" {
+		return body, nil
+	}
+	wantedID, err := json.Marshal(requestID)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request id: %w", err)
+	}
+	return jsonRPCMessageFromSSE(body, wantedID)
+}
+
+func jsonRPCMessageFromSSE(body, wantedID []byte) ([]byte, error) {
+	var dataLines [][]byte
+	for _, rawLine := range bytes.Split(body, []byte("\n")) {
+		line := bytes.TrimSuffix(rawLine, []byte("\r"))
+		if len(line) != 0 {
+			if bytes.HasPrefix(line, []byte("data:")) {
+				data := line[len("data:"):]
+				if len(data) > 0 && data[0] == ' ' {
+					data = data[1:]
+				}
+				dataLines = append(dataLines, data)
+			}
+			continue
+		}
+		if message := matchingSSEJSONRPCMessage(dataLines, wantedID); message != nil {
+			return message, nil
+		}
+		dataLines = nil
+	}
+	if message := matchingSSEJSONRPCMessage(dataLines, wantedID); message != nil {
+		return message, nil
+	}
+	return nil, fmt.Errorf("SSE response has no JSON-RPC message for request id %s", wantedID)
+}
+
+func matchingSSEJSONRPCMessage(dataLines [][]byte, wantedID []byte) []byte {
+	if len(dataLines) == 0 {
+		return nil
+	}
+	message := bytes.Join(dataLines, []byte("\n"))
+	var response struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(message, &response); err != nil || len(response.ID) == 0 {
+		return nil
+	}
+	var got, wanted interface{}
+	if json.Unmarshal(response.ID, &got) != nil || json.Unmarshal(wantedID, &wanted) != nil || !jsonRPCIDsEqual(got, wanted) {
+		return nil
+	}
+	return message
+}
+
+func jsonRPCIDsEqual(got, wanted interface{}) bool {
+	return reflect.DeepEqual(got, wanted)
 }
 
 func matchingBodyMarker(body string, markers []string) string {

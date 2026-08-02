@@ -44,6 +44,26 @@ func TestMCPHTTPFixtureCountsTotalPostsAndOperationCallsSeparately(t *testing.T)
 	}
 }
 
+func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	release := f.AcquireToolDefinitionLease([]json.RawMessage{json.RawMessage(`{"name":"leased_tool"}`)})
+	response := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if !bytes.Contains(response, []byte(`"leased_tool"`)) {
+		t.Fatalf("leased tools/list response = %s, want leased_tool", response)
+	}
+	release()
+
+	response = postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	if bytes.Contains(response, []byte(`"leased_tool"`)) {
+		t.Fatalf("released tools/list response = %s, must not retain previous inventory", response)
+	}
+}
+
 func postMCPFixture(t *testing.T, endpoint, request string) []byte {
 	t.Helper()
 	resp, err := http.Post(endpoint, "application/json", bytes.NewBufferString(request))

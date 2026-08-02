@@ -18,8 +18,12 @@ type MCPHTTPFixture struct {
 	calls     atomic.Int64
 	toolCalls atomic.Int64
 	listCalls atomic.Int64
-	toolsMu   sync.RWMutex
-	tools     []json.RawMessage
+	// toolDefinitionMu leases the fixture-wide tools/list inventory to one
+	// adapter run. The fixture is shared by all adapters in a gauntlet run, so
+	// SetTools alone cannot keep simultaneous tool-definition cases isolated.
+	toolDefinitionMu sync.Mutex
+	toolsMu          sync.RWMutex
+	tools            []json.RawMessage
 }
 
 // Addr returns the listener address (host:port).
@@ -48,6 +52,18 @@ func (f *MCPHTTPFixture) SetTools(tools []json.RawMessage) {
 	f.toolsMu.Lock()
 	defer f.toolsMu.Unlock()
 	f.tools = append(f.tools[:0], tools...)
+}
+
+// AcquireToolDefinitionLease installs a case's tools/list inventory and
+// exclusively leases it until the returned release function is called. Release
+// resets the inventory so a completed case cannot influence a later one.
+func (f *MCPHTTPFixture) AcquireToolDefinitionLease(tools []json.RawMessage) func() {
+	f.toolDefinitionMu.Lock()
+	f.SetTools(tools)
+	return func() {
+		f.SetTools(nil)
+		f.toolDefinitionMu.Unlock()
+	}
 }
 
 // StartMCPHTTP creates and starts a minimal MCP HTTP upstream on a random port.
