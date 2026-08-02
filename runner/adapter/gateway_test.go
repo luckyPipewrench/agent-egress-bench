@@ -696,7 +696,7 @@ func forwardingGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 		w.WriteHeader(resp.StatusCode)
 		if _, err := io.Copy(w, resp.Body); err != nil {
@@ -728,7 +728,7 @@ func transformingToolsListGateway(t *testing.T, upstreamURL string, transform fu
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		responseBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			t.Fatal(err)
@@ -865,7 +865,7 @@ func forwardMCPGatewayRequest(client *http.Client, ctx context.Context, upstream
 	if err != nil {
 		return nil, fmt.Errorf("upstream request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read upstream response: %w", err)

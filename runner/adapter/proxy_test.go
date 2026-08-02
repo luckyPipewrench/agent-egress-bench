@@ -6,15 +6,13 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -30,14 +28,14 @@ func TestRunWebSocketFrameViaProxy_Non101UpgradeSkipsNotAllows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		buf := make([]byte, 4096)
 		_, _ = conn.Read(buf)
@@ -143,17 +141,69 @@ func TestRunMCPStdio_ForgedMatchedResponseSkips(t *testing.T) {
 	}
 }
 
-func TestRunMCPStdio_ForwardedResponseWithReceiptAllows(t *testing.T) {
-	// The passthrough proxy executes the injected mock backend. Its per-run
-	// receipt is independent of stdout and proves the mock received a request.
+func TestRunMCPStdio_AdversarialProxyCannotForgeUpstreamProof(t *testing.T) {
+	// This is the attack the upstream-proof channel must resist. The evaluated
+	// proxy treats every command argument as potentially useful, reads every
+	// readable file it is handed (including a runner-injected backend script),
+	// copies a discovered receipt to every inherited proof FD it can use, and
+	// synthesizes the expected JSON-RPC success without forwarding the request.
+	//
+	// Before the runner-owned observation redesign, this test FAILS: the proxy
+	// reads the receipt from the injected script, writes it to FD 3, and scores
+	// allow without an upstream request. A real proof channel must make that
+	// attempt score skip.
 	dir := t.TempDir()
-
-	passthrough := dir + "/passthrough-mcp-proxy.sh"
-	if err := os.WriteFile(passthrough, []byte("#!/bin/sh\n# Discard the '--' separator and exec the injected mock backend.\nshift 1\nexec \"$@\"\n"), 0o700); err != nil {
-		t.Fatalf("write passthrough: %v", err)
+	gamingProxy := dir + "/gaming-mcp-proxy.sh"
+	if err := os.WriteFile(gamingProxy, []byte(`#!/bin/sh
+receipt=""
+for arg in "$@"; do
+  if [ -r "$arg" ]; then
+    found=$(awk -F"'" '/printf/ { print $4; exit }' "$arg")
+    if [ -n "$found" ]; then receipt="$found"; fi
+  fi
+done
+if [ -n "$receipt" ]; then
+  for fd in 3 4 5 6 7 8 9; do
+    eval "printf '%s\\n' \"\$receipt\" >&$fd" 2>/dev/null
+  done
+fi
+while IFS= read -r _line; do
+  printf '{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"read_file","inputSchema":{}}]}}\n'
+done
+`), 0o700); err != nil {
+		t.Fatalf("write gaming proxy: %v", err)
 	}
 
-	a := &ProxyAdapter{mcpCmd: "sh " + shellQuote(passthrough) + " -- placeholder"}
+	result := (&ProxyAdapter{mcpCmd: "sh " + shellQuote(gamingProxy) + " -- placeholder"}).runMCPStdio(Case{
+		ID:        "mcp-stdio-adversarial-forged-proof",
+		Transport: "mcp_stdio",
+		InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+			map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      1,
+				"result": map[string]interface{}{
+					"tools": []interface{}{
+						map[string]interface{}{"name": "read_file", "inputSchema": map[string]interface{}{}},
+					},
+				},
+			},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	t.Logf("adversarial result: verdict=%q evidence=%+v", result.Verdict, result.Evidence)
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; an evaluated proxy must not forge upstream proof from inherited files or FDs", result.Verdict)
+	}
+}
+
+func TestRunMCPStdio_ForwardedResponseWithRunnerOwnedObservationAllows(t *testing.T) {
+	// The proxy independently opts in to the neutral endpoint environment
+	// contract and forwards the request to the runner-owned listener.
+	a := &ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}
 	c := Case{
 		ID:        "mcp-stdio-matched-response-allow",
 		Transport: "mcp_stdio",
@@ -179,7 +229,36 @@ func TestRunMCPStdio_ForwardedResponseWithReceiptAllows(t *testing.T) {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
 	if result.Verdict != "allow" {
-		t.Fatalf("verdict = %q, want allow; upstream receipt must prove reach", result.Verdict)
+		t.Fatalf("verdict = %q, want allow; runner-owned observation must prove reach", result.Verdict)
+	}
+	if got := result.Evidence["upstream_requests_observed"]; got != 1 {
+		t.Fatalf("upstream_requests_observed = %v, want 1; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdio_ClientRequestForwardedToRunnerOwnedObservationAllows(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}).runMCPStdio(Case{
+		ID:              "mcp-stdio-client-request-forwarded",
+		ExpectedVerdict: "allow",
+		Transport:       "mcp_stdio",
+		InputType:       "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      1,
+				"method":  "tools/call",
+				"params":  map[string]interface{}{"name": "read_file", "arguments": map[string]interface{}{}},
+			},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow; runner-observed client forwarding is sufficient evidence", result.Verdict)
+	}
+	if got := result.Evidence["upstream_requests_observed"]; got != 1 {
+		t.Fatalf("upstream_requests_observed = %v, want 1; evidence=%+v", got, result.Evidence)
 	}
 }
 
@@ -226,14 +305,8 @@ func TestVerifyMCPStdioResponses_RejectsResultErrorKindMismatch(t *testing.T) {
 	}
 }
 
-func TestRunMCPStdio_ForwardedErrorWithReceiptAllows(t *testing.T) {
-	dir := t.TempDir()
-	passthrough := dir + "/passthrough-mcp-proxy.sh"
-	if err := os.WriteFile(passthrough, []byte("#!/bin/sh\nshift 1\nexec \"$@\"\n"), 0o700); err != nil {
-		t.Fatalf("write passthrough: %v", err)
-	}
-
-	result := (&ProxyAdapter{mcpCmd: "sh " + shellQuote(passthrough) + " -- placeholder"}).runMCPStdio(Case{
+func TestRunMCPStdio_ForwardedErrorWithRunnerOwnedObservationAllows(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}).runMCPStdio(Case{
 		ID: "mcp-stdio-forwarded-error",
 		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
 			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
@@ -245,6 +318,79 @@ func TestRunMCPStdio_ForwardedErrorWithReceiptAllows(t *testing.T) {
 	}
 	if result.Verdict != "allow" {
 		t.Fatalf("verdict = %q, want allow; forwarded matching error needs the same provenance proof", result.Verdict)
+	}
+}
+
+func mcpStdioTestProxyCommand(t *testing.T, mode string) string {
+	t.Helper()
+	t.Setenv("AEB_MCP_STDIO_TEST_HELPER", "1")
+	return shellQuote(os.Args[0]) + " -test.run=^TestMCPStdioProxyHelper$ -- " + shellQuote(mode)
+}
+
+// TestMCPStdioProxyHelper is a subprocess-only test proxy. It represents a
+// tool integration that explicitly consumes the neutral upstream-address
+// contract; it is not a runner-injected backend or a Pipelock convention.
+func TestMCPStdioProxyHelper(t *testing.T) {
+	if os.Getenv("AEB_MCP_STDIO_TEST_HELPER") != "1" {
+		return
+	}
+	mode := os.Args[len(os.Args)-1]
+	addr := os.Getenv(mcpStdioUpstreamAddrEnv)
+	if addr == "" {
+		fmt.Fprintln(os.Stderr, "missing runner-owned MCP stdio upstream address")
+		os.Exit(2)
+	}
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "dial runner-owned MCP stdio upstream: %v\n", err)
+		os.Exit(2)
+	}
+	defer func() { _ = conn.Close() }()
+
+	upstream := bufio.NewScanner(conn)
+	client := bufio.NewScanner(os.Stdin)
+	for call := 0; client.Scan(); call++ {
+		if mode == "forward" || (mode == "forward-first" && call == 0) {
+			if _, err := fmt.Fprintln(conn, client.Text()); err != nil {
+				fmt.Fprintf(os.Stderr, "forward request: %v\n", err)
+				os.Exit(2)
+			}
+			if !upstream.Scan() {
+				fmt.Fprintln(os.Stderr, "runner-owned MCP stdio upstream did not respond")
+				os.Exit(2)
+			}
+			_, _ = fmt.Fprintln(os.Stdout, upstream.Text())
+			continue
+		}
+
+		// Deliberately synthesize a plausible success after only forwarding the
+		// first request. The budget proof must reject this partial sequence.
+		var request map[string]interface{}
+		if err := json.Unmarshal([]byte(client.Text()), &request); err != nil {
+			fmt.Fprintf(os.Stderr, "decode client request: %v\n", err)
+			os.Exit(2)
+		}
+		response, _ := json.Marshal(mcpStdioSuccessResponse(request))
+		_, _ = fmt.Fprintln(os.Stdout, string(response))
+	}
+	if err := client.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "read client request: %v\n", err)
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+func TestMCPStdioUpstreamCommandEnvOverridesAmbientAddress(t *testing.T) {
+	t.Setenv(mcpStdioUpstreamAddrEnv, "127.0.0.1:1")
+	env := mcpStdioUpstreamCommandEnv("127.0.0.1:23456")
+	var addresses []string
+	for _, entry := range env {
+		if strings.HasPrefix(entry, mcpStdioUpstreamAddrEnv+"=") {
+			addresses = append(addresses, strings.TrimPrefix(entry, mcpStdioUpstreamAddrEnv+"="))
+		}
+	}
+	if !reflect.DeepEqual(addresses, []string{"127.0.0.1:23456"}) {
+		t.Fatalf("runner-owned upstream env values = %v, want only the current listener", addresses)
 	}
 }
 
@@ -1626,7 +1772,7 @@ func TestBudgetBlockResult_OmitsTimingWhenOverBudgetIndexUnknown(t *testing.T) {
 }
 
 func TestRunMCPStdioBudgetSequence_UnderBudgetAllowed(t *testing.T) {
-	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 0))}
+	a := &ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}
 	c := budgetSequenceCase("dow-allow", "allow")
 	delete(c.Payload, "over_budget_call_id")
 	c.Payload["jsonrpc_messages"] = []interface{}{
@@ -1643,6 +1789,33 @@ func TestRunMCPStdioBudgetSequence_UnderBudgetAllowed(t *testing.T) {
 	}
 	if got := result.Evidence["calls_observed"]; got != 3 {
 		t.Fatalf("calls_observed = %v, want 3", got)
+	}
+	if got := result.Evidence["upstream_requests_observed"]; got != 3 {
+		t.Fatalf("upstream_requests_observed = %v, want 3; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_ForwardOneThenSynthesizeSkips(t *testing.T) {
+	// Forwarding a single call merely to harvest a usable-looking response must
+	// not prove the rest of an under-budget sequence. The helper forwards call
+	// one then manufactures successes for calls two and three.
+	a := &ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-first")}
+	c := budgetSequenceCase("dow-forward-one-synthesize", "allow")
+	delete(c.Payload, "over_budget_call_id")
+	c.Payload["jsonrpc_messages"] = []interface{}{
+		budgetToolCall(1, "project-alpha"),
+		budgetToolCall(2, "project-alpha"),
+		budgetToolCall(3, "project-alpha"),
+	}
+	result := a.runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; every under-budget call needs runner-observed upstream arrival", result.Verdict)
+	}
+	if got := result.Evidence["upstream_requests_observed"]; got != 1 {
+		t.Fatalf("upstream_requests_observed = %v, want 1; evidence=%+v", got, result.Evidence)
 	}
 }
 
@@ -1731,8 +1904,16 @@ done
 	return script.Name()
 }
 
-func TestRunMCPStdio_MockInjectionFailFast(t *testing.T) {
-	a := &ProxyAdapter{mcpCmd: "some-command-without-separator"}
+func TestRunMCPStdio_UnconfiguredUpstreamSkipsWithoutSeparator(t *testing.T) {
+	dir := t.TempDir()
+	localSuccess := dir + "/local-success.sh"
+	if err := os.WriteFile(localSuccess, []byte("#!/bin/sh\nwhile IFS= read -r _line; do printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\\n'; done\n"), 0o700); err != nil {
+		t.Fatalf("write local-success command: %v", err)
+	}
+	// This command is intentionally a normal no-separator command. The runner
+	// must run it unchanged and fail closed to skip when it does not use the
+	// explicit endpoint contract.
+	a := &ProxyAdapter{mcpCmd: "sh " + shellQuote(localSuccess)}
 	c := Case{
 		ID: "test-no-sep",
 		Payload: map[string]interface{}{
@@ -1742,8 +1923,11 @@ func TestRunMCPStdio_MockInjectionFailFast(t *testing.T) {
 		},
 	}
 	result := a.runMCPStdio(c, 5*time.Second)
-	if result.Err == nil {
-		t.Fatal("expected error when --mcp-cmd has no ' -- ' separator")
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; unconfigured no-separator command must not be rewritten or allowed", result.Verdict)
 	}
 }
 
@@ -2095,93 +2279,11 @@ func classifyMCPOutput(lines []string, caseID string) Result {
 	}
 }
 
-func TestPreflightMockScriptExec_HappyPath(t *testing.T) {
-	if err := PreflightMockScriptExec(); err != nil {
-		t.Skipf("mock-script preflight is unsupported in this environment: %v", err)
-	}
-}
-
-func TestPreflightMockScriptExec_BashMissingFromPATH(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh on PATH to build a bash-free PATH with")
-	}
-	shDir := shOnlyPATHDir(t)
-	t.Setenv("PATH", shDir)
-
-	err := PreflightMockScriptExec()
-	if err == nil {
-		t.Fatal("expected an error when bash is not on PATH")
-	}
-	if !strings.Contains(err.Error(), "bash not found in PATH") {
-		t.Errorf("expected a bash-not-found message, got: %v", err)
-	}
-}
-
-// shOnlyPATHDir returns a directory containing only a "sh" symlink (copied
-// from the real sh on PATH), so PATH can be pointed at an environment with
-// a shell but no bash, without disturbing the real PATH for other tests.
-func shOnlyPATHDir(t *testing.T) string {
-	t.Helper()
-	shPath, err := exec.LookPath("sh")
-	if err != nil {
-		t.Fatalf("look up sh: %v", err)
-	}
-	dir := t.TempDir()
-	if err := os.Symlink(shPath, dir+"/sh"); err != nil {
-		t.Fatalf("symlink sh into isolated PATH dir: %v", err)
-	}
-	return dir
-}
-
-func TestClassifyPreflightScriptAccessErr_PermissionDenied(t *testing.T) {
-	wrapped := fmt.Errorf("open /tmp/x.sh: %w", fs.ErrPermission)
-	err := classifyPreflightScriptAccessErr("/tmp", wrapped)
-	if err == nil {
-		t.Fatal("expected a non-nil error")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "cannot read") {
-		t.Errorf("expected the permission message, got: %v", msg)
-	}
-	if !strings.Contains(msg, "TMPDIR") {
-		t.Errorf("expected a TMPDIR remediation hint, got: %v", msg)
-	}
-	if !errors.Is(err, fs.ErrPermission) {
-		t.Error("expected classifyPreflightScriptAccessErr to preserve the wrapped error for errors.Is")
-	}
-}
-
-func TestClassifyPreflightScriptAccessErr_ScriptMissing(t *testing.T) {
-	wrapped := fmt.Errorf("open /tmp/x.sh: %w", fs.ErrNotExist)
-	err := classifyPreflightScriptAccessErr("/tmp", wrapped)
-	if err == nil {
-		t.Fatal("expected a non-nil error")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "temp script disappeared") {
-		t.Errorf("expected a missing-script message, got: %v", msg)
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		t.Error("expected classifyPreflightScriptAccessErr to preserve the wrapped error for errors.Is")
-	}
-}
-
 func TestShellQuote(t *testing.T) {
 	got := shellQuote("/tmp/a b/it's.sh")
 	want := "'/tmp/a b/it'\\''s.sh'"
 	if got != want {
 		t.Fatalf("shellQuote() = %q, want %q", got, want)
-	}
-}
-
-func TestClassifyPreflightExecErr_UnknownFailure_UsesNoneForEmptyStderr(t *testing.T) {
-	wrapped := errors.New("boom")
-	err := classifyPreflightExecErr("/tmp", wrapped, "")
-	if err == nil {
-		t.Fatal("expected a non-nil error")
-	}
-	if !strings.Contains(err.Error(), "(none)") {
-		t.Errorf("expected the fallback branch to render empty stderr as (none), got: %v", err.Error())
 	}
 }
 
