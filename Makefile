@@ -1,8 +1,36 @@
-.PHONY: stats stats-update check-stats cases-manifest check-gauntlet-site
+.PHONY: preflight stats stats-update check-stats cases-manifest check-gauntlet-site test-validate test-runner test-receipt-generator validate-cases
+
+TMPDIR := $(HOME)/.cache/pipelock-tmp
+GOCACHE := $(HOME)/.cache/go-build
+export TMPDIR GOCACHE
 
 # Default fixture for local validator/renderer contract tests. A workflow that
 # generates a real artifact must override this with that exact output path.
 GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.json
+
+# Pre-push gate. Race coverage remains here because all three modules complete
+# comfortably inside the edit-to-push budget and it catches real shared-state
+# defects that ordinary go test would miss. It requires the Go toolchain needed
+# by runner/go.mod (currently Go 1.25 or newer).
+preflight: test-validate validate-cases test-runner test-receipt-generator check-stats check-gauntlet-site
+
+test-validate:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@cd validate && go test -race -count=1 ./...
+
+validate-cases:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@bin="$(TMPDIR)/aeb-validate"; trap 'rm -f "$$bin"' EXIT; \
+	(cd validate && go build -o "$$bin" .); \
+	"$$bin" cases cases
+
+test-runner:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@cd runner && go test -race -count=1 ./...
+
+test-receipt-generator:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@cd receipts/v0/conformance/_generator && go test -race -count=1 ./...
 
 # Regenerate cases/MANIFEST.txt after adding or removing a case. The manifest
 # pins the logical corpus so a case cannot leave it without a visible diff;
