@@ -251,6 +251,37 @@ func TestIntegrationRealCases(t *testing.T) {
 		summary.CaseCount.NotApplicable, summary.Sufficient)
 }
 
+func TestToolVersionOverrideFlag(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
+
+	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
+		t.Skip("cases directory not found, skipping")
+	}
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		t.Skip("profile not found, skipping")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "summary.json")
+
+	err := runWithOptions(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", "", "", "", false, "", "", "", false, "9.9.9-test")
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("reading summary: %v", err)
+	}
+	var summary GauntletSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("parsing summary: %v", err)
+	}
+	if summary.ToolVersion != "9.9.9-test" {
+		t.Errorf("summary tool_version = %q, want %q", summary.ToolVersion, "9.9.9-test")
+	}
+}
+
 func TestDebugFlag_EmitsPerCaseDiagnostics(t *testing.T) {
 	casesDir := filepath.Join("..", "cases")
 	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
