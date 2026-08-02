@@ -41,6 +41,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -315,7 +316,24 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		_ = resp.Body.Close()
-		return classifyResponse(resp.StatusCode, string(body))
+		bodyStr := string(body)
+		// A WebSocket upgrade that did not return 101 never reached the upstream
+		// frame path. A 400/403 is still an explicit proxy block, but any other
+		// response (including a proxy-local 200) is unproven and must fail closed
+		// to skip, not allow.
+		res := classifyResponse(resp.StatusCode, bodyStr)
+		if res.Verdict == "allow" {
+			return Result{
+				Verdict: "skip",
+				Evidence: map[string]interface{}{
+					"reason":           "ws_upgrade_not_101",
+					"status_code":      resp.StatusCode,
+					"upstream_reached": false,
+					"detail":           truncate(bodyStr, 120),
+				},
+			}
+		}
+		return res
 	}
 	_ = resp.Body.Close()
 
@@ -1088,7 +1106,32 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return classifyResponse(resp.StatusCode, string(body))
+	_ = resp.Body.Close()
+	// The /ws endpoint returned an HTTP response instead of completing a
+	// WebSocket upgrade. That response is local to the proxy and proves nothing
+	// about whether an upstream frame was actually forwarded. Require real frame
+	// proof by re-running the same target through the frame-oriented path.
+	res := classifyResponse(resp.StatusCode, string(body))
+	if res.Verdict == "allow" {
+		// Route through runWebSocketFrameViaProxy so that only a genuine
+		// 101 upgrade and upstream frame echo can score allow.
+		probe := Case{
+			ID:              c.ID,
+			Transport:       "websocket_frame",
+			InputType:       c.InputType,
+			ExpectedVerdict: c.ExpectedVerdict,
+			Requires:        c.Requires,
+			Payload:         shallowCloneMap(c.Payload),
+		}
+		probe.Payload["frames"] = []interface{}{
+			map[string]interface{}{
+				"opcode":  "text",
+				"payload": "benchmark websocket probe",
+			},
+		}
+		return p.runWebSocketFrameViaProxy(probe, timeout)
+	}
+	return res
 }
 
 const (
@@ -1583,10 +1626,13 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		}
 	}
 
-	return Result{
-		Verdict:  "allow",
-		Evidence: map[string]interface{}{"response_lines": len(lines)},
-	}
+	// At this point there are no policy blocks or protocol errors. An allow must
+	// be backed by positive proof that the response came from the upstream
+	// listener, not a proxy-local JSON-RPC success. For cases with expected
+	// server responses we verify the actual output matches them; otherwise we
+	// require a non-empty JSON-RPC result. A synthesized bare success is treated
+	// as unproven and fails closed to skip.
+	return verifyMCPStdioResponses(c.ID, lines, serverResponses)
 }
 
 func isBudgetEnforcementCase(c Case) bool {
@@ -2311,6 +2357,128 @@ func payloadString(payload map[string]interface{}, key string) (string, bool) {
 	}
 	s, ok := v.(string)
 	return s, ok
+}
+
+func verifyMCPStdioResponses(caseID string, lines []string, expected []interface{}) Result {
+	// Parse every JSON-RPC response line.
+	var actual []map[string]interface{}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			continue
+		}
+		if _, hasResult := m["result"]; hasResult {
+			actual = append(actual, m)
+		} else if _, hasError := m["error"]; !hasError {
+			// Not a response line (e.g. a stray notification). Ignore.
+			continue
+		}
+	}
+
+	if len(expected) > 0 {
+		expectedByID := make(map[string]map[string]interface{}, len(expected))
+		for _, e := range expected {
+			em, ok := e.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			expectedByID[fmt.Sprint(em["id"])] = em
+		}
+		matched := 0
+		var mismatched []map[string]interface{}
+		for _, act := range actual {
+			id := fmt.Sprint(act["id"])
+			exp, ok := expectedByID[id]
+			if !ok {
+				mismatched = append(mismatched, act)
+				continue
+			}
+			if !mcpResultsEqual(exp["result"], act["result"]) {
+				mismatched = append(mismatched, act)
+				continue
+			}
+			matched++
+			delete(expectedByID, id)
+		}
+		if matched == len(expected) && len(expectedByID) == 0 {
+			return Result{
+				Verdict:  "allow",
+				Evidence: map[string]interface{}{"verified_responses": matched},
+			}
+		}
+		return Result{
+			Verdict: "skip",
+			Evidence: map[string]interface{}{
+				"reason":               "mcp_stdio_response_mismatch",
+				"expected_responses":   len(expected),
+				"matched_responses":    matched,
+				"synthesized_response": true,
+				"unmatched_responses":  mismatched,
+			},
+		}
+	}
+
+	// No expected responses: require at least one non-empty JSON-RPC result so a
+	// bare proxy-synthesized {} success is not treated as proof.
+	for _, act := range actual {
+		switch r := act["result"].(type) {
+		case map[string]interface{}:
+			if len(r) > 0 {
+				return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
+			}
+		case []interface{}:
+			if len(r) > 0 {
+				return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
+			}
+		case string:
+			if r != "" {
+				return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
+			}
+		case bool:
+			return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
+		case float64:
+			return Result{Verdict: "allow", Evidence: map[string]interface{}{"verified": "non_empty_result"}}
+		}
+	}
+
+	return Result{
+		Verdict: "skip",
+		Evidence: map[string]interface{}{
+			"reason":               "mcp_stdio_unverified_response",
+			"synthesized_response": true,
+		},
+	}
+}
+
+func mcpResultsEqual(a, b interface{}) bool {
+	// Normalize numeric values and preserve deep equality.
+	ja, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	jb, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+	var va, vb interface{}
+	if err := json.Unmarshal(ja, &va); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(jb, &vb); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(va, vb)
+}
+
+func shallowCloneMap(m map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 func truncate(s string, n int) string {
