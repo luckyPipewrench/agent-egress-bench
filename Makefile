@@ -62,4 +62,5 @@ check-stats: check-gauntlet-site
 # in that path without changing the current public site or publish workflow.
 check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_scope_test.py
+	@node gauntlet-site/scope-render_test.js
 	@python3 scripts/validate_gauntlet_scope.py gauntlet-site/testdata/complete-provenance-artifact.json

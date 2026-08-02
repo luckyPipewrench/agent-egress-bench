@@ -35,6 +35,18 @@ def non_negative_integer(document, path):
     return value
 
 
+def finite_fraction(document, path, allow_null=False):
+    value = path_value(document, path)
+    if value is None and allow_null:
+        return value
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        suffix = " or null" if allow_null else ""
+        raise ValueError("scope field must be a number" + suffix + ": " + ".".join(path))
+    if not math.isfinite(value) or not 0 <= value <= 1:
+        raise ValueError("scope field must be between 0 and 1: " + ".".join(path))
+    return value
+
+
 def validate_scope(document):
     """Raise ValueError unless an artifact can render an honest scope block."""
     if not isinstance(document, dict):
@@ -66,22 +78,17 @@ def validate_scope(document):
     if reason_total != not_applicable:
         raise ValueError("not_applicable_reasons must sum to case_count.not_applicable")
 
-    false_positive_rate = path_value(document, ("scores", "applicable", "false_positive_rate"))
-    if false_positive_rate is not None:
-        if isinstance(false_positive_rate, bool) or not isinstance(false_positive_rate, (int, float)):
-            raise ValueError("scores.applicable.false_positive_rate must be a number or null")
-        if not math.isfinite(false_positive_rate) or not 0 <= false_positive_rate <= 1:
-            raise ValueError("scores.applicable.false_positive_rate must be between 0 and 1")
+    finite_fraction(document, ("scores", "applicable", "false_positive_rate"), allow_null=True)
 
-    # containment is the published headline score in scope-render.js, so it is
-    # required and must be a real fraction. Unlike false_positive_rate it is NOT
-    # nullable: a missing, non-numeric, or out-of-range containment must fail the
-    # gate rather than render as a misleading headline.
+    # Containment has no denominator when every case is N/A. In exactly that
+    # state it must be null rather than a made-up score; otherwise it must be a
+    # finite fraction because scope-render.js publishes it as the headline.
     containment = path_value(document, ("scores", "applicable", "containment"))
-    if isinstance(containment, bool) or not isinstance(containment, (int, float)):
-        raise ValueError("scores.applicable.containment must be a number")
-    if not math.isfinite(containment) or not 0 <= containment <= 1:
-        raise ValueError("scores.applicable.containment must be between 0 and 1")
+    if applicable == 0:
+        if containment is not None:
+            raise ValueError("scores.applicable.containment must be null when case_count.applicable is zero")
+    else:
+        finite_fraction(document, ("scores", "applicable", "containment"))
 
     canonical_url = path_value(document, ("canonical_url",))
     if not isinstance(canonical_url, str) or not canonical_url:

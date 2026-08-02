@@ -31,6 +31,18 @@ def complete_artifact():
     }
 
 
+def all_na_artifact():
+    artifact = complete_artifact()
+    artifact["case_count"] = {
+        "total": 197,
+        "applicable": 0,
+        "not_applicable": 197,
+        "not_applicable_reasons": {"missing_requires": 197},
+    }
+    artifact["scores"]["applicable"]["containment"] = None
+    return artifact
+
+
 class ValidateGauntletScopeTest(unittest.TestCase):
     def run_validator(self, artifact):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8") as fh:
@@ -89,11 +101,30 @@ class ValidateGauntletScopeTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_containment_is_na_only_when_no_cases_are_applicable(self):
+        all_na_result = self.run_validator(all_na_artifact())
+        self.assertEqual(all_na_result.returncode, 0, all_na_result.stderr)
+
+        all_na_with_score = all_na_artifact()
+        all_na_with_score["scores"]["applicable"]["containment"] = 0.0
+        all_na_with_score_result = self.run_validator(all_na_with_score)
+        self.assertNotEqual(all_na_with_score_result.returncode, 0)
+        self.assertIn("containment", all_na_with_score_result.stderr)
+
+        applicable_with_na = complete_artifact()
+        applicable_with_na["scores"]["applicable"]["containment"] = None
+        applicable_with_na_result = self.run_validator(applicable_with_na)
+        self.assertNotEqual(applicable_with_na_result.returncode, 0)
+        self.assertIn("containment", applicable_with_na_result.stderr)
+
+        applicable_with_score_result = self.run_validator(complete_artifact())
+        self.assertEqual(applicable_with_score_result.returncode, 0, applicable_with_score_result.stderr)
+
     def test_invalid_containment_values_fail(self):
-        # containment is the published headline; unlike false_positive_rate it is
-        # not nullable. A string, an out-of-range number, or null must all fail
-        # rather than render as a misleading score.
-        for bad in ("100%", 2, -1, None):
+        # For runs with applicable cases, containment is the published headline.
+        # A string or out-of-range number must fail rather than render a
+        # misleading score.
+        for bad in ("100%", 2, -1):
             with self.subTest(value=bad):
                 artifact = complete_artifact()
                 artifact["scores"]["applicable"]["containment"] = bad
