@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // stringPtr returns a pointer to s. Used in tests that build a fully-valid
@@ -539,6 +541,28 @@ func TestBuildReceiptProfile_EvidenceDirUnreadableFailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(row.ReceiptObservationReason, "receipt evidence unavailable") {
 		t.Fatalf("receipt_observation_reason = %q, want unavailable reason", row.ReceiptObservationReason)
+	}
+}
+
+func TestRunReceiptVerifierTimeoutKillsOrphanHoldingOutputPipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("verifier teardown relies on a POSIX shell and process groups")
+	}
+	script := filepath.Join(t.TempDir(), "orphan-verifier.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n( while :; do :; done ) &\nwhile :; do :; done\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	result := runReceiptVerifier("unused-evidence.jsonl", ReceiptEvidenceDeclaration{
+		VerifyCommand:        []string{script},
+		VerifyTimeoutSeconds: 1,
+	})
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("receipt verifier returned after %v; group kill should finish before WaitDelay", elapsed)
+	}
+	if !strings.Contains(result.reason, "verifier timed out") {
+		t.Fatalf("reason = %q, want verifier timeout", result.reason)
 	}
 }
 

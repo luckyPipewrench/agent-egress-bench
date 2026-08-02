@@ -101,6 +101,15 @@ dns:
   host_overrides:
     aeb-fixture.test:
       - 127.0.0.1
+    # The hostname-exfiltration false-positive control keeps its declared
+    # hostname (the runner swaps only its dynamic fixture port) and resolves to
+    # the ip_allowlist'd sink loopback, NOT to a trusted_domains entry. The
+    # allowlist makes the local fixture reachable while leaving subdomain-entropy
+    # / hostname-exfiltration scanning ACTIVE, so an allow here is the detector
+    # correctly declining a false positive rather than a destination-trust
+    # exemption. The HTTP fixture serves this address on its paired sink listener.
+    cdn.fixture.example.com:
+      - 127.0.0.2
     ws-exfil-sink.test:
       - 127.0.0.2
     a2a-exfil-sink.test:

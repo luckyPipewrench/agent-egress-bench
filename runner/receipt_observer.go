@@ -319,6 +319,15 @@ func runReceiptVerifier(evidenceFile string, decl ReceiptEvidenceDeclaration) ve
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	// A verifier may fork a child that inherits CombinedOutput's pipe. Put the
+	// verifier in its own group so context cancellation reaches that child too;
+	// otherwise Cmd.Wait can hang forever after killing only the direct verifier.
+	configureManagedCommand(cmd)
+	cmd.Cancel = func() error {
+		killManagedCommand(cmd)
+		return nil
+	}
+	cmd.WaitDelay = 5 * time.Second
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return verifyResult{verifiable: "no", reason: fmt.Sprintf("verifier timed out after %s", timeout)}

@@ -85,14 +85,23 @@ func (m *managedProcesses) startShellCommand(ctx context.Context, name, command 
 	output := newManagedOutputTail(maxManagedOutputBytes)
 	cmd.Stdout = output
 	cmd.Stderr = output
+	configureManagedCommand(cmd)
+	// The server can outlive a kill of its direct parent and keep the inherited
+	// stdout/stderr pipe open. In an environment with no init to reap the orphan
+	// (containers, CI runners), Wait would otherwise block forever on that pipe.
+	// WaitDelay bounds that wait: Wait force-closes the pipe and returns.
+	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s command: %w", name, err)
 	}
-	m.cmds = append(m.cmds, cmd)
 	if err := waitForTCPAddrs(ctx, readyAddrs, timeout); err != nil {
 		stopStartedCommand(cmd)
 		return fmt.Errorf("%s command did not listen on %s: %w; output: %s", name, strings.Join(readyAddrs, ", "), err, output.String())
 	}
+	// A command that failed readiness has already been stopped and waited above.
+	// Retain only successfully started commands so Close never signals a stale PID
+	// a second time during error cleanup.
+	m.cmds = append(m.cmds, cmd)
 	return nil
 }
 
@@ -100,15 +109,20 @@ func (m *managedProcesses) Close() {
 	if m.cancel != nil {
 		m.cancel()
 	}
+	// Kill every command first, then wait for each. Killing and waiting in one
+	// loop makes total teardown additive (up to one WaitDelay per command);
+	// killing all up front bounds it to a single WaitDelay regardless of count.
+	for _, cmd := range m.cmds {
+		killManagedCommand(cmd)
+	}
 	for _, cmd := range m.cmds {
 		_ = cmd.Wait()
 	}
+	m.cmds = nil
 }
 
 func stopStartedCommand(cmd *exec.Cmd) {
-	if cmd.Process != nil {
-		_ = cmd.Process.Kill()
-	}
+	killManagedCommand(cmd)
 	_ = cmd.Wait()
 }
 

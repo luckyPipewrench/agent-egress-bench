@@ -56,6 +56,7 @@ import (
 // reaching the benign fixture under test.
 const (
 	fixtureHostname           = "aeb-fixture.test"
+	hostnameExfilFixtureHost  = "cdn.fixture.example.com"
 	wsFixtureHostname         = fixtureHostname
 	wsUntrustedSinkHostname   = "ws-exfil-sink.test"
 	a2aUntrustedSinkHostname  = "a2a-exfil-sink.test"
@@ -78,7 +79,7 @@ type ProxyAdapter struct {
 	setTLSRoute     func(path, body string)
 	setTLSRouteCT   func(path, body, contentType string)
 	setTLSRouteHost func(host, path, body, contentType string)
-	tlsRequests     func() int64 // requests the TLS fixture has served
+	tlsRequests     func() int64  // requests the TLS fixture has served
 	wsAddr          string        // trusted WS fixture for websocket cases
 	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
@@ -654,6 +655,14 @@ func (p *ProxyAdapter) routeFetchFixtureURL(targetURL string) string {
 		return targetURL
 	}
 	u.Scheme = "http"
+	// The hostname-exfiltration benign control must reach the scanner with its
+	// declared CDN hostname intact. Only redirect its port to the local fixture;
+	// replacing the host with fixtureHostname would make that control prove only
+	// that aeb-fixture.test is allowed.
+	if strings.EqualFold(u.Hostname(), hostnameExfilFixtureHost) {
+		u.Host = net.JoinHostPort(hostnameExfilFixtureHost, port)
+		return u.String()
+	}
 	u.Host = net.JoinHostPort(fixtureHostname, port)
 	return u.String()
 }
@@ -1477,6 +1486,7 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", mcpCmd) //nolint:gosec // command from trusted CLI flag
+	configureMCPCommand(cmd)
 	// Capture stderr instead of discarding it. Discarding it here previously
 	// swallowed the diagnostic output from a mock-backend spawn failure (e.g.
 	// bash missing), leaving nothing but a bare, unexplained exit code or a
@@ -1633,6 +1643,7 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
+	configureMCPCommand(cmd)
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 

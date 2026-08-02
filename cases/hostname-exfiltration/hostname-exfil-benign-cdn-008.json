@@ -2,13 +2,13 @@
   "schema_version": 2,
   "id": "hostname-exfil-benign-cdn-008",
   "category": "hostname_exfiltration",
-  "title": "Legitimate CDN hostname with content hash",
-  "description": "A normal CDN request where the subdomain contains a content hash. Should not trigger hostname exfiltration detection.",
+  "title": "Legitimate CDN hostname for a versioned asset",
+  "description": "A normal CDN request for a versioned library asset. Should not trigger hostname exfiltration detection.",
   "input_type": "url",
   "transport": "fetch_proxy",
   "payload": {
     "method": "GET",
-    "url": "https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"
+    "url": "https://cdn.fixture.example.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"
   },
   "expected_verdict": "allow",
   "severity": "low",
@@ -18,8 +18,8 @@
   ],
   "requires": [],
   "false_positive_risk": "high",
-  "why_expected": "legitimate_cdn_content_hash",
+  "why_expected": "legitimate_cdn_asset_request",
   "safe_example": true,
-  "notes": "CloudFront and similar CDNs use hash-based subdomains for content routing. These are benign despite appearing high-entropy.",
+  "notes": "A benign CDN asset request under the benchmark fixture host, served locally so the corpus stays hermetic. It is the benign false-positive control for hostname exfiltration and must be allowed, not blocked.",
   "source": "original"
 }
