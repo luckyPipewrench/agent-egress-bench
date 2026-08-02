@@ -24,35 +24,6 @@ func TestRunBadProfile(t *testing.T) {
 	}
 }
 
-func TestRunProxyAdapterPreflightFailsFast(t *testing.T) {
-	casesDir := filepath.Join("..", "cases")
-	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")
-
-	// Skip if cases or profile don't exist.
-	if _, err := os.Stat(casesDir); os.IsNotExist(err) {
-		t.Skip("cases directory not found, skipping")
-	}
-	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
-		t.Skip("profile not found, skipping")
-	}
-
-	// Point TMPDIR at a directory that does not exist, so the mock-backend
-	// preflight cannot even create a temp file there. This proves run()
-	// actually invokes the preflight check when --mcp-cmd is set for the
-	// proxy adapter, and fails fast with a specific, wrapped error instead
-	// of proceeding to run (and silently misclassify) the whole corpus.
-	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "does-not-exist"))
-
-	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "proxy", "127.0.0.1:1", "", "", "echo hi", false, "", "", "", false)
-	if err == nil {
-		t.Fatal("expected the mock-backend preflight to fail with an unusable TMPDIR")
-	}
-	if !strings.Contains(err.Error(), "mcp mock-backend preflight") {
-		t.Errorf("expected the preflight-wrapped error, got: %v", err)
-	}
-}
-
 func TestRunUnknownAdapter(t *testing.T) {
 	casesDir := filepath.Join("..", "cases")
 	profilePath := filepath.Join("..", "examples", "pipelock", "tool-profile.json")

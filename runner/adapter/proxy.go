@@ -35,7 +35,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -43,6 +42,7 @@ import (
 	"os/exec"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -201,11 +201,12 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 	case "http_proxy":
 		result = p.runHTTPProxy(c, timeout)
 	case "websocket":
-		if c.InputType == "websocket_frame" {
+		switch c.InputType {
+		case "websocket_frame":
 			result = p.runWebSocketFrameViaProxy(c, timeout)
-		} else if c.InputType == "url" || c.InputType == "header" {
+		case "url", "header":
 			result = p.runWebSocket(c, timeout)
-		} else {
+		default:
 			result = unsupportedTransport(c, "websocket payload execution is not implemented for this input type")
 		}
 	case "mcp_stdio":
@@ -270,21 +271,6 @@ func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Dura
 		"url":    "http://" + net.JoinHostPort(fixtureHostname, port) + path,
 	}
 	return p.runFetchProxy(fixtureCase, timeout)
-}
-
-// runResponseContentViaScanAPI scans the response_body field directly. These
-// cases model fetched or intercepted response content, so the benchmark input
-// is the body itself rather than the availability of the example URL.
-func (p *ProxyAdapter) runResponseContentViaScanAPI(c Case, timeout time.Duration) Result {
-	body, ok := payloadString(c.Payload, "response_body")
-	if !ok || body == "" {
-		return Result{Err: fmt.Errorf("case %s: payload missing 'response_body'", c.ID)}
-	}
-	result := p.runScanAPITextWithKind(c.ID, body, timeout, "prompt_injection")
-	if result.Verdict == "block" || result.Err != nil {
-		return result
-	}
-	return p.runScanAPITextWithKind(c.ID, body, timeout, "dlp")
 }
 
 // runWebSocketFrameViaProxy performs a real WebSocket upgrade through the
@@ -1279,153 +1265,333 @@ func webSocketCloseReason(payload []byte) string {
 	return string(payload[2:])
 }
 
-// PreflightMockScriptExec verifies that the current environment can create a
-// temp script and run it with bash from PATH, matching runMCPStdio's mock MCP
-// backend injection for tool-poisoning cases.
-//
-// If bash is missing or the temp script cannot be created/read, that mechanism
-// silently breaks every in-scope MCP tool-poisoning case: with stderr discarded
-// (the bug this preflight exists to catch; see the stderr capture in
-// runMCPStdio) the failure surfaces, if at all, as a bare unexplained exit
-// code, or the case simply times out and gets scored as a "block" with no
-// indication that nothing was ever actually run. Call this once, before those
-// cases run, so that failure is loud, specific, and actionable instead of
-// silently corrupting case results.
-//
-// Callers should invoke this only when the proxy adapter is configured with
-// an MCP command (i.e. tool-poisoning cases will actually exercise this
-// mechanism); it is a no-op safety check, not part of scoring.
-func PreflightMockScriptExec() error {
-	tmpDir := os.TempDir()
-
-	bashPath, lookErr := exec.LookPath("bash")
-	if lookErr != nil {
-		return fmt.Errorf(
-			"preflight failed: bash not found in PATH (%w).\n"+
-				"the proxy adapter's MCP mock-backend script (used for tool-poisoning\n"+
-				"cases) is run as \"bash <temp-script>\"; install bash or ensure it is\n"+
-				"on PATH and retry",
-			lookErr)
-	}
-
-	f, err := os.CreateTemp(tmpDir, "aeb-preflight-mock-*.sh")
-	if err != nil {
-		return fmt.Errorf("preflight failed: cannot create a temp file in %s: %w", tmpDir, err)
-	}
-	scriptPath := f.Name()
-	defer func() { _ = os.Remove(scriptPath) }()
-
-	if _, writeErr := f.WriteString("exit 0\n"); writeErr != nil {
-		_ = f.Close()
-		return fmt.Errorf("preflight failed: cannot write temp script %s: %w", scriptPath, writeErr)
-	}
-	if closeErr := f.Close(); closeErr != nil {
-		return fmt.Errorf("preflight failed: cannot close temp script %s: %w", scriptPath, closeErr)
-	}
-	if accessErr := validatePreflightScriptReadable(tmpDir, scriptPath); accessErr != nil {
-		return accessErr
-	}
-
-	var stderrBuf bytes.Buffer
-	cmd := exec.Command(bashPath, scriptPath) //nolint:gosec // fixed bash path and a script this function just created
-	cmd.Stderr = &stderrBuf
-	runErr := cmd.Run()
-	if runErr == nil {
-		return nil
-	}
-	return classifyPreflightExecErr(tmpDir, runErr, strings.TrimSpace(stderrBuf.String()))
-}
-
-func validatePreflightScriptReadable(tmpDir, scriptPath string) error {
-	f, err := os.Open(scriptPath)
-	if err != nil {
-		return classifyPreflightScriptAccessErr(tmpDir, err)
-	}
-	if closeErr := f.Close(); closeErr != nil {
-		return fmt.Errorf("preflight failed: cannot close readable temp script %s: %w", scriptPath, closeErr)
-	}
-	return nil
-}
-
-// classifyPreflightScriptAccessErr turns a failed pre-exec readability probe
-// into TMPDIR-specific guidance. Bash reports an unreadable or missing script
-// as an ordinary process exit, so probing from Go before exec preserves the
-// wrapped filesystem error that makes the diagnosis reliable.
-func classifyPreflightScriptAccessErr(tmpDir string, accessErr error) error {
-	switch {
-	case errors.Is(accessErr, fs.ErrPermission):
-		return fmt.Errorf(
-			"preflight failed: cannot read a script written to the temp directory\n"+
-				"%s (%w).\n"+
-				"the current user most likely lacks read permission on files created there.\n"+
-				"The proxy adapter runs a mock MCP backend script from a freshly created\n"+
-				"temp file for tool-poisoning cases; if bash cannot read it, those cases\n"+
-				"will silently misclassify or hang until timeout instead of producing a\n"+
-				"real verdict, with no indication why.\n"+
-				"Fix: point TMPDIR at a writable directory and retry, e.g.:\n"+
-				"  mkdir -p \"$HOME/.cache/aeb-tmp\" && TMPDIR=\"$HOME/.cache/aeb-tmp\" <run command>",
-			tmpDir, accessErr)
-	case errors.Is(accessErr, fs.ErrNotExist):
-		return fmt.Errorf(
-			"preflight failed: temp script disappeared before bash could run it\n"+
-				"from %s (%w).\n"+
-				"check TMPDIR and filesystem cleanup policy, then retry",
-			tmpDir, accessErr)
-	default:
-		return fmt.Errorf(
-			"preflight failed: cannot verify a temp script is readable from %s (%w).\n"+
-				"the proxy adapter's MCP mock-backend mechanism needs to create temp\n"+
-				"scripts and run them with bash for tool-poisoning cases; fix the\n"+
-				"underlying environment issue and retry",
-			tmpDir, accessErr)
-	}
-}
-
-// classifyPreflightExecErr turns a failed bash execution into a specific,
-// actionable error message where Go still exposes the wrapped OS error.
-// Script read/missing errors are handled before exec by
-// validatePreflightScriptReadable because Bash converts them into ExitError.
-func classifyPreflightExecErr(tmpDir string, runErr error, detail string) error {
-	switch {
-	case errors.Is(runErr, fs.ErrPermission):
-		return fmt.Errorf(
-			"preflight failed: cannot execute bash for a temp script in\n"+
-				"%s (%w).\n"+
-				"bash was found on PATH but could not be executed by the current user.\n"+
-				"Check the bash executable permissions and retry.\n"+
-				"stderr from the failed script: %s",
-			tmpDir, runErr, orNoneIfEmpty(detail))
-	case errors.Is(runErr, fs.ErrNotExist):
-		return fmt.Errorf(
-			"preflight failed: cannot run bash with a temp script in %s (%w).\n"+
-				"bash was found on PATH, but that executable was not available when\n"+
-				"preflight tried to run it; check PATH and filesystem cleanup policy,\n"+
-				"then retry.\n"+
-				"stderr from the failed script: %s",
-			tmpDir, runErr, orNoneIfEmpty(detail))
-	default:
-		return fmt.Errorf(
-			"preflight failed: could not run a test script from the temp directory\n"+
-				"%s (%w).\n"+
-				"the proxy adapter's MCP mock-backend mechanism needs to create temp\n"+
-				"scripts and run them with bash for tool-poisoning cases; fix the\n"+
-				"underlying environment issue and retry.\n"+
-				"stderr from the failed script: %s",
-			tmpDir, runErr, orNoneIfEmpty(detail))
-	}
-}
-
-// orNoneIfEmpty returns "(none)" for an empty diagnostic string so error
-// messages never end with a dangling, easy-to-miss empty field.
-func orNoneIfEmpty(s string) string {
-	if s == "" {
-		return "(none)"
-	}
-	return s
-}
-
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// mcpStdioUpstreamAddrEnv is an opt-in, transport-neutral contract for MCP
+// stdio commands. When a case needs a runner-controlled upstream, the runner
+// starts a line-delimited JSON-RPC listener and publishes only its loopback
+// address through this variable. The evaluated command must be configured by
+// its operator to connect its upstream to that address. The runner neither
+// parses nor rewrites --mcp-cmd.
+//
+// The address is deliberately not a proof secret. Proof comes exclusively
+// from the runner observing a matching request on the listener it owns.
+const mcpStdioUpstreamAddrEnv = "AEB_MCP_STDIO_UPSTREAM_ADDR"
+
+// mcpStdioObserverDrainTimeout bounds the post-process grace period for input
+// that a forwarding command already delivered to the runner-owned listener.
+// It must stay short: a command that leaves a connection open must not hold up
+// the runner indefinitely.
+const mcpStdioObserverDrainTimeout = 100 * time.Millisecond
+
+// mcpStdioUpstreamObserverBeforeServe is a test seam that can hold an accepted
+// connection just before its handler starts, making the close/drain ordering
+// reproducible without changing the runner-owned upstream protocol.
+var mcpStdioUpstreamObserverBeforeServe func()
+
+type mcpStdioObservedRequest struct {
+	fingerprint string
+	response    interface{}
+}
+
+// mcpStdioUpstreamObserver is a runner-owned upstream endpoint. The evaluated
+// proxy gets a routable address but no descriptor, token, file, or other means
+// to write the observer's result. It can only cause a match by delivering a
+// request to the listener.
+type mcpStdioUpstreamObserver struct {
+	listener net.Listener
+	expected []mcpStdioObservedRequest
+
+	mu       sync.Mutex
+	matched  int
+	received int
+	conns    map[net.Conn]struct{}
+	stopping bool
+	closed   bool
+
+	handlers   sync.WaitGroup
+	acceptDone chan struct{}
+}
+
+func startMCPStdioUpstreamObserver(clientMsgs []interface{}, responses []interface{}) (*mcpStdioUpstreamObserver, error) {
+	if len(clientMsgs) == 0 {
+		return nil, errors.New("cannot observe an empty MCP stdio request sequence")
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("listen for runner-owned MCP stdio upstream: %w", err)
+	}
+	observer := &mcpStdioUpstreamObserver{
+		listener:   listener,
+		expected:   make([]mcpStdioObservedRequest, 0, len(clientMsgs)),
+		conns:      make(map[net.Conn]struct{}),
+		acceptDone: make(chan struct{}),
+	}
+	for i, msg := range clientMsgs {
+		fingerprint, fpErr := mcpStdioRequestFingerprint(msg)
+		if fpErr != nil {
+			_ = listener.Close()
+			return nil, fpErr
+		}
+		var response interface{}
+		if i < len(responses) {
+			response = responses[i]
+		} else {
+			response = mcpStdioSuccessResponse(msg)
+		}
+		observer.expected = append(observer.expected, mcpStdioObservedRequest{
+			fingerprint: fingerprint,
+			response:    response,
+		})
+	}
+	go observer.accept()
+	return observer, nil
+}
+
+func (o *mcpStdioUpstreamObserver) addr() string {
+	return o.listener.Addr().String()
+}
+
+func (o *mcpStdioUpstreamObserver) accept() {
+	defer close(o.acceptDone)
+	for {
+		conn, err := o.listener.Accept()
+		if err != nil {
+			return
+		}
+		o.mu.Lock()
+		if o.stopping || o.closed {
+			o.mu.Unlock()
+			_ = conn.Close()
+			continue
+		}
+		o.conns[conn] = struct{}{}
+		o.handlers.Add(1)
+		o.mu.Unlock()
+		if mcpStdioUpstreamObserverBeforeServe != nil {
+			mcpStdioUpstreamObserverBeforeServe()
+		}
+		go o.serve(conn)
+	}
+}
+
+func (o *mcpStdioUpstreamObserver) serve(conn net.Conn) {
+	defer func() {
+		o.handlers.Done()
+		o.mu.Lock()
+		delete(o.conns, conn)
+		o.mu.Unlock()
+		_ = conn.Close()
+	}()
+
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	for scanner.Scan() {
+		response, ok := o.observe(scanner.Bytes())
+		if !ok {
+			// A mismatched request is not proof for a corpus request. Do not
+			// advance the sequence; return a protocol error so a forwarding
+			// proxy cannot accidentally consume a later expected response.
+			_, _ = io.WriteString(conn, "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"unexpected runner-observed request\"}}\n")
+			continue
+		}
+		if response == nil {
+			continue
+		}
+		line, err := json.Marshal(response)
+		if err != nil {
+			continue
+		}
+		_, _ = conn.Write(append(line, '\n'))
+	}
+}
+
+// Drain stops accepting new connections and lets already-running handlers
+// consume buffered input for a bounded interval. It intentionally does not
+// close active connections: Close does that only after the caller snapshots
+// observation evidence.
+func (o *mcpStdioUpstreamObserver) Drain(timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+	o.mu.Lock()
+	if o.closed {
+		o.mu.Unlock()
+		return
+	}
+	o.stopping = true
+	o.mu.Unlock()
+	_ = o.listener.Close()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-o.acceptDone:
+	case <-timer.C:
+		return
+	}
+
+	handlersDone := make(chan struct{})
+	go func() {
+		o.handlers.Wait()
+		close(handlersDone)
+	}()
+	select {
+	case <-handlersDone:
+	case <-timer.C:
+	}
+}
+
+func (o *mcpStdioUpstreamObserver) observe(raw []byte) (interface{}, bool) {
+	var message interface{}
+	if err := json.Unmarshal(raw, &message); err != nil {
+		return nil, false
+	}
+	fingerprint, err := mcpStdioRequestFingerprint(message)
+	if err != nil {
+		return nil, false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.received++
+	if o.matched >= len(o.expected) || fingerprint != o.expected[o.matched].fingerprint {
+		return nil, false
+	}
+	response := o.expected[o.matched].response
+	o.matched++
+	return response, true
+}
+
+func (o *mcpStdioUpstreamObserver) counts() (matched, expected, received int) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.matched, len(o.expected), o.received
+}
+
+func (o *mcpStdioUpstreamObserver) Close() {
+	o.mu.Lock()
+	if o.closed {
+		o.mu.Unlock()
+		return
+	}
+	o.closed = true
+	o.stopping = true
+	conns := make([]net.Conn, 0, len(o.conns))
+	for conn := range o.conns {
+		conns = append(conns, conn)
+	}
+	o.mu.Unlock()
+	_ = o.listener.Close()
+	for _, conn := range conns {
+		_ = conn.Close()
+	}
+}
+
+func mcpStdioSubprocessError(c Case, waitErr error, stderrOutput string) error {
+	if stderrOutput != "" {
+		return fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)
+	}
+	return fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)
+}
+
+func mcpStdioRequestFingerprint(message interface{}) (string, error) {
+	request, ok := message.(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("runner-owned MCP upstream expected object request, got %T", message)
+	}
+	method, ok := request["method"].(string)
+	if !ok || method == "" {
+		return "", errors.New("runner-owned MCP upstream expected JSON-RPC method")
+	}
+	fingerprint := map[string]interface{}{
+		"jsonrpc": request["jsonrpc"],
+		"id":      request["id"],
+		"method":  method,
+	}
+	if params, ok := request["params"]; ok {
+		fingerprint["params"] = params
+	}
+	encoded, err := json.Marshal(fingerprint)
+	if err != nil {
+		return "", fmt.Errorf("encode runner-owned MCP upstream fingerprint: %w", err)
+	}
+	return string(encoded), nil
+}
+
+func mcpStdioSuccessResponse(request interface{}) map[string]interface{} {
+	id := interface{}(nil)
+	if message, ok := request.(map[string]interface{}); ok {
+		id = message["id"]
+	}
+	return map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  map[string]interface{}{"content": []interface{}{}},
+	}
+}
+
+func mcpStdioObservationEvidence(observer *mcpStdioUpstreamObserver) (map[string]interface{}, bool) {
+	if observer == nil {
+		return nil, false
+	}
+	matched, expected, received := observer.counts()
+	evidence := map[string]interface{}{
+		"upstream_requests_expected": expected,
+		"upstream_requests_observed": matched,
+	}
+	if received != matched {
+		evidence["upstream_requests_unmatched"] = received - matched
+	}
+	return evidence, matched == expected
+}
+
+func mcpStdioObservationMissingResult(observer *mcpStdioUpstreamObserver, evidence map[string]interface{}) Result {
+	if evidence == nil {
+		evidence = map[string]interface{}{}
+	}
+	observation, _ := mcpStdioObservationEvidence(observer)
+	for key, value := range observation {
+		evidence[key] = value
+	}
+	evidence["upstream_reached"] = false
+	evidence["reason"] = "mcp_stdio_upstream_observation_missing"
+	return Result{Verdict: "skip", Evidence: evidence}
+}
+
+// mcpStdioResponseRelayMissingResult keeps positive request-arrival proof
+// intact when the proxy did reach the runner-owned upstream but omitted the
+// response that the case requires it to relay.
+func mcpStdioResponseRelayMissingResult(observer *mcpStdioUpstreamObserver, evidence map[string]interface{}) Result {
+	if evidence == nil {
+		evidence = map[string]interface{}{}
+	}
+	observation, upstreamObserved := mcpStdioObservationEvidence(observer)
+	for key, value := range observation {
+		evidence[key] = value
+	}
+	evidence["upstream_reached"] = upstreamObserved
+	evidence["reason"] = "mcp_stdio_response_relay_missing"
+	return Result{Verdict: "skip", Evidence: evidence}
+}
+
+// mcpStdioUpstreamCommandEnv removes an ambient observation endpoint before
+// adding the runner-owned one. An empty addr deliberately means no endpoint:
+// commands must never inherit a stale endpoint that this run does not own.
+func mcpStdioUpstreamCommandEnv(addr string) []string {
+	prefix := mcpStdioUpstreamAddrEnv + "="
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, prefix) {
+			continue
+		}
+		env = append(env, entry)
+	}
+	if addr != "" {
+		env = append(env, prefix+addr)
+	}
+	return env
 }
 
 // runMCPStdio sends JSON-RPC messages through the MCP proxy subprocess.
@@ -1435,9 +1601,10 @@ func shellQuote(s string) string {
 //   - Client→server requests (tools/call): written to stdin, proxy scans them
 //   - Server→client responses (tools/list result): need the mock to return them
 //
-// For tool poisoning cases (messages with "result" field), the adapter creates
-// a mock that returns the poisoned payload as the server response, then sends
-// the corresponding request through the client side.
+// For tool poisoning cases (messages with "result" field), the adapter starts
+// a runner-owned upstream listener that returns the poisoned payload only
+// after observing the corresponding client request. The evaluated command opts
+// into that neutral endpoint contract; the runner never rewrites its command.
 func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	if p.mcpCmd == "" {
 		return Result{
@@ -1477,91 +1644,38 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		}
 	}
 
-	// Build the MCP command. For tool poisoning (server responses in payload),
-	// create a temp-file-based mock that returns the poisoned responses. The
-	// mock also writes a per-run receipt to an inherited pipe after it receives
-	// its first request. Stdout equality alone is forgeable because both the
-	// expected response and JSON-RPC ids are case-controlled; the runner-owned
-	// pipe gives allow scoring a separate upstream-reach proof channel.
-	mcpCmd := p.mcpCmd
-	var tempFiles []string // cleaned up after cmd.Wait
-	var proofReader, proofWriter *os.File
-	var receipt string
-	if len(serverResponses) > 0 {
-		receiptBytes := make([]byte, 32)
-		if _, err := rand.Read(receiptBytes); err != nil {
-			return Result{Err: fmt.Errorf("case %s: generate MCP stdio receipt: %w", c.ID, err)}
-		}
-		receipt = base64.RawURLEncoding.EncodeToString(receiptBytes)
-		var pipeErr error
-		proofReader, proofWriter, pipeErr = os.Pipe()
-		if pipeErr != nil {
-			return Result{Err: fmt.Errorf("case %s: create MCP stdio receipt pipe: %w", c.ID, pipeErr)}
-		}
-
-		// Write server responses to a temp file (one JSON line per response).
-		respFile, respErr := os.CreateTemp("", "mock-responses-*.jsonl")
-		if respErr != nil {
-			_ = proofReader.Close()
-			_ = proofWriter.Close()
-			return Result{Err: fmt.Errorf("case %s: create temp response file: %w", c.ID, respErr)}
-		}
-		tempFiles = append(tempFiles, respFile.Name())
-		for _, sr := range serverResponses {
-			line, _ := json.Marshal(sr)
-			_, _ = respFile.Write(line)
-			_, _ = respFile.Write([]byte("\n"))
-		}
-		_ = respFile.Close()
-
-		// Write a mock script that reads the response file.
-		// For each input line, output the next line from the response file.
-		mockScript, scriptErr := os.CreateTemp("", "mock-script-*.sh")
-		if scriptErr != nil {
-			_ = proofReader.Close()
-			_ = proofWriter.Close()
-			return Result{Err: fmt.Errorf("case %s: create temp script: %w", c.ID, scriptErr)}
-		}
-		tempFiles = append(tempFiles, mockScript.Name())
-		_, _ = fmt.Fprintf(mockScript, "_n=0\nwhile IFS= read -r _input; do\n  _n=$((_n+1))\n  if [ \"$_n\" -eq 1 ]; then\n    printf '%%s\\n' %s >&3\n  fi\n  sed -n \"${_n}p\" '%s'\ndone\n",
-			shellQuote(receipt), respFile.Name())
-		_ = mockScript.Close()
-
-		// Replace the backend command with our custom mock script. Invoke it
-		// through bash from PATH instead of relying on a hardcoded shebang path.
-		if idx := strings.Index(mcpCmd, " -- "); idx >= 0 {
-			mcpCmd = mcpCmd[:idx] + " -- bash " + shellQuote(mockScript.Name())
-		} else {
-			return Result{Err: fmt.Errorf("case %s: --mcp-cmd missing ' -- ' separator, cannot inject mock backend", c.ID)}
-		}
-
-		// If no client messages, send a tools/list request to trigger the response.
-		if len(clientMsgs) == 0 {
-			clientMsgs = append(clientMsgs, map[string]interface{}{
-				"jsonrpc": "2.0",
-				"method":  "tools/list",
-				"id":      1,
-			})
-		}
+	// Every MCP stdio case gets an upstream endpoint under runner control. The
+	// command string is deliberately left untouched: an integration opts in by
+	// configuring its own proxy to use AEB_MCP_STDIO_UPSTREAM_ADDR. Blocks do
+	// not need an observation, but every non-blocking result needs this endpoint
+	// to prove that it really reached an upstream.
+	var observer *mcpStdioUpstreamObserver
+	// If no client messages, send a tools/list request to trigger the response.
+	if len(clientMsgs) == 0 {
+		clientMsgs = append(clientMsgs, map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "tools/list",
+			"id":      1,
+		})
 	}
+	var observeErr error
+	observer, observeErr = startMCPStdioUpstreamObserver(clientMsgs, serverResponses)
+	if observeErr != nil {
+		return Result{Err: fmt.Errorf("case %s: start runner-owned MCP stdio upstream: %w", c.ID, observeErr)}
+	}
+	defer observer.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", mcpCmd) //nolint:gosec // command from trusted CLI flag
+	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
 	configureMCPCommand(cmd)
-	if proofWriter != nil {
-		// ExtraFiles starts at fd 3. The injected backend emits the receipt to
-		// that descriptor; normal JSON-RPC output remains exclusively on stdout.
-		cmd.ExtraFiles = []*os.File{proofWriter}
+	upstreamAddr := ""
+	if observer != nil {
+		upstreamAddr = observer.addr()
 	}
-	// Capture stderr instead of discarding it. Discarding it here previously
-	// swallowed the diagnostic output from a mock-backend spawn failure (e.g.
-	// bash missing), leaving nothing but a bare, unexplained exit code or a
-	// silent timeout. See PreflightMockScriptExec for the guard that catches
-	// this class of failure loudly before the in-scope corpus cases run, and
-	// the two branches below that now surface this buffer's contents when a
-	// case comes back empty.
+	cmd.Env = mcpStdioUpstreamCommandEnv(upstreamAddr)
+	// Capture stderr so integration failures have an actionable diagnostic.
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
@@ -1575,14 +1689,7 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	}
 
 	if startErr := cmd.Start(); startErr != nil {
-		if proofReader != nil {
-			_ = proofReader.Close()
-			_ = proofWriter.Close()
-		}
 		return Result{Err: fmt.Errorf("case %s: start MCP cmd: %w", c.ID, startErr)}
-	}
-	if proofWriter != nil {
-		_ = proofWriter.Close()
 	}
 
 	outputCh := make(chan []byte, 1)
@@ -1599,39 +1706,46 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	_ = stdin.Close()
 
 	waitErr := cmd.Wait()
-	for _, tf := range tempFiles {
-		_ = os.Remove(tf)
-	}
-	var proof []byte
-	if proofReader != nil {
-		proof, _ = io.ReadAll(proofReader)
-		_ = proofReader.Close()
+	stderrOutput := strings.TrimSpace(stderrBuf.String())
+	// A subprocess failure invalidates the integration regardless of any output
+	// it managed to print before exiting. Do not parse or score that output.
+	if waitErr != nil && ctx.Err() == nil {
+		return Result{Err: mcpStdioSubprocessError(c, waitErr, stderrOutput)}
 	}
 	output := <-outputCh
-	stderrOutput := strings.TrimSpace(stderrBuf.String())
+	if observer != nil {
+		observer.Drain(mcpStdioObserverDrainTimeout)
+	}
+	observationEvidence, upstreamObserved := mcpStdioObservationEvidence(observer)
 
-	// Context timeout is expected (subprocess runs until stdin closes).
-	// But other wait errors with no output indicate a real failure.
+	// Context timeout is handled as its normal unprovable outcome rather than an
+	// adapter error. A bare clean exit without a structured deny is likewise
+	// unprovable: it can be a no-op, misconfiguration, or discarded stdin.
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
-		if waitErr != nil && ctx.Err() == nil {
-			if stderrOutput != "" {
-				return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
-			}
-			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
-		}
-		// No output and no reported wait error (or a timeout) is treated as a
-		// block, since many proxies express "block" by simply closing the
-		// connection without writing anything. That is a real, valid signal
-		// for a well-behaved tool, but it is also exactly what a silently
-		// failed mock-backend spawn looks like, so any captured stderr is
-		// attached here as a diagnostic hint rather than changing the
-		// verdict itself.
+		// A block requires a structured, verifiable MCP policy deny. Silence is
+		// not a deny protocol, so it must never award a block score.
 		evidence := map[string]interface{}{"reason": "no_output"}
 		if stderrOutput != "" {
 			evidence["stderr"] = stderrOutput
 		}
-		return Result{Verdict: "block", Evidence: evidence}
+		for key, value := range observationEvidence {
+			evidence[key] = value
+		}
+		if observer != nil {
+			evidence["upstream_reached"] = upstreamObserved
+		}
+		if len(serverResponses) == 0 && upstreamObserved {
+			// Client-only cases need no response payload to verify. The
+			// runner-owned upstream observation is positive proof that the
+			// request was forwarded even when a pipelining proxy exits before
+			// reading its response.
+			return Result{Verdict: "allow", Evidence: evidence}
+		}
+		if len(serverResponses) > 0 && upstreamObserved {
+			return mcpStdioResponseRelayMissingResult(observer, evidence)
+		}
+		return mcpStdioObservationMissingResult(observer, evidence)
 	}
 
 	// Check response lines for policy-block JSON-RPC errors.
@@ -1648,12 +1762,19 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			code := rpcResp.Error.Code
 			if code >= -32099 && code <= -32000 {
 				// Policy block from the proxy (-32000 to -32099 range).
+				evidence := map[string]interface{}{
+					"error_code":    code,
+					"error_message": rpcResp.Error.Message,
+				}
+				for key, value := range observationEvidence {
+					evidence[key] = value
+				}
+				if observer != nil {
+					evidence["upstream_reached"] = upstreamObserved
+				}
 				return Result{
-					Verdict: "block",
-					Evidence: map[string]interface{}{
-						"error_code":    code,
-						"error_message": rpcResp.Error.Message,
-					},
+					Verdict:  "block",
+					Evidence: evidence,
 				}
 			}
 			if code <= -32600 {
@@ -1664,21 +1785,27 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	}
 
 	// At this point there are no policy blocks or protocol errors. An allow must
-	// be backed by positive proof that the response came from the upstream
-	// listener, not a proxy-local JSON-RPC success. Cases without an injected
-	// upstream have no independently verifiable provenance and fail closed.
+	// be backed by positive proof that every request reached the runner-owned
+	// upstream listener, not a proxy-local JSON-RPC success.
+	if len(serverResponses) == 0 {
+		if observer == nil || !upstreamObserved {
+			return mcpStdioObservationMissingResult(observer, nil)
+		}
+		return Result{Verdict: "allow", Evidence: map[string]interface{}{
+			"upstream_reached":           true,
+			"upstream_requests_expected": observationEvidence["upstream_requests_expected"],
+			"upstream_requests_observed": observationEvidence["upstream_requests_observed"],
+		}}
+	}
 	verified := verifyMCPStdioResponses(c.ID, lines, serverResponses)
 	if verified.Verdict != "allow" {
 		return verified
 	}
-	if !mcpStdioReceiptObserved(proof, receipt) {
-		return Result{
-			Verdict: "skip",
-			Evidence: map[string]interface{}{
-				"reason":               "mcp_stdio_upstream_receipt_missing",
-				"synthesized_response": true,
-			},
-		}
+	if observer == nil || !upstreamObserved {
+		return mcpStdioObservationMissingResult(observer, verified.Evidence)
+	}
+	for key, value := range observationEvidence {
+		verified.Evidence[key] = value
 	}
 	verified.Evidence["upstream_reached"] = true
 	return verified
@@ -1734,11 +1861,29 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 		}
 	}
 
+	// A non-blocking budget sequence is meaningful only if the runner observes
+	// every individual tool call at the upstream it owns. The command itself is
+	// not rewritten: integrations opt in by routing their upstream to the
+	// neutral AEB_MCP_STDIO_UPSTREAM_ADDR endpoint. A command that ignores it is
+	// unscorable (skip), not a command-line error or a false allow.
+	var observer *mcpStdioUpstreamObserver
+	var observeErr error
+	observer, observeErr = startMCPStdioUpstreamObserver(msgList, nil)
+	if observeErr != nil {
+		return Result{Err: fmt.Errorf("case %s: start runner-owned MCP stdio upstream: %w", c.ID, observeErr)}
+	}
+	defer observer.Close()
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
 	configureMCPCommand(cmd)
+	upstreamAddr := ""
+	if observer != nil {
+		upstreamAddr = observer.addr()
+	}
+	cmd.Env = mcpStdioUpstreamCommandEnv(upstreamAddr)
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
@@ -1762,11 +1907,16 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			waitErr := cmd.Wait()
 			if waitErr != nil && ctx.Err() == nil {
 				stderrOutput := strings.TrimSpace(stderrBuf.String())
-				if stderrOutput != "" {
-					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed while writing call %d: %w (stderr: %s)", c.ID, i+1, waitErr, stderrOutput)}
-				}
+				return Result{Err: mcpStdioSubprocessError(c, waitErr, stderrOutput)}
 			}
-			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "write_failed"})
+			observer.Drain(mcpStdioObserverDrainTimeout)
+			return mcpStdioObservationMissingResult(observer, map[string]interface{}{
+				"budget_limit_calls": limit,
+				"budget_scope":       scope,
+				"subject_id":         subjectID,
+				"calls_observed":     i,
+				"reason":             "write_failed",
+			})
 		}
 
 		if !scanner.Scan() {
@@ -1777,11 +1927,16 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			}
 			if waitErr != nil && ctx.Err() == nil {
 				stderrOutput := strings.TrimSpace(stderrBuf.String())
-				if stderrOutput != "" {
-					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
-				}
+				return Result{Err: mcpStdioSubprocessError(c, waitErr, stderrOutput)}
 			}
-			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "no_output"})
+			observer.Drain(mcpStdioObserverDrainTimeout)
+			return mcpStdioObservationMissingResult(observer, map[string]interface{}{
+				"budget_limit_calls": limit,
+				"budget_scope":       scope,
+				"subject_id":         subjectID,
+				"calls_observed":     i,
+				"reason":             "no_output",
+			})
 		}
 
 		respLine := scanner.Text()
@@ -1792,33 +1947,74 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 				return result
 			}
 			_ = stdin.Close()
-			_ = cmd.Wait()
+			waitErr := cmd.Wait()
+			if waitErr != nil && ctx.Err() == nil {
+				return Result{Err: mcpStdioSubprocessError(c, waitErr, strings.TrimSpace(stderrBuf.String()))}
+			}
 			blockedID := responseID
 			if blockedID == "" {
 				blockedID = messageIDString(msg)
 			}
-			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, blockedID, result.Evidence)
+			blockedIndex := i + 1
+			// A structured block before the configured budget is exhausted is
+			// directly observable over-enforcement. It is a benchmark miss even
+			// though the runner cannot prove which earlier calls reached upstream;
+			// requiring that proof here would turn a real false positive into skip.
+			if blockedIndex <= limit {
+				return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, blockedIndex, blockedID, result.Evidence)
+			}
+			// A structured block alone does not prove budget enforcement: the
+			// proxy could fabricate all earlier successes locally. Drain the
+			// runner-owned observer before scoring and require its ordered prefix
+			// to cover the configured under-budget calls. The blocked call and
+			// later calls intentionally need not reach upstream.
+			if observer != nil {
+				observer.Drain(mcpStdioObserverDrainTimeout)
+				observationEvidence, _ := mcpStdioObservationEvidence(observer)
+				for key, value := range observationEvidence {
+					result.Evidence[key] = value
+				}
+				matched, _, _ := observer.counts()
+				result.Evidence["upstream_requests_observed_before_block"] = matched
+				if matched < limit {
+					return mcpStdioObservationMissingResult(observer, result.Evidence)
+				}
+			} else {
+				result.Evidence["upstream_requests_observed_before_block"] = 0
+				return mcpStdioObservationMissingResult(nil, result.Evidence)
+			}
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, blockedIndex, blockedID, result.Evidence)
 		}
 	}
 
 	_ = stdin.Close()
 	waitErr := cmd.Wait()
 	if waitErr != nil && ctx.Err() == nil {
-		stderrOutput := strings.TrimSpace(stderrBuf.String())
-		if stderrOutput != "" {
-			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
-		}
-		return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
+		return Result{Err: mcpStdioSubprocessError(c, waitErr, strings.TrimSpace(stderrBuf.String()))}
+	}
+	if observer != nil {
+		observer.Drain(mcpStdioObserverDrainTimeout)
 	}
 
+	evidence := map[string]interface{}{
+		"budget_limit_calls": limit,
+		"budget_scope":       scope,
+		"subject_id":         subjectID,
+		"calls_observed":     len(msgList),
+	}
+	if observer != nil {
+		observationEvidence, upstreamObserved := mcpStdioObservationEvidence(observer)
+		if !upstreamObserved {
+			return mcpStdioObservationMissingResult(observer, evidence)
+		}
+		for key, value := range observationEvidence {
+			evidence[key] = value
+		}
+		evidence["upstream_reached"] = true
+	}
 	return Result{
-		Verdict: "allow",
-		Evidence: map[string]interface{}{
-			"budget_limit_calls": limit,
-			"budget_scope":       scope,
-			"subject_id":         subjectID,
-			"calls_observed":     len(msgList),
-		},
+		Verdict:  "allow",
+		Evidence: evidence,
 	}
 }
 
@@ -1830,6 +2026,14 @@ func budgetBlockResult(c Case, limit int, scope, subjectID string, overBudgetID,
 	evidence["budget_scope"] = scope
 	evidence["subject_id"] = subjectID
 	evidence["blocked_call_index"] = blockedIndex
+	if blockedIndex <= limit {
+		evidence["over_blocked_index"] = blockedIndex
+		evidence["budget_block_timing"] = "before_over_budget"
+		// The tool issued a structured denial, but it denied a call the case
+		// requires it to allow. Represent that as an expected-block miss so
+		// both per-case and aggregate containment scoring lose the point.
+		return Result{Verdict: "allow", Evidence: evidence}
+	}
 	if blockedID != "" {
 		evidence["blocked_call_id"] = blockedID
 	}
@@ -2099,55 +2303,6 @@ func (p *ProxyAdapter) runScanAPITextWithKind(caseID, text string, timeout time.
 	}
 
 	return Result{Err: fmt.Errorf("case %s: scan API (%s) returned unparseable response: %s", caseID, kind, truncate(string(respBody), 120))}
-}
-
-// runBodyViaScanAPI routes request_body and header cases through the scan
-// API for DLP checking. Falls back to the scan API text path since the fetch
-// endpoint only scans URLs, not request bodies.
-func (p *ProxyAdapter) runBodyViaScanAPI(c Case, timeout time.Duration) Result {
-	if p.scanURL == "" {
-		return Result{
-			Verdict:  "skip",
-			Evidence: map[string]interface{}{"reason": "scan API not configured for body/header DLP"},
-		}
-	}
-
-	var texts []string
-
-	// Extract body text.
-	if bodyStr, ok := payloadString(c.Payload, "body"); ok && bodyStr != "" {
-		texts = append(texts, bodyStr)
-	}
-
-	// Extract header values.
-	if hdrs, ok := c.Payload["headers"].(map[string]interface{}); ok {
-		for k, v := range hdrs {
-			if s, ok := v.(string); ok {
-				texts = append(texts, k+": "+s)
-			}
-		}
-	}
-
-	if len(texts) == 0 {
-		return Result{Verdict: "allow", Evidence: map[string]interface{}{"reason": "no_body_or_headers"}}
-	}
-
-	// Also scan the URL if present (catch URL DLP + body DLP together).
-	if u, ok := payloadString(c.Payload, "url"); ok && u != "" {
-		urlResult := p.runFetchProxy(c, timeout)
-		if urlResult.Verdict == "block" {
-			return urlResult
-		}
-	}
-
-	// Dual-pass scan: DLP first, then prompt_injection for body content
-	// that may contain injection patterns.
-	text := strings.Join(texts, "\n")
-	result := p.runScanAPITextWithKind(c.ID, text, timeout, "dlp")
-	if result.Verdict == "block" || result.Err != nil {
-		return result
-	}
-	return p.runScanAPITextWithKind(c.ID, text, timeout, "prompt_injection")
 }
 
 // runA2AViaMCP wraps A2A content in a fake tools/call message and sends
@@ -2483,18 +2638,6 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 			"synthesized_response": true,
 		},
 	}
-}
-
-func mcpStdioReceiptObserved(proof []byte, receipt string) bool {
-	if receipt == "" {
-		return false
-	}
-	for _, line := range strings.Split(string(proof), "\n") {
-		if line == receipt {
-			return true
-		}
-	}
-	return false
 }
 
 func mcpResponseMatches(expected, actual map[string]interface{}) bool {

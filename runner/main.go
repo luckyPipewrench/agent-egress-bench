@@ -22,7 +22,7 @@ func main() {
 	proxyAddr := flag.String("proxy-addr", "", "proxy address for proxy adapter (e.g. 127.0.0.1:18899; avoid 8888, commonly an already-running proxy)")
 	scanAddr := flag.String("scan-addr", "", "scan API address for MCP/A2A cases (defaults to proxy-addr)")
 	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
-	mcpCmd := flag.String("mcp-cmd", "", "MCP proxy command for MCP/A2A/shell cases (e.g. 'pipelock mcp proxy --config bench.yaml -- cat')")
+	mcpCmd := flag.String("mcp-cmd", "", "MCP stdio proxy command for MCP/A2A/shell cases; commands may opt in to AEB_MCP_STDIO_UPSTREAM_ADDR for runner-observed upstream proof")
 	mcpHTTPURL := flag.String("mcp-http-url", "", "MCP HTTP listener URL for mcp_http cases")
 	managedProxyCmd := flag.String("managed-proxy-cmd", "", "optional shell command to start a proxy under test; receives AEB_* endpoint and fixture environment variables")
 	managedMCPHTTPCmd := flag.String("managed-mcp-http-cmd", "", "optional shell command to start an MCP HTTP endpoint under test; receives AEB_* endpoint and fixture environment variables")
@@ -158,15 +158,6 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	case "proxy":
 		if proxyAddr == "" {
 			return fmt.Errorf("--proxy-addr is required when using the proxy adapter")
-		}
-		if mcpCmd != "" && needsMCPMockBackendPreflight(cases, profile) {
-			// MCP tool-poisoning cases inject a mock backend by writing a
-			// temp script and running it with bash. Verify that mechanism only
-			// when an applicable selected case will use it, so a fetch-only or
-			// scan-API-only run does not fail on an irrelevant MCP prerequisite.
-			if preflightErr := adapter.PreflightMockScriptExec(); preflightErr != nil {
-				return fmt.Errorf("mcp mock-backend preflight: %w", preflightErr)
-			}
 		}
 		pa, proxyErr := adapter.NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd)
 		if proxyErr != nil {
@@ -375,51 +366,6 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	}
 
 	return nil
-}
-
-func needsMCPMockBackendPreflight(cases []Case, profile Profile) bool {
-	for _, c := range cases {
-		if _, applicable := checkApplicability(c, profile); !applicable {
-			continue
-		}
-		if c.Transport != "mcp_stdio" && c.Transport != "mcp_http" {
-			continue
-		}
-		if payloadHasServerResponse(c.Payload) {
-			return true
-		}
-	}
-	return false
-}
-
-func payloadHasServerResponse(payload map[string]interface{}) bool {
-	if _, ok := payload["result"]; ok {
-		return true
-	}
-	if _, ok := payload["error"]; ok {
-		return true
-	}
-	rawMsgs, ok := payload["jsonrpc_messages"]
-	if !ok {
-		return false
-	}
-	msgs, ok := rawMsgs.([]interface{})
-	if !ok {
-		return false
-	}
-	for _, raw := range msgs {
-		msg, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if _, ok := msg["result"]; ok {
-			return true
-		}
-		if _, ok := msg["error"]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 // debugPrefix is the marker written at the start of every debug line.

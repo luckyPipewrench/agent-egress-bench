@@ -92,6 +92,42 @@ Available managed-command environment variables:
 | `AEB_DNS_FIXTURE_ADDR` | DNS fixture address |
 | `AEB_MCP_HTTP_FIXTURE_URL` | MCP HTTP upstream fixture URL |
 
+### MCP stdio upstream observation
+
+Some `mcp_stdio` cases need a controlled upstream response, and every MCP
+stdio allow needs independent proof that the request reached upstream. For
+those cases the runner opens a loopback TCP listener that speaks one
+line-delimited JSON-RPC message per line and sets this environment variable on
+the evaluated `--mcp-cmd` process:
+
+| Variable | Meaning |
+| --- | --- |
+| `AEB_MCP_STDIO_UPSTREAM_ADDR` | Host:port of the runner-owned line-delimited JSON-RPC upstream for this case |
+
+This is an explicit, tool-neutral opt-in contract. Configure the evaluated
+tool's own command or configuration to use that address as its MCP stdio
+upstream; for example, a tool with a TCP-upstream option could be launched as
+`my-mcp-proxy --upstream-tcp "$AEB_MCP_STDIO_UPSTREAM_ADDR"`. The runner never
+parses a separator in `--mcp-cmd`, appends a backend command, modifies the
+command string, or passes a proof file descriptor/token to the tool.
+
+The listener records matching JSON-RPC requests itself. An allow is credited
+only when every required request arrives at that listener in order (including
+every call in an under-budget sequence). A block requires a structured,
+verifiable deny signal, such as an MCP JSON-RPC policy error; a bare clean exit
+with no output and no runner-owned upstream observation is unprovable and
+therefore returns adapter verdict `skip`. For client-only cases, a complete
+runner-owned upstream observation can still prove `allow` even when a
+pipelining proxy exits before reading or emitting a response.
+Structured policy denies remain `block` even when they deliberately do not
+reach that listener. A command that completes without either a structured block
+signal or the required observation returns adapter verdict `skip`; for an otherwise-applicable case,
+the Gauntlet runner records that as `actual_verdict: "error"`, `score: "error"`,
+and notes `adapter skip: mcp_stdio_upstream_observation_missing`. A command
+failure is an adapter error, not an observation skip. This means an integration
+must expose a compatible upstream surface to score allow outcomes; it must not
+rely on runner-side command rewriting.
+
 ### Domain blocklist seeding
 
 Cases with `capability_tags: ["domain_blocklist"]` require the runner to configure the tool's blocklist with benchmark-specific test domains before running. The current test domain is:
@@ -173,9 +209,9 @@ For supported HTTP-shaped cases, map observations to verdicts this way:
 |-------------|---------|
 | Request or result withheld | `block` |
 | Explicit policy deny in response | `block` |
-| Process exits with deny semantics | `block` |
-| Structured block signal | `block` |
-| Message forwarded without block signal | `allow` |
+| Structured, verifiable block signal | `block` |
+| Bare clean exit with no structured deny signal or upstream proof | `skip` |
+| Message forwarded without block signal and observed at the runner-owned upstream | `allow` |
 | Transport or runner failure | `error` |
 
 For budget-enforcement MCP sequences, runners should include evidence fields such as `budget_limit_calls`, `blocked_call_id`, `blocked_call_index`, and `over_budget_call_id` when a block is observed. When a budget block is observed, the runner must include `budget_block_timing` (`at_or_after_over_budget` or `before_over_budget`); a budget-block case scores `pass` only when the timing is `at_or_after_over_budget`, so a block that cannot prove it allowed the first `budget_limit_calls` calls does not pass.

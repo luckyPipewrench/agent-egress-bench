@@ -332,7 +332,7 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 		}
 		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway request: %w", caseID, err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, &Result{Err: fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err)}
