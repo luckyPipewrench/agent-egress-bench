@@ -14,8 +14,11 @@ permissions:
   contents: read
 
 jobs:
+  # Do NOT give this job a display `name:`. The check reports under the display
+  # name when one is set, and `validate` is a required status check, so renaming
+  # it leaves the requirement permanently unsatisfied and the pull request
+  # unmergeable.
   validate:
-    name: Preflight
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,6 +32,22 @@ jobs:
 
       - name: Run local preflight gate
         run: make preflight
+
+  # `runner` is a required status check. Keep the job so the requirement stays
+  # satisfiable; the preflight target above already covers these tests, so this
+  # is a narrow re-assertion rather than the primary gate.
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+
+      - name: Run runner tests
+        run: cd runner && go test -race -count=1 ./...
 
   # The shared gate above is the normal push contract. Keep this narrower job
   # solely for the validate module's declared minimum Go compatibility, which
