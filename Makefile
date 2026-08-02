@@ -1,4 +1,10 @@
-.PHONY: stats check-stats
+.PHONY: stats check-stats cases-manifest
+
+# Regenerate cases/MANIFEST.txt after adding or removing a case. The manifest
+# pins the logical corpus so a case cannot leave it without a visible diff;
+# runner/corpus_manifest_test.go asserts the two agree in both directions.
+cases-manifest:
+	cd runner && go test . -run 'TestCorpus' -update-manifest
 
 # Print canonical stats from test cases.
 # Counts are LOGICAL cases: single-file JSON cases plus each multi-file
