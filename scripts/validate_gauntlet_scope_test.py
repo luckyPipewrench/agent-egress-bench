@@ -54,6 +54,7 @@ class ValidateGauntletScopeTest(unittest.TestCase):
             ("case_count", "total"),
             ("case_count", "not_applicable"),
             ("case_count", "not_applicable_reasons"),
+            ("scores", "applicable", "containment"),
             ("scores", "applicable", "false_positive_rate"),
             ("canonical_url",),
         ]
@@ -87,6 +88,20 @@ class ValidateGauntletScopeTest(unittest.TestCase):
         result = self.run_validator(artifact)
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_invalid_containment_values_fail(self):
+        # containment is the published headline; unlike false_positive_rate it is
+        # not nullable. A string, an out-of-range number, or null must all fail
+        # rather than render as a misleading score.
+        for bad in ("100%", 2, -1, None):
+            with self.subTest(value=bad):
+                artifact = complete_artifact()
+                artifact["scores"]["applicable"]["containment"] = bad
+
+                result = self.run_validator(artifact)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("containment", result.stderr)
 
 
 if __name__ == "__main__":

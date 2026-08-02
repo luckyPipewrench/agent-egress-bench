@@ -12,6 +12,7 @@ REQUIRED_SCOPE_PATHS = (
     ("case_count", "total"),
     ("case_count", "not_applicable"),
     ("case_count", "not_applicable_reasons"),
+    ("scores", "applicable", "containment"),
     ("scores", "applicable", "false_positive_rate"),
     ("canonical_url",),
 )
@@ -68,6 +69,16 @@ def validate_scope(document):
             raise ValueError("scores.applicable.false_positive_rate must be a number or null")
         if not math.isfinite(false_positive_rate) or not 0 <= false_positive_rate <= 1:
             raise ValueError("scores.applicable.false_positive_rate must be between 0 and 1")
+
+    # containment is the published headline score in scope-render.js, so it is
+    # required and must be a real fraction. Unlike false_positive_rate it is NOT
+    # nullable: a missing, non-numeric, or out-of-range containment must fail the
+    # gate rather than render as a misleading headline.
+    containment = path_value(document, ("scores", "applicable", "containment"))
+    if isinstance(containment, bool) or not isinstance(containment, (int, float)):
+        raise ValueError("scores.applicable.containment must be a number")
+    if not math.isfinite(containment) or not 0 <= containment <= 1:
+        raise ValueError("scores.applicable.containment must be between 0 and 1")
 
     canonical_url = path_value(document, ("canonical_url",))
     if not isinstance(canonical_url, str) or not canonical_url:
