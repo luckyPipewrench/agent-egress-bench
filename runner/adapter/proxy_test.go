@@ -22,6 +22,232 @@ import (
 	"time"
 )
 
+func TestRunWebSocketFrameViaProxy_Non101UpgradeSkipsNotAllows(t *testing.T) {
+	// A proxy-local 200 to a WebSocket upgrade request proves nothing about
+	// whether the upgrade reached upstream. A non-101 response must fail closed
+	// to skip, never allow.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buf := make([]byte, 4096)
+		_, _ = conn.Read(buf)
+		_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"))
+	}()
+
+	a, err := NewProxyAdapter(ln.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Case{
+		ID:        "ws-non-101-probe",
+		Transport: "websocket_frame",
+		InputType: "url",
+		Payload: map[string]interface{}{
+			"url": "ws://example.com/echo",
+			"frames": []interface{}{
+				map[string]interface{}{"opcode": "text", "payload": "hello"},
+			},
+		},
+	}
+	result := a.runWebSocketFrameViaProxy(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip for non-101 upgrade response", result.Verdict)
+	}
+}
+
+func TestRunWebSocket_LegacyHTTPResponseRequiresFrameProof(t *testing.T) {
+	// The legacy /ws endpoint used to score allow from a local HTTP response.
+	// Now an allow requires a completed WebSocket upgrade and upstream frame echo.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/ws") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("proxy-local OK"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Case{
+		ID:        "ws-legacy-http-allow",
+		Transport: "websocket",
+		InputType: "url",
+		Payload: map[string]interface{}{
+			"url": "ws://example.com/echo",
+		},
+	}
+	result := a.runWebSocket(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; legacy /ws HTTP response must require frame proof", result.Verdict)
+	}
+}
+
+func TestRunMCPStdio_ForgedMatchedResponseSkips(t *testing.T) {
+	// Matching a case-controlled response is not evidence that the injected
+	// upstream received the request: a proxy can synthesize this exact line.
+	dir := t.TempDir()
+
+	fakeProxy := dir + "/fake-mcp-proxy.sh"
+	if err := os.WriteFile(fakeProxy, []byte("#!/bin/sh\n# Simulate a proxy that synthesizes the complete expected response.\nprintf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"read_file\",\"inputSchema\":{}}]}}\\n'\n"), 0o700); err != nil {
+		t.Fatalf("write fake proxy: %v", err)
+	}
+
+	a := &ProxyAdapter{mcpCmd: "sh " + shellQuote(fakeProxy) + " -- placeholder"}
+	c := Case{
+		ID:        "mcp-stdio-synthesized-success-skip",
+		Transport: "mcp_stdio",
+		InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+				map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      1,
+					"result": map[string]interface{}{
+						"tools": []interface{}{
+							map[string]interface{}{"name": "read_file", "inputSchema": map[string]interface{}{}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := a.runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; static response equality is forgeable", result.Verdict)
+	}
+}
+
+func TestRunMCPStdio_ForwardedResponseWithReceiptAllows(t *testing.T) {
+	// The passthrough proxy executes the injected mock backend. Its per-run
+	// receipt is independent of stdout and proves the mock received a request.
+	dir := t.TempDir()
+
+	passthrough := dir + "/passthrough-mcp-proxy.sh"
+	if err := os.WriteFile(passthrough, []byte("#!/bin/sh\n# Discard the '--' separator and exec the injected mock backend.\nshift 1\nexec \"$@\"\n"), 0o700); err != nil {
+		t.Fatalf("write passthrough: %v", err)
+	}
+
+	a := &ProxyAdapter{mcpCmd: "sh " + shellQuote(passthrough) + " -- placeholder"}
+	c := Case{
+		ID:        "mcp-stdio-matched-response-allow",
+		Transport: "mcp_stdio",
+		InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+				map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      1,
+					"result": map[string]interface{}{
+						"tools": []interface{}{
+							map[string]interface{}{"name": "read_file", "inputSchema": map[string]interface{}{}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := a.runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow; upstream receipt must prove reach", result.Verdict)
+	}
+}
+
+func TestRunMCPStdio_UnprovenNonEmptyResponseSkips(t *testing.T) {
+	dir := t.TempDir()
+	fakeProxy := dir + "/fake-mcp-proxy.sh"
+	if err := os.WriteFile(fakeProxy, []byte("#!/bin/sh\nprintf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\\n'\n"), 0o700); err != nil {
+		t.Fatalf("write fake proxy: %v", err)
+	}
+
+	result := (&ProxyAdapter{mcpCmd: "sh " + shellQuote(fakeProxy)}).runMCPStdio(Case{
+		ID: "mcp-stdio-unproven-non-empty-result",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/call", "id": 1},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; a non-empty local result has no upstream proof", result.Verdict)
+	}
+}
+
+func TestVerifyMCPStdioResponses_ExpectedErrorRequiresMatchingError(t *testing.T) {
+	result := verifyMCPStdioResponses("mcp-stdio-error-content", []string{
+		`{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"forged error"}}`,
+	}, []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "error": map[string]interface{}{"code": -1, "message": "upstream error"}},
+	})
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; an arbitrary error must not match an expected error", result.Verdict)
+	}
+}
+
+func TestVerifyMCPStdioResponses_RejectsResultErrorKindMismatch(t *testing.T) {
+	result := verifyMCPStdioResponses("mcp-stdio-kind-mismatch", []string{
+		`{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"error"}}`,
+	}, []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"ok": true}},
+	})
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; result/error kind mismatch must be rejected", result.Verdict)
+	}
+}
+
+func TestRunMCPStdio_ForwardedErrorWithReceiptAllows(t *testing.T) {
+	dir := t.TempDir()
+	passthrough := dir + "/passthrough-mcp-proxy.sh"
+	if err := os.WriteFile(passthrough, []byte("#!/bin/sh\nshift 1\nexec \"$@\"\n"), 0o700); err != nil {
+		t.Fatalf("write passthrough: %v", err)
+	}
+
+	result := (&ProxyAdapter{mcpCmd: "sh " + shellQuote(passthrough) + " -- placeholder"}).runMCPStdio(Case{
+		ID: "mcp-stdio-forwarded-error",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "error": map[string]interface{}{"code": -1, "message": "upstream error"}},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow; forwarded matching error needs the same provenance proof", result.Verdict)
+	}
+}
+
 func TestClassifyResponse(t *testing.T) {
 	tests := []struct {
 		name    string
