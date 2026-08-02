@@ -76,10 +76,7 @@ func loadMultiFileCases(dir string) ([]MultiFileCase, error) {
 		caseYAMLPath := filepath.Join(caseDir, "case.yaml")
 		if _, statErr := os.Stat(caseYAMLPath); statErr != nil {
 			if os.IsNotExist(statErr) {
-				// Subdirectory without case.yaml is ignored, not an error.
-				// The mcp-drift directory has a README.md sibling and may
-				// gain other non-case subdirectories over time.
-				continue
+				return nil, fmt.Errorf("multi-file case directory %s is missing required case.yaml; restore case.yaml or remove the directory, then run 'make cases-manifest'", caseDir)
 			}
 			return nil, fmt.Errorf("stat %s: %w", caseYAMLPath, statErr)
 		}
