@@ -1501,7 +1501,7 @@ func TestRunMCPHTTP_ForwardedListenerAllowsWithUpstreamProof(t *testing.T) {
 }
 
 func TestRunMCPStdioBudgetSequence_BlockAtOverBudgetCall(t *testing.T) {
-	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 4))}
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 4)) + " -- placeholder"}
 	result := a.runMCPStdio(budgetSequenceCase("dow-block", "block"), 5*time.Second)
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
@@ -1518,7 +1518,7 @@ func TestRunMCPStdioBudgetSequence_BlockAtOverBudgetCall(t *testing.T) {
 }
 
 func TestRunMCPStdioBudgetSequence_ProtocolBudgetErrorBlocks(t *testing.T) {
-	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32600, "tool call limit exceeded: 4/3"))}
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32600, "tool call limit exceeded: 4/3")) + " -- placeholder"}
 	result := a.runMCPStdio(budgetSequenceCase("dow-protocol-block", "block"), 5*time.Second)
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
@@ -1585,7 +1585,7 @@ func TestIsBudgetLimitProtocolError_TightBudgetPhrases(t *testing.T) {
 }
 
 func TestRunMCPStdioBudgetSequence_NonBudgetProtocolErrorFails(t *testing.T) {
-	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32601, "method not found"))}
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPProtocolErrorResponder(t, 4, -32601, "method not found")) + " -- placeholder"}
 	result := a.runMCPStdio(budgetSequenceCase("dow-protocol-error", "block"), 5*time.Second)
 	if result.Err == nil {
 		t.Fatalf("expected adapter error, got verdict=%q evidence=%+v", result.Verdict, result.Evidence)
@@ -1596,7 +1596,7 @@ func TestRunMCPStdioBudgetSequence_NonBudgetProtocolErrorFails(t *testing.T) {
 }
 
 func TestRunMCPStdioBudgetSequence_RecordsEarlyBlock(t *testing.T) {
-	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 2))}
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 2)) + " -- placeholder"}
 	result := a.runMCPStdio(budgetSequenceCase("dow-early", "block"), 5*time.Second)
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
@@ -1626,7 +1626,7 @@ func TestBudgetBlockResult_OmitsTimingWhenOverBudgetIndexUnknown(t *testing.T) {
 }
 
 func TestRunMCPStdioBudgetSequence_UnderBudgetAllowed(t *testing.T) {
-	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeBudgetMCPResponder(t, 0))}
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(writeMCPPassthrough(t)) + " -- placeholder"}
 	c := budgetSequenceCase("dow-allow", "allow")
 	delete(c.Payload, "over_budget_call_id")
 	c.Payload["jsonrpc_messages"] = []interface{}{
@@ -1643,6 +1643,52 @@ func TestRunMCPStdioBudgetSequence_UnderBudgetAllowed(t *testing.T) {
 	}
 	if got := result.Evidence["calls_observed"]; got != 3 {
 		t.Fatalf("calls_observed = %v, want 3", got)
+	}
+	if got := result.Evidence["upstream_reached"]; got != true {
+		t.Fatalf("upstream_reached = %v, want true", got)
+	}
+}
+
+func writeMCPPassthrough(t *testing.T) string {
+	t.Helper()
+	script, err := os.CreateTemp(t.TempDir(), "mcp-passthrough-*.sh")
+	if err != nil {
+		t.Fatalf("create passthrough script: %v", err)
+	}
+	_, _ = fmt.Fprint(script, `#!/bin/sh
+# Discard the '--' separator and exec the injected mock backend.
+shift 1
+exec "$@"
+`)
+	if err := script.Close(); err != nil {
+		t.Fatalf("close passthrough script: %v", err)
+	}
+	return script.Name()
+}
+
+func TestRunMCPStdioBudgetSequence_SynthesizedUnderBudgetSkips(t *testing.T) {
+	// A proxy that synthesizes plausible JSON-RPC success responses for every
+	// call should not score allow just because the call count is within budget.
+	// Without upstream proof, an under-budget sequence must fail closed to skip.
+	dir := t.TempDir()
+	fakeProxy := dir + "/fake-budget-proxy.sh"
+	if err := os.WriteFile(fakeProxy, []byte("#!/bin/sh\n# Synthesize a success response for every stdin line without forwarding upstream.\nwhile IFS= read -r line; do\n  printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[]}}\\n'\ndone\n"), 0o700); err != nil {
+		t.Fatalf("write fake proxy: %v", err)
+	}
+
+	a := &ProxyAdapter{mcpCmd: "bash " + shellQuote(fakeProxy) + " -- placeholder"}
+	c := budgetSequenceCase("dow-synthesized-allow", "allow")
+	delete(c.Payload, "over_budget_call_id")
+	c.Payload["jsonrpc_messages"] = []interface{}{
+		budgetToolCall(1, "project-alpha"),
+		budgetToolCall(2, "project-alpha"),
+	}
+	result := a.runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip; synthesized responses without upstream proof must not allow", result.Verdict)
 	}
 }
 

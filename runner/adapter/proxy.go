@@ -1734,11 +1734,60 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 		}
 	}
 
+	// Build the MCP command. A budget sequence has no runner-injected server
+	// responses, so there is no case-controlled stdout to compare against.
+	// Positive proof therefore requires a runner-owned receipt channel: the
+	// mock backend emits a per-run receipt to an inherited pipe on its first
+	// request. A proxy that synthesizes responses cannot produce this receipt,
+	// so an under-budget sequence without it fails closed to skip.
+	receiptBytes := make([]byte, 32)
+	if _, err := rand.Read(receiptBytes); err != nil {
+		return Result{Err: fmt.Errorf("case %s: generate MCP stdio receipt: %w", c.ID, err)}
+	}
+	receipt := base64.RawURLEncoding.EncodeToString(receiptBytes)
+	proofReader, proofWriter, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		return Result{Err: fmt.Errorf("case %s: create MCP stdio receipt pipe: %w", c.ID, pipeErr)}
+	}
+
+	mockScript, scriptErr := os.CreateTemp("", "budget-mock-script-*.sh")
+	if scriptErr != nil {
+		_ = proofReader.Close()
+		_ = proofWriter.Close()
+		return Result{Err: fmt.Errorf("case %s: create temp script: %w", c.ID, scriptErr)}
+	}
+	_, _ = fmt.Fprintf(mockScript, `#!/bin/sh
+_n=0
+while IFS= read -r _input; do
+  _n=$((_n+1))
+  if [ "$_n" -eq 1 ]; then
+    printf '%%s\n' %s >&3
+  fi
+  _id=$(printf '%%s' "$_input" | sed -n 's/.*"id":\s*\([^,}\"]*\).*/\1/p')
+  if [ -z "$_id" ]; then
+    _id=null
+  fi
+  printf '{"jsonrpc":"2.0","id":%%s,"result":{"content":[]}}\n' "$_id"
+done
+`, shellQuote(receipt))
+	_ = mockScript.Close()
+	defer func() { _ = os.Remove(mockScript.Name()) }()
+
+	mcpCmd := p.mcpCmd
+	if idx := strings.Index(mcpCmd, " -- "); idx >= 0 {
+		mcpCmd = mcpCmd[:idx] + " -- bash " + shellQuote(mockScript.Name())
+	} else {
+		_ = proofReader.Close()
+		_ = proofWriter.Close()
+		return Result{Err: fmt.Errorf("case %s: --mcp-cmd missing ' -- ' separator, cannot inject mock backend", c.ID)}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
+	cmd := exec.CommandContext(ctx, "sh", "-c", mcpCmd) //nolint:gosec // command from trusted CLI flag
 	configureMCPCommand(cmd)
+	cmd.ExtraFiles = []*os.File{proofWriter}
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
@@ -1751,8 +1800,11 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 		return Result{Err: fmt.Errorf("case %s: stdout pipe: %w", c.ID, err)}
 	}
 	if startErr := cmd.Start(); startErr != nil {
+		_ = proofReader.Close()
+		_ = proofWriter.Close()
 		return Result{Err: fmt.Errorf("case %s: start MCP cmd: %w", c.ID, startErr)}
 	}
+	_ = proofWriter.Close()
 
 	scanner := bufio.NewScanner(stdout)
 	for i, msg := range msgList {
@@ -1811,6 +1863,22 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 		return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
 	}
 
+	proof, _ := io.ReadAll(proofReader)
+	_ = proofReader.Close()
+	if !mcpStdioReceiptObserved(proof, receipt) {
+		return Result{
+			Verdict: "skip",
+			Evidence: map[string]interface{}{
+				"reason":               "mcp_stdio_upstream_receipt_missing",
+				"synthesized_response": true,
+				"budget_limit_calls":   limit,
+				"budget_scope":         scope,
+				"subject_id":           subjectID,
+				"calls_observed":       len(msgList),
+			},
+		}
+	}
+
 	return Result{
 		Verdict: "allow",
 		Evidence: map[string]interface{}{
@@ -1818,6 +1886,7 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			"budget_scope":       scope,
 			"subject_id":         subjectID,
 			"calls_observed":     len(msgList),
+			"upstream_reached":   true,
 		},
 	}
 }
