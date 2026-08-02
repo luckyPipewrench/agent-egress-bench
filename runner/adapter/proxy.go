@@ -1955,6 +1955,14 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			if blockedID == "" {
 				blockedID = messageIDString(msg)
 			}
+			blockedIndex := i + 1
+			// A structured block before the configured budget is exhausted is
+			// directly observable over-enforcement. It is a benchmark miss even
+			// though the runner cannot prove which earlier calls reached upstream;
+			// requiring that proof here would turn a real false positive into skip.
+			if blockedIndex <= limit {
+				return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, blockedIndex, blockedID, result.Evidence)
+			}
 			// A structured block alone does not prove budget enforcement: the
 			// proxy could fabricate all earlier successes locally. Drain the
 			// runner-owned observer before scoring and require its ordered prefix
@@ -1975,7 +1983,7 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 				result.Evidence["upstream_requests_observed_before_block"] = 0
 				return mcpStdioObservationMissingResult(nil, result.Evidence)
 			}
-			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, blockedID, result.Evidence)
+			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, blockedIndex, blockedID, result.Evidence)
 		}
 	}
 
@@ -2018,6 +2026,14 @@ func budgetBlockResult(c Case, limit int, scope, subjectID string, overBudgetID,
 	evidence["budget_scope"] = scope
 	evidence["subject_id"] = subjectID
 	evidence["blocked_call_index"] = blockedIndex
+	if blockedIndex <= limit {
+		evidence["over_blocked_index"] = blockedIndex
+		evidence["budget_block_timing"] = "before_over_budget"
+		// The tool issued a structured denial, but it denied a call the case
+		// requires it to allow. Represent that as an expected-block miss so
+		// both per-case and aggregate containment scoring lose the point.
+		return Result{Verdict: "allow", Evidence: evidence}
+	}
 	if blockedID != "" {
 		evidence["blocked_call_id"] = blockedID
 	}

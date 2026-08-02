@@ -2023,12 +2023,13 @@ func TestRunMCPStdioBudgetSequence_NonBudgetProtocolErrorFails(t *testing.T) {
 	}
 }
 
-func TestRunMCPStdioBudgetSequence_RecordsEarlyBlockAfterProvenPrefix(t *testing.T) {
-	// An early block is creditable only when the case's configured under-budget
-	// prefix has already reached runner-owned upstream. Use a limit of one so
-	// the second call can be an early policy block with a complete proof prefix.
+func TestRunMCPStdioBudgetSequence_RecordsBlockAfterProvenPrefix(t *testing.T) {
+	// Use a limit of one so the second call is the configured over-budget call
+	// after a complete runner-observed prefix. This also verifies that the
+	// runner need not observe calls after the structured block.
 	c := budgetSequenceCase("dow-early", "block")
 	c.Payload["budget_limit_calls"] = 1
+	c.Payload["over_budget_call_id"] = 2
 	a := &ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-one-then-budget-block")}
 	result := a.runMCPStdio(c, 5*time.Second)
 	if result.Err != nil {
@@ -2040,13 +2041,33 @@ func TestRunMCPStdioBudgetSequence_RecordsEarlyBlockAfterProvenPrefix(t *testing
 	if got := result.Evidence["blocked_call_index"]; got != 2 {
 		t.Fatalf("blocked_call_index = %v, want 2", got)
 	}
-	if got := result.Evidence["budget_block_timing"]; got != "before_over_budget" {
-		t.Fatalf("budget_block_timing = %v, want before_over_budget", got)
+	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_OverBlockScoresMiss(t *testing.T) {
+	// The proxy forwards only call one, then structured-blocks call two even
+	// though this case permits three calls. That is an over-enforcement miss,
+	// not an unscorable missing-proof result.
+	c := budgetSequenceCase("budget-over-block", "block")
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-one-then-budget-block")}).runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow benchmark miss for an under-budget block; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["over_blocked_index"]; got != 2 {
+		t.Fatalf("over_blocked_index = %v, want 2; evidence=%+v", got, result.Evidence)
+	}
+	if got := result.Evidence["budget_limit_calls"]; got != 3 {
+		t.Fatalf("budget_limit_calls = %v, want 3; evidence=%+v", got, result.Evidence)
 	}
 }
 
 func TestBudgetBlockResult_OmitsTimingWhenOverBudgetIndexUnknown(t *testing.T) {
-	result := budgetBlockResult(Case{ID: "unknown-index"}, 3, "per_subject", "project-alpha", 4, -1, 2, "2", nil)
+	result := budgetBlockResult(Case{ID: "unknown-index"}, 3, "per_subject", "project-alpha", 4, -1, 4, "4", nil)
 	if result.Verdict != "block" {
 		t.Fatalf("verdict = %q, want block", result.Verdict)
 	}
