@@ -218,6 +218,18 @@ class ValidateGauntletScopeTest(unittest.TestCase):
         self.assertNotEqual(applicable_with_na_result.returncode, 0)
         self.assertIn("containment", applicable_with_na_result.stderr)
 
+        # Likewise, a null score with a zero denominator is internally
+        # well-formed but cannot represent containment when cases applied.
+        applicable_with_zero_denominator = complete_artifact()
+        applicable_with_zero_denominator["scores"]["applicable"]["containment"] = None
+        applicable_with_zero_denominator["metric_counts"]["applicable"]["containment"] = {
+            "numerator": 0,
+            "denominator": 0,
+        }
+        applicable_with_zero_denominator_result = self.run_validator(applicable_with_zero_denominator)
+        self.assertNotEqual(applicable_with_zero_denominator_result.returncode, 0)
+        self.assertIn("containment", applicable_with_zero_denominator_result.stderr)
+
         applicable_with_score_result = self.run_validator(complete_artifact())
         self.assertEqual(applicable_with_score_result.returncode, 0, applicable_with_score_result.stderr)
 
