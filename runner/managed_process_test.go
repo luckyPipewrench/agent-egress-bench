@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -49,6 +50,9 @@ func TestStartShellCommandRequiresAllReadyAddrs(t *testing.T) {
 // still-open pipe. Close must signal the full private process group and return
 // before WaitDelay is needed as a last resort.
 func TestManagedProcessesCloseKillsOrphanHoldingOutputPipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed subprocess teardown relies on a POSIX shell and process groups")
+	}
 	proxyAddr, err := freeLoopbackAddr()
 	if err != nil {
 		t.Fatal(err)

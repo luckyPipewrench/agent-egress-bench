@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1978,6 +1979,9 @@ func TestRunMCPStdio_StderrSurfacedOnSubprocessFailure(t *testing.T) {
 }
 
 func TestRunMCPStdioTimeoutKillsOrphanHoldingStderrPipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("MCP stdio teardown relies on a POSIX shell and process groups")
+	}
 	script := t.TempDir() + "/orphan-mcp.sh"
 	if err := os.WriteFile(script, []byte("#!/bin/sh\n( while :; do :; done ) 1>&2 &\nwhile :; do :; done\n"), 0o700); err != nil {
 		t.Fatal(err)

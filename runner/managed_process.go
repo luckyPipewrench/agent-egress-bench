@@ -109,8 +109,13 @@ func (m *managedProcesses) Close() {
 	if m.cancel != nil {
 		m.cancel()
 	}
+	// Kill every command first, then wait for each. Killing and waiting in one
+	// loop makes total teardown additive (up to one WaitDelay per command);
+	// killing all up front bounds it to a single WaitDelay regardless of count.
 	for _, cmd := range m.cmds {
 		killManagedCommand(cmd)
+	}
+	for _, cmd := range m.cmds {
 		_ = cmd.Wait()
 	}
 	m.cmds = nil

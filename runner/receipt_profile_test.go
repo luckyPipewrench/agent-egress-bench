@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -544,6 +545,9 @@ func TestBuildReceiptProfile_EvidenceDirUnreadableFailsClosed(t *testing.T) {
 }
 
 func TestRunReceiptVerifierTimeoutKillsOrphanHoldingOutputPipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("verifier teardown relies on a POSIX shell and process groups")
+	}
 	script := filepath.Join(t.TempDir(), "orphan-verifier.sh")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\n( while :; do :; done ) &\nwhile :; do :; done\n"), 0o700); err != nil {
 		t.Fatal(err)
