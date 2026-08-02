@@ -15,9 +15,10 @@ import (
 type MCPHTTPFixture struct {
 	listener net.Listener
 	server   *http.Server
-	calls    atomic.Int64
-	toolsMu  sync.RWMutex
-	tools    []json.RawMessage
+	calls     atomic.Int64
+	toolCalls atomic.Int64
+	toolsMu   sync.RWMutex
+	tools     []json.RawMessage
 }
 
 // Addr returns the listener address (host:port).
@@ -26,8 +27,15 @@ func (f *MCPHTTPFixture) Addr() string { return f.listener.Addr().String() }
 // URL returns the upstream URL.
 func (f *MCPHTTPFixture) URL() string { return "http://" + f.Addr() + "/" }
 
-// Calls returns the number of tools/call requests that reached the upstream.
+// Calls returns the total number of POST requests that reached the upstream.
+// The proxy MCP HTTP proof relies on this total (one increment per sent
+// message), so it must count every request, not only tools/call.
 func (f *MCPHTTPFixture) Calls() int64 { return f.calls.Load() }
+
+// ToolCalls returns the number of tools/call requests that reached the
+// upstream. The gateway adapter proves an allow by this tool-call-specific
+// count so an initialize/tools-list POST cannot inflate the proof.
+func (f *MCPHTTPFixture) ToolCalls() int64 { return f.toolCalls.Load() }
 
 // SetTools configures the tools returned by a later tools/list request.
 func (f *MCPHTTPFixture) SetTools(tools []json.RawMessage) {
@@ -50,6 +58,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		f.calls.Add(1)
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		_ = r.Body.Close()
 		var req struct {
@@ -76,7 +85,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			}
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":%s}}`, id, tools)
 		case "tools/call":
-			f.calls.Add(1)
+			f.toolCalls.Add(1)
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
 		default:
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)

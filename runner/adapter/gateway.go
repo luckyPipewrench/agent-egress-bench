@@ -205,5 +205,5 @@ func (a *MCPGatewayAdapter) upstreamCalls() (int64, bool) {
 	if a.fixtures == nil || a.fixtures.MCPHTTP() == nil {
 		return 0, false
 	}
-	return a.fixtures.MCPHTTP().Calls(), true
+	return a.fixtures.MCPHTTP().ToolCalls(), true
 }
