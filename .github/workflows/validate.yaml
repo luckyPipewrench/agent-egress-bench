@@ -27,6 +27,11 @@ jobs:
       - name: Run validator tests
         run: cd validate && go test -race -count=1 ./...
 
+      # The runner module was built by the gauntlet workflow but never tested by
+      # CI, so its suite (including the corpus manifest pin) could not fail a PR.
+      - name: Run runner tests
+        run: cd runner && go test -race -count=1 ./...
+
       - name: Build validator
         run: cd validate && go build -o /tmp/aeb-validate .
 
