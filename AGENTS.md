@@ -42,7 +42,7 @@ Set those two variables for every Go command; `/tmp` is quota-constrained.
 
 ## Project Structure
 
-```
+```text
 cases/
   url/              URL-based exfiltration (DLP, entropy, encoding evasion, SSRF)
   request-body/     Request body secret exfiltration
@@ -62,7 +62,8 @@ cases/
   crypto-financial/ Wallet addresses, seed phrases, credit cards
   false-positive/   Benign traffic that must not be blocked
 validate/           Go validator (stdlib-only, zero deps)
-runner/             Canonical Gauntlet runner (Go, proxy + fixtures + MCP adapters) — emits profiles/<tool>.json
+runner/             Canonical Gauntlet runner (Go, proxy + fixtures + MCP adapters). Writes per-case
+                    JSONL results to stdout and a Gauntlet summary JSON to --output
 examples/           Per-tool capability profiles, bench configs, and verifier metadata
   pipelock/         Pipelock tool-profile.json + pipelock-benchmark.yaml + receipt-verifier.json (harness.sh is legacy fetch-only)
 docs/               Spec, scoring, Gauntlet methodology, runner contract, OWASP mapping
@@ -71,7 +72,13 @@ scripts/            CI tooling (pr-review.py)
 
 ## Case Format
 
-Every case is a JSON file. Filename (minus `.json`) must match the `id` field exactly. Files live in category-specific directories under `cases/`.
+The corpus holds two fixture shapes, and a logical case is one of either.
+
+**Single-file cases.** One JSON file whose filename (minus `.json`) matches the `id` field exactly, living in a category directory under `cases/`. This is the common shape and the rest of this section describes it.
+
+**Multi-file cases.** One directory per case under `cases/mcp-drift/`, holding `case.yaml` plus the `before.json`, `after.json` and `expected.json` snapshots its `files` block names. The driver replays before and after through a single MCP session and observes the verdict on the second `tools/list` response. A directory under `cases/mcp-drift/` that has no `case.yaml` is a hard error, not a directory to skip, because a partially deleted case would otherwise vanish from the run and lower the denominator of a published score.
+
+`expected_verdict` is `block`, `allow`, or `warn`. The `warn` class is used by drift guardrail cases and exists only in the multi-file shape today.
 
 ### Required Fields
 
@@ -150,7 +157,7 @@ The validator enforces these relationships:
 ### Adding a case
 
 1. Pick category and directory (see table above)
-2. Name: `{category}-{subcategory}-{NNN}.json`, must match `id` field
+2. Name: `{category}-{subcategory}-{NNN}.json`, must match `id` field. For an MCP drift case, create a directory under `cases/mcp-drift/` named for the id, holding `case.yaml` plus the three snapshots it names
 3. Copy an existing case in the same directory as a template
 4. Benign cases (`expected_verdict: allow`) MUST have `"safe_example": true`
 5. Validate: `cd validate && go build -o "$TMPDIR/aeb-validate" . && "$TMPDIR/aeb-validate" ../cases`

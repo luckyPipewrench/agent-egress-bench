@@ -34,6 +34,8 @@ force a tool through the wrong shape just to get a numeric result.
 
 One JSON object per case, written to stdout (one per line, JSONL):
 
+> `--stats` is the one exception to this contract. It reports the loaded corpus rather than running it, so it writes a human-readable Markdown snapshot to stdout and exits without producing JSONL or a summary. It requires `--cases` and ignores the tool-profile and adapter flags. `make stats`, `make stats-update` and `make check-stats` are its only intended callers.
+
 ```json
 {
   "case_id": "url-dlp-aws-key-001",

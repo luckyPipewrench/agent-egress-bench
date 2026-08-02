@@ -48,6 +48,8 @@ Every case is **tool-neutral**: no case is written to favor or penalize a specif
 
 **Severity** (`critical`, `high`, `medium`, `low`) and **false positive risk** (`low`, `medium`, `high`) are informational metadata. They help operators prioritize but do not affect scoring.
 
+A logical case takes one of two fixture shapes. Most are a single JSON file in a category directory. MCP drift cases are a directory under `cases/mcp-drift/` holding `case.yaml` plus before, after and expected snapshots, replayed through one MCP session. Both shapes count as one case, both are pinned by `cases/MANIFEST.txt`, and the counts in [`cases/STATS.md`](../cases/STATS.md) are generated from what the runner loads rather than from a file count.
+
 ## Categories
 
 The corpus categories across the `cases/` directory tree are listed below. Current counts are generated from the runner-loaded corpus in [`cases/STATS.md`](../cases/STATS.md).
