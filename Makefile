@@ -57,9 +57,9 @@ check-stats: check-gauntlet-site
 	fi; \
 	echo "check-stats: OK (cases/STATS.md matches the runner-loaded corpus)"
 
-# Fail closed before a provenance artifact can supply a published score.
-# check-stats is the existing Makefile check called by CI, so this guard runs
-# in that path without changing the current public site or publish workflow.
+# Exercise provenance-artifact validation in the existing check-stats CI path.
+# The fixture is checked against this checkout's cases/MANIFEST.txt and the
+# renderer contract; this target does not invoke or gate a site publish path.
 check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_scope_test.py
 	@node gauntlet-site/scope-render_test.js

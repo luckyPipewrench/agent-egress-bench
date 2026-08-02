@@ -1,22 +1,37 @@
 #!/usr/bin/env python3
-"""Refuse incomplete provenance artifacts before scope-aware publication."""
+"""Validate scope-artifact fields against the checked-out corpus manifest."""
 
+import hashlib
 import json
 import math
+import re
 import sys
 import urllib.parse
 from pathlib import Path
 
 
 REQUIRED_SCOPE_PATHS = (
+    ("artifact_id",),
+    ("corpus_manifest_sha256",),
+    ("logical_case_count",),
+    ("runner_version",),
+    ("scoring_version",),
     ("case_count", "applicable"),
     ("case_count", "total"),
     ("case_count", "not_applicable"),
     ("case_count", "not_applicable_reasons"),
     ("scores", "applicable", "containment"),
     ("scores", "applicable", "false_positive_rate"),
+    ("metric_counts", "applicable", "containment", "numerator"),
+    ("metric_counts", "applicable", "containment", "denominator"),
+    ("metric_counts", "applicable", "false_positive_rate", "numerator"),
+    ("metric_counts", "applicable", "false_positive_rate", "denominator"),
     ("canonical_url",),
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = REPO_ROOT / "cases" / "MANIFEST.txt"
+SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 
 
 def path_value(document, path):
@@ -47,6 +62,50 @@ def finite_fraction(document, path, allow_null=False):
     return value
 
 
+def non_empty_string(document, path):
+    value = path_value(document, path)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("scope field must be a non-empty string: " + ".".join(path))
+    return value
+
+
+def checked_out_corpus_identity():
+    """Return the manifest identity asserted by runner/corpus_manifest_test.go."""
+    try:
+        raw = MANIFEST_PATH.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"read corpus manifest {MANIFEST_PATH}: {exc}") from exc
+
+    # The runner test treats non-empty IDs as a set when comparing the manifest
+    # to loadable cases. It separately rejects duplicate IDs, so this is the
+    # same logical count once the runner's corpus pin is green.
+    logical_ids = {line.strip() for line in raw.decode("utf-8").splitlines() if line.strip()}
+    if not logical_ids:
+        raise ValueError("checked-out corpus manifest has no logical case IDs")
+    return hashlib.sha256(raw).hexdigest(), len(logical_ids)
+
+
+def validate_metric_fraction(document, metric):
+    """Bind an applicable-view score to its explicit numerator/denominator."""
+    score_path = ("scores", "applicable", metric)
+    count_path = ("metric_counts", "applicable", metric)
+    numerator = non_negative_integer(document, count_path + ("numerator",))
+    denominator = non_negative_integer(document, count_path + ("denominator",))
+    if numerator > denominator:
+        raise ValueError("metric numerator cannot exceed denominator: " + ".".join(count_path))
+
+    score = finite_fraction(document, score_path, allow_null=True)
+    if denominator == 0:
+        if score is not None:
+            raise ValueError("score must be null when metric denominator is zero: " + ".".join(score_path))
+        return numerator, denominator
+    if score is None:
+        raise ValueError("score must be a number when metric denominator is non-zero: " + ".".join(score_path))
+    if score != numerator / denominator:
+        raise ValueError("score must equal metric numerator/denominator: " + ".".join(score_path))
+    return numerator, denominator
+
+
 def validate_scope(document):
     """Raise ValueError unless an artifact can render an honest scope block."""
     if not isinstance(document, dict):
@@ -55,11 +114,27 @@ def validate_scope(document):
     for path in REQUIRED_SCOPE_PATHS:
         path_value(document, path)
 
+    non_empty_string(document, ("artifact_id",))
+    non_empty_string(document, ("runner_version",))
+    non_empty_string(document, ("scoring_version",))
+
+    manifest_digest = non_empty_string(document, ("corpus_manifest_sha256",))
+    if not SHA256_HEX.fullmatch(manifest_digest):
+        raise ValueError("corpus_manifest_sha256 must be 64 lower-case hex characters")
+    manifest_count = non_negative_integer(document, ("logical_case_count",))
+    checked_out_digest, checked_out_count = checked_out_corpus_identity()
+    if manifest_digest != checked_out_digest:
+        raise ValueError("corpus_manifest_sha256 does not match checked-out cases/MANIFEST.txt")
+    if manifest_count != checked_out_count:
+        raise ValueError("logical_case_count does not match checked-out cases/MANIFEST.txt")
+
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
     not_applicable = non_negative_integer(document, ("case_count", "not_applicable"))
     if total == 0:
         raise ValueError("case_count.total must be greater than zero")
+    if total != checked_out_count:
+        raise ValueError("case_count.total does not match checked-out logical corpus count")
     if applicable > total:
         raise ValueError("case_count.applicable cannot exceed case_count.total")
     if applicable + not_applicable != total:
@@ -78,17 +153,22 @@ def validate_scope(document):
     if reason_total != not_applicable:
         raise ValueError("not_applicable_reasons must sum to case_count.not_applicable")
 
-    finite_fraction(document, ("scores", "applicable", "false_positive_rate"), allow_null=True)
-
     # Containment has no denominator when every case is N/A. In exactly that
     # state it must be null rather than a made-up score; otherwise it must be a
     # finite fraction because scope-render.js publishes it as the headline.
     containment = path_value(document, ("scores", "applicable", "containment"))
+    _, containment_denominator = validate_metric_fraction(document, "containment")
+    _, false_positive_denominator = validate_metric_fraction(document, "false_positive_rate")
+    if containment_denominator > applicable or false_positive_denominator > applicable:
+        raise ValueError("metric denominator cannot exceed case_count.applicable")
     if applicable == 0:
-        if containment is not None:
+        if containment is not None or containment_denominator != 0:
             raise ValueError("scores.applicable.containment must be null when case_count.applicable is zero")
     else:
-        finite_fraction(document, ("scores", "applicable", "containment"))
+        if containment_denominator == 0:
+            raise ValueError("containment must have a denominator when case_count.applicable is non-zero")
+    if applicable == 0 and false_positive_denominator != 0:
+        raise ValueError("false_positive_rate must have a zero denominator when case_count.applicable is zero")
 
     canonical_url = path_value(document, ("canonical_url",))
     if not isinstance(canonical_url, str) or not canonical_url:

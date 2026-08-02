@@ -45,6 +45,45 @@
     return value;
   }
 
+  function nonEmptyString(value, path) {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error('scope field must be a non-empty string: ' + path);
+    }
+    return value;
+  }
+
+  function validateManifestDigest(value) {
+    nonEmptyString(value, 'corpus_manifest_sha256');
+    if (!/^[0-9a-f]{64}$/.test(value)) {
+      throw new Error('corpus_manifest_sha256 must be 64 lower-case hex characters');
+    }
+    return value;
+  }
+
+  function validateMetricFraction(artifact, metric) {
+    var scorePath = 'scores.applicable.' + metric;
+    var countPath = 'metric_counts.applicable.' + metric;
+    var numerator = nonNegativeInteger(scopeValue(artifact,
+      ['metric_counts', 'applicable', metric, 'numerator']), countPath + '.numerator');
+    var denominator = nonNegativeInteger(scopeValue(artifact,
+      ['metric_counts', 'applicable', metric, 'denominator']), countPath + '.denominator');
+    if (numerator > denominator) {
+      throw new Error('metric numerator cannot exceed denominator: ' + countPath);
+    }
+
+    var score = finiteFraction(scopeValue(artifact, ['scores', 'applicable', metric]), scorePath, true);
+    if (denominator === 0) {
+      if (score !== null) {
+        throw new Error('score must be null when metric denominator is zero: ' + scorePath);
+      }
+    } else if (score === null) {
+      throw new Error('score must be a number when metric denominator is non-zero: ' + scorePath);
+    } else if (score !== numerator / denominator) {
+      throw new Error('score must equal metric numerator/denominator: ' + scorePath);
+    }
+    return { numerator: numerator, denominator: denominator };
+  }
+
   function validateCanonicalURL(canonicalURL) {
     if (typeof canonicalURL !== 'string' || !/^https:\/\//i.test(canonicalURL)) {
       throw new Error('canonical_url must be an absolute https URL');
@@ -65,10 +104,20 @@
       throw new Error('artifact must be an object');
     }
 
+    nonEmptyString(scopeValue(artifact, ['artifact_id']), 'artifact_id');
+    validateManifestDigest(scopeValue(artifact, ['corpus_manifest_sha256']));
+    var logicalCaseCount = nonNegativeInteger(scopeValue(artifact, ['logical_case_count']), 'logical_case_count');
+    if (logicalCaseCount === 0) throw new Error('logical_case_count must be greater than zero');
+    nonEmptyString(scopeValue(artifact, ['runner_version']), 'runner_version');
+    nonEmptyString(scopeValue(artifact, ['scoring_version']), 'scoring_version');
+
     var applicable = nonNegativeInteger(scopeValue(artifact, ['case_count', 'applicable']), 'case_count.applicable');
     var total = nonNegativeInteger(scopeValue(artifact, ['case_count', 'total']), 'case_count.total');
     var notApplicable = nonNegativeInteger(scopeValue(artifact, ['case_count', 'not_applicable']), 'case_count.not_applicable');
     if (total === 0) throw new Error('case_count.total must be greater than zero');
+    if (total !== logicalCaseCount) {
+      throw new Error('case_count.total must equal logical_case_count');
+    }
     if (applicable > total) throw new Error('case_count.applicable cannot exceed case_count.total');
     if (applicable + notApplicable !== total) {
       throw new Error('case_count.applicable plus not_applicable must equal case_count.total');
@@ -88,15 +137,23 @@
     }
 
     var containment = scopeValue(artifact, ['scores', 'applicable', 'containment']);
+    var containmentCounts = validateMetricFraction(artifact, 'containment');
+    var falsePositiveCounts = validateMetricFraction(artifact, 'false_positive_rate');
+    if (containmentCounts.denominator > applicable || falsePositiveCounts.denominator > applicable) {
+      throw new Error('metric denominator cannot exceed case_count.applicable');
+    }
     if (applicable === 0) {
-      if (containment !== null) {
+      if (containment !== null || containmentCounts.denominator !== 0) {
         throw new Error('scores.applicable.containment must be null when case_count.applicable is zero');
       }
     } else {
-      finiteFraction(containment, 'scores.applicable.containment', false);
+      if (containmentCounts.denominator === 0) {
+        throw new Error('containment must have a denominator when case_count.applicable is non-zero');
+      }
     }
-    finiteFraction(scopeValue(artifact, ['scores', 'applicable', 'false_positive_rate']),
-      'scores.applicable.false_positive_rate', true);
+    if (applicable === 0 && falsePositiveCounts.denominator !== 0) {
+      throw new Error('false_positive_rate must have a zero denominator when case_count.applicable is zero');
+    }
 
     return {
       applicable: applicable,

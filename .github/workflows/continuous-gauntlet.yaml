@@ -203,6 +203,7 @@ jobs:
           {
             echo "ARTIFACT_DIR=$artifact_dir"
             echo "SUMMARY_PATH=$summary_path"
+            echo "RESULTS_PATH=$jsonl_path"
             echo "COMMAND_PATH=$command_path"
             echo "STATS_PATH=$stats_path"
           } >> "$GITHUB_ENV"
@@ -213,6 +214,7 @@ jobs:
           set -euo pipefail
 
           python3 - <<'PY'
+          import hashlib
           import json
           import os
 
@@ -301,6 +303,59 @@ jobs:
           with open(os.environ["STATS_PATH"], encoding="utf-8") as fh:
               make_stats = fh.read()
 
+          manifest_path = "cases/MANIFEST.txt"
+          with open(manifest_path, "rb") as fh:
+              manifest = fh.read()
+          manifest_ids = {line.strip() for line in manifest.decode("utf-8").splitlines() if line.strip()}
+          if not manifest_ids:
+              raise SystemExit("refusing provenance artifact: cases/MANIFEST.txt has no logical case IDs")
+          manifest_sha256 = hashlib.sha256(manifest).hexdigest()
+          logical_case_count = len(manifest_ids)
+
+          results = []
+          with open(os.environ["RESULTS_PATH"], encoding="utf-8") as fh:
+              for line_number, line in enumerate(fh, 1):
+                  if not line.strip():
+                      continue
+                  try:
+                      results.append(json.loads(line))
+                  except json.JSONDecodeError as exc:
+                      raise SystemExit(f"invalid runner JSONL at line {line_number}: {exc}") from exc
+
+          def metric_counts(expected_verdict, actual_verdict):
+              denominator = sum(row.get("expected_verdict") == expected_verdict for row in results)
+              numerator = sum(
+                  row.get("expected_verdict") == expected_verdict and row.get("actual_verdict") == actual_verdict
+                  for row in results
+              )
+              return {"numerator": numerator, "denominator": denominator}
+
+          applicable_metrics = {
+              "containment": metric_counts("block", "block"),
+              "false_positive_rate": metric_counts("allow", "block"),
+          }
+          if summary["case_count"]["total"] != logical_case_count:
+              raise SystemExit(
+                  "runner summary total does not match the pinned manifest: "
+                  f"{summary['case_count']['total']} != {logical_case_count}"
+              )
+          if summary["case_count"]["applicable"] != len(results):
+              raise SystemExit(
+                  "runner summary applicable count does not match runner JSONL: "
+                  f"{summary['case_count']['applicable']} != {len(results)}"
+              )
+          for metric, counts in applicable_metrics.items():
+              expected_score = (
+                  counts["numerator"] / counts["denominator"]
+                  if counts["denominator"] else None
+              )
+              actual_score = summary["scores"]["applicable"].get(metric)
+              if actual_score != expected_score:
+                  raise SystemExit(
+                      f"runner summary scores.applicable.{metric} does not match runner JSONL: "
+                      f"{actual_score!r} != {expected_score!r}"
+                  )
+
           repo = os.environ["GITHUB_REPOSITORY"]
           run_id = os.environ["GITHUB_RUN_ID"]
           corpus_sha = os.environ["CORPUS_GIT_SHA"]
@@ -308,6 +363,7 @@ jobs:
 
           artifact = {
               "schema_version": 1,
+              "artifact_id": f"github-actions:{repo}:{run_id}",
               "generated_at": os.environ["GENERATED_AT"],
               "canonical_url": f"https://github.com/{repo}/actions/runs/{run_id}",
               "corpus_ref_kind": os.environ["CORPUS_REF_KIND"],
@@ -325,6 +381,8 @@ jobs:
               "tool_version": summary["tool_version"],
               "corpus_version": summary["corpus_version"],
               "corpus_sha256": summary["corpus_sha256"],
+              "corpus_manifest_sha256": manifest_sha256,
+              "logical_case_count": logical_case_count,
               "tool_profile_sha256": summary["tool_profile_sha256"],
               "case_count": {
                   "total": summary["case_count"]["total"],
@@ -334,6 +392,7 @@ jobs:
                   "errors": summary["case_count"]["errors"],
               },
               "scores": summary["scores"],
+              "metric_counts": {"applicable": applicable_metrics},
               "sufficient": summary["sufficient"],
               "fixtures": True,
               "multifile_cases": True,

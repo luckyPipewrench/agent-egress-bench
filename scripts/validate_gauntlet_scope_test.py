@@ -2,6 +2,7 @@
 """Tests for the fail-safe provenance scope validator."""
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -11,14 +12,28 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = REPO_ROOT / "scripts" / "validate_gauntlet_scope.py"
+MANIFEST = REPO_ROOT / "cases" / "MANIFEST.txt"
+
+
+def corpus_manifest_sha256():
+    return hashlib.sha256(MANIFEST.read_bytes()).hexdigest()
+
+
+def logical_case_count():
+    return len({line.strip() for line in MANIFEST.read_text(encoding="utf-8").splitlines() if line.strip()})
 
 
 def complete_artifact():
     return {
         "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
+        "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
+        "corpus_manifest_sha256": corpus_manifest_sha256(),
+        "logical_case_count": logical_case_count(),
+        "runner_version": "0.4.0",
+        "scoring_version": "2.2",
         "case_count": {
-            "total": 197,
-            "applicable": 196,
+            "total": logical_case_count(),
+            "applicable": logical_case_count() - 1,
             "not_applicable": 1,
             "not_applicable_reasons": {"missing_requires": 1},
         },
@@ -28,18 +43,27 @@ def complete_artifact():
                 "false_positive_rate": 0.0,
             },
         },
+        "metric_counts": {
+            "applicable": {
+                "containment": {"numerator": 1, "denominator": 1},
+                "false_positive_rate": {"numerator": 0, "denominator": 1},
+            },
+        },
     }
 
 
 def all_na_artifact():
     artifact = complete_artifact()
     artifact["case_count"] = {
-        "total": 197,
+        "total": logical_case_count(),
         "applicable": 0,
-        "not_applicable": 197,
-        "not_applicable_reasons": {"missing_requires": 197},
+        "not_applicable": logical_case_count(),
+        "not_applicable_reasons": {"missing_requires": logical_case_count()},
     }
     artifact["scores"]["applicable"]["containment"] = None
+    artifact["scores"]["applicable"]["false_positive_rate"] = None
+    artifact["metric_counts"]["applicable"]["containment"] = {"numerator": 0, "denominator": 0}
+    artifact["metric_counts"]["applicable"]["false_positive_rate"] = {"numerator": 0, "denominator": 0}
     return artifact
 
 
@@ -69,6 +93,15 @@ class ValidateGauntletScopeTest(unittest.TestCase):
             ("scores", "applicable", "containment"),
             ("scores", "applicable", "false_positive_rate"),
             ("canonical_url",),
+            ("artifact_id",),
+            ("corpus_manifest_sha256",),
+            ("logical_case_count",),
+            ("runner_version",),
+            ("scoring_version",),
+            ("metric_counts", "applicable", "containment", "numerator"),
+            ("metric_counts", "applicable", "containment", "denominator"),
+            ("metric_counts", "applicable", "false_positive_rate", "numerator"),
+            ("metric_counts", "applicable", "false_positive_rate", "denominator"),
         ]
 
         for path in required_paths:
@@ -84,6 +117,70 @@ class ValidateGauntletScopeTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(".".join(path), result.stderr)
 
+    def test_missing_corpus_digest_fails(self):
+        artifact = complete_artifact()
+        del artifact["corpus_manifest_sha256"]
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("corpus_manifest_sha256", result.stderr)
+
+    def test_corpus_digest_must_match_checked_out_manifest(self):
+        artifact = complete_artifact()
+        artifact["corpus_manifest_sha256"] = "0" * 64
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("corpus_manifest_sha256", result.stderr)
+
+    def test_logical_case_count_must_match_checked_out_manifest(self):
+        artifact = complete_artifact()
+        artifact["logical_case_count"] -= 1
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("logical_case_count", result.stderr)
+
+    def test_case_count_total_must_match_checked_out_manifest(self):
+        artifact = complete_artifact()
+        artifact["case_count"] = {
+            "total": logical_case_count() - 1,
+            "applicable": logical_case_count() - 2,
+            "not_applicable": 1,
+            "not_applicable_reasons": {"missing_requires": 1},
+        }
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("case_count.total", result.stderr)
+
+    def test_score_must_equal_metric_numerator_over_denominator(self):
+        for metric in ("containment", "false_positive_rate"):
+            with self.subTest(metric=metric):
+                artifact = complete_artifact()
+                artifact["scores"]["applicable"][metric] = 0.5
+
+                result = self.run_validator(artifact)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(metric, result.stderr)
+
+    def test_metric_denominator_cannot_exceed_applicable_cases(self):
+        artifact = complete_artifact()
+        artifact["metric_counts"]["applicable"]["containment"] = {
+            "numerator": logical_case_count(),
+            "denominator": logical_case_count(),
+        }
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("metric denominator", result.stderr)
+
     def test_inconsistent_na_breakdown_fails(self):
         artifact = complete_artifact()
         artifact["case_count"]["not_applicable_reasons"] = {"missing_requires": 0}
@@ -96,6 +193,10 @@ class ValidateGauntletScopeTest(unittest.TestCase):
     def test_null_false_positive_rate_passes_as_na(self):
         artifact = complete_artifact()
         artifact["scores"]["applicable"]["false_positive_rate"] = None
+        artifact["metric_counts"]["applicable"]["false_positive_rate"] = {
+            "numerator": 0,
+            "denominator": 0,
+        }
 
         result = self.run_validator(artifact)
 
