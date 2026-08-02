@@ -1,5 +1,9 @@
 .PHONY: stats stats-update check-stats cases-manifest check-gauntlet-site
 
+# Default fixture for local validator/renderer contract tests. A workflow that
+# generates a real artifact must override this with that exact output path.
+GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.json
+
 # Regenerate cases/MANIFEST.txt after adding or removing a case. The manifest
 # pins the logical corpus so a case cannot leave it without a visible diff;
 # runner/corpus_manifest_test.go asserts the two agree in both directions.
@@ -57,10 +61,11 @@ check-stats: check-gauntlet-site
 	fi; \
 	echo "check-stats: OK (cases/STATS.md matches the runner-loaded corpus)"
 
-# Exercise provenance-artifact validation in the existing check-stats CI path.
-# The fixture is checked against this checkout's cases/MANIFEST.txt and the
-# renderer contract; this target does not invoke or gate a site publish path.
+# Exercise provenance-artifact validation and the renderer contract. The
+# fixture is the local-test default; callers can and must pass the generated
+# artifact path when validating an actual scoring run.
 check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_scope_test.py
 	@node gauntlet-site/scope-render_test.js
-	@python3 scripts/validate_gauntlet_scope.py gauntlet-site/testdata/complete-provenance-artifact.json
+	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }
+	@python3 scripts/validate_gauntlet_scope.py "$(GAUNTLET_SCOPE_ARTIFACT)"
