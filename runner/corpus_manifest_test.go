@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -22,8 +21,8 @@ const manifestPath = "../cases/MANIFEST.txt"
 // and passed: loadCases only errors when the corpus is EMPTY, and the published
 // score is a percentage over whatever was discovered, so a corpus that shrinks
 // produces a clean-looking number over a smaller denominator with nothing
-// reporting the loss. loadMultiFileCases makes that easier still, because a
-// case directory that loses its case.yaml is skipped rather than failed.
+// reporting the loss. The multi-file loader also rejects a case directory
+// missing case.yaml rather than silently skipping it.
 //
 // Removing a case stays possible. It now costs a visible diff in
 // cases/MANIFEST.txt instead of silence.
@@ -121,31 +120,13 @@ func firstDuplicateID(ids []string) (string, bool) {
 // runner uses so the manifest reflects what would actually execute. Single-file
 // JSON cases and multi-file case directories are both included.
 func corpusCaseIDs() ([]string, error) {
-	root := filepath.Join("..", "cases")
-	cases, err := loadCases(root)
+	cases, err := loadCorpus("../cases")
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]string, 0, len(cases))
 	for _, c := range cases {
 		ids = append(ids, c.ID)
-	}
-
-	for name := range multiFileCaseCategories {
-		dir := filepath.Join(root, name)
-		if _, statErr := os.Stat(dir); statErr != nil {
-			if os.IsNotExist(statErr) {
-				continue
-			}
-			return nil, statErr
-		}
-		mfCases, mfErr := loadMultiFileCases(dir)
-		if mfErr != nil {
-			return nil, mfErr
-		}
-		for _, mfc := range mfCases {
-			ids = append(ids, mfc.ID)
-		}
 	}
 
 	sort.Strings(ids)

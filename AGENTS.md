@@ -154,7 +154,7 @@ The validator enforces these relationships:
 3. Copy an existing case in the same directory as a template
 4. Benign cases (`expected_verdict: allow`) MUST have `"safe_example": true`
 5. Validate: `cd validate && go build -o "$TMPDIR/aeb-validate" . && "$TMPDIR/aeb-validate" ../cases`
-6. After adding or removing a logical case, run `make cases-manifest`. It uses the runner loaders to regenerate the committed `cases/MANIFEST.txt`; `runner/corpus_manifest_test.go` compares that ID list with what the loaders execute in both directions. Regeneration should be reviewed as part of the corpus change.
+6. After adding or removing a logical case, run `make cases-manifest` and `make stats-update`. The first uses the runner loaders to regenerate the committed `cases/MANIFEST.txt`; `runner/corpus_manifest_test.go` compares that ID list with what the loaders execute in both directions. The second refreshes `cases/STATS.md` from the same loaded corpus. Review both generated files as part of the corpus change.
 
 ### Adding a validator rule
 
