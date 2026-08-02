@@ -52,6 +52,10 @@ func TestCorpusMatchesManifest(t *testing.T) {
 	want := map[string]bool{}
 	for _, line := range strings.Split(string(raw), "\n") {
 		if id := strings.TrimSpace(line); id != "" {
+			if want[id] {
+				t.Errorf("case manifest %s lists case %q more than once", manifestPath, id)
+				continue
+			}
 			want[id] = true
 		}
 	}
