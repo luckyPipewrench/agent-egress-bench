@@ -183,8 +183,8 @@ Output must follow `docs/RUNNER.md` (JSONL, one object per case).
 
 Cases contain intentionally fake secrets. GitHub Push Protection flags patterns like `AKIA`, `ghp_`, `xoxb-`, `sk-live_`.
 
-- Use obviously synthetic values: `AKIAIOSFODNN7EXAMPLE`
-- Split at pattern boundary if push is blocked: `"AKIA" + "IOSFODNN7EXAMPLE"` in code
+- Use obviously synthetic values: the AWS documentation example key, `"AKIA" + "IOSFODNN7EXAMPLE"`
+- Split at the pattern boundary if a push or scan is blocked, as that example is written here. This guide is itself scanned, so writing the key whole would fail the repository's own secret scan
 - The `SG.FAKE_TEST_KEY` pattern works for SendGrid-style tokens
 - Never use real secrets, even expired ones
 
