@@ -36,6 +36,15 @@ Available managed-command environment variables:
 | `AEB_WS_FIXTURE_ADDR` | WebSocket fixture address |
 | `AEB_DNS_FIXTURE_ADDR` | DNS fixture address |
 | `AEB_MCP_HTTP_FIXTURE_URL` | MCP HTTP upstream fixture URL |
+| `AEB_MCP_STDIO_UPSTREAM_ADDR` | Runner-owned line-delimited JSON-RPC TCP upstream for MCP stdio cases |
+
+For MCP stdio, Pipelock passes the observer address to its backend explicitly
+with `--env AEB_MCP_STDIO_UPSTREAM_ADDR`: Pipelock otherwise sanitizes the
+child environment. The checked-in bridge connects its stdin/stdout to that
+address without parsing the JSON-RPC stream. It prefers `socat`, then falls
+back to `ncat` or `nc`; a machine running this example needs one of those
+programs. The continuous Gauntlet verifies that one is available before it
+runs.
 
 Example shape:
 
@@ -46,7 +55,7 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
 /tmp/aeb-gauntlet \
   --adapter proxy \
   --scan-token bench-test-token \
-  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" -- cat" \
+  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh" \
   --managed-proxy-cmd './examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"' \
   --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
   --cases ./cases \

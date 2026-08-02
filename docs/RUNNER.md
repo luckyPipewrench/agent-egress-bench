@@ -105,11 +105,21 @@ the evaluated `--mcp-cmd` process:
 | `AEB_MCP_STDIO_UPSTREAM_ADDR` | Host:port of the runner-owned line-delimited JSON-RPC upstream for this case |
 
 This is an explicit, tool-neutral opt-in contract. Configure the evaluated
-tool's own command or configuration to use that address as its MCP stdio
+tool's own command or configuration to make that address its MCP stdio
 upstream; for example, a tool with a TCP-upstream option could be launched as
-`my-mcp-proxy --upstream-tcp "$AEB_MCP_STDIO_UPSTREAM_ADDR"`. The runner never
-parses a separator in `--mcp-cmd`, appends a backend command, modifies the
-command string, or passes a proof file descriptor/token to the tool.
+`my-mcp-proxy --upstream-tcp "$AEB_MCP_STDIO_UPSTREAM_ADDR"`. A stdio-only
+backend can satisfy the same contract with a transparent stdio-to-TCP bridge;
+the bridge must pass the line-delimited JSON-RPC stream in both directions, not
+merely consume its input. The runner never parses a separator in `--mcp-cmd`,
+appends a backend command, modifies the command string, or passes a proof file
+descriptor/token to the tool.
+
+This runner-owned observation is a **versioned runner-contract change**. To
+have MCP stdio cases scored, an evaluated tool must route its MCP stdio
+upstream to `$AEB_MCP_STDIO_UPSTREAM_ADDR`, either natively or through the
+documented stdio-to-TCP bridge (or any equivalent forwarding proxy). A tool
+that does not satisfy the contract receives adapter verdict `skip` because its
+allow outcome is unprovable; it is never credited as a silent false allow.
 
 The listener records matching JSON-RPC requests itself. An allow is credited
 only when every required request arrives at that listener in order (including
@@ -266,7 +276,7 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
 /tmp/aeb-gauntlet \
   --adapter proxy \
   --scan-token bench-test-token \
-  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" -- cat" \
+  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh" \
   --managed-proxy-cmd './examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"' \
   --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
   --fixtures \
