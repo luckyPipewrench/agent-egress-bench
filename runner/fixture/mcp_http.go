@@ -1,6 +1,7 @@
 package fixture
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,12 +19,13 @@ type MCPHTTPFixture struct {
 	calls     atomic.Int64
 	toolCalls atomic.Int64
 	listCalls atomic.Int64
-	// toolDefinitionMu leases the fixture-wide tools/list inventory to one
+	// toolDefinitionLease leases the fixture-wide tools/list inventory to one
 	// adapter run. The fixture is shared by all adapters in a gauntlet run, so
 	// SetTools alone cannot keep simultaneous tool-definition cases isolated.
-	toolDefinitionMu sync.Mutex
-	toolsMu          sync.RWMutex
-	tools            []json.RawMessage
+	// A channel permits acquisition to honor each case's deadline.
+	toolDefinitionLease chan struct{}
+	toolsMu             sync.RWMutex
+	tools               []json.RawMessage
 }
 
 // Addr returns the listener address (host:port).
@@ -55,15 +57,30 @@ func (f *MCPHTTPFixture) SetTools(tools []json.RawMessage) {
 }
 
 // AcquireToolDefinitionLease installs a case's tools/list inventory and
-// exclusively leases it until the returned release function is called. Release
+// exclusively leases it until the returned release function is called. It
+// returns promptly when ctx expires while another case owns the lease. Release
 // resets the inventory so a completed case cannot influence a later one.
-func (f *MCPHTTPFixture) AcquireToolDefinitionLease(tools []json.RawMessage) func() {
-	f.toolDefinitionMu.Lock()
-	f.SetTools(tools)
-	return func() {
-		f.SetTools(nil)
-		f.toolDefinitionMu.Unlock()
+func (f *MCPHTTPFixture) AcquireToolDefinitionLease(ctx context.Context, tools []json.RawMessage) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-f.toolDefinitionLease:
+	}
+	if err := ctx.Err(); err != nil {
+		f.toolDefinitionLease <- struct{}{}
+		return nil, err
+	}
+	f.SetTools(tools)
+	var released sync.Once
+	return func() {
+		released.Do(func() {
+			f.SetTools(nil)
+			f.toolDefinitionLease <- struct{}{}
+		})
+	}, nil
 }
 
 // StartMCPHTTP creates and starts a minimal MCP HTTP upstream on a random port.
@@ -73,7 +90,11 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
 
-	f := &MCPHTTPFixture{listener: ln}
+	f := &MCPHTTPFixture{
+		listener:            ln,
+		toolDefinitionLease: make(chan struct{}, 1),
+	}
+	f.toolDefinitionLease <- struct{}{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

@@ -264,6 +264,93 @@ func TestMCPGatewayAdapterAllowsSSEToolsListResponse(t *testing.T) {
 	}
 }
 
+func TestMCPGatewayAdapterSkipsMalformedSSEToolsListResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "tools/list" {
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			_, _ = fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"aeb-tools-list\",\"result\":\n\n")
+			return
+		}
+		writeJSONRPC(t, w, request.ID, nil)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "malformed SSE gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolDefinitionCase("gateway-malformed-sse-tools-list", "poisoned_tool"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want malformed SSE tools/list skip", result)
+	}
+	if got := result.Evidence["reason"]; got != "malformed_sse_response" {
+		t.Fatalf("reason = %v, want malformed_sse_response; evidence=%+v", got, result.Evidence)
+	}
+	if got := result.Evidence["upstream_reached"]; got != false {
+		t.Fatalf("upstream_reached = %v, want false; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestMCPGatewayAdapterPreservesFixtureProofForMalformedSSEToolsListResponse(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		responseBody := forwardMCPGatewayRequest(t, &http.Client{Timeout: time.Second}, r.Context(), fm.MCPHTTP().URL(), body)
+		if request.Method == "tools/list" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":\"aeb-tools-list\",\"result\":\n\n")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(responseBody); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "malformed SSE forwarding gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolDefinitionCase("gateway-malformed-sse-proven", "poisoned_tool"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want malformed SSE tools/list skip", result)
+	}
+	if got := result.Evidence["reason"]; got != "malformed_sse_response" {
+		t.Fatalf("reason = %v, want malformed_sse_response; evidence=%+v", got, result.Evidence)
+	}
+	if got := result.Evidence["upstream_reached"]; got != true {
+		t.Fatalf("upstream_reached = %v, want fixture-proven true; evidence=%+v", got, result.Evidence)
+	}
+}
+
 func TestMCPGatewayAdapterSkipsUnclassifiedJSONRPCErrorForToolsList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if method := requestMethod(t, r); method == "tools/list" {
@@ -327,6 +414,89 @@ func TestMCPGatewayAdapterToolDefinitionRunsDoNotShareFixtureInventory(t *testin
 		if result.Err != nil || result.Verdict != "allow" {
 			t.Fatalf("result = %+v, want each case to receive its own inventory", result)
 		}
+	}
+}
+
+func TestMCPGatewayAdapterTimesOutWaitingForToolDefinitionLease(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	holderInitialized := make(chan struct{})
+	releaseHolder := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		if r.Header.Get("X-AEB-Case") == "holder" && request.Method == "initialize" {
+			close(holderInitialized)
+			select {
+			case <-releaseHolder:
+			case <-r.Context().Done():
+			}
+		}
+		responseBody := forwardMCPGatewayRequest(t, &http.Client{Timeout: time.Second}, r.Context(), fm.MCPHTTP().URL(), body)
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(responseBody); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer server.Close()
+	defer close(releaseHolder)
+
+	newAdapter := func(caseName string) *MCPGatewayAdapter {
+		t.Helper()
+		a, err := NewMCPGatewayAdapter(GatewayPlugin{
+			Name: "lease timeout gateway", Transport: "streamable_http",
+			Client: GatewayClient{Endpoint: server.URL, Headers: map[string]string{"X-AEB-Case": caseName}},
+		}, fm)
+		if err != nil {
+			t.Fatalf("NewMCPGatewayAdapter: %v", err)
+		}
+		return a
+	}
+
+	holderResult := make(chan Result, 1)
+	go func() {
+		holderResult <- newAdapter("holder").Run(gatewayToolDefinitionCase("gateway-lease-holder", "holder_tool"), time.Second)
+	}()
+	select {
+	case <-holderInitialized:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for lease holder initialize")
+	}
+
+	started := time.Now()
+	waiterResult := make(chan Result, 1)
+	go func() {
+		waiterResult <- newAdapter("waiter").Run(gatewayToolDefinitionCase("gateway-lease-waiter", "waiter_tool"), 40*time.Millisecond)
+	}()
+	var result Result
+	select {
+	case result = <-waiterResult:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("waiter did not respect its case timeout while waiting for the fixture lease")
+	}
+	if elapsed := time.Since(started); elapsed > 150*time.Millisecond {
+		t.Fatalf("waiter returned after %s, want its single case timeout to cover lease acquisition", elapsed)
+	}
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("waiter result = %+v, want lease-timeout skip", result)
+	}
+	if got := result.Evidence["reason"]; got != "tool_definition_lease_timeout" {
+		t.Fatalf("reason = %v, want tool_definition_lease_timeout; evidence=%+v", got, result.Evidence)
+	}
+	if got := result.Evidence["upstream_reached"]; got != false {
+		t.Fatalf("upstream_reached = %v, want false; evidence=%+v", got, result.Evidence)
 	}
 }
 

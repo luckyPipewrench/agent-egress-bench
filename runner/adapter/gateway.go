@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -101,6 +102,7 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
 	upstreamBefore, proofAvailable := a.upstreamCalls()
 	result := a.send(ctx, client, c.ID, toolsCall, true)
 	if result != nil {
+		a.preserveMalformedSSEToolsCallProof(result, upstreamBefore, proofAvailable)
 		return *result
 	}
 	upstreamAfter, proofAvailableAfter := a.upstreamCalls()
@@ -127,13 +129,22 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 	if err != nil {
 		return gatewaySkip(c, "gateway tools/list requires one tools/list-style tool definition: "+err.Error())
 	}
-	if upstream := a.mcpHTTPFixture(); upstream != nil {
-		release := upstream.AcquireToolDefinitionLease(tools)
-		defer release()
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	if upstream := a.mcpHTTPFixture(); upstream != nil {
+		release, err := upstream.AcquireToolDefinitionLease(ctx, tools)
+		if err != nil {
+			return Result{Verdict: "skip", Evidence: map[string]interface{}{
+				"product_surface":     "mcp_gateway_streamable_http",
+				"reason":              "tool_definition_lease_timeout",
+				"requested_transport": c.Transport,
+				"upstream_reached":    false,
+			}}
+		}
+		defer release()
+	}
+
 	client := &http.Client{}
 	if result := a.initialize(ctx, client, c.ID); result != nil {
 		return *result
@@ -148,6 +159,7 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 	}
 	responseBody, result := a.sendResponse(ctx, client, c.ID, toolsList, true, "empty_tools_list_response")
 	if result != nil {
+		a.preserveMalformedSSEToolsListProof(result, upstreamBefore, proofAvailable)
 		return *result
 	}
 	upstreamAfter, proofAvailableAfter := a.upstreamListCalls()
@@ -358,6 +370,14 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 	if requireResponse {
 		responseBody, err = decodeGatewayResponse(resp.Header.Get("Content-Type"), responseBody, message["id"])
 		if err != nil {
+			var malformedSSE *malformedSSEResponseError
+			if errors.As(err, &malformedSSE) {
+				return nil, &Result{Verdict: "skip", Evidence: map[string]interface{}{
+					"product_surface":  "mcp_gateway_streamable_http",
+					"reason":           "malformed_sse_response",
+					"upstream_reached": false,
+				}}
+			}
 			return nil, &Result{Err: fmt.Errorf("case %s: decode MCP gateway response: %w", caseID, err)}
 		}
 	}
@@ -412,8 +432,18 @@ func decodeGatewayResponse(contentType string, body []byte, requestID interface{
 	if err != nil {
 		return nil, fmt.Errorf("marshal request id: %w", err)
 	}
-	return jsonRPCMessageFromSSE(body, wantedID)
+	response, err := jsonRPCMessageFromSSE(body, wantedID)
+	if err != nil {
+		return nil, &malformedSSEResponseError{err: err}
+	}
+	return response, nil
 }
+
+type malformedSSEResponseError struct{ err error }
+
+func (e *malformedSSEResponseError) Error() string { return e.err.Error() }
+
+func (e *malformedSSEResponseError) Unwrap() error { return e.err }
 
 func jsonRPCMessageFromSSE(body, wantedID []byte) ([]byte, error) {
 	var dataLines [][]byte
@@ -460,6 +490,48 @@ func matchingSSEJSONRPCMessage(dataLines [][]byte, wantedID []byte) []byte {
 
 func jsonRPCIDsEqual(got, wanted interface{}) bool {
 	return reflect.DeepEqual(got, wanted)
+}
+
+// preserveMalformedSSEToolsListProof upgrades the default no-upstream proof
+// only when this fixture independently observed the corresponding tools/list
+// request. A malformed gateway response alone is not evidence of egress.
+func (a *MCPGatewayAdapter) preserveMalformedSSEToolsListProof(result *Result, before int64, proofAvailable bool) {
+	if result == nil || result.Verdict != "skip" || result.Evidence["reason"] != "malformed_sse_response" {
+		return
+	}
+	after, proofAvailableAfter := a.upstreamListCalls()
+	if proofAvailable && proofAvailableAfter {
+		result.Evidence["upstream_tools_list_calls_before"] = before
+		result.Evidence["upstream_tools_list_calls_after"] = after
+	}
+	if proofAvailable && proofAvailableAfter && after > before {
+		result.Evidence["upstream_reached"] = true
+		return
+	}
+	if !proofAvailable || !proofAvailableAfter {
+		result.Evidence["upstream_proof"] = "unavailable"
+	}
+}
+
+// preserveMalformedSSEToolsCallProof is the tools/call equivalent of the
+// tools/list proof handling above. The decode failure remains a scored skip,
+// but a fixture counter can still prove that the gateway reached its upstream.
+func (a *MCPGatewayAdapter) preserveMalformedSSEToolsCallProof(result *Result, before int64, proofAvailable bool) {
+	if result == nil || result.Verdict != "skip" || result.Evidence["reason"] != "malformed_sse_response" {
+		return
+	}
+	after, proofAvailableAfter := a.upstreamCalls()
+	if proofAvailable && proofAvailableAfter {
+		result.Evidence["upstream_calls_before"] = before
+		result.Evidence["upstream_calls_after"] = after
+	}
+	if proofAvailable && proofAvailableAfter && after > before {
+		result.Evidence["upstream_reached"] = true
+		return
+	}
+	if !proofAvailable || !proofAvailableAfter {
+		result.Evidence["upstream_proof"] = "unavailable"
+	}
 }
 
 func matchingBodyMarker(body string, markers []string) string {
