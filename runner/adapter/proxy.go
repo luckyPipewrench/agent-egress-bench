@@ -1280,6 +1280,17 @@ func shellQuote(s string) string {
 // from the runner observing a matching request on the listener it owns.
 const mcpStdioUpstreamAddrEnv = "AEB_MCP_STDIO_UPSTREAM_ADDR"
 
+// mcpStdioObserverDrainTimeout bounds the post-process grace period for input
+// that a forwarding command already delivered to the runner-owned listener.
+// It must stay short: a command that leaves a connection open must not hold up
+// the runner indefinitely.
+const mcpStdioObserverDrainTimeout = 100 * time.Millisecond
+
+// mcpStdioUpstreamObserverBeforeServe is a test seam that can hold an accepted
+// connection just before its handler starts, making the close/drain ordering
+// reproducible without changing the runner-owned upstream protocol.
+var mcpStdioUpstreamObserverBeforeServe func()
+
 type mcpStdioObservedRequest struct {
 	fingerprint string
 	response    interface{}
@@ -1297,7 +1308,11 @@ type mcpStdioUpstreamObserver struct {
 	matched  int
 	received int
 	conns    map[net.Conn]struct{}
+	stopping bool
 	closed   bool
+
+	handlers   sync.WaitGroup
+	acceptDone chan struct{}
 }
 
 func startMCPStdioUpstreamObserver(clientMsgs []interface{}, responses []interface{}) (*mcpStdioUpstreamObserver, error) {
@@ -1309,9 +1324,10 @@ func startMCPStdioUpstreamObserver(clientMsgs []interface{}, responses []interfa
 		return nil, fmt.Errorf("listen for runner-owned MCP stdio upstream: %w", err)
 	}
 	observer := &mcpStdioUpstreamObserver{
-		listener: listener,
-		expected: make([]mcpStdioObservedRequest, 0, len(clientMsgs)),
-		conns:    make(map[net.Conn]struct{}),
+		listener:   listener,
+		expected:   make([]mcpStdioObservedRequest, 0, len(clientMsgs)),
+		conns:      make(map[net.Conn]struct{}),
+		acceptDone: make(chan struct{}),
 	}
 	for i, msg := range clientMsgs {
 		fingerprint, fpErr := mcpStdioRequestFingerprint(msg)
@@ -1339,25 +1355,31 @@ func (o *mcpStdioUpstreamObserver) addr() string {
 }
 
 func (o *mcpStdioUpstreamObserver) accept() {
+	defer close(o.acceptDone)
 	for {
 		conn, err := o.listener.Accept()
 		if err != nil {
 			return
 		}
 		o.mu.Lock()
-		if o.closed {
+		if o.stopping || o.closed {
 			o.mu.Unlock()
 			_ = conn.Close()
-			return
+			continue
 		}
 		o.conns[conn] = struct{}{}
+		o.handlers.Add(1)
 		o.mu.Unlock()
+		if mcpStdioUpstreamObserverBeforeServe != nil {
+			mcpStdioUpstreamObserverBeforeServe()
+		}
 		go o.serve(conn)
 	}
 }
 
 func (o *mcpStdioUpstreamObserver) serve(conn net.Conn) {
 	defer func() {
+		o.handlers.Done()
 		o.mu.Lock()
 		delete(o.conns, conn)
 		o.mu.Unlock()
@@ -1383,6 +1405,42 @@ func (o *mcpStdioUpstreamObserver) serve(conn net.Conn) {
 			continue
 		}
 		_, _ = conn.Write(append(line, '\n'))
+	}
+}
+
+// Drain stops accepting new connections and lets already-running handlers
+// consume buffered input for a bounded interval. It intentionally does not
+// close active connections: Close does that only after the caller snapshots
+// observation evidence.
+func (o *mcpStdioUpstreamObserver) Drain(timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+	o.mu.Lock()
+	if o.closed {
+		o.mu.Unlock()
+		return
+	}
+	o.stopping = true
+	o.mu.Unlock()
+	_ = o.listener.Close()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-o.acceptDone:
+	case <-timer.C:
+		return
+	}
+
+	handlersDone := make(chan struct{})
+	go func() {
+		o.handlers.Wait()
+		close(handlersDone)
+	}()
+	select {
+	case <-handlersDone:
+	case <-timer.C:
 	}
 }
 
@@ -1419,6 +1477,7 @@ func (o *mcpStdioUpstreamObserver) Close() {
 		return
 	}
 	o.closed = true
+	o.stopping = true
 	conns := make([]net.Conn, 0, len(o.conns))
 	for conn := range o.conns {
 		conns = append(conns, conn)
@@ -1428,6 +1487,13 @@ func (o *mcpStdioUpstreamObserver) Close() {
 	for _, conn := range conns {
 		_ = conn.Close()
 	}
+}
+
+func mcpStdioSubprocessError(c Case, waitErr error, stderrOutput string) error {
+	if stderrOutput != "" {
+		return fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)
+	}
+	return fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)
 }
 
 func mcpStdioRequestFingerprint(message interface{}) (string, error) {
@@ -1624,31 +1690,25 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	_ = stdin.Close()
 
 	waitErr := cmd.Wait()
-	if observer != nil {
-		observer.Close()
+	stderrOutput := strings.TrimSpace(stderrBuf.String())
+	// A subprocess failure invalidates the integration regardless of any output
+	// it managed to print before exiting. Do not parse or score that output.
+	if waitErr != nil && ctx.Err() == nil {
+		return Result{Err: mcpStdioSubprocessError(c, waitErr, stderrOutput)}
 	}
 	output := <-outputCh
-	stderrOutput := strings.TrimSpace(stderrBuf.String())
+	if observer != nil {
+		observer.Drain(mcpStdioObserverDrainTimeout)
+	}
 	observationEvidence, upstreamObserved := mcpStdioObservationEvidence(observer)
 
-	// Context timeout is expected (subprocess runs until stdin closes). Other
-	// wait errors are real failures and must be returned before any
-	// observation-based allow skip can hide them.
+	// Context timeout is handled as its normal unprovable outcome rather than an
+	// adapter error. A bare clean exit without a structured deny is likewise
+	// unprovable: it can be a no-op, misconfiguration, or discarded stdin.
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
-		if waitErr != nil && ctx.Err() == nil {
-			if stderrOutput != "" {
-				return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
-			}
-			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
-		}
-		// No output and no reported wait error (or a timeout) is treated as a
-		// block, since many proxies express "block" by simply closing the
-		// connection without writing anything. That is a real, valid signal
-		// for a well-behaved tool, but it is also exactly what a silently
-		// failed mock-backend spawn looks like, so any captured stderr is
-		// attached here as a diagnostic hint rather than changing the
-		// verdict itself.
+		// A block requires a structured, verifiable MCP policy deny. Silence is
+		// not a deny protocol, so it must never award a block score.
 		evidence := map[string]interface{}{"reason": "no_output"}
 		if stderrOutput != "" {
 			evidence["stderr"] = stderrOutput
@@ -1659,7 +1719,14 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		if observer != nil {
 			evidence["upstream_reached"] = upstreamObserved
 		}
-		return Result{Verdict: "block", Evidence: evidence}
+		if len(serverResponses) == 0 && upstreamObserved {
+			// Client-only cases need no response payload to verify. The
+			// runner-owned upstream observation is positive proof that the
+			// request was forwarded even when a pipelining proxy exits before
+			// reading its response.
+			return Result{Verdict: "allow", Evidence: evidence}
+		}
+		return mcpStdioObservationMissingResult(observer, evidence)
 	}
 
 	// Check response lines for policy-block JSON-RPC errors.
@@ -1821,11 +1888,16 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			waitErr := cmd.Wait()
 			if waitErr != nil && ctx.Err() == nil {
 				stderrOutput := strings.TrimSpace(stderrBuf.String())
-				if stderrOutput != "" {
-					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed while writing call %d: %w (stderr: %s)", c.ID, i+1, waitErr, stderrOutput)}
-				}
+				return Result{Err: mcpStdioSubprocessError(c, waitErr, stderrOutput)}
 			}
-			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "write_failed"})
+			observer.Drain(mcpStdioObserverDrainTimeout)
+			return mcpStdioObservationMissingResult(observer, map[string]interface{}{
+				"budget_limit_calls": limit,
+				"budget_scope":       scope,
+				"subject_id":         subjectID,
+				"calls_observed":     i,
+				"reason":             "write_failed",
+			})
 		}
 
 		if !scanner.Scan() {
@@ -1836,11 +1908,16 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			}
 			if waitErr != nil && ctx.Err() == nil {
 				stderrOutput := strings.TrimSpace(stderrBuf.String())
-				if stderrOutput != "" {
-					return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
-				}
+				return Result{Err: mcpStdioSubprocessError(c, waitErr, stderrOutput)}
 			}
-			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, messageIDString(msg), map[string]interface{}{"reason": "no_output"})
+			observer.Drain(mcpStdioObserverDrainTimeout)
+			return mcpStdioObservationMissingResult(observer, map[string]interface{}{
+				"budget_limit_calls": limit,
+				"budget_scope":       scope,
+				"subject_id":         subjectID,
+				"calls_observed":     i,
+				"reason":             "no_output",
+			})
 		}
 
 		respLine := scanner.Text()
@@ -1851,7 +1928,10 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 				return result
 			}
 			_ = stdin.Close()
-			_ = cmd.Wait()
+			waitErr := cmd.Wait()
+			if waitErr != nil && ctx.Err() == nil {
+				return Result{Err: mcpStdioSubprocessError(c, waitErr, strings.TrimSpace(stderrBuf.String()))}
+			}
 			blockedID := responseID
 			if blockedID == "" {
 				blockedID = messageIDString(msg)
@@ -1862,15 +1942,11 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 
 	_ = stdin.Close()
 	waitErr := cmd.Wait()
-	if observer != nil {
-		observer.Close()
-	}
 	if waitErr != nil && ctx.Err() == nil {
-		stderrOutput := strings.TrimSpace(stderrBuf.String())
-		if stderrOutput != "" {
-			return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w (stderr: %s)", c.ID, waitErr, stderrOutput)}
-		}
-		return Result{Err: fmt.Errorf("case %s: MCP subprocess failed: %w", c.ID, waitErr)}
+		return Result{Err: mcpStdioSubprocessError(c, waitErr, strings.TrimSpace(stderrBuf.String()))}
+	}
+	if observer != nil {
+		observer.Drain(mcpStdioObserverDrainTimeout)
 	}
 
 	evidence := map[string]interface{}{

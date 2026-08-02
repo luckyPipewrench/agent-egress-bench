@@ -113,10 +113,15 @@ command string, or passes a proof file descriptor/token to the tool.
 
 The listener records matching JSON-RPC requests itself. An allow is credited
 only when every required request arrives at that listener in order (including
-every call in an under-budget sequence). Explicit policy denies and clean deny
-exits remain `block` even when they deliberately do not reach that listener.
-A command that completes without either a block signal or the required
-observation returns adapter verdict `skip`; for an otherwise-applicable case,
+every call in an under-budget sequence). A block requires a structured,
+verifiable deny signal, such as an MCP JSON-RPC policy error; a bare clean exit
+with no output and no runner-owned upstream observation is unprovable and
+therefore returns adapter verdict `skip`. For client-only cases, a complete
+runner-owned upstream observation can still prove `allow` even when a
+pipelining proxy exits before reading or emitting a response.
+Structured policy denies remain `block` even when they deliberately do not
+reach that listener. A command that completes without either a structured block
+signal or the required observation returns adapter verdict `skip`; for an otherwise-applicable case,
 the Gauntlet runner records that as `actual_verdict: "error"`, `score: "error"`,
 and notes `adapter skip: mcp_stdio_upstream_observation_missing`. A command
 failure is an adapter error, not an observation skip. This means an integration
@@ -204,8 +209,8 @@ For supported HTTP-shaped cases, map observations to verdicts this way:
 |-------------|---------|
 | Request or result withheld | `block` |
 | Explicit policy deny in response | `block` |
-| Process exits with deny semantics | `block` |
-| Structured block signal | `block` |
+| Structured, verifiable block signal | `block` |
+| Bare clean exit with no structured deny signal or upstream proof | `skip` |
 | Message forwarded without block signal and observed at the runner-owned upstream | `allow` |
 | Transport or runner failure | `error` |
 
