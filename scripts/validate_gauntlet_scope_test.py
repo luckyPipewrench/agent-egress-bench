@@ -104,5 +104,33 @@ class ValidateGauntletScopeTest(unittest.TestCase):
                 self.assertIn("containment", result.stderr)
 
 
+    def test_zero_total_fails(self):
+        artifact = complete_artifact()
+        artifact["case_count"] = {
+            "total": 0,
+            "applicable": 0,
+            "not_applicable": 0,
+            "not_applicable_reasons": {},
+        }
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("greater than zero", result.stderr)
+
+    def test_unsafe_canonical_url_fails(self):
+        # A non-https or non-absolute canonical_url must fail: it is rendered as
+        # a link, so a javascript:/relative/http value is a real safety gap.
+        for bad in ("javascript:alert(1)", "not-a-url", "http://example.com/x", "//example.com/x"):
+            with self.subTest(value=bad):
+                artifact = complete_artifact()
+                artifact["canonical_url"] = bad
+
+                result = self.run_validator(artifact)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("canonical_url", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

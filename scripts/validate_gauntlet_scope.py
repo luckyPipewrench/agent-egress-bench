@@ -4,6 +4,7 @@
 import json
 import math
 import sys
+import urllib.parse
 from pathlib import Path
 
 
@@ -45,6 +46,8 @@ def validate_scope(document):
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
     not_applicable = non_negative_integer(document, ("case_count", "not_applicable"))
+    if total == 0:
+        raise ValueError("case_count.total must be greater than zero")
     if applicable > total:
         raise ValueError("case_count.applicable cannot exceed case_count.total")
     if applicable + not_applicable != total:
@@ -83,6 +86,9 @@ def validate_scope(document):
     canonical_url = path_value(document, ("canonical_url",))
     if not isinstance(canonical_url, str) or not canonical_url:
         raise ValueError("canonical_url must be a non-empty string")
+    parsed_url = urllib.parse.urlparse(canonical_url)
+    if parsed_url.scheme != "https" or not parsed_url.netloc:
+        raise ValueError("canonical_url must be an absolute https URL")
 
 
 def main(argv):

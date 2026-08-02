@@ -40,8 +40,8 @@
     var block = document.createElement('div');
     block.className = 'denominator';
     block.appendChild(document.createTextNode(
-      'Containment ' + formatPercent(containment) + ' on ' + applicable + '/' + total +
-      ' applicable cases (' + notApplicable + ' N/A: ' + formatReasons(reasons) +
+      'Containment ' + formatPercent(containment) + ' on ' + applicable + ' applicable of ' + total +
+      ' total cases (' + notApplicable + ' N/A: ' + formatReasons(reasons) +
       '), false positives ' + formatPercent(falsePositiveRate) + ', '
     ));
 
