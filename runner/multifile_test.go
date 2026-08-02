@@ -77,6 +77,31 @@ func TestLoadMultiFileCases_ValidFixtures(t *testing.T) {
 	}
 }
 
+// TestLoadMultiFileCases_MissingCaseYAML makes a partial case directory a
+// loader error. Silently skipping it would shrink the Gauntlet denominator
+// while leaving a clean-looking score over the remaining cases.
+func TestLoadMultiFileCases_MissingCaseYAML(t *testing.T) {
+	dir := t.TempDir()
+	caseDir := filepath.Join(dir, "partial-case")
+	if err := os.Mkdir(caseDir, 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", caseDir, err)
+	}
+
+	_, err := loadMultiFileCases(dir)
+	if err == nil {
+		t.Fatal("expected loader error when case.yaml is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing required case.yaml") {
+		t.Errorf("error did not name missing case.yaml: %v", err)
+	}
+	if !strings.Contains(err.Error(), "restore case.yaml or remove the directory") {
+		t.Errorf("error did not explain how to fix the partial directory: %v", err)
+	}
+	if !strings.Contains(err.Error(), "make cases-manifest") {
+		t.Errorf("error did not name the manifest regeneration command: %v", err)
+	}
+}
+
 // TestLoadMultiFileCase_MissingBefore covers the loader's missing-file
 // error path: a directory with case.yaml + after.json + expected.json but
 // no before.json must produce a load error naming the missing file. This

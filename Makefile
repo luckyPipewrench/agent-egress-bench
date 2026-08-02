@@ -1,4 +1,4 @@
-.PHONY: stats check-stats cases-manifest
+.PHONY: stats stats-update check-stats cases-manifest
 
 # Regenerate cases/MANIFEST.txt after adding or removing a case. The manifest
 # pins the logical corpus so a case cannot leave it without a visible diff;
@@ -6,51 +6,53 @@
 cases-manifest:
 	cd runner && go test . -run 'TestCorpus' -update-manifest
 
-# Print canonical stats from test cases.
-# Counts are LOGICAL cases: single-file JSON cases plus each multi-file
-# mcp-drift directory as one case. Verdicts include the mcp-drift case.yaml.
+# Print canonical statistics from the runner's loaded corpus. Unlike the
+# manifest, this reports category and verdict metadata from each loaded case.
 stats:
-	@echo "# agent-egress-bench stats"
-	@single=$$(find cases -name '*.json' -not -path 'cases/mcp-drift/*' | wc -l); \
-	drift=$$(find cases/mcp-drift -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l); \
-	echo "cases_total: $$((single + drift))"
-	@echo "categories: $$(find cases -mindepth 1 -maxdepth 1 -type d | wc -l)"
-	@jblk=$$(find cases -name '*.json' -not -path 'cases/mcp-drift/*' -exec grep -l '"expected_verdict"[[:space:]]*:[[:space:]]*"block"' {} \; | wc -l); \
-	dblk=$$(grep -lE 'expected_verdict:[[:space:]]*block' cases/mcp-drift/*/case.yaml 2>/dev/null | wc -l); \
-	echo "block: $$((jblk + dblk))"
-	@jaln=$$(find cases -name '*.json' -not -path 'cases/mcp-drift/*' -exec grep -l '"expected_verdict"[[:space:]]*:[[:space:]]*"allow"' {} \; | wc -l); \
-	daln=$$(grep -lE 'expected_verdict:[[:space:]]*allow' cases/mcp-drift/*/case.yaml 2>/dev/null | wc -l); \
-	echo "allow: $$((jaln + daln))"
-	@echo "warn: $$(grep -lE 'expected_verdict:[[:space:]]*warn' cases/mcp-drift/*/case.yaml 2>/dev/null | wc -l)"
-	@set -- cases/*/; \
-	if [ "$$1" = 'cases/*/' ]; then exit 0; fi; \
-	for dir in "$$@"; do \
-		name=$$(basename "$$dir"); \
-		if [ "$$name" = "mcp-drift" ]; then \
-			count=$$(find "$$dir" -mindepth 1 -maxdepth 1 -type d | wc -l); \
-		else \
-			count=$$(find "$$dir" -name '*.json' | wc -l); \
-		fi; \
-		echo "  $$name: $$count"; \
-	done
+	@cd runner && go run . --stats --cases ../cases
 
-# Fail when README.md's advertised case count no longer matches the corpus.
-# The count is LOGICAL: one JSON outside cases/mcp-drift, or one
-# cases/mcp-drift/<dir>. Counting files instead inflates it, which is how the
-# advertised number has drifted before.
+# Refresh the committed, reader-facing stats snapshot from the runner loaders.
+# Generate into a temporary file and replace the snapshot only after the runner
+# succeeds with output. Redirecting straight into cases/STATS.md truncates it
+# when the shell opens it, so a runner that then failed left an EMPTY snapshot.
+stats-update:
+	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	if ! (cd runner && go run . --stats --cases ../cases) > "$$tmp"; then \
+		echo "stats-update: FAIL - the runner could not load the corpus"; \
+		echo "  cases/STATS.md is unchanged; repair the corpus, then run 'make stats-update'"; \
+		exit 1; \
+	fi; \
+	if ! test -s "$$tmp"; then \
+		echo "stats-update: FAIL - the runner produced no output"; \
+		echo "  cases/STATS.md is unchanged"; \
+		exit 1; \
+	fi; \
+	cp "$$tmp" cases/STATS.md; \
+	echo "stats-update: OK (cases/STATS.md refreshed from the runner-loaded corpus)"
+
+# Fail when the reader-facing stats snapshot no longer matches the corpus that
+# the runner actually loads. This compares the whole generated report, not a
+# wording-dependent claim embedded in prose.
+#
+# The runner's exit status is checked BEFORE the comparison. Piping it straight
+# into cmp reported the pipeline's last status, so a failing runner produced no
+# output, and an empty snapshot compared equal to it and passed.
 check-stats:
-	@single=$$(find cases -name '*.json' -not -path 'cases/mcp-drift/*' | wc -l); \
-	drift=$$(find cases/mcp-drift -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l); \
-	actual=$$((single + drift)); \
-	stated=$$(grep -oE '[0-9]+ logical cases' README.md | head -1 | grep -oE '^[0-9]+'); \
-	if [ -z "$$stated" ]; then \
-		echo "check-stats: FAIL - no 'N logical cases' phrase found in README.md"; \
+	@test -f cases/STATS.md || { echo "check-stats: FAIL - missing cases/STATS.md; run 'make stats-update'"; exit 1; }
+	@test -s cases/STATS.md || { echo "check-stats: FAIL - cases/STATS.md is empty; run 'make stats-update'"; exit 1; }
+	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	if ! (cd runner && go run . --stats --cases ../cases) > "$$tmp"; then \
+		echo "check-stats: FAIL - the runner could not load the corpus"; \
+		echo "  fix: repair the corpus, then run 'make stats-update'"; \
 		exit 1; \
 	fi; \
-	if [ "$$stated" != "$$actual" ]; then \
-		echo "check-stats: FAIL - README.md advertises $$stated logical cases, corpus has $$actual"; \
-		echo "  a case = one JSON outside cases/mcp-drift, or one cases/mcp-drift/<dir>"; \
-		echo "  fix: change README.md to $$actual, or run 'make stats' to see the breakdown"; \
+	if ! test -s "$$tmp"; then \
+		echo "check-stats: FAIL - the runner produced no output"; \
 		exit 1; \
 	fi; \
-	echo "check-stats: OK ($$actual logical cases, README agrees)"
+	if ! cmp -s "$$tmp" cases/STATS.md; then \
+		echo "check-stats: FAIL - cases/STATS.md is stale or malformed"; \
+		echo "  fix: run 'make stats-update', review cases/STATS.md, then run 'make check-stats'"; \
+		exit 1; \
+	fi; \
+	echo "check-stats: OK (cases/STATS.md matches the runner-loaded corpus)"

@@ -48,31 +48,34 @@ Every case is **tool-neutral**: no case is written to favor or penalize a specif
 
 **Severity** (`critical`, `high`, `medium`, `low`) and **false positive risk** (`low`, `medium`, `high`) are informational metadata. They help operators prioritize but do not affect scoring.
 
+A logical case takes one of two fixture shapes. Most are a single JSON file in a category directory. MCP drift cases are a directory under `cases/mcp-drift/` holding `case.yaml` plus before, after and expected snapshots, replayed through one MCP session. Both shapes count as one case, both are pinned by `cases/MANIFEST.txt`, and the counts in [`cases/STATS.md`](../cases/STATS.md) are generated from what the runner loads rather than from a file count.
+
 ## Categories
 
-The corpus contains 17 categories across the `cases/` directory tree.
+The corpus categories across the `cases/` directory tree are listed below. Current counts are generated from the runner-loaded corpus in [`cases/STATS.md`](../cases/STATS.md).
 
-| # | Category | Directory | What it tests |
-|---|----------|-----------|---------------|
-| 1 | URL DLP | `cases/url/` | Secrets in query strings, encoded paths, high-entropy subdomains |
-| 2 | Request body DLP | `cases/request-body/` | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex) |
-| 3 | Header DLP | `cases/headers/` | API keys and tokens in HTTP headers |
-| 4 | Response injection (fetch) | `cases/response-fetch/` | Prompt injection in fetched web content |
-| 5 | Response injection (MITM) | `cases/response-mitm/` | Injection via TLS-intercepted responses |
-| 6 | MCP input scanning | `cases/mcp-input/` | DLP and injection in MCP tool call arguments |
-| 7 | MCP tool poisoning | `cases/mcp-tool/` | Poisoned tool descriptions, schema injection, rug-pull drift |
-| 8 | MCP chain detection | `cases/mcp-chain/` | Multi-step exfiltration sequences (read-then-send, env-to-network) |
-| 9 | A2A message scanning | `cases/a2a-message/` | Secrets and injection in A2A message parts |
-| 10 | A2A Agent Card poisoning | `cases/a2a-agent-card/` | Injection in Agent Card skill descriptions, card drift |
-| 11 | WebSocket DLP | `cases/websocket-dlp/` | Secrets in WebSocket frames, fragment reassembly evasion |
-| 12 | SSRF bypass | `cases/ssrf-bypass/` | Private IP detection, cloud metadata, encoded IP bypasses |
-| 13 | Encoding evasion | `cases/encoding-evasion/` | Multi-layer encoding chains, Unicode tricks, zero-width insertion |
-| 14 | Shell obfuscation | `cases/shell-obfuscation/` | Backtick substitution, brace expansion, IFS manipulation |
-| 15 | Crypto/financial DLP | `cases/crypto-financial/` | Wallet addresses, seed phrases, credit cards, IBANs |
-| 16 | Hostname exfiltration | `cases/hostname-exfiltration/` | Secret data encoded in DNS hostname labels |
-| 17 | False positive suite | `cases/false-positive/` | Benign traffic that must not be blocked |
+| Category | Directory | What it tests |
+|----------|-----------|---------------|
+| URL DLP | `cases/url/` | Secrets in query strings, encoded paths, high-entropy subdomains |
+| Request body DLP | `cases/request-body/` | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex) |
+| Header DLP | `cases/headers/` | API keys and tokens in HTTP headers |
+| Response injection (fetch) | `cases/response-fetch/` | Prompt injection in fetched web content |
+| Response injection (MITM) | `cases/response-mitm/` | Injection via TLS-intercepted responses |
+| MCP input scanning | `cases/mcp-input/` | DLP and injection in MCP tool call arguments |
+| MCP tool poisoning | `cases/mcp-tool/` | Poisoned tool descriptions, schema injection, rug-pull drift |
+| MCP chain detection | `cases/mcp-chain/` | Multi-step exfiltration sequences (read-then-send, env-to-network) |
+| A2A message scanning | `cases/a2a-message/` | DLP and injection in A2A message parts |
+| A2A Agent Card poisoning | `cases/a2a-agent-card/` | Injection in Agent Card skill descriptions, card drift |
+| WebSocket DLP | `cases/websocket-dlp/` | Secrets in WebSocket frames, fragment reassembly evasion |
+| SSRF bypass | `cases/ssrf-bypass/` | Private IP detection, cloud metadata, encoded IP bypasses |
+| Encoding evasion | `cases/encoding-evasion/` | Multi-layer encoding chains, Unicode tricks, zero-width insertion |
+| Shell obfuscation | `cases/shell-obfuscation/` | Backtick substitution, brace expansion, IFS manipulation |
+| Crypto/financial DLP | `cases/crypto-financial/` | Wallet addresses, seed phrases, credit cards, IBANs |
+| Hostname exfiltration | `cases/hostname-exfiltration/` | Secret data encoded in DNS hostname labels |
+| MCP drift | `cases/mcp-drift/` | Multi-file MCP tool-definition changes, including benign drift guardrails |
+| False positive suite | `cases/false-positive/` | Benign traffic that must not be blocked |
 
-Categories 1 through 16 contain malicious cases (expected verdict: `block`). Category 17 contains benign cases (expected verdict: `allow`). Some categories also include benign cases for category-specific false positive testing.
+Categories can contain malicious (`block`), benign (`allow`), or drift-guardrail (`warn`) cases. Some attack-surface categories also include benign cases for category-specific false-positive testing.
 
 ## Scoring
 

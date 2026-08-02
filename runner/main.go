@@ -32,6 +32,7 @@ func main() {
 	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile.schema.json) to this path alongside the Gauntlet summary")
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
 	multiFileCases := flag.String("multifile-cases", "", "directory of multi-file MCP-drift cases (each subdirectory has case.yaml + before.json + after.json + expected.json). Driver replays before then after through a single MCP session and observes the verdict on the second tools/list response.")
+	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
 
 	// --debug / -v: emit verbose per-case diagnostics to stderr. Both
 	// flag names point at the same variable so either can be used.
@@ -40,6 +41,22 @@ func main() {
 	flag.BoolVar(&debug, "v", false, "alias for --debug")
 
 	flag.Parse()
+	if *stats {
+		if *casesDir == "" {
+			flag.Usage()
+			os.Exit(1)
+		}
+		cases, err := loadCorpusStats(*casesDir)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := writeCorpusStats(os.Stdout, cases); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: write corpus stats: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if *casesDir == "" || *profilePath == "" {
 		flag.Usage()

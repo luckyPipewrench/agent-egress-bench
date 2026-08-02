@@ -12,7 +12,7 @@
   <a href="https://discord.gg/badNfhGKTc"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white"></a>
 </p>
 
-A standardized test corpus for evaluating AI agent egress security tools. 213 logical cases across 18 categories, covering secret exfiltration, prompt injection, SSRF, hostname exfiltration, MCP tool poisoning, chain detection, MCP drift, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection.
+A standardized test corpus for evaluating AI agent egress security tools, covering secret exfiltration, prompt injection, SSRF, hostname exfiltration, MCP tool poisoning, chain detection, MCP drift, A2A protocol scanning, WebSocket DLP, encoding evasion, shell obfuscation, and cryptocurrency/financial data protection. Current loader-backed counts are in [`cases/STATS.md`](cases/STATS.md).
 
 **This tests the security tool, not the agent.** Most benchmarks in this space (AgentDojo, InjecAgent, CyberSecEval, AgentHarm) test whether the LLM behaves correctly. This one tests whether the firewall, proxy, or scanner sitting between the agent and the network catches the attack.
 
@@ -35,32 +35,32 @@ Tools exist to sit between agents and the network (proxies, firewalls, MCP wrapp
 
 ## What's in the corpus
 
-| Category | Directory | Cases | What it tests |
-|----------|-----------|-------|---------------|
-| URL DLP | `cases/url/` | 20 | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF, domain blocklist |
-| Request body DLP | `cases/request-body/` | 16 | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
-| Header DLP | `cases/headers/` | 11 | API keys and tokens in HTTP headers (Bearer, JWT, AWS, multi-header) |
-| Hostname exfiltration | `cases/hostname-exfiltration/` | 10 | Encoded secrets in DNS hostname labels before resolution |
-| Response injection (fetch) | `cases/response-fetch/` | 8 | Prompt injection in fetched web content |
-| Response injection (MITM) | `cases/response-mitm/` | 9 | Injection via tampered TLS-intercepted responses |
-| MCP input scanning | `cases/mcp-input/` | 11 | DLP and injection in MCP tool arguments (base64, hex, scattered, SSH keys) |
-| MCP tool poisoning | `cases/mcp-tool/` | 8 | Poisoned tool descriptions, schema injection, rug-pull changes |
-| MCP chain detection | `cases/mcp-chain/` | 10 | Multi-step exfiltration sequences (read-then-send, env-to-network) |
-| MCP drift | `cases/mcp-drift/` | 4 | Multi-file before/after tool snapshots for rug-pull and benign drift detection |
-| A2A message scanning | `cases/a2a-message/` | 12 | Secrets and injection in A2A message parts |
-| A2A Agent Card poisoning | `cases/a2a-agent-card/` | 8 | Injection in Agent Card skill descriptions, card drift |
-| WebSocket DLP | `cases/websocket-dlp/` | 9 | Secrets in WebSocket frames, fragment reassembly evasion |
-| SSRF bypass | `cases/ssrf-bypass/` | 11 | Private IP detection, cloud metadata, encoded IPs |
-| Encoding evasion | `cases/encoding-evasion/` | 9 | Multi-layer encoding chains, Unicode tricks, zero-width insertion |
-| Shell obfuscation | `cases/shell-obfuscation/` | 10 | Backtick substitution, brace expansion, IFS manipulation |
-| Crypto/financial DLP | `cases/crypto-financial/` | 11 | Wallet addresses, seed phrases, credit cards, IBANs |
-| False positive suite | `cases/false-positive/` | 20 | Benign traffic that must not be blocked |
+| Category | Directory | What it tests |
+|----------|-----------|---------------|
+| URL DLP | `cases/url/` | Secrets leaked via query strings, encoded paths, high-entropy subdomains, SSRF, domain blocklist |
+| Request body DLP | `cases/request-body/` | Secrets in POST bodies (JSON, YAML, CSV, multipart, base64, hex, env dumps) |
+| Header DLP | `cases/headers/` | API keys and tokens in HTTP headers (Bearer, JWT, AWS, multi-header) |
+| Hostname exfiltration | `cases/hostname-exfiltration/` | Encoded secrets in DNS hostname labels before resolution |
+| Response injection (fetch) | `cases/response-fetch/` | Prompt injection in fetched web content |
+| Response injection (MITM) | `cases/response-mitm/` | Injection via tampered TLS-intercepted responses |
+| MCP input scanning | `cases/mcp-input/` | DLP and injection in MCP tool arguments (base64, hex, scattered, SSH keys) |
+| MCP tool poisoning | `cases/mcp-tool/` | Poisoned tool descriptions, schema injection, rug-pull changes |
+| MCP chain detection | `cases/mcp-chain/` | Multi-step exfiltration sequences (read-then-send, env-to-network) |
+| MCP drift | `cases/mcp-drift/` | Multi-file before/after tool snapshots for rug-pull and benign drift detection |
+| A2A message scanning | `cases/a2a-message/` | Secrets and injection in A2A message parts |
+| A2A Agent Card poisoning | `cases/a2a-agent-card/` | Injection in Agent Card skill descriptions, card drift |
+| WebSocket DLP | `cases/websocket-dlp/` | Secrets in WebSocket frames, fragment reassembly evasion |
+| SSRF bypass | `cases/ssrf-bypass/` | Private IP detection, cloud metadata, encoded IPs |
+| Encoding evasion | `cases/encoding-evasion/` | Multi-layer encoding chains, Unicode tricks, zero-width insertion |
+| Shell obfuscation | `cases/shell-obfuscation/` | Backtick substitution, brace expansion, IFS manipulation |
+| Crypto/financial DLP | `cases/crypto-financial/` | Wallet addresses, seed phrases, credit cards, IBANs |
+| False positive suite | `cases/false-positive/` | Benign traffic that must not be blocked |
 
 Counts are logical cases, not fixture files. Most cases are single JSON files; MCP drift cases are multi-file before/after snapshots, and each drift directory counts as one case.
 
-149 block-expected cases, 47 allow-expected baselines, and 1 warn-class MCP drift guardrail test containment and false positive behavior.
+The [loader-backed statistics](cases/STATS.md) include the block, allow, and warn-class breakdown used to assess containment and false-positive behavior.
 
-Most cases are self-contained JSON files with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome. The 4 MCP drift cases under `cases/mcp-drift/` are multi-file before/after fixtures with `case.yaml` metadata.
+Most cases are self-contained JSON files with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome. MCP drift cases under `cases/mcp-drift/` are multi-file before/after fixtures with `case.yaml` metadata.
 
 ## Quick start
 
