@@ -293,6 +293,7 @@ jobs:
           export ARTIFACT_JSON="$ARTIFACT_DIR/continuous-gauntlet-pipelock-${PIPELOCK_TAG}.json"
 
           python3 - <<'PY'
+          import hashlib
           import json
           import os
 
@@ -406,6 +407,18 @@ jobs:
           PY
 
           jq empty "$ARTIFACT_JSON"
+
+          # A shell export does not survive the step boundary, so the validating
+          # step below would see an unbound variable. Persist the path instead.
+          echo "ARTIFACT_JSON=$ARTIFACT_JSON" >> "$GITHUB_ENV"
+
+      - name: Validate generated provenance artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ARTIFACT_JSON:-}" || { echo "provenance artifact path was not published by the generating step"; exit 1; }
+          test -f "$ARTIFACT_JSON" || { echo "provenance artifact missing at $ARTIFACT_JSON"; exit 1; }
+          python3 scripts/validate_gauntlet_scope.py "$ARTIFACT_JSON"
 
       - name: Upload provenance artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
