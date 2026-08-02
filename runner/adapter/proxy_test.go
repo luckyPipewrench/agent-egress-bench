@@ -1977,6 +1977,28 @@ func TestRunMCPStdio_StderrSurfacedOnSubprocessFailure(t *testing.T) {
 	}
 }
 
+func TestRunMCPStdioTimeoutKillsOrphanHoldingStderrPipe(t *testing.T) {
+	script := t.TempDir() + "/orphan-mcp.sh"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n( while :; do :; done ) 1>&2 &\nwhile :; do :; done\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	result := (&ProxyAdapter{mcpCmd: script}).runMCPStdio(Case{
+		ID:      "orphan-stderr",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{"method": "tools/call"}}},
+	}, time.Second)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("MCP subprocess returned after %v; process-group kill should finish before WaitDelay", elapsed)
+	}
+	if result.Err != nil {
+		t.Fatalf("result error = %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block after timed-out subprocess", result.Verdict)
+	}
+}
+
 // A case whose host is NOT the reserved fixture domain must be left alone. The
 // host is frequently the payload itself (subdomain-encoded exfiltration,
 // credentials in userinfo), so redirecting it to the fixture would strip the
@@ -1992,6 +2014,34 @@ func TestRunFetchProxy_LeavesNonFixtureHostsUnrewritten(t *testing.T) {
 		if got := a.routeFetchFixtureURL(targetURL); got != targetURL {
 			t.Errorf("routeFetchFixtureURL(%q) rewrote to %q; non-fixture hosts must be preserved", targetURL, got)
 		}
+	}
+}
+
+func TestRunFetchProxy_HostnameExfiltrationControlPreservesDeclaredHost(t *testing.T) {
+	var gotTarget string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTarget = r.URL.Query().Get("url")
+		_, _ = fmt.Fprint(w, "ok")
+	}))
+	defer proxy.Close()
+
+	a, err := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetHTTPFixture("127.0.0.1:34567", func(string, string) {})
+	result := a.runFetchProxy(Case{
+		ID: "hostname-exfil-benign-cdn-008",
+		Payload: map[string]interface{}{
+			"url": "https://cdn.fixture.example.com/ajax/libs/lodash.js/4.17.21/lodash.min.js",
+		},
+	}, 5*time.Second)
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, err = %v", result.Verdict, result.Err)
+	}
+	want := "http://cdn.fixture.example.com:34567/ajax/libs/lodash.js/4.17.21/lodash.min.js"
+	if gotTarget != want {
+		t.Fatalf("fetch target = %q, want %q", gotTarget, want)
 	}
 }
 

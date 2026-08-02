@@ -101,6 +101,10 @@ dns:
   host_overrides:
     aeb-fixture.test:
       - 127.0.0.1
+    # This hostname-exfiltration false-positive control must retain its
+    # declared hostname while the runner swaps only its dynamic fixture port.
+    cdn.fixture.example.com:
+      - 127.0.0.1
     ws-exfil-sink.test:
       - 127.0.0.2
     a2a-exfil-sink.test:
@@ -122,6 +126,7 @@ dns:
       - 93.184.216.34
 trusted_domains:
   - aeb-fixture.test
+  - cdn.fixture.example.com
   - allowed-code-api.test
   - allowed-chat-webhook.test
 
