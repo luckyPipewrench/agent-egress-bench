@@ -113,11 +113,15 @@ command string, or passes a proof file descriptor/token to the tool.
 
 The listener records matching JSON-RPC requests itself. An allow is credited
 only when every required request arrives at that listener in order (including
-every call in an under-budget sequence). A command that does not support this
-endpoint contract still runs exactly as configured, but a case requiring this
-observation is emitted as `skip`, never as an invocation error or an unproven
-allow. This means an integration must expose a compatible upstream surface to
-score those cases; it must not rely on runner-side command rewriting.
+every call in an under-budget sequence). Explicit policy denies and clean deny
+exits remain `block` even when they deliberately do not reach that listener.
+A command that completes without either a block signal or the required
+observation returns adapter verdict `skip`; for an otherwise-applicable case,
+the Gauntlet runner records that as `actual_verdict: "error"`, `score: "error"`,
+and notes `adapter skip: mcp_stdio_upstream_observation_missing`. A command
+failure is an adapter error, not an observation skip. This means an integration
+must expose a compatible upstream surface to score allow outcomes; it must not
+rely on runner-side command rewriting.
 
 ### Domain blocklist seeding
 

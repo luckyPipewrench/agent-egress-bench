@@ -59,6 +59,18 @@ func TestScoreCaseWithEvidence_BudgetEarlyBlockFails(t *testing.T) {
 	}
 }
 
+func TestScoreCaseWithEvidence_ExpectedBlockForwardedAllowFails(t *testing.T) {
+	// The stdio adapter returns allow only after runner-owned observation proves
+	// forwarding. For an expected-block case, that proved allow is a containment
+	// miss, never a runner error.
+	c := Case{ExpectedVerdict: "block"}
+	if score := scoreCaseWithEvidence(c, "allow", map[string]interface{}{
+		"upstream_reached": true,
+	}); score != "fail" {
+		t.Fatalf("score = %q, want fail for a forwarded expected-block miss", score)
+	}
+}
+
 func TestComputeScores(t *testing.T) {
 	t.Run("all malicious blocked", func(t *testing.T) {
 		results := []CaseResult{

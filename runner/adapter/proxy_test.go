@@ -283,6 +283,114 @@ func TestRunMCPStdio_UnprovenNonEmptyResponseSkips(t *testing.T) {
 	}
 }
 
+func TestRunMCPStdio_UnobservedPolicyDenyBlocks(t *testing.T) {
+	// A security decision happens before any upstream forwarding. Observation is
+	// proof for an allow, not a precondition for recognizing a policy deny.
+	result := (&ProxyAdapter{mcpCmd: `printf '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}\n'`}).runMCPStdio(
+		mcpStdioExpectedBlockResponseCase("mcp-stdio-unobserved-policy-deny"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block; policy deny must not require upstream observation; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["upstream_requests_observed"]; got != 0 {
+		t.Fatalf("upstream_requests_observed = %v, want 0; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdio_UnobservedDenyExitBlocks(t *testing.T) {
+	// A clean close without a response is an MCP deny signal. It must remain a
+	// block even though the tool deliberately did not reach its upstream.
+	result := (&ProxyAdapter{mcpCmd: `exit 0`}).runMCPStdio(
+		mcpStdioExpectedBlockResponseCase("mcp-stdio-unobserved-deny-exit"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block; deny exit must not require upstream observation; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["upstream_requests_observed"]; got != 0 {
+		t.Fatalf("upstream_requests_observed = %v, want 0; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdio_SubprocessFailureBeforeObservationErrors(t *testing.T) {
+	// A non-zero exit is an integration failure, not an observation skip, even
+	// when this allow case has a runner-owned upstream observer.
+	result := (&ProxyAdapter{mcpCmd: `echo bad-config 1>&2; exit 7`}).runMCPStdio(Case{
+		ID:              "mcp-stdio-subprocess-failure",
+		ExpectedVerdict: "allow",
+		Transport:       "mcp_stdio",
+		InputType:       "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/call"},
+		}},
+	}, 5*time.Second)
+	if result.Err == nil {
+		t.Fatalf("result = %+v, want subprocess error rather than observation skip", result)
+	}
+	if !strings.Contains(result.Err.Error(), "bad-config") {
+		t.Fatalf("error = %v, want captured stderr", result.Err)
+	}
+}
+
+func TestRunMCPStdio_ExpectedBlockForwardedAllowIsMiss(t *testing.T) {
+	// A malicious case that reaches upstream and receives a non-blocking result
+	// is a containment miss. It must be an allow so the runner scores it fail,
+	// never an observation skip that becomes a runner error.
+	c := Case{
+		ID:              "mcp-stdio-expected-block-forwarded-allow",
+		ExpectedVerdict: "block",
+		Transport:       "mcp_stdio",
+		InputType:       "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/call"},
+		}},
+	}
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}).runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow for forwarded non-blocking result; evidence=%+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestMCPStdioUpstreamCommandEnvStripsAmbientAddress(t *testing.T) {
+	t.Setenv(mcpStdioUpstreamAddrEnv, "127.0.0.1:12345")
+	prefix := mcpStdioUpstreamAddrEnv + "="
+	for _, entry := range mcpStdioUpstreamCommandEnv("") {
+		if strings.HasPrefix(entry, prefix) {
+			t.Fatalf("environment leaked ambient upstream endpoint %q", entry)
+		}
+	}
+
+	const runnerOwnedAddr = "127.0.0.1:23456"
+	var found []string
+	for _, entry := range mcpStdioUpstreamCommandEnv(runnerOwnedAddr) {
+		if strings.HasPrefix(entry, prefix) {
+			found = append(found, entry)
+		}
+	}
+	if !reflect.DeepEqual(found, []string{prefix + runnerOwnedAddr}) {
+		t.Fatalf("runner-owned upstream environment = %v, want [%s]", found, prefix+runnerOwnedAddr)
+	}
+}
+
+func mcpStdioExpectedBlockResponseCase(id string) Case {
+	return Case{
+		ID:              id,
+		ExpectedVerdict: "block",
+		Transport:       "mcp_stdio",
+		InputType:       "mcp_tool_definition",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"tools": []interface{}{}}},
+		}},
+	}
+}
+
 func TestVerifyMCPStdioResponses_ExpectedErrorRequiresMatchingError(t *testing.T) {
 	result := verifyMCPStdioResponses("mcp-stdio-error-content", []string{
 		`{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"forged error"}}`,
@@ -334,12 +442,11 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 	if os.Getenv("AEB_MCP_STDIO_TEST_HELPER") != "1" {
 		return
 	}
-	mode := os.Args[len(os.Args)-1]
 	addr := os.Getenv(mcpStdioUpstreamAddrEnv)
 	if addr == "" {
-		fmt.Fprintln(os.Stderr, "missing runner-owned MCP stdio upstream address")
-		os.Exit(2)
+		return
 	}
+	mode := os.Args[len(os.Args)-1]
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "dial runner-owned MCP stdio upstream: %v\n", err)

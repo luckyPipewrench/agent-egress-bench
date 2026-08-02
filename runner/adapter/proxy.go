@@ -1494,6 +1494,9 @@ func mcpStdioObservationMissingResult(observer *mcpStdioUpstreamObserver, eviden
 	return Result{Verdict: "skip", Evidence: evidence}
 }
 
+// mcpStdioUpstreamCommandEnv removes an ambient observation endpoint before
+// adding the runner-owned one. An empty addr deliberately means no endpoint:
+// commands must never inherit a stale endpoint that this run does not own.
 func mcpStdioUpstreamCommandEnv(addr string) []string {
 	prefix := mcpStdioUpstreamAddrEnv + "="
 	env := make([]string, 0, len(os.Environ())+1)
@@ -1503,7 +1506,10 @@ func mcpStdioUpstreamCommandEnv(addr string) []string {
 		}
 		env = append(env, entry)
 	}
-	return append(env, prefix+addr)
+	if addr != "" {
+		env = append(env, prefix+addr)
+	}
+	return env
 }
 
 // runMCPStdio sends JSON-RPC messages through the MCP proxy subprocess.
@@ -1556,36 +1562,37 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		}
 	}
 
-	// Server-response cases need an upstream endpoint under runner control. The
+	// Every MCP stdio case gets an upstream endpoint under runner control. The
 	// command string is deliberately left untouched: an integration opts in by
-	// configuring its own proxy to use AEB_MCP_STDIO_UPSTREAM_ADDR. A command
-	// that cannot do that remains runnable, but its unobserved result is skip.
+	// configuring its own proxy to use AEB_MCP_STDIO_UPSTREAM_ADDR. Blocks do
+	// not need an observation, but every non-blocking result needs this endpoint
+	// to prove that it really reached an upstream.
 	var observer *mcpStdioUpstreamObserver
-	if len(serverResponses) > 0 || c.ExpectedVerdict == "allow" {
-		// If no client messages, send a tools/list request to trigger the response.
-		if len(clientMsgs) == 0 {
-			clientMsgs = append(clientMsgs, map[string]interface{}{
-				"jsonrpc": "2.0",
-				"method":  "tools/list",
-				"id":      1,
-			})
-		}
-		var observeErr error
-		observer, observeErr = startMCPStdioUpstreamObserver(clientMsgs, serverResponses)
-		if observeErr != nil {
-			return Result{Err: fmt.Errorf("case %s: start runner-owned MCP stdio upstream: %w", c.ID, observeErr)}
-		}
-		defer observer.Close()
+	// If no client messages, send a tools/list request to trigger the response.
+	if len(clientMsgs) == 0 {
+		clientMsgs = append(clientMsgs, map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "tools/list",
+			"id":      1,
+		})
 	}
+	var observeErr error
+	observer, observeErr = startMCPStdioUpstreamObserver(clientMsgs, serverResponses)
+	if observeErr != nil {
+		return Result{Err: fmt.Errorf("case %s: start runner-owned MCP stdio upstream: %w", c.ID, observeErr)}
+	}
+	defer observer.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
 	configureMCPCommand(cmd)
+	upstreamAddr := ""
 	if observer != nil {
-		cmd.Env = mcpStdioUpstreamCommandEnv(observer.addr())
+		upstreamAddr = observer.addr()
 	}
+	cmd.Env = mcpStdioUpstreamCommandEnv(upstreamAddr)
 	// Capture stderr so integration failures have an actionable diagnostic.
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
@@ -1624,8 +1631,9 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 	stderrOutput := strings.TrimSpace(stderrBuf.String())
 	observationEvidence, upstreamObserved := mcpStdioObservationEvidence(observer)
 
-	// Context timeout is expected (subprocess runs until stdin closes).
-	// But other wait errors with no output indicate a real failure.
+	// Context timeout is expected (subprocess runs until stdin closes). Other
+	// wait errors are real failures and must be returned before any
+	// observation-based allow skip can hide them.
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
 		if waitErr != nil && ctx.Err() == nil {
@@ -1645,14 +1653,11 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		if stderrOutput != "" {
 			evidence["stderr"] = stderrOutput
 		}
-		if observer != nil && !upstreamObserved {
-			return mcpStdioObservationMissingResult(observer, evidence)
-		}
 		for key, value := range observationEvidence {
 			evidence[key] = value
 		}
 		if observer != nil {
-			evidence["upstream_reached"] = true
+			evidence["upstream_reached"] = upstreamObserved
 		}
 		return Result{Verdict: "block", Evidence: evidence}
 	}
@@ -1671,12 +1676,6 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			code := rpcResp.Error.Code
 			if code >= -32099 && code <= -32000 {
 				// Policy block from the proxy (-32000 to -32099 range).
-				if observer != nil && !upstreamObserved {
-					return mcpStdioObservationMissingResult(observer, map[string]interface{}{
-						"error_code":    code,
-						"error_message": rpcResp.Error.Message,
-					})
-				}
 				evidence := map[string]interface{}{
 					"error_code":    code,
 					"error_message": rpcResp.Error.Message,
@@ -1685,7 +1684,7 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 					evidence[key] = value
 				}
 				if observer != nil {
-					evidence["upstream_reached"] = true
+					evidence["upstream_reached"] = upstreamObserved
 				}
 				return Result{
 					Verdict:  "block",
@@ -1776,29 +1775,29 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 		}
 	}
 
-	// An under-budget allow is meaningful only if the runner observes every
-	// individual tool call at the upstream it owns. The command itself is not
-	// rewritten: integrations opt in by routing their upstream to the neutral
-	// AEB_MCP_STDIO_UPSTREAM_ADDR endpoint. A command that ignores it is
+	// A non-blocking budget sequence is meaningful only if the runner observes
+	// every individual tool call at the upstream it owns. The command itself is
+	// not rewritten: integrations opt in by routing their upstream to the
+	// neutral AEB_MCP_STDIO_UPSTREAM_ADDR endpoint. A command that ignores it is
 	// unscorable (skip), not a command-line error or a false allow.
 	var observer *mcpStdioUpstreamObserver
-	if c.ExpectedVerdict == "allow" {
-		var observeErr error
-		observer, observeErr = startMCPStdioUpstreamObserver(msgList, nil)
-		if observeErr != nil {
-			return Result{Err: fmt.Errorf("case %s: start runner-owned MCP stdio upstream: %w", c.ID, observeErr)}
-		}
-		defer observer.Close()
+	var observeErr error
+	observer, observeErr = startMCPStdioUpstreamObserver(msgList, nil)
+	if observeErr != nil {
+		return Result{Err: fmt.Errorf("case %s: start runner-owned MCP stdio upstream: %w", c.ID, observeErr)}
 	}
+	defer observer.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", p.mcpCmd) //nolint:gosec // command from trusted CLI flag
 	configureMCPCommand(cmd)
+	upstreamAddr := ""
 	if observer != nil {
-		cmd.Env = mcpStdioUpstreamCommandEnv(observer.addr())
+		upstreamAddr = observer.addr()
 	}
+	cmd.Env = mcpStdioUpstreamCommandEnv(upstreamAddr)
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
