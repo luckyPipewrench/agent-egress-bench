@@ -27,11 +27,6 @@ jobs:
       - name: Run validator tests
         run: cd validate && go test -race -count=1 ./...
 
-      # The runner module was built by the gauntlet workflow but never tested by
-      # CI, so its suite (including the corpus manifest pin) could not fail a PR.
-      - name: Run runner tests
-        run: cd runner && go test -race -count=1 ./...
-
       - name: Build validator
         run: cd validate && go build -o /tmp/aeb-validate .
 
@@ -51,3 +46,22 @@ jobs:
             exit 1
           fi
           echo "Personal info scan: clean"
+
+  # The runner module was built by the gauntlet workflow but never tested by any
+  # workflow, so its suite (including the corpus manifest pin) could not fail a
+  # pull request. It is a separate job rather than a step in validate because the
+  # two modules declare different Go versions: runner/go.mod requires 1.25 while
+  # validate/go.mod requires 1.24, and each should be tested on the version it
+  # declares.
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+
+      - name: Run runner tests
+        run: cd runner && go test -race -count=1 ./...
