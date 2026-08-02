@@ -1,0 +1,33 @@
+{
+  "_comment": "Generic MCP gateway plugin. _comment keys are ignored by the JSON loader and keep this template valid JSON.",
+  "name": "replace-with-gateway-integration-name",
+  "transport": "streamable_http",
+  "gateway": {
+    "_comment": "Lifecycle metadata; PR1 records it but does not execute these commands.",
+    "start_command": "",
+    "ready_addr": "",
+    "env_passthrough": []
+  },
+  "fixture_registration": {
+    "_comment": "How a later adapter slice will register the runner's MCP fixture.",
+    "method": "",
+    "register_command": "",
+    "deregister_command": "",
+    "config_template_path": "",
+    "api_endpoint": ""
+  },
+  "client": {
+    "_comment": "The externally started generic gateway's Streamable HTTP MCP endpoint and literal request headers.",
+    "endpoint": "http://127.0.0.1:3000/mcp",
+    "headers": {}
+  },
+  "deny_signals": {
+    "_comment": "Set only documented deny signals for this integration; [0, 0] disables JSON-RPC code matching.",
+    "jsonrpc_error_code_range": [0, 0],
+    "http_status_codes": [],
+    "tool_filtered_from_list": false,
+    "connection_closed_no_output": false,
+    "non_zero_exit": false,
+    "custom_body_markers": []
+  }
+}

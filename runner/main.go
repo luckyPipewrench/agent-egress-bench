@@ -17,7 +17,8 @@ func main() {
 	casesDir := flag.String("cases", "", "directory of case JSON files (required)")
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
-	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null, blockall, proxy")
+	adapterName := flag.String("adapter", "dryrun", "adapter name: dryrun, null, blockall, proxy, mcp-gateway")
+	gatewayPluginPath := flag.String("gateway-plugin", "", "path to a generic MCP gateway plugin JSON (required with --adapter mcp-gateway)")
 	proxyAddr := flag.String("proxy-addr", "", "proxy address for proxy adapter (e.g. 127.0.0.1:18899; avoid 8888, commonly an already-running proxy)")
 	scanAddr := flag.String("scan-addr", "", "scan API address for MCP/A2A cases (defaults to proxy-addr)")
 	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
@@ -45,7 +46,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := runWithOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion); err != nil {
+	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -56,6 +57,10 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 }
 
 func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string) error {
+	return runWithGatewayPluginOptions(casesDir, profilePath, outputPath, timeout, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, "", useFixtures, emitReceiptProfile, receiptVerifierFile, multiFileCases, debug, toolVersion)
+}
+
+func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, gatewayPluginPath string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -100,7 +105,7 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 	// Select adapter based on flag.
 	var adapt adapter.Adapter
 	var fm *fixture.Manager
-	if useFixtures || managedProxyCmd != "" || managedMCPHTTPCmd != "" {
+	if useFixtures || managedProxyCmd != "" || managedMCPHTTPCmd != "" || adapterName == "mcp-gateway" {
 		var fErr error
 		fm, fErr = fixture.StartAll()
 		if fErr != nil {
@@ -164,8 +169,21 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 			pa.SetMCPHTTPURL(mcpHTTPURL)
 		}
 		adapt = pa
+	case "mcp-gateway":
+		if gatewayPluginPath == "" {
+			return fmt.Errorf("--gateway-plugin is required when using the mcp-gateway adapter")
+		}
+		plugin, pluginErr := adapter.LoadGatewayPlugin(gatewayPluginPath)
+		if pluginErr != nil {
+			return pluginErr
+		}
+		gatewayAdapter, gatewayErr := adapter.NewMCPGatewayAdapter(plugin, fm)
+		if gatewayErr != nil {
+			return gatewayErr
+		}
+		adapt = gatewayAdapter
 	default:
-		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, blockall, proxy)", adapterName)
+		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, blockall, proxy, mcp-gateway)", adapterName)
 	}
 
 	var applicableResults []CaseResult
