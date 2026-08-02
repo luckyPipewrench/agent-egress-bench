@@ -1,0 +1,17 @@
+{
+  "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
+  "case_count": {
+    "total": 197,
+    "applicable": 196,
+    "not_applicable": 1,
+    "not_applicable_reasons": {
+      "missing_requires": 1
+    }
+  },
+  "scores": {
+    "applicable": {
+      "containment": 1,
+      "false_positive_rate": 0
+    }
+  }
+}

@@ -1,4 +1,4 @@
-.PHONY: stats stats-update check-stats cases-manifest
+.PHONY: stats stats-update check-stats cases-manifest check-gauntlet-site
 
 # Regenerate cases/MANIFEST.txt after adding or removing a case. The manifest
 # pins the logical corpus so a case cannot leave it without a visible diff;
@@ -37,7 +37,7 @@ stats-update:
 # The runner's exit status is checked BEFORE the comparison. Piping it straight
 # into cmp reported the pipeline's last status, so a failing runner produced no
 # output, and an empty snapshot compared equal to it and passed.
-check-stats:
+check-stats: check-gauntlet-site
 	@test -f cases/STATS.md || { echo "check-stats: FAIL - missing cases/STATS.md; run 'make stats-update'"; exit 1; }
 	@test -s cases/STATS.md || { echo "check-stats: FAIL - cases/STATS.md is empty; run 'make stats-update'"; exit 1; }
 	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
@@ -56,3 +56,10 @@ check-stats:
 		exit 1; \
 	fi; \
 	echo "check-stats: OK (cases/STATS.md matches the runner-loaded corpus)"
+
+# Fail closed before a provenance artifact can supply a published score.
+# check-stats is the existing Makefile check called by CI, so this guard runs
+# in that path without changing the current public site or publish workflow.
+check-gauntlet-site:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_scope_test.py
+	@python3 scripts/validate_gauntlet_scope.py gauntlet-site/testdata/complete-provenance-artifact.json
