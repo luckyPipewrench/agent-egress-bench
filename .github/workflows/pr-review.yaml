@@ -8,19 +8,27 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: pr-review-${{ github.repository }}-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     if: >-
+      github.event.comment.user.login == 'luckyPipewrench' &&
+      github.event.comment.author_association == 'OWNER' &&
       github.event.issue.pull_request &&
       (github.event.comment.body == '/review' ||
-       github.event.comment.body == '/review fast' ||
        github.event.comment.body == '/review deep')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Check out trusted review runner
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -30,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: pip install --require-hashes -r .github/requirements-pr-review.txt
 
+      - name: Test trusted review runner
+        run: python -m unittest scripts/pr_review_test.py
+
       - name: Determine review mode
         id: mode
         env:
@@ -38,7 +49,7 @@ jobs:
           if [ "$COMMENT_BODY" = "/review deep" ]; then
             echo "mode=deep" >> "$GITHUB_OUTPUT"
           else
-            echo "mode=fast" >> "$GITHUB_OUTPUT"
+            echo "mode=default" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run PR review
@@ -47,8 +58,11 @@ jobs:
           LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PR_REVIEW_MODEL_FAST: ${{ secrets.PR_REVIEW_MODEL_FAST }}
-          PR_REVIEW_MODEL_DEEP: ${{ secrets.PR_REVIEW_MODEL_DEEP }}
+          # Optional repository variables. Empty values fall back to the
+          # reviewed constants in scripts/pr-review.py, the single source of
+          # truth for model defaults.
+          PR_REVIEW_MODEL_FAST: ${{ vars.PR_REVIEW_MODEL_FAST }}
+          PR_REVIEW_MODEL_DEEP: ${{ vars.PR_REVIEW_MODEL_DEEP }}
           REVIEW_MODE: ${{ steps.mode.outputs.mode }}
           PR_NUMBER: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
