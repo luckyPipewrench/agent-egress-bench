@@ -37,6 +37,13 @@ func TestCorpusMatchesManifest(t *testing.T) {
 	}
 
 	if *updateManifest {
+		// Regeneration must not be able to write an expectation that the
+		// assertion path would reject. Duplicate IDs collapse when the manifest
+		// is read back, so writing one produces a committed artifact that looks
+		// regenerated and is invalid.
+		if dup, ok := firstDuplicateID(ids); ok {
+			t.Fatalf("case ID %q appears more than once; refusing to write %s", dup, manifestPath)
+		}
 		body := strings.Join(ids, "\n") + "\n"
 		if writeErr := os.WriteFile(manifestPath, []byte(body), 0o644); writeErr != nil {
 			t.Fatalf("write manifest: %v", writeErr)
@@ -97,6 +104,17 @@ func TestCorpusCaseIDsAreUnique(t *testing.T) {
 			t.Errorf("case ID %q appears %d times; IDs must be unique", id, n)
 		}
 	}
+}
+
+// firstDuplicateID returns the first ID that appears more than once. ids is
+// sorted by corpusCaseIDs, so duplicates are adjacent.
+func firstDuplicateID(ids []string) (string, bool) {
+	for i := 1; i < len(ids); i++ {
+		if ids[i] == ids[i-1] {
+			return ids[i], true
+		}
+	}
+	return "", false
 }
 
 // corpusCaseIDs returns every logical case ID, using the same loaders the

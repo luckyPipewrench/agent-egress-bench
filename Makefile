@@ -4,7 +4,7 @@
 # pins the logical corpus so a case cannot leave it without a visible diff;
 # runner/corpus_manifest_test.go asserts the two agree in both directions.
 cases-manifest:
-	cd runner && go test . -run TestCorpusMatchesManifest -update-manifest
+	cd runner && go test . -run 'TestCorpus' -update-manifest
 
 # Print canonical stats from test cases.
 # Counts are LOGICAL cases: single-file JSON cases plus each multi-file
