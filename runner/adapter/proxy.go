@@ -1560,6 +1560,22 @@ func mcpStdioObservationMissingResult(observer *mcpStdioUpstreamObserver, eviden
 	return Result{Verdict: "skip", Evidence: evidence}
 }
 
+// mcpStdioResponseRelayMissingResult keeps positive request-arrival proof
+// intact when the proxy did reach the runner-owned upstream but omitted the
+// response that the case requires it to relay.
+func mcpStdioResponseRelayMissingResult(observer *mcpStdioUpstreamObserver, evidence map[string]interface{}) Result {
+	if evidence == nil {
+		evidence = map[string]interface{}{}
+	}
+	observation, upstreamObserved := mcpStdioObservationEvidence(observer)
+	for key, value := range observation {
+		evidence[key] = value
+	}
+	evidence["upstream_reached"] = upstreamObserved
+	evidence["reason"] = "mcp_stdio_response_relay_missing"
+	return Result{Verdict: "skip", Evidence: evidence}
+}
+
 // mcpStdioUpstreamCommandEnv removes an ambient observation endpoint before
 // adding the runner-owned one. An empty addr deliberately means no endpoint:
 // commands must never inherit a stale endpoint that this run does not own.
@@ -1725,6 +1741,9 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			// request was forwarded even when a pipelining proxy exits before
 			// reading its response.
 			return Result{Verdict: "allow", Evidence: evidence}
+		}
+		if len(serverResponses) > 0 && upstreamObserved {
+			return mcpStdioResponseRelayMissingResult(observer, evidence)
 		}
 		return mcpStdioObservationMissingResult(observer, evidence)
 	}
@@ -1935,6 +1954,26 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			blockedID := responseID
 			if blockedID == "" {
 				blockedID = messageIDString(msg)
+			}
+			// A structured block alone does not prove budget enforcement: the
+			// proxy could fabricate all earlier successes locally. Drain the
+			// runner-owned observer before scoring and require its ordered prefix
+			// to cover the configured under-budget calls. The blocked call and
+			// later calls intentionally need not reach upstream.
+			if observer != nil {
+				observer.Drain(mcpStdioObserverDrainTimeout)
+				observationEvidence, _ := mcpStdioObservationEvidence(observer)
+				for key, value := range observationEvidence {
+					result.Evidence[key] = value
+				}
+				matched, _, _ := observer.counts()
+				result.Evidence["upstream_requests_observed_before_block"] = matched
+				if matched < limit {
+					return mcpStdioObservationMissingResult(observer, result.Evidence)
+				}
+			} else {
+				result.Evidence["upstream_requests_observed_before_block"] = 0
+				return mcpStdioObservationMissingResult(nil, result.Evidence)
 			}
 			return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, i+1, blockedID, result.Evidence)
 		}
