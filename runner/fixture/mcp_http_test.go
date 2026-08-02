@@ -2,13 +2,14 @@ package fixture
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"testing"
 )
 
-func TestMCPHTTPFixtureCountsTotalPostsAndToolCallsSeparately(t *testing.T) {
+func TestMCPHTTPFixtureCountsTotalPostsAndOperationCallsSeparately(t *testing.T) {
 	f, err := StartMCPHTTP()
 	if err != nil {
 		t.Fatal(err)
@@ -30,14 +31,40 @@ func TestMCPHTTPFixtureCountsTotalPostsAndToolCallsSeparately(t *testing.T) {
 		}
 	}
 	// Calls() is the total POST count the proxy MCP HTTP proof relies on
-	// (one per sent message); ToolCalls() is the tools/call-specific count
-	// the gateway adapter proves an allow by. initialize + tools/list +
-	// tools/call = 3 total POSTs, 1 of them a tools/call.
+	// (one per sent message). ToolCalls() and ListCalls() are operation-specific
+	// proof counters for gateway adapter paths. initialize + tools/list +
+	// tools/call = 3 total POSTs, one of each operation-specific request.
 	if got := f.Calls(); got != 3 {
 		t.Fatalf("Calls() = %d, want 3 total POSTs (initialize+tools/list+tools/call)", got)
 	}
 	if got := f.ToolCalls(); got != 1 {
 		t.Fatalf("ToolCalls() = %d, want 1 tools/call request", got)
+	}
+	if got := f.ListCalls(); got != 1 {
+		t.Fatalf("ListCalls() = %d, want 1 tools/list request", got)
+	}
+}
+
+func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	release, err := f.AcquireToolDefinitionLease(context.Background(), []json.RawMessage{json.RawMessage(`{"name":"leased_tool"}`)})
+	if err != nil {
+		t.Fatalf("AcquireToolDefinitionLease: %v", err)
+	}
+	response := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if !bytes.Contains(response, []byte(`"leased_tool"`)) {
+		t.Fatalf("leased tools/list response = %s, want leased_tool", response)
+	}
+	release()
+
+	response = postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	if bytes.Contains(response, []byte(`"leased_tool"`)) {
+		t.Fatalf("released tools/list response = %s, must not retain previous inventory", response)
 	}
 }
 
