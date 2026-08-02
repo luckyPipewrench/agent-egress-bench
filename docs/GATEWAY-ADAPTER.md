@@ -64,9 +64,10 @@ are literal HTTP headers sent with every MCP request.
   range; `[0, 0]` disables this signal.
 - `http_status_codes`: HTTP statuses that mean deny.
 - `custom_body_markers`: literal response-body strings that mean deny.
-- `tool_filtered_from_list`: documents that an integration blocks tool
-  definitions by omitting them from `tools/list`. The adapter detects omission
-  directly for its supported tools/list path.
+- `tool_filtered_from_list`: descriptive metadata only. It documents that an
+  integration blocks tool definitions by omitting them from `tools/list`, but it
+  does not gate detection. `runToolDefinition` detects an omitted declared tool
+  directly and never reads `DenySignals.ToolFilteredFromList`.
 - `connection_closed_no_output` and `non_zero_exit`: declared signals reserved
   for relevant follow-on paths; the adapter applies
   `connection_closed_no_output` when an MCP request fails before a response is

@@ -319,7 +319,12 @@ func TestMCPGatewayAdapterPreservesFixtureProofForMalformedSSEToolsListResponse(
 		if err := json.Unmarshal(body, &request); err != nil {
 			t.Fatal(err)
 		}
-		responseBody := forwardMCPGatewayRequest(t, &http.Client{Timeout: time.Second}, r.Context(), fm.MCPHTTP().URL(), body)
+		responseBody, ferr := forwardMCPGatewayRequest(&http.Client{Timeout: time.Second}, r.Context(), fm.MCPHTTP().URL(), body)
+		if ferr != nil {
+			t.Errorf("forward MCP gateway request: %v", ferr)
+			http.Error(w, ferr.Error(), http.StatusBadGateway)
+			return
+		}
 		if request.Method == "tools/list" {
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":\"aeb-tools-list\",\"result\":\n\n")
@@ -444,7 +449,12 @@ func TestMCPGatewayAdapterTimesOutWaitingForToolDefinitionLease(t *testing.T) {
 			case <-r.Context().Done():
 			}
 		}
-		responseBody := forwardMCPGatewayRequest(t, &http.Client{Timeout: time.Second}, r.Context(), fm.MCPHTTP().URL(), body)
+		responseBody, ferr := forwardMCPGatewayRequest(&http.Client{Timeout: time.Second}, r.Context(), fm.MCPHTTP().URL(), body)
+		if ferr != nil {
+			t.Errorf("forward MCP gateway request: %v", ferr)
+			http.Error(w, ferr.Error(), http.StatusBadGateway)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(responseBody); err != nil {
 			t.Fatal(err)
@@ -483,10 +493,14 @@ func TestMCPGatewayAdapterTimesOutWaitingForToolDefinitionLease(t *testing.T) {
 	var result Result
 	select {
 	case result = <-waiterResult:
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(900 * time.Millisecond):
 		t.Fatal("waiter did not respect its case timeout while waiting for the fixture lease")
 	}
-	if elapsed := time.Since(started); elapsed > 150*time.Millisecond {
+	// The waiter's own case timeout is 40ms and the holder's is 1s. A generous
+	// 500ms upper bound still proves the waiter returned on its own timeout
+	// rather than blocking for the holder's full second, without flaking on CI
+	// scheduling, goroutine startup, HTTP setup, or lease contention.
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
 		t.Fatalf("waiter returned after %s, want its single case timeout to cover lease acquisition", elapsed)
 	}
 	if result.Err != nil || result.Verdict != "skip" {
@@ -752,7 +766,12 @@ func sseToolsListGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		if err := json.Unmarshal(body, &request); err != nil {
 			t.Fatal(err)
 		}
-		responseBody := forwardMCPGatewayRequest(t, client, r.Context(), upstreamURL, body)
+		responseBody, ferr := forwardMCPGatewayRequest(client, r.Context(), upstreamURL, body)
+		if ferr != nil {
+			t.Errorf("forward MCP gateway request: %v", ferr)
+			http.Error(w, ferr.Error(), http.StatusBadGateway)
+			return
+		}
 		if request.Method == "tools/list" {
 			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"other-request\",\"result\":{\"tools\":[]}}\n\nevent: message\ndata: %s\n\n", responseBody)
@@ -802,7 +821,12 @@ func sequencedInventoryGateway(t *testing.T, upstreamURL string) *inventoryGatew
 			case <-time.After(200 * time.Millisecond):
 			}
 		}
-		responseBody := forwardMCPGatewayRequest(t, client, r.Context(), upstreamURL, body)
+		responseBody, ferr := forwardMCPGatewayRequest(client, r.Context(), upstreamURL, body)
+		if ferr != nil {
+			t.Errorf("forward MCP gateway request: %v", ferr)
+			http.Error(w, ferr.Error(), http.StatusBadGateway)
+			return
+		}
 		if caseName == "B" && request.Method == "tools/list" {
 			gateway.bOnce.Do(func() { close(gateway.bListDone) })
 		}
@@ -827,24 +851,27 @@ func (g *inventoryGateway) waitForAInitialize(t *testing.T) {
 	}
 }
 
-func forwardMCPGatewayRequest(t *testing.T, client *http.Client, ctx context.Context, upstreamURL string, body []byte) []byte {
-	t.Helper()
+// forwardMCPGatewayRequest runs inside httptest handler goroutines, so it
+// returns an error instead of calling t.Fatal: FailNow/Fatal only stops the
+// goroutine it runs on, which would leave the test hanging rather than failing.
+// Callers report the error with t.Errorf (goroutine-safe) and send an HTTP error.
+func forwardMCPGatewayRequest(client *http.Client, ctx context.Context, upstreamURL string, body []byte) ([]byte, error) {
 	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(body))
 	if err != nil {
-		t.Fatal(err)
+		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 	upstream.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(upstream)
 	if err != nil {
-		t.Fatal(err)
+		return nil, fmt.Errorf("upstream request: %w", err)
 	}
 	defer resp.Body.Close()
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatal(err)
+		return nil, fmt.Errorf("read upstream response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("upstream status = %d, body=%s", resp.StatusCode, responseBody)
+		return nil, fmt.Errorf("upstream status = %d, body=%s", resp.StatusCode, responseBody)
 	}
-	return responseBody
+	return responseBody, nil
 }

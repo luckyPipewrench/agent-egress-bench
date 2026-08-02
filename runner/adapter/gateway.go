@@ -77,25 +77,7 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	client := &http.Client{}
-	initialize := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      "aeb-initialize",
-		"method":  "initialize",
-		"params": map[string]interface{}{
-			"protocolVersion": "2025-03-26",
-			"capabilities":    map[string]interface{}{},
-			"clientInfo":      map[string]string{"name": "agent-egress-bench", "version": "1"},
-		},
-	}
-	if result := a.send(ctx, client, c.ID, initialize, false); result != nil {
-		return *result
-	}
-	initialized := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "notifications/initialized",
-		"params":  map[string]interface{}{},
-	}
-	if result := a.send(ctx, client, c.ID, initialized, false); result != nil {
+	if result := a.initialize(ctx, client, c.ID); result != nil {
 		return *result
 	}
 
@@ -492,17 +474,19 @@ func jsonRPCIDsEqual(got, wanted interface{}) bool {
 	return reflect.DeepEqual(got, wanted)
 }
 
-// preserveMalformedSSEToolsListProof upgrades the default no-upstream proof
-// only when this fixture independently observed the corresponding tools/list
-// request. A malformed gateway response alone is not evidence of egress.
-func (a *MCPGatewayAdapter) preserveMalformedSSEToolsListProof(result *Result, before int64, proofAvailable bool) {
+// preserveMalformedSSEProof upgrades the default no-upstream proof on a
+// malformed-SSE skip only when this fixture independently observed the
+// corresponding request. A malformed gateway response alone is not evidence of
+// egress, so both the tools/list and tools/call callers route through here to
+// keep their evidence handling identical.
+func (a *MCPGatewayAdapter) preserveMalformedSSEProof(result *Result, before int64, proofAvailable bool, counter func() (int64, bool), beforeKey, afterKey string) {
 	if result == nil || result.Verdict != "skip" || result.Evidence["reason"] != "malformed_sse_response" {
 		return
 	}
-	after, proofAvailableAfter := a.upstreamListCalls()
+	after, proofAvailableAfter := counter()
 	if proofAvailable && proofAvailableAfter {
-		result.Evidence["upstream_tools_list_calls_before"] = before
-		result.Evidence["upstream_tools_list_calls_after"] = after
+		result.Evidence[beforeKey] = before
+		result.Evidence[afterKey] = after
 	}
 	if proofAvailable && proofAvailableAfter && after > before {
 		result.Evidence["upstream_reached"] = true
@@ -513,25 +497,18 @@ func (a *MCPGatewayAdapter) preserveMalformedSSEToolsListProof(result *Result, b
 	}
 }
 
+// preserveMalformedSSEToolsListProof upgrades the default no-upstream proof
+// only when this fixture independently observed the corresponding tools/list
+// request.
+func (a *MCPGatewayAdapter) preserveMalformedSSEToolsListProof(result *Result, before int64, proofAvailable bool) {
+	a.preserveMalformedSSEProof(result, before, proofAvailable, a.upstreamListCalls, "upstream_tools_list_calls_before", "upstream_tools_list_calls_after")
+}
+
 // preserveMalformedSSEToolsCallProof is the tools/call equivalent of the
 // tools/list proof handling above. The decode failure remains a scored skip,
 // but a fixture counter can still prove that the gateway reached its upstream.
 func (a *MCPGatewayAdapter) preserveMalformedSSEToolsCallProof(result *Result, before int64, proofAvailable bool) {
-	if result == nil || result.Verdict != "skip" || result.Evidence["reason"] != "malformed_sse_response" {
-		return
-	}
-	after, proofAvailableAfter := a.upstreamCalls()
-	if proofAvailable && proofAvailableAfter {
-		result.Evidence["upstream_calls_before"] = before
-		result.Evidence["upstream_calls_after"] = after
-	}
-	if proofAvailable && proofAvailableAfter && after > before {
-		result.Evidence["upstream_reached"] = true
-		return
-	}
-	if !proofAvailable || !proofAvailableAfter {
-		result.Evidence["upstream_proof"] = "unavailable"
-	}
+	a.preserveMalformedSSEProof(result, before, proofAvailable, a.upstreamCalls, "upstream_calls_before", "upstream_calls_after")
 }
 
 func matchingBodyMarker(body string, markers []string) string {
