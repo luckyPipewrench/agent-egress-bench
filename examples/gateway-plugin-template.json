@@ -3,7 +3,7 @@
   "name": "replace-with-gateway-integration-name",
   "transport": "streamable_http",
   "gateway": {
-    "_comment": "Lifecycle metadata; PR1 records it but does not execute these commands.",
+    "_comment": "Lifecycle metadata; the adapter records it but does not execute these commands.",
     "start_command": "",
     "ready_addr": "",
     "env_passthrough": []

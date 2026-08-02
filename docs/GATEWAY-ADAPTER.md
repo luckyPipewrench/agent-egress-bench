@@ -4,16 +4,33 @@ The `mcp-gateway` runner adapter drives a gateway through a generic MCP client
 endpoint. A plugin describes the gateway's protocol surface and deny signals;
 it must not identify or depend on a particular gateway product.
 
-PR1 supports one narrow path: a corpus `mcp_http` case containing exactly one
-`mcp_tool_call`, sent to a plugin with `"transport": "streamable_http"`. The
-adapter sends `initialize`, `notifications/initialized`, and the case's
-`tools/call`. Other corpus transports and input types return `skip` with a
-reason rather than inventing a verdict.
+The adapter supports two narrow paths, both sent to a plugin with
+`"transport": "streamable_http"`:
+
+- A corpus `mcp_http` case containing exactly one `mcp_tool_call`: the adapter
+  sends `initialize`, `notifications/initialized`, and the case's `tools/call`.
+- A corpus `mcp_stdio` case containing exactly one `mcp_tool_definition`: the
+  corpus definition models the upstream inventory, while the adapter drives the
+  gateway over HTTP. It configures the runner-managed fixture with the declared
+  definitions, then sends `initialize`, `notifications/initialized`, and
+  `tools/list`.
+
+Other corpus transports and input types return `skip` with a reason rather than
+inventing a verdict. This does not model multi-call sequences or temporal tool
+drift.
 
 An allow is credited only when the runner-managed MCP fixture's `tools/call`
 counter advances after the gateway response. A successful response generated
 by a gateway without forwarding is therefore `skip`, with
 `upstream_reached: false`.
+
+For a `tools/list` path, an allow is credited only when the fixture's dedicated
+`tools/list` counter advances and every declared tool name is present in the
+gateway response. Names are lowercased for this presence comparison, so a
+gateway that only changes case is not credited as filtering a tool. A declared
+tool absent from the returned list is a `block`; a JSON-RPC error in the
+configured deny range is also a `block`. A successful local `tools/list`
+response without a fixture counter advance is always `skip`, never `allow`.
 
 ## Plugin fields
 
@@ -47,10 +64,13 @@ are literal HTTP headers sent with every MCP request.
   range; `[0, 0]` disables this signal.
 - `http_status_codes`: HTTP statuses that mean deny.
 - `custom_body_markers`: literal response-body strings that mean deny.
-- `tool_filtered_from_list`, `connection_closed_no_output`, and
-  `non_zero_exit`: declared signals reserved for the relevant follow-on paths;
-  PR1 applies `connection_closed_no_output` when an MCP request fails before a
-  response is received.
+- `tool_filtered_from_list`: documents that an integration blocks tool
+  definitions by omitting them from `tools/list`. The adapter detects omission
+  directly for its supported tools/list path.
+- `connection_closed_no_output` and `non_zero_exit`: declared signals reserved
+  for relevant follow-on paths; the adapter applies
+  `connection_closed_no_output` when an MCP request fails before a response is
+  received.
 
 ## Managed variables and interpolation
 
@@ -68,7 +88,7 @@ The runner's fixture environment names are:
 - `AEB_DNS_FIXTURE_ADDR`
 - `AEB_MCP_HTTP_FIXTURE_ADDR`, `AEB_MCP_HTTP_FIXTURE_URL`
 
-These values are available to runner-managed process commands today. PR1's
+These values are available to runner-managed process commands today. The
 plugin lifecycle commands are deliberately declarative, so supply any values
 needed during plugin loading in the runner process environment.
 

@@ -17,6 +17,7 @@ type MCPHTTPFixture struct {
 	server    *http.Server
 	calls     atomic.Int64
 	toolCalls atomic.Int64
+	listCalls atomic.Int64
 	toolsMu   sync.RWMutex
 	tools     []json.RawMessage
 }
@@ -36,6 +37,11 @@ func (f *MCPHTTPFixture) Calls() int64 { return f.calls.Load() }
 // upstream. The gateway adapter proves an allow by this tool-call-specific
 // count so an initialize/tools-list POST cannot inflate the proof.
 func (f *MCPHTTPFixture) ToolCalls() int64 { return f.toolCalls.Load() }
+
+// ListCalls returns the number of tools/list requests that reached the
+// upstream. The gateway adapter uses this dedicated count to prove that a
+// tools/list response was not generated locally by the gateway.
+func (f *MCPHTTPFixture) ListCalls() int64 { return f.listCalls.Load() }
 
 // SetTools configures the tools returned by a later tools/list request.
 func (f *MCPHTTPFixture) SetTools(tools []json.RawMessage) {
@@ -76,6 +82,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		case "initialize":
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"aeb-mcp-fixture","version":"1"}}}`, id)
 		case "tools/list":
+			f.listCalls.Add(1)
 			f.toolsMu.RLock()
 			toolList := f.tools
 			if toolList == nil {
