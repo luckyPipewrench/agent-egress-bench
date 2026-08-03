@@ -243,6 +243,41 @@ synthetic keys for conformance only. In a real verification flow, the buyer or o
 and manage context through an independent trusted channel; accepting producer-supplied context would
 let the producer choose the keys and every approved digest and would collapse the trust boundary.
 
+## Reference verifier
+
+The importable Go verifier and a thin offline CLI live under
+`control-evidence/v0/verifier`. The CLI takes a directory package plus the
+independently supplied context:
+
+```sh
+cd control-evidence/v0/verifier
+install -d -m 700 "$HOME/.cache/aeb-cee-replay-demo"
+go run ./cmd/aeb-cee-verify \
+  --package ../conformance/golden/g01-vendor-time \
+  --context ../conformance/golden/g01-vendor-time/context.json \
+  --replay-ledger "$HOME/.cache/aeb-cee-replay-demo"
+```
+
+It emits one versioned JSON result. Exit status `0` means valid, `1` means one
+of the five non-valid semantic outcomes, and `2` is reserved for invalid CLI
+usage or an internal output-encoding failure. The reference CLI currently
+accepts directory packages only; archive extraction remains a separate future
+trust boundary. It implements the four deterministic conformance material
+profiles below for corpus verification, not for production use.
+
+The replay-ledger argument names an existing buyer-controlled directory with
+mode `0700`, outside the evidence package. Each accepted nonce tuple is written
+as one canonical `0600` record using an atomic no-replace operation plus file
+and directory synchronization. Concurrent first use therefore has one winner;
+same-envelope re-verification remains valid, while a different envelope under
+the same tuple is invalid. Missing or unwritable durable state is
+`unverifiable`, never `valid`.
+
+Replay state is append-only in v0. Operators back up and restore the complete
+private directory; loss or corruption requires a newly issued buyer
+requirement and nonce. The reference verifier has no pruning, eviction,
+force-accept, or reset path that could silently reopen an old nonce.
+
 ## Replay ledger
 
 A durable verifier namespaces its replay ledger by the exact tuple `(requirement signer key ID,
