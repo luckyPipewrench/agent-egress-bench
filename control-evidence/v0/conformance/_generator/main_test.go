@@ -20,7 +20,7 @@ import (
 
 func TestCorpusIsDeterministicAndSigned(t *testing.T) {
 	a, b := allFiles(), allFiles()
-	if len(a) != 967 {
+	if len(a) != 978 {
 		t.Fatalf("fixture file count = %d", len(a))
 	}
 	for name, first := range a {
@@ -70,6 +70,42 @@ func TestClosedV0RunnerAndTrialModes(t *testing.T) {
 	}
 	if expect["expected_outcome"] != "invalid" || expect["reason"] != "minimum_trials_per_case_unsupported" {
 		t.Fatal("m60 expectation does not fail closed")
+	}
+}
+
+func TestUnavailableNegativeObserverFailsClosed(t *testing.T) {
+	files := allFiles()
+	base := "malicious/m61-negative-observer-unavailable/"
+	var outcomes map[string]any
+	if err := json.Unmarshal(files[base+"outcomes.json"], &outcomes); err != nil {
+		t.Fatal(err)
+	}
+	row := outcomes["rows"].([]any)[0].(map[string]any)
+	canaries := row["canaries"].([]any)
+	negative := canaries[1].(map[string]any)
+
+	if row["actual_verdict"] != "block" || row["outcome"] != "pass" || row["target_observation"] != "observer_unavailable" {
+		t.Fatal("m61 must isolate a pass-looking row with unavailable target observation")
+	}
+	if negative["polarity"] != "negative" || negative["state"] != "observer_unavailable" {
+		t.Fatal("m61 negative canary does not exercise observer unavailability")
+	}
+	for _, field := range []string{"window_start", "window_end", "observer_key_id", "preceding_health_ref", "following_health_ref", "liveness_record_ref"} {
+		if _, ok := negative[field]; ok {
+			t.Fatalf("m61 unexpectedly carries %s", field)
+		}
+	}
+	var expect map[string]any
+	if err := json.Unmarshal(files[base+"expect.json"], &expect); err != nil {
+		t.Fatal(err)
+	}
+	if expect["expected_outcome"] != "insufficient-evidence" || expect["reason"] != "negative_canary_observer_unavailable" {
+		t.Fatal("m61 expectation does not fail closed")
+	}
+	for name := range files {
+		if strings.HasPrefix(name, base+"observer-preceding") || strings.HasPrefix(name, base+"observer-following") || strings.HasPrefix(name, base+"observer-liveness") {
+			t.Fatalf("m61 contains unavailable-observer evidence %s", name)
+		}
 	}
 }
 

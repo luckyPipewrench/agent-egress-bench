@@ -40,6 +40,7 @@ func key(role string) ed25519.PrivateKey {
 	s := sha256.Sum256([]byte("agent-egress-bench-control-evidence-" + role + "-test-key-v0"))
 	return ed25519.NewKeyFromSeed(s[:])
 }
+
 func keyID(role string) string   { return hex.EncodeToString(key(role).Public().(ed25519.PublicKey)) }
 func digest(b []byte) string     { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func textDigest(s string) string { return digest([]byte(s)) }
@@ -57,6 +58,7 @@ func tokenCommitment(requirementSHA, runID, caseID string, trial int, canaryID, 
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
 func healthCommitment(requirementSHA, runID, caseID string, trial int, canaryID, subjectToken, controlID, transport, target, controlToken string) string {
 	parts := []string{"aeb-cee-v0/health-control", requirementSHA, runID, caseID, fmt.Sprint(trial), canaryID, subjectToken, controlID, transport, target, controlToken}
 	h := sha256.New()
@@ -68,6 +70,7 @@ func healthCommitment(requirementSHA, runID, caseID string, trial int, canaryID,
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
 func derivedHealthInput(profile, materialID, controlID, root string) string {
 	parts := []string{"aeb-cee-conformance-health-input/v1", profile, materialID, controlID, root}
 	h := sha256.New()
@@ -79,6 +82,7 @@ func derivedHealthInput(profile, materialID, controlID, root string) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
 func derivedToken(profile, materialID, root, canaryID string) string {
 	parts := []string{"aeb-cee-conformance-token-input/v1", profile, materialID, canaryID, root}
 	h := sha256.New()
@@ -378,6 +382,7 @@ func unknownHealthMaterial(requirementID string) []byte {
 	nonce := lengthPrefixedSHA256("aeb-cee-conformance-nonce/v1", requirementID, unknownHealthProfile, unknownHealthID, "health-control-material")[:gcm.NonceSize()]
 	return append(append([]byte(nil), nonce...), gcm.Seal(nil, nonce, plaintext, lengthPrefixedSHA256Input(unknownHealthProfile, unknownHealthID))...)
 }
+
 func pretty(v any) []byte {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -385,6 +390,7 @@ func pretty(v any) []byte {
 	}
 	return append(b, '\n')
 }
+
 func compact(v any) []byte {
 	var b bytes.Buffer
 	encoder := json.NewEncoder(&b)
@@ -394,6 +400,7 @@ func compact(v any) []byte {
 	}
 	return bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 }
+
 func compactGoHTML(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -401,6 +408,7 @@ func compactGoHTML(v any) []byte {
 	}
 	return b
 }
+
 func pae(t string, p []byte) []byte {
 	return []byte(fmt.Sprintf("DSSEv1 %d %s %d %s", len(t), t, len(p), p))
 }
@@ -408,6 +416,7 @@ func pae(t string, p []byte) []byte {
 func dsse(t string, payload any, signer ed25519.PrivateKey) map[string]any {
 	return dssePayload(t, compact(payload), signer)
 }
+
 func dssePayload(t string, p []byte, signer ed25519.PrivateKey) map[string]any {
 	sig := ed25519.Sign(signer, pae(t, p))
 	pub := signer.Public().(ed25519.PublicKey)
@@ -594,6 +603,7 @@ func clockEvidence(requirementSHA, runID, observationsSHA, kind, observedAt, key
 	payload := map[string]any{"profile": "control-evidence-clock-evidence/v0", "observation_kind": kind, "requirement_sha256": requirementSHA, "run_id": runID, "observations_sha256": observationsSHA, "started_at": "2026-08-02T11:30:00Z", "finished_at": "2026-08-02T11:45:00Z", "observed_at": observedAt, "attestor": map[string]any{"key_id": keyID, "authority_id": authorityID, "role": role, "profile": "synthetic-clock/v1", "verifier_sha256": textDigest("clock-verifier"), "policy_sha256": textDigest("clock-policy")}}
 	return pretty(dsse(typeClock, payload, key(signer)))
 }
+
 func observerEvidence(kind, requirementSHA, runID, commitment, fixtureID, healthRoot, caseID string, trial int, canaryID string, gap, after bool) []byte {
 	identity := observerIdentity(fixtureID)
 	p := map[string]any{"profile": "control-evidence-observer-evidence/v0", "kind": kind, "requirement_sha256": requirementSHA, "run_id": runID, "target_identity": "runner-target-example", "transport": "mcp_stdio", "observer": identity, "case_id": caseID, "trial_index": trial, "canary_id": canaryID, "canary_commitment_sha256": commitment}
@@ -891,7 +901,11 @@ func build(f fixture) map[string][]byte {
 		row := outcomes["rows"].([]any)[0].(map[string]any)
 		negativeCanary := row["canaries"].([]any)[1].(map[string]any)
 		commitment := negativeCanary["canary_commitment_sha256"].(string)
-		if f.id == "e01-continuous-liveness-negative" || f.id == "m07-gapped-liveness" {
+		if f.id == "m61-negative-observer-unavailable" {
+			// The signed row still claims a pass, but an unavailable observer cannot
+			// prove the negative canary. Leave it without health/liveness evidence so
+			// an independent verifier must downgrade it to insufficient evidence.
+		} else if f.id == "e01-continuous-liveness-negative" || f.id == "m07-gapped-liveness" {
 			extras["observer-liveness.dsse.json"] = observerEvidence("liveness-record", requirementSHA, runID, commitment, f.id, "synthetic-health-root-"+f.id, row["case_id"].(string), 1, negativeCanary["canary_id"].(string), f.id == "m07-gapped-liveness", false)
 			negativeCanary["liveness_record_ref"] = digest(extras["observer-liveness.dsse.json"])
 		} else {
@@ -931,7 +945,8 @@ func build(f fixture) map[string][]byte {
 	}
 	man := manifest(reqBytes, summaryBytes, outcomesBytes, extras)
 	manBytes := pretty(man)
-	envPayload := map[string]any{"profile": "control-evidence-envelope/v0", "requirement_sha256": requirementSHA, "challenge_nonce": reqPayload["challenge_nonce"], "run_id": runID,
+	envPayload := map[string]any{
+		"profile": "control-evidence-envelope/v0", "requirement_sha256": requirementSHA, "challenge_nonce": reqPayload["challenge_nonce"], "run_id": runID,
 		"started_at": "2026-08-02T11:30:00Z", "finished_at": "2026-08-02T11:45:00Z", "expires_at": "2026-08-02T12:45:00Z",
 		"runner": map[string]any{"version": "0.4.0", "source_revision": "synthetic-1", "execution_mode": "approved-binary", "binary_sha256": textDigest("runner")},
 		"corpus": map[string]any{"version": "v2.2.0", "corpus_sha256": textDigest("corpus"), "manifest_sha256": textDigest("corpus-manifest"), "scoring_version": "2.2"},
@@ -1000,9 +1015,21 @@ func fixtures() []fixture {
 		return fixture{category: "malicious", outcome: "invalid", reason: reason, mutate: mutate}
 	}
 	fs := []fixture{
-		{id: "g01-vendor-time", category: "golden", outcome: "valid"}, {id: "g02-customer-completion-clock", category: "golden", outcome: "valid"}, {id: "g03-token-packaged-material", category: "golden", outcome: "valid"}, {id: "g04-health-packaged-material", category: "golden", outcome: "valid"},
-		{id: "e01-continuous-liveness-negative", category: "edge", outcome: "valid"}, {id: "e02-same-envelope-reverification", category: "edge", outcome: "previously-accepted"}, {id: "e03-exact-future-skew-boundary", category: "edge", outcome: "valid"}, {id: "e04-legacy-opaque-summary-rational-projection", category: "edge", outcome: "valid"}, {id: "e05-same-nonce-different-requirement", category: "edge", outcome: "valid"}, {id: "e06-literal-html-signed-payload", category: "edge", outcome: "valid"}, {id: "e07-opaque-summary-score-lie", category: "edge", outcome: "valid"}, {id: "e08-buyer-authorized-not-applicable", category: "edge", outcome: "valid"}, {id: "e09-authorized-error", category: "edge", outcome: "valid"},
-		{id: "m01-dsse-multi-signature", category: "malicious", outcome: "invalid", reason: "dsse_signature_count"}, {id: "m02-payload-hash-mismatch", category: "malicious", outcome: "invalid", reason: "requirement_payload_hash_mismatch"},
+		{id: "g01-vendor-time", category: "golden", outcome: "valid"},
+		{id: "g02-customer-completion-clock", category: "golden", outcome: "valid"},
+		{id: "g03-token-packaged-material", category: "golden", outcome: "valid"},
+		{id: "g04-health-packaged-material", category: "golden", outcome: "valid"},
+		{id: "e01-continuous-liveness-negative", category: "edge", outcome: "valid"},
+		{id: "e02-same-envelope-reverification", category: "edge", outcome: "previously-accepted"},
+		{id: "e03-exact-future-skew-boundary", category: "edge", outcome: "valid"},
+		{id: "e04-legacy-opaque-summary-rational-projection", category: "edge", outcome: "valid"},
+		{id: "e05-same-nonce-different-requirement", category: "edge", outcome: "valid"},
+		{id: "e06-literal-html-signed-payload", category: "edge", outcome: "valid"},
+		{id: "e07-opaque-summary-score-lie", category: "edge", outcome: "valid"},
+		{id: "e08-buyer-authorized-not-applicable", category: "edge", outcome: "valid"},
+		{id: "e09-authorized-error", category: "edge", outcome: "valid"},
+		{id: "m01-dsse-multi-signature", category: "malicious", outcome: "invalid", reason: "dsse_signature_count"},
+		{id: "m02-payload-hash-mismatch", category: "malicious", outcome: "invalid", reason: "requirement_payload_hash_mismatch"},
 	}
 	add := func(id, outcome, reason string, m func(map[string]any, map[string]any, map[string]any)) {
 		x := bad(reason, m)
@@ -1097,6 +1124,15 @@ func fixtures() []fixture {
 		e["runner"].(map[string]any)["execution_mode"] = "conformant-compatible"
 	})
 	add("m60-minimum-trials-unsupported", "invalid", "minimum_trials_per_case_unsupported", nil)
+	add("m61-negative-observer-unavailable", "insufficient-evidence", "negative_canary_observer_unavailable", func(_, o, _ map[string]any) {
+		row := o["rows"].([]any)[0].(map[string]any)
+		row["target_observation"] = "observer_unavailable"
+		canary := row["canaries"].([]any)[1].(map[string]any)
+		canary["state"] = "observer_unavailable"
+		for _, field := range []string{"window_start", "window_end", "observer_key_id", "preceding_health_ref", "following_health_ref", "liveness_record_ref"} {
+			delete(canary, field)
+		}
+	})
 	return fs
 }
 
@@ -1188,11 +1224,13 @@ func context(f fixture, packageFiles map[string][]byte) []byte {
 	}
 	return pretty(map[string]any{"profile": "control-evidence-conformance-context/v0", "reference_now": now, "trusted_keys": map[string]any{"buyer": keyID("buyer"), "vendor_runner": keyID("vendor-runner"), "observer": keyID("observer"), "customer_clock": keyID("customer-clock")}, "token_material": tokenContext, "health_control_material": healthContext, "nonce_ledger": ledger})
 }
+
 func requirementOuterKeyID(data []byte) string {
 	var outer map[string]any
 	_ = json.Unmarshal(data, &outer)
 	return outer["signatures"].([]any)[0].(map[string]any)["keyid"].(string)
 }
+
 func allFiles() map[string][]byte {
 	out := map[string][]byte{}
 	for _, f := range fixtures() {
@@ -1332,6 +1370,7 @@ func verify(files map[string][]byte) error {
 	}
 	return nil
 }
+
 func main() {
 	write := flag.Bool("write", false, "write fixtures")
 	verifyFlag := flag.Bool("verify", false, "verify fixtures")
