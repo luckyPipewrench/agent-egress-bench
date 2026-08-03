@@ -3,7 +3,7 @@
   "description": "Synthetic control-evidence envelope v0 conformance vector.",
   "expected_outcome": "insufficient-evidence",
   "fixture_id": "m24-token-aead-authentication-failure",
-  "nonce_status": "first_verification",
+  "nonce_status": "",
   "reason": "token_material_aead_authentication_failed",
   "reference_now": "2026-08-02T12:00:00Z"
 }

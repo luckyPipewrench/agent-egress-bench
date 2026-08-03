@@ -43,6 +43,15 @@ func TestDerivedTokenCanaryIDSeparatesSamePolarity(t *testing.T) {
 	}
 }
 
+func TestPackagedMaterialKeysAreRequirementScoped(t *testing.T) {
+	if packagedTokenKey("requirement-a") == packagedTokenKey("requirement-b") {
+		t.Fatal("token-material AES key was reused across requirements")
+	}
+	if packagedHealthKey("requirement-a") == packagedHealthKey("requirement-b") {
+		t.Fatal("health-control-material AES key was reused across requirements")
+	}
+}
+
 func TestClosedV0RunnerAndTrialModes(t *testing.T) {
 	files := allFiles()
 	for _, id := range []string{"m10-compatibility-declared", "m59-conformant-compatible-unpinned"} {

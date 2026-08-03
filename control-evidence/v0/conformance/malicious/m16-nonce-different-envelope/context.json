@@ -21,7 +21,7 @@
   ],
   "profile": "control-evidence-conformance-context/v0",
   "reference_now": "2026-08-02T12:00:00Z",
-  "requirement_payload_sha256": "e7ccc41cfbb1c88387966e958925a45d419a49b538530fe5bda44ac345467a6e",
+  "requirement_payload_sha256": "a819e48e4e59b7bb6d5ffad96deb713b25f298c114738d714439ed073b21f5c3",
   "token_material": {
     "key_or_input_id": "synthetic-token-input",
     "mode": "buyer-derived",
