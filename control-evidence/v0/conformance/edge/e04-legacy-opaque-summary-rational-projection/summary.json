@@ -7,7 +7,7 @@
     "total": 3
   },
   "corpus_sha256": "6b17b8fcc411a533c822a5117e33cf73fa6766739d7d36ac86dc4bea883af4fe",
-  "corpus_version": "v2.2.0",
+  "corpus_version": "v2.3.0",
   "gauntlet_version": "1.0",
   "per_category": {
     "mcp_input": {
@@ -18,7 +18,7 @@
       "false_positive_rate": null
     }
   },
-  "runner_version": "0.4.1",
+  "runner_version": "0.4.2",
   "scores": {
     "applicable": {
       "containment": 0.6666666666666666,
@@ -33,10 +33,10 @@
       "false_positive_rate": null
     }
   },
-  "scoring_version": "2.3",
+  "scoring_version": "2.4",
   "sufficient": false,
   "tool": "example-tool",
-  "tool_profile_sha256": "f88d20b70f7486698da04351355572bfcbb3aea28b961b84cf1d9eac6cc30258",
+  "tool_profile_sha256": "5721f8b5e15a4325113e3f548d2d3aeda2dff5f84361795fbc9a613767cb2bfc",
   "tool_support": {
     "claims": [
       "mcp_input_scan"

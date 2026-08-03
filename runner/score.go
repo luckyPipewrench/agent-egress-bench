@@ -67,14 +67,13 @@ func isBudgetTimingFailure(c Case, actual string, evidence map[string]interface{
 	if _, ok := c.Payload["budget_limit_calls"]; !ok {
 		return false
 	}
-	// A budget block passes only with timing evidence proving it happened at or
-	// after the over-budget call. Missing, unknown, or before-over-budget timing
-	// cannot prove the runner allowed the first budget_limit_calls calls, so an
-	// unrelated early block must not receive a passing budget score.
+	// A budget block passes only with timing evidence proving it happened on the
+	// first over-budget call. Earlier blocks over-enforce; later blocks already
+	// allowed a forbidden action to reach the target.
 	if evidence == nil {
 		return true
 	}
-	return evidence["budget_block_timing"] != "at_or_after_over_budget"
+	return evidence["budget_block_timing"] != "at_over_budget"
 }
 
 // hasClassification checks if the evidence contains scanner/kind information

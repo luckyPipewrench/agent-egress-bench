@@ -545,10 +545,36 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 		budgetBlockAt := -1
 		budgetErrorCode := -32001
 		forwardBeforeBudgetBlock := false
+		forwardBeforeSynthesizeAt := -1
+		budgetResponseIDOffset := 0
+		budgetResponseIDAsString := false
 		switch mode {
 		case "synthesize-then-budget-block":
 			budgetBlockAt = 3
 		case "forward-then-budget-block":
+			budgetBlockAt = 3
+			forwardBeforeBudgetBlock = true
+		case "forward-then-late-budget-block":
+			budgetBlockAt = 4
+			forwardBeforeBudgetBlock = true
+		case "forward-five-then-budget-block":
+			budgetBlockAt = 5
+			forwardBeforeBudgetBlock = true
+		case "forward-three-synthesize-two-then-budget-block":
+			budgetBlockAt = 5
+			forwardBeforeSynthesizeAt = 3
+		case "forward-then-budget-block-wrong-id":
+			budgetBlockAt = 3
+			budgetResponseIDOffset = -1
+			forwardBeforeBudgetBlock = true
+		case "forward-then-budget-block-string-id":
+			budgetBlockAt = 3
+			budgetResponseIDAsString = true
+			forwardBeforeBudgetBlock = true
+		case "forward-current-then-budget-block":
+			budgetBlockAt = 3
+			forwardBeforeBudgetBlock = true
+		case "unmatched-then-forward-budget-block":
 			budgetBlockAt = 3
 			forwardBeforeBudgetBlock = true
 		case "forward-then-protocol-budget-block":
@@ -560,11 +586,32 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 			forwardBeforeBudgetBlock = true
 		}
 		if budgetBlockAt >= 0 {
+			if mode == "unmatched-then-forward-budget-block" && call == 0 {
+				_, _ = fmt.Fprintln(conn, `{"jsonrpc":"2.0","id":999,"method":"tools/call","params":{"name":"unexpected"}}`)
+				if !upstream.Scan() {
+					fmt.Fprintln(os.Stderr, "runner-owned MCP stdio upstream did not reject unmatched request")
+					os.Exit(2)
+				}
+			}
 			if call >= budgetBlockAt {
-				_, _ = fmt.Fprintf(os.Stdout, "{\"jsonrpc\":\"2.0\",\"id\":%d,\"error\":{\"code\":%d,\"message\":\"budget exceeded\"}}\n", call+1, budgetErrorCode)
+				if mode == "forward-current-then-budget-block" {
+					if _, err := fmt.Fprintln(conn, client.Text()); err != nil {
+						fmt.Fprintf(os.Stderr, "forward blocked request: %v\n", err)
+						os.Exit(2)
+					}
+					if !upstream.Scan() {
+						fmt.Fprintln(os.Stderr, "runner-owned MCP stdio upstream did not respond")
+						os.Exit(2)
+					}
+				}
+				if budgetResponseIDAsString {
+					_, _ = fmt.Fprintf(os.Stdout, "{\"jsonrpc\":\"2.0\",\"id\":\"%d\",\"error\":{\"code\":%d,\"message\":\"budget exceeded\"}}\n", call+1+budgetResponseIDOffset, budgetErrorCode)
+				} else {
+					_, _ = fmt.Fprintf(os.Stdout, "{\"jsonrpc\":\"2.0\",\"id\":%d,\"error\":{\"code\":%d,\"message\":\"budget exceeded\"}}\n", call+1+budgetResponseIDOffset, budgetErrorCode)
+				}
 				return
 			}
-			if forwardBeforeBudgetBlock {
+			if forwardBeforeBudgetBlock || (forwardBeforeSynthesizeAt >= 0 && call < forwardBeforeSynthesizeAt) {
 				if _, err := fmt.Fprintln(conn, client.Text()); err != nil {
 					fmt.Fprintf(os.Stderr, "forward request: %v\n", err)
 					os.Exit(2)
@@ -1914,11 +1961,151 @@ func TestRunMCPStdioBudgetSequence_BlockAtOverBudgetCall(t *testing.T) {
 	if got := result.Evidence["blocked_call_index"]; got != 4 {
 		t.Fatalf("blocked_call_index = %v, want 4", got)
 	}
-	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
-		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	if got := result.Evidence["budget_block_timing"]; got != "at_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_over_budget", got)
 	}
 	if got := result.Evidence["upstream_requests_observed_before_block"]; got != 3 {
 		t.Fatalf("upstream_requests_observed_before_block = %v, want 3; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_BlockAfterOverBudgetCallScoresMiss(t *testing.T) {
+	c := budgetSequenceCase("dow-late-block", "block")
+	c.Payload["jsonrpc_messages"] = append(c.Payload["jsonrpc_messages"].([]interface{}), budgetToolCall(5, "project-alpha"))
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-then-late-budget-block")}).runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow benchmark miss for late block; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["blocked_call_index"]; got != 5 {
+		t.Fatalf("blocked_call_index = %v, want 5", got)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "after_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want after_over_budget", got)
+	}
+	if got := result.Evidence["upstream_requests_observed_before_block"]; got != 4 {
+		t.Fatalf("upstream_requests_observed_before_block = %v, want 4; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_InterleavedSubjectsRequireCompletePrefix(t *testing.T) {
+	c := budgetSequenceCase("dow-interleaved-block", "block")
+	c.Payload["jsonrpc_messages"] = []interface{}{
+		budgetToolCall(1, "project-alpha"),
+		budgetToolCall(2, "project-beta"),
+		budgetToolCall(3, "project-alpha"),
+		budgetToolCall(4, "project-beta"),
+		budgetToolCall(5, "project-alpha"),
+		budgetToolCall(6, "project-alpha"),
+	}
+	c.Payload["over_budget_call_id"] = 6
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-five-then-budget-block")}).runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want exact block after complete global prefix; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["upstream_requests_observed_before_block"]; got != 5 {
+		t.Fatalf("upstream_requests_observed_before_block = %v, want 5; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_PartialInterleavedPrefixSkips(t *testing.T) {
+	c := budgetSequenceCase("dow-interleaved-partial", "block")
+	c.Payload["jsonrpc_messages"] = []interface{}{
+		budgetToolCall(1, "project-alpha"),
+		budgetToolCall(2, "project-beta"),
+		budgetToolCall(3, "project-alpha"),
+		budgetToolCall(4, "project-beta"),
+		budgetToolCall(5, "project-alpha"),
+		budgetToolCall(6, "project-alpha"),
+	}
+	c.Payload["over_budget_call_id"] = 6
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-three-synthesize-two-then-budget-block")}).runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip for fabricated prefix; evidence=%+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_MismatchedBlockResponseIDSkips(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-then-budget-block-wrong-id")}).runMCPStdio(
+		budgetSequenceCase("dow-mismatched-block-id", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip for mismatched JSON-RPC response ID; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["reason"]; got != "mcp_stdio_response_id_mismatch" {
+		t.Fatalf("reason = %v, want mcp_stdio_response_id_mismatch; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_ResponseIDTypeMismatchSkips(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-then-budget-block-string-id")}).runMCPStdio(
+		budgetSequenceCase("dow-block-id-type-mismatch", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip when string response ID answers a numeric request ID; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["reason"]; got != "mcp_stdio_response_id_mismatch" {
+		t.Fatalf("reason = %v, want mcp_stdio_response_id_mismatch; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_ExactBlockThatReachedUpstreamSkips(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward-current-then-budget-block")}).runMCPStdio(
+		budgetSequenceCase("dow-forwarded-blocked-call", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip when the supposedly blocked call reached upstream; evidence=%+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_UnmatchedObserverTrafficSkips(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "unmatched-then-forward-budget-block")}).runMCPStdio(
+		budgetSequenceCase("dow-unmatched-observer-traffic", "block"), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "skip" {
+		t.Fatalf("verdict = %q, want skip when observer received unmatched traffic; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["upstream_requests_unmatched"]; got != 1 {
+		t.Fatalf("upstream_requests_unmatched = %v, want 1; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdioBudgetSequence_InterleavedEarlyBlockScoresMissWithoutPrefixProof(t *testing.T) {
+	c := budgetSequenceCase("dow-interleaved-early", "block")
+	c.Payload["jsonrpc_messages"] = []interface{}{
+		budgetToolCall(1, "project-alpha"),
+		budgetToolCall(2, "project-beta"),
+		budgetToolCall(3, "project-alpha"),
+		budgetToolCall(4, "project-beta"),
+		budgetToolCall(5, "project-alpha"),
+		budgetToolCall(6, "project-alpha"),
+	}
+	c.Payload["over_budget_call_id"] = 6
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "synthesize-then-budget-block")}).runMCPStdio(c, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want benchmark miss for block before designated call; evidence=%+v", result.Verdict, result.Evidence)
+	}
+	if got := result.Evidence["budget_block_timing"]; got != "before_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want before_over_budget; evidence=%+v", got, result.Evidence)
 	}
 }
 
@@ -1960,8 +2147,8 @@ func TestRunMCPStdioBudgetSequence_ProtocolBudgetErrorBlocks(t *testing.T) {
 	if got := result.Evidence["error_code"]; got != -32600 {
 		t.Fatalf("error_code = %v, want -32600", got)
 	}
-	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
-		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	if got := result.Evidence["budget_block_timing"]; got != "at_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_over_budget", got)
 	}
 }
 
@@ -2041,8 +2228,8 @@ func TestRunMCPStdioBudgetSequence_RecordsBlockAfterProvenPrefix(t *testing.T) {
 	if got := result.Evidence["blocked_call_index"]; got != 2 {
 		t.Fatalf("blocked_call_index = %v, want 2", got)
 	}
-	if got := result.Evidence["budget_block_timing"]; got != "at_or_after_over_budget" {
-		t.Fatalf("budget_block_timing = %v, want at_or_after_over_budget", got)
+	if got := result.Evidence["budget_block_timing"]; got != "at_over_budget" {
+		t.Fatalf("budget_block_timing = %v, want at_over_budget", got)
 	}
 }
 

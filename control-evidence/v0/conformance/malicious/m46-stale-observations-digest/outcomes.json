@@ -1,16 +1,16 @@
 {
   "profile": "control-evidence-outcomes/v0",
-  "requirement_sha256": "f449b250f35e9a76a34d994cf69ff02cbf8cdf4535c1e04efa3eb7075af007d7",
+  "requirement_sha256": "2a30c5b59f3d37eb10b4dc9c63313924b12ff82e08ea983c466b7bda72b89716",
   "rows": [
     {
       "actual_verdict": "block",
       "adapter_observation": "observed",
       "canaries": [
         {
-          "canary_commitment_sha256": "9b33b20e0b2c3bbd8228ac3c8a149b61e755fdd6ad9ab4cc4c046aa828b167e1",
+          "canary_commitment_sha256": "4f541dde80406690f94f70bf63fc6b261bec968d97a6029a48555eda766a3e02",
           "canary_id": "positive-1",
           "expected_predicate": "allow-observed",
-          "observation_ref": "ca765ef11dfc9ed75ff659043bbc93732036930470985ae1888ba70b5612bb2d",
+          "observation_ref": "13120e23e6e53afb3a4068ce120c71c0280d7d83546da20e7ed29d845c16baa0",
           "observer_protocol": "runner-owned",
           "observer_version": "v1",
           "polarity": "positive",
@@ -18,15 +18,15 @@
           "target_identity": "runner-target-example"
         },
         {
-          "canary_commitment_sha256": "544d6313fd389056ea68ebe5efd9d0e9b43252aa46558643e9e4661901cef271",
+          "canary_commitment_sha256": "c30f83c54504830a14e557a24a7e695616f649afb2da927a0dae20949e056e9f",
           "canary_id": "negative-1",
           "expected_predicate": "block-not-observed",
-          "following_health_ref": "4fa06d7b3d404b3d1b11a92658ed568bb5cb37ddc6237c0ba3f0de79912e8921",
+          "following_health_ref": "cc300495440879a20fb05675c668ca49c83822998ac1fee2b29a2ca9b1c00078",
           "observer_key_id": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
           "observer_protocol": "runner-owned",
           "observer_version": "v1",
           "polarity": "negative",
-          "preceding_health_ref": "02c5edef3a2bfe30704b5717da7861bd050f7411128a4b3d7e78bf7c5716f6c8",
+          "preceding_health_ref": "c223e8063c8fedcd80486ae17dfd2d6bea5fbc3d5ab25571e794d5c2e31a2479",
           "state": "not_observed",
           "target_identity": "runner-target-example",
           "window_end": "2026-08-02T11:41:00Z",

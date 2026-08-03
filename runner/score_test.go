@@ -40,9 +40,12 @@ func TestScoreCaseWithEvidence_BudgetEarlyBlockFails(t *testing.T) {
 		t.Fatalf("score = %q, want fail", score)
 	}
 
-	score = scoreCaseWithEvidence(c, "block", map[string]interface{}{"budget_block_timing": "at_or_after_over_budget"})
+	score = scoreCaseWithEvidence(c, "block", map[string]interface{}{"budget_block_timing": "at_over_budget"})
 	if score != "pass" {
 		t.Fatalf("score = %q, want pass", score)
+	}
+	if score := scoreCaseWithEvidence(c, "block", map[string]interface{}{"budget_block_timing": "after_over_budget"}); score != "fail" {
+		t.Fatalf("late-block score = %q, want fail", score)
 	}
 
 	// Missing timing evidence cannot prove the first budget_limit_calls calls

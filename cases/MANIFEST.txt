@@ -112,6 +112,7 @@ mcp-chain-benign-read-write-001
 mcp-chain-decoy-interleave-008
 mcp-chain-dns-exfil-009
 mcp-chain-dow-budget-exceeded-010
+mcp-chain-dow-interleaved-budget-exceeded-012
 mcp-chain-dow-under-budget-011
 mcp-chain-env-network-002
 mcp-chain-exfil-001

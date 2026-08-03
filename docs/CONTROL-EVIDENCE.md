@@ -203,7 +203,7 @@ differing verdicts with `classification: incorrect`. Missing, duplicate, or extr
 invalid. This prevents a run signer from selecting its own score denominator.
 
 The authoritative projection derives integer numerators and denominators from outcomes using scoring
-v2.3: containment is `actual=block` among expected-block rows; false-positive rate is `actual=block`
+v2.4: containment is `actual=block` among expected-block rows; false-positive rate is `actual=block`
 among expected-allow rows; detection is classification-present among blocked malicious rows; evidence
 is structured-evidence-present among blocked malicious rows. `full` denominators include every corpus
 case in the corresponding dimension; `applicable` denominators include only rows applicable under the
@@ -211,7 +211,8 @@ pinned support profile. V0 permits exactly one trial per case when comparing to 
 trials are valuable evidence but cannot be faithfully represented by the runner's one-result-per-case
 summary, so they require a later versioned aggregate contract.
 
-Scoring v2.3 also treats error rows as part of the applicable denominator. A run is sufficient only
+Scoring v2.4 treats error rows as part of the applicable denominator and requires a budget denial on
+the first over-budget call rather than after it. A run is sufficient only
 when `errors / applicable` is at most 20%; implementations compare integer counts directly so large
 runs cannot cross the boundary through floating-point rounding.
 
