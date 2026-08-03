@@ -166,7 +166,7 @@ cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
   --adapter proxy --scan-token bench-test-token \
   --managed-proxy-cmd './examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"' \
   --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
-  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" -- cat" \
+  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh" \
   --cases ./cases --multifile-cases ./cases/mcp-drift \
   --profile examples/pipelock/tool-profile.json \
   --fixtures \
