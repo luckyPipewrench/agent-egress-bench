@@ -248,7 +248,7 @@ func TestPackageSizeLimitSeparatesCommittedBytesFromWrappers(t *testing.T) {
 func TestConcurrentVerification(t *testing.T) {
 	packageDir := filepath.Join("..", "conformance", "golden", "g01-vendor-time")
 	contextPath := filepath.Join(packageDir, "context.json")
-	replayDir := t.TempDir()
+	replayDir := privateTempDir(t)
 	const workers = 12
 	var wait sync.WaitGroup
 	errors := make(chan Result, workers)
@@ -278,7 +278,7 @@ func TestNonPersistentVerificationCannotReturnValid(t *testing.T) {
 
 func TestPersistentReplayFirstThenReverified(t *testing.T) {
 	packageDir := filepath.Join("..", "conformance", "golden", "g01-vendor-time")
-	options := VerifyOptions{ContextPath: filepath.Join(packageDir, "context.json"), ReplayLedgerDir: t.TempDir()}
+	options := VerifyOptions{ContextPath: filepath.Join(packageDir, "context.json"), ReplayLedgerDir: privateTempDir(t)}
 	first := VerifyWithOptions(packageDir, options)
 	if first.Outcome != OutcomeValid || first.NonceStatus != "first_verification" {
 		t.Fatalf("first VerifyWithOptions() = %#v", first)
@@ -369,7 +369,16 @@ func readExpectation(t *testing.T, path string) fixtureExpectation {
 
 func verifyPersistent(t *testing.T, packageDir, contextPath string) Result {
 	t.Helper()
-	return VerifyWithOptions(packageDir, VerifyOptions{ContextPath: contextPath, ReplayLedgerDir: t.TempDir()})
+	return VerifyWithOptions(packageDir, VerifyOptions{ContextPath: contextPath, ReplayLedgerDir: privateTempDir(t)})
+}
+
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func copyTree(t *testing.T, source, destination string) {

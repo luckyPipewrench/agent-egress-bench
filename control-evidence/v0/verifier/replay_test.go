@@ -9,7 +9,7 @@ import (
 )
 
 func TestReplayStoreConcurrentDifferentEnvelopeHasOneWinner(t *testing.T) {
-	store, reason, err := openReplayStore(t.TempDir())
+	store, reason, err := openReplayStore(privateTempDir(t))
 	if err != nil {
 		t.Fatalf("openReplayStore() reason=%q err=%v", reason, err)
 	}
@@ -40,7 +40,7 @@ func TestReplayStoreConcurrentDifferentEnvelopeHasOneWinner(t *testing.T) {
 }
 
 func TestReplayStoreConcurrentSameEnvelopeReverifies(t *testing.T) {
-	store, reason, err := openReplayStore(t.TempDir())
+	store, reason, err := openReplayStore(privateTempDir(t))
 	if err != nil {
 		t.Fatalf("openReplayStore() reason=%q err=%v", reason, err)
 	}
@@ -71,7 +71,7 @@ func TestReplayStoreConcurrentSameEnvelopeReverifies(t *testing.T) {
 }
 
 func TestMalformedReplayRecordFailsClosed(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	entry := testReplayEntry("a")
 	path := filepath.Join(dir, replayFilename(entry))
 	if err := os.WriteFile(path, []byte(`{"profile":"wrong"}`), 0o600); err != nil {
@@ -84,7 +84,7 @@ func TestMalformedReplayRecordFailsClosed(t *testing.T) {
 
 func TestInvalidPackageDoesNotConsumeReplayNonce(t *testing.T) {
 	packageDir := filepath.Join("..", "conformance", "malicious", "m08-token-mismatch")
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	result := VerifyWithOptions(packageDir, VerifyOptions{
 		ContextPath:     filepath.Join(packageDir, "context.json"),
 		ReplayLedgerDir: dir,
