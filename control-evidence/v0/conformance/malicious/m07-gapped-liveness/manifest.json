@@ -1,11 +1,11 @@
 {
   "entries": [
     {
-      "byte_length": 3370,
+      "byte_length": 3498,
       "media_type": "application/json",
       "path": "requirement.dsse.json",
       "role": "requirement",
-      "sha256": "bc41c9707d032a6909ceb22538f67bdfcd1dd564435ff84bf57a9c32a39930cb"
+      "sha256": "63579fd592ac5d81397359c4278e73c347822114ef7f4e1b85725438b531410e"
     },
     {
       "byte_length": 2107,
@@ -19,7 +19,7 @@
       "media_type": "application/json",
       "path": "outcomes.json",
       "role": "outcomes",
-      "sha256": "30256ca7907757a2e2a4dd44da6d96c8c4b6da96babb689780762f2e0bfa2ff5"
+      "sha256": "8eede555d127c0aa4e21cf90141790137cb6de594872576b70e8af67305bdd0a"
     },
     {
       "byte_length": 49,
@@ -33,14 +33,14 @@
       "media_type": "application/json",
       "path": "observer-liveness.dsse.json",
       "role": "observer-evidence",
-      "sha256": "01639f1184f33f73874af9dfac107f13fccb31c92d412524902967f0b6d91fb5"
+      "sha256": "5b1da2066434700cbdb8ebc553ce4692c753a43e74660c366862dd83b4895050"
     },
     {
       "byte_length": 1244,
       "media_type": "application/json",
       "path": "observer-target-1.dsse.json",
       "role": "observer-evidence",
-      "sha256": "ed1db17dd1b03ffab7d0f5a91f2cad363def1d49a1d7cf8b04954218ec84388b"
+      "sha256": "80c37fd660e2003623daef501fa3bf507673a2162317423a643a1f479bc8431a"
     },
     {
       "byte_length": 39,
@@ -58,5 +58,5 @@
     }
   ],
   "profile": "control-evidence-manifest/v0",
-  "total_uncompressed_bytes": 11453
+  "total_uncompressed_bytes": 11581
 }

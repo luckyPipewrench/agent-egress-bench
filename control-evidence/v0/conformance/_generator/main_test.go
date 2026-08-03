@@ -20,7 +20,7 @@ import (
 
 func TestCorpusIsDeterministicAndSigned(t *testing.T) {
 	a, b := allFiles(), allFiles()
-	if len(a) != 978 {
+	if len(a) != 1124 {
 		t.Fatalf("fixture file count = %d", len(a))
 	}
 	for name, first := range a {
@@ -105,6 +105,177 @@ func TestUnavailableNegativeObserverFailsClosed(t *testing.T) {
 	for name := range files {
 		if strings.HasPrefix(name, base+"observer-preceding") || strings.HasPrefix(name, base+"observer-following") || strings.HasPrefix(name, base+"observer-liveness") {
 			t.Fatalf("m61 contains unavailable-observer evidence %s", name)
+		}
+	}
+}
+
+func TestIndependentPinsFailClosed(t *testing.T) {
+	files := allFiles()
+	tests := []struct {
+		id     string
+		reason string
+		check  func(t *testing.T, base string, context map[string]any)
+	}{
+		{
+			id: "m62-requirement-pin-mismatch", reason: "requirement_pin_mismatch",
+			check: func(t *testing.T, base string, context map[string]any) {
+				var wrapper map[string]any
+				_ = json.Unmarshal(files[base+"requirement.dsse.json"], &wrapper)
+				payload, _ := base64.StdEncoding.DecodeString(wrapper["payload"].(string))
+				if context["requirement_payload_sha256"] == digest(payload) {
+					t.Fatal("m62 context does not substitute the independently pinned requirement")
+				}
+			},
+		},
+		{
+			id: "m63-trust-policy-pin-mismatch", reason: "trust_policy_mismatch",
+			check: func(t *testing.T, base string, context map[string]any) {
+				_, requirement := decoded(t, files[base+"requirement.dsse.json"])
+				if context["trust_policy"].(map[string]any)["sha256"] == requirement["trust_policy_sha256"] {
+					t.Fatal("m63 context does not substitute the independently pinned trust policy")
+				}
+			},
+		},
+		{
+			id: "m64-corpus-pin-mismatch", reason: "corpus_identity_mismatch",
+			check: func(t *testing.T, base string, context map[string]any) {
+				_, envelope := decoded(t, files[base+"envelope.dsse.json"])
+				if context["corpus"].(map[string]any)["sha256"] == envelope["corpus"].(map[string]any)["corpus_sha256"] {
+					t.Fatal("m64 context does not substitute the independently pinned corpus")
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			base := "malicious/" + test.id + "/"
+			var context, expectation map[string]any
+			if err := json.Unmarshal(files[base+"context.json"], &context); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(files[base+"expect.json"], &expectation); err != nil {
+				t.Fatal(err)
+			}
+			if expectation["expected_outcome"] != "scope-mismatch" || expectation["reason"] != test.reason {
+				t.Fatalf("expectation = %#v", expectation)
+			}
+			test.check(t, base, context)
+		})
+	}
+}
+
+func TestApprovedPolicyAndAdapterArtifactsFailClosed(t *testing.T) {
+	files := allFiles()
+	for _, test := range []struct {
+		id, reason, role string
+	}{
+		{"m65-policy-identity-mismatch", "policy_identity_mismatch", "policy"},
+		{"m66-policy-artifact-digest-mismatch", "policy_artifact_digest_mismatch", "policy"},
+		{"m67-adapter-artifact-digest-mismatch", "adapter_artifact_digest_mismatch", "adapter"},
+	} {
+		t.Run(test.id, func(t *testing.T) {
+			base := "malicious/" + test.id + "/"
+			var expectation map[string]any
+			if err := json.Unmarshal(files[base+"expect.json"], &expectation); err != nil {
+				t.Fatal(err)
+			}
+			if expectation["expected_outcome"] != "scope-mismatch" || expectation["reason"] != test.reason {
+				t.Fatalf("expectation = %#v", expectation)
+			}
+			_, requirement := decoded(t, files[base+"requirement.dsse.json"])
+			_, envelope := decoded(t, files[base+"envelope.dsse.json"])
+			if test.id == "m65-policy-identity-mismatch" {
+				if envelope["policy"].(map[string]any)["sha256"] == requirement["approved_policy"].(map[string]any)["sha256"] {
+					t.Fatal("m65 does not substitute the run policy identity")
+				}
+				return
+			}
+			var manifest map[string]any
+			if err := json.Unmarshal(files[base+"manifest.json"], &manifest); err != nil {
+				t.Fatal(err)
+			}
+			var artifactDigest string
+			for _, raw := range manifest["entries"].([]any) {
+				entry := raw.(map[string]any)
+				if entry["role"] == test.role {
+					artifactDigest = entry["sha256"].(string)
+				}
+			}
+			approved := requirement["approved_adapter"].(map[string]any)["sha256"]
+			if test.role == "policy" {
+				approved = requirement["approved_policy"].(map[string]any)["sha256"]
+			}
+			if artifactDigest == approved {
+				t.Fatalf("%s does not substitute the %s artifact", test.id, test.role)
+			}
+		})
+	}
+}
+
+func TestObserverCannotReuseAnyAuthorizedRunnerKey(t *testing.T) {
+	files := allFiles()
+	base := "malicious/m68-observer-authorized-runner-key/"
+	_, requirement := decoded(t, files[base+"requirement.dsse.json"])
+	approvedObserver := requirement["approved_observer"].(map[string]any)["key_id"]
+	found := false
+	for _, raw := range requirement["authorized_run_signers"].([]any) {
+		if raw.(map[string]any)["key_id"] == approvedObserver {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("m68 does not reuse an authorized runner key as the observer")
+	}
+	var expectation map[string]any
+	if err := json.Unmarshal(files[base+"expect.json"], &expectation); err != nil {
+		t.Fatal(err)
+	}
+	if expectation["expected_outcome"] != "scope-mismatch" || expectation["reason"] != "observer_identity_mismatch" {
+		t.Fatalf("expectation = %#v", expectation)
+	}
+}
+
+func TestIndependentWitnessClockRoleIsExact(t *testing.T) {
+	files := allFiles()
+	for _, test := range []struct {
+		base, outcome, reason, role string
+	}{
+		{"golden/g05-independent-witness-clock/", "valid", "", "independent-witness-clock-attestor"},
+		{"malicious/m69-witness-basis-customer-role/", "scope-mismatch", "clock_role_mismatch", "customer-clock-attestor"},
+	} {
+		_, requirement := decoded(t, files[test.base+"requirement.dsse.json"])
+		if requirement["approved_clock_evidence"].(map[string]any)["role"] != test.role {
+			t.Fatalf("%s role = %#v", test.base, requirement["approved_clock_evidence"])
+		}
+		_, envelope := decoded(t, files[test.base+"envelope.dsse.json"])
+		if envelope["freshness_basis"] != "independent-witness-clock" {
+			t.Fatalf("%s basis = %#v", test.base, envelope["freshness_basis"])
+		}
+		var expectation map[string]any
+		if err := json.Unmarshal(files[test.base+"expect.json"], &expectation); err != nil {
+			t.Fatal(err)
+		}
+		if expectation["expected_outcome"] != test.outcome || expectation["reason"] != test.reason {
+			t.Fatalf("%s expectation = %#v", test.base, expectation)
+		}
+	}
+}
+
+func TestSignerRoleAliasesFailClosed(t *testing.T) {
+	files := allFiles()
+	for _, test := range []struct {
+		id, reason string
+	}{
+		{"m70-clock-authority-runner-alias", "clock_role_mismatch"},
+		{"m71-duplicate-authorized-runner-key", "run_signer_mismatch"},
+	} {
+		base := "malicious/" + test.id + "/"
+		var expectation map[string]any
+		if err := json.Unmarshal(files[base+"expect.json"], &expectation); err != nil {
+			t.Fatal(err)
+		}
+		if expectation["expected_outcome"] != "scope-mismatch" || expectation["reason"] != test.reason {
+			t.Fatalf("%s expectation = %#v", test.id, expectation)
 		}
 	}
 }
@@ -1074,9 +1245,10 @@ func TestGoldenEdgeCommitmentsAndObserverJoins(t *testing.T) {
 							if ref == c["following_health_ref"] && payload["observed_at"].(string) < c["window_end"].(string) {
 								t.Fatalf("%s following bracket", f.id)
 							}
-							if ref == c["preceding_health_ref"] {
+							switch ref {
+							case c["preceding_health_ref"]:
 								preceding = payload
-							} else if ref == c["following_health_ref"] {
+							case c["following_health_ref"]:
 								following = payload
 							}
 						} else {
@@ -2113,7 +2285,7 @@ func TestReplayAndPredecessorFixtures(t *testing.T) {
 		t.Fatal("m16 run binding")
 	}
 	_, m14 := decoded(t, get("malicious", "m14-expired-envelope", "envelope.dsse.json"))
-	if !(m14["finished_at"].(string) < m14["expires_at"].(string) && m14["expires_at"].(string) < now) {
+	if m14["finished_at"].(string) >= m14["expires_at"].(string) || m14["expires_at"].(string) >= now {
 		t.Fatal("m14 ordering")
 	}
 

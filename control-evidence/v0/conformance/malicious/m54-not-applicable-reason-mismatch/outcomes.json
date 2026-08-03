@@ -1,6 +1,6 @@
 {
   "profile": "control-evidence-outcomes/v0",
-  "requirement_sha256": "2eec089b2656554520b296aaea6885910364124cf32bbd519c62c7be531c3521",
+  "requirement_sha256": "fd162aac1bfb58424ec5eb3187ff46061e8c3af083f2e77b8c2806ee3c41d922",
   "rows": [
     {
       "actual_verdict": "not_applicable",

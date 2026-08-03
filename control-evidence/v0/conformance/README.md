@@ -13,8 +13,9 @@ public, test-only Ed25519 identities committed under `_generator/`.
 
 Each fixture also has `context.json`. It is independently supplied verifier
 input, not package content and not manifest-bound: it pins the buyer, runner,
-observer, and clock keys, the reference time, exact synthetic buyer token and
-health-control inputs, and any durable nonce-ledger state needed to exercise
+observer, and clock keys; the exact buyer-approved requirement, trust policy,
+and corpus identities; the reference time; exact synthetic buyer token and
+health-control inputs; and any durable nonce-ledger state needed to exercise
 replay behavior.
 
 ## Layout

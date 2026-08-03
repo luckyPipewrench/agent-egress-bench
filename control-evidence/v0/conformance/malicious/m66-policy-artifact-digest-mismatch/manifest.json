@@ -1,0 +1,69 @@
+{
+  "entries": [
+    {
+      "byte_length": 3498,
+      "media_type": "application/json",
+      "path": "requirement.dsse.json",
+      "role": "requirement",
+      "sha256": "8a8130a95515a39e9b08e21cdf915dc623d3d65cf893fced35bae918fbcb152d"
+    },
+    {
+      "byte_length": 2107,
+      "media_type": "application/json",
+      "path": "summary.json",
+      "role": "summary",
+      "sha256": "efa90928c988df994034a7b9da378aaca82e90c7cd88c0878c8d5a411c4321df"
+    },
+    {
+      "byte_length": 2149,
+      "media_type": "application/json",
+      "path": "outcomes.json",
+      "role": "outcomes",
+      "sha256": "a70159ac829493c0315e4f9db4f7b7f59253f182ef8bf6e4a8bbb92d4cd13233"
+    },
+    {
+      "byte_length": 49,
+      "media_type": "application/json",
+      "path": "adapter.json",
+      "role": "adapter",
+      "sha256": "ebb215dd7a1b2729d29ccb60000ad8e7932018c7bfe9cd7f6f021274735f44f5"
+    },
+    {
+      "byte_length": 1412,
+      "media_type": "application/json",
+      "path": "observer-following.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "4a595c9aec8a2b68cba65f869d065974fd1a844e5db8fb8ff9bf8cc5b65d2385"
+    },
+    {
+      "byte_length": 1412,
+      "media_type": "application/json",
+      "path": "observer-preceding.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "cce5bb085a7648a3a8b873f84d091fd9881e11756382445e037d8b71575303d9"
+    },
+    {
+      "byte_length": 1244,
+      "media_type": "application/json",
+      "path": "observer-target-1.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "7a79e7bfaccb4d120c214e7fd7bc99fcd1c57c3a3ef9a6ef0983219acd5e8277"
+    },
+    {
+      "byte_length": 41,
+      "media_type": "application/json",
+      "path": "policy.json",
+      "role": "policy",
+      "sha256": "30d2b76a4b1350702aac27f441268daf2444c26e99b2102c0578da4d4a4c075c"
+    },
+    {
+      "byte_length": 1458,
+      "media_type": "application/json",
+      "path": "tool-profile.json",
+      "role": "tool-profile",
+      "sha256": "34f37605dffe3d984581dded1579691180b71d9b82c207cd7f40d2b042cf8a8f"
+    }
+  ],
+  "profile": "control-evidence-manifest/v0",
+  "total_uncompressed_bytes": 13370
+}
