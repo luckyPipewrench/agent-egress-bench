@@ -20,7 +20,7 @@ import (
 
 func TestCorpusIsDeterministicAndSigned(t *testing.T) {
 	a, b := allFiles(), allFiles()
-	if len(a) != 941 {
+	if len(a) != 967 {
 		t.Fatalf("fixture file count = %d", len(a))
 	}
 	for name, first := range a {
@@ -40,6 +40,36 @@ func TestDerivedTokenCanaryIDSeparatesSamePolarity(t *testing.T) {
 	cb := tokenCommitment("r", "u", "case", 1, "positive-2", "mcp_stdio", "target", "positive", b)
 	if ca == cb {
 		t.Fatal("same-polarity canary IDs alias commitment")
+	}
+}
+
+func TestClosedV0RunnerAndTrialModes(t *testing.T) {
+	files := allFiles()
+	for _, id := range []string{"m10-compatibility-declared", "m59-conformant-compatible-unpinned"} {
+		_, envelope := decoded(t, files["malicious/"+id+"/envelope.dsse.json"])
+		mode := envelope["runner"].(map[string]any)["execution_mode"]
+		if mode == "approved-binary" {
+			t.Fatalf("%s does not exercise unsupported execution mode", id)
+		}
+		var expect map[string]any
+		if err := json.Unmarshal(files["malicious/"+id+"/expect.json"], &expect); err != nil {
+			t.Fatal(err)
+		}
+		if expect["expected_outcome"] != "invalid" || expect["reason"] != "runner_execution_mode_unsupported" {
+			t.Fatalf("%s expectation does not fail closed", id)
+		}
+	}
+
+	_, requirement := decoded(t, files["malicious/m60-minimum-trials-unsupported/requirement.dsse.json"])
+	if requirement["minimum_trials_per_case"] != float64(2) {
+		t.Fatal("m60 does not exercise unsupported repeated trials")
+	}
+	var expect map[string]any
+	if err := json.Unmarshal(files["malicious/m60-minimum-trials-unsupported/expect.json"], &expect); err != nil {
+		t.Fatal(err)
+	}
+	if expect["expected_outcome"] != "invalid" || expect["reason"] != "minimum_trials_per_case_unsupported" {
+		t.Fatal("m60 expectation does not fail closed")
 	}
 }
 

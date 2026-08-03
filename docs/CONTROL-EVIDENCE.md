@@ -193,6 +193,10 @@ pinned support profile. V0 permits exactly one trial per case when comparing to 
 trials are valuable evidence but cannot be faithfully represented by the runner's one-result-per-case
 summary, so they require a later versioned aggregate contract.
 
+V0 also permits only `runner.execution_mode: approved-binary`, bound to the buyer-approved runner
+digest. Compatibility or provenance-based runner modes require a later versioned contract that defines
+and requires the exact manifest-bound proof; a producer declaration alone is never sufficient.
+
 A `not_applicable` row is valid only when the signed requirement's `allowed_not_applicable` contains
 the exact case ID and exact reason. It contributes to `case_count.not_applicable` and the matching
 `not_applicable_reasons` bucket, never to `case_count.applicable`. An unauthorized case or mismatched
@@ -218,7 +222,7 @@ Schemas validate bounded field shape. The offline verifier must additionally fai
 - Signer and clock-attestor authorization/separation, including distinct witness and runner identities.
 - Exact membership of cases, trials, canaries, transports, observer target, token commitments, and
   negative-canary health/liveness windows.
-- Approved runner, adapter, corpus, policy, and tool identity or any separately pinned compatibility proof.
+- Approved runner binary, adapter, corpus, policy, and tool identity.
 - Derivation of all normative totals and scores from the ledger rather than signer-declared aggregates.
 
 The top-level verifier results are mutually exclusive: `valid`, `invalid`, `stale`,

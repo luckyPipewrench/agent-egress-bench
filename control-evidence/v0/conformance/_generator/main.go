@@ -752,6 +752,9 @@ func build(f fixture) map[string][]byte {
 	if f.id == "m58-maximum-errors-exceeded" {
 		reqPayload["maximum_errors"] = 0
 	}
+	if f.id == "m60-minimum-trials-unsupported" {
+		reqPayload["minimum_trials_per_case"] = 2
+	}
 	if f.id == "e08-buyer-authorized-not-applicable" || f.id == "m54-not-applicable-reason-mismatch" || f.id == "m55-not-applicable-summary-mismatch" || f.id == "e09-authorized-error" || f.id == "m56-error-summary-mismatch" || f.id == "m58-maximum-errors-exceeded" {
 		reqPayload["required_artifacts"] = []any{"policy", "adapter", "tool-profile"}
 	}
@@ -1028,7 +1031,7 @@ func fixtures() []fixture {
 		r["canaries"].([]any)[0].(map[string]any)["canary_commitment_sha256"] = textDigest("wrong-token")
 	})
 	add("m09-post-hoc-token-material", "insufficient-evidence", "token_material_not_committed", nil)
-	add("m10-compatibility-declared", "scope-mismatch", "runner_compatibility_unpinned", func(_, _, e map[string]any) {
+	add("m10-compatibility-declared", "invalid", "runner_execution_mode_unsupported", func(_, _, e map[string]any) {
 		e["runner"].(map[string]any)["execution_mode"] = "compatibility-declared"
 	})
 	add("m11-vendor-clock-role-laundering", "scope-mismatch", "clock_role_mismatch", func(_, _, e map[string]any) {
@@ -1090,6 +1093,10 @@ func fixtures() []fixture {
 	add("m56-error-summary-mismatch", "invalid", "summary_error_count_mismatch", nil)
 	add("m57-observer-identity-mismatch", "scope-mismatch", "observer_identity_mismatch", nil)
 	add("m58-maximum-errors-exceeded", "invalid", "maximum_errors_exceeded", nil)
+	add("m59-conformant-compatible-unpinned", "invalid", "runner_execution_mode_unsupported", func(_, _, e map[string]any) {
+		e["runner"].(map[string]any)["execution_mode"] = "conformant-compatible"
+	})
+	add("m60-minimum-trials-unsupported", "invalid", "minimum_trials_per_case_unsupported", nil)
 	return fs
 }
 

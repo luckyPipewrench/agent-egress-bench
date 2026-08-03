@@ -78,11 +78,14 @@ func TestMaliciousFixturesHaveOnlyDeclaredSchemaFailure(t *testing.T) {
 		"observer":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-observer-evidence.schema.json")),
 	}
 	expectedFailure := map[string]string{
-		"m01-dsse-multi-signature": "envelope-wrapper",
-		"m03-row-omission":         "outcomes",
-		"m05-unknown-scoring-fact": "outcomes",
-		"m06-one-sided-health":     "outcomes",
-		"m12-receipt-only-clock":   "clock-payload",
+		"m01-dsse-multi-signature":           "envelope-wrapper",
+		"m03-row-omission":                   "outcomes",
+		"m05-unknown-scoring-fact":           "outcomes",
+		"m06-one-sided-health":               "outcomes",
+		"m10-compatibility-declared":         "envelope-payload",
+		"m12-receipt-only-clock":             "clock-payload",
+		"m59-conformant-compatible-unpinned": "envelope-payload",
+		"m60-minimum-trials-unsupported":     "requirement-payload",
 	}
 
 	entries, err := os.ReadDir(filepath.Join("..", "malicious"))
