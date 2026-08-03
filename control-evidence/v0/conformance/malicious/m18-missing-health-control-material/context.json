@@ -1,0 +1,23 @@
+{
+  "health_control_material": {
+    "aes_key_base64": "LYf0BbHPZRAwDJ542Ay0DDNWIxeQNNKMdlWBofNdUiE=",
+    "key_or_input_id": "synthetic-health-material",
+    "mode": "packaged-encrypted",
+    "profile": "aeb-cee-conformance-health-aesgcm/v1"
+  },
+  "nonce_ledger": [],
+  "profile": "control-evidence-conformance-context/v0",
+  "reference_now": "2026-08-02T12:00:00Z",
+  "token_material": {
+    "key_or_input_id": "synthetic-token-input",
+    "mode": "buyer-derived",
+    "profile": "aeb-cee-conformance-token-derived/v1",
+    "root_input": "synthetic-token-root-m18-missing-health-control-material"
+  },
+  "trusted_keys": {
+    "buyer": "d75cc4067a4a661e1e2ef1560e53b43a3238cee18e2769a13166495526aac1b2",
+    "customer_clock": "ebcf768b9887fa47516bbe84a3240e884a900df65d5c69588f40c3d574117857",
+    "observer": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
+    "vendor_runner": "55f4b85bccda120a6e7767e6e28146fbefac616bfa2b9a002af556946ddbc71c"
+  }
+}

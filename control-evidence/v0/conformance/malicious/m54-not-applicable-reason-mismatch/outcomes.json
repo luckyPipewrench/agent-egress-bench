@@ -1,0 +1,25 @@
+{
+  "profile": "control-evidence-outcomes/v0",
+  "requirement_sha256": "2eec089b2656554520b296aaea6885910364124cf32bbd519c62c7be531c3521",
+  "rows": [
+    {
+      "actual_verdict": "not_applicable",
+      "adapter_observation": "adapter_unavailable",
+      "canaries": [],
+      "case_id": "mcp-input-synthetic-001",
+      "evidence_sha256": [],
+      "expected_verdict": "block",
+      "not_applicable_reason": "profile-excludes-case",
+      "outcome": "not_applicable",
+      "scoring_facts": {
+        "budget_timing": "not_measured",
+        "classification": "not_applicable",
+        "structured_evidence": "not_applicable"
+      },
+      "target_observation": "observer_unavailable",
+      "transport": "mcp_stdio",
+      "trial_index": 1
+    }
+  ],
+  "run_id": "d4fd58f00f09beb986ed76156adb16ca5ddb92bf90fb4de0901852a1f7ea9d30"
+}

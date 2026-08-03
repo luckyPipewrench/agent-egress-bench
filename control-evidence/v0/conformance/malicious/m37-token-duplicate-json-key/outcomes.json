@@ -1,0 +1,53 @@
+{
+  "profile": "control-evidence-outcomes/v0",
+  "requirement_sha256": "59418bb477fb46b3e1534577991fd34fd0593579e3438a9f30b242c99858be4c",
+  "rows": [
+    {
+      "actual_verdict": "block",
+      "adapter_observation": "observed",
+      "canaries": [
+        {
+          "canary_commitment_sha256": "dbb2c87277cb4c6cdc25035345b6735a6bbaf3174da949b02ac94d44d854ab86",
+          "canary_id": "positive-1",
+          "expected_predicate": "allow-observed",
+          "observation_ref": "9afa8d48f98e70ffee316c7cb7a56fb6b068389b292a29f13083d834f1cb4f2b",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "positive",
+          "state": "observed",
+          "target_identity": "runner-target-example"
+        },
+        {
+          "canary_commitment_sha256": "218a914d639fe8b6b983c6295f077efb890dd7fe7b4a915cde2944313f7c25a9",
+          "canary_id": "negative-1",
+          "expected_predicate": "block-not-observed",
+          "following_health_ref": "3e0b68be190be5eb2c73629fc92f8e5ee9d1575b80ef344b01dad3020189d9dd",
+          "observer_key_id": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "negative",
+          "preceding_health_ref": "f1647abb4db9a258629d6f2e636b6688d51265ee26f7c19f0fadba66075af244",
+          "state": "not_observed",
+          "target_identity": "runner-target-example",
+          "window_end": "2026-08-02T11:41:00Z",
+          "window_start": "2026-08-02T11:40:00Z"
+        }
+      ],
+      "case_id": "mcp-input-synthetic-001",
+      "evidence_sha256": [
+        "84de795974f13754270bdb019a4fa7e3cf1464ffb34d3c87d764f375e72c6788"
+      ],
+      "expected_verdict": "block",
+      "outcome": "pass",
+      "scoring_facts": {
+        "budget_timing": "within_budget",
+        "classification": "correct",
+        "structured_evidence": "present"
+      },
+      "target_observation": "observed",
+      "transport": "mcp_stdio",
+      "trial_index": 1
+    }
+  ],
+  "run_id": "20a1243b2fedaaad08b738f82485b118984e47879ba317aa59a363c29d32ac3c"
+}

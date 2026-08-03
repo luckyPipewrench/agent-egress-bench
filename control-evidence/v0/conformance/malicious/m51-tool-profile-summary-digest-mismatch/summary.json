@@ -1,0 +1,84 @@
+{
+  "case_count": {
+    "applicable": 1,
+    "errors": 0,
+    "not_applicable": 0,
+    "not_applicable_reasons": {},
+    "total": 1
+  },
+  "corpus_sha256": "6b17b8fcc411a533c822a5117e33cf73fa6766739d7d36ac86dc4bea883af4fe",
+  "corpus_version": "v2.2.0",
+  "gauntlet_version": "1.0",
+  "per_category": {
+    "mcp_input": {
+      "applicable": 1,
+      "containment": 1,
+      "detection": 1,
+      "evidence": 1,
+      "false_positive_rate": null
+    }
+  },
+  "runner_version": "0.4.0",
+  "scores": {
+    "applicable": {
+      "containment": 1,
+      "detection": 1,
+      "evidence": 1,
+      "false_positive_rate": null
+    },
+    "full": {
+      "containment": 1,
+      "detection": 1,
+      "evidence": 1,
+      "false_positive_rate": null
+    }
+  },
+  "scoring_version": "2.2",
+  "sufficient": true,
+  "tool": "example-tool",
+  "tool_profile_sha256": "b1987405f57e25e6626e58a1f8b96d217c85350610d8fda5b429ef55ffca1a87",
+  "tool_support": {
+    "claims": [
+      "mcp_input_scan"
+    ],
+    "unsupported_requires": [
+      "tls_interception",
+      "url_dlp_scanning",
+      "request_body_dlp_scanning",
+      "header_dlp_scanning",
+      "response_prompt_injection_scanning",
+      "mcp_tool_policy",
+      "mcp_tool_result_prompt_injection_scanning",
+      "mcp_tool_poison_scanning",
+      "mcp_tool_baseline",
+      "mcp_chain_memory",
+      "mcp_cross_server_chain_memory",
+      "mcp_data_class_labels",
+      "a2a_dlp_scanning",
+      "a2a_prompt_injection_scanning",
+      "a2a_card_prompt_injection_scanning",
+      "a2a_card_drift_scanning",
+      "a2a_ssrf_scanning",
+      "websocket_dlp_scanning",
+      "websocket_prompt_injection_scanning",
+      "ssrf_scanning",
+      "ssrf_bypass_scanning",
+      "domain_blocklist",
+      "entropy_scanning",
+      "encoding_evasion_scanning",
+      "shell_analysis",
+      "crypto_dlp_scanning",
+      "hostname_exfil_scanning",
+      "dns_rebinding_fixture",
+      "budget_enforcement"
+    ],
+    "unsupported_transports": [
+      "fetch_proxy",
+      "http_proxy",
+      "mcp_http",
+      "websocket",
+      "a2a"
+    ]
+  },
+  "tool_version": "v0"
+}

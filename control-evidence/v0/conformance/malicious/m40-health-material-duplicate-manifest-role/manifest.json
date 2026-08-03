@@ -1,0 +1,83 @@
+{
+  "entries": [
+    {
+      "byte_length": 3530,
+      "media_type": "application/json",
+      "path": "requirement.dsse.json",
+      "role": "requirement",
+      "sha256": "c1aa45ad4543f818f7103e83861d2547a4af0a39485a10a4fa967d0fb18d269a"
+    },
+    {
+      "byte_length": 2107,
+      "media_type": "application/json",
+      "path": "summary.json",
+      "role": "summary",
+      "sha256": "efa90928c988df994034a7b9da378aaca82e90c7cd88c0878c8d5a411c4321df"
+    },
+    {
+      "byte_length": 2149,
+      "media_type": "application/json",
+      "path": "outcomes.json",
+      "role": "outcomes",
+      "sha256": "5df236b7c2e3bc74561f6f7aef772341cd3a0b58a1ae24828f866f7988f61a59"
+    },
+    {
+      "byte_length": 49,
+      "media_type": "application/json",
+      "path": "adapter.json",
+      "role": "adapter",
+      "sha256": "ebb215dd7a1b2729d29ccb60000ad8e7932018c7bfe9cd7f6f021274735f44f5"
+    },
+    {
+      "byte_length": 43,
+      "media_type": "application/octet-stream",
+      "path": "health-control-material-duplicate.bin",
+      "role": "health-control-material",
+      "sha256": "dc82dc19482aa40922562749e17ce5993313af0e0abb28d4c3820029fb09dfe5"
+    },
+    {
+      "byte_length": 267,
+      "media_type": "application/octet-stream",
+      "path": "health-control-material.bin",
+      "role": "health-control-material",
+      "sha256": "a3a334be8025b78d151af88e6c8d0d667409c4ce23062826849c8a9d34319c08"
+    },
+    {
+      "byte_length": 1412,
+      "media_type": "application/json",
+      "path": "observer-following.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "7f1ca9636160ba5b0f42e1b3c79b355a6c57c2a5eae66669596b08b1d566c7e3"
+    },
+    {
+      "byte_length": 1412,
+      "media_type": "application/json",
+      "path": "observer-preceding.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "38661b9796bc2704042ba81ab27f376f950a71b8577e9d068d92e041f2ee6094"
+    },
+    {
+      "byte_length": 1244,
+      "media_type": "application/json",
+      "path": "observer-target-1.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "6949193d541fcb404cbc8c982c5e83a058ad884d1a5820869f4797cd2fc6eb8b"
+    },
+    {
+      "byte_length": 39,
+      "media_type": "application/json",
+      "path": "policy.json",
+      "role": "policy",
+      "sha256": "d1eec8625bb876a7ecc34a3bc2e910f1cb884fa20db35710615072198f3b364a"
+    },
+    {
+      "byte_length": 1458,
+      "media_type": "application/json",
+      "path": "tool-profile.json",
+      "role": "tool-profile",
+      "sha256": "34f37605dffe3d984581dded1579691180b71d9b82c207cd7f40d2b042cf8a8f"
+    }
+  ],
+  "profile": "control-evidence-manifest/v0",
+  "total_uncompressed_bytes": 13710
+}
