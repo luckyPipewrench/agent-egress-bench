@@ -12,7 +12,7 @@
 #   cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
 #   /tmp/aeb-gauntlet --adapter proxy --proxy-addr 127.0.0.1:18899 \
 #     --scan-addr 127.0.0.1:9990 --scan-token bench-test-token \
-#     --mcp-cmd "pipelock mcp proxy --config $PWD/examples/pipelock/pipelock-benchmark.yaml -- cat" \
+#     --mcp-cmd "pipelock mcp proxy --config $PWD/examples/pipelock/pipelock-benchmark.yaml --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh" \
 #     --cases ./cases --multifile-cases ./cases/mcp-drift \
 #     --profile examples/pipelock/tool-profile.json --fixtures \
 #     --output /tmp/gauntlet.json

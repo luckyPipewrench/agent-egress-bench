@@ -127,6 +127,13 @@ jobs:
           cd runner
           go build -o "$RUNNER_TEMP/aeb-gauntlet" .
 
+      - name: Verify MCP stdio bridge dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          command -v socat || command -v ncat || command -v nc
+
       - name: Run canonical benchmark
         shell: bash
         run: |
@@ -144,7 +151,7 @@ jobs:
           command_path="$artifact_dir/command.txt"
           stats_path="$artifact_dir/make-stats.txt"
 
-          mcp_cmd="\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" -- cat"
+          mcp_cmd="\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh"
           managed_proxy_cmd='./examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"'
           managed_mcp_http_cmd='./examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"'
 
