@@ -863,7 +863,6 @@ func build(f fixture) map[string][]byte {
 		summary["case_count"].(map[string]any)["errors"] = 0
 	}
 	summaryBytes := pretty(summary)
-	outcomesBytes := pretty(outcomes)
 	if len(outcomes["rows"].([]any)[0].(map[string]any)["canaries"].([]any)) > 0 {
 		for i, v := range outcomes["rows"].([]any) {
 			r := v.(map[string]any)
@@ -912,7 +911,7 @@ func build(f fixture) map[string][]byte {
 			}
 		}
 	}
-	outcomesBytes = pretty(outcomes)
+	outcomesBytes := pretty(outcomes)
 	switch f.id {
 	case "g02-customer-completion-clock":
 		extras["clock.dsse.json"] = clockEvidence(requirementSHA, runID, digest(outcomesBytes), "run-completion-observed", "2026-08-02T11:45:01Z", keyID("customer-clock"), "customer-clock-authority", "customer-clock-attestor", "customer-clock")
