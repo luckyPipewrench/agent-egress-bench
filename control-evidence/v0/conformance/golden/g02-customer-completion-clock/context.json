@@ -1,4 +1,10 @@
 {
+  "corpus": {
+    "manifest_sha256": "543a5d594177f343e16e4c4341d0bb0ad0495c35e964a1956217510c26a7b0e8",
+    "scoring_version": "2.2",
+    "sha256": "6b17b8fcc411a533c822a5117e33cf73fa6766739d7d36ac86dc4bea883af4fe",
+    "version": "v2.2.0"
+  },
   "health_control_material": {
     "key_or_input_id": "synthetic-health-input",
     "mode": "buyer-derived",
@@ -8,15 +14,21 @@
   "nonce_ledger": [],
   "profile": "control-evidence-conformance-context/v0",
   "reference_now": "2026-08-02T12:00:00Z",
+  "requirement_payload_sha256": "d4edb3f926c19e3da7f2d59238204ea4f7a801e5ea99fa04ebb7955560f1a6e6",
   "token_material": {
     "key_or_input_id": "synthetic-token-input",
     "mode": "buyer-derived",
     "profile": "aeb-cee-conformance-token-derived/v1",
     "root_input": "synthetic-token-root-g02-customer-completion-clock"
   },
+  "trust_policy": {
+    "id": "synthetic-trust-policy",
+    "sha256": "e3dadeea35b09683a3b49c5fcae289109a4035d26d7a6ac276d9f8cdb857f620"
+  },
   "trusted_keys": {
     "buyer": "d75cc4067a4a661e1e2ef1560e53b43a3238cee18e2769a13166495526aac1b2",
     "customer_clock": "ebcf768b9887fa47516bbe84a3240e884a900df65d5c69588f40c3d574117857",
+    "independent_witness_clock": "93d8c4c5f805d9d4ed6273089b62c365500b91275b67520e425f315062e30bcb",
     "observer": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
     "vendor_runner": "55f4b85bccda120a6e7767e6e28146fbefac616bfa2b9a002af556946ddbc71c"
   }

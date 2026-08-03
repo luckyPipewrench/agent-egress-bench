@@ -437,17 +437,36 @@ func baseRequirement(id string) map[string]any {
 		"minimum_trials_per_case": 1, "maximum_errors": 0, "maximum_age_seconds": 3600, "allowed_future_skew_seconds": 60,
 		"allowed_not_applicable": []any{}, "required_artifacts": []any{"policy", "adapter", "observer-evidence", "tool-profile"}, "trust_policy_id": "synthetic-trust-policy", "trust_policy_sha256": textDigest("trust-policy"),
 		"approved_tool_identity": map[string]any{"kind": "binary", "expected": "tool-digest-example"},
+		"approved_policy":        map[string]any{"sha256": digest(policyArtifact())},
 		"required_signer_policy": map[string]any{"key_id": vendor, "authority_id": "example-runner-authority", "role": "vendor-runner"},
 		"authorized_run_signers": []any{map[string]any{"key_id": vendor, "authority_id": "example-runner-authority", "role": "vendor-runner"}},
-		"approved_runner":        map[string]any{"protocol": "gauntlet", "version": "0.4.0", "sha256": textDigest("runner")}, "approved_adapter": map[string]any{"protocol": "mcp-stdio", "version": "v1", "sha256": textDigest("adapter")},
+		"approved_runner":        map[string]any{"protocol": "gauntlet", "version": "0.4.0", "sha256": textDigest("runner")}, "approved_adapter": map[string]any{"protocol": "mcp-stdio", "version": "v1", "sha256": digest(adapterArtifact())},
 	}
 }
 
+func policyArtifact() []byte {
+	return pretty(map[string]any{"profile": "synthetic-policy/v1"})
+}
+
+func adapterArtifact() []byte {
+	return pretty(map[string]any{"protocol": "mcp-stdio", "version": "v1"})
+}
+
 func observerIdentity(fixtureID string) map[string]any {
+	if fixtureID == "m68-observer-authorized-runner-key" {
+		return map[string]any{"protocol": "runner-owned", "version": "v1", "key_id": keyID("alternate-runner")}
+	}
 	if fixtureID == "m57-observer-identity-mismatch" {
 		return map[string]any{"protocol": "alternate-runner-owned", "version": "v2", "key_id": keyID("substituted-observer")}
 	}
 	return map[string]any{"protocol": "runner-owned", "version": "v1", "key_id": keyID("observer")}
+}
+
+func observerSigner(fixtureID string) string {
+	if fixtureID == "m68-observer-authorized-runner-key" {
+		return "alternate-runner"
+	}
+	return "observer"
 }
 
 func toolProfileBytesForFixture(id string) []byte {
@@ -607,10 +626,11 @@ func clockEvidence(requirementSHA, runID, observationsSHA, kind, observedAt, key
 func observerEvidence(kind, requirementSHA, runID, commitment, fixtureID, healthRoot, caseID string, trial int, canaryID string, gap, after bool) []byte {
 	identity := observerIdentity(fixtureID)
 	p := map[string]any{"profile": "control-evidence-observer-evidence/v0", "kind": kind, "requirement_sha256": requirementSHA, "run_id": runID, "target_identity": "runner-target-example", "transport": "mcp_stdio", "observer": identity, "case_id": caseID, "trial_index": trial, "canary_id": canaryID, "canary_commitment_sha256": commitment}
-	if kind == "target-observation" {
+	switch kind {
+	case "target-observation":
 		p["observation_state"] = "observed"
 		p["observed_at"] = "2026-08-02T11:40:30Z"
-	} else if kind == "health-control" {
+	case "health-control":
 		controlID := "health-pre"
 		controlInput := healthInput(fixtureID, controlID, healthRoot)
 		at := "2026-08-02T11:39:59Z"
@@ -623,7 +643,7 @@ func observerEvidence(kind, requirementSHA, runID, commitment, fixtureID, health
 		p["health_control_commitment_sha256"] = healthCommitment(requirementSHA, runID, caseID, trial, canaryID, commitment, controlID, "mcp_stdio", "runner-target-example", controlInput)
 		p["observed_at"] = at
 		p["health_state"] = "allow-observed"
-	} else {
+	default:
 		delete(p, "case_id")
 		delete(p, "trial_index")
 		delete(p, "canary_id")
@@ -634,7 +654,7 @@ func observerEvidence(kind, requirementSHA, runID, commitment, fixtureID, health
 		}
 		p["liveness"] = times
 	}
-	return pretty(dsse(typeObserver, p, key("observer")))
+	return pretty(dsse(typeObserver, p, key(observerSigner(fixtureID))))
 }
 
 func manifest(req, summary, outcomes []byte, extras map[string][]byte) map[string]any {
@@ -771,8 +791,26 @@ func build(f fixture) map[string][]byte {
 	if f.id == "g02-customer-completion-clock" || f.id == "m12-receipt-only-clock" || f.id == "m13-observed-before-completion" {
 		reqPayload["approved_clock_evidence"] = map[string]any{"key_id": keyID("customer-clock"), "authority_id": "customer-clock-authority", "role": "customer-clock-attestor", "profile": "synthetic-clock/v1", "verifier_sha256": textDigest("clock-verifier"), "policy_sha256": textDigest("clock-policy"), "permitted_skew_seconds": 5}
 	}
+	if f.id == "g05-independent-witness-clock" {
+		reqPayload["approved_clock_evidence"] = map[string]any{"key_id": keyID("witness-clock"), "authority_id": "independent-witness-clock-authority", "role": "independent-witness-clock-attestor", "profile": "synthetic-clock/v1", "verifier_sha256": textDigest("clock-verifier"), "policy_sha256": textDigest("clock-policy"), "permitted_skew_seconds": 5}
+	}
+	if f.id == "m69-witness-basis-customer-role" {
+		reqPayload["approved_clock_evidence"] = map[string]any{"key_id": keyID("witness-clock"), "authority_id": "independent-witness-clock-authority", "role": "customer-clock-attestor", "profile": "synthetic-clock/v1", "verifier_sha256": textDigest("clock-verifier"), "policy_sha256": textDigest("clock-policy"), "permitted_skew_seconds": 5}
+	}
 	if f.id == "m11-vendor-clock-role-laundering" {
 		reqPayload["approved_clock_evidence"] = map[string]any{"key_id": keyID("vendor-runner"), "authority_id": "example-runner-authority", "role": "customer-clock-attestor", "profile": "synthetic-clock/v1", "verifier_sha256": textDigest("clock-verifier"), "policy_sha256": textDigest("clock-policy"), "permitted_skew_seconds": 5}
+	}
+	if f.id == "m70-clock-authority-runner-alias" {
+		reqPayload["approved_clock_evidence"] = map[string]any{"key_id": keyID("customer-clock"), "authority_id": "example-runner-authority", "role": "customer-clock-attestor", "profile": "synthetic-clock/v1", "verifier_sha256": textDigest("clock-verifier"), "policy_sha256": textDigest("clock-policy"), "permitted_skew_seconds": 5}
+	}
+	if f.id == "m68-observer-authorized-runner-key" {
+		alternate := map[string]any{"key_id": keyID("alternate-runner"), "authority_id": "alternate-runner-authority", "role": "vendor-runner"}
+		reqPayload["authorized_run_signers"] = append(reqPayload["authorized_run_signers"].([]any), alternate)
+		reqPayload["approved_observer"].(map[string]any)["key_id"] = keyID("alternate-runner")
+	}
+	if f.id == "m71-duplicate-authorized-runner-key" {
+		duplicate := map[string]any{"key_id": keyID("vendor-runner"), "authority_id": "alternate-runner-authority", "role": "vendor-runner"}
+		reqPayload["authorized_run_signers"] = append(reqPayload["authorized_run_signers"].([]any), duplicate)
 	}
 	requirementPayload := compact(reqPayload)
 	if f.id == "m42-html-escaped-signed-payload" {
@@ -782,7 +820,15 @@ func build(f fixture) map[string][]byte {
 	runID := textDigest("run-" + f.id)
 	req := dssePayload(typeReq, requirementPayload, key("buyer"))
 	reqBytes := pretty(req)
-	extras := map[string][]byte{"policy.json": pretty(map[string]any{"profile": "synthetic-policy/v1"}), "adapter.json": pretty(map[string]any{"protocol": "mcp-stdio", "version": "v1"}), "tool-profile.json": toolProfile}
+	policyBytes := policyArtifact()
+	adapterBytes := adapterArtifact()
+	if f.id == "m66-policy-artifact-digest-mismatch" {
+		policyBytes = pretty(map[string]any{"profile": "substituted-policy/v1"})
+	}
+	if f.id == "m67-adapter-artifact-digest-mismatch" {
+		adapterBytes = pretty(map[string]any{"protocol": "substituted-adapter", "version": "v1"})
+	}
+	extras := map[string][]byte{"policy.json": policyBytes, "adapter.json": adapterBytes, "tool-profile.json": toolProfile}
 	if f.id != "m09-post-hoc-token-material" && isPackagedTokenFixture(f.id) {
 		path := "token-material.bin"
 		if f.id == "m26-token-material-wrong-manifest-role" {
@@ -812,6 +858,12 @@ func build(f fixture) map[string][]byte {
 	switch f.id {
 	case "g02-customer-completion-clock":
 		extras["clock.json"] = pretty(map[string]any{"profile": "control-evidence-clock-evidence/v0", "observation_kind": "run-completion-observed", "requirement_sha256": requirementSHA, "run_id": runID, "observations_sha256": textDigest("clock-observations-" + f.id), "started_at": "2026-08-02T11:30:00Z", "finished_at": "2026-08-02T11:45:00Z", "observed_at": "2026-08-02T11:45:01Z", "attestor": map[string]any{"key_id": "customer-clock-key", "authority_id": "customer-clock-authority", "role": "customer-clock-attestor", "profile": "synthetic-clock/v1", "verifier_sha256": textDigest("clock-verifier"), "policy_sha256": textDigest("clock-policy")}})
+	case "g05-independent-witness-clock":
+		extras["clock.json"] = pretty(map[string]any{"profile": "control-evidence-clock-evidence/v0"})
+	case "m69-witness-basis-customer-role":
+		extras["clock.json"] = pretty(map[string]any{"profile": "control-evidence-clock-evidence/v0"})
+	case "m70-clock-authority-runner-alias":
+		extras["clock.json"] = pretty(map[string]any{"profile": "control-evidence-clock-evidence/v0"})
 	case "e01-continuous-liveness-negative":
 		extras["liveness.json"] = pretty(map[string]any{"profile": "observer-liveness/v1", "sequence": []any{1, 2, 3}, "max_gap_seconds": 10, "continuous": true})
 	case "m11-vendor-clock-role-laundering":
@@ -901,14 +953,15 @@ func build(f fixture) map[string][]byte {
 		row := outcomes["rows"].([]any)[0].(map[string]any)
 		negativeCanary := row["canaries"].([]any)[1].(map[string]any)
 		commitment := negativeCanary["canary_commitment_sha256"].(string)
-		if f.id == "m61-negative-observer-unavailable" {
+		switch f.id {
+		case "m61-negative-observer-unavailable":
 			// The signed row still claims a pass, but an unavailable observer cannot
 			// prove the negative canary. Leave it without health/liveness evidence so
 			// an independent verifier must downgrade it to insufficient evidence.
-		} else if f.id == "e01-continuous-liveness-negative" || f.id == "m07-gapped-liveness" {
+		case "e01-continuous-liveness-negative", "m07-gapped-liveness":
 			extras["observer-liveness.dsse.json"] = observerEvidence("liveness-record", requirementSHA, runID, commitment, f.id, "synthetic-health-root-"+f.id, row["case_id"].(string), 1, negativeCanary["canary_id"].(string), f.id == "m07-gapped-liveness", false)
 			negativeCanary["liveness_record_ref"] = digest(extras["observer-liveness.dsse.json"])
-		} else {
+		default:
 			extras["observer-preceding.dsse.json"] = observerEvidence("health-control", requirementSHA, runID, commitment, f.id, "synthetic-health-root-"+f.id, row["case_id"].(string), 1, negativeCanary["canary_id"].(string), false, false)
 			negativeCanary["preceding_health_ref"] = digest(extras["observer-preceding.dsse.json"])
 			if f.id != "m06-one-sided-health" {
@@ -933,6 +986,15 @@ func build(f fixture) map[string][]byte {
 	case "g02-customer-completion-clock":
 		extras["clock.dsse.json"] = clockEvidence(requirementSHA, runID, digest(outcomesBytes), "run-completion-observed", "2026-08-02T11:45:01Z", keyID("customer-clock"), "customer-clock-authority", "customer-clock-attestor", "customer-clock")
 		delete(extras, "clock.json")
+	case "g05-independent-witness-clock":
+		extras["clock.dsse.json"] = clockEvidence(requirementSHA, runID, digest(outcomesBytes), "run-completion-observed", "2026-08-02T11:45:01Z", keyID("witness-clock"), "independent-witness-clock-authority", "independent-witness-clock-attestor", "witness-clock")
+		delete(extras, "clock.json")
+	case "m69-witness-basis-customer-role":
+		extras["clock.dsse.json"] = clockEvidence(requirementSHA, runID, digest(outcomesBytes), "run-completion-observed", "2026-08-02T11:45:01Z", keyID("witness-clock"), "independent-witness-clock-authority", "customer-clock-attestor", "witness-clock")
+		delete(extras, "clock.json")
+	case "m70-clock-authority-runner-alias":
+		extras["clock.dsse.json"] = clockEvidence(requirementSHA, runID, digest(outcomesBytes), "run-completion-observed", "2026-08-02T11:45:01Z", keyID("customer-clock"), "example-runner-authority", "customer-clock-attestor", "customer-clock")
+		delete(extras, "clock.json")
 	case "m11-vendor-clock-role-laundering":
 		extras["clock.dsse.json"] = clockEvidence(requirementSHA, runID, digest(outcomesBytes), "run-completion-observed", "2026-08-02T11:45:01Z", keyID("vendor-runner"), "example-runner-authority", "customer-clock-attestor", "vendor-runner")
 		delete(extras, "vendor-clock.json")
@@ -950,11 +1012,19 @@ func build(f fixture) map[string][]byte {
 		"started_at": "2026-08-02T11:30:00Z", "finished_at": "2026-08-02T11:45:00Z", "expires_at": "2026-08-02T12:45:00Z",
 		"runner": map[string]any{"version": "0.4.0", "source_revision": "synthetic-1", "execution_mode": "approved-binary", "binary_sha256": textDigest("runner")},
 		"corpus": map[string]any{"version": "v2.2.0", "corpus_sha256": textDigest("corpus"), "manifest_sha256": textDigest("corpus-manifest"), "scoring_version": "2.2"},
-		"tool":   map[string]any{"product": "example-tool", "version": "v0", "identity": map[string]any{"kind": "binary", "value": "tool-digest-example"}}, "policy": map[string]any{"sha256": textDigest("policy")}, "adapter": map[string]any{"protocol": "mcp-stdio", "version": "v1", "sha256": textDigest("adapter"), "owner": "example"}, "scope": map[string]any{"deployment_archetype": "mcp-stdio-gateway", "transports": []any{"mcp_stdio"}, "case_ids_sha256": digest(compact(reqPayload["required_case_ids"])), "enforcement_point": "gateway"},
+		"tool":   map[string]any{"product": "example-tool", "version": "v0", "identity": map[string]any{"kind": "binary", "value": "tool-digest-example"}}, "policy": map[string]any{"sha256": reqPayload["approved_policy"].(map[string]any)["sha256"]}, "adapter": map[string]any{"protocol": "mcp-stdio", "version": "v1", "sha256": reqPayload["approved_adapter"].(map[string]any)["sha256"], "owner": "example"}, "scope": map[string]any{"deployment_archetype": "mcp-stdio-gateway", "transports": []any{"mcp_stdio"}, "case_ids_sha256": digest(compact(reqPayload["required_case_ids"])), "enforcement_point": "gateway"},
 		"artifacts": map[string]any{"manifest_sha256": digest(manBytes), "count": 3 + len(extras)}, "observations": map[string]any{"sha256": digest(outcomesBytes), "row_count": len(outcomes["rows"].([]any)), "observer_protocol": observerIdentity(f.id)["protocol"], "observer_version": observerIdentity(f.id)["version"]},
 		"freshness_basis": "vendor-asserted-clock", "signer": map[string]any{"key_id": keyID("vendor-runner"), "authority_id": "example-runner-authority", "role": "vendor-runner"},
 	}
 	if f.id == "g02-customer-completion-clock" {
+		envPayload["freshness_basis"] = "customer-observed-clock"
+		envPayload["clock_evidence_ref"] = digest(extras["clock.dsse.json"])
+	}
+	if f.id == "g05-independent-witness-clock" || f.id == "m69-witness-basis-customer-role" {
+		envPayload["freshness_basis"] = "independent-witness-clock"
+		envPayload["clock_evidence_ref"] = digest(extras["clock.dsse.json"])
+	}
+	if f.id == "m70-clock-authority-runner-alias" {
 		envPayload["freshness_basis"] = "customer-observed-clock"
 		envPayload["clock_evidence_ref"] = digest(extras["clock.dsse.json"])
 	}
@@ -1019,6 +1089,7 @@ func fixtures() []fixture {
 		{id: "g02-customer-completion-clock", category: "golden", outcome: "valid"},
 		{id: "g03-token-packaged-material", category: "golden", outcome: "valid"},
 		{id: "g04-health-packaged-material", category: "golden", outcome: "valid"},
+		{id: "g05-independent-witness-clock", category: "golden", outcome: "valid"},
 		{id: "e01-continuous-liveness-negative", category: "edge", outcome: "valid"},
 		{id: "e02-same-envelope-reverification", category: "edge", outcome: "previously-accepted"},
 		{id: "e03-exact-future-skew-boundary", category: "edge", outcome: "valid"},
@@ -1133,6 +1204,18 @@ func fixtures() []fixture {
 			delete(canary, field)
 		}
 	})
+	add("m62-requirement-pin-mismatch", "scope-mismatch", "requirement_pin_mismatch", nil)
+	add("m63-trust-policy-pin-mismatch", "scope-mismatch", "trust_policy_mismatch", nil)
+	add("m64-corpus-pin-mismatch", "scope-mismatch", "corpus_identity_mismatch", nil)
+	add("m65-policy-identity-mismatch", "scope-mismatch", "policy_identity_mismatch", func(_, _, e map[string]any) {
+		e["policy"].(map[string]any)["sha256"] = textDigest("different-run-policy")
+	})
+	add("m66-policy-artifact-digest-mismatch", "scope-mismatch", "policy_artifact_digest_mismatch", nil)
+	add("m67-adapter-artifact-digest-mismatch", "scope-mismatch", "adapter_artifact_digest_mismatch", nil)
+	add("m68-observer-authorized-runner-key", "scope-mismatch", "observer_identity_mismatch", nil)
+	add("m69-witness-basis-customer-role", "scope-mismatch", "clock_role_mismatch", nil)
+	add("m70-clock-authority-runner-alias", "scope-mismatch", "clock_role_mismatch", nil)
+	add("m71-duplicate-authorized-runner-key", "scope-mismatch", "run_signer_mismatch", nil)
 	return fs
 }
 
@@ -1156,6 +1239,8 @@ func context(f fixture, packageFiles map[string][]byte) []byte {
 	_ = json.Unmarshal(packageFiles["envelope.dsse.json"], &outer)
 	payload, _ := base64.StdEncoding.DecodeString(outer.Payload)
 	envelopeDigest := digest(payload)
+	var envelope map[string]any
+	_ = json.Unmarshal(payload, &envelope)
 	var requirementOuter struct {
 		Payload string `json:"payload"`
 	}
@@ -1163,6 +1248,23 @@ func context(f fixture, packageFiles map[string][]byte) []byte {
 	requirementPayload, _ := base64.StdEncoding.DecodeString(requirementOuter.Payload)
 	var requirement map[string]any
 	_ = json.Unmarshal(requirementPayload, &requirement)
+	requirementPin := digest(requirementPayload)
+	if f.id == "m62-requirement-pin-mismatch" {
+		requirementPin = textDigest("different-buyer-approved-requirement")
+	}
+	trustPolicy := map[string]any{"id": requirement["trust_policy_id"], "sha256": requirement["trust_policy_sha256"]}
+	if f.id == "m63-trust-policy-pin-mismatch" {
+		trustPolicy["sha256"] = textDigest("different-buyer-trust-policy")
+	}
+	corpus := map[string]any{
+		"version":         envelope["corpus"].(map[string]any)["version"],
+		"sha256":          envelope["corpus"].(map[string]any)["corpus_sha256"],
+		"manifest_sha256": envelope["corpus"].(map[string]any)["manifest_sha256"],
+		"scoring_version": envelope["corpus"].(map[string]any)["scoring_version"],
+	}
+	if f.id == "m64-corpus-pin-mismatch" {
+		corpus["sha256"] = textDigest("different-buyer-approved-corpus")
+	}
 	nonce, _ := requirement["challenge_nonce"].(string)
 	ledger := []any{}
 	tuple := map[string]any{"requirement_signer_key_id": requirementOuterKeyID(packageFiles["requirement.dsse.json"]), "requirement_id": requirement["requirement_id"], "challenge_nonce": nonce}
@@ -1222,7 +1324,11 @@ func context(f fixture, packageFiles map[string][]byte) []byte {
 	if f.id == "m22-health-context-descriptor-mismatch" {
 		healthContext["profile"] = "wrong-health-profile"
 	}
-	return pretty(map[string]any{"profile": "control-evidence-conformance-context/v0", "reference_now": now, "trusted_keys": map[string]any{"buyer": keyID("buyer"), "vendor_runner": keyID("vendor-runner"), "observer": keyID("observer"), "customer_clock": keyID("customer-clock")}, "token_material": tokenContext, "health_control_material": healthContext, "nonce_ledger": ledger})
+	observerKey := keyID("observer")
+	if f.id == "m68-observer-authorized-runner-key" {
+		observerKey = keyID("alternate-runner")
+	}
+	return pretty(map[string]any{"profile": "control-evidence-conformance-context/v0", "reference_now": now, "requirement_payload_sha256": requirementPin, "trust_policy": trustPolicy, "corpus": corpus, "trusted_keys": map[string]any{"buyer": keyID("buyer"), "vendor_runner": keyID("vendor-runner"), "observer": observerKey, "customer_clock": keyID("customer-clock"), "independent_witness_clock": keyID("witness-clock")}, "token_material": tokenContext, "health_control_material": healthContext, "nonce_ledger": ledger})
 }
 
 func requirementOuterKeyID(data []byte) string {
@@ -1303,7 +1409,7 @@ func selfCheck(files map[string][]byte) error {
 			}
 			required := []string{"profile", "requirement_sha256", "challenge_nonce", "run_id"}
 			if outer.PayloadType == typeReq {
-				required = []string{"profile", "requirement_id", "challenge_nonce", "enforcement_point", "approved_observer", "token_material", "allowed_future_skew_seconds", "authorized_run_signers", "approved_runner", "approved_adapter"}
+				required = []string{"profile", "requirement_id", "challenge_nonce", "enforcement_point", "approved_observer", "token_material", "allowed_future_skew_seconds", "authorized_run_signers", "approved_runner", "approved_adapter", "approved_policy"}
 			}
 			if outer.PayloadType == typeClock {
 				required = []string{"profile", "requirement_sha256", "run_id", "observations_sha256", "attestor"}
@@ -1319,7 +1425,7 @@ func selfCheck(files map[string][]byte) error {
 		}
 	}
 	for name, data := range files {
-		if !(strings.HasPrefix(name, "golden/") || strings.HasPrefix(name, "edge/")) || !(strings.HasSuffix(name, "manifest.json") || strings.HasSuffix(name, "outcomes.json")) {
+		if (!strings.HasPrefix(name, "golden/") && !strings.HasPrefix(name, "edge/")) || (!strings.HasSuffix(name, "manifest.json") && !strings.HasSuffix(name, "outcomes.json")) {
 			continue
 		}
 		var object map[string]any

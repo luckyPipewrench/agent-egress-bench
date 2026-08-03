@@ -4,19 +4,41 @@
   "title": "Control Evidence v0 independent conformance context",
   "type": "object",
   "additionalProperties": false,
-  "required": ["profile", "reference_now", "trusted_keys", "token_material", "health_control_material", "nonce_ledger"],
+  "required": ["profile", "reference_now", "requirement_payload_sha256", "trust_policy", "corpus", "trusted_keys", "token_material", "health_control_material", "nonce_ledger"],
   "properties": {
     "profile": {"const": "control-evidence-conformance-context/v0"},
     "reference_now": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "requirement_payload_sha256": {"$ref": "#/$defs/sha256"},
+    "trust_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sha256", "manifest_sha256", "scoring_version"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "scoring_version": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
     "trusted_keys": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["buyer", "vendor_runner", "observer", "customer_clock"],
+      "required": ["buyer", "vendor_runner", "observer", "customer_clock", "independent_witness_clock"],
       "properties": {
         "buyer": {"$ref": "#/$defs/ed25519Key"},
         "vendor_runner": {"$ref": "#/$defs/ed25519Key"},
         "observer": {"$ref": "#/$defs/ed25519Key"},
-        "customer_clock": {"$ref": "#/$defs/ed25519Key"}
+        "customer_clock": {"$ref": "#/$defs/ed25519Key"},
+        "independent_witness_clock": {"$ref": "#/$defs/ed25519Key"}
       }
     },
     "token_material": {"$ref": "#/$defs/material"},

@@ -67,7 +67,8 @@ them; a producer or verifier must not use Go HTML escaping when forming or check
 
 The requirement pins its challenge nonce, required cases and canaries, observer identity/key,
 allowed signer roles, runner/adapter/tool identities, error limit, freshness policy, and independent
-trust-policy digest. In v0 it requires one exact transport (`mcp_stdio`) and one exact deployment
+trust-policy digest. It separately pins the exact approved run-policy bytes by SHA-256; that enforcement
+policy is not the verifier's independent trust policy. In v0 it requires one exact transport (`mcp_stdio`) and one exact deployment
 archetype (`mcp-stdio-gateway`). It also pins the approved live tool profile by exact SHA-256.
 
 Required positive and negative canary ID sets must be disjoint; a canary ID cannot be selected under both polarities.
@@ -233,7 +234,14 @@ Each test fixture's `context.json` is an independent verifier input, not package
 manifest role. A durable verifier may annotate a valid re-verification of the same retained package as
 `previously-accepted`; that nonce status is an annotation, while the top-level outcome remains `valid`.
 The verifier rejects duplicate object keys and validates the complete context against
-`schemas/control-evidence-context.schema.json` before using any value.
+`schemas/control-evidence-context.schema.json` before using any value. Context pins the exact decoded
+buyer-requirement payload digest, trust-policy ID and digest, and corpus version, corpus digest,
+manifest digest, and scoring version. A trusted key alone is insufficient: a vendor cannot select a
+different permissive requirement previously signed by the same buyer or self-declare a substitute
+corpus under an otherwise authorized run signature. The fixture-local context files use public
+synthetic keys for conformance only. In a real verification flow, the buyer or operator must deliver
+and manage context through an independent trusted channel; accepting producer-supplied context would
+let the producer choose the keys and every approved digest and would collapse the trust boundary.
 
 ## Replay ledger
 

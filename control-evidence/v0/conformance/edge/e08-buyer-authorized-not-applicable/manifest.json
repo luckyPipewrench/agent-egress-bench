@@ -1,11 +1,11 @@
 {
   "entries": [
     {
-      "byte_length": 3438,
+      "byte_length": 3566,
       "media_type": "application/json",
       "path": "requirement.dsse.json",
       "role": "requirement",
-      "sha256": "2c4ce7fb414042f40dd6782ab0a99c4d75a83347d8e93b775ec89e5859160962"
+      "sha256": "7f935922aa82292ea7fb68a869411eb2f02480c3b0bb843e51ca538caefd923f"
     },
     {
       "byte_length": 2170,
@@ -19,7 +19,7 @@
       "media_type": "application/json",
       "path": "outcomes.json",
       "role": "outcomes",
-      "sha256": "f3e29557431ae7472cf025911159b8c9c9ea3e8b2b5b01b17be94cd9cf62e9c1"
+      "sha256": "f51cb74f1bdb5b824151ced54c2b790da8106d60de4656d43c39189cd427759e"
     },
     {
       "byte_length": 49,
@@ -44,5 +44,5 @@
     }
   ],
   "profile": "control-evidence-manifest/v0",
-  "total_uncompressed_bytes": 7992
+  "total_uncompressed_bytes": 8120
 }
