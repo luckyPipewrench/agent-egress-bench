@@ -1,16 +1,16 @@
 {
   "profile": "control-evidence-outcomes/v0",
-  "requirement_sha256": "717bce89c7a701aed3e93d8078e729f98f6969ab1638b605fe46025c9b05e47f",
+  "requirement_sha256": "83aac5e0f6beef49efdcf72371f729c3f77664f62118108d63416a6adde013f4",
   "rows": [
     {
       "actual_verdict": "block",
       "adapter_observation": "observed",
       "canaries": [
         {
-          "canary_commitment_sha256": "5ae0a281ec538f0b0859f57e3253dc469766d1856e5d68fefb11076b56811205",
+          "canary_commitment_sha256": "5906a455a6c9032808e4b95dde242d9fea96b5d674018885728bec409d785cca",
           "canary_id": "positive-1",
           "expected_predicate": "allow-observed",
-          "observation_ref": "2d4c1e143794f2c314f0296e5e832e009ab28129036d9b1e0f4756d813435ee3",
+          "observation_ref": "13a065beab38314504591203762cb3f987403e7e52704e5f95970fa8148eec0a",
           "observer_protocol": "runner-owned",
           "observer_version": "v1",
           "polarity": "positive",
@@ -18,10 +18,10 @@
           "target_identity": "runner-target-example"
         },
         {
-          "canary_commitment_sha256": "1c3c9261ba82c1018b6bc0a8ba03817634fa2b72219ce934d024300fe546b8df",
+          "canary_commitment_sha256": "b135415f1c8ed2f9d58fb4455d45cac5b714a568c359715d92d79746888fede9",
           "canary_id": "negative-1",
           "expected_predicate": "block-not-observed",
-          "liveness_record_ref": "eb850f57218518ab49513adb8655399296931472b065b7747fd387a34433ee0b",
+          "liveness_record_ref": "1577fb961432aaf6e0dc2117709f87e3fda7a77ed0ccb35cb7306f13bcd49135",
           "observer_key_id": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
           "observer_protocol": "runner-owned",
           "observer_version": "v1",

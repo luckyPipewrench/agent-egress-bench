@@ -1,9 +1,9 @@
 {
   "corpus": {
     "manifest_sha256": "543a5d594177f343e16e4c4341d0bb0ad0495c35e964a1956217510c26a7b0e8",
-    "scoring_version": "2.2",
+    "scoring_version": "2.4",
     "sha256": "6b17b8fcc411a533c822a5117e33cf73fa6766739d7d36ac86dc4bea883af4fe",
-    "version": "v2.2.0"
+    "version": "v2.3.0"
   },
   "health_control_material": {
     "key_or_input_id": "synthetic-health-input",
@@ -14,7 +14,7 @@
   "nonce_ledger": [],
   "profile": "control-evidence-conformance-context/v0",
   "reference_now": "2026-08-02T12:00:00Z",
-  "requirement_payload_sha256": "7ec483206208fb676e2be3a997f6a82b862752a780cca88d1888957d8a1db286",
+  "requirement_payload_sha256": "aeaea00aa1d6bc1d7a2757f25172d651aed2d12f05f9fa685c8392c80c40ed53",
   "token_material": {
     "key_or_input_id": "synthetic-token-input",
     "mode": "buyer-derived",

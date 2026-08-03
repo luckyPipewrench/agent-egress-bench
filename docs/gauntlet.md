@@ -145,7 +145,7 @@ Key fields:
 A Gauntlet run is valid when all of the following are true:
 
 1. **All applicable cases were executed.** No cherry-picking. The runner processes every case file in the corpus directory.
-2. **Error rate is below 20%.** If more than 20% of applicable cases produce `error` (runner or tool failure), the run is invalid and results should not be published.
+2. **Error rate is at most 20%.** If more than 20% of applicable cases produce `error` (runner or tool failure), the run is invalid and results should not be published. Error rows are already included in the applicable count, so the rate is `errors / applicable`, not `errors / (applicable + errors)`.
 3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
 4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, implement the same applicability rules, and use the same scoring formulas.
 

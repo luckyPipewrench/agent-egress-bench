@@ -5,21 +5,21 @@
       "media_type": "application/json",
       "path": "requirement.dsse.json",
       "role": "requirement",
-      "sha256": "f5f3cef9dc55e3993cd800a158b3de90c3cee9ed98b8b87b2c87db12339e02f5"
+      "sha256": "4abef3352bd37b6b4d7cd6c25ef4c3b584213a48f9d84c3b2bc85bcf3b74f74d"
     },
     {
       "byte_length": 2126,
       "media_type": "application/json",
       "path": "summary.json",
       "role": "summary",
-      "sha256": "54f78a2db318224897b483b1e07aaccca54a654788c8bc202798d7f5b70faf51"
+      "sha256": "e25e6eff6ec6ca06cc744513d37a427a469616c5239dbc493e9d8a261ed1008e"
     },
     {
       "byte_length": 805,
       "media_type": "application/json",
       "path": "outcomes.json",
       "role": "outcomes",
-      "sha256": "f9ddc284a918841f769eea97613f5374ffa3b3f2902723deb4159528aafa73f9"
+      "sha256": "3fd080ba94120e91054fa0ba8138f0eb112f45c032a034c1314691ce00914a04"
     },
     {
       "byte_length": 49,
@@ -40,7 +40,7 @@
       "media_type": "application/json",
       "path": "tool-profile.json",
       "role": "tool-profile",
-      "sha256": "34f37605dffe3d984581dded1579691180b71d9b82c207cd7f40d2b042cf8a8f"
+      "sha256": "5721f8b5e15a4325113e3f548d2d3aeda2dff5f84361795fbc9a613767cb2bfc"
     }
   ],
   "profile": "control-evidence-manifest/v0",

@@ -2,7 +2,7 @@
   "claims": [
     "mcp_input_scan"
   ],
-  "runner_version": "0.4.0",
+  "runner_version": "0.4.2",
   "schema_version": 1,
   "supports": {
     "a2a": false,

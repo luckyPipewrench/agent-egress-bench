@@ -45,7 +45,7 @@ A tool failing a case it was never designed to handle is not a meaningful signal
 
 A runner error (tool crash, timeout, transport failure) is scored as `error`, not `fail`. This prevents infrastructure problems from being counted as detection failures.
 
-If a tool produces `error` on more than 20% of applicable cases, the run should be considered invalid and the results should not be published. This threshold is a guideline for result publishers; the Go validator does not enforce it automatically.
+If a tool produces `error` on more than 20% of applicable cases, the run is insufficient and the results should not be published. The runner enforces this in `summary.sufficient`; the separate case/result validator does not decide whether a complete run is publishable.
 
 ## Authoritative Validation
 

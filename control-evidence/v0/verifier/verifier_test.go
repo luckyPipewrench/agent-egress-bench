@@ -13,6 +13,27 @@ import (
 	"testing"
 )
 
+func TestErrorRateWithinLimit(t *testing.T) {
+	tests := []struct {
+		name               string
+		applicable, errors int
+		want               bool
+	}{
+		{name: "empty", want: true},
+		{name: "exact boundary", applicable: 5, errors: 1, want: true},
+		{name: "old twenty-five-percent boundary", applicable: 4, errors: 1, want: false},
+		{name: "below boundary with remainder", applicable: 6, errors: 1, want: true},
+		{name: "impossible counts", applicable: 1, errors: 2, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errorRateWithinLimit(tt.applicable, tt.errors); got != tt.want {
+				t.Fatalf("errorRateWithinLimit(%d, %d) = %v, want %v", tt.applicable, tt.errors, got, tt.want)
+			}
+		})
+	}
+}
+
 type fixtureExpectation struct {
 	ExpectedOutcome string `json:"expected_outcome"`
 	Reason          string `json:"reason"`

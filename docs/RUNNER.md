@@ -155,7 +155,7 @@ Cases with `requires: ["budget_enforcement"]` require the runner or tool under t
 - `budget_limit_calls`
 - `over_budget_call_id` for block-expected cases
 
-The scoring boundary is off-by-one sensitive: a limit of `N` must allow the first `N` subject calls and block the `N+1` call. A conforming runner must drive the MCP sequence to the tool's MCP proxy in order and score the block case as detected only when the first block occurs at or after `over_budget_call_id`. A block before `over_budget_call_id` is a failure for the budget case because another policy or an incorrect budget boundary blocked too early. Benign controls that make exactly `budget_limit_calls` calls must not be blocked.
+The scoring boundary is off-by-one sensitive: a limit of `N` must allow the first `N` subject calls and block the `N+1` call. A conforming runner must drive the MCP sequence to the tool's MCP proxy in order and score the block case as detected only when the first block occurs exactly at `over_budget_call_id`. A block before `over_budget_call_id` is a failure because another policy or an incorrect budget boundary blocked too early. A block after `over_budget_call_id` is also a failure because the first forbidden call already reached the target. Benign controls that make exactly `budget_limit_calls` calls must not be blocked.
 
 Weighted fields such as `cost_units` and `budget_limit_units` are intentionally not part of the contract because call-count budget tools cannot score them.
 
@@ -224,7 +224,7 @@ For supported HTTP-shaped cases, map observations to verdicts this way:
 | Message forwarded without block signal and observed at the runner-owned upstream | `allow` |
 | Transport or runner failure | `error` |
 
-For budget-enforcement MCP sequences, runners should include evidence fields such as `budget_limit_calls`, `blocked_call_id`, `blocked_call_index`, and `over_budget_call_id` when a block is observed. When a budget block is observed, the runner must include `budget_block_timing` (`at_or_after_over_budget` or `before_over_budget`); a budget-block case scores `pass` only when the timing is `at_or_after_over_budget`, so a block that cannot prove it allowed the first `budget_limit_calls` calls does not pass.
+For budget-enforcement MCP sequences, runners should include evidence fields such as `budget_limit_calls`, `blocked_call_id`, `blocked_call_index`, and `over_budget_call_id` when a block is observed. When a budget block is observed, the runner must include `budget_block_timing` (`before_over_budget`, `at_over_budget`, or `after_over_budget`); a budget-block case scores `pass` only when the timing is `at_over_budget`. Earlier blocks over-enforce, while later blocks have already allowed a forbidden call to reach the target. The block response ID must match the designated request, and runner-owned observation must prove the complete ordered message prefix before that request, including calls for other subjects that are interleaved in the sequence.
 
 ## Verdict Mapping
 

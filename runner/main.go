@@ -196,7 +196,6 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 
 	var applicableResults []CaseResult
 	naReasons := make(map[NAKind]int)
-	errorCount := 0
 	enc := json.NewEncoder(os.Stdout)
 
 	for _, c := range cases {
@@ -233,7 +232,6 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		adapterResult := adapt.Run(adapterCase, timeout)
 
 		if adapterResult.Err != nil {
-			errorCount++
 			debugf(debug, "case %s: ERROR expected=%s err=%v evidence=%v",
 				c.ID, c.ExpectedVerdict, adapterResult.Err, adapterResult.Evidence)
 			result := CaseResult{
@@ -253,19 +251,13 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			continue
 		}
 
-		// Applicability was already established from the tool profile. A skip at
-		// this point is a runner/fixture coverage failure, not a tool capability
-		// exception. Count it as an error so an incomplete adapter cannot launder
-		// unexecuted cases into not_applicable results.
-		if adapterResult.Verdict == "skip" {
-			errorCount++
-			debugf(debug, "case %s: ERROR adapter could not execute applicable case (%v)", c.ID, adapterResult.Evidence)
-			skipReason := "adapter skip"
-			if adapterResult.Evidence != nil {
-				if r, ok := adapterResult.Evidence["reason"].(string); ok {
-					skipReason = "adapter skip: " + r
-				}
-			}
+		// Applicability was already established from the tool profile. A skip or
+		// an out-of-contract verdict at this point is a runner/adapter failure,
+		// not a tool capability exception. Count it as an error so an incomplete
+		// or malformed adapter cannot launder an unexecuted case into a normal
+		// pass/fail result.
+		if verdictError, invalid := adapterVerdictError(adapterResult); invalid {
+			debugf(debug, "case %s: ERROR %s (%v)", c.ID, verdictError, adapterResult.Evidence)
 			result := CaseResult{
 				CaseID:          c.ID,
 				Tool:            profile.Tool,
@@ -274,7 +266,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 				ActualVerdict:   "error",
 				Score:           "error",
 				Evidence:        adapterResult.Evidence,
-				Notes:           skipReason,
+				Notes:           verdictError,
 			}
 			applicableResults = append(applicableResults, result)
 			if encErr := enc.Encode(result); encErr != nil {
@@ -315,7 +307,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	}
 
 	// Build and write summary.
-	summary, err := buildSummary(profile, cases, applicableResults, naReasons, errorCount, casesDir, multiFileCases, casesByID, profilePath)
+	summary, err := buildSummary(profile, cases, applicableResults, naReasons, casesDir, multiFileCases, casesByID, profilePath)
 	if err != nil {
 		return err
 	}
@@ -354,7 +346,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	_, _ = fmt.Fprintf(os.Stderr, "Tool:       %s %s\n", profile.Tool, profile.ToolVersion)
 	_, _ = fmt.Fprintf(os.Stderr, "Adapter:    %s\n", adapterName)
 	_, _ = fmt.Fprintf(os.Stderr, "Cases:      %d total, %d applicable, %d N/A, %d errors\n",
-		len(cases), len(applicableResults), summary.CaseCount.NotApplicable, errorCount)
+		len(cases), len(applicableResults), summary.CaseCount.NotApplicable, summary.CaseCount.Errors)
 
 	printScores(os.Stderr, "Full Corpus Scores (primary)", summary.Scores.Full)
 	printScores(os.Stderr, "Applicable Scores (diagnostic)", summary.Scores.Applicable)
@@ -366,6 +358,21 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	}
 
 	return nil
+}
+
+func adapterVerdictError(result adapter.Result) (string, bool) {
+	switch result.Verdict {
+	case "allow", "block":
+		return "", false
+	case "skip":
+		reason := "adapter skip"
+		if value, ok := result.Evidence["reason"].(string); ok && value != "" {
+			reason += ": " + value
+		}
+		return reason, true
+	default:
+		return fmt.Sprintf("invalid adapter verdict: %q", result.Verdict), true
+	}
 }
 
 // debugPrefix is the marker written at the start of every debug line.

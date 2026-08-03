@@ -30,6 +30,27 @@ func TestCorpusIsDeterministicAndSigned(t *testing.T) {
 	}
 }
 
+func TestErrorRateWithinLimit(t *testing.T) {
+	tests := []struct {
+		name               string
+		applicable, errors int
+		want               bool
+	}{
+		{name: "empty", want: true},
+		{name: "exact boundary", applicable: 5, errors: 1, want: true},
+		{name: "old twenty-five-percent boundary", applicable: 4, errors: 1, want: false},
+		{name: "below boundary with remainder", applicable: 6, errors: 1, want: true},
+		{name: "impossible counts", applicable: 1, errors: 2, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errorRateWithinLimit(tt.applicable, tt.errors); got != tt.want {
+				t.Fatalf("errorRateWithinLimit(%d, %d) = %v, want %v", tt.applicable, tt.errors, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDerivedTokenCanaryIDSeparatesSamePolarity(t *testing.T) {
 	root := "same-root"
 	a, b := derivedToken("aeb-cee-conformance-token-derived/v1", "synthetic-token-input", root, "positive-1"), derivedToken("aeb-cee-conformance-token-derived/v1", "synthetic-token-input", root, "positive-2")

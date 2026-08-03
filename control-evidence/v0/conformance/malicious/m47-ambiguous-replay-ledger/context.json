@@ -1,9 +1,9 @@
 {
   "corpus": {
     "manifest_sha256": "543a5d594177f343e16e4c4341d0bb0ad0495c35e964a1956217510c26a7b0e8",
-    "scoring_version": "2.2",
+    "scoring_version": "2.4",
     "sha256": "6b17b8fcc411a533c822a5117e33cf73fa6766739d7d36ac86dc4bea883af4fe",
-    "version": "v2.2.0"
+    "version": "v2.3.0"
   },
   "health_control_material": {
     "key_or_input_id": "synthetic-health-input",
@@ -14,7 +14,7 @@
   "nonce_ledger": [
     {
       "challenge_nonce": "5eb7966ab40f33a02ab9d62b831b565bc8ff855b2e124018a564dcb1848afedd",
-      "envelope_payload_sha256": "2ec8b4a96bbbf13bebf92c7bcf948187feaff6887a7e1879d04842995743c898",
+      "envelope_payload_sha256": "4394ad830b70875e230a6c1ec03a2ff7c6a9cf693ed29fa9ffebc15e3071d330",
       "requirement_id": "fae2a6ec4005563d14d0524f9dacca14",
       "requirement_signer_key_id": "d75cc4067a4a661e1e2ef1560e53b43a3238cee18e2769a13166495526aac1b2"
     },
@@ -27,7 +27,7 @@
   ],
   "profile": "control-evidence-conformance-context/v0",
   "reference_now": "2026-08-02T12:00:00Z",
-  "requirement_payload_sha256": "fb7adcb87c7798de4c1448cdad5099fafa3003ae251bd78dc1659e7282c693a0",
+  "requirement_payload_sha256": "91fa160bb2529af86fec7c751e4e00d17c2ce209277d079677cc736ab50619fd",
   "token_material": {
     "key_or_input_id": "synthetic-token-input",
     "mode": "buyer-derived",

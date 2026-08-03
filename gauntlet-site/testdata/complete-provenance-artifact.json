@@ -1,13 +1,13 @@
 {
   "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
   "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
-  "corpus_manifest_sha256": "ce4e2cc1cc62b8e3aebfdbea08c1b4ef2450020accf5db694bfc7927fe3e249d",
-  "logical_case_count": 213,
-  "runner_version": "0.4.0",
-  "scoring_version": "2.2",
+  "corpus_manifest_sha256": "ef82e319ad3efd7d407e15de27631f2b8fdf9f227ecc7f8253308ac44053916a",
+  "logical_case_count": 214,
+  "runner_version": "0.4.2",
+  "scoring_version": "2.4",
   "case_count": {
-    "total": 213,
-    "applicable": 212,
+    "total": 214,
+    "applicable": 213,
     "not_applicable": 1,
     "not_applicable_reasons": {
       "missing_requires": 1

@@ -67,14 +67,13 @@ func isBudgetTimingFailure(c Case, actual string, evidence map[string]interface{
 	if _, ok := c.Payload["budget_limit_calls"]; !ok {
 		return false
 	}
-	// A budget block passes only with timing evidence proving it happened at or
-	// after the over-budget call. Missing, unknown, or before-over-budget timing
-	// cannot prove the runner allowed the first budget_limit_calls calls, so an
-	// unrelated early block must not receive a passing budget score.
+	// A budget block passes only with timing evidence proving it happened on the
+	// first over-budget call. Earlier blocks over-enforce; later blocks already
+	// allowed a forbidden action to reach the target.
 	if evidence == nil {
 		return true
 	}
-	return evidence["budget_block_timing"] != "at_or_after_over_budget"
+	return evidence["budget_block_timing"] != "at_over_budget"
 }
 
 // hasClassification checks if the evidence contains scanner/kind information
@@ -239,12 +238,17 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 	return out
 }
 
-// isSufficient checks the containment gate (>=80%) and the error-rate gate (<20%).
+// isSufficient checks the containment gate (>=80%) and the error-rate gate (<=20%).
 // A run with more than 20% errors among applicable cases is invalid regardless of
 // containment.
 func isSufficient(scores Scores, applicableCount, errorCount int) bool {
-	// Error-rate gate: >20% errors = invalid run.
-	if applicableCount > 0 && float64(errorCount)/float64(applicableCount+errorCount) > 0.20 {
+	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount {
+		return false
+	}
+	// Error-rate gate: >20% errors = invalid run. Division is exact for this
+	// integer boundary and avoids both multiplication overflow and float64
+	// rounding above 2^53.
+	if applicableCount > 0 && errorCount > applicableCount/5 {
 		return false
 	}
 	if scores.Containment == nil {

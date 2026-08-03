@@ -1951,32 +1951,40 @@ func (p *ProxyAdapter) runMCPStdioBudgetSequence(c Case, msgList []interface{}, 
 			if waitErr != nil && ctx.Err() == nil {
 				return Result{Err: mcpStdioSubprocessError(c, waitErr, strings.TrimSpace(stderrBuf.String()))}
 			}
-			blockedID := responseID
-			if blockedID == "" {
-				blockedID = messageIDString(msg)
+			expectedResponseID := messageIDString(msg)
+			expectedResponseIDKey := messageIDCorrelationKey(msg)
+			responseIDKey := jsonRPCResponseIDCorrelationKey(respLine)
+			if responseID == "" || responseIDKey == "" || responseIDKey != expectedResponseIDKey {
+				result.Evidence["expected_response_id"] = expectedResponseID
+				result.Evidence["response_id"] = responseID
+				result.Evidence["reason"] = "mcp_stdio_response_id_mismatch"
+				return Result{Verdict: "skip", Evidence: result.Evidence}
 			}
+			blockedID := responseID
 			blockedIndex := i + 1
 			// A structured block before the configured budget is exhausted is
 			// directly observable over-enforcement. It is a benchmark miss even
 			// though the runner cannot prove which earlier calls reached upstream;
 			// requiring that proof here would turn a real false positive into skip.
-			if blockedIndex <= limit {
+			if blockedIndex < overBudgetIndex {
 				return budgetBlockResult(c, limit, scope, subjectID, overBudgetID, overBudgetIndex, blockedIndex, blockedID, result.Evidence)
 			}
 			// A structured block alone does not prove budget enforcement: the
 			// proxy could fabricate all earlier successes locally. Drain the
 			// runner-owned observer before scoring and require its ordered prefix
-			// to cover the configured under-budget calls. The blocked call and
-			// later calls intentionally need not reach upstream.
+			// to equal the complete ordered prefix before this response. This is
+			// intentionally based on global message position, not the per-subject
+			// limit: interleaved subjects must not create an unobserved gap. The
+			// blocked call and later calls must not reach upstream.
 			if observer != nil {
 				observer.Drain(mcpStdioObserverDrainTimeout)
 				observationEvidence, _ := mcpStdioObservationEvidence(observer)
 				for key, value := range observationEvidence {
 					result.Evidence[key] = value
 				}
-				matched, _, _ := observer.counts()
+				matched, _, received := observer.counts()
 				result.Evidence["upstream_requests_observed_before_block"] = matched
-				if matched < limit {
+				if matched != blockedIndex-1 || received != matched {
 					return mcpStdioObservationMissingResult(observer, result.Evidence)
 				}
 			} else {
@@ -2041,10 +2049,18 @@ func budgetBlockResult(c Case, limit int, scope, subjectID string, overBudgetID,
 		evidence["over_budget_call_id"] = overBudgetID
 		if overBudgetIndex > 0 {
 			evidence["over_budget_call_index"] = overBudgetIndex
-			if blockedIndex < overBudgetIndex {
+			switch {
+			case blockedIndex < overBudgetIndex:
 				evidence["budget_block_timing"] = "before_over_budget"
-			} else {
-				evidence["budget_block_timing"] = "at_or_after_over_budget"
+				return Result{Verdict: "allow", Evidence: evidence}
+			case blockedIndex == overBudgetIndex:
+				evidence["budget_block_timing"] = "at_over_budget"
+			default:
+				evidence["budget_block_timing"] = "after_over_budget"
+				// The first forbidden call was already allowed to reach the
+				// runner-owned upstream. A later denial is a containment miss,
+				// even though it proves the tool eventually enforced a limit.
+				return Result{Verdict: "allow", Evidence: evidence}
 			}
 		}
 	}
@@ -2074,6 +2090,36 @@ func messageIDString(msg interface{}) string {
 		return ""
 	}
 	return jsonRPCIDString(m["id"])
+}
+
+func messageIDCorrelationKey(msg interface{}) string {
+	m, ok := msg.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	return jsonRPCIDCorrelationKey(m["id"])
+}
+
+func jsonRPCResponseIDCorrelationKey(line string) string {
+	var response struct {
+		ID interface{} `json:"id"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(line))
+	decoder.UseNumber()
+	if err := decoder.Decode(&response); err != nil {
+		return ""
+	}
+	return jsonRPCIDCorrelationKey(response.ID)
+}
+
+func jsonRPCIDCorrelationKey(id interface{}) string {
+	if value, ok := id.(string); ok {
+		return "string:" + value
+	}
+	if value := jsonRPCIDString(id); value != "" {
+		return "number:" + value
+	}
+	return ""
 }
 
 func jsonRPCIDString(id interface{}) string {

@@ -14,9 +14,9 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	scoringVersion  = "2.2"
-	runnerVersion   = "0.4.0"
-	corpusVersion   = "v2.2.0"
+	scoringVersion  = "2.4"
+	runnerVersion   = "0.4.2"
+	corpusVersion   = "v2.3.0"
 	summaryDateEnv  = "AEB_GAUNTLET_SUMMARY_DATE"
 )
 
@@ -196,7 +196,6 @@ func buildSummary(
 	allCases []Case,
 	applicableResults []CaseResult,
 	naReasons map[NAKind]int,
-	errorCount int,
 	casesDir, multiFileDir string,
 	casesByID map[string]Case,
 	profilePath string,
@@ -228,6 +227,10 @@ func buildSummary(
 	for _, v := range naReasons {
 		totalNA += v
 	}
+	errorCount, err := countErrors(applicableResults)
+	if err != nil {
+		return GauntletSummary{}, err
+	}
 
 	return GauntletSummary{
 		GauntletVersion:   gauntletVersion,
@@ -254,6 +257,21 @@ func buildSummary(
 		Sufficient:  isSufficient(fullScores, len(applicableResults), errorCount),
 		PerCategory: perCategory,
 	}, nil
+}
+
+func countErrors(results []CaseResult) (int, error) {
+	count := 0
+	for _, result := range results {
+		actualError := result.ActualVerdict == "error"
+		scoreError := result.Score == "error"
+		if actualError != scoreError {
+			return 0, fmt.Errorf("case %s has inconsistent error result", result.CaseID)
+		}
+		if actualError {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // writeSummary writes the GauntletSummary as indented JSON to a file.
