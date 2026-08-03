@@ -5,21 +5,21 @@
       "media_type": "application/json",
       "path": "requirement.dsse.json",
       "role": "requirement",
-      "sha256": "1f8a76d57cda3f80d8b29a1081025f56bdc2fcab1ffbec562e2e2fc94b42421d"
+      "sha256": "287770fdbe83ebff0052a6098d8c41fa1a1be619449d522bc88c2202815f398a"
     },
     {
       "byte_length": 2107,
       "media_type": "application/json",
       "path": "summary.json",
       "role": "summary",
-      "sha256": "efa90928c988df994034a7b9da378aaca82e90c7cd88c0878c8d5a411c4321df"
+      "sha256": "2e472a68e7ba29e7aaa29cce09daf1f3b534de3040416adb4a820db5413ecef1"
     },
     {
       "byte_length": 2145,
       "media_type": "application/json",
       "path": "outcomes.json",
       "role": "outcomes",
-      "sha256": "7fabf85207856730fdc9a470f39f9c1aeffd3e75091288c043669484d93d0beb"
+      "sha256": "3c9483dde645f0a2cf8725261cadacedd297f719772cbf38184a79d98de3f1ae"
     },
     {
       "byte_length": 49,
@@ -33,21 +33,21 @@
       "media_type": "application/json",
       "path": "observer-following.dsse.json",
       "role": "observer-evidence",
-      "sha256": "661486aa80a6441059a87706456af767908d5dd1e8b52d2714af7a82522f6a17"
+      "sha256": "80a0b341e0bf190fb9d7a79fcdb618f5ea3dfe1bb440afdf096ea8ecd8522d62"
     },
     {
       "byte_length": 1408,
       "media_type": "application/json",
       "path": "observer-preceding.dsse.json",
       "role": "observer-evidence",
-      "sha256": "2b770610dc8a2043022ae37ad2da4626a2d99f65bcbca2b191803657d2cbad1d"
+      "sha256": "3684e78e4cb3e6aeaf90b826691ffea8109dfa9f01d65f9ea62313af83df8a96"
     },
     {
       "byte_length": 1244,
       "media_type": "application/json",
       "path": "observer-target-1.dsse.json",
       "role": "observer-evidence",
-      "sha256": "8d43a6ed1fb6df8515eff71d23bef9fa44a52b2b928cc27bcdc7e7a8d8751f90"
+      "sha256": "03f8cc89697c87350e0ccf5a7a241b4f4c2b0532907e747b86144c2914cd1f39"
     },
     {
       "byte_length": 39,
@@ -61,7 +61,7 @@
       "media_type": "application/json",
       "path": "tool-profile.json",
       "role": "tool-profile",
-      "sha256": "34f37605dffe3d984581dded1579691180b71d9b82c207cd7f40d2b042cf8a8f"
+      "sha256": "f88d20b70f7486698da04351355572bfcbb3aea28b961b84cf1d9eac6cc30258"
     }
   ],
   "profile": "control-evidence-manifest/v0",

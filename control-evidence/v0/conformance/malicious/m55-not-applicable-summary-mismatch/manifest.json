@@ -5,21 +5,21 @@
       "media_type": "application/json",
       "path": "requirement.dsse.json",
       "role": "requirement",
-      "sha256": "7ddb9fe08218cc0c1bbdfc847853ea7b6ad2dc94c5e1af4abbfebbf375202867"
+      "sha256": "0e59d3e6b8813319bae02a444382ce402027f4a18f42ba018e7a23ac15c19482"
     },
     {
       "byte_length": 2132,
       "media_type": "application/json",
       "path": "summary.json",
       "role": "summary",
-      "sha256": "ea7af4ae94b5af275c36cb4c61e3af76e6df24c3dd9da93a7ae5ccff747f152b"
+      "sha256": "40a1abc9859ed920824e1bfdd027d9c4311567cea2e2fcde5ced9e92e81b9049"
     },
     {
       "byte_length": 838,
       "media_type": "application/json",
       "path": "outcomes.json",
       "role": "outcomes",
-      "sha256": "a5205b8b34faa2b86fddb20c36196bef26acb0b1aff90c67e672386200d9244d"
+      "sha256": "c630c1e9fd40ba604a58b38c06813ee01a613ce84f71a30064979125677ae690"
     },
     {
       "byte_length": 49,
@@ -40,7 +40,7 @@
       "media_type": "application/json",
       "path": "tool-profile.json",
       "role": "tool-profile",
-      "sha256": "34f37605dffe3d984581dded1579691180b71d9b82c207cd7f40d2b042cf8a8f"
+      "sha256": "f88d20b70f7486698da04351355572bfcbb3aea28b961b84cf1d9eac6cc30258"
     }
   ],
   "profile": "control-evidence-manifest/v0",

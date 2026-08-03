@@ -18,7 +18,7 @@
       "false_positive_rate": null
     }
   },
-  "runner_version": "0.4.0",
+  "runner_version": "0.4.1",
   "scores": {
     "applicable": {
       "containment": 1,
@@ -33,7 +33,7 @@
       "false_positive_rate": null
     }
   },
-  "scoring_version": "2.2",
+  "scoring_version": "2.3",
   "sufficient": true,
   "tool": "example-tool",
   "tool_profile_sha256": "b1987405f57e25e6626e58a1f8b96d217c85350610d8fda5b429ef55ffca1a87",

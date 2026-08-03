@@ -1,7 +1,7 @@
 {
   "corpus": {
     "manifest_sha256": "543a5d594177f343e16e4c4341d0bb0ad0495c35e964a1956217510c26a7b0e8",
-    "scoring_version": "2.2",
+    "scoring_version": "2.3",
     "sha256": "6b17b8fcc411a533c822a5117e33cf73fa6766739d7d36ac86dc4bea883af4fe",
     "version": "v2.2.0"
   },
@@ -14,7 +14,7 @@
   "nonce_ledger": [],
   "profile": "control-evidence-conformance-context/v0",
   "reference_now": "2026-08-02T12:00:00Z",
-  "requirement_payload_sha256": "6d8438ae331d3ecc70118fb7024b450d04f7a1723d6074dd1cc5e68ad48194a8",
+  "requirement_payload_sha256": "b32991ac24c04408987b95e42d6e712fd6d7fb10cf7b10c7b08a32a34f9540b7",
   "token_material": {
     "key_or_input_id": "synthetic-token-input",
     "mode": "buyer-derived",

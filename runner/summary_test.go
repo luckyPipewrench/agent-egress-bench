@@ -112,9 +112,31 @@ func TestWriteSummaryBadPath(t *testing.T) {
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, 0, "/nonexistent/dir", "", nil, "/nonexistent/profile.json")
+	_, err := buildSummary(p, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json")
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
+	}
+}
+
+func TestCountErrorsDerivesFromApplicableResults(t *testing.T) {
+	results := []CaseResult{
+		{CaseID: "pass", ActualVerdict: "block", Score: "pass"},
+		{CaseID: "failed", ActualVerdict: "allow", Score: "fail"},
+		{CaseID: "errored", ActualVerdict: "error", Score: "error"},
+	}
+	got, err := countErrors(results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 1 {
+		t.Fatalf("countErrors() = %d, want 1", got)
+	}
+}
+
+func TestCountErrorsRejectsInconsistentResult(t *testing.T) {
+	_, err := countErrors([]CaseResult{{CaseID: "laundered", ActualVerdict: "error", Score: "pass"}})
+	if err == nil {
+		t.Fatal("countErrors() accepted an error verdict with a non-error score")
 	}
 }
 
@@ -135,7 +157,6 @@ func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		nil,
 		nil,
-		0,
 		dir,
 		"",
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
@@ -166,7 +187,6 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		nil,
 		nil,
-		0,
 		dir,
 		"",
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},

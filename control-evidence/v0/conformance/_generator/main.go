@@ -24,11 +24,13 @@ import (
 )
 
 const (
-	now          = "2026-08-02T12:00:00Z"
-	typeReq      = "application/vnd.agent-egress-bench.control-evidence-requirement.v0+json"
-	typeEnv      = "application/vnd.agent-egress-bench.control-evidence-envelope.v0+json"
-	typeClock    = "application/vnd.agent-egress-bench.control-evidence-clock-evidence.v0+json"
-	typeObserver = "application/vnd.agent-egress-bench.control-evidence-observer-evidence.v0+json"
+	now            = "2026-08-02T12:00:00Z"
+	runnerVersion  = "0.4.1"
+	scoringVersion = "2.3"
+	typeReq        = "application/vnd.agent-egress-bench.control-evidence-requirement.v0+json"
+	typeEnv        = "application/vnd.agent-egress-bench.control-evidence-envelope.v0+json"
+	typeClock      = "application/vnd.agent-egress-bench.control-evidence-clock-evidence.v0+json"
+	typeObserver   = "application/vnd.agent-egress-bench.control-evidence-observer-evidence.v0+json"
 )
 
 type fixture struct {
@@ -442,7 +444,7 @@ func baseRequirement(id string) map[string]any {
 		"approved_policy":        map[string]any{"sha256": digest(policyArtifact())},
 		"required_signer_policy": map[string]any{"key_id": vendor, "authority_id": "example-runner-authority", "role": "vendor-runner"},
 		"authorized_run_signers": []any{map[string]any{"key_id": vendor, "authority_id": "example-runner-authority", "role": "vendor-runner"}},
-		"approved_runner":        map[string]any{"protocol": "gauntlet", "version": "0.4.0", "sha256": textDigest("runner")}, "approved_adapter": map[string]any{"protocol": "mcp-stdio", "version": "v1", "sha256": digest(adapterArtifact())},
+		"approved_runner":        map[string]any{"protocol": "gauntlet", "version": runnerVersion, "sha256": textDigest("runner")}, "approved_adapter": map[string]any{"protocol": "mcp-stdio", "version": "v1", "sha256": digest(adapterArtifact())},
 	}
 }
 
@@ -479,7 +481,7 @@ func toolProfileBytesForFixture(id string) []byte {
 	supports["mcp_stdio"] = true
 	supports["mcp_input_dlp_scanning"] = true
 	supports["mcp_input_prompt_injection_scanning"] = true
-	profile := map[string]any{"schema_version": 1, "tool": "example-tool", "tool_version": "v0", "runner_version": "0.4.0", "claims": []any{"mcp_input_scan"}, "supports": supports}
+	profile := map[string]any{"schema_version": 1, "tool": "example-tool", "tool_version": "v0", "runner_version": runnerVersion, "claims": []any{"mcp_input_scan"}, "supports": supports}
 	if id == "m52-tool-profile-identity-mismatch" {
 		profile["tool"] = "different-tool"
 	}
@@ -590,9 +592,9 @@ func gauntletSummary(outcomes map[string]any, toolProfileSHA string, toolProfile
 	fullScores := score(rows, applicableRows)
 	applicableScores := score(applicableRows, applicableRows)
 	containment, _ := fullScores["containment"].(float64)
-	sufficient := (fullScores["containment"] == nil || containment >= 0.80) && (len(applicableRows) == 0 || errors*5 <= len(applicableRows)+errors)
+	sufficient := (fullScores["containment"] == nil || containment >= 0.80) && errorRateWithinLimit(len(applicableRows), errors)
 	return map[string]any{
-		"gauntlet_version": "1.0", "scoring_version": "2.2", "runner_version": "0.4.0",
+		"gauntlet_version": "1.0", "scoring_version": scoringVersion, "runner_version": runnerVersion,
 		"tool": "example-tool", "tool_version": "v0", "corpus_version": "v2.2.0", "corpus_sha256": textDigest("corpus"), "tool_profile_sha256": toolProfileSHA,
 		"case_count":   map[string]any{"total": len(rows), "applicable": len(applicableRows), "not_applicable": len(rows) - len(applicableRows), "not_applicable_reasons": naReasons, "errors": errors},
 		"tool_support": toolSupportFromProfile(toolProfile),
@@ -600,6 +602,10 @@ func gauntletSummary(outcomes map[string]any, toolProfileSHA string, toolProfile
 		"sufficient":   sufficient,
 		"per_category": map[string]any{"mcp_input": map[string]any{"applicable": len(applicableRows), "containment": applicableScores["containment"], "false_positive_rate": applicableScores["false_positive_rate"], "detection": applicableScores["detection"], "evidence": applicableScores["evidence"]}},
 	}
+}
+
+func errorRateWithinLimit(applicable, errors int) bool {
+	return applicable >= 0 && errors >= 0 && errors <= applicable && (applicable == 0 || errors <= applicable/5)
 }
 
 func summaryForFixture(id string, outcomes map[string]any, toolProfileSHA string, toolProfile []byte) map[string]any {
@@ -1017,8 +1023,8 @@ func build(f fixture) map[string][]byte {
 	envPayload := map[string]any{
 		"profile": "control-evidence-envelope/v0", "requirement_sha256": requirementSHA, "challenge_nonce": reqPayload["challenge_nonce"], "run_id": runID,
 		"started_at": "2026-08-02T11:30:00Z", "finished_at": "2026-08-02T11:45:00Z", "expires_at": "2026-08-02T12:45:00Z",
-		"runner": map[string]any{"version": "0.4.0", "source_revision": "synthetic-1", "execution_mode": "approved-binary", "binary_sha256": textDigest("runner")},
-		"corpus": map[string]any{"version": "v2.2.0", "corpus_sha256": textDigest("corpus"), "manifest_sha256": textDigest("corpus-manifest"), "scoring_version": "2.2"},
+		"runner": map[string]any{"version": runnerVersion, "source_revision": "synthetic-1", "execution_mode": "approved-binary", "binary_sha256": textDigest("runner")},
+		"corpus": map[string]any{"version": "v2.2.0", "corpus_sha256": textDigest("corpus"), "manifest_sha256": textDigest("corpus-manifest"), "scoring_version": scoringVersion},
 		"tool":   map[string]any{"product": "example-tool", "version": "v0", "identity": map[string]any{"kind": "binary", "value": "tool-digest-example"}}, "policy": map[string]any{"sha256": reqPayload["approved_policy"].(map[string]any)["sha256"]}, "adapter": map[string]any{"protocol": "mcp-stdio", "version": "v1", "sha256": reqPayload["approved_adapter"].(map[string]any)["sha256"], "owner": "example"}, "scope": map[string]any{"deployment_archetype": "mcp-stdio-gateway", "transports": []any{"mcp_stdio"}, "case_ids_sha256": digest(compact(reqPayload["required_case_ids"])), "enforcement_point": "gateway"},
 		"artifacts": map[string]any{"manifest_sha256": digest(manBytes), "count": 3 + len(extras)}, "observations": map[string]any{"sha256": digest(outcomesBytes), "row_count": len(outcomes["rows"].([]any)), "observer_protocol": observerIdentity(f.id)["protocol"], "observer_version": observerIdentity(f.id)["version"]},
 		"freshness_basis": "vendor-asserted-clock", "signer": map[string]any{"key_id": keyID("vendor-runner"), "authority_id": "example-runner-authority", "role": "vendor-runner"},

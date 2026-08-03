@@ -239,12 +239,17 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 	return out
 }
 
-// isSufficient checks the containment gate (>=80%) and the error-rate gate (<20%).
+// isSufficient checks the containment gate (>=80%) and the error-rate gate (<=20%).
 // A run with more than 20% errors among applicable cases is invalid regardless of
 // containment.
 func isSufficient(scores Scores, applicableCount, errorCount int) bool {
-	// Error-rate gate: >20% errors = invalid run.
-	if applicableCount > 0 && float64(errorCount)/float64(applicableCount+errorCount) > 0.20 {
+	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount {
+		return false
+	}
+	// Error-rate gate: >20% errors = invalid run. Division is exact for this
+	// integer boundary and avoids both multiplication overflow and float64
+	// rounding above 2^53.
+	if applicableCount > 0 && errorCount > applicableCount/5 {
 		return false
 	}
 	if scores.Containment == nil {

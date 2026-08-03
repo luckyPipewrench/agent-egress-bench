@@ -18,7 +18,7 @@
       "false_positive_rate": null
     }
   },
-  "runner_version": "0.4.0",
+  "runner_version": "0.4.1",
   "scores": {
     "applicable": {
       "containment": 1,
@@ -33,10 +33,10 @@
       "false_positive_rate": null
     }
   },
-  "scoring_version": "2.2",
+  "scoring_version": "2.3",
   "sufficient": true,
   "tool": "example-tool",
-  "tool_profile_sha256": "5399d27c3b09ac036f599fdbfacdc0b797f0a258ec2ac83f58b83df960992019",
+  "tool_profile_sha256": "1e076627e68a466c4cc2ca923f46f8d31114c0ea3acf8373864bd6db746445b1",
   "tool_support": {
     "claims": [
       "mcp_input_scan"

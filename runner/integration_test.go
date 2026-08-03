@@ -6,7 +6,33 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/luckyPipewrench/agent-egress-bench/runner/adapter"
 )
+
+func TestAdapterVerdictError(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  adapter.Result
+		want    string
+		invalid bool
+	}{
+		{name: "allow", result: adapter.Result{Verdict: "allow"}},
+		{name: "block", result: adapter.Result{Verdict: "block"}},
+		{name: "warn", result: adapter.Result{Verdict: "warn"}, want: `invalid adapter verdict: "warn"`, invalid: true},
+		{name: "skip", result: adapter.Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "unsupported path"}}, want: "adapter skip: unsupported path", invalid: true},
+		{name: "empty", result: adapter.Result{}, want: `invalid adapter verdict: ""`, invalid: true},
+		{name: "unknown", result: adapter.Result{Verdict: "bypass"}, want: `invalid adapter verdict: "bypass"`, invalid: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, invalid := adapterVerdictError(tt.result)
+			if got != tt.want || invalid != tt.invalid {
+				t.Fatalf("adapterVerdictError() = (%q, %v), want (%q, %v)", got, invalid, tt.want, tt.invalid)
+			}
+		})
+	}
+}
 
 func TestRunBadCasesDir(t *testing.T) {
 	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),

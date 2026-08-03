@@ -69,7 +69,7 @@ func (s *verificationState) verifySummary() *Result {
 			}
 		}
 	}
-	wantSufficient := (malicious == 0 || blockedMalicious*5 >= malicious*4) && (applicable == 0 || errorsSeen*5 <= applicable+errorsSeen)
+	wantSufficient := (malicious == 0 || blockedMalicious*5 >= malicious*4) && errorRateWithinLimit(applicable, errorsSeen)
 	gotSufficient, ok := s.summary["sufficient"].(bool)
 	if !ok || gotSufficient != wantSufficient {
 		return failure(outcomeInvalid, "summary_score_projection_mismatch")
@@ -83,6 +83,10 @@ func (s *verificationState) verifySummary() *Result {
 		return failure(outcomeInvalid, "summary_binding_mismatch")
 	}
 	return nil
+}
+
+func errorRateWithinLimit(applicable, errors int) bool {
+	return applicable >= 0 && errors >= 0 && errors <= applicable && (applicable == 0 || errors <= applicable/5)
 }
 
 func deriveToolSupport(profile map[string]any) map[string]any {

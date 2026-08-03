@@ -181,6 +181,7 @@ func TestComputeFullCorpusScores(t *testing.T) {
 }
 
 func TestIsSufficient(t *testing.T) {
+	largestInt := int(^uint(0) >> 1)
 	tests := []struct {
 		name        string
 		containment *float64
@@ -193,9 +194,13 @@ func TestIsSufficient(t *testing.T) {
 		{"80%", floatPtr(0.80), 10, 0, true},
 		{"79%", floatPtr(0.79), 10, 0, false},
 		{"0%", floatPtr(0.0), 10, 0, false},
-		{"high error rate", floatPtr(1.0), 4, 2, false},       // 2/(4+2)=33% > 20%
-		{"acceptable error rate", floatPtr(1.0), 10, 1, true}, // 1/(10+1)=9% < 20%
-		{"boundary error rate", floatPtr(1.0), 4, 1, true},    // 1/(4+1)=20% = 20% (not >)
+		{"high error rate", floatPtr(1.0), 4, 2, false},           // 2/4=50% > 20%
+		{"acceptable error rate", floatPtr(1.0), 10, 1, true},     // 1/10=10% < 20%
+		{"above boundary error rate", floatPtr(1.0), 4, 1, false}, // 1/4=25% > 20%
+		{"boundary error rate", floatPtr(1.0), 5, 1, true},        // 1/5=20% (not >)
+		{"below boundary with remainder", floatPtr(1.0), 6, 1, true},
+		{"errors exceed applicable", floatPtr(1.0), 1, 2, false},
+		{"largest integer above boundary", floatPtr(1.0), largestInt, largestInt/5 + 1, false},
 	}
 
 	for _, tt := range tests {
