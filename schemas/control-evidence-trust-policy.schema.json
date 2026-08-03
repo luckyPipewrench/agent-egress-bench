@@ -54,7 +54,8 @@
         "properties": {
           "key_id": {
             "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Ed25519 public key identifier; the assessor requires this to equal public_key."
           },
           "public_key": {
             "type": "string",
@@ -87,7 +88,25 @@
             "format": "date-time",
             "pattern": "Z$"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"role": {"const": "buyer-requirement"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-requirement.v0+json"}}}
+          },
+          {
+            "if": {"properties": {"role": {"const": "run-envelope"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-envelope.v0+json"}}}
+          },
+          {
+            "if": {"properties": {"role": {"const": "observer-evidence"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-observer-evidence.v0+json"}}}
+          },
+          {
+            "if": {"properties": {"role": {"const": "completion-clock"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-clock-evidence.v0+json"}}}
+          }
+        ]
       }
     },
     "revocations": {

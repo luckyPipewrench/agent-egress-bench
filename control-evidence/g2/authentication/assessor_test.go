@@ -78,63 +78,88 @@ func firstNonEmpty(a, b string) string {
 }
 
 func TestAssessRejectsEveryManifestDeclaredObserverWrapper(t *testing.T) {
-	fixture := newFixture(t)
-	fixture.signerFor["observer-target.dsse.json"] = fixture.rogue
-	fixture.writePackage(t)
-	fixture.writePolicy(t)
-	result := fixture.assess(t)
-	if result.Predicates[0].Status != StatusFail || result.Predicates[0].Reason != "signer_key_untrusted" {
-		t.Fatalf("result = %#v, want untrusted observer FAIL", result)
+	for _, name := range observerWrapperNames {
+		t.Run(name, func(t *testing.T) {
+			fixture := newFixture(t)
+			fixture.signerFor[name] = fixture.rogue
+			fixture.writePackage(t)
+			fixture.writePolicy(t)
+			result := fixture.assess(t)
+			if result.Predicates[0].Status != StatusFail || result.Predicates[0].Reason != "signer_key_untrusted" {
+				t.Fatalf("result = %#v, want untrusted observer FAIL", result)
+			}
+		})
 	}
 }
 
 func TestAssessWrongPurposeAndAuthorityFail(t *testing.T) {
-	for _, mutate := range []func(*testFixture){
-		func(f *testFixture) { f.policy.Keys[1].Purpose = typeObserver },
-		func(f *testFixture) { f.policy.Keys[1].AuthorityID = "wrong-authority" },
+	for _, tc := range []struct {
+		name, reason string
+		mutate       func(*testFixture)
+	}{
+		{"purpose", "policy_payload_invalid", func(f *testFixture) { f.policyKey(t, "run-envelope").Purpose = typeObserver }},
+		{"authority", "signer_role_or_authority_mismatch", func(f *testFixture) { f.policyKey(t, "run-envelope").AuthorityID = "wrong-authority" }},
 	} {
-		fixture := newFixture(t)
-		mutate(fixture)
-		fixture.writePolicy(t)
-		result := fixture.assess(t)
-		if result.Predicates[0].Status != StatusFail {
-			t.Fatalf("result = %#v, want FAIL", result)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newFixture(t)
+			tc.mutate(fixture)
+			fixture.writePolicy(t)
+			result := fixture.assess(t)
+			if result.Predicates[0].Status != StatusFail || result.Predicates[0].Reason != tc.reason {
+				t.Fatalf("result = %#v, want FAIL %s", result, tc.reason)
+			}
+		})
 	}
 }
 
 func TestAssessFutureAndRevokedKeysFail(t *testing.T) {
-	for _, mutate := range []func(*testFixture){
-		func(f *testFixture) { f.policy.Keys[1].NotBefore = "2030-01-01T00:00:00Z" },
-		func(f *testFixture) {
+	for _, tc := range []struct {
+		name, reason string
+		mutate       func(*testFixture)
+	}{
+		{"future", "signer_key_not_valid_at_assessment", func(f *testFixture) { f.policyKey(t, "run-envelope").NotBefore = "2026-09-01T00:00:00Z" }},
+		{"revoked", "signer_key_revoked", func(f *testFixture) {
 			f.policy.Revocations = []revocation{{KeyID: f.runner.ID, EffectiveAt: "2026-01-01T00:00:00Z", Reason: "test"}}
-		},
+		}},
 	} {
-		fixture := newFixture(t)
-		mutate(fixture)
-		fixture.writePolicy(t)
-		result := fixture.assess(t)
-		if result.Predicates[0].Status != StatusFail {
-			t.Fatalf("result = %#v, want FAIL", result)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newFixture(t)
+			tc.mutate(fixture)
+			fixture.writePolicy(t)
+			result := fixture.assess(t)
+			if result.Predicates[0].Status != StatusFail || result.Predicates[0].Reason != tc.reason {
+				t.Fatalf("result = %#v, want FAIL %s", result, tc.reason)
+			}
+		})
 	}
 }
 
-func TestAssessStalePolicyAndMissingCheckpointAreUnverifiable(t *testing.T) {
-	fixture := newFixture(t)
-	fixture.policy.NextUpdate = "2026-07-01T00:00:00Z"
-	fixture.writePolicy(t)
-	if result := fixture.assess(t); result.Predicates[0].Status != StatusUnverifiable {
-		t.Fatalf("stale result = %#v", result)
-	}
-
-	fixture = newFixture(t)
-	if err := os.Chmod(fixture.state, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if result := fixture.assess(t); result.Predicates[0].Status != StatusUnverifiable {
-		t.Fatalf("unsafe-state result = %#v", result)
-	}
+func TestAssessPolicyAndCheckpointAvailabilityAreUnverifiable(t *testing.T) {
+	t.Run("stale-policy", func(t *testing.T) {
+		fixture := newFixture(t)
+		fixture.policy.NextUpdate = "2026-07-01T00:00:00Z"
+		fixture.writePolicy(t)
+		if result := fixture.assess(t); result.Predicates[0].Status != StatusUnverifiable || result.Predicates[0].Reason != "policy_stale" {
+			t.Fatalf("stale result = %#v", result)
+		}
+	})
+	t.Run("unsafe-checkpoint-mode", func(t *testing.T) {
+		fixture := newFixture(t)
+		if err := os.Chmod(fixture.state, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if result := fixture.assess(t); result.Predicates[0].Status != StatusUnverifiable || result.Predicates[0].Reason != "checkpoint_unavailable" {
+			t.Fatalf("unsafe-state result = %#v", result)
+		}
+	})
+	t.Run("missing-checkpoint-directory", func(t *testing.T) {
+		fixture := newFixture(t)
+		missing := filepath.Join(t.TempDir(), "missing")
+		result := Assess(testOptions(fixture.pkg, fixture.policyPath, fixture.contextPath, missing))
+		if result.Predicates[0].Status != StatusUnverifiable || result.Predicates[0].Reason != "checkpoint_not_external" {
+			t.Fatalf("missing-state result = %#v", result)
+		}
+	})
 }
 
 func TestAssessCheckpointRejectsRollbackAndEquivocation(t *testing.T) {
@@ -154,7 +179,7 @@ func TestAssessCheckpointRejectsRollbackAndEquivocation(t *testing.T) {
 	if result := fixture.assess(t); result.Predicates[0].Status != StatusPass {
 		t.Fatalf("first result = %#v", result)
 	}
-	fixture.policy.Keys[0].AuthorityID = "changed-but-signed"
+	fixture.policyKey(t, "buyer-requirement").AuthorityID = "changed-but-signed"
 	fixture.writePolicy(t)
 	if result := fixture.assess(t); result.Predicates[0].Status != StatusFail || result.Predicates[0].Reason != "policy_epoch_equivocation" {
 		t.Fatalf("equivocation result = %#v", result)
@@ -162,43 +187,31 @@ func TestAssessCheckpointRejectsRollbackAndEquivocation(t *testing.T) {
 }
 
 func TestAssessCheckpointCorruptionAndBusyLockAreUnverifiable(t *testing.T) {
-	fixture := newFixture(t)
-	if result := fixture.assess(t); result.Predicates[0].Status != StatusPass {
-		t.Fatalf("initial result = %#v", result)
-	}
-	entries, err := os.ReadDir(fixture.state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var checkpointPath string
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) == ".json" {
-			checkpointPath = filepath.Join(fixture.state, entry.Name())
+	t.Run("corrupt-content", func(t *testing.T) {
+		fixture := newFixture(t)
+		if result := fixture.assess(t); result.Predicates[0].Status != StatusPass {
+			t.Fatalf("initial result = %#v", result)
 		}
-	}
-	if checkpointPath == "" {
-		t.Fatal("checkpoint record not found")
-	}
-	if err := os.Chmod(checkpointPath, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	result := fixture.assess(t)
-	if result.Predicates[0].Status != StatusUnverifiable || result.Predicates[0].Reason != "checkpoint_invalid" {
-		t.Fatalf("corrupt result = %#v", result)
-	}
-
-	if err := os.Chmod(checkpointPath, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	policyIDHash := sha256.Sum256([]byte(fixture.policy.PolicyID))
-	lockPath := filepath.Join(fixture.state, hex.EncodeToString(policyIDHash[:])+".lock")
-	if err := os.Mkdir(lockPath, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	result = fixture.assess(t)
-	if result.Predicates[0].Status != StatusUnverifiable || result.Predicates[0].Reason != "checkpoint_busy" {
-		t.Fatalf("busy result = %#v", result)
-	}
+		checkpointPath := filepath.Join(fixture.state, checkpointStem(fixture.policy.PolicyID)+".json")
+		if err := os.WriteFile(checkpointPath, []byte("not-json"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		result := fixture.assess(t)
+		if result.Predicates[0].Status != StatusUnverifiable || result.Predicates[0].Reason != "checkpoint_invalid" {
+			t.Fatalf("corrupt result = %#v", result)
+		}
+	})
+	t.Run("busy-lock", func(t *testing.T) {
+		fixture := newFixture(t)
+		lockPath := filepath.Join(fixture.state, checkpointStem(fixture.policy.PolicyID)+".lock")
+		if err := os.Mkdir(lockPath, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		result := fixture.assess(t)
+		if result.Predicates[0].Status != StatusUnverifiable || result.Predicates[0].Reason != "checkpoint_busy" {
+			t.Fatalf("busy result = %#v", result)
+		}
+	})
 }
 
 func TestAssessRejectsPolicyInsidePackage(t *testing.T) {
@@ -355,9 +368,13 @@ func TestUnverifiableAssessmentOmitsUnknownBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range [][]byte{[]byte(`"assessment_time"`), []byte(`"evidence"`), []byte(`"external_state"`)} {
-		if bytes.Contains(raw, forbidden) {
-			t.Fatalf("unknown binding %s was emitted in %s", forbidden, raw)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"assessment_time", "evidence", "external_state"} {
+		if _, ok := fields[forbidden]; ok {
+			t.Fatalf("unknown binding %q was emitted in %s", forbidden, raw)
 		}
 	}
 }
@@ -424,7 +441,13 @@ func TestAssessmentResultsValidateAgainstPublicSchema(t *testing.T) {
 	failFixture.writePolicy(t)
 	fail := failFixture.assess(t)
 	unverifiable := Assess(testOptions("", "", filepath.Join(t.TempDir(), "missing"), ""))
-	for name, result := range map[string]Result{"pass": pass, "fail": fail, "unverifiable": unverifiable} {
+	invalidVerifierOptions := testOptions("", "", filepath.Join(t.TempDir(), "missing"), "")
+	invalidVerifierOptions.VerifierSHA256 = "not-a-digest"
+	invalidVerifier := Assess(invalidVerifierOptions)
+	if invalidVerifier.Verifier.SHA256 != "" || invalidVerifier.Predicates[0].Reason != "verifier_identity_invalid" {
+		t.Fatalf("invalid verifier result = %#v", invalidVerifier)
+	}
+	for name, result := range map[string]Result{"pass": pass, "fail": fail, "unverifiable": unverifiable, "invalid-verifier": invalidVerifier} {
 		t.Run(name, func(t *testing.T) {
 			raw, err := json.Marshal(result)
 			if err != nil {
@@ -472,6 +495,8 @@ type testFixture struct {
 	signerFor                                           map[string]testKey
 }
 
+var observerWrapperNames = []string{"observer-following.dsse.json", "observer-preceding.dsse.json", "observer-target.dsse.json"}
+
 func newFixture(t *testing.T) *testFixture {
 	t.Helper()
 	root := newTestKey(t.Name() + "root")
@@ -487,22 +512,42 @@ func newFixture(t *testing.T) *testFixture {
 		t.Fatal(err)
 	}
 	f.policy = policy{Profile: policyProfile, PolicyID: "test-policy", Epoch: 1, IssuedAt: "2026-01-01T00:00:00Z", NextUpdate: "2027-01-01T00:00:00Z", Keys: []policyKey{f.key(buyer, "buyer-requirement", typeRequirement, "buyer"), f.key(runner, "run-envelope", typeEnvelope, "runner"), f.key(observer, "observer-evidence", typeObserver, "observer"), f.key(clock, "completion-clock", typeClock, "clock")}}
-	f.signerFor = map[string]testKey{"requirement.dsse.json": buyer, "envelope.dsse.json": runner, "observer-target.dsse.json": observer, "clock.dsse.json": clock}
+	f.signerFor = map[string]testKey{"requirement.dsse.json": buyer, "envelope.dsse.json": runner, "clock.dsse.json": clock}
+	for _, name := range observerWrapperNames {
+		f.signerFor[name] = observer
+	}
 	f.writePackage(t)
 	f.writePolicy(t)
 	return f
 }
+
 func (f *testFixture) key(k testKey, role, purpose, authority string) policyKey {
 	return policyKey{KeyID: k.ID, PublicKey: k.ID, AuthorityID: authority, Role: role, Purpose: purpose, NotBefore: "2025-01-01T00:00:00Z", ExpiresAt: "2027-01-01T00:00:00Z"}
 }
+
+func (f *testFixture) policyKey(t *testing.T, role string) *policyKey {
+	t.Helper()
+	for i := range f.policy.Keys {
+		if f.policy.Keys[i].Role == role {
+			return &f.policy.Keys[i]
+		}
+	}
+	t.Fatalf("policy key for role %q not found", role)
+	return nil
+}
+
 func (f *testFixture) writePackage(t *testing.T) {
 	t.Helper()
 	files := map[string][]byte{}
 	files["requirement.dsse.json"] = signed(t, f.signerFor["requirement.dsse.json"], typeRequirement, map[string]any{"profile": "control-evidence-requirement/v0", "buyer_id": "buyer", "trust_policy_id": "test-policy", "trust_policy_sha256": "placeholder"})
-	files["observer-target.dsse.json"] = signed(t, f.signerFor["observer-target.dsse.json"], typeObserver, map[string]any{"profile": "control-evidence-observer-evidence/v0", "observer": map[string]any{"key_id": f.observer.ID, "protocol": "test", "version": "v1"}})
+	for _, name := range observerWrapperNames {
+		files[name] = signed(t, f.signerFor[name], typeObserver, map[string]any{"profile": "control-evidence-observer-evidence/v0", "observer": map[string]any{"key_id": f.observer.ID, "protocol": "test", "version": "v1"}})
+	}
 	files["clock.dsse.json"] = signed(t, f.signerFor["clock.dsse.json"], typeClock, map[string]any{"profile": "control-evidence-clock-evidence/v0", "attestor": map[string]any{"authority_id": "clock"}})
 	entries := []manifestEntry{}
-	for _, name := range []string{"requirement.dsse.json", "observer-target.dsse.json", "clock.dsse.json"} {
+	names := append([]string{"requirement.dsse.json"}, observerWrapperNames...)
+	names = append(names, "clock.dsse.json")
+	for _, name := range names {
 		role := "observer-evidence"
 		if name == "requirement.dsse.json" {
 			role = "requirement"
@@ -525,11 +570,13 @@ func (f *testFixture) writePackage(t *testing.T) {
 	_, payload := decodeDSSE(t, files["envelope.dsse.json"])
 	f.envelopeDigest = digest(payload)
 	ctx := authContext{Profile: contextProfile, AssessmentTime: "2026-08-03T12:00:00Z", PolicyID: "test-policy", BootstrapKeyID: f.root.ID, BootstrapPublicKey: f.root.ID, EnvelopePayloadSHA256: f.envelopeDigest}
+	// writePolicy must follow writePackage to bind this context to the signed policy.
 	raw, _ := json.Marshal(ctx)
 	if err := os.WriteFile(f.contextPath, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
+
 func (f *testFixture) writePolicy(t *testing.T) {
 	t.Helper()
 	raw := signed(t, f.root, policyType, f.policy)
@@ -550,10 +597,12 @@ func (f *testFixture) writePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
 func (f *testFixture) assess(t *testing.T) Result {
 	t.Helper()
 	return Assess(testOptions(f.pkg, f.policyPath, f.contextPath, f.state))
 }
+
 func signed(t *testing.T, k testKey, typ string, payload any) []byte {
 	t.Helper()
 	raw, err := json.Marshal(payload)
@@ -575,6 +624,7 @@ func signed(t *testing.T, k testKey, typ string, payload any) []byte {
 	}
 	return out
 }
+
 func decodeDSSE(t *testing.T, raw []byte) (dsseEnvelope, []byte) {
 	t.Helper()
 	var d dsseEnvelope

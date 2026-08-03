@@ -39,12 +39,15 @@ const (
 	maxExternalJSON    = int64(1 << 20)
 )
 
-type Options struct{ PackageDir, PolicyPath, ContextPath, CheckpointDir, VerifierName, VerifierVersion, VerifierSHA256 string }
-type Predicate struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Reason string `json:"reason"`
-}
+type (
+	Options   struct{ PackageDir, PolicyPath, ContextPath, CheckpointDir, VerifierName, VerifierVersion, VerifierSHA256 string }
+	Predicate struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+		Reason string `json:"reason"`
+	}
+)
+
 type EvidenceState struct {
 	EnvelopePayloadSHA256 string `json:"envelope_payload_sha256"`
 }
@@ -127,9 +130,12 @@ func baseResult(o Options) Result {
 	r := Result{Profile: assessmentProfile}
 	r.Verifier.Name = o.VerifierName
 	r.Verifier.Version = o.VerifierVersion
-	r.Verifier.SHA256 = o.VerifierSHA256
+	if lowerHex64(o.VerifierSHA256) {
+		r.Verifier.SHA256 = o.VerifierSHA256
+	}
 	return r
 }
+
 func resultWith(r Result, status, reason string) Result {
 	r.Predicates = []Predicate{{Name: "authenticated-at(T)", Status: status, Reason: reason}}
 	return r
@@ -277,6 +283,7 @@ func verifyPolicy(raw []byte, ctx authContext) (policy, string) {
 	}
 	return p, ""
 }
+
 func expectedPurpose(role string) string {
 	switch role {
 	case "buyer-requirement":
@@ -291,6 +298,7 @@ func expectedPurpose(role string) string {
 		return ""
 	}
 }
+
 func authorizeArtifact(a signedArtifact, p policy, at time.Time) string {
 	for _, k := range p.Keys {
 		if k.KeyID != a.signer {
@@ -332,8 +340,7 @@ func advanceCheckpoint(root, id string, epoch int, policySHA string) (string, st
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 {
 		return "", "checkpoint_unavailable"
 	}
-	s := sha256.Sum256([]byte(id))
-	stem := hex.EncodeToString(s[:])
+	stem := checkpointStem(id)
 	lockPath := filepath.Join(root, stem+".lock")
 	if err := os.Mkdir(lockPath, 0o700); err != nil {
 		return "", "checkpoint_busy"
@@ -392,6 +399,11 @@ func advanceCheckpoint(root, id string, epoch int, policySHA string) (string, st
 		return "", "checkpoint_unavailable"
 	}
 	return digest(raw), ""
+}
+
+func checkpointStem(policyID string) string {
+	sum := sha256.Sum256([]byte(policyID))
+	return hex.EncodeToString(sum[:])
 }
 
 func syncDirectory(path string) error {
@@ -465,6 +477,7 @@ func requiredArtifacts(files map[string][]byte) ([]signedArtifact, string, strin
 	}
 	return out, envDigest, ""
 }
+
 func authorityFor(role string, p []byte) string {
 	var v struct {
 		BuyerID     string `json:"buyer_id"`
@@ -490,6 +503,7 @@ func authorityFor(role string, p []byte) string {
 		return v.AuthorityID
 	}
 }
+
 func parseDSSE(raw []byte, want string) (dsseEnvelope, []byte, error) {
 	var d dsseEnvelope
 	if err := strictJSON(raw, &d); err != nil {
@@ -512,6 +526,7 @@ func parseDSSE(raw []byte, want string) (dsseEnvelope, []byte, error) {
 	}
 	return d, p, nil
 }
+
 func loadPackage(root string) (map[string][]byte, error) {
 	info, err := os.Lstat(root)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
@@ -557,9 +572,11 @@ func loadPackage(root string) (map[string][]byte, error) {
 	})
 	return out, err
 }
+
 func safePath(p string) bool {
 	return p != "" && p == filepath.ToSlash(filepath.Clean(p)) && !filepath.IsAbs(p) && !strings.HasPrefix(p, "../") && !strings.Contains(p, "\\")
 }
+
 func externalToPackage(root, path string) bool {
 	a, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -580,6 +597,7 @@ func externalToPackage(root, path string) bool {
 	rel, err := filepath.Rel(a, b)
 	return err == nil && rel != "." && rel != ".." && strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
+
 func readRegularBounded(path string, maxBytes int64) ([]byte, error) {
 	before, err := os.Lstat(path)
 	if err != nil {
@@ -603,6 +621,7 @@ func readRegularBounded(path string, maxBytes int64) ([]byte, error) {
 	}
 	return data, nil
 }
+
 func validContext(ctx authContext) bool {
 	if ctx.Profile != contextProfile || !validOpaqueID(ctx.PolicyID) || !lowerHex64(ctx.PolicySHA256) ||
 		!lowerHex64(ctx.BootstrapKeyID) || !lowerHex64(ctx.BootstrapPublicKey) || !lowerHex64(ctx.EnvelopePayloadSHA256) {
@@ -611,12 +630,14 @@ func validContext(ctx authContext) bool {
 	_, err := parseUTC(ctx.AssessmentTime)
 	return err == nil
 }
+
 func parseUTC(value string) (time.Time, error) {
 	if !strings.HasSuffix(value, "Z") {
 		return time.Time{}, errors.New("timestamp must use UTC Z form")
 	}
 	return time.Parse(time.RFC3339, value)
 }
+
 func lowerHex64(value string) bool {
 	if len(value) != 64 || value != strings.ToLower(value) {
 		return false
@@ -624,6 +645,7 @@ func lowerHex64(value string) bool {
 	decoded, err := hex.DecodeString(value)
 	return err == nil && len(decoded) == 32
 }
+
 func validOpaqueID(value string) bool {
 	if value == "" || len(value) > 128 {
 		return false
@@ -636,6 +658,7 @@ func validOpaqueID(value string) bool {
 	}
 	return true
 }
+
 func decodeKey(s string) (ed25519.PublicKey, error) {
 	b, err := hex.DecodeString(s)
 	if err != nil || len(b) != ed25519.PublicKeySize {
@@ -648,6 +671,7 @@ func SHA256(b []byte) string { return digest(b) }
 func pae(t string, p []byte) []byte {
 	return []byte(fmt.Sprintf("DSSEv1 %d %s %d %s", len(t), t, len(p), p))
 }
+
 func canonical(raw []byte) error {
 	c, err := jsoncanonicalizer.Transform(raw)
 	if err != nil || !bytes.Equal(c, raw) {
@@ -672,6 +696,7 @@ func strictJSON(raw []byte, dst any) error {
 	}
 	return nil
 }
+
 func strictValue(dec *json.Decoder, depth int) (any, error) {
 	if depth > 128 {
 		return nil, errors.New("depth")

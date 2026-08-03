@@ -12,7 +12,7 @@ import (
 func main() {
 	packageDir := flag.String("package", "", "Control Evidence v0 package directory")
 	policy := flag.String("policy", "", "externally supplied signed trust policy")
-	context := flag.String("context", "", "independent authentication context")
+	context := flag.String("context", "", "verifier-trusted authentication context (never producer supplied)")
 	checkpoint := flag.String("policy-checkpoint", "", "private durable policy checkpoint directory")
 	flag.Parse()
 	if *packageDir == "" || *policy == "" || *context == "" || *checkpoint == "" {
