@@ -3,7 +3,7 @@
   "description": "Synthetic control-evidence envelope v0 conformance vector.",
   "expected_outcome": "invalid",
   "fixture_id": "m27-token-extra-canary-id",
-  "nonce_status": "first_verification",
+  "nonce_status": "",
   "reason": "token_material_canary_id_set_mismatch",
   "reference_now": "2026-08-02T12:00:00Z"
 }

@@ -34,6 +34,7 @@ func loadSchemas() (*schemaSet, error) {
 			return nil, fmt.Errorf("read embedded %s: %w", name, err)
 		}
 		compiler := jsonschema.NewCompiler()
+		compiler.AssertFormat()
 		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("parse embedded %s: %w", name, err)

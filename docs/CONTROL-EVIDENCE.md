@@ -65,7 +65,7 @@ them; a producer or verifier must not use Go HTML escaping when forming or check
 | `schemas/control-evidence-health-control-material.schema.json` | Decrypted closed control-ID/input mapping |
 | `schemas/control-evidence-context.schema.json` | Independent conformance trust, material, clock, and replay input |
 
-The requirement pins its challenge nonce, required cases and canaries, observer identity/key,
+The requirement pins its challenge nonce, required cases, each case's expected verdict, and canaries, observer identity/key,
 allowed signer roles, runner/adapter/tool identities, error limit, freshness policy, and independent
 trust-policy digest. It separately pins the exact approved run-policy bytes by SHA-256; that enforcement
 policy is not the verifier's independent trust policy. In v0 it requires one exact transport (`mcp_stdio`) and one exact deployment
@@ -84,6 +84,11 @@ one or more canary observations. A positive canary is proven only by its `observ
 observer-signed `target-observation` DSSE wrapper joining the exact case, trial, canary ID, token, target,
 and observed time. A negative canary is useful only when the target did not observe the expected block
 action *and* the observer was continuously demonstrated healthy across its observation window.
+
+A liveness record is intentionally run-level observer-health evidence. One signed record may cover
+multiple negative-canary windows in the same bound run, target, and transport; each canary is still
+checked against its own signed window. It is an alternative to per-canary bracketing health controls,
+not an additional required proof.
 
 For a negative canary that did not report observer unavailability, the ledger carries either
 bracketing signed health controls or a signed, ordered liveness record. Each reference is the SHA-256
@@ -157,6 +162,13 @@ issuing a new signed profile/ID and requirement, revoke an ID in its verifier tr
 only through the buyer's approved key recovery process, and inspect the resolved ID/profile before
 accepting a run. None of those lifecycle actions are inferred from producer-provided package content.
 
+The deterministic `aeb-cee-conformance-*-aesgcm/v1` profiles are test-only. For these v1 profiles,
+one AES-256 key MUST NOT encrypt two distinct plaintexts for the same
+`(requirement_id, profile, key_or_input_id, role)` tuple; changing a mapping requires a fresh key.
+Reusing that key and tuple would reuse an AES-GCM nonce and destroy its confidentiality and integrity
+guarantees. Production verifiers must reject these conformance profiles and use a profile with an
+operator-defined key and nonce lifecycle.
+
 ## Canonical outcomes projection
 
 `summary.json` is retained as exact runner output and may use legacy JSON formatting. It is not
@@ -168,7 +180,7 @@ compares only the mapped summary facts below.
 | selected case set | `rows[].case_id` | Exact set equals the signed requirement |
 | trials per case | `rows[].trial_index` | Exactly one for live-summary comparison in v0 |
 | pass/fail/N/A/error totals | `rows[].outcome` | Count after validating each row |
-| expected/actual verdict totals | `rows[].expected_verdict`, `rows[].actual_verdict` | Count after validating each row |
+| expected/actual verdict totals | buyer-signed `required_case_expectations`, `rows[].actual_verdict` | Count after validating each row |
 | score numerator/denominator | validated rows and `scoring_facts` | Integer arithmetic only |
 | canary totals | `rows[].canaries[]` | Count by required ID, polarity, and state |
 
@@ -184,6 +196,11 @@ Exactly one manifest member has role `tool-profile`. Its exact bytes must hash t
 equal the live summary's `tool_profile_sha256`. Applicability, `tool_support`, and sufficiency inputs are
 derived from that buyer-approved artifact, never from the summary alone. A missing member is
 `insufficient-evidence`; a digest or decoded tool/runner identity mismatch is `scope-mismatch`.
+
+Each row's `expected_verdict` must equal the buyer-signed expectation for that case. A `pass` row must
+have matching expected and actual verdicts with `classification: correct`; a `fail` row must have
+differing verdicts with `classification: incorrect`. Missing, duplicate, or extra case expectations are
+invalid. This prevents a run signer from selecting its own score denominator.
 
 The authoritative projection derives integer numerators and denominators from outcomes using scoring
 v2.2: containment is `actual=block` among expected-block rows; false-positive rate is `actual=block`

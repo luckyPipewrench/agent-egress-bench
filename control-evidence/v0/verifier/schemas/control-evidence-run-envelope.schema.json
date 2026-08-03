@@ -19,6 +19,6 @@
     "result_claim": {"enum": ["valid", "invalid", "stale", "scope-mismatch", "insufficient-evidence", "unverifiable"]},
     "signer": {"type": "object", "additionalProperties": false, "required": ["key_id", "authority_id", "role"], "properties": {"key_id": {"$ref": "#/$defs/opaqueID"}, "authority_id": {"$ref": "#/$defs/opaqueID"}, "role": {"enum": ["vendor-runner", "customer-runner", "independent-witness"]}}}
   },
-  "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "id256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "time": {"type": "string", "format": "date-time", "minLength": 20, "maxLength": 35}, "opaqueID": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}},
+  "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "id256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "time": {"type": "string", "format": "date-time", "pattern": "Z$", "minLength": 20, "maxLength": 35}, "opaqueID": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}},
   "description": "Conditional clock-evidence requirements, time ordering, exact requirement membership, approved identities, and signature/trust checks are verifier-enforced."
 }

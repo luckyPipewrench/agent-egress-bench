@@ -155,7 +155,7 @@ func TestSymlinkPackageMemberFailsClosed(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "package")
 	copyTree(t, source, destination)
 	if err := os.Symlink("summary.json", filepath.Join(destination, "alias.json")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink creation is unavailable: %v", err)
 	}
 	result := Verify(destination, filepath.Join(destination, "context.json"))
 	if result.Outcome != outcomeInvalid || result.Reason != "package_invalid" {
@@ -167,7 +167,7 @@ func TestSymlinkPackageRootFailsClosed(t *testing.T) {
 	target := t.TempDir()
 	root := filepath.Join(t.TempDir(), "package")
 	if err := os.Symlink(target, root); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink creation is unavailable: %v", err)
 	}
 	if _, err := loadDirectoryPackage(root); err == nil || err.Error() != "package is not a directory" {
 		t.Fatalf("loadDirectoryPackage() error = %v, want symlink-root rejection", err)
@@ -321,6 +321,80 @@ func TestEmbeddedSchemasMatchCanonicalCopies(t *testing.T) {
 		if string(embedded) != string(canonical) {
 			t.Fatalf("embedded schema %s drifted from schemas/%s", entry.Name(), entry.Name())
 		}
+	}
+}
+
+func TestRequiredCaseExpectationsAreExact(t *testing.T) {
+	base := requirement{
+		RequiredCaseIDs: []string{"case-a", "case-b"},
+		RequiredCaseExpectations: []caseExpectation{
+			{CaseID: "case-a", ExpectedVerdict: "block"},
+			{CaseID: "case-b", ExpectedVerdict: "allow"},
+		},
+	}
+	if _, ok := requiredCaseExpectations(base); !ok {
+		t.Fatal("exact expectation set was rejected")
+	}
+	for _, test := range []struct {
+		name  string
+		items []caseExpectation
+	}{
+		{name: "missing", items: base.RequiredCaseExpectations[:1]},
+		{name: "extra", items: append(append([]caseExpectation{}, base.RequiredCaseExpectations...), caseExpectation{CaseID: "case-c", ExpectedVerdict: "block"})},
+		{name: "duplicate", items: []caseExpectation{{CaseID: "case-a", ExpectedVerdict: "block"}, {CaseID: "case-a", ExpectedVerdict: "allow"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			candidate.RequiredCaseExpectations = test.items
+			if _, ok := requiredCaseExpectations(candidate); ok {
+				t.Fatal("invalid expectation set was accepted")
+			}
+		})
+	}
+}
+
+func TestEmbeddedSchemasRejectInvalidAndNonUTCDateTimes(t *testing.T) {
+	schemas, err := loadSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextBytes, err := os.ReadFile(filepath.Join("..", "conformance", "golden", "g01-vendor-time", "context.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var context map[string]any
+	if err := json.Unmarshal(contextBytes, &context); err != nil {
+		t.Fatal(err)
+	}
+	context["reference_now"] = "xxxxxxxxxxxxxxxxxxxZ"
+	if err := validateSchema(schemas.context, context); err == nil {
+		t.Fatal("malformed date-time passed schema validation")
+	}
+
+	wrapper := readObject(t, filepath.Join("..", "conformance", "golden", "g01-vendor-time", "requirement.dsse.json"))
+	payload, err := base64.StdEncoding.Strict().DecodeString(wrapper["payload"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requirement map[string]any
+	if err := json.Unmarshal(payload, &requirement); err != nil {
+		t.Fatal(err)
+	}
+	requirement["issued_at"] = "2026-08-02T07:00:00-04:00"
+	if err := validateSchema(schemas.requirement, requirement); err == nil {
+		t.Fatal("non-UTC date-time passed schema validation")
+	}
+}
+
+func TestManifestSchemaRejectsTooFewEntries(t *testing.T) {
+	schemas, err := loadSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := readObject(t, filepath.Join("..", "conformance", "golden", "g01-vendor-time", "manifest.json"))
+	manifest["entries"] = manifest["entries"].([]any)[:4]
+	if err := validateSchema(schemas.manifest, manifest); err == nil {
+		t.Fatal("four-entry manifest passed schema validation")
 	}
 }
 

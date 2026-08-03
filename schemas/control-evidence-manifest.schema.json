@@ -8,7 +8,7 @@
     "profile": {"const": "control-evidence-manifest/v0"},
     "entries": {
       "type": "array",
-      "minItems": 3,
+      "minItems": 5,
       "maxItems": 256,
       "allOf": [
         {"contains": {"type": "object", "required": ["role"], "properties": {"role": {"const": "requirement"}}}},

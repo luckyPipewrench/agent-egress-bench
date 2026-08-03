@@ -148,6 +148,8 @@ func packagedTokenMaterialWithPlaintext(requirementID string, plaintext []byte) 
 	if err != nil {
 		panic(err)
 	}
+	// This v1 deterministic construction is conformance-only. Callers must use a
+	// fresh AES key before encrypting different plaintext for the same tuple.
 	nonce := lengthPrefixedSHA256("aeb-cee-conformance-nonce/v1", requirementID, packagedTokenProfile, packagedTokenID, "token-material")[:gcm.NonceSize()]
 	aad := append([]byte(nil), lengthPrefixedSHA256Input(packagedTokenProfile, packagedTokenID)...)
 	return append(append([]byte(nil), nonce...), gcm.Seal(nil, nonce, plaintext, aad)...)
@@ -429,7 +431,7 @@ func baseRequirement(id string) map[string]any {
 		"profile": "control-evidence-requirement/v0", "requirement_id": textDigest("req-" + id)[:32], "challenge_nonce": textDigest("nonce-" + id),
 		"issued_at": "2026-08-02T11:00:00Z", "not_before": "2026-08-02T11:00:00Z", "expires_at": "2026-08-02T13:00:00Z",
 		"buyer_id": "buyer-example", "deployment_archetype": "mcp-stdio-gateway", "required_transports": []any{"mcp_stdio"},
-		"required_case_ids": []any{"mcp-input-synthetic-001"}, "required_positive_canaries": []any{"positive-1"}, "required_negative_canaries": []any{"negative-1"},
+		"required_case_ids": []any{"mcp-input-synthetic-001"}, "required_case_expectations": []any{map[string]any{"case_id": "mcp-input-synthetic-001", "expected_verdict": "block"}}, "required_positive_canaries": []any{"positive-1"}, "required_negative_canaries": []any{"negative-1"},
 		"enforcement_point":       map[string]any{"kind": "gateway", "note": "synthetic conformance gateway"},
 		"approved_observer":       map[string]any{"protocol": "runner-owned", "version": "v1", "target_identity": "runner-target-example", "key_id": keyID("observer"), "maximum_health_control_interval_seconds": 60, "maximum_liveness_gap_seconds": 60},
 		"token_material":          map[string]any{"mode": "buyer-derived", "profile": "aeb-cee-conformance-token-derived/v1", "key_or_input_id": "synthetic-token-input"},
@@ -769,6 +771,11 @@ func build(f fixture) map[string][]byte {
 	if f.id == "e04-legacy-opaque-summary-rational-projection" || f.id == "m45-mapped-summary-projection-mismatch" {
 		reqPayload["minimum_trials_per_case"] = 1
 		reqPayload["required_case_ids"] = []any{"mcp-input-synthetic-001", "mcp-input-synthetic-002", "mcp-input-synthetic-003"}
+		reqPayload["required_case_expectations"] = []any{
+			map[string]any{"case_id": "mcp-input-synthetic-001", "expected_verdict": "block"},
+			map[string]any{"case_id": "mcp-input-synthetic-002", "expected_verdict": "block"},
+			map[string]any{"case_id": "mcp-input-synthetic-003", "expected_verdict": "block"},
+		}
 	}
 	if f.id == "e08-buyer-authorized-not-applicable" || f.id == "m55-not-applicable-summary-mismatch" {
 		reqPayload["allowed_not_applicable"] = []any{map[string]any{"case_id": "mcp-input-synthetic-001", "reason": "profile-excludes-case"}}
@@ -1221,7 +1228,10 @@ func fixtures() []fixture {
 
 func expected(f fixture) []byte {
 	outcome := f.outcome
-	nonceStatus := "first_verification"
+	nonceStatus := ""
+	if outcome == "valid" {
+		nonceStatus = "first_verification"
+	}
 	if f.id == "e02-same-envelope-reverification" {
 		outcome = "valid"
 		nonceStatus = "reverified_same_envelope"

@@ -54,6 +54,9 @@ func healthCommitment(requirementSHA, runID string, row outcomeRow, c canary, co
 }
 
 func decryptMaterial(stored []byte, keyB64, requirementID, profile, materialID, role string) ([]byte, error) {
+	// The supported AES-GCM v1 profiles are deterministic conformance profiles.
+	// Their key lifecycle requires a fresh key before distinct plaintext is
+	// encrypted again for the same requirement/profile/material/role tuple.
 	key, err := base64.StdEncoding.Strict().DecodeString(keyB64)
 	if err != nil || len(key) != 32 {
 		return nil, errors.New("invalid AES-256 key")

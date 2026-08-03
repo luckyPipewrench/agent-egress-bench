@@ -82,6 +82,57 @@ func TestLivenessNegativeWindowCannotBeReversed(t *testing.T) {
 	}
 }
 
+func TestVendorCannotRelabelBuyerExpectedVerdict(t *testing.T) {
+	source := filepath.Join("..", "conformance", "golden", "g01-vendor-time")
+	destination := filepath.Join(t.TempDir(), "package")
+	copyTree(t, source, destination)
+	outcomesPath := filepath.Join(destination, "outcomes.json")
+	outcomes := readObject(t, outcomesPath)
+	row := outcomes["rows"].([]any)[0].(map[string]any)
+	row["expected_verdict"] = "allow"
+	row["actual_verdict"] = "allow"
+	writePrettyJSON(t, outcomesPath, outcomes)
+	resealPackage(t, destination)
+
+	result := verifyPersistent(t, destination, filepath.Join(destination, "context.json"))
+	if result.Outcome != outcomeInvalid || result.Reason != "outcomes_expected_verdict_mismatch" {
+		t.Fatalf("Verify() = %#v, want invalid outcomes_expected_verdict_mismatch", result)
+	}
+}
+
+func TestOutcomeAndClassificationMustAgree(t *testing.T) {
+	source := filepath.Join("..", "conformance", "golden", "g01-vendor-time")
+	for _, test := range []struct {
+		name           string
+		outcome        string
+		actual         string
+		classification string
+	}{
+		{name: "pass_with_mismatched_actual", outcome: "pass", actual: "allow", classification: "correct"},
+		{name: "pass_with_incorrect_classification", outcome: "pass", actual: "block", classification: "incorrect"},
+		{name: "fail_with_matching_actual", outcome: "fail", actual: "block", classification: "incorrect"},
+		{name: "fail_with_correct_classification", outcome: "fail", actual: "allow", classification: "correct"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			destination := filepath.Join(t.TempDir(), "package")
+			copyTree(t, source, destination)
+			outcomesPath := filepath.Join(destination, "outcomes.json")
+			outcomes := readObject(t, outcomesPath)
+			row := outcomes["rows"].([]any)[0].(map[string]any)
+			row["outcome"] = test.outcome
+			row["actual_verdict"] = test.actual
+			row["scoring_facts"].(map[string]any)["classification"] = test.classification
+			writePrettyJSON(t, outcomesPath, outcomes)
+			resealPackage(t, destination)
+
+			result := verifyPersistent(t, destination, filepath.Join(destination, "context.json"))
+			if result.Outcome != outcomeInvalid || result.Reason != "outcomes_scoring_facts_mismatch" {
+				t.Fatalf("Verify() = %#v, want invalid outcomes_scoring_facts_mismatch", result)
+			}
+		})
+	}
+}
+
 func resignObserverTime(t *testing.T, path, observedAt string) string {
 	t.Helper()
 	wrapper := readObject(t, path)

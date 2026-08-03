@@ -1,6 +1,10 @@
 package verifier
 
 func (s *verificationState) verifySummary() *Result {
+	expectations, ok := requiredCaseExpectations(s.req.Payload)
+	if !ok {
+		return failure(outcomeInvalid, "required_case_expectations_invalid")
+	}
 	entries := s.entriesByRole["tool-profile"]
 	if len(entries) == 0 {
 		return failure(outcomeInsufficientEvidence, "tool_profile_missing")
@@ -58,7 +62,7 @@ func (s *verificationState) verifySummary() *Result {
 	}
 	malicious, blockedMalicious := 0, 0
 	for _, row := range s.outcomes.Rows {
-		if row.ExpectedVerdict == "block" {
+		if expectations[row.CaseID] == "block" {
 			malicious++
 			if row.Outcome != "not_applicable" && row.ActualVerdict == "block" {
 				blockedMalicious++

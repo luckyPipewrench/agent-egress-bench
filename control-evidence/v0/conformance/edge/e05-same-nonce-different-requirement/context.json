@@ -14,14 +14,14 @@
   "nonce_ledger": [
     {
       "challenge_nonce": "65f13c416095f70242b25c9f4396f8d4a92bb6ccf9b40e972c88f7431bf94934",
-      "envelope_payload_sha256": "ce4611a1632226935bce86f51a07edb57cc8d060702f51aa62bf86573b659065",
+      "envelope_payload_sha256": "dbdb2f1c3e15b28203a20e8e19d1b3df9734b43f4527cc0957d3876d1335c52b",
       "requirement_id": "83b1fe9a2843d7be95f36f37911a894a",
       "requirement_signer_key_id": "d75cc4067a4a661e1e2ef1560e53b43a3238cee18e2769a13166495526aac1b2"
     }
   ],
   "profile": "control-evidence-conformance-context/v0",
   "reference_now": "2026-08-02T12:00:00Z",
-  "requirement_payload_sha256": "dd8dd282a9b16b8b3602381572a201c0f41673c5fef0cf09e4f67678305b11ba",
+  "requirement_payload_sha256": "581c426e7d1a5b13a9c6fae9ea44421fc520549c12b1ce4caa417ba44952e691",
   "token_material": {
     "key_or_input_id": "synthetic-token-input",
     "mode": "buyer-derived",

@@ -14,7 +14,7 @@
   "nonce_ledger": [],
   "profile": "control-evidence-conformance-context/v0",
   "reference_now": "2026-08-02T12:00:00Z",
-  "requirement_payload_sha256": "3a8b68c998477f5eac45b2587f00722efdc17e2ce982886327b98a4d6af8f27d",
+  "requirement_payload_sha256": "238e78190ea32eab721505fa8cd0822645b0be5d2290fe0a017ea1a3097b48bf",
   "token_material": {
     "key_or_input_id": "synthetic-token-input",
     "mode": "buyer-derived",

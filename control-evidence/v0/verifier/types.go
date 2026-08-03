@@ -93,6 +93,7 @@ type requirement struct {
 	EnforcementPoint         enforcementPoint     `json:"enforcement_point"`
 	RequiredTransports       []string             `json:"required_transports"`
 	RequiredCaseIDs          []string             `json:"required_case_ids"`
+	RequiredCaseExpectations []caseExpectation    `json:"required_case_expectations"`
 	RequiredPositiveCanaries []string             `json:"required_positive_canaries"`
 	RequiredNegativeCanaries []string             `json:"required_negative_canaries"`
 	ApprovedObserver         approvedObserver     `json:"approved_observer"`
@@ -114,6 +115,11 @@ type requirement struct {
 	ApprovedAdapter          approvedAdapter      `json:"approved_adapter"`
 	ApprovedToolIdentity     approvedToolIdentity `json:"approved_tool_identity"`
 	ApprovedClockEvidence    *approvedClock       `json:"approved_clock_evidence,omitempty"`
+}
+
+type caseExpectation struct {
+	CaseID          string `json:"case_id"`
+	ExpectedVerdict string `json:"expected_verdict"`
 }
 
 type enforcementPoint struct {

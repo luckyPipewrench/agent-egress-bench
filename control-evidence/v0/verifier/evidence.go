@@ -7,6 +7,10 @@ import (
 
 func (s *verificationState) verifyOutcomesAndEvidence(materials materialInputs) *Result {
 	req := s.req.Payload
+	expectations, ok := requiredCaseExpectations(req)
+	if !ok {
+		return failure(outcomeInvalid, "required_case_expectations_invalid")
+	}
 	requirementSHA := digestBytes(s.req.PayloadBytes)
 	wantedRows := map[string]bool{}
 	for _, caseID := range req.RequiredCaseIDs {
@@ -27,6 +31,9 @@ func (s *verificationState) verifyOutcomesAndEvidence(materials materialInputs) 
 		if !contains(req.RequiredTransports, row.Transport) {
 			return failure(outcomeScopeMismatch, "outcomes_transport_mismatch")
 		}
+		if row.ExpectedVerdict != expectations[row.CaseID] {
+			return failure(outcomeInvalid, "outcomes_expected_verdict_mismatch")
+		}
 		if row.Outcome == "not_applicable" {
 			if !authorizedNA(row.CaseID, row.NotApplicableReason, req.AllowedNotApplicable) {
 				return failure(outcomeScopeMismatch, "not_applicable_reason_unauthorized")
@@ -36,6 +43,10 @@ func (s *verificationState) verifyOutcomesAndEvidence(materials materialInputs) 
 		if row.Outcome == "error" {
 			errorsSeen++
 			continue
+		}
+		if (row.Outcome == "pass") != (row.ActualVerdict == row.ExpectedVerdict) ||
+			(row.Outcome == "pass") != (row.ScoringFacts.Classification == "correct") {
+			return failure(outcomeInvalid, "outcomes_scoring_facts_mismatch")
 		}
 		if result := s.verifyRowCanaries(row, materials, requirementSHA, usedControls); result != nil {
 			return result
@@ -53,6 +64,21 @@ func (s *verificationState) verifyOutcomesAndEvidence(materials materialInputs) 
 		return failure(outcomeInvalid, "health_control_material_control_id_set_mismatch")
 	}
 	return nil
+}
+
+func requiredCaseExpectations(req requirement) (map[string]string, bool) {
+	wanted := make(map[string]bool, len(req.RequiredCaseIDs))
+	for _, caseID := range req.RequiredCaseIDs {
+		wanted[caseID] = true
+	}
+	expectations := make(map[string]string, len(req.RequiredCaseExpectations))
+	for _, item := range req.RequiredCaseExpectations {
+		if !wanted[item.CaseID] || expectations[item.CaseID] != "" {
+			return nil, false
+		}
+		expectations[item.CaseID] = item.ExpectedVerdict
+	}
+	return expectations, len(expectations) == len(wanted)
 }
 
 func (s *verificationState) verifyRowCanaries(row outcomeRow, materials materialInputs, requirementSHA string, usedControls map[string]bool) *Result {

@@ -45,7 +45,7 @@ type VerifyOptions struct {
 }
 
 func failure(outcome, reason string) *Result {
-	return &Result{Profile: resultProfile, Outcome: outcome, Reason: reason, NonceStatus: "first_verification"}
+	return &Result{Profile: resultProfile, Outcome: outcome, Reason: reason}
 }
 
 func success(nonceStatus, requirementSHA, runID string) Result {
@@ -104,6 +104,9 @@ func VerifyWithOptions(packageDir string, options VerifyOptions) Result {
 	}
 	if overlapping(state.req.Payload.RequiredPositiveCanaries, state.req.Payload.RequiredNegativeCanaries) {
 		return *failure(outcomeInvalid, "required_canary_polarity_overlap")
+	}
+	if _, ok := requiredCaseExpectations(state.req.Payload); !ok {
+		return *failure(outcomeInvalid, "required_case_expectations_invalid")
 	}
 
 	envPeek := peekPayload(state.files["envelope.dsse.json"])
