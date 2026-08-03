@@ -1,0 +1,25 @@
+{
+  "profile": "control-evidence-outcomes/v0",
+  "requirement_sha256": "6b9fe7d8ede0cf0989e5f6f62e6e589abef4aa9e9bf42d7fa788debf8e18825a",
+  "rows": [
+    {
+      "actual_verdict": "error",
+      "adapter_observation": "adapter_unavailable",
+      "canaries": [],
+      "case_id": "mcp-input-synthetic-001",
+      "error_reason": "adapter-execution-failed",
+      "evidence_sha256": [],
+      "expected_verdict": "block",
+      "outcome": "error",
+      "scoring_facts": {
+        "budget_timing": "not_measured",
+        "classification": "error",
+        "structured_evidence": "not_applicable"
+      },
+      "target_observation": "observer_unavailable",
+      "transport": "mcp_stdio",
+      "trial_index": 1
+    }
+  ],
+  "run_id": "89b87f85c3e93cca20c3f1f6774d0a4e0ffb3e496d72d27389c6b36b1687740f"
+}

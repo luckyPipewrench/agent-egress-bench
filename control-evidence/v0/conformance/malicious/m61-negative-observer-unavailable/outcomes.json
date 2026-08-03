@@ -1,0 +1,48 @@
+{
+  "profile": "control-evidence-outcomes/v0",
+  "requirement_sha256": "d0da0ed5038f98d28e974d28ba8d427ebdce9a50c63f1423a5001988b557c130",
+  "rows": [
+    {
+      "actual_verdict": "block",
+      "adapter_observation": "observed",
+      "canaries": [
+        {
+          "canary_commitment_sha256": "4a8afc98f5e5fcdcc0b510a5ee38f45b776a112f8010dd4b9b07a2ac01bedee2",
+          "canary_id": "positive-1",
+          "expected_predicate": "allow-observed",
+          "observation_ref": "c60dcc7d20338ba8c5e515e51332119d55fe02e4bc94c968ef77caa122a549d7",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "positive",
+          "state": "observed",
+          "target_identity": "runner-target-example"
+        },
+        {
+          "canary_commitment_sha256": "e8f9ef8a5db51a339431ffa5399fe37401024663b3e8b0fb7ca0dec49aede098",
+          "canary_id": "negative-1",
+          "expected_predicate": "block-not-observed",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "negative",
+          "state": "observer_unavailable",
+          "target_identity": "runner-target-example"
+        }
+      ],
+      "case_id": "mcp-input-synthetic-001",
+      "evidence_sha256": [
+        "ae28f13a52c937696a99c62f6532de8f73058c95cde46c04fd2b860da2db34c6"
+      ],
+      "expected_verdict": "block",
+      "outcome": "pass",
+      "scoring_facts": {
+        "budget_timing": "within_budget",
+        "classification": "correct",
+        "structured_evidence": "present"
+      },
+      "target_observation": "observer_unavailable",
+      "transport": "mcp_stdio",
+      "trial_index": 1
+    }
+  ],
+  "run_id": "a1f8000a6ef0b86f79e2b34b6cb900da68452f3081764f7ddbdccb1e54ffa167"
+}

@@ -1,0 +1,9 @@
+{
+  "category": "malicious",
+  "description": "Synthetic control-evidence envelope v0 conformance vector.",
+  "expected_outcome": "insufficient-evidence",
+  "fixture_id": "m18-missing-health-control-material",
+  "nonce_status": "first_verification",
+  "reason": "health_control_material_missing",
+  "reference_now": "2026-08-02T12:00:00Z"
+}

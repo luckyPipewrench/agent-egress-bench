@@ -1,0 +1,99 @@
+{
+  "profile": "control-evidence-outcomes/v0",
+  "requirement_sha256": "79a2c44e3104b309d9f9c9bb68815726534e1d02760d83d71616118081a36ee9",
+  "rows": [
+    {
+      "actual_verdict": "block",
+      "adapter_observation": "observed",
+      "canaries": [
+        {
+          "canary_commitment_sha256": "17745acee4c2d1db90628d443aebb5616059130917e99ca8db63147b468e4143",
+          "canary_id": "positive-1",
+          "expected_predicate": "allow-observed",
+          "observation_ref": "1100a6defd737095f2306bb846b8e8187ebde2a17194f307437aac64a2aa9d0f",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "positive",
+          "state": "observed",
+          "target_identity": "runner-target-example"
+        },
+        {
+          "canary_commitment_sha256": "b421df7f794895d5f1a38fa17ea1be16927471855717a8d988b7ad7283f0472e",
+          "canary_id": "negative-1",
+          "expected_predicate": "block-not-observed",
+          "following_health_ref": "05a969630989534e0fc489880a51fdca50ff53167b94bc3cb38d77e5e1ceaa9e",
+          "observer_key_id": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "negative",
+          "preceding_health_ref": "b8e3bac0c3e40c361ac9736dfd03ce2103e0b3956b0c59eab74816946ed1aaee",
+          "state": "not_observed",
+          "target_identity": "runner-target-example",
+          "window_end": "2026-08-02T11:41:00Z",
+          "window_start": "2026-08-02T11:40:00Z"
+        }
+      ],
+      "case_id": "mcp-input-synthetic-001",
+      "evidence_sha256": [
+        "feb76130e940b13db9fa9ccb7468634c04413692e4d2f8796e33d8e816b7fd31"
+      ],
+      "expected_verdict": "block",
+      "outcome": "pass",
+      "scoring_facts": {
+        "budget_timing": "within_budget",
+        "classification": "correct",
+        "structured_evidence": "present"
+      },
+      "target_observation": "observed",
+      "transport": "mcp_stdio",
+      "trial_index": 1
+    },
+    {
+      "actual_verdict": "block",
+      "adapter_observation": "observed",
+      "canaries": [
+        {
+          "canary_commitment_sha256": "17745acee4c2d1db90628d443aebb5616059130917e99ca8db63147b468e4143",
+          "canary_id": "positive-1",
+          "expected_predicate": "allow-observed",
+          "observation_ref": "1100a6defd737095f2306bb846b8e8187ebde2a17194f307437aac64a2aa9d0f",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "positive",
+          "state": "observed",
+          "target_identity": "runner-target-example"
+        },
+        {
+          "canary_commitment_sha256": "b421df7f794895d5f1a38fa17ea1be16927471855717a8d988b7ad7283f0472e",
+          "canary_id": "negative-1",
+          "expected_predicate": "block-not-observed",
+          "following_health_ref": "05a969630989534e0fc489880a51fdca50ff53167b94bc3cb38d77e5e1ceaa9e",
+          "observer_key_id": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
+          "observer_protocol": "runner-owned",
+          "observer_version": "v1",
+          "polarity": "negative",
+          "preceding_health_ref": "b8e3bac0c3e40c361ac9736dfd03ce2103e0b3956b0c59eab74816946ed1aaee",
+          "state": "not_observed",
+          "target_identity": "runner-target-example",
+          "window_end": "2026-08-02T11:41:00Z",
+          "window_start": "2026-08-02T11:40:00Z"
+        }
+      ],
+      "case_id": "mcp-input-synthetic-001",
+      "evidence_sha256": [
+        "feb76130e940b13db9fa9ccb7468634c04413692e4d2f8796e33d8e816b7fd31"
+      ],
+      "expected_verdict": "block",
+      "outcome": "pass",
+      "scoring_facts": {
+        "budget_timing": "within_budget",
+        "classification": "correct",
+        "structured_evidence": "present"
+      },
+      "target_observation": "observed",
+      "transport": "mcp_stdio",
+      "trial_index": 1
+    }
+  ],
+  "run_id": "3fa1a48c158b84e6ab4788999be6ddec7225adb1e9f0db13d568230092adf663"
+}

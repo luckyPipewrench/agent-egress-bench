@@ -1,0 +1,36 @@
+{
+  "health_control_material": {
+    "key_or_input_id": "synthetic-health-input",
+    "mode": "buyer-derived",
+    "profile": "aeb-cee-conformance-health-derived/v1",
+    "root_input": "synthetic-health-root-m47-ambiguous-replay-ledger"
+  },
+  "nonce_ledger": [
+    {
+      "challenge_nonce": "5eb7966ab40f33a02ab9d62b831b565bc8ff855b2e124018a564dcb1848afedd",
+      "envelope_payload_sha256": "9bdcfd221c9dac7c02f2be802f3f41b5fb3f07083cf13c4451650672d370c426",
+      "requirement_id": "fae2a6ec4005563d14d0524f9dacca14",
+      "requirement_signer_key_id": "d75cc4067a4a661e1e2ef1560e53b43a3238cee18e2769a13166495526aac1b2"
+    },
+    {
+      "challenge_nonce": "5eb7966ab40f33a02ab9d62b831b565bc8ff855b2e124018a564dcb1848afedd",
+      "envelope_payload_sha256": "7829600635f9887026de170d078c87ce6f184a9022c8580d8034d1d83063aa0e",
+      "requirement_id": "fae2a6ec4005563d14d0524f9dacca14",
+      "requirement_signer_key_id": "d75cc4067a4a661e1e2ef1560e53b43a3238cee18e2769a13166495526aac1b2"
+    }
+  ],
+  "profile": "control-evidence-conformance-context/v0",
+  "reference_now": "2026-08-02T12:00:00Z",
+  "token_material": {
+    "key_or_input_id": "synthetic-token-input",
+    "mode": "buyer-derived",
+    "profile": "aeb-cee-conformance-token-derived/v1",
+    "root_input": "synthetic-token-root-m47-ambiguous-replay-ledger"
+  },
+  "trusted_keys": {
+    "buyer": "d75cc4067a4a661e1e2ef1560e53b43a3238cee18e2769a13166495526aac1b2",
+    "customer_clock": "ebcf768b9887fa47516bbe84a3240e884a900df65d5c69588f40c3d574117857",
+    "observer": "126743047806b2e9060f2b2713a7a46b6e835a58bba0125d462c67fba33a1e66",
+    "vendor_runner": "55f4b85bccda120a6e7767e6e28146fbefac616bfa2b9a002af556946ddbc71c"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "entries": [
+    {
+      "byte_length": 3438,
+      "media_type": "application/json",
+      "path": "requirement.dsse.json",
+      "role": "requirement",
+      "sha256": "8c7dbf5bef3899ef48b35c0ba0010555eea60f4aa6b02f7ad5c95c25737c14b6"
+    },
+    {
+      "byte_length": 2132,
+      "media_type": "application/json",
+      "path": "summary.json",
+      "role": "summary",
+      "sha256": "ea7af4ae94b5af275c36cb4c61e3af76e6df24c3dd9da93a7ae5ccff747f152b"
+    },
+    {
+      "byte_length": 838,
+      "media_type": "application/json",
+      "path": "outcomes.json",
+      "role": "outcomes",
+      "sha256": "c661e7a6a47e00bd13898ec9502fd60ce458ca2f1b75c45678e0e1828f3a31c2"
+    },
+    {
+      "byte_length": 49,
+      "media_type": "application/json",
+      "path": "adapter.json",
+      "role": "adapter",
+      "sha256": "ebb215dd7a1b2729d29ccb60000ad8e7932018c7bfe9cd7f6f021274735f44f5"
+    },
+    {
+      "byte_length": 39,
+      "media_type": "application/json",
+      "path": "policy.json",
+      "role": "policy",
+      "sha256": "d1eec8625bb876a7ecc34a3bc2e910f1cb884fa20db35710615072198f3b364a"
+    },
+    {
+      "byte_length": 1458,
+      "media_type": "application/json",
+      "path": "tool-profile.json",
+      "role": "tool-profile",
+      "sha256": "34f37605dffe3d984581dded1579691180b71d9b82c207cd7f40d2b042cf8a8f"
+    }
+  ],
+  "profile": "control-evidence-manifest/v0",
+  "total_uncompressed_bytes": 7954
+}

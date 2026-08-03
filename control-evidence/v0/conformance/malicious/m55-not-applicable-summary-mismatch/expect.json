@@ -1,0 +1,9 @@
+{
+  "category": "malicious",
+  "description": "Synthetic control-evidence envelope v0 conformance vector.",
+  "expected_outcome": "invalid",
+  "fixture_id": "m55-not-applicable-summary-mismatch",
+  "nonce_status": "first_verification",
+  "reason": "summary_not_applicable_count_mismatch",
+  "reference_now": "2026-08-02T12:00:00Z"
+}

@@ -1,0 +1,10 @@
+{
+  "continuous": true,
+  "max_gap_seconds": 10,
+  "profile": "observer-liveness/v1",
+  "sequence": [
+    1,
+    2,
+    3
+  ]
+}
