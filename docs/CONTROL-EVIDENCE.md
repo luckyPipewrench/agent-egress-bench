@@ -46,6 +46,11 @@ member uses `application/vnd.agent-egress-bench.control-evidence-clock-evidence.
 ## Schemas
 
 All v0 schemas are JSON Schema draft 2020-12 and reject unknown fields.
+This applies to the schema-governed documents listed below. Preserved runner
+summaries and opaque policy, adapter, provenance, or attachment documents do
+not acquire an invented v0 content schema: their bytes remain manifest-bound,
+and JSON-typed members are still parsed with duplicate-key and trailing-data
+rejection by the G2 `schema-valid` assessor.
 
 Signed payload bytes are RFC 8785 JCS bytes. V0 schemas use closed ASCII property names and bounded
 safe integers, so non-BMP property-name ordering and unsafe JSON numbers are outside valid instances.

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"embed"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -190,30 +189,9 @@ type verifiedDSSE[T any] struct {
 }
 
 func verifyDSSE[T any](data []byte, expectedType, trustedKey string, schemas *schemaSet, payloadSchema *jsonschema.Schema) (*verifiedDSSE[T], string, error) {
-	var wrapper dsseEnvelope
-	wrapperValue, err := strictJSON(data, &wrapper)
+	wrapper, payload, reason, err := decodeDSSEWrapper(data, expectedType, schemas)
 	if err != nil {
-		return nil, "dsse_wrapper_invalid", err
-	}
-	if len(wrapper.Signatures) != 1 {
-		return nil, "dsse_signature_count", errors.New("DSSE must carry exactly one signature")
-	}
-	if wrapper.PayloadType != expectedType {
-		reason := "payload_type_mismatch"
-		switch expectedType {
-		case typeRequirement:
-			reason = "requirement_payload_type_mismatch"
-		case typeObserver:
-			reason = "observer_payload_type_mismatch"
-		}
-		return nil, reason, errors.New("DSSE payload type mismatch")
-	}
-	if err := validateSchema(schemas.dsse, wrapperValue); err != nil {
-		return nil, "dsse_wrapper_invalid", err
-	}
-	payload, err := base64.StdEncoding.Strict().DecodeString(wrapper.Payload)
-	if err != nil {
-		return nil, "dsse_payload_base64_invalid", err
+		return nil, reason, err
 	}
 	sig := wrapper.Signatures[0]
 	if trustedKey != "" && sig.KeyID != trustedKey {
@@ -223,27 +201,64 @@ func verifyDSSE[T any](data []byte, expectedType, trustedKey string, schemas *sc
 	if err != nil || len(pub) != ed25519.PublicKeySize {
 		return nil, "signer_key_invalid", errors.New("invalid Ed25519 public key")
 	}
-	sigBytes, err := base64.StdEncoding.Strict().DecodeString(sig.Sig)
+	sigBytes, err := decodeBase64(sig.Sig)
 	if err != nil || len(sigBytes) != ed25519.SignatureSize {
 		return nil, "dsse_signature_invalid", errors.New("invalid Ed25519 signature encoding")
 	}
 	if !ed25519.Verify(ed25519.PublicKey(pub), pae(wrapper.PayloadType, payload), sigBytes) {
 		return nil, "dsse_signature_invalid", errors.New("Ed25519 signature verification failed")
 	}
-	if err := canonicalJSON(payload); err != nil {
-		return nil, "signed_payload_not_jcs", err
+	decoded, reason, err := decodeCanonicalPayload[T](payload, payloadSchema)
+	if err != nil {
+		return nil, reason, err
 	}
+	return &verifiedDSSE[T]{Wrapper: wrapper, Payload: decoded, PayloadBytes: payload, SignerKeyID: sig.KeyID}, "", nil
+}
+
+func decodeDSSEWrapper(data []byte, expectedType string, schemas *schemaSet) (dsseEnvelope, []byte, string, error) {
+	var wrapper dsseEnvelope
+	wrapperValue, err := strictJSON(data, &wrapper)
+	if err != nil {
+		return wrapper, nil, "dsse_wrapper_invalid", err
+	}
+	if len(wrapper.Signatures) != 1 {
+		return wrapper, nil, "dsse_signature_count", errors.New("DSSE must carry exactly one signature")
+	}
+	if wrapper.PayloadType != expectedType {
+		reason := "payload_type_mismatch"
+		switch expectedType {
+		case typeRequirement:
+			reason = "requirement_payload_type_mismatch"
+		case typeObserver:
+			reason = "observer_payload_type_mismatch"
+		}
+		return wrapper, nil, reason, errors.New("DSSE payload type mismatch")
+	}
+	if err := validateSchema(schemas.dsse, wrapperValue); err != nil {
+		return wrapper, nil, "dsse_wrapper_invalid", err
+	}
+	payload, err := decodeBase64(wrapper.Payload)
+	if err != nil {
+		return wrapper, nil, "dsse_payload_base64_invalid", err
+	}
+	return wrapper, payload, "", nil
+}
+
+func decodeCanonicalPayload[T any](payload []byte, payloadSchema *jsonschema.Schema) (T, string, error) {
 	var decoded T
+	if err := canonicalJSON(payload); err != nil {
+		return decoded, "signed_payload_not_jcs", err
+	}
 	payloadValue, err := strictJSON(payload, &decoded)
 	if err != nil {
-		return nil, "signed_payload_invalid", err
+		return decoded, "signed_payload_invalid", err
 	}
 	if payloadSchema != nil {
 		if err := validateSchema(payloadSchema, payloadValue); err != nil {
-			return nil, "signed_payload_schema_invalid", err
+			return decoded, "signed_payload_schema_invalid", err
 		}
 	}
-	return &verifiedDSSE[T]{Wrapper: wrapper, Payload: decoded, PayloadBytes: payload, SignerKeyID: sig.KeyID}, "", nil
+	return decoded, "", nil
 }
 
 func readBounded(path string, max int64) ([]byte, error) {
