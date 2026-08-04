@@ -50,6 +50,17 @@ func TestTrustPolicySchemaRejectsRolePurposeMismatch(t *testing.T) {
 
 	fixture := newFixture(t)
 	fixture.policy.Revocations = []revocation{}
+	baselineRaw, err := json.Marshal(fixture.policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baselineValue, err := jsonschema.UnmarshalJSON(bytes.NewReader(baselineRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(baselineValue); err != nil {
+		t.Fatalf("baseline fixture must validate: %v", err)
+	}
 	fixture.policyKey(t, "run-envelope").Purpose = typeObserver
 	raw, err := json.Marshal(fixture.policy)
 	if err != nil {
