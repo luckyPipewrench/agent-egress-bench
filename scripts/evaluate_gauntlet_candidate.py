@@ -113,22 +113,26 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))
-        advertised_case_index_digest = candidate.get("case_index_sha256")
-        case_index_digest = decision["evidence_sha256"].get("case_index")
-        if (
-            not isinstance(advertised_case_index_digest, str)
-            or len(advertised_case_index_digest) != 64
-            or any(character not in "0123456789abcdef" for character in advertised_case_index_digest)
+        for candidate_key, evidence_label in (
+            ("case_index_sha256", "case_index"),
+            ("portable_bundle_sha256", "run_bundle"),
         ):
-            decision["failures"].append(
-                "candidate case_index_sha256 must be 64 lower-case hex characters"
-            )
-        elif not isinstance(case_index_digest, str):
-            decision["failures"].append("case_index evidence is required")
-        elif advertised_case_index_digest != case_index_digest:
-            decision["failures"].append(
-                "candidate case_index_sha256 does not match case_index evidence"
-            )
+            advertised_digest = candidate.get(candidate_key)
+            evidence_digest = decision["evidence_sha256"].get(evidence_label)
+            if (
+                not isinstance(advertised_digest, str)
+                or len(advertised_digest) != 64
+                or any(character not in "0123456789abcdef" for character in advertised_digest)
+            ):
+                decision["failures"].append(
+                    f"candidate {candidate_key} must be 64 lower-case hex characters"
+                )
+            elif not isinstance(evidence_digest, str):
+                decision["failures"].append(f"{evidence_label} evidence is required")
+            elif advertised_digest != evidence_digest:
+                decision["failures"].append(
+                    f"candidate {candidate_key} does not match {evidence_label} evidence"
+                )
 
         if candidate.get("sufficient") is not True:
             decision["failures"].append(f"sufficient={candidate.get('sufficient')!r}, want true")

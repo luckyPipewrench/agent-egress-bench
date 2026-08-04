@@ -1,0 +1,725 @@
+#!/usr/bin/env python3
+"""Build and finalize hash-bound continuous Gauntlet evidence."""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shlex
+import tempfile
+from collections import Counter
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+RAW_EVIDENCE = {
+    "raw_summary": "raw-summary.json",
+    "results": "results.jsonl",
+    "runner_stderr": "runner.stderr",
+    "command": "command.txt",
+    "stats": "make-stats.txt",
+    "case_index": "case-index.json",
+    "entrypoint_command": "entrypoint-command.txt",
+    "run_metadata": "run-metadata.json",
+    "pipelock_release": "pipelock-release.json",
+    "release_checksums": "checksums.txt",
+    "pipelock_version_output": "pipelock-version.txt",
+    "corpus_manifest": "corpus-manifest.txt",
+}
+SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def atomic_json_write(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, path)
+    except BaseException:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def load_object(path):
+    with path.open(encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return value
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def evidence_hashes(run_dir, require_all):
+    hashes = {}
+    for label, relative_path in RAW_EVIDENCE.items():
+        path = run_dir / relative_path
+        if not path.is_file():
+            if require_all:
+                raise ValueError(f"required evidence is missing: {label} ({relative_path})")
+            hashes[label] = None
+            continue
+        hashes[label] = file_sha256(path)
+    return hashes
+
+
+def require_non_empty_string(document, key, label=None):
+    value = document.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label or key} must be a non-empty string")
+    return value
+
+
+def require_sha256(document, key, allow_null=False):
+    value = document.get(key)
+    if value is None and allow_null:
+        return value
+    if not isinstance(value, str) or not SHA256_HEX.fullmatch(value):
+        raise ValueError(f"{key} must be 64 lower-case hex characters")
+    return value
+
+
+def read_results(path):
+    results = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid runner JSONL at line {line_number}: {exc}") from exc
+            if not isinstance(row, dict):
+                raise ValueError(f"runner JSONL row {line_number} is not an object")
+            results.append(row)
+    return results
+
+
+def load_manifest(repo_root, run_dir):
+    manifest_path = run_dir / RAW_EVIDENCE["corpus_manifest"]
+    manifest = manifest_path.read_bytes()
+    checked_out_manifest = (repo_root / "cases" / "MANIFEST.txt").read_bytes()
+    if manifest != checked_out_manifest:
+        raise ValueError("retained corpus manifest does not match the checked-out corpus manifest")
+    id_list = [line.strip() for line in manifest.decode("utf-8").splitlines() if line.strip()]
+    ids = set(id_list)
+    if not id_list:
+        raise ValueError("refusing provenance bundle: cases/MANIFEST.txt has no logical case IDs")
+    if len(ids) != len(id_list):
+        raise ValueError("refusing provenance bundle: cases/MANIFEST.txt contains duplicate IDs")
+    return manifest, ids
+
+
+def load_case_index(path, manifest_ids):
+    case_index_bytes = path.read_bytes()
+    case_index = json.loads(case_index_bytes)
+    if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
+        raise ValueError("loader case index must be a schema_version 1 object")
+    rows = case_index.get("cases")
+    if not isinstance(rows, list):
+        raise ValueError("loader case index cases must be an array")
+    expected_by_id = {}
+    for row_number, row in enumerate(rows, 1):
+        if not isinstance(row, dict):
+            raise ValueError(f"loader case index row {row_number} is not an object")
+        case_id = row.get("case_id")
+        expected = row.get("expected_verdict")
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError(f"loader case index row {row_number} has no case_id")
+        if case_id in expected_by_id:
+            raise ValueError(f"loader case index contains duplicate case ID {case_id!r}")
+        if expected not in {"block", "allow"}:
+            raise ValueError(
+                f"loader case index row {row_number} has invalid normalized expected_verdict {expected!r}"
+            )
+        expected_by_id[case_id] = expected
+    if set(expected_by_id) != manifest_ids:
+        raise ValueError("loader case index IDs do not match cases/MANIFEST.txt")
+    return case_index_bytes, expected_by_id
+
+
+def count_stat(make_stats, name):
+    match = re.search(rf"(?m)^{re.escape(name)}: ([0-9]+)$", make_stats)
+    if match is None:
+        raise ValueError(f"make stats output is missing {name!r}")
+    return int(match.group(1))
+
+
+def has_classification(evidence):
+    if not isinstance(evidence, dict):
+        return False
+    for key in ("kind", "scanner", "block_reason"):
+        if evidence.get(key) is not None:
+            return True
+    return isinstance(evidence.get("error_message"), str) and bool(evidence["error_message"])
+
+
+def has_structured_evidence(evidence):
+    if not isinstance(evidence, dict):
+        return False
+    return any(
+        key in evidence and evidence[key] is not None
+        for key in ("kind", "scanner", "block_reason", "error_message", "decision", "findings")
+    )
+
+
+def expected_fraction(numerator, denominator):
+    return numerator / denominator if denominator else None
+
+
+def verify_score(summary, scope, metric, numerator, denominator):
+    try:
+        actual = summary["scores"][scope][metric]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"runner summary is missing scores.{scope}.{metric}") from exc
+    expected = expected_fraction(numerator, denominator)
+    if actual != expected:
+        raise ValueError(
+            f"runner summary scores.{scope}.{metric} does not match bound metric counts: "
+            f"{actual!r} != {expected!r}"
+        )
+
+
+def measurements(repo_root, run_dir):
+    summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
+    command = (run_dir / RAW_EVIDENCE["command"]).read_text(encoding="utf-8").strip()
+    make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
+    stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
+    results = read_results(run_dir / RAW_EVIDENCE["results"])
+    manifest, manifest_ids = load_manifest(repo_root, run_dir)
+    case_index_bytes, expected_by_id = load_case_index(
+        run_dir / RAW_EVIDENCE["case_index"], manifest_ids
+    )
+
+    try:
+        command_argv = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError(f"recorded runner command is not valid shell syntax: {exc}") from exc
+    if "--fixtures" not in command_argv:
+        raise ValueError("recorded runner command does not include --fixtures")
+    if "--multifile-cases" not in command_argv:
+        raise ValueError("recorded runner command does not include --multifile-cases")
+    if not re.search(r"(?m)^Fixtures: HTTP=.* TLS=.* WS=.* DNS=.* MCP_HTTP=", stderr):
+        raise ValueError("runner stderr does not prove fixture startup")
+
+    result_ids = []
+    for row_number, row in enumerate(results, 1):
+        case_id = row.get("case_id")
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError(f"runner JSONL row {row_number} has no case_id")
+        result_ids.append(case_id)
+    duplicate_ids = sorted(case_id for case_id, count in Counter(result_ids).items() if count > 1)
+    if duplicate_ids:
+        raise ValueError(f"runner JSONL contains duplicate case IDs: {duplicate_ids!r}")
+    result_id_set = set(result_ids)
+    if result_id_set != manifest_ids:
+        missing = sorted(manifest_ids - result_id_set)
+        unknown = sorted(result_id_set - manifest_ids)
+        raise ValueError(
+            "runner JSONL case IDs do not match cases/MANIFEST.txt: "
+            f"missing={missing!r} unknown={unknown!r}"
+        )
+    for row_number, row in enumerate(results, 1):
+        expected = expected_by_id[row["case_id"]]
+        if row.get("expected_verdict") != expected:
+            raise ValueError(
+                f"runner JSONL row {row_number} expected_verdict for {row['case_id']!r} "
+                f"does not match loader case index: {row.get('expected_verdict')!r} != {expected!r}"
+            )
+        actual = row.get("actual_verdict")
+        score = row.get("score")
+        evidence = row.get("evidence")
+        if actual not in {"block", "allow", "not_applicable", "error"}:
+            raise ValueError(f"runner JSONL row {row_number} has invalid actual_verdict {actual!r}")
+        if score not in {"pass", "fail", "not_applicable", "error"}:
+            raise ValueError(f"runner JSONL row {row_number} has invalid score {score!r}")
+        if not isinstance(evidence, dict):
+            raise ValueError(f"runner JSONL row {row_number} evidence must be an object")
+        if not isinstance(row.get("notes"), str):
+            raise ValueError(f"runner JSONL row {row_number} notes must be a string")
+        if row.get("tool") != summary.get("tool") or row.get("tool_version") != summary.get(
+            "tool_version"
+        ):
+            raise ValueError(f"runner JSONL row {row_number} tool identity does not match summary")
+        case_specific_failure = (
+            score == "fail"
+            and "over_budget_call_id" in evidence
+            and evidence.get("budget_block_timing") == "before_over_budget"
+        )
+        if actual == "not_applicable":
+            expected_score = "not_applicable"
+        elif actual == "error":
+            expected_score = "error"
+        elif actual == expected:
+            expected_score = "fail" if case_specific_failure else "pass"
+        else:
+            expected_score = "fail"
+        if score != expected_score:
+            raise ValueError(
+                f"runner JSONL row {row_number} score {score!r} does not match its verdicts"
+            )
+
+    applicable_results = [row for row in results if row.get("actual_verdict") != "not_applicable"]
+    applicable_malicious = [
+        row for row in applicable_results if row.get("expected_verdict") == "block"
+    ]
+    applicable_benign = [
+        row for row in applicable_results if row.get("expected_verdict") == "allow"
+    ]
+    blocked_malicious = [
+        row for row in applicable_malicious if row.get("actual_verdict") == "block"
+    ]
+    blocked_benign = [
+        row for row in applicable_benign if row.get("actual_verdict") == "block"
+    ]
+    classified = sum(has_classification(row.get("evidence")) for row in blocked_malicious)
+    evidence_emitted = sum(
+        has_structured_evidence(row.get("evidence")) for row in blocked_malicious
+    )
+    full_malicious = count_stat(make_stats, "block")
+    full_benign = count_stat(make_stats, "allow") + count_stat(make_stats, "warn")
+    metric_counts = {
+        "applicable": {
+            "containment": {
+                "numerator": len(blocked_malicious),
+                "denominator": len(applicable_malicious),
+            },
+            "false_positive_rate": {
+                "numerator": len(blocked_benign),
+                "denominator": len(applicable_benign),
+            },
+            "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
+            "evidence": {
+                "numerator": evidence_emitted,
+                "denominator": len(blocked_malicious),
+            },
+        },
+        "full": {
+            "containment": {
+                "numerator": len(blocked_malicious),
+                "denominator": full_malicious,
+            },
+            "false_positive_rate": {
+                "numerator": len(blocked_benign),
+                "denominator": full_benign,
+            },
+            "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
+            "evidence": {
+                "numerator": evidence_emitted,
+                "denominator": len(blocked_malicious),
+            },
+        },
+    }
+
+    logical_case_count = len(manifest_ids)
+    case_count = summary.get("case_count")
+    if not isinstance(case_count, dict):
+        raise ValueError("runner summary case_count must be an object")
+    if case_count.get("total") != logical_case_count:
+        raise ValueError(
+            "runner summary total does not match the pinned manifest: "
+            f"{case_count.get('total')!r} != {logical_case_count}"
+        )
+    if len(results) != logical_case_count:
+        raise ValueError(
+            "runner JSONL row count does not match the logical corpus: "
+            f"{len(results)} != {logical_case_count}"
+        )
+    if case_count.get("applicable") != len(applicable_results):
+        raise ValueError("runner summary applicable count does not match runner JSONL")
+    not_applicable_count = logical_case_count - len(applicable_results)
+    if case_count.get("not_applicable") != not_applicable_count:
+        raise ValueError("runner summary not_applicable count does not match runner JSONL")
+    not_applicable_reasons = case_count.get("not_applicable_reasons")
+    if not isinstance(not_applicable_reasons, dict) or any(
+        not isinstance(reason, str)
+        or not reason
+        or isinstance(count, bool)
+        or not isinstance(count, int)
+        or count < 0
+        for reason, count in not_applicable_reasons.items()
+    ):
+        raise ValueError("runner summary not_applicable_reasons is invalid")
+    if sum(not_applicable_reasons.values()) != not_applicable_count:
+        raise ValueError("runner summary not_applicable reasons do not sum to the N/A count")
+    jsonl_errors = sum(row.get("actual_verdict") == "error" for row in applicable_results)
+    if case_count.get("errors") != jsonl_errors:
+        raise ValueError("runner summary error count does not match runner JSONL")
+    if jsonl_errors != 0:
+        raise ValueError(f"runner produced {jsonl_errors} error result(s)")
+    if full_malicious + full_benign != logical_case_count:
+        raise ValueError("make stats verdict counts do not match the logical corpus")
+    for scope, metrics in metric_counts.items():
+        for metric, counts in metrics.items():
+            verify_score(summary, scope, metric, counts["numerator"], counts["denominator"])
+    full_containment = expected_fraction(
+        metric_counts["full"]["containment"]["numerator"],
+        metric_counts["full"]["containment"]["denominator"],
+    )
+    expected_sufficient = full_containment is None or full_containment >= 0.80
+    if summary.get("sufficient") is not expected_sufficient:
+        raise ValueError("runner summary sufficient flag does not match the full containment gate")
+
+    return {
+        "summary": summary,
+        "command": command,
+        "make_stats": make_stats,
+        "metric_counts": metric_counts,
+        "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
+        "case_index_sha256": hashlib.sha256(case_index_bytes).hexdigest(),
+        "logical_case_count": logical_case_count,
+    }
+
+
+def validate_metadata(metadata):
+    if metadata.get("schema_version") != 1:
+        raise ValueError("run metadata schema_version must be 1")
+    for key in (
+        "local_run_id",
+        "generated_at",
+        "corpus_repository",
+        "corpus_ref_kind",
+        "corpus_git_sha",
+    ):
+        require_non_empty_string(metadata, key, f"run metadata {key}")
+    if not isinstance(metadata.get("dirty"), bool):
+        raise ValueError("run metadata dirty must be boolean")
+    if not isinstance(metadata.get("canonical_execution"), bool):
+        raise ValueError("run metadata canonical_execution must be boolean")
+    reasons = metadata.get("noncanonical_reasons")
+    if not isinstance(reasons, list) or any(not isinstance(item, str) or not item for item in reasons):
+        raise ValueError("run metadata noncanonical_reasons must be an array of strings")
+    if metadata["canonical_execution"] and (metadata["dirty"] or reasons):
+        raise ValueError("canonical execution cannot be dirty or have noncanonical reasons")
+    if not re.fullmatch(r"[0-9a-f]{40}", metadata["corpus_git_sha"]):
+        raise ValueError("run metadata corpus_git_sha must be 40 lower-case hex characters")
+    if metadata["corpus_ref_kind"] not in {"origin/main", "tag", "development"}:
+        raise ValueError("run metadata corpus_ref_kind is invalid")
+    if metadata["canonical_execution"]:
+        if metadata["corpus_ref_kind"] not in {"origin/main", "tag"}:
+            raise ValueError("canonical execution requires origin/main or a tag")
+        if metadata["corpus_repository"] != "luckyPipewrench/agent-egress-bench":
+            raise ValueError("canonical execution names an unexpected corpus repository")
+
+
+def validate_release(release, metadata, run_dir):
+    if release.get("schema_version") != 1:
+        raise ValueError("Pipelock release metadata schema_version must be 1")
+    for key in ("repository", "tag", "version", "asset", "binary_sha256", "version_output"):
+        require_non_empty_string(release, key, f"Pipelock release {key}")
+    require_sha256(release, "binary_sha256")
+    require_sha256(release, "asset_sha256", allow_null=not release.get("released_binary", False))
+    if not isinstance(release.get("released_binary"), bool):
+        raise ValueError("Pipelock release released_binary must be boolean")
+    if metadata["canonical_execution"] and not release["released_binary"]:
+        raise ValueError("canonical execution requires a released Pipelock binary")
+    if metadata["canonical_execution"] and release["repository"] != "luckyPipewrench/pipelock":
+        raise ValueError("canonical execution names an unexpected Pipelock repository")
+    if release["tag"] != "v" + release["version"]:
+        raise ValueError("Pipelock release tag and version do not match")
+    expected_version_line = f"pipelock version {release['version']}"
+    if expected_version_line not in release["version_output"].splitlines():
+        raise ValueError("Pipelock release version_output does not report the pinned version")
+    retained_version = (run_dir / RAW_EVIDENCE["pipelock_version_output"]).read_text(
+        encoding="utf-8"
+    ).strip()
+    if retained_version != release["version_output"].strip():
+        raise ValueError("retained Pipelock version output does not match release metadata")
+    if release["released_binary"]:
+        expected_asset = re.escape(f"pipelock_{release['version']}_linux_")
+        if not re.fullmatch(expected_asset + r"(?:amd64|arm64)\.tar\.gz", release["asset"]):
+            raise ValueError("Pipelock release asset name does not match the pinned Linux version")
+        matches = []
+        checksums = (run_dir / RAW_EVIDENCE["release_checksums"]).read_text(encoding="utf-8")
+        for line in checksums.splitlines():
+            fields = line.split()
+            if len(fields) == 2 and fields[1].lstrip("*") == release["asset"]:
+                matches.append(fields[0])
+        if matches != [release["asset_sha256"]]:
+            raise ValueError("release checksums do not bind the recorded Pipelock asset digest")
+
+
+def build_complete_bundle(repo_root, run_dir):
+    metadata = load_object(run_dir / RAW_EVIDENCE["run_metadata"])
+    release = load_object(run_dir / RAW_EVIDENCE["pipelock_release"])
+    validate_metadata(metadata)
+    validate_release(release, metadata, run_dir)
+    if not (run_dir / RAW_EVIDENCE["entrypoint_command"]).read_text(encoding="utf-8").strip():
+        raise ValueError("entrypoint command evidence is empty")
+    measured = measurements(repo_root, run_dir)
+    summary = measured["summary"]
+    if summary.get("tool_version") != release["version"]:
+        raise ValueError(
+            "runner summary tool_version does not match the executed Pipelock release: "
+            f"{summary.get('tool_version')!r} != {release['version']!r}"
+        )
+    hashes = evidence_hashes(run_dir, require_all=True)
+    candidate_scope = {
+        "schema_version": 2,
+        "local_run_id": metadata["local_run_id"],
+        "generated_at": metadata["generated_at"],
+        "corpus_ref_kind": metadata["corpus_ref_kind"],
+        "corpus_git_sha": metadata["corpus_git_sha"],
+        "corpus_commit_url": (
+            f"https://github.com/{metadata['corpus_repository']}/commit/{metadata['corpus_git_sha']}"
+        ),
+        "dirty": metadata["dirty"],
+        "pipelock_tag": release["tag"],
+        "pipelock_version": release["version"],
+        "pipelock_asset": release["asset"],
+        "pipelock_asset_sha256": release.get("asset_sha256"),
+        "pipelock_binary_sha256": release["binary_sha256"],
+        "pipelock_release_url": f"https://github.com/{release['repository']}/releases/tag/{release['tag']}",
+        "gauntlet_version": summary["gauntlet_version"],
+        "scoring_version": summary["scoring_version"],
+        "runner_version": summary["runner_version"],
+        "tool": summary["tool"],
+        "tool_version": summary["tool_version"],
+        "corpus_version": summary["corpus_version"],
+        "corpus_sha256": summary["corpus_sha256"],
+        "corpus_manifest_sha256": measured["manifest_sha256"],
+        "case_index_sha256": measured["case_index_sha256"],
+        "logical_case_count": measured["logical_case_count"],
+        "tool_profile_sha256": summary["tool_profile_sha256"],
+        "case_count": {
+            "total": summary["case_count"]["total"],
+            "applicable": summary["case_count"]["applicable"],
+            "not_applicable": summary["case_count"]["not_applicable"],
+            "not_applicable_reasons": summary["case_count"]["not_applicable_reasons"],
+            "errors": summary["case_count"]["errors"],
+        },
+        "scores": summary["scores"],
+        "metric_counts": measured["metric_counts"],
+        "sufficient": summary["sufficient"],
+        "fixtures": True,
+        "multifile_cases": True,
+        "command": measured["command"],
+        "make_stats": measured["make_stats"],
+        "evidence_sha256": hashes,
+    }
+    return {
+        "schema_version": 1,
+        "bundle_status": "complete",
+        "local_run_id": metadata["local_run_id"],
+        "publication_eligible": metadata["canonical_execution"] and release["released_binary"],
+        "noncanonical_reasons": metadata["noncanonical_reasons"],
+        "evidence_sha256": hashes,
+        "candidate_scope": candidate_scope,
+    }
+
+
+def build_partial_bundle(run_dir, failure):
+    metadata_path = run_dir / RAW_EVIDENCE["run_metadata"]
+    metadata = load_object(metadata_path) if metadata_path.is_file() else {}
+    return {
+        "schema_version": 1,
+        "bundle_status": "partial",
+        "local_run_id": metadata.get("local_run_id"),
+        "publication_eligible": False,
+        "noncanonical_reasons": metadata.get("noncanonical_reasons", []),
+        "evidence_sha256": evidence_hashes(run_dir, require_all=False),
+        "failure": failure,
+    }
+
+
+def bundle_command(args):
+    run_dir = args.run_dir.resolve()
+    output_path = run_dir / "run-bundle.json"
+    decision_path = run_dir / "execution-decision.json"
+    if args.failure:
+        bundle = build_partial_bundle(run_dir, args.failure)
+        decision = {
+            "schema_version": 1,
+            "local_run_id": bundle.get("local_run_id"),
+            "blocked": True,
+            "execution_status": "blocked",
+            "publication_eligible": False,
+            "failures": [args.failure],
+            "evidence_sha256": bundle["evidence_sha256"],
+        }
+    else:
+        bundle = build_complete_bundle(args.repo_root.resolve(), run_dir)
+        decision = {
+            "schema_version": 1,
+            "local_run_id": bundle["local_run_id"],
+            "blocked": False,
+            "execution_status": "complete",
+            "publication_eligible": bundle["publication_eligible"],
+            "failures": [],
+            "review_notes": bundle["noncanonical_reasons"],
+            "evidence_sha256": bundle["evidence_sha256"],
+        }
+    atomic_json_write(output_path, bundle)
+    atomic_json_write(decision_path, decision)
+
+
+def finalize_command(args):
+    bundle_path = args.bundle.resolve()
+    run_dir = bundle_path.parent
+    output_path = args.output.resolve()
+    protected_paths = {
+        (run_dir / relative_path).resolve() for relative_path in RAW_EVIDENCE.values()
+    }
+    protected_paths.update(
+        {
+            bundle_path,
+            (run_dir / "execution-decision.json").resolve(),
+            (run_dir / "promotion-decision.json").resolve(),
+        }
+    )
+    if output_path in protected_paths:
+        raise ValueError("candidate output cannot overwrite retained evidence or a decision")
+    if output_path.exists():
+        raise ValueError("candidate output must not already exist")
+    bundle = load_object(bundle_path)
+    if bundle.get("schema_version") != 1 or bundle.get("bundle_status") != "complete":
+        raise ValueError("portable run bundle is not complete")
+    if bundle.get("publication_eligible") is not True:
+        raise ValueError("portable run bundle is noncanonical and cannot be finalized")
+    recorded_hashes = bundle.get("evidence_sha256")
+    if not isinstance(recorded_hashes, dict) or set(recorded_hashes) != set(RAW_EVIDENCE):
+        raise ValueError("portable run bundle evidence set is incomplete")
+    current_hashes = evidence_hashes(run_dir, require_all=True)
+    for label in sorted(RAW_EVIDENCE):
+        if recorded_hashes.get(label) != current_hashes[label]:
+            raise ValueError(f"evidence {label} changed after the portable bundle was created")
+    recomputed_bundle = build_complete_bundle(args.repo_root.resolve(), run_dir)
+    if bundle != recomputed_bundle:
+        raise ValueError("portable run bundle does not match a fresh reconstruction from evidence")
+
+    artifact_id = args.artifact_id.strip()
+    if not artifact_id:
+        raise ValueError("artifact_id must be non-empty")
+    canonical_url = args.canonical_url.strip()
+    parsed = urlparse(canonical_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("canonical_url must be an absolute https URL")
+    candidate_scope = bundle.get("candidate_scope")
+    if not isinstance(candidate_scope, dict):
+        raise ValueError("portable run bundle candidate_scope must be an object")
+    candidate = dict(candidate_scope)
+    candidate.update(
+        {
+            "artifact_id": artifact_id,
+            "canonical_url": canonical_url,
+            "portable_bundle_sha256": file_sha256(bundle_path),
+        }
+    )
+    atomic_json_write(output_path, candidate)
+
+
+def start_command(args):
+    metadata = {
+        "schema_version": 1,
+        "local_run_id": args.local_run_id,
+        "generated_at": args.generated_at,
+        "corpus_repository": args.corpus_repository,
+        "corpus_ref_kind": args.corpus_ref_kind,
+        "corpus_git_sha": args.corpus_git_sha,
+        "dirty": args.dirty,
+        "canonical_execution": args.canonical_execution,
+        "noncanonical_reasons": args.noncanonical_reason,
+    }
+    validate_metadata(metadata)
+    atomic_json_write(args.output, metadata)
+
+
+def release_command(args):
+    release = {
+        "schema_version": 1,
+        "repository": args.repository,
+        "tag": args.tag,
+        "version": args.version,
+        "asset": args.asset,
+        "asset_sha256": args.asset_sha256,
+        "binary_sha256": args.binary_sha256,
+        "version_output": args.version_output,
+        "released_binary": args.released_binary,
+    }
+    atomic_json_write(args.output, release)
+
+
+def bool_value(value):
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    raise argparse.ArgumentTypeError("want true or false")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    start = subparsers.add_parser("start")
+    start.add_argument("--output", type=Path, required=True)
+    start.add_argument("--local-run-id", required=True)
+    start.add_argument("--generated-at", required=True)
+    start.add_argument("--corpus-repository", required=True)
+    start.add_argument("--corpus-ref-kind", required=True)
+    start.add_argument("--corpus-git-sha", required=True)
+    start.add_argument("--dirty", type=bool_value, required=True)
+    start.add_argument("--canonical-execution", type=bool_value, required=True)
+    start.add_argument("--noncanonical-reason", action="append", default=[])
+
+    release = subparsers.add_parser("release")
+    release.add_argument("--output", type=Path, required=True)
+    release.add_argument("--repository", required=True)
+    release.add_argument("--tag", required=True)
+    release.add_argument("--version", required=True)
+    release.add_argument("--asset", required=True)
+    release.add_argument("--asset-sha256")
+    release.add_argument("--binary-sha256", required=True)
+    release.add_argument("--version-output", required=True)
+    release.add_argument("--released-binary", type=bool_value, required=True)
+
+    bundle = subparsers.add_parser("bundle")
+    bundle.add_argument("--repo-root", type=Path, required=True)
+    bundle.add_argument("--run-dir", type=Path, required=True)
+    bundle.add_argument("--failure")
+
+    finalize = subparsers.add_parser("finalize")
+    finalize.add_argument(
+        "--repo-root", type=Path, default=Path(__file__).resolve().parents[1]
+    )
+    finalize.add_argument("--bundle", type=Path, required=True)
+    finalize.add_argument("--artifact-id", required=True)
+    finalize.add_argument("--canonical-url", required=True)
+    finalize.add_argument("--output", type=Path, required=True)
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    try:
+        if args.command == "start":
+            start_command(args)
+        elif args.command == "release":
+            release_command(args)
+        elif args.command == "bundle":
+            bundle_command(args)
+        else:
+            finalize_command(args)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        print(f"provenance: BLOCKED: {exc}", file=os.sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,579 @@
+#!/usr/bin/env python3
+"""Tests for portable Gauntlet evidence construction and finalization."""
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BUILDER = REPO_ROOT / "scripts" / "build_gauntlet_provenance.py"
+RUNNER = REPO_ROOT / "scripts" / "run-pipelock-gauntlet.sh"
+RELEASE_PIN = REPO_ROOT / "examples" / "pipelock" / "release.env"
+
+
+def parsed_release_pin():
+    values = {}
+    for line in RELEASE_PIN.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
+
+
+PIN = parsed_release_pin()
+PIN_VERSION = PIN["PIPELOCK_VERSION"]
+PIN_TAG = PIN["PIPELOCK_TAG"]
+
+
+class ProvenanceBuilderTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.run_dir = self.root / "run"
+        (self.root / "cases").mkdir()
+        self.run_dir.mkdir()
+        (self.root / "cases" / "MANIFEST.txt").write_text("a\nb\nc\n", encoding="utf-8")
+        self.results = [
+            {
+                "case_id": "a",
+                "tool": "Pipelock",
+                "tool_version": PIN_VERSION,
+                "expected_verdict": "block",
+                "actual_verdict": "block",
+                "score": "pass",
+                "evidence": {"scanner": "test"},
+                "notes": "",
+            },
+            {
+                "case_id": "b",
+                "tool": "Pipelock",
+                "tool_version": PIN_VERSION,
+                "expected_verdict": "allow",
+                "actual_verdict": "allow",
+                "score": "pass",
+                "evidence": {},
+                "notes": "",
+            },
+            {
+                "case_id": "c",
+                "tool": "Pipelock",
+                "tool_version": PIN_VERSION,
+                "expected_verdict": "block",
+                "actual_verdict": "not_applicable",
+                "score": "not_applicable",
+                "evidence": {},
+                "notes": "",
+            },
+        ]
+        self.write_fixture()
+
+    def write_fixture(self, detection_score=1.0, evidence_score=1.0):
+        summary = {
+            "gauntlet_version": "1",
+            "scoring_version": "2.4",
+            "runner_version": "0.4.2",
+            "tool": "Pipelock",
+            "tool_version": PIN_VERSION,
+            "corpus_version": "test",
+            "corpus_sha256": "a" * 64,
+            "tool_profile_sha256": "b" * 64,
+            "case_count": {
+                "total": 3,
+                "applicable": 2,
+                "not_applicable": 1,
+                "not_applicable_reasons": {"missing_requires": 1},
+                "errors": 0,
+            },
+            "scores": {
+                "applicable": {
+                    "containment": 1.0,
+                    "false_positive_rate": 0.0,
+                    "detection": detection_score,
+                    "evidence": evidence_score,
+                },
+                "full": {
+                    "containment": 0.5,
+                    "false_positive_rate": 0.0,
+                    "detection": detection_score,
+                    "evidence": evidence_score,
+                },
+            },
+            "sufficient": False,
+        }
+        (self.run_dir / "raw-summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in self.results), encoding="utf-8"
+        )
+        (self.run_dir / "runner.stderr").write_text(
+            "Fixtures: HTTP=x TLS=x WS=x DNS=x MCP_HTTP=x\n", encoding="utf-8"
+        )
+        (self.run_dir / "command.txt").write_text(
+            "timeout 10s aeb-gauntlet --fixtures --multifile-cases cases/mcp-drift\n",
+            encoding="utf-8",
+        )
+        (self.run_dir / "make-stats.txt").write_text(
+            "block: 2\nallow: 1\nwarn: 0\n", encoding="utf-8"
+        )
+        (self.run_dir / "case-index.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "cases": [
+                        {"case_id": "a", "expected_verdict": "block"},
+                        {"case_id": "b", "expected_verdict": "allow"},
+                        {"case_id": "c", "expected_verdict": "block"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.run_dir / "entrypoint-command.txt").write_text(
+            "./scripts/run-pipelock-gauntlet.sh\n", encoding="utf-8"
+        )
+        (self.run_dir / "run-metadata.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "local_run_id": "local:test:1",
+                    "generated_at": "2026-08-04T00:00:00Z",
+                    "corpus_repository": "luckyPipewrench/agent-egress-bench",
+                    "corpus_ref_kind": "origin/main",
+                    "corpus_git_sha": "c" * 40,
+                    "dirty": False,
+                    "canonical_execution": True,
+                    "noncanonical_reasons": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.run_dir / "pipelock-release.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "repository": "luckyPipewrench/pipelock",
+                    "tag": PIN_TAG,
+                    "version": PIN_VERSION,
+                    "asset": f"pipelock_{PIN_VERSION}_linux_amd64.tar.gz",
+                    "asset_sha256": "d" * 64,
+                    "binary_sha256": "e" * 64,
+                    "version_output": f"pipelock version {PIN_VERSION}",
+                    "released_binary": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.run_dir / "checksums.txt").write_text(
+            "d" * 64 + f"  pipelock_{PIN_VERSION}_linux_amd64.tar.gz\n",
+            encoding="utf-8",
+        )
+        (self.run_dir / "pipelock-version.txt").write_text(
+            f"pipelock version {PIN_VERSION}\n", encoding="utf-8"
+        )
+        (self.run_dir / "corpus-manifest.txt").write_text("a\nb\nc\n", encoding="utf-8")
+
+    def run_builder(self, *arguments):
+        return subprocess.run(
+            [sys.executable, str(BUILDER), *map(str, arguments)],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+
+    def bundle(self):
+        return self.run_builder(
+            "bundle", "--repo-root", self.root, "--run-dir", self.run_dir
+        )
+
+    def finalize(self, output=None):
+        return self.run_builder(
+            "finalize",
+            "--repo-root",
+            self.root,
+            "--bundle",
+            self.run_dir / "run-bundle.json",
+            "--artifact-id",
+            "github-actions:luckyPipewrench/agent-egress-bench:123",
+            "--canonical-url",
+            "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
+            "--output",
+            output or self.run_dir / "candidate.json",
+        )
+
+    def test_bundle_binds_manifest_case_index_and_metric_denominators(self):
+        result = self.bundle()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bundle = json.loads((self.run_dir / "run-bundle.json").read_text(encoding="utf-8"))
+        scope = bundle["candidate_scope"]
+        self.assertEqual(
+            scope["case_index_sha256"],
+            hashlib.sha256((self.run_dir / "case-index.json").read_bytes()).hexdigest(),
+        )
+        self.assertEqual(
+            scope["metric_counts"]["applicable"]["containment"],
+            {"numerator": 1, "denominator": 1},
+        )
+        self.assertEqual(
+            scope["metric_counts"]["full"]["containment"],
+            {"numerator": 1, "denominator": 2},
+        )
+
+    def test_bundle_rejects_duplicate_unknown_and_swapped_case_labels(self):
+        mutations = {
+            "duplicate": [self.results[0], {**self.results[1], "case_id": "a"}, self.results[2]],
+            "unknown": [self.results[0], self.results[1], {**self.results[2], "case_id": "z"}],
+            "swapped": [
+                {**self.results[0], "expected_verdict": "allow"},
+                {**self.results[1], "expected_verdict": "block"},
+                self.results[2],
+            ],
+        }
+        for name, rows in mutations.items():
+            with self.subTest(name=name):
+                (self.run_dir / "results.jsonl").write_text(
+                    "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+                )
+                result = self.bundle()
+                self.assertNotEqual(result.returncode, 0)
+                self.write_fixture()
+
+    def test_null_classification_fields_earn_no_detection_or_evidence_credit(self):
+        for key in ("kind", "scanner", "block_reason"):
+            with self.subTest(key=key):
+                self.results[0]["evidence"] = {key: None}
+                self.write_fixture(detection_score=0.0, evidence_score=0.0)
+                result = self.bundle()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                scope = json.loads(
+                    (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+                )["candidate_scope"]
+                self.assertEqual(
+                    scope["metric_counts"]["applicable"]["detection"],
+                    {"numerator": 0, "denominator": 1},
+                )
+                self.assertEqual(
+                    scope["metric_counts"]["applicable"]["evidence"],
+                    {"numerator": 0, "denominator": 1},
+                )
+
+    def test_fixture_and_multifile_flags_are_load_bearing(self):
+        original = (self.run_dir / "command.txt").read_text(encoding="utf-8")
+        for flag in ("--fixtures", "--multifile-cases"):
+            with self.subTest(flag=flag):
+                (self.run_dir / "command.txt").write_text(
+                    original.replace(flag, "--neutralized"), encoding="utf-8"
+                )
+                result = self.bundle()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(flag, result.stderr)
+        (self.run_dir / "command.txt").write_text(original, encoding="utf-8")
+
+    def test_real_url_finalization_does_not_change_evidence_bytes(self):
+        self.assertEqual(self.bundle().returncode, 0)
+        before = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in self.run_dir.iterdir()
+            if path.is_file()
+        }
+        result = self.finalize()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        after = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in self.run_dir.iterdir()
+            if path.is_file() and path.name in before
+        }
+        self.assertEqual(after, before)
+        candidate = json.loads((self.run_dir / "candidate.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            candidate["canonical_url"],
+            "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
+        )
+
+    def test_finalizer_never_overwrites_evidence_or_an_existing_candidate(self):
+        self.assertEqual(self.bundle().returncode, 0)
+        result = self.finalize(output=self.run_dir / "results.jsonl")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot overwrite retained evidence", result.stderr)
+
+        existing = self.run_dir / "candidate.json"
+        existing.write_text("keep me\n", encoding="utf-8")
+        result = self.finalize(output=existing)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must not already exist", result.stderr)
+        self.assertEqual(existing.read_text(encoding="utf-8"), "keep me\n")
+
+    def test_each_evidence_substitution_is_rejected_during_finalization(self):
+        for filename in (
+            "raw-summary.json",
+            "results.jsonl",
+            "runner.stderr",
+            "command.txt",
+            "make-stats.txt",
+            "case-index.json",
+        ):
+            with self.subTest(filename=filename):
+                self.write_fixture()
+                self.assertEqual(self.bundle().returncode, 0)
+                path = self.run_dir / filename
+                path.write_bytes(path.read_bytes() + b"substituted\n")
+                result = self.finalize()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("changed after", result.stderr)
+
+    def test_candidate_scope_substitution_is_rejected_during_finalization(self):
+        self.assertEqual(self.bundle().returncode, 0)
+        bundle_path = self.run_dir / "run-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["candidate_scope"]["scores"]["applicable"]["containment"] = 0.0
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        result = self.finalize()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fresh reconstruction", result.stderr)
+
+    def test_missing_evidence_label_and_missing_digest_are_rejected(self):
+        self.assertEqual(self.bundle().returncode, 0)
+        bundle_path = self.run_dir / "run-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        del bundle["evidence_sha256"]["runner_stderr"]
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        result = self.finalize()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("evidence set is incomplete", result.stderr)
+
+        self.write_fixture()
+        self.assertEqual(self.bundle().returncode, 0)
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["evidence_sha256"]["runner_stderr"] = None
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        (self.run_dir / "runner.stderr").unlink()
+        result = self.finalize()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required evidence is missing", result.stderr)
+
+    def test_noncanonical_bundle_cannot_be_platform_finalized(self):
+        metadata_path = self.run_dir / "run-metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["canonical_execution"] = False
+        metadata["noncanonical_reasons"] = ["development corpus mode was requested"]
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+        self.assertEqual(self.bundle().returncode, 0)
+        result = self.finalize()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("noncanonical", result.stderr)
+
+    def test_release_checksum_and_version_output_are_load_bearing(self):
+        release_path = self.run_dir / "pipelock-release.json"
+        release = json.loads(release_path.read_text(encoding="utf-8"))
+        release["asset_sha256"] = "0" * 64
+        release_path.write_text(json.dumps(release), encoding="utf-8")
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("checksums do not bind", result.stderr)
+
+        self.write_fixture()
+        (self.run_dir / "pipelock-version.txt").write_text(
+            "pipelock version 0.0.0\n", encoding="utf-8"
+        )
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("version output does not match", result.stderr)
+
+    def test_canonical_metadata_cannot_claim_a_development_ref(self):
+        metadata_path = self.run_dir / "run-metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["corpus_ref_kind"] = "development"
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires origin/main or a tag", result.stderr)
+
+    def test_summary_sufficiency_and_result_scores_are_recomputed(self):
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["sufficient"] = True
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sufficient flag", result.stderr)
+
+        self.write_fixture()
+        rows = [dict(row) for row in self.results]
+        rows[1]["actual_verdict"] = "block"
+        rows[1]["score"] = "pass"
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("score", result.stderr)
+
+    def test_reviewed_release_pin_matches_profile_and_baseline(self):
+        pin = parsed_release_pin()
+        profile = json.loads(
+            (REPO_ROOT / "examples" / "pipelock" / "tool-profile.json").read_text(encoding="utf-8")
+        )
+        baseline = json.loads(
+            (REPO_ROOT / "ci" / "gauntlet-baseline.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(profile["tool_version"], pin["PIPELOCK_VERSION"])
+        self.assertEqual(baseline["pipelock_version"], pin["PIPELOCK_VERSION"])
+        self.assertEqual(pin["PIPELOCK_TAG"], "v" + pin["PIPELOCK_VERSION"])
+
+
+class PortableRunnerFailureTest(unittest.TestCase):
+    def test_output_directory_cannot_touch_git_metadata(self):
+        forbidden = REPO_ROOT / ".git" / "portable-gauntlet-output-safety-test"
+        self.assertFalse(forbidden.exists())
+        result = subprocess.run(
+            [
+                "bash",
+                str(RUNNER),
+                "--development",
+                "--output-dir",
+                str(forbidden),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Git metadata", result.stderr)
+        self.assertFalse(forbidden.exists())
+
+    def test_existing_output_directory_is_never_reused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            existing = Path(temporary) / "existing"
+            existing.mkdir()
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(RUNNER),
+                    "--development",
+                    "--output-dir",
+                    str(existing),
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must not already exist", result.stderr)
+
+    def run_with_fake_runner(self, mode, timeout_seconds="10"):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        fake_bin = root / "bin"
+        output_dir = root / "evidence"
+        fake_bin.mkdir()
+
+        pipelock = root / "pipelock"
+        pipelock.write_text(
+            f"#!/bin/sh\nprintf '%s\\n' 'pipelock version {PIN_VERSION}'\n",
+            encoding="utf-8",
+        )
+        pipelock.chmod(0o755)
+
+        fake_go = fake_bin / "go"
+        fake_go.write_text(
+            """#!/bin/sh
+set -eu
+if [ "$1" = "build" ]; then
+  shift
+  [ "$1" = "-o" ]
+  target="$2"
+  cat > "$target" <<'RUNNER'
+#!/bin/sh
+if printf '%s\\n' "$@" | grep -q -- '--case-index'; then
+  printf '%s\\n' '{"schema_version":1,"cases":[]}'
+  exit 0
+fi
+if [ "${AEB_FAKE_RUNNER_MODE:-error}" = "hang" ]; then
+  sleep 10
+fi
+printf '%s\\n' 'synthetic runner failure' >&2
+exit 23
+RUNNER
+  chmod 0755 "$target"
+  exit 0
+fi
+exit 99
+""",
+            encoding="utf-8",
+        )
+        fake_go.chmod(0o755)
+        fake_make = fake_bin / "make"
+        fake_make.write_text(
+            "#!/bin/sh\nprintf '%s\\n' 'block: 0' 'allow: 0' 'warn: 0'\n", encoding="utf-8"
+        )
+        fake_make.chmod(0o755)
+
+        started = time.monotonic()
+        result = subprocess.run(
+            [
+                "bash",
+                str(RUNNER),
+                "--development",
+                "--development-binary",
+                str(pipelock),
+                "--benchmark-timeout-seconds",
+                timeout_seconds,
+                "--output-dir",
+                str(output_dir),
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
+                "AEB_FAKE_RUNNER_MODE": mode,
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return result, output_dir, time.monotonic() - started
+
+    def test_runner_error_leaves_command_stderr_partial_evidence_and_blocked_decision(self):
+        result, output_dir, _ = self.run_with_fake_runner("error")
+        self.assertEqual(result.returncode, 23, result.stderr)
+        for filename in (
+            "command.txt",
+            "runner.stderr",
+            "results.jsonl",
+            "case-index.json",
+            "make-stats.txt",
+            "execution-decision.json",
+        ):
+            self.assertTrue((output_dir / filename).is_file(), filename)
+        decision = json.loads(
+            (output_dir / "execution-decision.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(decision["blocked"])
+        self.assertIn("exit code 23", decision["failures"][0])
+
+    def test_hung_runner_is_terminated_and_leaves_blocked_evidence(self):
+        result, output_dir, elapsed = self.run_with_fake_runner("hang", timeout_seconds="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(elapsed, 5)
+        decision = json.loads(
+            (output_dir / "execution-decision.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(decision["blocked"])
+        self.assertTrue((output_dir / "runner.stderr").is_file())
+
+
+if __name__ == "__main__":
+    unittest.main()

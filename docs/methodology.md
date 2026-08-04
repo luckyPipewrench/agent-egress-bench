@@ -154,28 +154,17 @@ corpus bytes are unchanged.
 
 ## Running the Gauntlet
 
-Build and run the Gauntlet runner:
+For the reviewed Pipelock release, run the portable entry point from a clean Linux clone:
 
 ```bash
-# Path to the tool under test, and the config the managed harness starts it with.
-export PIPELOCK_BIN=/path/to/pipelock
-export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
-
-cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
-/tmp/aeb-gauntlet \
-  --adapter proxy --scan-token bench-test-token \
-  --managed-proxy-cmd './examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"' \
-  --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
-  --mcp-cmd "\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh" \
-  --cases ./cases --multifile-cases ./cases/mcp-drift \
-  --profile examples/pipelock/tool-profile.json \
-  --fixtures \
-  --output summary.json
+./scripts/run-pipelock-gauntlet.sh
 ```
 
-`--fixtures` and `--multifile-cases` are not optional for a comparable score. Without `--fixtures` the runner starts no local HTTP, TLS, WebSocket, DNS or MCP endpoints, so cases that target them fail for lack of a server rather than on policy, and the false-positive rate becomes meaningless. The managed-command flags start the tool under test with TLS interception wired up; a plain listening proxy scores the response-interception cases incorrectly. Confirm the run printed a line beginning `Fixtures:` before trusting any number it produces.
+The entry point pins and verifies the released binary, supplies the required managed commands, enables the local fixtures, includes the multi-file MCP drift corpus, validates the result rows, and leaves a hash-bound evidence directory. It rejects a recorded command with the fixture or multi-file flags missing. Without fixtures, cases can fail because no local server exists rather than because policy blocked them, and the false-positive rate becomes meaningless. A plain listening proxy also scores response-interception cases incorrectly because it does not receive the runner's TLS fixture configuration.
 
-Per-case JSONL results are written to stdout. The summary JSON file is written to the path specified by `--output`. See [RUNNER.md](RUNNER.md) for the full runner contract and verdict mapping rules.
+The raw portable directory is the common execution layer. It has a local run ID but no invented public URL. GitHub Actions or another retaining platform supplies a real artifact ID and canonical HTTPS URL during a separate finalization step. The [Pipelock reference-runner guide](../examples/pipelock/README.md) documents every evidence file, explicit development mode, the underlying long-form command, and a Linux scheduling example.
+
+For other tools and adapter development, use the Go runner directly. Per-case JSONL results are written to stdout and the summary JSON file is written to the path specified by `--output`. See [RUNNER.md](RUNNER.md) for the full runner contract and verdict mapping rules.
 
 ## Submission
 

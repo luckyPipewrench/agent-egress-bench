@@ -269,6 +269,8 @@ Reproducibility:
 
 Example shape for a tool-specific benchmark run:
 
+> For the pinned Pipelock release, `./scripts/run-pipelock-gauntlet.sh` is the normal operator command. The long form below is an advanced reference for adapter and receipt-profile development.
+
 ```bash
 cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
 export PIPELOCK_BIN=/path/to/pipelock
@@ -288,7 +290,7 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
   --receipt-verifier-file examples/pipelock/receipt-verifier.json \
   --timeout 15s
 
-# 3. Compare byte-for-byte with the committed artifact.
+# Compare byte-for-byte with the committed artifact.
 sha256sum /tmp/pipelock.json profiles/pipelock.json
 diff -q /tmp/pipelock.json profiles/pipelock.json
 ```
