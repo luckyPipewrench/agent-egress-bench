@@ -1,7 +1,7 @@
 # Artifact provenance predicates
 
-The opt-in G2 assessors currently evaluate two separately callable predicates:
-`schema-valid` and `authenticated-at(T)`. They do not combine those results
+The opt-in G2 assessors currently evaluate three separately callable predicates:
+`schema-valid`, `authenticated-at(T)`, and `buyer-reproduced`. They do not combine those results
 into a tier, score, or producer-awarded badge. Each assessment artifact carries
 one predicate and the identity of the verifier binary that evaluated it;
 consumers compose the separate results by their shared evidence binding.
@@ -30,8 +30,8 @@ verifier-schema failure is `UNVERIFIABLE`; a presented malformed package is
 externally supplied signed trust policy, an independently managed verifier
 trust context, and a durable verifier-owned policy checkpoint. The trust
 context is the root of trust: the buyer or verifier operator must deliver and
-protect it outside the producer's
-control. A producer-supplied context can select its own bootstrap key and must
+protect it outside the producer's control. A producer-supplied context can
+select its own bootstrap key and must
 never be accepted as independent input. The CLI emits its result on standard
 output; callers must retain that assessment outside the submitted package.
 
@@ -61,3 +61,31 @@ or evidence digest. A `PASS` assessment always includes the time, exact
 envelope-payload digest, policy ID/epoch/digest, checkpoint digest, and verifier
 identity. It also binds the exact independent authentication-context digest and
 the pinned bootstrap key ID.
+
+`buyer-reproduced` reads the original Control Evidence v0 package plus an
+external buyer-reproduction DSSE statement and the normalized transcript named by
+that statement. That transcript is a closed, canonical normalized-outcome
+document, not raw protocol I/O. The statement stays outside the original package so a later
+rerun cannot mutate the manifest or envelope it is comparing against. `PASS`
+means the statement is signed by the same key that signed the source buyer
+requirement, binds the exact source envelope and requirement payloads, tool
+profile, runner binary, corpus and corpus manifest, scoring version, policy,
+and adapter digests, uses a different reproduction run ID, binds the supplied
+transcript bytes, and binds the canonical logical outcome projection re-derived
+from that transcript to the source outcomes ledger.
+
+This predicate does not independently authorize the shared signing key. Compose
+it with an `authenticated-at(T)` PASS carrying the same
+`envelope_payload_sha256` to establish that the source requirement key was
+authorized for its buyer role. It also does not prove that the named binary or
+corpus bytes executed, that the transcript caused the projected outcomes, that
+the buyer environment or custody was independent, or that another observer saw
+the run. The normalized transcript is retained and digest-bound evidence; this
+assessor does not invent a generic cross-adapter raw-I/O reducer. Those stronger claims
+need separate execution, corpus-membership, and observation predicates.
+
+`schema-valid` and `authenticated-at(T)` retain the published strict
+`control-evidence-assessment/v1` output contract. `buyer-reproduced` uses the
+additive `/v2` contract; consumers compose results across versions through the
+same `envelope_payload_sha256`, not by assuming one schema version implies
+another predicate.

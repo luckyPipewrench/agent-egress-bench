@@ -51,12 +51,35 @@ signature authentication, trusted ownership, freshness, result correctness,
 or scope completeness; compose it with the corresponding independent G2
 predicates instead of over-reading it.
 
+The buyer-reproduction assessor compares a later buyer-signed statement with an
+immutable source package and digest-binds a closed, normalized reproduction
+transcript:
+
+```sh
+go run ./cmd/aeb-ce-buyer-reproduced \
+  --package /srv/evidence/source-package \
+  --statement /srv/evidence/reproduction/buyer-reproduction.dsse.json \
+  --transcript /srv/evidence/reproduction/normalized-transcript.json
+```
+
+The statement and transcript must be regular files outside the source package.
+A `buyer-reproduced` PASS means the same requirement-signing key attested a
+distinct run with the exact source/input bindings and matching logical outcome
+projection re-derived from that normalized transcript. It does not authorize
+that key, prove the named binary/corpus ran, or prove the transcript was derived
+from raw protocol I/O; compose it with separately bound authentication and
+execution predicates.
+
 Replay records are append-only in v0. Back up and restore the complete private
 directory as one unit. If it is lost or damaged, issue a new buyer requirement
 and nonce; do not replace it with an empty directory and continue trusting old
 requirements. v0 deliberately has no pruning or force-accept operation.
 
-Standard output is one `control-evidence-verification-result/v0` JSON object.
+The full `aeb-cee-verify` command emits one
+`control-evidence-verification-result/v0` JSON object. The G2 assessors emit
+versioned `control-evidence-assessment/*` objects documented by their public
+schemas; `buyer-reproduced` uses v2 so the strict, published v1 contract remains
+unchanged.
 Exit status `0` means valid, `1` means a semantic non-valid result, and `2`
 means invalid CLI usage or an internal encoding failure.
 
