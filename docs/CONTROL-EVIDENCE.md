@@ -69,6 +69,11 @@ them; a producer or verifier must not use Go HTML escaping when forming or check
 | `schemas/control-evidence-token-material.schema.json` | Decrypted closed canary-ID/input mapping |
 | `schemas/control-evidence-health-control-material.schema.json` | Decrypted closed control-ID/input mapping |
 | `schemas/control-evidence-context.schema.json` | Independent conformance trust, material, clock, and replay input |
+| `schemas/control-evidence-assessment.schema.json` | Strict external assessment v1 for `schema-valid` and `authenticated-at(T)` |
+| `schemas/control-evidence-assessment-v2.schema.json` | Additive external assessment v2 including `buyer-reproduced` |
+| `schemas/control-evidence-buyer-reproduction-statement.schema.json` | External buyer-reproduction DSSE wrapper |
+| `schemas/control-evidence-buyer-reproduction.schema.json` | Decoded buyer-reproduction statement and exact source/transcript bindings |
+| `schemas/control-evidence-buyer-reproduction-transcript.schema.json` | Closed normalized rerun-outcome transcript |
 
 The requirement pins its challenge nonce, required cases, each case's expected verdict, and canaries, observer identity/key,
 allowed signer roles, runner/adapter/tool identities, error limit, freshness policy, and independent
@@ -81,6 +86,14 @@ Required positive and negative canary ID sets must be disjoint; a canary ID cann
 The run envelope binds that requirement digest and nonce to the runner, corpus, tool, policy,
 adapter, scope, manifest, outcome ledger, times, and signer. A `result_claim` is diagnostic only;
 the verifier derives the authoritative result.
+
+Later G2 reproduction evidence is not a v0 package member. An external
+buyer-reproduction statement can bind this immutable source envelope, the exact
+input identities, a distinct run ID, retained normalized-transcript bytes, and a canonical
+logical projection re-derived from the rerun outcomes in that transcript. Its separate assessor verifies those
+bindings without turning the statement into proof that the named executable or
+corpus bytes ran or that the normalized transcript came from raw protocol I/O. See `ARTIFACT-PROVENANCE.md` for the predicate boundary and
+composition rules.
 
 ## Observation semantics
 
