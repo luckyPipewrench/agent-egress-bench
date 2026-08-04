@@ -1,11 +1,22 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
 	"sort"
 )
+
+type caseIndexDocument struct {
+	SchemaVersion int              `json:"schema_version"`
+	Cases         []caseIndexEntry `json:"cases"`
+}
+
+type caseIndexEntry struct {
+	CaseID          string `json:"case_id"`
+	ExpectedVerdict string `json:"expected_verdict"`
+}
 
 type corpusStatCase struct {
 	Category        string
@@ -110,4 +121,16 @@ func writeCorpusStats(w io.Writer, cases []corpusStatCase) error {
 		}
 	}
 	return nil
+}
+
+// writeCaseIndex emits the execution loader's normalized case classification.
+// This is the per-case authority for evidence wrappers: notably, multi-file
+// warn fixtures are normalized to allow exactly as they are during scoring.
+func writeCaseIndex(w io.Writer, cases []Case) error {
+	entries := make([]caseIndexEntry, 0, len(cases))
+	for _, c := range cases {
+		entries = append(entries, caseIndexEntry{CaseID: c.ID, ExpectedVerdict: c.ExpectedVerdict})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].CaseID < entries[j].CaseID })
+	return json.NewEncoder(w).Encode(caseIndexDocument{SchemaVersion: 1, Cases: entries})
 }

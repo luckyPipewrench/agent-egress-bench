@@ -47,6 +47,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [[ "$GITHUB_REPOSITORY" != "luckyPipewrench/agent-egress-bench" ]]; then
+            echo "Continuous candidates are canonical only in luckyPipewrench/agent-egress-bench." >&2
+            exit 1
+          fi
+
           git fetch --force --tags origin '+refs/heads/main:refs/remotes/origin/main'
 
           dirty_output="$(git status --porcelain=v1 --untracked-files=all)"
@@ -150,6 +155,7 @@ jobs:
           stderr_path="$artifact_dir/runner.stderr"
           command_path="$artifact_dir/command.txt"
           stats_path="$artifact_dir/make-stats.txt"
+          case_index_path="$artifact_dir/case-index.json"
 
           mcp_cmd="\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh"
           managed_proxy_cmd='./examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"'
@@ -168,8 +174,11 @@ jobs:
             --fixtures
             --output "$summary_path"
           )
+          # Leave seven minutes inside the 35-minute job budget for decision
+          # synthesis and evidence upload if the benchmark itself hangs.
+          run_cmd=(timeout --signal=TERM --kill-after=30s 28m "${cmd[@]}")
 
-          printf '%q ' "${cmd[@]}" > "$command_path"
+          printf '%q ' "${run_cmd[@]}" > "$command_path"
           printf '\n' >> "$command_path"
           command_string="$(<"$command_path")"
 
@@ -185,9 +194,10 @@ jobs:
           fi
 
           make stats > "$stats_path"
+          "$RUNNER_TEMP/aeb-gauntlet" --cases ./cases --case-index > "$case_index_path"
 
           set +e
-          "${cmd[@]}" > "$jsonl_path" 2> "$stderr_path"
+          "${run_cmd[@]}" > "$jsonl_path" 2> "$stderr_path"
           run_status=$?
           set -e
 
@@ -205,6 +215,8 @@ jobs:
             exit 1
           fi
 
+          results_abs="$(realpath "$jsonl_path")"
+          (cd validate && go run . results "$results_abs")
           jq -e '.case_count.errors == 0' "$summary_path" >/dev/null
 
           {
@@ -213,83 +225,8 @@ jobs:
             echo "RESULTS_PATH=$jsonl_path"
             echo "COMMAND_PATH=$command_path"
             echo "STATS_PATH=$stats_path"
+            echo "CASE_INDEX_PATH=$case_index_path"
           } >> "$GITHUB_ENV"
-
-      - name: Gate result against the recorded baseline
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-
-          with open(os.environ["SUMMARY_PATH"], encoding="utf-8") as fh:
-              summary = json.load(fh)
-          with open("ci/gauntlet-baseline.json", encoding="utf-8") as fh:
-              baseline = json.load(fh)
-
-          failures = []
-          notes = []
-
-          # Trustworthiness of the RUN is a hard gate. These say the measurement
-          # itself is not usable, regardless of what the numbers are.
-          if summary.get("sufficient") is not True:
-              failures.append(f"sufficient={summary.get('sufficient')!r}, want true")
-          errors = summary["case_count"].get("errors")
-          if errors != 0:
-              failures.append(f"case_count.errors={errors}, want 0")
-
-          # Scores are compared against floors and ceilings, never equalities.
-          # An exact-match gate would red this lane the moment the corpus grows,
-          # which is the normal and desired state of a growing benchmark.
-          for scope, metrics in baseline.get("score_floors", {}).items():
-              for metric, floor in metrics.items():
-                  actual = summary["scores"].get(scope, {}).get(metric)
-                  if actual is None:
-                      failures.append(f"scores.{scope}.{metric} missing from summary")
-                  elif float(actual) < float(floor) - 1e-12:
-                      failures.append(
-                          f"REGRESSION scores.{scope}.{metric}={actual}, below baseline floor {floor}"
-                      )
-                  elif float(actual) > float(floor) + 1e-12:
-                      notes.append(
-                          f"scores.{scope}.{metric}={actual} is ABOVE the baseline floor {floor}; "
-                          "refresh ci/gauntlet-baseline.json in a reviewed commit to lock the gain in"
-                      )
-
-          for scope, metrics in baseline.get("score_ceilings", {}).items():
-              for metric, ceiling in metrics.items():
-                  actual = summary["scores"].get(scope, {}).get(metric)
-                  if actual is None:
-                      failures.append(f"scores.{scope}.{metric} missing from summary")
-                  elif float(actual) > float(ceiling) + 1e-12:
-                      failures.append(
-                          f"REGRESSION scores.{scope}.{metric}={actual}, above baseline ceiling {ceiling}"
-                      )
-
-          # Case counts are REPORTED, not gated. The corpus is meant to grow, and
-          # a lane that fails on growth gets switched off by whoever adds a case.
-          observed = baseline.get("observed_case_count", {})
-          for key in ("total", "applicable", "not_applicable"):
-              was = observed.get(key)
-              now = summary["case_count"].get(key)
-              if was is not None and now != was:
-                  notes.append(f"case_count.{key} moved {was} -> {now} since the baseline was recorded")
-          was_reasons = observed.get("not_applicable_reasons")
-          now_reasons = summary["case_count"].get("not_applicable_reasons", {})
-          if was_reasons is not None and now_reasons != was_reasons:
-              notes.append(f"not_applicable_reasons moved {was_reasons!r} -> {now_reasons!r}")
-
-          for note in notes:
-              print(f"::notice::{note}")
-          for failure in failures:
-              print(f"::error::{failure}")
-          if failures:
-              raise SystemExit(f"{len(failures)} baseline gate failure(s)")
-          print("baseline gate: OK")
-          PY
 
       - name: Wrap provenance artifact
         shell: bash
@@ -303,6 +240,8 @@ jobs:
           import hashlib
           import json
           import os
+          import re
+          from collections import Counter
 
           with open(os.environ["SUMMARY_PATH"], encoding="utf-8") as fh:
               summary = json.load(fh)
@@ -310,13 +249,18 @@ jobs:
               command = fh.read().strip()
           with open(os.environ["STATS_PATH"], encoding="utf-8") as fh:
               make_stats = fh.read()
+          with open(os.environ["CASE_INDEX_PATH"], encoding="utf-8") as fh:
+              case_index = json.load(fh)
 
           manifest_path = "cases/MANIFEST.txt"
           with open(manifest_path, "rb") as fh:
               manifest = fh.read()
-          manifest_ids = {line.strip() for line in manifest.decode("utf-8").splitlines() if line.strip()}
-          if not manifest_ids:
+          manifest_id_list = [line.strip() for line in manifest.decode("utf-8").splitlines() if line.strip()]
+          manifest_ids = set(manifest_id_list)
+          if not manifest_id_list:
               raise SystemExit("refusing provenance artifact: cases/MANIFEST.txt has no logical case IDs")
+          if len(manifest_ids) != len(manifest_id_list):
+              raise SystemExit("refusing provenance artifact: cases/MANIFEST.txt contains duplicate IDs")
           manifest_sha256 = hashlib.sha256(manifest).hexdigest()
           logical_case_count = len(manifest_ids)
 
@@ -330,39 +274,139 @@ jobs:
                   except json.JSONDecodeError as exc:
                       raise SystemExit(f"invalid runner JSONL at line {line_number}: {exc}") from exc
 
-          def metric_counts(expected_verdict, actual_verdict):
-              denominator = sum(row.get("expected_verdict") == expected_verdict for row in results)
-              numerator = sum(
-                  row.get("expected_verdict") == expected_verdict and row.get("actual_verdict") == actual_verdict
-                  for row in results
+          result_ids = []
+          for row_number, row in enumerate(results, 1):
+              if not isinstance(row, dict):
+                  raise SystemExit(f"runner JSONL row {row_number} is not an object")
+              case_id = row.get("case_id")
+              if not isinstance(case_id, str) or not case_id:
+                  raise SystemExit(f"runner JSONL row {row_number} has no case_id")
+              result_ids.append(case_id)
+          duplicate_ids = sorted(case_id for case_id, count in Counter(result_ids).items() if count > 1)
+          if duplicate_ids:
+              raise SystemExit(f"runner JSONL contains duplicate case IDs: {duplicate_ids!r}")
+          result_id_set = set(result_ids)
+          if result_id_set != manifest_ids:
+              missing = sorted(manifest_ids - result_id_set)
+              unknown = sorted(result_id_set - manifest_ids)
+              raise SystemExit(
+                  "runner JSONL case IDs do not match cases/MANIFEST.txt: "
+                  f"missing={missing!r} unknown={unknown!r}"
               )
-              return {"numerator": numerator, "denominator": denominator}
 
-          applicable_metrics = {
-              "containment": metric_counts("block", "block"),
-              "false_positive_rate": metric_counts("allow", "block"),
+          if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
+              raise SystemExit("loader case index must be a schema_version 1 object")
+          case_index_rows = case_index.get("cases")
+          if not isinstance(case_index_rows, list):
+              raise SystemExit("loader case index cases must be an array")
+          expected_by_id = {}
+          for row_number, row in enumerate(case_index_rows, 1):
+              if not isinstance(row, dict):
+                  raise SystemExit(f"loader case index row {row_number} is not an object")
+              case_id = row.get("case_id")
+              expected = row.get("expected_verdict")
+              if not isinstance(case_id, str) or not case_id:
+                  raise SystemExit(f"loader case index row {row_number} has no case_id")
+              if case_id in expected_by_id:
+                  raise SystemExit(f"loader case index contains duplicate case ID {case_id!r}")
+              if expected not in {"block", "allow"}:
+                  raise SystemExit(
+                      f"loader case index row {row_number} has invalid normalized expected_verdict {expected!r}"
+                  )
+              expected_by_id[case_id] = expected
+          if set(expected_by_id) != manifest_ids:
+              raise SystemExit("loader case index IDs do not match cases/MANIFEST.txt")
+          for row_number, row in enumerate(results, 1):
+              expected = expected_by_id[row["case_id"]]
+              if row.get("expected_verdict") != expected:
+                  raise SystemExit(
+                      f"runner JSONL row {row_number} expected_verdict for {row['case_id']!r} "
+                      f"does not match loader case index: {row.get('expected_verdict')!r} != {expected!r}"
+                  )
+
+          def count_stat(name):
+              match = re.search(rf"(?m)^{re.escape(name)}: ([0-9]+)$", make_stats)
+              if match is None:
+                  raise SystemExit(f"make stats output is missing {name!r}")
+              return int(match.group(1))
+
+          def has_classification(evidence):
+              if not isinstance(evidence, dict):
+                  return False
+              if "kind" in evidence or "scanner" in evidence or "block_reason" in evidence:
+                  return True
+              return isinstance(evidence.get("error_message"), str) and bool(evidence["error_message"])
+
+          def has_structured_evidence(evidence):
+              if not isinstance(evidence, dict):
+                  return False
+              return any(
+                  key in evidence and evidence[key] is not None
+                  for key in ("kind", "scanner", "block_reason", "error_message", "decision", "findings")
+              )
+
+          applicable_results = [row for row in results if row.get("actual_verdict") != "not_applicable"]
+          applicable_malicious = [row for row in applicable_results if row.get("expected_verdict") == "block"]
+          applicable_benign = [row for row in applicable_results if row.get("expected_verdict") == "allow"]
+          blocked_malicious = [row for row in applicable_malicious if row.get("actual_verdict") == "block"]
+          blocked_benign = [row for row in applicable_benign if row.get("actual_verdict") == "block"]
+          classified = sum(has_classification(row.get("evidence")) for row in blocked_malicious)
+          evidence_emitted = sum(has_structured_evidence(row.get("evidence")) for row in blocked_malicious)
+          full_malicious = count_stat("block")
+          full_benign = count_stat("allow") + count_stat("warn")
+
+          metric_counts = {
+              "applicable": {
+                  "containment": {"numerator": len(blocked_malicious), "denominator": len(applicable_malicious)},
+                  "false_positive_rate": {"numerator": len(blocked_benign), "denominator": len(applicable_benign)},
+                  "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
+                  "evidence": {"numerator": evidence_emitted, "denominator": len(blocked_malicious)},
+              },
+              "full": {
+                  "containment": {"numerator": len(blocked_malicious), "denominator": full_malicious},
+                  "false_positive_rate": {"numerator": len(blocked_benign), "denominator": full_benign},
+                  "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
+                  "evidence": {"numerator": evidence_emitted, "denominator": len(blocked_malicious)},
+              },
           }
           if summary["case_count"]["total"] != logical_case_count:
               raise SystemExit(
                   "runner summary total does not match the pinned manifest: "
                   f"{summary['case_count']['total']} != {logical_case_count}"
               )
-          if summary["case_count"]["applicable"] != len(results):
+          if len(results) != logical_case_count:
+              raise SystemExit(
+                  "runner JSONL row count does not match the logical corpus: "
+                  f"{len(results)} != {logical_case_count}"
+              )
+          if summary["case_count"]["applicable"] != len(applicable_results):
               raise SystemExit(
                   "runner summary applicable count does not match runner JSONL: "
-                  f"{summary['case_count']['applicable']} != {len(results)}"
+                  f"{summary['case_count']['applicable']} != {len(applicable_results)}"
               )
-          for metric, counts in applicable_metrics.items():
-              expected_score = (
-                  counts["numerator"] / counts["denominator"]
-                  if counts["denominator"] else None
+          jsonl_errors = sum(row.get("actual_verdict") == "error" for row in applicable_results)
+          if summary["case_count"]["errors"] != jsonl_errors:
+              raise SystemExit(
+                  "runner summary error count does not match runner JSONL: "
+                  f"{summary['case_count']['errors']} != {jsonl_errors}"
               )
-              actual_score = summary["scores"]["applicable"].get(metric)
-              if actual_score != expected_score:
-                  raise SystemExit(
-                      f"runner summary scores.applicable.{metric} does not match runner JSONL: "
-                      f"{actual_score!r} != {expected_score!r}"
+          if full_malicious + full_benign != logical_case_count:
+              raise SystemExit(
+                  "make stats verdict counts do not match the logical corpus: "
+                  f"{full_malicious} + {full_benign} != {logical_case_count}"
+              )
+          for scope, metrics in metric_counts.items():
+              for metric, counts in metrics.items():
+                  expected_score = (
+                      counts["numerator"] / counts["denominator"]
+                      if counts["denominator"] else None
                   )
+                  actual_score = summary["scores"][scope].get(metric)
+                  if actual_score != expected_score:
+                      raise SystemExit(
+                          f"runner summary scores.{scope}.{metric} does not match bound metric counts: "
+                          f"{actual_score!r} != {expected_score!r}"
+                      )
 
           repo = os.environ["GITHUB_REPOSITORY"]
           run_id = os.environ["GITHUB_RUN_ID"]
@@ -390,6 +434,9 @@ jobs:
               "corpus_version": summary["corpus_version"],
               "corpus_sha256": summary["corpus_sha256"],
               "corpus_manifest_sha256": manifest_sha256,
+              "case_index_sha256": hashlib.sha256(
+                  json.dumps(case_index, sort_keys=True, separators=(",", ":")).encode("utf-8")
+              ).hexdigest(),
               "logical_case_count": logical_case_count,
               "tool_profile_sha256": summary["tool_profile_sha256"],
               "case_count": {
@@ -400,7 +447,7 @@ jobs:
                   "errors": summary["case_count"]["errors"],
               },
               "scores": summary["scores"],
-              "metric_counts": {"applicable": applicable_metrics},
+              "metric_counts": metric_counts,
               "sufficient": summary["sufficient"],
               "fixtures": True,
               "multifile_cases": True,
@@ -427,13 +474,108 @@ jobs:
           test -f "$ARTIFACT_JSON" || { echo "provenance artifact missing at $ARTIFACT_JSON"; exit 1; }
           python3 scripts/validate_gauntlet_scope.py "$ARTIFACT_JSON"
 
+      - name: Evaluate candidate without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          decision_path="$ARTIFACT_DIR/promotion-decision.json"
+          python3 scripts/evaluate_gauntlet_candidate.py evaluate \
+            --candidate "$ARTIFACT_JSON" \
+            --baseline ci/gauntlet-baseline.json \
+            --evidence "raw_summary=$SUMMARY_PATH" \
+            --evidence "results=$RESULTS_PATH" \
+            --evidence "runner_stderr=$ARTIFACT_DIR/runner.stderr" \
+            --evidence "command=$COMMAND_PATH" \
+            --evidence "stats=$STATS_PATH" \
+            --evidence "case_index=$CASE_INDEX_PATH" \
+            --decision "$decision_path"
+          echo "DECISION_PATH=$decision_path" >> "$GITHUB_ENV"
+
+      # Earlier failures skip the normal evaluator. Still produce a blocked,
+      # machine-readable decision before upload so malformed or partial runs
+      # leave an auditable reason instead of only a red job status.
+      - name: Ensure fail-closed decision exists
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$GAUNTLET_ARTIFACT_DIR"
+          candidate_path="$artifact_dir/continuous-gauntlet-pipelock-${PIPELOCK_TAG}.json"
+          decision_path="$artifact_dir/promotion-decision.json"
+          mkdir -p "$artifact_dir"
+          if [[ ! -f "$decision_path" ]]; then
+            if [[ -f scripts/evaluate_gauntlet_candidate.py ]]; then
+              python3 scripts/evaluate_gauntlet_candidate.py evaluate \
+                --candidate "$candidate_path" \
+                --baseline ci/gauntlet-baseline.json \
+                --evidence "raw_summary=$artifact_dir/raw-summary.json" \
+                --evidence "results=$artifact_dir/results.jsonl" \
+                --evidence "runner_stderr=$artifact_dir/runner.stderr" \
+                --evidence "command=$artifact_dir/command.txt" \
+                --evidence "stats=$artifact_dir/make-stats.txt" \
+                --evidence "case_index=$artifact_dir/case-index.json" \
+                --decision "$decision_path"
+            else
+              # Checkout itself can fail before repository scripts exist. Keep
+              # that failure auditable too instead of turning it into no artifact.
+              temporary_decision="$decision_path.tmp"
+              jq -n '{
+                schema_version: 1,
+                candidate_sha256: null,
+                baseline_sha256: null,
+                evidence_sha256: {},
+                blocked: true,
+                promotion_status: "blocked",
+                failures: ["repository evaluator unavailable after an earlier workflow failure"],
+                review_notes: []
+              }' > "$temporary_decision"
+              mv "$temporary_decision" "$decision_path"
+            fi
+          fi
+          {
+            echo "DECISION_PATH=$decision_path"
+            echo "ARTIFACT_JSON=$candidate_path"
+          } >> "$GITHUB_ENV"
+          {
+            echo '## Continuous Gauntlet candidate'
+            echo
+            echo 'This run did not publish or replace a public result.'
+            echo
+            jq -r '"- Promotion status: `\(.promotion_status)`\n- Blocked: `\(.blocked)`\n- Candidate SHA-256: `\(.candidate_sha256)`"' "$decision_path"
+            jq -r '.review_notes[]? | "- Review: " + .' "$decision_path"
+            jq -r '.failures[]? | "- Failure: " + .' "$decision_path"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload provenance artifact
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: continuous-gauntlet-pipelock-${{ env.PIPELOCK_TAG }}
           path: |
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/continuous-gauntlet-pipelock-${{ env.PIPELOCK_TAG }}.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/promotion-decision.json
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/raw-summary.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/results.jsonl
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/runner.stderr
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/command.txt
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/make-stats.txt
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/case-index.json
           retention-days: 14
+
+      # Enforce only after upload. A regression must leave the candidate and
+      # its reason available for review instead of disappearing when CI turns red.
+      - name: Enforce candidate decision
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DECISION_PATH:-}" || { echo "candidate decision was not produced" >&2; exit 1; }
+          python3 scripts/evaluate_gauntlet_candidate.py enforce "$DECISION_PATH" \
+            --candidate "$ARTIFACT_JSON" \
+            --baseline ci/gauntlet-baseline.json \
+            --evidence "raw_summary=$ARTIFACT_DIR/raw-summary.json" \
+            --evidence "results=$ARTIFACT_DIR/results.jsonl" \
+            --evidence "runner_stderr=$ARTIFACT_DIR/runner.stderr" \
+            --evidence "command=$ARTIFACT_DIR/command.txt" \
+            --evidence "stats=$ARTIFACT_DIR/make-stats.txt" \
+            --evidence "case_index=$ARTIFACT_DIR/case-index.json"

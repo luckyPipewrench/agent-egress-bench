@@ -13,6 +13,7 @@ from pathlib import Path
 REQUIRED_SCOPE_PATHS = (
     ("artifact_id",),
     ("corpus_manifest_sha256",),
+    ("case_index_sha256",),
     ("logical_case_count",),
     ("runner_version",),
     ("scoring_version",),
@@ -20,14 +21,11 @@ REQUIRED_SCOPE_PATHS = (
     ("case_count", "total"),
     ("case_count", "not_applicable"),
     ("case_count", "not_applicable_reasons"),
-    ("scores", "applicable", "containment"),
-    ("scores", "applicable", "false_positive_rate"),
-    ("metric_counts", "applicable", "containment", "numerator"),
-    ("metric_counts", "applicable", "containment", "denominator"),
-    ("metric_counts", "applicable", "false_positive_rate", "numerator"),
-    ("metric_counts", "applicable", "false_positive_rate", "denominator"),
+    ("case_count", "errors"),
     ("canonical_url",),
 )
+METRICS = ("containment", "false_positive_rate", "detection", "evidence")
+SCOPES = ("applicable", "full")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "cases" / "MANIFEST.txt"
@@ -85,10 +83,10 @@ def checked_out_corpus_identity():
     return hashlib.sha256(raw).hexdigest(), len(logical_ids)
 
 
-def validate_metric_fraction(document, metric):
-    """Bind an applicable-view score to its explicit numerator/denominator."""
-    score_path = ("scores", "applicable", metric)
-    count_path = ("metric_counts", "applicable", metric)
+def validate_metric_fraction(document, scope, metric):
+    """Bind a score to its explicit numerator/denominator."""
+    score_path = ("scores", scope, metric)
+    count_path = ("metric_counts", scope, metric)
     numerator = non_negative_integer(document, count_path + ("numerator",))
     denominator = non_negative_integer(document, count_path + ("denominator",))
     if numerator > denominator:
@@ -121,6 +119,9 @@ def validate_scope(document):
     manifest_digest = non_empty_string(document, ("corpus_manifest_sha256",))
     if not SHA256_HEX.fullmatch(manifest_digest):
         raise ValueError("corpus_manifest_sha256 must be 64 lower-case hex characters")
+    case_index_digest = non_empty_string(document, ("case_index_sha256",))
+    if not SHA256_HEX.fullmatch(case_index_digest):
+        raise ValueError("case_index_sha256 must be 64 lower-case hex characters")
     manifest_count = non_negative_integer(document, ("logical_case_count",))
     checked_out_digest, checked_out_count = checked_out_corpus_identity()
     if manifest_digest != checked_out_digest:
@@ -131,6 +132,7 @@ def validate_scope(document):
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
     not_applicable = non_negative_integer(document, ("case_count", "not_applicable"))
+    errors = non_negative_integer(document, ("case_count", "errors"))
     if total == 0:
         raise ValueError("case_count.total must be greater than zero")
     if total != checked_out_count:
@@ -139,6 +141,8 @@ def validate_scope(document):
         raise ValueError("case_count.applicable cannot exceed case_count.total")
     if applicable + not_applicable != total:
         raise ValueError("case_count.applicable plus not_applicable must equal case_count.total")
+    if errors > applicable:
+        raise ValueError("case_count.errors cannot exceed case_count.applicable")
 
     reasons = path_value(document, ("case_count", "not_applicable_reasons"))
     if not isinstance(reasons, dict):
@@ -157,8 +161,15 @@ def validate_scope(document):
     # state it must be null rather than a made-up score; otherwise it must be a
     # finite fraction because scope-render.js publishes it as the headline.
     containment = path_value(document, ("scores", "applicable", "containment"))
-    _, containment_denominator = validate_metric_fraction(document, "containment")
-    _, false_positive_denominator = validate_metric_fraction(document, "false_positive_rate")
+    counts = {
+        scope: {
+            metric: validate_metric_fraction(document, scope, metric)
+            for metric in METRICS
+        }
+        for scope in SCOPES
+    }
+    containment_numerator, containment_denominator = counts["applicable"]["containment"]
+    _, false_positive_denominator = counts["applicable"]["false_positive_rate"]
     if containment_denominator > applicable or false_positive_denominator > applicable:
         raise ValueError("metric denominator cannot exceed case_count.applicable")
     if applicable == 0:
@@ -169,6 +180,21 @@ def validate_scope(document):
             raise ValueError("containment must have a denominator when case_count.applicable is non-zero")
     if applicable == 0 and false_positive_denominator != 0:
         raise ValueError("false_positive_rate must have a zero denominator when case_count.applicable is zero")
+    if containment_denominator + false_positive_denominator != applicable:
+        raise ValueError("applicable metric denominators must partition case_count.applicable")
+    if counts["full"]["containment"][1] + counts["full"]["false_positive_rate"][1] != total:
+        raise ValueError("full metric denominators must partition case_count.total")
+    for metric in METRICS:
+        if counts["full"][metric][0] != counts["applicable"][metric][0]:
+            raise ValueError(
+                f"metric_counts.full.{metric}.numerator must equal applicable numerator"
+            )
+    for scope in SCOPES:
+        for metric in ("detection", "evidence"):
+            if counts[scope][metric][1] != containment_numerator:
+                raise ValueError(
+                    f"metric_counts.{scope}.{metric}.denominator must equal blocked malicious count"
+                )
 
     canonical_url = path_value(document, ("canonical_url",))
     if not isinstance(canonical_url, str) or not canonical_url:

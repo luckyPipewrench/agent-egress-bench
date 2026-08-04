@@ -33,6 +33,7 @@ func main() {
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
 	multiFileCases := flag.String("multifile-cases", "", "directory of multi-file MCP-drift cases (each subdirectory has case.yaml + before.json + after.json + expected.json). Driver replays before then after through a single MCP session and observes the verdict on the second tools/list response.")
 	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
+	caseIndex := flag.Bool("case-index", false, "print loader-normalized case IDs and expected verdicts as JSON (requires --cases; ignores runner profile flags)")
 
 	// --debug / -v: emit verbose per-case diagnostics to stderr. Both
 	// flag names point at the same variable so either can be used.
@@ -53,6 +54,22 @@ func main() {
 		}
 		if err := writeCorpusStats(os.Stdout, cases); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "error: write corpus stats: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *caseIndex {
+		if *casesDir == "" {
+			flag.Usage()
+			os.Exit(1)
+		}
+		cases, err := loadCorpus(*casesDir)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := writeCaseIndex(os.Stdout, cases); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: write case index: %v\n", err)
 			os.Exit(1)
 		}
 		return

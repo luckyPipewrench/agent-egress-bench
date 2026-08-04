@@ -1,9 +1,12 @@
 {
   "_comment": "Baseline for the continuous gauntlet lane. Scores are floors, not equalities: the lane fails when containment or detection or evidence drops below these, or when the false-positive rate rises above its ceiling. Case counts are recorded for reporting and are EXPECTED to move as the corpus grows; a count change is reported, never failed. Update this file in a reviewed commit when a score legitimately moves, so the change is a visible diff rather than a silently-adjusted threshold.",
+  "schema_version": 1,
   "recorded_on": "2026-08-01",
   "pipelock_version": "3.3.0",
   "corpus_git_sha": "333ad01df3cedbcee7ba455011b9242e34068dac",
   "corpus_version": "v2.2.0",
+  "scoring_version": "2.4",
+  "runner_version": "0.4.2",
   "observed_case_count": {
     "total": 213,
     "applicable": 212,
