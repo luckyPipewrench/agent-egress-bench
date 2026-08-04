@@ -64,49 +64,49 @@ func TestAssessmentSchemaRejectsIncompleteBuyerReproducedPass(t *testing.T) {
 func TestAssessBuyerReproducedHostile(t *testing.T) {
 	tests := []struct {
 		name, reason string
-		mutate       func(*BuyerReproducedOptions, *buyerReproduction, string, string)
+		mutate       func(*testing.T, *buyerReproduction, string, string)
 	}{
-		{"source-envelope-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-envelope-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.EnvelopePayloadSHA256 = stringsOfA(64)
 		}},
-		{"source-requirement-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-requirement-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.RequirementPayloadSHA256 = stringsOfA(64)
 		}},
-		{"source-tool-profile-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-tool-profile-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.ToolProfileSHA256 = stringsOfA(64)
 		}},
-		{"source-runner-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-runner-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.RunnerBinarySHA256 = stringsOfA(64)
 		}},
-		{"source-corpus-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-corpus-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.CorpusSHA256 = stringsOfA(64)
 		}},
-		{"source-corpus-manifest-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-corpus-manifest-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.CorpusManifestSHA256 = stringsOfA(64)
 		}},
-		{"source-scoring-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-scoring-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.ScoringVersion = "different"
 		}},
-		{"source-policy-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-policy-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.PolicySHA256 = stringsOfA(64)
 		}},
-		{"source-adapter-binding", "buyer_statement_source_binding_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"source-adapter-binding", "buyer_statement_source_binding_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Source.AdapterSHA256 = stringsOfA(64)
 		}},
-		{"same-run-id", "reproduction_run_id_not_fresh", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, transcriptPath string) {
+		{"same-run-id", "reproduction_run_id_not_fresh", func(t *testing.T, statement *buyerReproduction, _, transcriptPath string) {
 			statement.Reproduction.RunID = statement.Source.OriginalRunID
 			transcript := readBuyerTranscript(t, transcriptPath)
 			transcript.ReproductionRunID = statement.Source.OriginalRunID
 			writeBuyerTranscript(t, transcriptPath, transcript)
 			statement.Reproduction.TranscriptSHA256 = digestBytes(mustRead(t, transcriptPath))
 		}},
-		{"transcript-digest", "reproduction_transcript_digest_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"transcript-digest", "reproduction_transcript_digest_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Reproduction.TranscriptSHA256 = stringsOfA(64)
 		}},
-		{"projection-digest", "reproduction_projection_digest_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, _ string) {
+		{"projection-digest", "reproduction_projection_digest_mismatch", func(_ *testing.T, statement *buyerReproduction, _, _ string) {
 			statement.Reproduction.OutcomesProjectionSHA256 = stringsOfA(64)
 		}},
-		{"outcomes-mismatch", "reproduction_outcomes_mismatch", func(_ *BuyerReproducedOptions, statement *buyerReproduction, _, transcriptPath string) {
+		{"outcomes-mismatch", "reproduction_outcomes_mismatch", func(t *testing.T, statement *buyerReproduction, _, transcriptPath string) {
 			transcript := readBuyerTranscript(t, transcriptPath)
 			transcript.Outcomes[0].ActualVerdict = "allow"
 			transcript.Outcomes[0].Outcome = "fail"
@@ -115,7 +115,7 @@ func TestAssessBuyerReproducedHostile(t *testing.T) {
 			statement.Reproduction.TranscriptSHA256 = digestBytes(mustRead(t, transcriptPath))
 			projection, ok := canonicalProjection(transcript.Outcomes)
 			if !ok {
-				panic("invalid test projection")
+				t.Fatal("invalid test projection")
 			}
 			statement.Reproduction.OutcomesProjectionSHA256 = digestBytes(projection)
 		}},
@@ -123,7 +123,7 @@ func TestAssessBuyerReproducedHostile(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			options, statement, statementPath, transcriptPath := buyerReproducedFixture(t)
-			test.mutate(&options, statement, statementPath, transcriptPath)
+			test.mutate(t, statement, statementPath, transcriptPath)
 			writeBuyerStatement(t, statementPath, *statement, buyerTestKey("buyer"))
 			result := AssessBuyerReproduced(options)
 			assertBuyerReproducedResult(t, result, "FAIL", test.reason)
@@ -314,13 +314,13 @@ func TestAssessBuyerReproducedRejectsMalformedTranscript(t *testing.T) {
 	t.Run("not-jcs", func(t *testing.T) {
 		options, statement, statementPath, transcriptPath := buyerReproducedFixture(t)
 		mustWrite(t, transcriptPath, append([]byte(" "), mustRead(t, transcriptPath)...))
-		rebindBuyerTranscript(t, statement, statementPath, transcriptPath, false)
+		rebindBuyerTranscript(t, statement, statementPath, transcriptPath)
 		assertBuyerReproducedResult(t, AssessBuyerReproduced(options), "FAIL", "reproduction_transcript_not_jcs")
 	})
 	t.Run("schema", func(t *testing.T) {
 		options, statement, statementPath, transcriptPath := buyerReproducedFixture(t)
 		mustWrite(t, transcriptPath, []byte("{}"))
-		rebindBuyerTranscript(t, statement, statementPath, transcriptPath, false)
+		rebindBuyerTranscript(t, statement, statementPath, transcriptPath)
 		assertBuyerReproducedResult(t, AssessBuyerReproduced(options), "FAIL", "reproduction_transcript_invalid")
 	})
 	t.Run("source-binding", func(t *testing.T) {
@@ -328,7 +328,7 @@ func TestAssessBuyerReproducedRejectsMalformedTranscript(t *testing.T) {
 		transcript := readBuyerTranscript(t, transcriptPath)
 		transcript.SourceEnvelopePayloadSHA256 = stringsOfA(64)
 		writeBuyerTranscript(t, transcriptPath, transcript)
-		rebindBuyerTranscript(t, statement, statementPath, transcriptPath, false)
+		rebindBuyerTranscript(t, statement, statementPath, transcriptPath)
 		assertBuyerReproducedResult(t, AssessBuyerReproduced(options), "FAIL", "reproduction_transcript_binding_mismatch")
 	})
 	t.Run("run-binding", func(t *testing.T) {
@@ -336,7 +336,7 @@ func TestAssessBuyerReproducedRejectsMalformedTranscript(t *testing.T) {
 		transcript := readBuyerTranscript(t, transcriptPath)
 		transcript.ReproductionRunID = stringsOfA(64)
 		writeBuyerTranscript(t, transcriptPath, transcript)
-		rebindBuyerTranscript(t, statement, statementPath, transcriptPath, false)
+		rebindBuyerTranscript(t, statement, statementPath, transcriptPath)
 		assertBuyerReproducedResult(t, AssessBuyerReproduced(options), "FAIL", "reproduction_transcript_binding_mismatch")
 	})
 	t.Run("contradictory-outcome", func(t *testing.T) {
@@ -344,7 +344,7 @@ func TestAssessBuyerReproducedRejectsMalformedTranscript(t *testing.T) {
 		transcript := readBuyerTranscript(t, transcriptPath)
 		transcript.Outcomes[0].Outcome = "fail"
 		writeBuyerTranscript(t, transcriptPath, transcript)
-		rebindBuyerTranscript(t, statement, statementPath, transcriptPath, false)
+		rebindBuyerTranscript(t, statement, statementPath, transcriptPath)
 		assertBuyerReproducedResult(t, AssessBuyerReproduced(options), "FAIL", "reproduction_transcript_invalid")
 	})
 }
@@ -453,6 +453,62 @@ func TestReadExternalBounded(t *testing.T) {
 	if _, err := readExternalBounded(root, outside, 1); err == nil {
 		t.Fatal("oversized evidence accepted")
 	}
+	replacePath := filepath.Join(t.TempDir(), "replace.json")
+	replacementPath := filepath.Join(t.TempDir(), "replacement.json")
+	mustWrite(t, replacePath, []byte("original"))
+	mustWrite(t, replacementPath, []byte("replacement"))
+	swapped := false
+	_, replacementErr := readExternalBoundedWithHook(root, replacePath, 32, func() error {
+		if err := os.Rename(replacementPath, replacePath); err != nil {
+			return err
+		}
+		swapped = true
+		return nil
+	})
+	if !swapped {
+		t.Fatal("test did not replace evidence after open")
+	}
+	if replacementErr == nil {
+		t.Fatal("evidence replacement after open was accepted")
+	}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeRoot, err := filepath.Rel(workingDir, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pathOutsideRoot(relativeRoot, outside) {
+		t.Fatal("mixed relative/absolute external path rejected")
+	}
+}
+
+func TestBuyerReproductionTranscriptSchemaBindsClassification(t *testing.T) {
+	_, _, _, transcriptPath := buyerReproducedFixture(t)
+	transcript := readBuyerTranscript(t, transcriptPath)
+	schemas, err := loadSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	validate := func(candidate buyerReproductionTranscript) error {
+		value, err := strictJSON(marshalJSON(t, candidate), nil)
+		if err != nil {
+			return err
+		}
+		return validateSchema(schemas.buyerReproductionTranscript, value)
+	}
+	if err := validate(transcript); err != nil {
+		t.Fatalf("valid transcript rejected: %v", err)
+	}
+	transcript.Outcomes[0].ScoringFacts.Classification = "incorrect"
+	if err := validate(transcript); err == nil {
+		t.Fatal("pass outcome with incorrect classification accepted")
+	}
+	transcript.Outcomes[0].Outcome = "fail"
+	if err := validate(transcript); err != nil {
+		t.Fatalf("fail outcome with incorrect classification rejected: %v", err)
+	}
 }
 
 func TestBuyerReproductionStatementLimitCoversPublishedPayloadMaximum(t *testing.T) {
@@ -557,16 +613,9 @@ func writeBuyerTranscript(t *testing.T, path string, transcript buyerReproductio
 	mustWrite(t, path, marshalJSON(t, transcript))
 }
 
-func rebindBuyerTranscript(t *testing.T, statement *buyerReproduction, statementPath, transcriptPath string, updateProjection bool) {
+func rebindBuyerTranscript(t *testing.T, statement *buyerReproduction, statementPath, transcriptPath string) {
 	t.Helper()
 	statement.Reproduction.TranscriptSHA256 = digestBytes(mustRead(t, transcriptPath))
-	if updateProjection {
-		projection, ok := canonicalProjection(readBuyerTranscript(t, transcriptPath).Outcomes)
-		if !ok {
-			t.Fatal("test transcript projection invalid")
-		}
-		statement.Reproduction.OutcomesProjectionSHA256 = digestBytes(projection)
-	}
 	writeBuyerStatement(t, statementPath, *statement, buyerTestKey("buyer"))
 }
 

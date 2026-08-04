@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "required": ["key_id", "role"],
       "properties": {
-        "key_id": {"$ref": "#/$defs/sha256"},
+        "key_id": {"$ref": "#/$defs/hex32"},
         "role": {"const": "buyer-reproducer"}
       }
     },
@@ -31,7 +31,7 @@
         "scoring_version": {"type": "string", "minLength": 1, "maxLength": 64},
         "policy_sha256": {"$ref": "#/$defs/sha256"},
         "adapter_sha256": {"$ref": "#/$defs/sha256"},
-        "original_run_id": {"$ref": "#/$defs/sha256"}
+        "original_run_id": {"$ref": "#/$defs/hex32"}
       }
     },
     "reproduction": {
@@ -39,7 +39,7 @@
       "additionalProperties": false,
       "required": ["run_id", "transcript_sha256", "outcomes_projection_sha256"],
       "properties": {
-        "run_id": {"$ref": "#/$defs/sha256"},
+        "run_id": {"$ref": "#/$defs/hex32"},
         "transcript_sha256": {"$ref": "#/$defs/sha256"},
         "outcomes_projection_sha256": {"$ref": "#/$defs/sha256"}
       }
@@ -47,6 +47,7 @@
   },
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "hex32": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "opaqueID": {"type": "string", "minLength": 1, "maxLength": 256}
   }
 }

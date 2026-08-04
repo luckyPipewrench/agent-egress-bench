@@ -36,6 +36,7 @@ func main() {
 		VerifierSHA256: fmt.Sprintf("%x", sha256.Sum256(binary)), AssessmentTime: time.Now(),
 	})
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		fmt.Fprintln(os.Stderr, "encode assessment:", err)
 		os.Exit(2)
 	}
 	if result.Predicates[0].Status != "PASS" {

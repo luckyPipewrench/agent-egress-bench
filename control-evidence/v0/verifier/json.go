@@ -303,6 +303,10 @@ func readBounded(path string, max int64) ([]byte, error) {
 // descriptor open through the final path checks prevents a symlink or rename
 // swap from validating one file while the assessor consumes another.
 func readExternalBounded(root, path string, max int64) ([]byte, error) {
+	return readExternalBoundedWithHook(root, path, max, nil)
+}
+
+func readExternalBoundedWithHook(root, path string, max int64, afterOpen func() error) ([]byte, error) {
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err
@@ -330,6 +334,11 @@ func readExternalBounded(root, path string, max int64) ([]byte, error) {
 	}
 	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
 		return nil, errors.New("evidence changed while opening")
+	}
+	if afterOpen != nil {
+		if err := afterOpen(); err != nil {
+			return nil, fmt.Errorf("after-open check: %w", err)
+		}
 	}
 
 	resolvedPath, err := filepath.EvalSymlinks(path)
@@ -372,8 +381,20 @@ func readExternalBounded(root, path string, max int64) ([]byte, error) {
 }
 
 func pathOutsideRoot(root, path string) bool {
-	relative, err := filepath.Rel(root, path)
-	if err != nil || relative == "." || relative == "" {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(absRoot, absPath)
+	if err != nil {
+		// Absolute paths on different volumes cannot be descendants.
+		return true
+	}
+	if relative == "." || relative == "" {
 		return false
 	}
 	return relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator))

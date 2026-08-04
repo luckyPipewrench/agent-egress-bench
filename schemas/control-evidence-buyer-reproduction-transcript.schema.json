@@ -44,6 +44,14 @@
       },
       "allOf": [
         {
+          "if": {"properties": {"outcome": {"const": "pass"}}, "required": ["outcome"]},
+          "then": {"properties": {"scoring_facts": {"properties": {"classification": {"const": "correct"}}}}}
+        },
+        {
+          "if": {"properties": {"outcome": {"const": "fail"}}, "required": ["outcome"]},
+          "then": {"properties": {"scoring_facts": {"properties": {"classification": {"const": "incorrect"}}}}}
+        },
+        {
           "if": {"properties": {"outcome": {"const": "not_applicable"}}, "required": ["outcome"]},
           "then": {
             "properties": {
