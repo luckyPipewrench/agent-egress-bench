@@ -19,10 +19,12 @@ import (
 
 type schemaSet struct {
 	dsse, requirement, envelope, manifest, outcomes, clock, observer, tokenMaterial, healthMaterial, context, toolProfile,
-		buyerReproduction, buyerReproductionStatement, buyerReproductionTranscript *jsonschema.Schema
+	buyerReproduction, buyerReproductionStatement, buyerReproductionTranscript *jsonschema.Schema
 }
 
 const maxJSONDepth = 128
+
+var errEvidenceNotExternal = errors.New("evidence is not external to the source package")
 
 //go:embed schemas/*.json
 var embeddedSchemas embed.FS
@@ -294,6 +296,87 @@ func readBounded(path string, max int64) ([]byte, error) {
 		return nil, fmt.Errorf("file exceeds %d bytes", max)
 	}
 	return data, nil
+}
+
+// readExternalBounded validates the external-path boundary against the same
+// already-open file descriptor that supplies the returned bytes. Keeping the
+// descriptor open through the final path checks prevents a symlink or rename
+// swap from validating one file while the assessor consumes another.
+func readExternalBounded(root, path string, max int64) ([]byte, error) {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	rootInfo, err := os.Stat(resolvedRoot)
+	if err != nil || !rootInfo.IsDir() {
+		return nil, errors.New("source package root is not a directory")
+	}
+
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, errors.New("evidence is not a regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	opened, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		return nil, errors.New("evidence changed while opening")
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, err
+	}
+	resolvedInfo, err := os.Stat(resolvedPath)
+	if err != nil || !os.SameFile(opened, resolvedInfo) {
+		return nil, errors.New("evidence path changed while opening")
+	}
+	if !pathOutsideRoot(resolvedRoot, resolvedPath) {
+		return nil, errEvidenceNotExternal
+	}
+
+	data, err := io.ReadAll(io.LimitReader(file, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > max {
+		return nil, fmt.Errorf("file exceeds %d bytes", max)
+	}
+
+	after, err := os.Lstat(path)
+	if err != nil || !os.SameFile(opened, after) {
+		return nil, errors.New("evidence changed while reading")
+	}
+	resolvedPathAfter, err := filepath.EvalSymlinks(path)
+	if err != nil || resolvedPathAfter != resolvedPath {
+		return nil, errors.New("evidence path changed while reading")
+	}
+	resolvedRootAfter, err := filepath.EvalSymlinks(root)
+	if err != nil || resolvedRootAfter != resolvedRoot {
+		return nil, errors.New("source package root changed while reading evidence")
+	}
+	rootInfoAfter, err := os.Stat(resolvedRootAfter)
+	if err != nil || !os.SameFile(rootInfo, rootInfoAfter) {
+		return nil, errors.New("source package root changed while reading evidence")
+	}
+	return data, nil
+}
+
+func pathOutsideRoot(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == "." || relative == "" {
+		return false
+	}
+	return relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func normalizedPath(path string) bool {

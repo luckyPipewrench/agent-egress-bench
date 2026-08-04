@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -418,29 +419,59 @@ func TestValidLogicalProjectionRow(t *testing.T) {
 	}
 }
 
-func TestExternalEvidencePath(t *testing.T) {
+func TestReadExternalBounded(t *testing.T) {
 	root := t.TempDir()
 	inside := filepath.Join(root, "inside.json")
 	mustWrite(t, inside, []byte("{}"))
 	outside := filepath.Join(t.TempDir(), "outside.json")
 	mustWrite(t, outside, []byte("{}"))
-	if externalEvidencePath(root, inside) {
-		t.Fatal("inside evidence accepted as external")
+	if _, err := readExternalBounded(root, inside, 16); !errors.Is(err, errEvidenceNotExternal) {
+		t.Fatalf("inside evidence error = %v, want not-external", err)
 	}
-	if !externalEvidencePath(root, outside) {
-		t.Fatal("outside evidence rejected")
+	if data, err := readExternalBounded(root, outside, 16); err != nil || string(data) != "{}" {
+		t.Fatalf("outside evidence = %q, %v", data, err)
 	}
-	if externalEvidencePath(filepath.Join(root, "missing"), outside) {
+	if _, err := readExternalBounded(filepath.Join(root, "missing"), outside, 16); err == nil {
 		t.Fatal("missing root accepted")
 	}
-	if externalEvidencePath(root, filepath.Join(root, "missing")) {
+	if _, err := readExternalBounded(root, filepath.Join(root, "missing"), 16); err == nil {
 		t.Fatal("missing evidence accepted")
 	}
-	if externalEvidencePath(inside, outside) {
+	if _, err := readExternalBounded(inside, outside, 16); err == nil {
 		t.Fatal("regular file accepted as package root")
 	}
-	if externalEvidencePath(root, t.TempDir()) {
+	if _, err := readExternalBounded(root, t.TempDir(), 16); err == nil {
 		t.Fatal("directory accepted as evidence file")
+	}
+	symlink := filepath.Join(t.TempDir(), "evidence-link.json")
+	if err := os.Symlink(outside, symlink); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readExternalBounded(root, symlink, 16); err == nil {
+		t.Fatal("symlink evidence accepted")
+	}
+	if _, err := readExternalBounded(root, outside, 1); err == nil {
+		t.Fatal("oversized evidence accepted")
+	}
+}
+
+func TestBuyerReproductionStatementLimitCoversPublishedPayloadMaximum(t *testing.T) {
+	const compactWrapperOverhead = int64(512)
+	var published struct {
+		Properties struct {
+			Payload struct {
+				MaxLength int64 `json:"maxLength"`
+			} `json:"payload"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(mustRead(t, filepath.Join("..", "..", "..", "schemas", "control-evidence-buyer-reproduction-statement.schema.json")), &published); err != nil {
+		t.Fatal(err)
+	}
+	if published.Properties.Payload.MaxLength < 1 {
+		t.Fatal("published statement schema has no payload maximum")
+	}
+	if maxReproductionStatement < published.Properties.Payload.MaxLength+compactWrapperOverhead {
+		t.Fatalf("statement limit %d cannot hold maximum payload plus wrapper", maxReproductionStatement)
 	}
 }
 

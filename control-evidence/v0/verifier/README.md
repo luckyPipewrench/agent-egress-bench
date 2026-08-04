@@ -63,6 +63,9 @@ go run ./cmd/aeb-ce-buyer-reproduced \
 ```
 
 The statement and transcript must be regular files outside the source package.
+The assessor reads them through already-open descriptors while validating that
+boundary, rejects symlink or path replacement, and caps the complete statement
+at 2 MiB and the transcript at 64 MiB.
 A `buyer-reproduced` PASS means the same requirement-signing key attested a
 distinct run with the exact source/input bindings and matching logical outcome
 projection re-derived from that normalized transcript. It does not authorize

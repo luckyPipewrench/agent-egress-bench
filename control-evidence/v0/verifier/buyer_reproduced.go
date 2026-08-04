@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -20,7 +19,7 @@ const (
 	buyerReproductionProfile  = "control-evidence-buyer-reproduction/v0"
 	buyerReproductionType     = "application/vnd.agent-egress-bench.control-evidence-buyer-reproduction.v0+json"
 	buyerAssessmentProfile    = "control-evidence-assessment/v2"
-	maxReproductionStatement  = int64(1 << 20)
+	maxReproductionStatement  = int64(2 << 20)
 	maxReproductionTranscript = int64(64 << 20)
 )
 
@@ -126,16 +125,19 @@ func AssessBuyerReproduced(options BuyerReproducedOptions) BuyerReproducedAssess
 	if _, err := os.Lstat(options.PackageDir); err != nil {
 		return finish("UNVERIFIABLE", "source_package_unavailable")
 	}
-	statementBytes, err := readBounded(options.StatementPath, maxReproductionStatement)
+	statementBytes, err := readExternalBounded(options.PackageDir, options.StatementPath, maxReproductionStatement)
 	if err != nil {
+		if errors.Is(err, errEvidenceNotExternal) {
+			return finish("FAIL", "reproduction_evidence_not_external")
+		}
 		return finish("UNVERIFIABLE", "reproduction_statement_unavailable")
 	}
-	transcriptBytes, err := readBounded(options.TranscriptPath, maxReproductionTranscript)
+	transcriptBytes, err := readExternalBounded(options.PackageDir, options.TranscriptPath, maxReproductionTranscript)
 	if err != nil || len(transcriptBytes) == 0 {
+		if errors.Is(err, errEvidenceNotExternal) {
+			return finish("FAIL", "reproduction_evidence_not_external")
+		}
 		return finish("UNVERIFIABLE", "reproduction_transcript_unavailable")
-	}
-	if !externalEvidencePath(options.PackageDir, options.StatementPath) || !externalEvidencePath(options.PackageDir, options.TranscriptPath) {
-		return finish("FAIL", "reproduction_evidence_not_external")
 	}
 	files, err := loadDirectoryPackageWithOptions(options.PackageDir, false)
 	if err != nil {
@@ -376,28 +378,4 @@ func validLogicalProjectionRow(row buyerOutcomeProjection) bool {
 	default:
 		return false
 	}
-}
-
-func externalEvidencePath(root, path string) bool {
-	resolvedRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return false
-	}
-	resolvedPath, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return false
-	}
-	rootInfo, err := os.Stat(resolvedRoot)
-	if err != nil || !rootInfo.IsDir() {
-		return false
-	}
-	pathInfo, err := os.Stat(resolvedPath)
-	if err != nil || !pathInfo.Mode().IsRegular() {
-		return false
-	}
-	relative, err := filepath.Rel(resolvedRoot, resolvedPath)
-	if err != nil || relative == "." || relative == "" {
-		return false
-	}
-	return relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
