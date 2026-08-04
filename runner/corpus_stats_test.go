@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -27,6 +28,39 @@ func TestWriteCorpusStats(t *testing.T) {
 		"  url: 2\n"
 	if got.String() != want {
 		t.Errorf("writeCorpusStats output:\n%s\nwant:\n%s", got.String(), want)
+	}
+}
+
+func TestWriteCaseIndexUsesNormalizedVerdicts(t *testing.T) {
+	cases, err := loadCorpus("../cases")
+	if err != nil {
+		t.Fatalf("loadCorpus: %v", err)
+	}
+	var output bytes.Buffer
+	if err := writeCaseIndex(&output, cases); err != nil {
+		t.Fatalf("writeCaseIndex: %v", err)
+	}
+	var index caseIndexDocument
+	if err := json.Unmarshal(output.Bytes(), &index); err != nil {
+		t.Fatalf("decode case index: %v", err)
+	}
+	if index.SchemaVersion != 1 || len(index.Cases) != len(cases) {
+		t.Fatalf("case index scope = schema %d, cases %d; want schema 1, cases %d", index.SchemaVersion, len(index.Cases), len(cases))
+	}
+	foundNormalizedWarn := false
+	for position, entry := range index.Cases {
+		if position > 0 && index.Cases[position-1].CaseID >= entry.CaseID {
+			t.Fatalf("case index is not strictly sorted at %q then %q", index.Cases[position-1].CaseID, entry.CaseID)
+		}
+		if entry.CaseID == "mcp-drift-benign-001" && entry.ExpectedVerdict != "allow" {
+			t.Fatalf("warn normalization = %q, want allow", entry.ExpectedVerdict)
+		}
+		if entry.CaseID == "mcp-drift-benign-001" {
+			foundNormalizedWarn = true
+		}
+	}
+	if !foundNormalizedWarn {
+		t.Fatal("case index omitted normalized warn fixture")
 	}
 }
 

@@ -1,5 +1,7 @@
 {
+  "schema_version": 2,
   "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
+  "case_index_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
   "corpus_manifest_sha256": "ef82e319ad3efd7d407e15de27631f2b8fdf9f227ecc7f8253308ac44053916a",
   "logical_case_count": 214,
@@ -11,23 +13,58 @@
     "not_applicable": 1,
     "not_applicable_reasons": {
       "missing_requires": 1
-    }
+    },
+    "errors": 0
   },
   "scores": {
+    "full": {
+      "containment": 0.9937106918238994,
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
+    },
     "applicable": {
       "containment": 1,
-      "false_positive_rate": 0
+      "false_positive_rate": 0,
+      "detection": 1,
+      "evidence": 1
     }
   },
   "metric_counts": {
     "applicable": {
       "containment": {
-        "numerator": 1,
-        "denominator": 1
+        "numerator": 158,
+        "denominator": 158
       },
       "false_positive_rate": {
         "numerator": 0,
-        "denominator": 1
+        "denominator": 55
+      },
+      "detection": {
+        "numerator": 158,
+        "denominator": 158
+      },
+      "evidence": {
+        "numerator": 158,
+        "denominator": 158
+      }
+    },
+    "full": {
+      "containment": {
+        "numerator": 158,
+        "denominator": 159
+      },
+      "false_positive_rate": {
+        "numerator": 0,
+        "denominator": 55
+      },
+      "detection": {
+        "numerator": 158,
+        "denominator": 158
+      },
+      "evidence": {
+        "numerator": 158,
+        "denominator": 158
       }
     }
   }

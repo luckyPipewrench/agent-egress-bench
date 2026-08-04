@@ -75,6 +75,25 @@ func TestScoreCaseWithEvidence_ExpectedBlockForwardedAllowFails(t *testing.T) {
 }
 
 func TestComputeScores(t *testing.T) {
+	t.Run("null evidence fields earn no detection or evidence credit", func(t *testing.T) {
+		for _, key := range []string{"kind", "scanner", "block_reason"} {
+			t.Run(key, func(t *testing.T) {
+				scores := computeScores([]CaseResult{{
+					CaseID:          "malicious",
+					ExpectedVerdict: "block",
+					ActualVerdict:   "block",
+					Evidence:        map[string]interface{}{key: nil},
+				}})
+				if scores.Detection == nil || *scores.Detection != 0 {
+					t.Fatalf("detection = %v, want 0 for null %s", ptrVal(scores.Detection), key)
+				}
+				if scores.Evidence == nil || *scores.Evidence != 0 {
+					t.Fatalf("evidence = %v, want 0 for null %s", ptrVal(scores.Evidence), key)
+				}
+			})
+		}
+	})
+
 	t.Run("all malicious blocked", func(t *testing.T) {
 		results := []CaseResult{
 			{CaseID: "a", ExpectedVerdict: "block", ActualVerdict: "block"},
