@@ -15,10 +15,12 @@ SCRIPT = REPO_ROOT / "scripts" / "evaluate_gauntlet_candidate.py"
 
 def candidate():
     return {
+        "schema_version": 2,
         "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
         "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
         "pipelock_version": "3.3.0",
         "corpus_git_sha": "b" * 40,
+        "corpus_sha256": "c" * 64,
         "corpus_version": "v2.3.0",
         "scoring_version": "2.4",
         "runner_version": "0.4.2",
@@ -47,6 +49,7 @@ def baseline():
         "schema_version": 1,
         "pipelock_version": "3.3.0",
         "corpus_git_sha": "b" * 40,
+        "corpus_sha256": "c" * 64,
         "corpus_version": "v2.3.0",
         "scoring_version": "2.4",
         "runner_version": "0.4.2",
@@ -251,8 +254,20 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("evidence results changed", result.stdout)
 
+    def test_supporting_evidence_set_mismatch_fails_closed(self):
+        _, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate()
+        result = self.run_enforce(decision_path, candidate_path, baseline_path)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("evidence set does not match", result.stdout)
+
     def test_required_baseline_identity_cannot_be_deleted(self):
-        for identity in ("corpus_git_sha", "corpus_version", "scoring_version", "runner_version"):
+        for identity in (
+            "corpus_git_sha",
+            "corpus_sha256",
+            "corpus_version",
+            "scoring_version",
+            "runner_version",
+        ):
             with self.subTest(identity=identity):
                 baseline_value = baseline()
                 del baseline_value[identity]
@@ -267,6 +282,25 @@ class CandidateEvaluationTest(unittest.TestCase):
                     ).returncode,
                     0,
                 )
+
+    def test_git_commit_drift_is_informational_not_a_scope_change(self):
+        value = candidate()
+        value["corpus_git_sha"] = "d" * 40
+        decision, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate(value)
+        self.assertFalse(decision["blocked"])
+        self.assertEqual(decision["promotion_status"], "under_review")
+        self.assertTrue(any("corpus_git_sha moved" in note for note in decision["review_notes"]))
+        self.assertEqual(
+            self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode,
+            0,
+        )
+
+    def test_corpus_content_drift_requires_scope_review(self):
+        value = candidate()
+        value["corpus_sha256"] = "d" * 64
+        decision, _, _, _, _ = self.run_evaluate(value)
+        self.assertFalse(decision["blocked"])
+        self.assertEqual(decision["promotion_status"], "scope_changed_requires_review")
 
 
 if __name__ == "__main__":

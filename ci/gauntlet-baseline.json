@@ -4,6 +4,7 @@
   "recorded_on": "2026-08-01",
   "pipelock_version": "3.3.0",
   "corpus_git_sha": "333ad01df3cedbcee7ba455011b9242e34068dac",
+  "corpus_sha256": "cb9f74802df69f418e63715200ca9d24a0bf99c2604dce4ed1f1797fa9c90357",
   "corpus_version": "v2.2.0",
   "scoring_version": "2.4",
   "runner_version": "0.4.2",

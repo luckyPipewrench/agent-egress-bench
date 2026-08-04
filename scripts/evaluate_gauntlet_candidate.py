@@ -16,7 +16,14 @@ REQUIRED_FLOORS = {
 }
 REQUIRED_CEILINGS = {"applicable": {"false_positive_rate"}}
 REQUIRED_COUNT_KEYS = ("total", "applicable", "not_applicable", "not_applicable_reasons")
-REQUIRED_IDENTITIES = ("corpus_git_sha", "corpus_version", "scoring_version", "runner_version")
+REQUIRED_IDENTITIES = (
+    "corpus_git_sha",
+    "corpus_sha256",
+    "corpus_version",
+    "scoring_version",
+    "runner_version",
+)
+SCOPE_IDENTITIES = {"corpus_sha256", "corpus_version", "scoring_version", "runner_version"}
 
 
 def load_object(path):
@@ -100,6 +107,9 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         decision["baseline_sha256"] = file_sha256(baseline_path)
         candidate = load_object(candidate_path)
         baseline = load_object(baseline_path)
+
+        if candidate.get("schema_version") != 2:
+            raise ValueError("candidate schema_version must be 2")
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))
@@ -234,7 +244,8 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 raise ValueError(f"baseline {identity_key} must be a non-empty string")
             current = candidate.get(identity_key)
             if current != previous:
-                scope_changed = True
+                if identity_key in SCOPE_IDENTITIES:
+                    scope_changed = True
                 decision["review_notes"].append(
                     f"{identity_key} moved {previous!r} -> {current!r}"
                 )

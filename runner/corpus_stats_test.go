@@ -48,7 +48,10 @@ func TestWriteCaseIndexUsesNormalizedVerdicts(t *testing.T) {
 		t.Fatalf("case index scope = schema %d, cases %d; want schema 1, cases %d", index.SchemaVersion, len(index.Cases), len(cases))
 	}
 	foundNormalizedWarn := false
-	for _, entry := range index.Cases {
+	for position, entry := range index.Cases {
+		if position > 0 && index.Cases[position-1].CaseID >= entry.CaseID {
+			t.Fatalf("case index is not strictly sorted at %q then %q", index.Cases[position-1].CaseID, entry.CaseID)
+		}
 		if entry.CaseID == "mcp-drift-benign-001" && entry.ExpectedVerdict != "allow" {
 			t.Fatalf("warn normalization = %q, want allow", entry.ExpectedVerdict)
 		}

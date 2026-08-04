@@ -32,13 +32,14 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
     def setUp(self):
         self.workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    def run_wrapper(self, results):
+    def run_wrapper(self, results, detection_score=1.0, evidence_score=1.0):
+        wrapper_block = step_block(self.workflow, "Wrap provenance artifact")
         marker = "          python3 - <<'PY'\n"
-        start = self.workflow.index(marker) + len(marker)
-        end = self.workflow.index("\n          PY\n", start)
+        start = wrapper_block.index(marker) + len(marker)
+        end = wrapper_block.index("\n          PY\n", start)
         source = "\n".join(
             line[10:] if line.startswith("          ") else line
-            for line in self.workflow[start:end].splitlines()
+            for line in wrapper_block[start:end].splitlines()
         )
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -68,14 +69,14 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                 "applicable": {
                     "containment": 1.0,
                     "false_positive_rate": 0.0,
-                    "detection": 1.0,
-                    "evidence": 1.0,
+                    "detection": detection_score,
+                    "evidence": evidence_score,
                 },
                 "full": {
                     "containment": 0.5,
                     "false_positive_rate": 0.0,
-                    "detection": 1.0,
-                    "evidence": 1.0,
+                    "detection": detection_score,
+                    "evidence": evidence_score,
                 },
             },
             "sufficient": False,
@@ -224,6 +225,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         result, artifact_path = self.run_wrapper(results)
         self.assertEqual(result.returncode, 0, result.stderr)
         artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        self.assertEqual(artifact["schema_version"], 2)
         self.assertEqual(artifact["metric_counts"]["applicable"]["containment"], {
             "numerator": 1,
             "denominator": 1,
@@ -259,10 +261,60 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("does not match loader case index", result.stderr)
 
+    def test_null_classification_fields_do_not_earn_detection_or_evidence_credit(self):
+        for key in ("kind", "scanner", "block_reason"):
+            with self.subTest(key=key):
+                results = [
+                    {
+                        "case_id": "a",
+                        "expected_verdict": "block",
+                        "actual_verdict": "block",
+                        "evidence": {key: None},
+                    },
+                    {
+                        "case_id": "b",
+                        "expected_verdict": "allow",
+                        "actual_verdict": "allow",
+                        "evidence": {},
+                    },
+                    {
+                        "case_id": "c",
+                        "expected_verdict": "block",
+                        "actual_verdict": "not_applicable",
+                        "evidence": {},
+                    },
+                ]
+                result, artifact_path = self.run_wrapper(
+                    results, detection_score=0.0, evidence_score=0.0
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    artifact["metric_counts"]["applicable"]["detection"],
+                    {"numerator": 0, "denominator": 1},
+                )
+                self.assertEqual(
+                    artifact["metric_counts"]["applicable"]["evidence"],
+                    {"numerator": 0, "denominator": 1},
+                )
+
     def test_runner_timeout_preserves_cleanup_budget(self):
+        budget_block = step_block(self.workflow, "Record job budget start")
         run_block = step_block(self.workflow, "Run canonical benchmark")
-        self.assertIn('run_cmd=(timeout --signal=TERM --kill-after=30s 28m "${cmd[@]}")', run_block)
+        self.assertIn("JOB_STARTED_EPOCH", budget_block)
+        self.assertIn("reserve_seconds=$((6 * 60))", run_block)
+        self.assertIn("job_deadline=$((JOB_STARTED_EPOCH + 35 * 60))", run_block)
+        self.assertIn("benchmark_cap_seconds=$((24 * 60))", run_block)
+        self.assertIn("if (( available_seconds <= 0 ))", run_block)
+        self.assertIn('run_cmd=(timeout --signal=TERM --kill-after=30s "${benchmark_cap_seconds}s" "${cmd[@]}")', run_block)
         self.assertIn('"${run_cmd[@]}" > "$jsonl_path"', run_block)
+
+    def test_early_failure_paths_use_the_always_defined_artifact_directory(self):
+        ensure_block = step_block(self.workflow, "Ensure fail-closed decision exists")
+        enforce_block = step_block(self.workflow, "Enforce candidate decision")
+        for block in (ensure_block, enforce_block):
+            self.assertIn('artifact_dir="$GAUNTLET_ARTIFACT_DIR"', block)
+        self.assertNotIn('runner_stderr=$STDERR_PATH', enforce_block)
 
 
 if __name__ == "__main__":

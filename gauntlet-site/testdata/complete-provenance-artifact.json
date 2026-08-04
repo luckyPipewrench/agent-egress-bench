@@ -1,4 +1,5 @@
 {
+  "schema_version": 2,
   "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
   "case_index_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",

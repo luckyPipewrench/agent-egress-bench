@@ -79,16 +79,13 @@ func isBudgetTimingFailure(c Case, actual string, evidence map[string]interface{
 // hasClassification checks if the evidence contains scanner/kind information
 // that demonstrates the tool identified what KIND of attack it blocked.
 func hasClassification(ev map[string]interface{}) bool {
-	// Scan API results include "kind" (dlp, prompt_injection, tool_call).
-	if _, ok := ev["kind"]; ok {
-		return true
-	}
-	// Fetch proxy results include "scanner" or "block_reason".
-	if _, ok := ev["scanner"]; ok {
-		return true
-	}
-	if _, ok := ev["block_reason"]; ok {
-		return true
+	// Scan API results include "kind" (dlp, prompt_injection, tool_call),
+	// while fetch proxy results include "scanner" or "block_reason". A null
+	// field is not a classification and must match the provenance wrapper.
+	for _, key := range []string{"kind", "scanner", "block_reason"} {
+		if value, ok := ev[key]; ok && value != nil {
+			return true
+		}
 	}
 	// MCP proxy results include "error_message" with scanner context.
 	if msg, ok := ev["error_message"].(string); ok && msg != "" {

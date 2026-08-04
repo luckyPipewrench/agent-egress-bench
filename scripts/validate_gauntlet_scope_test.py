@@ -29,6 +29,7 @@ def complete_artifact():
     full_malicious = total - full_benign
     blocked_malicious = full_malicious - 1
     return {
+        "schema_version": 2,
         "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
         "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
         "corpus_manifest_sha256": corpus_manifest_sha256(),
@@ -122,6 +123,7 @@ class ValidateGauntletScopeTest(unittest.TestCase):
 
     def test_each_required_scope_field_fails_when_missing(self):
         required_paths = [
+            ("schema_version",),
             ("case_count", "applicable"),
             ("case_count", "total"),
             ("case_count", "not_applicable"),
@@ -157,6 +159,30 @@ class ValidateGauntletScopeTest(unittest.TestCase):
 
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(".".join(path), result.stderr)
+
+    def test_original_v1_artifact_remains_verifiable(self):
+        artifact = complete_artifact()
+        artifact["schema_version"] = 1
+        artifact.pop("case_index_sha256")
+        artifact["case_count"].pop("errors")
+        artifact["scores"].pop("full")
+        artifact["metric_counts"].pop("full")
+        for metric in ("detection", "evidence"):
+            artifact["scores"]["applicable"].pop(metric)
+            artifact["metric_counts"]["applicable"].pop(metric)
+
+        result = self.run_validator(artifact)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unknown_schema_version_fails(self):
+        artifact = complete_artifact()
+        artifact["schema_version"] = 99
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported schema_version", result.stderr)
 
     def test_missing_corpus_digest_fails(self):
         artifact = complete_artifact()
@@ -223,6 +249,15 @@ class ValidateGauntletScopeTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("applicable numerator", result.stderr)
+
+    def test_full_metric_denominators_must_partition_total(self):
+        artifact = complete_artifact()
+        artifact["metric_counts"]["full"]["false_positive_rate"]["denominator"] -= 1
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("full metric denominators must partition", result.stderr)
 
     def test_metric_denominator_cannot_exceed_applicable_cases(self):
         artifact = complete_artifact()
@@ -327,8 +362,6 @@ class ValidateGauntletScopeTest(unittest.TestCase):
 
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("containment", result.stderr)
-
-
     def test_zero_total_fails(self):
         artifact = complete_artifact()
         artifact["case_count"] = {

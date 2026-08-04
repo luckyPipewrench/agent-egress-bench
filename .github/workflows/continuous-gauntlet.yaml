@@ -30,6 +30,10 @@ jobs:
       PIPELOCK_VERSION: "3.3.0"
       GAUNTLET_ARTIFACT_DIR: continuous-gauntlet-artifacts
     steps:
+      - name: Record job budget start
+        shell: bash
+        run: echo "JOB_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Check out corpus
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -174,9 +178,22 @@ jobs:
             --fixtures
             --output "$summary_path"
           )
-          # Leave seven minutes inside the 35-minute job budget for decision
-          # synthesis and evidence upload if the benchmark itself hangs.
-          run_cmd=(timeout --signal=TERM --kill-after=30s 28m "${cmd[@]}")
+          # Compute the cap from the job's actual elapsed time. This keeps six
+          # minutes of the 35-minute job budget for decision synthesis and
+          # evidence upload even when checkout or release setup was slow.
+          now_epoch="$(date +%s)"
+          reserve_seconds=$((6 * 60))
+          job_deadline=$((JOB_STARTED_EPOCH + 35 * 60))
+          available_seconds=$((job_deadline - now_epoch - reserve_seconds))
+          benchmark_cap_seconds=$((24 * 60))
+          if (( available_seconds <= 0 )); then
+            echo "Insufficient job budget remains to run the benchmark safely." >&2
+            exit 1
+          fi
+          if (( available_seconds < benchmark_cap_seconds )); then
+            benchmark_cap_seconds=$available_seconds
+          fi
+          run_cmd=(timeout --signal=TERM --kill-after=30s "${benchmark_cap_seconds}s" "${cmd[@]}")
 
           printf '%q ' "${run_cmd[@]}" > "$command_path"
           printf '\n' >> "$command_path"
@@ -223,6 +240,7 @@ jobs:
             echo "ARTIFACT_DIR=$artifact_dir"
             echo "SUMMARY_PATH=$summary_path"
             echo "RESULTS_PATH=$jsonl_path"
+            echo "STDERR_PATH=$stderr_path"
             echo "COMMAND_PATH=$command_path"
             echo "STATS_PATH=$stats_path"
             echo "CASE_INDEX_PATH=$case_index_path"
@@ -333,8 +351,9 @@ jobs:
           def has_classification(evidence):
               if not isinstance(evidence, dict):
                   return False
-              if "kind" in evidence or "scanner" in evidence or "block_reason" in evidence:
-                  return True
+              for key in ("kind", "scanner", "block_reason"):
+                  if evidence.get(key) is not None:
+                      return True
               return isinstance(evidence.get("error_message"), str) and bool(evidence["error_message"])
 
           def has_structured_evidence(evidence):
@@ -414,7 +433,7 @@ jobs:
           pipelock_tag = os.environ["PIPELOCK_TAG"]
 
           artifact = {
-              "schema_version": 1,
+              "schema_version": 2,
               "artifact_id": f"github-actions:{repo}:{run_id}",
               "generated_at": os.environ["GENERATED_AT"],
               "canonical_url": f"https://github.com/{repo}/actions/runs/{run_id}",
@@ -484,7 +503,7 @@ jobs:
             --baseline ci/gauntlet-baseline.json \
             --evidence "raw_summary=$SUMMARY_PATH" \
             --evidence "results=$RESULTS_PATH" \
-            --evidence "runner_stderr=$ARTIFACT_DIR/runner.stderr" \
+            --evidence "runner_stderr=$STDERR_PATH" \
             --evidence "command=$COMMAND_PATH" \
             --evidence "stats=$STATS_PATH" \
             --evidence "case_index=$CASE_INDEX_PATH" \
@@ -570,12 +589,13 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${DECISION_PATH:-}" || { echo "candidate decision was not produced" >&2; exit 1; }
+          artifact_dir="$GAUNTLET_ARTIFACT_DIR"
           python3 scripts/evaluate_gauntlet_candidate.py enforce "$DECISION_PATH" \
             --candidate "$ARTIFACT_JSON" \
             --baseline ci/gauntlet-baseline.json \
-            --evidence "raw_summary=$ARTIFACT_DIR/raw-summary.json" \
-            --evidence "results=$ARTIFACT_DIR/results.jsonl" \
-            --evidence "runner_stderr=$ARTIFACT_DIR/runner.stderr" \
-            --evidence "command=$ARTIFACT_DIR/command.txt" \
-            --evidence "stats=$ARTIFACT_DIR/make-stats.txt" \
-            --evidence "case_index=$ARTIFACT_DIR/case-index.json"
+            --evidence "raw_summary=$artifact_dir/raw-summary.json" \
+            --evidence "results=$artifact_dir/results.jsonl" \
+            --evidence "runner_stderr=$artifact_dir/runner.stderr" \
+            --evidence "command=$artifact_dir/command.txt" \
+            --evidence "stats=$artifact_dir/make-stats.txt" \
+            --evidence "case_index=$artifact_dir/case-index.json"
