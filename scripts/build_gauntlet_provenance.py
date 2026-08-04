@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
@@ -196,6 +197,16 @@ def verify_score(summary, scope, metric, numerator, denominator):
 
 def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
+    for key in (
+        "gauntlet_version",
+        "scoring_version",
+        "runner_version",
+        "tool",
+        "corpus_version",
+    ):
+        require_non_empty_string(summary, key, f"runner summary {key}")
+    for key in ("corpus_sha256", "tool_profile_sha256"):
+        require_sha256(summary, key)
     command = (run_dir / RAW_EVIDENCE["command"]).read_text(encoding="utf-8").strip()
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
@@ -716,7 +727,7 @@ def main():
         else:
             finalize_command(args)
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        print(f"provenance: BLOCKED: {exc}", file=os.sys.stderr)
+        print(f"provenance: BLOCKED: {exc}", file=sys.stderr)
         return 1
     return 0
 

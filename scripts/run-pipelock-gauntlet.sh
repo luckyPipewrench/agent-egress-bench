@@ -4,6 +4,9 @@
 set -Eeuo pipefail
 umask 077
 
+github_api_token="${GH_TOKEN:-}"
+unset GH_TOKEN GITHUB_TOKEN
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 provenance_script="$repo_root/scripts/build_gauntlet_provenance.py"
 release_pin="$repo_root/examples/pipelock/release.env"
@@ -168,7 +171,7 @@ command -v socat >/dev/null || command -v ncat >/dev/null || command -v nc >/dev
 
 failure_reason="corpus identity check failed"
 [[ "$(git rev-parse --show-toplevel)" == "$repo_root" ]] || die "repository root identity mismatch"
-remote_url="$(git remote get-url origin)"
+remote_url="$(git remote get-url origin 2>/dev/null || true)"
 case "$remote_url" in
   git@github.com:luckyPipewrench/agent-egress-bench.git|ssh://git@github.com/luckyPipewrench/agent-egress-bench.git|https://github.com/luckyPipewrench/agent-egress-bench|https://github.com/luckyPipewrench/agent-egress-bench.git)
     remote_matches=true
@@ -275,15 +278,20 @@ else
   asset="pipelock_${PIPELOCK_VERSION}_linux_${release_arch}.tar.gz"
   release_json="$work_dir/release.json"
   api_headers=( -H 'Accept: application/vnd.github+json' )
-  if [[ -n "${GH_TOKEN:-}" ]]; then
+  auth_header_file=""
+  if [[ -n "$github_api_token" ]]; then
     auth_header_file="$work_dir/github-api.headers"
-    printf 'Authorization: Bearer %s\n' "$GH_TOKEN" > "$auth_header_file"
+    printf 'Authorization: Bearer %s\n' "$github_api_token" > "$auth_header_file"
     chmod 0600 "$auth_header_file"
     api_headers+=( -H "@$auth_header_file" )
   fi
   curl -fsSL "${api_headers[@]}" \
     "https://api.github.com/repos/${PIPELOCK_REPO}/releases/tags/${PIPELOCK_TAG}" \
     -o "$release_json"
+  if [[ -n "$auth_header_file" ]]; then
+    rm -f -- "$auth_header_file"
+  fi
+  github_api_token=""
   actual_tag="$(jq -r '.tag_name // empty' "$release_json")"
   is_draft="$(jq -r 'if has("draft") then (.draft | tostring) else empty end' "$release_json")"
   is_prerelease="$(jq -r 'if has("prerelease") then (.prerelease | tostring) else empty end' "$release_json")"

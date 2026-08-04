@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Structural tests for the fail-safe continuous Gauntlet workflow."""
 
+import importlib.util
 import json
 import os
 import re
@@ -15,22 +16,18 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "continuous-gauntlet.yaml"
 ENTRYPOINT = REPO_ROOT / "scripts" / "run-pipelock-gauntlet.sh"
 RELEASE_PIN = REPO_ROOT / "examples" / "pipelock" / "release.env"
 MAKEFILE = REPO_ROOT / "Makefile"
-EVIDENCE_LABELS = (
-    "raw_summary",
-    "results",
-    "runner_stderr",
-    "command",
-    "stats",
-    "case_index",
-    "entrypoint_command",
-    "run_metadata",
-    "pipelock_release",
-    "release_checksums",
-    "pipelock_version_output",
-    "corpus_manifest",
-    "execution_decision",
-    "run_bundle",
-)
+
+
+def load_builder():
+    spec = importlib.util.spec_from_file_location(
+        "build_gauntlet_provenance", REPO_ROOT / "scripts" / "build_gauntlet_provenance.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+EVIDENCE_LABELS = tuple(load_builder().RAW_EVIDENCE) + ("execution_decision", "run_bundle")
 
 
 def step_block(workflow, name):
@@ -56,6 +53,9 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("--deadline-epoch", run_block)
         self.assertIn("--reserve-seconds $((6 * 60))", run_block)
         self.assertIn("--benchmark-timeout-seconds $((24 * 60))", run_block)
+        self.assertNotIn("GH_TOKEN", run_block)
+        self.assertIn("JOB_TIMEOUT_MINUTES", self.workflow)
+        self.assertIn("JOB_STARTED_EPOCH + JOB_TIMEOUT_MINUTES * 60", run_block)
         self.assertNotIn("--fixtures", self.workflow)
         self.assertNotIn("--multifile-cases", self.workflow)
         self.assertIn("--fixtures", self.entrypoint)

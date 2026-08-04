@@ -64,7 +64,7 @@ Most cases are self-contained JSON files with the attack payload, expected verdi
 
 ## Quick start
 
-**Prerequisites:** [Go 1.24+](https://go.dev/dl/) for the validator. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
+**Prerequisites:** [Go 1.25+](https://go.dev/dl/) for the validator and portable runner. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
 
 **Build the validator:**
 

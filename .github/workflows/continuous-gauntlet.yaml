@@ -23,9 +23,10 @@ jobs:
   pipelock-release:
     name: Pipelock release benchmark
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 35 # Keep synchronized with JOB_TIMEOUT_MINUTES below.
     env:
       GAUNTLET_ARTIFACT_DIR: continuous-gauntlet-artifacts
+      JOB_TIMEOUT_MINUTES: "35"
     steps:
       - name: Record job budget start
         shell: bash
@@ -45,11 +46,9 @@ jobs:
 
       - name: Run portable canonical benchmark
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          job_deadline=$((JOB_STARTED_EPOCH + 35 * 60))
+          job_deadline=$((JOB_STARTED_EPOCH + JOB_TIMEOUT_MINUTES * 60))
           ./scripts/run-pipelock-gauntlet.sh \
             --output-dir "$GAUNTLET_ARTIFACT_DIR" \
             --deadline-epoch "$job_deadline" \

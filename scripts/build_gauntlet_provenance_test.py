@@ -230,21 +230,52 @@ class ProvenanceBuilderTest(unittest.TestCase):
 
     def test_bundle_rejects_duplicate_unknown_and_swapped_case_labels(self):
         mutations = {
-            "duplicate": [self.results[0], {**self.results[1], "case_id": "a"}, self.results[2]],
-            "unknown": [self.results[0], self.results[1], {**self.results[2], "case_id": "z"}],
-            "swapped": [
-                {**self.results[0], "expected_verdict": "allow"},
-                {**self.results[1], "expected_verdict": "block"},
-                self.results[2],
-            ],
+            "duplicate": (
+                [self.results[0], {**self.results[1], "case_id": "a"}, self.results[2]],
+                "runner JSONL contains duplicate case IDs",
+            ),
+            "unknown": (
+                [self.results[0], self.results[1], {**self.results[2], "case_id": "z"}],
+                "runner JSONL case IDs do not match cases/MANIFEST.txt",
+            ),
+            "swapped": (
+                [
+                    {**self.results[0], "expected_verdict": "allow"},
+                    {**self.results[1], "expected_verdict": "block"},
+                    self.results[2],
+                ],
+                "does not match loader case index",
+            ),
         }
-        for name, rows in mutations.items():
+        for name, (rows, expected_message) in mutations.items():
             with self.subTest(name=name):
                 (self.run_dir / "results.jsonl").write_text(
                     "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
                 )
                 result = self.bundle()
                 self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected_message, result.stderr)
+                self.write_fixture()
+
+    def test_candidate_scope_rejects_malformed_summary_identity_fields(self):
+        mutations = {
+            "tool": (None, "runner summary tool must be a non-empty string"),
+            "corpus_version": ("", "runner summary corpus_version must be a non-empty string"),
+            "corpus_sha256": (None, "corpus_sha256 must be 64 lower-case hex characters"),
+            "tool_profile_sha256": (
+                "not-a-digest",
+                "tool_profile_sha256 must be 64 lower-case hex characters",
+            ),
+        }
+        for key, (value, expected_message) in mutations.items():
+            with self.subTest(key=key):
+                summary_path = self.run_dir / "raw-summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                summary[key] = value
+                summary_path.write_text(json.dumps(summary), encoding="utf-8")
+                result = self.bundle()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected_message, result.stderr)
                 self.write_fixture()
 
     def test_null_classification_fields_earn_no_detection_or_evidence_credit(self):
@@ -415,7 +446,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         )
         result = self.bundle()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("score", result.stderr)
+        self.assertIn("score 'pass' does not match its verdicts", result.stderr)
 
     def test_reviewed_release_pin_matches_profile_and_baseline(self):
         pin = parsed_release_pin()
@@ -471,7 +502,9 @@ class PortableRunnerFailureTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must not already exist", result.stderr)
 
-    def run_with_fake_runner(self, mode, timeout_seconds="10"):
+    def run_with_fake_runner(
+        self, mode, timeout_seconds="10", *, missing_origin=False, inject_tokens=False
+    ):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -481,7 +514,13 @@ class PortableRunnerFailureTest(unittest.TestCase):
 
         pipelock = root / "pipelock"
         pipelock.write_text(
-            f"#!/bin/sh\nprintf '%s\\n' 'pipelock version {PIN_VERSION}'\n",
+            f"""#!/bin/sh
+if [ -n "${{GH_TOKEN:-}}" ] || [ -n "${{GITHUB_TOKEN:-}}" ]; then
+  printf '%s\\n' 'credential environment reached Pipelock' >&2
+  exit 97
+fi
+printf '%s\\n' 'pipelock version {PIN_VERSION}'
+""",
             encoding="utf-8",
         )
         pipelock.chmod(0o755)
@@ -520,7 +559,33 @@ exit 99
         )
         fake_make.chmod(0o755)
 
+        if missing_origin:
+            fake_git = fake_bin / "git"
+            fake_git.write_text(
+                """#!/bin/sh
+if [ "$#" -eq 3 ] && [ "$1" = "remote" ] && [ "$2" = "get-url" ] && [ "$3" = "origin" ]; then
+  exit 2
+fi
+PATH=${PATH#*:}
+export PATH
+exec git "$@"
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+
         started = time.monotonic()
+        env = {
+            **os.environ,
+            "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
+            "AEB_FAKE_RUNNER_MODE": mode,
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        env.pop("GH_TOKEN", None)
+        env.pop("GITHUB_TOKEN", None)
+        if inject_tokens:
+            env["GH_TOKEN"] = "synthetic-gh-token"
+            env["GITHUB_TOKEN"] = "synthetic-github-token"
         result = subprocess.run(
             [
                 "bash",
@@ -534,17 +599,26 @@ exit 99
                 str(output_dir),
             ],
             cwd=REPO_ROOT,
-            env={
-                **os.environ,
-                "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
-                "AEB_FAKE_RUNNER_MODE": mode,
-                "PYTHONDONTWRITEBYTECODE": "1",
-            },
+            env=env,
             text=True,
             capture_output=True,
             check=False,
         )
         return result, output_dir, time.monotonic() - started
+
+    def test_development_mode_without_origin_reaches_the_runner(self):
+        result, output_dir, _ = self.run_with_fake_runner("error", missing_origin=True)
+        self.assertEqual(result.returncode, 23, result.stderr)
+        metadata = json.loads((output_dir / "run-metadata.json").read_text(encoding="utf-8"))
+        self.assertIn(
+            "origin did not match luckyPipewrench/agent-egress-bench",
+            metadata["noncanonical_reasons"],
+        )
+
+    def test_github_tokens_are_not_inherited_by_the_tool_under_test(self):
+        result, _, _ = self.run_with_fake_runner("error", inject_tokens=True)
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertNotIn("credential environment reached Pipelock", result.stderr)
 
     def test_runner_error_leaves_command_stderr_partial_evidence_and_blocked_decision(self):
         result, output_dir, _ = self.run_with_fake_runner("error")
@@ -567,7 +641,8 @@ exit 99
     def test_hung_runner_is_terminated_and_leaves_blocked_evidence(self):
         result, output_dir, elapsed = self.run_with_fake_runner("hang", timeout_seconds="1")
         self.assertNotEqual(result.returncode, 0)
-        self.assertLess(elapsed, 5)
+        # The stub sleeps 10 seconds; finishing sooner proves the benchmark timeout fired.
+        self.assertLess(elapsed, 9)
         decision = json.loads(
             (output_dir / "execution-decision.json").read_text(encoding="utf-8")
         )

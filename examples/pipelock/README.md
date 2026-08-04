@@ -40,6 +40,10 @@ Important files in the completed directory:
 | `corpus-manifest.txt` | Exact logical-case manifest bytes behind the recorded manifest digest |
 | `make-stats.txt` | Loader-backed corpus counts used for full denominators |
 | `pipelock-release.json` | Release tag, version, archive digest, binary digest, and reported version |
+| `checksums.txt` | Published checksum bytes that bind the downloaded release archive |
+| `pipelock-version.txt` | Version output from the executed Pipelock binary |
+| `run-metadata.json` | Corpus identity, ref kind, dirty state, and canonicality decision |
+| `entrypoint-command.txt` | Exact operator command that started the run |
 
 A runner error or timeout still leaves a blocked decision plus whatever evidence was produced. A successful portable run still is not a published result. A platform must retain the directory, assign a real artifact ID and HTTPS URL, finalize the candidate, and apply its reviewed publication policy.
 
