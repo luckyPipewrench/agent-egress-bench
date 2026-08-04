@@ -286,7 +286,7 @@ func TestRunMCPStdio_UnprovenNonEmptyResponseSkips(t *testing.T) {
 func TestRunMCPStdio_UnobservedPolicyDenyBlocks(t *testing.T) {
 	// A security decision happens before any upstream forwarding. Observation is
 	// proof for an allow, not a precondition for recognizing a policy deny.
-	result := (&ProxyAdapter{mcpCmd: `printf '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}\n'`}).runMCPStdio(
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "policy-deny-no-forward")}).runMCPStdio(
 		mcpStdioExpectedBlockResponseCase("mcp-stdio-unobserved-policy-deny"), 5*time.Second)
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
@@ -315,7 +315,7 @@ func TestRunMCPStdio_UnobservedDenyExitSkipsButStructuredPolicyDenyBlocks(t *tes
 		t.Fatalf("upstream_requests_observed = %v, want 0; evidence=%+v", got, result.Evidence)
 	}
 
-	structured := (&ProxyAdapter{mcpCmd: `printf '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}\n'`}).runMCPStdio(
+	structured := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "policy-deny-no-forward")}).runMCPStdio(
 		mcpStdioExpectedBlockResponseCase("mcp-stdio-structured-policy-deny"), 5*time.Second)
 	if structured.Err != nil {
 		t.Fatalf("structured policy deny error: %v", structured.Err)
@@ -527,11 +527,15 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 	if os.Getenv("AEB_MCP_STDIO_TEST_HELPER") != "1" {
 		return
 	}
+	mode := os.Args[len(os.Args)-1]
+	if mode == "policy-deny-no-forward" {
+		_, _ = fmt.Fprintln(os.Stdout, `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}`)
+		return
+	}
 	addr := os.Getenv(mcpStdioUpstreamAddrEnv)
 	if addr == "" {
 		return
 	}
-	mode := os.Args[len(os.Args)-1]
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "dial runner-owned MCP stdio upstream: %v\n", err)

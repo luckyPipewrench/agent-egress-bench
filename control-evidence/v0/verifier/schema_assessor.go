@@ -1,6 +1,7 @@
 package verifier
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -121,8 +122,12 @@ func validateStructuralDSSE[T any](data []byte, expectedType string, schemas *sc
 	if err != nil {
 		return nil, reason
 	}
-	if _, err := decodeBase64(wrapper.Signatures[0].Sig); err != nil {
+	signature, err := decodeBase64(wrapper.Signatures[0].Sig)
+	if err != nil {
 		return nil, "dsse_signature_base64_invalid"
+	}
+	if len(signature) != ed25519.SignatureSize {
+		return nil, "dsse_signature_invalid"
 	}
 	decoded, reason, err := decodeCanonicalPayload[T](payload, payloadSchema)
 	if err != nil {

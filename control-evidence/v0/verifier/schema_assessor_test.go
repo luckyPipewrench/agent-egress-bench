@@ -135,6 +135,15 @@ func TestAssessSchemaHostilePackages(t *testing.T) {
 			wrapper["signatures"].([]any)[0].(map[string]any)["sig"] = strings.Repeat("A", 65)
 			mustWrite(t, path, marshalJSON(t, wrapper))
 		}},
+		{"wrong-signature-length", "dsse_signature_invalid", func(t *testing.T, root string) {
+			path := filepath.Join(root, "envelope.dsse.json")
+			var wrapper map[string]any
+			strictDecodeTest(t, mustRead(t, path), &wrapper)
+			// This is valid base64 and passes the JSON schema's encoded-length
+			// floor, but decodes to 48 bytes rather than an Ed25519 signature.
+			wrapper["signatures"].([]any)[0].(map[string]any)["sig"] = strings.Repeat("A", 64)
+			mustWrite(t, path, marshalJSON(t, wrapper))
+		}},
 		{"requirement-payload-type", "requirement_payload_type_mismatch", func(t *testing.T, root string) {
 			path := filepath.Join(root, "requirement.dsse.json")
 			var wrapper map[string]any

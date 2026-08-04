@@ -26,10 +26,11 @@ explicit conformance-only option is selected. An unavailable package or
 verifier-schema failure is `UNVERIFIABLE`; a presented malformed package is
 `FAIL`.
 
-It reads a Control Evidence v0 directory package, an externally supplied signed
-trust policy, an independently managed verifier trust context, and a durable
-verifier-owned policy checkpoint. The trust context is the root of trust: the
-buyer or verifier operator must deliver and protect it outside the producer's
+`authenticated-at(T)` reads a Control Evidence v0 directory package, an
+externally supplied signed trust policy, an independently managed verifier
+trust context, and a durable verifier-owned policy checkpoint. The trust
+context is the root of trust: the buyer or verifier operator must deliver and
+protect it outside the producer's
 control. A producer-supplied context can select its own bootstrap key and must
 never be accepted as independent input. The CLI emits its result on standard
 output; callers must retain that assessment outside the submitted package.
