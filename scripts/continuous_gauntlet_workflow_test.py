@@ -2,6 +2,7 @@
 """Structural tests for the fail-safe continuous-gauntlet workflow."""
 
 import json
+import hashlib
 import os
 import re
 import subprocess
@@ -226,6 +227,10 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
         self.assertEqual(artifact["schema_version"], 2)
+        self.assertEqual(
+            artifact["case_index_sha256"],
+            hashlib.sha256((artifact_path.parent / "case-index.json").read_bytes()).hexdigest(),
+        )
         self.assertEqual(artifact["metric_counts"]["applicable"]["containment"], {
             "numerator": 1,
             "denominator": 1,

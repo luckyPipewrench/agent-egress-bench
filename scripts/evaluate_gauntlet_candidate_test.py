@@ -2,6 +2,7 @@
 """Tests for fail-safe continuous-gauntlet candidate evaluation."""
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "evaluate_gauntlet_candidate.py"
+CASE_INDEX_BYTES = b'{"schema_version":1,"cases":[]}\n'
 
 
 def candidate():
@@ -21,6 +23,7 @@ def candidate():
         "pipelock_version": "3.3.0",
         "corpus_git_sha": "b" * 40,
         "corpus_sha256": "c" * 64,
+        "case_index_sha256": hashlib.sha256(CASE_INDEX_BYTES).hexdigest(),
         "corpus_version": "v2.3.0",
         "scoring_version": "2.4",
         "runner_version": "0.4.2",
@@ -74,6 +77,7 @@ class CandidateEvaluationTest(unittest.TestCase):
         baseline_value=None,
         raw_candidate=None,
         missing_candidate=False,
+        include_case_index_evidence=True,
     ):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -90,7 +94,12 @@ class CandidateEvaluationTest(unittest.TestCase):
         baseline_path.write_text(json.dumps(baseline_value or baseline()), encoding="utf-8")
         evidence_path = root / "results.jsonl"
         evidence_path.write_text('{"id":"case-1"}\n', encoding="utf-8")
+        case_index_path = root / "case-index.json"
+        case_index_path.write_bytes(CASE_INDEX_BYTES)
 
+        evidence_args = ["--evidence", f"results={evidence_path}"]
+        if include_case_index_evidence:
+            evidence_args.extend(["--evidence", f"case_index={case_index_path}"])
         result = subprocess.run(
             [
                 sys.executable,
@@ -100,8 +109,7 @@ class CandidateEvaluationTest(unittest.TestCase):
                 str(candidate_path),
                 "--baseline",
                 str(baseline_path),
-                "--evidence",
-                f"results={evidence_path}",
+                *evidence_args,
                 "--decision",
                 str(decision_path),
             ],
@@ -123,7 +131,12 @@ class CandidateEvaluationTest(unittest.TestCase):
     def run_enforce(self, decision_path, candidate_path, baseline_path, evidence_path=None):
         evidence_args = []
         if evidence_path is not None:
-            evidence_args = ["--evidence", f"results={evidence_path}"]
+            evidence_args = [
+                "--evidence",
+                f"results={evidence_path}",
+                "--evidence",
+                f"case_index={evidence_path.parent / 'case-index.json'}",
+            ]
         return subprocess.run(
             [
                 sys.executable,
@@ -253,6 +266,41 @@ class CandidateEvaluationTest(unittest.TestCase):
         result = self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("evidence results changed", result.stdout)
+
+    def test_case_index_substitution_fails_closed(self):
+        _, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate()
+        (evidence_path.parent / "case-index.json").write_bytes(b'{"substituted":true}\n')
+
+        result = self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("evidence case_index changed", result.stdout)
+
+    def test_candidate_case_index_digest_must_match_uploaded_evidence(self):
+        value = candidate()
+        value["case_index_sha256"] = "0" * 64
+
+        decision, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate(value)
+
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(
+            any("case_index_sha256 does not match" in failure for failure in decision["failures"])
+        )
+        self.assertNotEqual(
+            self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode,
+            0,
+        )
+
+    def test_missing_candidate_digest_and_case_index_evidence_fail_closed(self):
+        value = candidate()
+        del value["case_index_sha256"]
+
+        decision, _, _, _, _ = self.run_evaluate(
+            value, include_case_index_evidence=False
+        )
+
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(any("case_index_sha256" in failure for failure in decision["failures"]))
 
     def test_supporting_evidence_set_mismatch_fails_closed(self):
         _, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate()

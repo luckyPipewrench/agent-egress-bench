@@ -267,8 +267,9 @@ jobs:
               command = fh.read().strip()
           with open(os.environ["STATS_PATH"], encoding="utf-8") as fh:
               make_stats = fh.read()
-          with open(os.environ["CASE_INDEX_PATH"], encoding="utf-8") as fh:
-              case_index = json.load(fh)
+          with open(os.environ["CASE_INDEX_PATH"], "rb") as fh:
+              case_index_bytes = fh.read()
+          case_index = json.loads(case_index_bytes)
 
           manifest_path = "cases/MANIFEST.txt"
           with open(manifest_path, "rb") as fh:
@@ -453,9 +454,7 @@ jobs:
               "corpus_version": summary["corpus_version"],
               "corpus_sha256": summary["corpus_sha256"],
               "corpus_manifest_sha256": manifest_sha256,
-              "case_index_sha256": hashlib.sha256(
-                  json.dumps(case_index, sort_keys=True, separators=(",", ":")).encode("utf-8")
-              ).hexdigest(),
+              "case_index_sha256": hashlib.sha256(case_index_bytes).hexdigest(),
               "logical_case_count": logical_case_count,
               "tool_profile_sha256": summary["tool_profile_sha256"],
               "case_count": {
