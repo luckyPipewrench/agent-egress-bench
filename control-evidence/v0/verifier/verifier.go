@@ -152,6 +152,10 @@ func VerifyWithOptions(packageDir string, options VerifyOptions) Result {
 }
 
 func loadDirectoryPackage(root string) (map[string][]byte, error) {
+	return loadDirectoryPackageWithOptions(root, true)
+}
+
+func loadDirectoryPackageWithOptions(root string, allowConformanceSidecars bool) (map[string][]byte, error) {
 	info, err := os.Lstat(root)
 	if err != nil || !info.IsDir() {
 		return nil, errors.New("package is not a directory")
@@ -191,7 +195,7 @@ func loadDirectoryPackage(root string) (map[string][]byte, error) {
 			return fmt.Errorf("unsafe member path %s", rel)
 		}
 		// Conformance sidecars are independent verifier inputs, not package members.
-		if rel == "context.json" || rel == "expect.json" {
+		if allowConformanceSidecars && (rel == "context.json" || rel == "expect.json") {
 			return nil
 		}
 		if len(files) >= maxMembers {

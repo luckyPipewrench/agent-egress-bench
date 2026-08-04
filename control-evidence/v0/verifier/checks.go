@@ -30,39 +30,8 @@ func (s *verificationState) verifyBindingsAndManifest() *Result {
 		return failure(outcomeInvalid, "manifest_count_mismatch")
 	}
 
-	seenPaths := map[string]bool{}
-	var total int64
-	for _, entry := range s.manifest.Entries {
-		if seenPaths[entry.Path] || !normalizedPath(entry.Path) {
-			return failure(outcomeInvalid, "manifest_path_ambiguous")
-		}
-		seenPaths[entry.Path] = true
-		data, ok := s.files[entry.Path]
-		if !ok || int64(len(data)) != entry.ByteLength || digestBytes(data) != entry.SHA256 {
-			return failure(outcomeInvalid, "manifest_member_mismatch")
-		}
-		total += entry.ByteLength
-	}
-	if total != s.manifest.TotalUncompressedBytes {
-		return failure(outcomeInvalid, "manifest_total_mismatch")
-	}
-	for path := range s.files {
-		if path == "manifest.json" || path == "envelope.dsse.json" {
-			continue
-		}
-		if !seenPaths[path] {
-			return failure(outcomeInvalid, "manifest_member_uncommitted")
-		}
-	}
-	for role, path := range map[string]string{
-		"requirement": "requirement.dsse.json",
-		"outcomes":    "outcomes.json",
-		"summary":     "summary.json",
-	} {
-		entries := s.entriesByRole[role]
-		if len(entries) != 1 || entries[0].Path != path {
-			return failure(outcomeInvalid, "manifest_core_role_mismatch")
-		}
+	if reason := validateManifestPackage(s.files, s.manifest, s.entriesByRole); reason != "" {
+		return failure(outcomeInvalid, reason)
 	}
 	if entries := s.entriesByRole["policy"]; len(entries) == 1 && entries[0].SHA256 != s.req.Payload.ApprovedPolicy.SHA256 {
 		return failure(outcomeScopeMismatch, "policy_artifact_digest_mismatch")
@@ -88,6 +57,44 @@ func (s *verificationState) verifyBindingsAndManifest() *Result {
 		}
 	}
 	return nil
+}
+
+func validateManifestPackage(files map[string][]byte, value manifest, entriesByRole map[string][]manifestEntry) string {
+	seenPaths := map[string]bool{}
+	var total int64
+	for _, entry := range value.Entries {
+		if seenPaths[entry.Path] || !normalizedPath(entry.Path) {
+			return "manifest_path_ambiguous"
+		}
+		seenPaths[entry.Path] = true
+		data, ok := files[entry.Path]
+		if !ok || int64(len(data)) != entry.ByteLength || digestBytes(data) != entry.SHA256 {
+			return "manifest_member_mismatch"
+		}
+		total += entry.ByteLength
+	}
+	if total != value.TotalUncompressedBytes {
+		return "manifest_total_mismatch"
+	}
+	for path := range files {
+		if path == "manifest.json" || path == "envelope.dsse.json" {
+			continue
+		}
+		if !seenPaths[path] {
+			return "manifest_member_uncommitted"
+		}
+	}
+	for role, path := range map[string]string{
+		"requirement": "requirement.dsse.json",
+		"outcomes":    "outcomes.json",
+		"summary":     "summary.json",
+	} {
+		entries := entriesByRole[role]
+		if len(entries) != 1 || entries[0].Path != path {
+			return "manifest_core_role_mismatch"
+		}
+	}
+	return ""
 }
 
 func (s *verificationState) verifyScopeAndTime() *Result {

@@ -34,6 +34,23 @@ with mode `0700`, outside the package. The verifier atomically records the
 single-use challenge there. Omitting durable replay state returns
 `unverifiable`, never `valid`.
 
+The separately callable G2 format assessor needs no trust policy and does not
+verify signatures:
+
+```sh
+go run ./cmd/aeb-ce-schema-valid \
+  --package ../conformance/golden/g01-vendor-time \
+  --allow-conformance-sidecars
+```
+
+The sidecar flag exists only for the public corpus layout. Omit it for submitted
+packages so undeclared `context.json` or `expect.json` files fail closed. A
+`schema-valid` PASS proves bounded package structure, closed manifest binding,
+strict/schema-governed JSON, and JCS signed payload bytes. It does not prove
+signature authentication, trusted ownership, freshness, result correctness,
+or scope completeness; compose it with the corresponding independent G2
+predicates instead of over-reading it.
+
 Replay records are append-only in v0. Back up and restore the complete private
 directory as one unit. If it is lost or damaged, issue a new buyer requirement
 and nonce; do not replace it with an empty directory and continue trusting old

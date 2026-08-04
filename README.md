@@ -224,7 +224,7 @@ Each tool publishes its own results independently; this repo produces no ranking
 - [SCORING.md](docs/SCORING.md): pass/fail/not_applicable/error scoring model
 - [RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md): receipt evidence scoring axis for independently verifiable artifacts
 - [CONTROL-EVIDENCE.md](docs/CONTROL-EVIDENCE.md): v0 run-level control-evidence package and verifier contract
-- [ARTIFACT-PROVENANCE.md](docs/ARTIFACT-PROVENANCE.md): opt-in external `authenticated-at(T)` provenance assessment
+- [ARTIFACT-PROVENANCE.md](docs/ARTIFACT-PROVENANCE.md): opt-in external `schema-valid` and `authenticated-at(T)` provenance assessments
 - [gauntlet.md](docs/gauntlet.md): Gauntlet scoring methodology (containment, FP rate, detection, evidence)
 - [RUNNER.md](docs/RUNNER.md): runner output contract and verdict mapping
 - [ADOPTION.md](docs/ADOPTION.md): guide for vendors adopting the benchmark
