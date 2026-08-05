@@ -1,8 +1,8 @@
 name: Pipelock Security Scan
 
 on:
-  # Promotion pull requests are created with GITHUB_TOKEN, so GitHub parks
-  # their pull_request runs for manual approval. The promotion workflow
+  # Promotion pull requests are created with GITHUB_TOKEN, which intentionally
+  # does not emit a pull_request workflow run. The promotion workflow explicitly
   # dispatches this trusted workflow against the generated branch instead.
   workflow_dispatch:
   pull_request:

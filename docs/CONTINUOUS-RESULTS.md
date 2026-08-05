@@ -37,7 +37,7 @@ A normal successful run can prepare a promotion pull request directly. A run tha
 
 That option does not turn a failed execution into a pass. It only permits the workflow to propose the exact score, version, identity, or scope change in a pull request. The candidate must still be complete, sufficient, error-free, origin-bound, and hash-consistent. The pull request body lists the old-policy failures and the full new scope. Reviewers can merge or reject the proposal without changing the selected repository record.
 
-Promotion branches are created with GitHub's workflow token, so the promotion workflow explicitly dispatches the repository's required validation workflow against the branch. A second prepared promotion may conflict with the first at the baseline and pointer. It must be regenerated from the newly merged baseline rather than bypassing the up-to-date branch requirement.
+Promotion branches are created with GitHub's workflow token, so the promotion workflow explicitly dispatches the repository's required validation workflows against the branch. Re-running a candidate that is already selected on `main` exits successfully without creating another branch or dispatching unnecessary checks. A second unmerged promotion may conflict with the first at the baseline and pointer. It must be regenerated from the newly merged baseline rather than bypassing the up-to-date branch requirement.
 
 ## Independent operators
 
