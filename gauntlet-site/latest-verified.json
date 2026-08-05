@@ -1,0 +1,15 @@
+{
+  "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:30962417325",
+  "candidate_sha256": "4634014ed71559ee542113e7073be6961eca18710b67f8b792c13afd6f595afd",
+  "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/30962417325",
+  "generated_at": "2026-08-05T00:10:08Z",
+  "previous_candidate_sha256": null,
+  "previous_record_manifest_sha256": null,
+  "record_manifest_path": "./results/pipelock/4634014ed71559ee542113e7073be6961eca18710b67f8b792c13afd6f595afd/record-manifest.json",
+  "record_manifest_sha256": "8a648dcc9697d9be201e4e006016b4c502f07fa214f0a83e47a6de5fd63e4b25",
+  "record_path": "./results/pipelock/4634014ed71559ee542113e7073be6961eca18710b67f8b792c13afd6f595afd/continuous-gauntlet-pipelock.json",
+  "schema_version": 1,
+  "status": "verified",
+  "tool": "pipelock",
+  "tool_version": "3.3.0"
+}

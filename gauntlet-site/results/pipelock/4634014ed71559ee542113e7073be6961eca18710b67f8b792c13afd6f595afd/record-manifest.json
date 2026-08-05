@@ -1,0 +1,32 @@
+{
+  "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:30962417325",
+  "candidate_sha256": "4634014ed71559ee542113e7073be6961eca18710b67f8b792c13afd6f595afd",
+  "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/30962417325",
+  "files": {
+    "case-index.json": "2a36b9f2ce028055f41d8781f5da68249a34f9b42a3b09beea9dc5e98c3fafa0",
+    "checksums.txt": "e8bed22541f2660700c9a58884da3a00f0270ad437b9483015b74ba19e438877",
+    "command.txt": "689f3ff1ec11ebcce897306314491b2f48fc7691355de8391efa3d654281f71c",
+    "continuous-gauntlet-pipelock.json": "4634014ed71559ee542113e7073be6961eca18710b67f8b792c13afd6f595afd",
+    "corpus-manifest.txt": "ef82e319ad3efd7d407e15de27631f2b8fdf9f227ecc7f8253308ac44053916a",
+    "entrypoint-command.txt": "cad5e1d2c4baf52a05ca42820b6df964c65c4b78665f0ec27c072d8db306e1aa",
+    "execution-decision.json": "40f86a8da18359e0e8e0fef92b6047eee1f8afbdf9406172530285742b497711",
+    "make-stats.txt": "a43158709df0fe447c3eb2e5ff3f89d66a907b1a102ff5210e635bf841f8ecfa",
+    "pipelock-release.json": "016d9287cd2a63c000b5012f7ff0f24ae7d88b28e321ad08e3dbf3c9c6d6ee7f",
+    "pipelock-version.txt": "f7475df97325d18fe948b25d17d390766c2a236b2c9617f0dd3b1a58db4ecfdd",
+    "raw-summary.json": "ff88f7356afadcde6fc2bf790dd3a97434b9b8687fe04e1ff869de3ebe062120",
+    "results.jsonl": "220868aaad6436031e0bf87f4d1dc861f9b3d1ca45814c039a3606f8dd7b5ac4",
+    "reviewed-baseline.json": "5d7cf43a06290d8e0b7655329957ea151af65b9e8924738368205bdc7bdf8d6e",
+    "reviewed-promotion-decision.json": "572d8856ee2d1f52e54aa98afdd251d1294cdcfb2076e29c742595e5abbbeb02",
+    "run-bundle.json": "c9ddacbd4764459ee0053c486c594ba6bef52f35f145449b7f115f60bc073916",
+    "run-metadata.json": "d659bc78f69c6d924ebf0042fccc6c91c2c66a56c876553c76e75650e2de269a",
+    "runner.stderr": "2588fbd378e3cf3d8ff6d13b099f84838e83496e5c5c14fe92e8f97c69fa2ff4",
+    "source-baseline.json": "819e94a8550ddf76677ad8a6ba96c75ec1fdad54a35bfd27ed07ad3a528eb091",
+    "source-promotion-decision.json": "490d2cbbcd6d9da2df9d1d3b34a3e2151fe0d3cb6c4e65ea1dea6d7d97454035"
+  },
+  "generated_at": "2026-08-05T00:10:08Z",
+  "previous_candidate_sha256": null,
+  "previous_record_manifest_sha256": null,
+  "schema_version": 1,
+  "tool": "pipelock",
+  "tool_version": "3.3.0"
+}

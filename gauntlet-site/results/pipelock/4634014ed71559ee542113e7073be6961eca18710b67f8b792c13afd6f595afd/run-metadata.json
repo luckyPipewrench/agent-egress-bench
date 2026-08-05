@@ -1,0 +1,11 @@
+{
+  "canonical_execution": true,
+  "corpus_git_sha": "b9baf394b5cb303139bf7da56608e97dad9009db",
+  "corpus_ref_kind": "origin/main",
+  "corpus_repository": "luckyPipewrench/agent-egress-bench",
+  "dirty": false,
+  "generated_at": "2026-08-05T00:10:08Z",
+  "local_run_id": "local:20260805T001008Z:2474",
+  "noncanonical_reasons": [],
+  "schema_version": 1
+}
