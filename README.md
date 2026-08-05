@@ -64,7 +64,7 @@ Most cases are self-contained JSON files with the attack payload, expected verdi
 
 ## Quick start
 
-**Prerequisites:** [Go 1.24+](https://go.dev/dl/) for the validator. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
+**Prerequisites:** [Go 1.25+](https://go.dev/dl/) for the validator and portable runner. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
 
 **Build the validator:**
 
@@ -87,29 +87,19 @@ cd validate && go build -o aeb-validate .
 
 **Run against a tool.** Each tool ships its own runner. The Go program in [`runner/`](runner/) is the reference implementation; it brings up HTTP, TLS, WebSocket, DNS, and MCP HTTP fixtures, executes declared transports through the selected adapter, and emits the Gauntlet summary and an optional receipt-scoring profile.
 
-For Pipelock, the full reproducible invocation is in [docs/RUNNER.md](docs/RUNNER.md#reproducing-a-receipt-profile). The short form:
+For the pinned Pipelock release, use the portable entry point from a clean Linux clone on `origin/main` or a tag:
 
 ```bash
-# 1. Start a benchmark-configured tool instance (Pipelock shown):
-pipelock run --config examples/pipelock/pipelock-benchmark.yaml \
-  --listen 127.0.0.1:18899 &
-
-# 2. Build and run the gauntlet against it:
-cd runner && go build -o /tmp/aeb-gauntlet . && cd ..
-/tmp/aeb-gauntlet \
-  --adapter proxy \
-  --proxy-addr 127.0.0.1:18899 \
-  --scan-addr 127.0.0.1:9990 \
-  --scan-token bench-test-token \
-  --mcp-cmd "pipelock mcp proxy --config $PWD/examples/pipelock/pipelock-benchmark.yaml --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh" \
-  --cases ./cases \
-  --multifile-cases ./cases/mcp-drift \
-  --profile examples/pipelock/tool-profile.json \
-  --fixtures \
-  --output /tmp/gauntlet.json
+./scripts/run-pipelock-gauntlet.sh
 ```
 
-The runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, detection, evidence, per-category, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)). See [`examples/pipelock/`](examples/pipelock/) for a complete profile and config example.
+The command downloads the reviewed Pipelock release, verifies its published checksum and reported version, starts the required local fixtures and managed Pipelock processes, runs the single-file and multi-file cases, and leaves one timestamped directory under `continuous-gauntlet-runs/`. That directory contains the exact internal command, stdout results, stderr, summary, case index, corpus stats, release identity, file digests, and a machine-readable execution decision.
+
+It requires Linux, Go 1.25 or newer, Python 3, Git, curl, jq, tar, GNU timeout, SHA-256 utilities, and one of `socat`, `ncat`, or `nc`. Use `--output-dir` to place the self-contained run directory somewhere else. The [Pipelock reference-runner guide](examples/pipelock/README.md) documents the evidence files, explicit development mode, the underlying long-form command, and a neutral scheduling example.
+
+The raw directory intentionally has no made-up public URL. GitHub Actions or another retaining platform adds its real artifact ID and HTTPS location later, without modifying the evidence bytes. Creating a schedule and publishing a result are separate operator decisions.
+
+For other tools, the runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, detection, evidence, per-category, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)).
 
 > A minimal legacy shell example for fetch-only cases lives at [`examples/pipelock/harness.sh`](examples/pipelock/harness.sh). It covers a single transport (`/fetch?url=...` GET) and is kept for illustration only — it is not the Gauntlet and will misreport every body, header, WebSocket, MCP, and response-content case. Use the Go runner for any real benchmark.
 

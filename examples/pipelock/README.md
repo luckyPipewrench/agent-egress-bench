@@ -7,9 +7,70 @@ This directory contains the Pipelock-specific artifacts the Go runner needs to s
 - [`tool-profile.json`](tool-profile.json): Pipelock's capability claims (what it supports, what it does not).
 - [`pipelock-benchmark.yaml`](pipelock-benchmark.yaml): bench-only config (every scanner enabled, action=block, test blocklist domain included).
 - [`receipt-verifier.json`](receipt-verifier.json): Pipelock's verifier metadata for the optional receipt-scoring profile.
+- [`release.env`](release.env): the single reviewed Pipelock release tag and version used by the portable runner and GitHub workflow.
 - [`harness.sh`](harness.sh): legacy fetch-only example, kept for illustration.
 
-## Development run
+## Portable release run
+
+From a clean Linux clone on `origin/main` or a repository tag:
+
+```bash
+./scripts/run-pipelock-gauntlet.sh
+```
+
+The default output is a unique directory under `continuous-gauntlet-runs/`. To choose the location explicitly:
+
+```bash
+./scripts/run-pipelock-gauntlet.sh --output-dir /var/lib/agent-egress-bench/runs/manual-20260805
+```
+
+The destination must not already exist. The command verifies the corpus Git identity and cleanliness, downloads the release named by `release.env`, rejects draft or prerelease assets, verifies the archive against the release's `checksums.txt`, and verifies the extracted binary's version before running it. It then builds the repository runner and executes every canonical fixture and multi-file MCP drift case.
+
+Important files in the completed directory:
+
+| File | Meaning |
+| --- | --- |
+| `execution-decision.json` | Whether execution completed, whether platform finalization is eligible, and any blocking failure |
+| `run-bundle.json` | Hash-bound portable bundle used by a later platform finalizer |
+| `raw-summary.json` | Four-axis Gauntlet summary and case counts |
+| `results.jsonl` | One result row per logical case |
+| `runner.stderr` | Fixture startup proof and runner diagnostics |
+| `command.txt` | Exact internal runner command, including timeout and all canonical flags |
+| `case-index.json` | Loader-normalized case IDs and expected verdicts |
+| `corpus-manifest.txt` | Exact logical-case manifest bytes behind the recorded manifest digest |
+| `make-stats.txt` | Loader-backed corpus counts used for full denominators |
+| `pipelock-release.json` | Release tag, version, archive digest, binary digest, and reported version |
+| `checksums.txt` | Published checksum bytes that bind the downloaded release archive |
+| `pipelock-version.txt` | Version output from the executed Pipelock binary |
+| `run-metadata.json` | Corpus identity, ref kind, dirty state, and canonicality decision |
+| `entrypoint-command.txt` | Exact operator command that started the run |
+
+A runner error or timeout still leaves a blocked decision plus whatever evidence was produced. A successful portable run still is not a published result. A platform must retain the directory, assign a real artifact ID and HTTPS URL, finalize the candidate, and apply its reviewed publication policy.
+
+### Explicit development mode
+
+To test uncommitted runner changes with an already-built Pipelock binary:
+
+```bash
+./scripts/run-pipelock-gauntlet.sh \
+  --development \
+  --development-binary /usr/local/bin/pipelock
+```
+
+The output records why the run is noncanonical. The provenance finalizer refuses to turn that bundle into a publication candidate. A binary found on `PATH` is never selected silently.
+
+### Repeating the command on Linux
+
+Scheduling is an ordinary operator task, separate from evidence validation or publication. For example, if the repository is installed at `/opt/agent-egress-bench`, this crontab entry starts the same command every day at 06:17 UTC:
+
+```cron
+CRON_TZ=UTC
+17 6 * * * cd /opt/agent-egress-bench && ./scripts/run-pipelock-gauntlet.sh
+```
+
+That timer does not update the repository, delete old runs, upload evidence, or publish a result. The machine operator must choose update, retention, and publication policies separately. Run the command manually once and inspect `execution-decision.json` and `run-bundle.json` before connecting it to any timer.
+
+## Advanced runner invocation
 
 The runner can either target already-running endpoints (`--proxy-addr`,
 `--scan-addr`, `--mcp-http-url`) or start operator-provided commands with the
@@ -46,7 +107,7 @@ back to `ncat` or `nc`; a machine running this example needs one of those
 programs. The continuous Gauntlet verifies that one is available before it
 runs.
 
-Example shape:
+The portable entry point above is the normal Pipelock operator surface. The long form below is retained for runner development and to make the managed-command contract inspectable:
 
 ```bash
 cd runner && go build -o /tmp/aeb-gauntlet . && cd ..

@@ -25,6 +25,8 @@ CLAUDE.local.md
 # Test output
 *.jsonl
 !receipts/v0/conformance/**/*.jsonl
+/continuous-gauntlet-runs/
+/continuous-gauntlet-artifacts/
 
 # Playwright
 .playwright-mcp/
