@@ -160,7 +160,11 @@ jobs:
             ci/gauntlet-baseline.json \
             gauntlet-site/latest-verified.json \
             "$record_dir"
-          git diff --cached --check
+          # Raw evidence is copied byte-for-byte and may legitimately preserve
+          # command-line whitespace. Lint only the generated control files.
+          git diff --cached --check -- \
+            ci/gauntlet-baseline.json \
+            gauntlet-site/latest-verified.json
           git commit -m "results: promote Gauntlet run $RUN_ID"
           if remote_sha="$(git ls-remote --exit-code --heads origin "refs/heads/$branch" | awk '{print $1}')"; then
             git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
