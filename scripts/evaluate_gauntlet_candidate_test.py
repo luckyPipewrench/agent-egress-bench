@@ -167,6 +167,8 @@ class CandidateEvaluationTest(unittest.TestCase):
                 str(candidate_path),
                 "--baseline",
                 str(baseline_path),
+                "--result",
+                str(decision_path.parent / "enforcement-result.json"),
                 *evidence_args,
             ],
             cwd=REPO_ROOT,
@@ -208,7 +210,7 @@ class CandidateEvaluationTest(unittest.TestCase):
                     self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode, 0
                 )
 
-    def test_scope_change_requires_review_but_does_not_disable_the_lane(self):
+    def test_scope_change_returns_distinct_owner_review_status(self):
         value = candidate()
         value["case_count"] = {
             "total": 214,
@@ -221,10 +223,14 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertFalse(decision["blocked"])
         self.assertEqual(decision["promotion_status"], "scope_changed_requires_review")
         self.assertTrue(any("case_count.total moved" in note for note in decision["review_notes"]))
-        self.assertEqual(
-            self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode,
-            0,
+        enforced = self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path)
+        self.assertEqual(enforced.returncode, 2)
+        self.assertIn("REVIEW REQUIRED", enforced.stdout)
+        result = json.loads(
+            (decision_path.parent / "enforcement-result.json").read_text(encoding="utf-8")
         )
+        self.assertEqual(result["verdict"], "review_required")
+        self.assertEqual(result["promotion_status"], "scope_changed_requires_review")
 
     def test_malformed_candidate_still_produces_a_blocked_decision(self):
         decision, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate(raw_candidate="{")
@@ -286,6 +292,12 @@ class CandidateEvaluationTest(unittest.TestCase):
         result = self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("evidence results changed", result.stdout)
+        enforcement = json.loads(
+            (decision_path.parent / "enforcement-result.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(enforcement["verdict"], "blocked")
+        self.assertTrue(any("evidence results changed" in failure for failure in enforcement["failures"]))
+        self.assertFalse(any("without a recorded reason" in failure for failure in enforcement["failures"]))
 
     def test_case_index_substitution_fails_closed(self):
         _, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate()

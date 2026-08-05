@@ -18,6 +18,7 @@ development_binary=""
 benchmark_timeout_seconds=$((24 * 60))
 deadline_epoch=""
 reserve_seconds=$((6 * 60))
+original_arg_count=$#
 original_args=("$@")
 
 usage() {
@@ -160,8 +161,13 @@ on_exit() {
 }
 trap on_exit EXIT
 
-printf '%q ' "$0" "${original_args[@]}" > "$output_dir/entrypoint-command.txt"
-printf '\n' >> "$output_dir/entrypoint-command.txt"
+{
+  printf '%q' "$0"
+  for ((original_arg_index = 0; original_arg_index < original_arg_count; original_arg_index++)); do
+    printf ' %q' "${original_args[$original_arg_index]}"
+  done
+  printf '\n'
+} > "$output_dir/entrypoint-command.txt"
 
 for command_name in git python3 go curl jq sha256sum tar timeout realpath make; do
   command -v "$command_name" >/dev/null || die "required command is unavailable: $command_name"
@@ -181,9 +187,14 @@ case "$remote_url" in
     ;;
 esac
 
+noncanonical_reason_count=0
 noncanonical_reasons=()
+add_noncanonical_reason() {
+  noncanonical_reasons[$noncanonical_reason_count]="$1"
+  noncanonical_reason_count=$((noncanonical_reason_count + 1))
+}
 if [[ "$development_mode" == true ]]; then
-  noncanonical_reasons+=("development corpus mode was requested")
+  add_noncanonical_reason "development corpus mode was requested"
 else
   [[ "$remote_matches" == true ]] || die "origin is not the canonical $corpus_repository repository"
   git fetch --force --prune --prune-tags --tags \
@@ -203,7 +214,7 @@ if [[ -n "$dirty_output" ]]; then
     printf '%s\n' "$dirty_output" >&2
     die "corpus checkout is dirty; use a clean origin/main or tag checkout"
   fi
-  noncanonical_reasons+=("corpus checkout was dirty")
+  add_noncanonical_reason "corpus checkout was dirty"
 else
   corpus_dirty=false
 fi
@@ -222,12 +233,12 @@ elif [[ -n "$pointed_tags" ]]; then
   corpus_ref_kind="tag"
 elif [[ "$development_mode" == true ]]; then
   corpus_ref_kind="development"
-  noncanonical_reasons+=("corpus commit was neither fetched origin/main nor a tag")
+  add_noncanonical_reason "corpus commit was neither fetched origin/main nor a tag"
 else
   die "corpus checkout is neither fetched origin/main nor a tag"
 fi
 if [[ "$remote_matches" != true ]]; then
-  noncanonical_reasons+=("origin did not match $corpus_repository")
+  add_noncanonical_reason "origin did not match $corpus_repository"
 fi
 
 canonical_execution=true
@@ -235,7 +246,7 @@ if [[ "$development_mode" == true || -n "$development_binary" || "$corpus_dirty"
   canonical_execution=false
 fi
 if [[ -n "$development_binary" ]]; then
-  noncanonical_reasons+=("development Pipelock binary was requested")
+  add_noncanonical_reason "development Pipelock binary was requested"
 fi
 
 start_args=(
@@ -249,7 +260,9 @@ start_args=(
   --dirty "$corpus_dirty"
   --canonical-execution "$canonical_execution"
 )
-for reason in "${noncanonical_reasons[@]}"; do
+failure_reason="run metadata generation failed"
+for ((reason_index = 0; reason_index < noncanonical_reason_count; reason_index++)); do
+  reason="${noncanonical_reasons[$reason_index]}"
   start_args+=(--noncanonical-reason "$reason")
 done
 PYTHONDONTWRITEBYTECODE=1 python3 "$provenance_script" "${start_args[@]}"
