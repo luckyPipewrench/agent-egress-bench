@@ -3,7 +3,10 @@ mode: balanced
 agents:
   _default:
     budget:
-      max_tool_calls_per_session: 3
+      # The current corpus capability is authenticated per-subject accounting,
+      # which this single-session stdio adapter does not claim. Keep the
+      # session-wide limiter unlimited so it cannot decide unrelated cases.
+      max_tool_calls_per_session: 0
       window_minutes: 1440
       dow_action: block
 

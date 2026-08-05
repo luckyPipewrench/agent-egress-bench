@@ -113,6 +113,20 @@ back to `ncat` or `nc`; a machine running this example needs one of those
 programs. The continuous Gauntlet verifies that one is available before it
 runs.
 
+### Budget capability scope
+
+The checked-in profile deliberately sets `budget_enforcement` to `false`.
+The current benchmark capability requires authenticated per-subject accounting,
+but the canonical MCP stdio invocation above is one authenticated session.
+Caller-supplied tool arguments such as `subject_id` are payload data, not a
+trusted identity boundary. Pipelock can enforce a session-wide tool-call limit
+on this transport, but this adapter cannot honestly claim the benchmark's
+per-subject capability until it supplies a trusted multi-subject mapping. The
+benchmark config keeps that different session-wide limiter unlimited so it
+cannot decide unrelated cases. The current budget cases therefore score as
+`not_applicable` for this profile instead of as containment failures or
+accidental passes.
+
 The portable entry point above is the normal Pipelock operator surface. The long form below is retained for runner development and to make the managed-command contract inspectable:
 
 ```bash

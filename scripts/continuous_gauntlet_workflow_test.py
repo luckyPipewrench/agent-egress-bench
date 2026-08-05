@@ -15,6 +15,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "continuous-gauntlet.yaml"
 ENTRYPOINT = REPO_ROOT / "scripts" / "run-pipelock-gauntlet.sh"
 RELEASE_PIN = REPO_ROOT / "examples" / "pipelock" / "release.env"
+PIPELOCK_PROFILE = REPO_ROOT / "examples" / "pipelock" / "tool-profile.json"
+PIPELOCK_README = REPO_ROOT / "examples" / "pipelock" / "README.md"
+PIPELOCK_CONFIG = REPO_ROOT / "examples" / "pipelock" / "pipelock-benchmark.yaml"
 MAKEFILE = REPO_ROOT / "Makefile"
 
 
@@ -69,6 +72,17 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertNotIn(version, self.workflow)
         self.assertNotIn(version, self.entrypoint)
         self.assertIn('source "$release_pin"', self.entrypoint)
+
+    def test_stdio_profile_does_not_claim_unexercised_subject_budget(self):
+        profile = json.loads(PIPELOCK_PROFILE.read_text(encoding="utf-8"))
+        self.assertIs(profile["supports"]["budget_enforcement"], False)
+        self.assertNotIn("denial_of_wallet", profile["claims"])
+        readme = " ".join(PIPELOCK_README.read_text(encoding="utf-8").split())
+        self.assertIn("Budget capability scope", readme)
+        self.assertIn("one authenticated session", readme)
+        self.assertIn("not a trusted identity boundary", readme)
+        config = PIPELOCK_CONFIG.read_text(encoding="utf-8")
+        self.assertRegex(config, r"(?m)^\s+max_tool_calls_per_session: 0$")
 
     def test_collection_upload_and_enforcement_order_is_fail_safe(self):
         ensure = self.workflow.index("      - name: Ensure fail-closed decision exists")
