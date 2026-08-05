@@ -162,7 +162,7 @@ For the reviewed Pipelock release, run the portable entry point from a clean Lin
 
 The entry point pins and verifies the released binary, supplies the required managed commands, enables the local fixtures, includes the multi-file MCP drift corpus, validates the result rows, and leaves a hash-bound evidence directory. It rejects a recorded command with the fixture or multi-file flags missing. Without fixtures, cases can fail because no local server exists rather than because policy blocked them, and the false-positive rate becomes meaningless. A plain listening proxy also scores response-interception cases incorrectly because it does not receive the runner's TLS fixture configuration.
 
-The raw portable directory is the common execution layer. It has a local run ID but no invented public URL. GitHub Actions or another retaining platform supplies a real artifact ID and canonical HTTPS URL during a separate finalization step. The [Pipelock reference-runner guide](../examples/pipelock/README.md) documents every evidence file, explicit development mode, the underlying long-form command, and a Linux scheduling example.
+The raw portable directory is the common execution layer. It has a local run ID but no invented public URL. GitHub Actions or another retaining platform supplies a real artifact ID and canonical HTTPS URL during a separate finalization step. The [Pipelock reference-runner guide](../examples/pipelock/README.md) documents every evidence file, explicit development mode, the underlying long-form command, and a Linux scheduling example. The [continuous-results contract](CONTINUOUS-RESULTS.md) documents the separate append-only review and publication step.
 
 For other tools and adapter development, use the Go runner directly. Per-case JSONL results are written to stdout and the summary JSON file is written to the path specified by `--output`. See [RUNNER.md](RUNNER.md) for the full runner contract and verdict mapping rules.
 
@@ -170,9 +170,11 @@ For other tools and adapter development, use the Go runner directly. Per-case JS
 
 Vendors run the Gauntlet locally against their own tool. Results may be submitted to a public leaderboard or published independently.
 
-Submitted results start as **self-reported**. A maintainer may verify results by re-running the Gauntlet against the same tool version. Verified results are marked accordingly on the leaderboard.
+Submitted results start as **self-reported**. A maintainer may verify results by re-running the Gauntlet against the same tool version. Verified results are marked accordingly on the leaderboard. The repository's Pipelock reference lane is explicitly first-party: it publishes only human-reviewed, append-only records and does not claim independent certification.
 
-Gauntlet leaderboard results are not stored in this repository. This repo contains attack cases, scoring methodology, and optional maintainer-published receipt profiles under `profiles/`. Each vendor owns its results and is expected to document reproduction steps.
+Third-party leaderboard submissions are not stored in this repository. This repo contains attack cases, scoring methodology, and optional maintainer-published receipt profiles under `profiles/`. Each vendor owns its results and is expected to document reproduction steps.
+
+The maintainer-operated Pipelock reference lane is the narrow exception. Its first-party results live under `gauntlet-site/results/pipelock/` as immutable evidence records selected by a reviewed `latest-verified` pointer. This is disclosed self-operated regression evidence, not a ranking or independent certification. Independent lab results remain under the independent operator's control.
 
 ## Dispute Resolution
 
@@ -200,7 +202,7 @@ Neutrality is maintained through design constraints:
 
 - **Cases test observable behavior.** Every case asks "was this traffic blocked?" not "did the tool use this internal technique?" No case requires a specific implementation approach.
 - **Pipelock runner is reference, not privileged.** The Pipelock runner in `examples/pipelock/` is a working example. It has no special status. Any vendor can add a runner in `examples/`.
-- **Gauntlet leaderboard results live outside this repo.** Optional receipt profiles may live in `profiles/` as self-reported, reproducible evidence artifacts, not rankings or certifications.
+- **Third-party leaderboard results live outside this repo.** The append-only Pipelock reference history is disclosed first-party regression evidence, not a ranking or certification. Optional receipt profiles may live in `profiles/` as self-reported, reproducible evidence artifacts.
 - **Methodology published before results.** The scoring rules, case corpus, and governance policy are public before any tool publishes Gauntlet results. No retroactive tuning.
 
 Contributions from any vendor, researcher, or individual are welcome. See [GOVERNANCE.md](GOVERNANCE.md) for the full policy and [ADOPTION.md](ADOPTION.md) for how to build a runner and publish results.

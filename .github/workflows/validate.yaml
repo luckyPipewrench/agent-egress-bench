@@ -1,6 +1,10 @@
 name: Validate Cases
 
 on:
+  # Promotion branches are created with GITHUB_TOKEN, which intentionally does
+  # not emit a pull_request workflow run. The promotion workflow explicitly
+  # dispatches this trusted workflow against the resulting branch instead.
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:

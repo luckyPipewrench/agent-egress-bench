@@ -99,6 +99,8 @@ It requires Linux, Go 1.25 or newer, Python 3, Git, curl, jq, tar, GNU timeout, 
 
 The raw directory intentionally has no made-up public URL. GitHub Actions or another retaining platform adds its real artifact ID and HTTPS location later, without modifying the evidence bytes. Creating a schedule and publishing a result are separate operator decisions.
 
+The repository's scheduled Pipelock lane is read-only and produces review candidates, not automatic public claims. Approved candidates are retained as digest-addressed, hash-linked evidence directories, and a reviewed pull request advances the `latest-verified` pointer. The included reference renderer verifies and displays score, scope, N/A reasons, false-positive rate, and the canonical run URL together; it is not currently the live pipelab.org leaderboard. See [Continuous Gauntlet Results](docs/CONTINUOUS-RESULTS.md) for the repository review and publication contract.
+
 For other tools, the runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, detection, evidence, per-category, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)).
 
 > A minimal legacy shell example for fetch-only cases lives at [`examples/pipelock/harness.sh`](examples/pipelock/harness.sh). It covers a single transport (`/fetch?url=...` GET) and is kept for illustration only — it is not the Gauntlet and will misreport every body, header, WebSocket, MCP, and response-content case. Use the Go runner for any real benchmark.

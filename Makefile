@@ -113,6 +113,12 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/evaluate_gauntlet_candidate_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/build_gauntlet_provenance_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/continuous_gauntlet_workflow_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/promote_gauntlet_candidate_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/promote_gauntlet_workflow_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/gauntlet_site_index_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_records_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_gauntlet_records.py
 	@node gauntlet-site/scope-render_test.js
+	@node gauntlet-site/latest-result_test.js
 	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }
 	@python3 scripts/validate_gauntlet_scope.py "$(GAUNTLET_SCOPE_ARTIFACT)"
