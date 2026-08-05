@@ -122,6 +122,9 @@
       if (artifact[key] !== pointer[key]) {
         throw new Error('latest-verified and result record disagree on ' + key);
       }
+      if (artifact[key] !== manifest[key]) {
+        throw new Error('record manifest and result record disagree on ' + key);
+      }
     });
     return artifact;
   }

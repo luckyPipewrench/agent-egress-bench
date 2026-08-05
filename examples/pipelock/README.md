@@ -70,13 +70,11 @@ CRON_TZ=UTC
 
 That timer does not update the repository, delete old runs, upload evidence, or publish a result. The machine operator must choose update, retention, and publication policies separately. Run the command manually once and inspect `execution-decision.json` and `run-bundle.json` before connecting it to any timer.
 
-### Reviewed GitHub publication
+### Publication is separate from this example
 
-The repository's daily GitHub workflow finalizes the portable bundle with the real Actions run ID and URL, evaluates it against the reviewed baseline, and retains it for review. It has read-only repository permissions and cannot publish.
+This directory is only a reference execution adapter. It does not grant Pipelock a benchmark endorsement, vendor submission path, ranking, or certification. Other tools use the same runner contract and control their own result publication.
 
-A maintainer can select a completed run in the `Prepare Gauntlet result promotion` workflow. That separate manual workflow revalidates the source run and every evidence digest, then opens one pull request containing an immutable evidence record, the next reviewed baseline, and the `latest-verified` pointer update. Merging that pull request approves the repository record. A rejected candidate leaves the currently selected repository record untouched. The live pipelab.org leaderboard is a separate publication surface.
-
-If a score or pinned Pipelock version moved, the source candidate remains blocked. Selecting `accept_policy_change` only allows the workflow to put the exact move in front of reviewers. It cannot override incomplete execution, errors, insufficient scope, wrong origin, or tampered evidence. The complete contract is in [`../../docs/CONTINUOUS-RESULTS.md`](../../docs/CONTINUOUS-RESULTS.md).
+The repository maintainer's separately governed, first-party regression record is documented in [`../../docs/CONTINUOUS-RESULTS.md`](../../docs/CONTINUOUS-RESULTS.md). It is disclosed operational evidence for this reference adapter, not a status available through `examples/` and not the live pipelab.org leaderboard.
 
 ## Advanced runner invocation
 

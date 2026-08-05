@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +13,9 @@ from types import SimpleNamespace
 import build_gauntlet_provenance as provenance
 import evaluate_gauntlet_candidate as evaluator
 import promote_gauntlet_candidate as promotion
+
+
+RESULTS_PATH = Path("gauntlet-site/results/pipelock")
 
 
 def reconstruct_candidate(record_dir, candidate, repo_root):
@@ -69,10 +73,11 @@ def validate_record(record_dir, repo_root):
     candidate = evaluator.load_object(candidate_path)
     if evaluator.file_sha256(candidate_path) != digest:
         raise ValueError(f"{record_dir}: candidate digest does not match its directory")
+    promotion.validate_reference_candidate(candidate)
     promotion.validate_candidate_origin(
         candidate,
-        "github-actions:luckyPipewrench/agent-egress-bench:",
-        "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/",
+        promotion.DEFAULT_ARTIFACT_PREFIX,
+        promotion.DEFAULT_URL_PREFIX,
         None,
     )
     promotion.validate_execution_decision(record_dir / promotion.EXECUTION_DECISION_FILENAME)
@@ -81,7 +86,7 @@ def validate_record(record_dir, repo_root):
         record_dir,
         candidate_path,
         promotion.SOURCE_BASELINE_FILENAME,
-        "source-promotion-decision.json",
+        promotion.SOURCE_PROMOTION_DECISION_FILENAME,
     )
     reviewed = validate_decision(
         record_dir,
@@ -92,6 +97,60 @@ def validate_record(record_dir, repo_root):
     if reviewed.get("blocked") is not False:
         raise ValueError(f"{record_dir}: reviewed promotion decision is blocked")
     return candidate, manifest
+
+
+def require_predecessor_older(predecessor, successor):
+    predecessor_time = promotion.parse_timestamp(
+        predecessor["generated_at"], "predecessor generated_at"
+    )
+    successor_time = promotion.parse_timestamp(
+        successor["generated_at"], "successor generated_at"
+    )
+    if predecessor_time >= successor_time:
+        raise ValueError("append-only record chain is not strictly chronological")
+
+
+def validate_immutable_history(repo_root, base_ref):
+    ancestor = subprocess.run(
+        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", base_ref, "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if ancestor.returncode != 0:
+        raise ValueError(f"immutable base is not an ancestor of HEAD: {base_ref}")
+    listing = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            base_ref,
+            "--",
+            RESULTS_PATH.as_posix(),
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if listing.returncode != 0:
+        raise ValueError(f"cannot inspect append-only records at immutable base: {base_ref}")
+    for raw_path in listing.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        relative = Path(os.fsdecode(raw_path))
+        current = repo_root / relative
+        if current.is_symlink() or not current.is_file():
+            raise ValueError(f"append-only history deleted a retained file: {relative}")
+        original = subprocess.run(
+            ["git", "-C", str(repo_root), "show", f"{base_ref}:{relative.as_posix()}"],
+            check=False,
+            capture_output=True,
+        )
+        if original.returncode != 0 or original.stdout != current.read_bytes():
+            raise ValueError(f"append-only history modified a retained file: {relative}")
 
 
 def validate(site_root, baseline_path, repo_root):
@@ -149,13 +208,17 @@ def validate(site_root, baseline_path, repo_root):
     visited = set()
     current_digest = digest
     expected_manifest_digest = pointer["record_manifest_sha256"]
+    successor_candidate = None
     while current_digest is not None:
         if current_digest in visited:
             raise ValueError("append-only record chain contains a cycle")
         if current_digest not in records:
             raise ValueError("append-only record chain is missing a predecessor")
         visited.add(current_digest)
-        current_dir, _, current_manifest = records[current_digest]
+        current_dir, current_candidate, current_manifest = records[current_digest]
+        if successor_candidate is not None:
+            require_predecessor_older(current_candidate, successor_candidate)
+        successor_candidate = current_candidate
         actual_manifest_digest = evaluator.file_sha256(
             current_dir / promotion.RECORD_MANIFEST_FILENAME
         )
@@ -173,12 +236,15 @@ def parse_args():
     parser.add_argument("--site-root", type=Path, default=Path("gauntlet-site"))
     parser.add_argument("--baseline", type=Path, default=Path("ci/gauntlet-baseline.json"))
     parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument("--immutable-base")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     try:
+        if args.immutable_base is not None:
+            validate_immutable_history(args.repo_root.resolve(), args.immutable_base)
         validate(args.site_root.resolve(), args.baseline.resolve(), args.repo_root.resolve())
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         print(f"Gauntlet record validation: BLOCKED: {exc}")

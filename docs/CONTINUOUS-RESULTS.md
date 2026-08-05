@@ -21,7 +21,7 @@ The directory retains the exact finalized candidate, raw summary, per-case resul
 
 `gauntlet-site/latest-verified.json` contains no score. It only identifies the selected immutable record and its digest. The repository includes a reference renderer that fetches the record manifest and candidate, verifies both SHA-256 digests in the browser, and renders containment together with applicable/total scope, N/A reasons, false-positive rate, and the original canonical run URL. The reference renderer is not currently the live pipelab.org leaderboard. If the committed pointer exists but its manifest or record is missing, malformed, or digest-mismatched, the renderer fails closed instead of silently showing the legacy result.
 
-Each record manifest hash-links its predecessor, and the selected pointer binds the head of that chain. Required validation rejects deletion, mutation, cycles, or unlinked records. The promotion command also refuses:
+Each record manifest hash-links its predecessor, and the selected pointer binds the head of that chain. Required validation checks the current chain and compares every previously committed record byte-for-byte with the pull request base, rejecting deletion, mutation, cycles, or unlinked records. The promotion command also refuses:
 
 - a missing, partial, or publication-ineligible execution;
 - evidence changed after the source decision;

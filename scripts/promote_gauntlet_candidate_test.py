@@ -98,7 +98,7 @@ def candidate(run_id="123", generated_at="2026-08-05T00:10:08Z"):
         },
         "scores": {
             "full": {
-                "containment": 0.99,
+                "containment": 157 / 158,
                 "detection": 1.0,
                 "evidence": 1.0,
                 "false_positive_rate": 0.0,
@@ -122,6 +122,7 @@ class PromotionFixture:
         self.store_root = root / "site" / "results"
         self.latest = root / "site" / "latest-verified.json"
         self.baseline_path = root / "baseline.json"
+        self.summary = root / "promotion-summary.md"
         write_json(self.baseline_path, baseline_value or baseline())
 
         self.evidence = {}
@@ -174,7 +175,6 @@ class PromotionFixture:
         write_json(self.artifact_dir / promotion.SOURCE_DECISION_FILENAME, decision)
 
     def command(self, accept_policy_change=False):
-        self.summary = self.root / "promotion-summary.md"
         command = [
             sys.executable,
             str(SCRIPT),
@@ -235,7 +235,8 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
 
     def test_same_promotion_is_idempotent(self):
         fixture = self.fixture()
-        self.assertEqual(fixture.run().returncode, 0)
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         fixture.summary.unlink()
         second = fixture.run()
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
@@ -255,6 +256,18 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             evaluator.load_object(fixture.baseline_path)["score_floors"]["full"]["containment"],
             0.98,
         )
+
+    def test_false_positive_regression_needs_explicit_policy_change(self):
+        value = candidate()
+        value["metric_counts"]["applicable"]["false_positive_rate"]["numerator"] = 1
+        value["scores"]["applicable"]["false_positive_rate"] = 1 / 54
+        fixture = self.fixture(value)
+        blocked = fixture.run()
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("explicit reviewed policy-change", blocked.stdout)
+        accepted = fixture.run(accept_policy_change=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertIn("above baseline ceiling", fixture.summary.read_text(encoding="utf-8"))
 
     def test_pinned_version_move_needs_explicit_policy_change(self):
         value = candidate()
@@ -324,7 +337,8 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
 
     def test_record_mutation_breaks_idempotent_promotion(self):
         fixture = self.fixture()
-        self.assertEqual(fixture.run().returncode, 0)
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         pointer = evaluator.load_object(fixture.latest)
         record_candidate = (
             fixture.store_root
@@ -337,6 +351,58 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("existing record file changed", result.stdout)
 
+    def test_record_manifest_identity_must_match_candidate(self):
+        fixture = self.fixture()
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        pointer = evaluator.load_object(fixture.latest)
+        record = fixture.store_root / "pipelock" / pointer["candidate_sha256"]
+        manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
+        manifest = evaluator.load_object(manifest_path)
+        manifest["tool_version"] = "9.9.9"
+        write_json(manifest_path, manifest)
+        with self.assertRaisesRegex(
+            ValueError, "record manifest and candidate disagree on tool_version"
+        ):
+            promotion.validate_record(record, pointer["candidate_sha256"])
+
+    def test_record_manifest_schema_is_enforced(self):
+        fixture = self.fixture()
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        pointer = evaluator.load_object(fixture.latest)
+        record = fixture.store_root / "pipelock" / pointer["candidate_sha256"]
+        manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
+        manifest = evaluator.load_object(manifest_path)
+        manifest["schema_version"] = 2
+        write_json(manifest_path, manifest)
+        with self.assertRaisesRegex(ValueError, "manifest schema_version must be 1"):
+            promotion.validate_record(record, pointer["candidate_sha256"])
+
+    def test_missing_latest_pointer_cannot_recreate_existing_record(self):
+        fixture = self.fixture()
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        fixture.latest.unlink()
+        fixture.write_source_decision()
+        second = fixture.run()
+        self.assertNotEqual(second.returncode, 0)
+        self.assertIn(
+            "append-only record already exists without a matching latest pointer",
+            second.stdout,
+        )
+
+    def test_latest_pointer_identity_must_match_candidate(self):
+        fixture = self.fixture()
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        pointer = evaluator.load_object(fixture.latest)
+        pointer["artifact_id"] = promotion.DEFAULT_ARTIFACT_PREFIX + "999"
+        write_json(fixture.latest, pointer)
+        second = fixture.run()
+        self.assertNotEqual(second.returncode, 0)
+        self.assertIn("latest pointer and record candidate disagree on artifact_id", second.stdout)
+
     def test_unsafe_artifact_origin_is_rejected(self):
         value = candidate()
         value["canonical_url"] = "https://attacker.example/run/123"
@@ -344,6 +410,28 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         result = fixture.run()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("canonical_url must start", result.stdout)
+
+    def test_non_reference_tool_is_rejected(self):
+        value = candidate()
+        value["tool"] = "other-tool"
+        fixture = self.fixture(value)
+        result = fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("candidate tool must be pipelock", result.stdout)
+
+    def test_unicode_run_id_is_rejected(self):
+        value = candidate(run_id="١٢٣")
+        fixture = self.fixture(value)
+        result = fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("positive decimal run ID", result.stdout)
+
+    def test_store_root_must_be_beside_latest_pointer(self):
+        fixture = self.fixture()
+        fixture.store_root = fixture.root / "elsewhere" / "results"
+        result = fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("results directory beside latest-verified", result.stdout)
 
     def test_cross_run_candidate_substitution_is_rejected(self):
         fixture = self.fixture()
@@ -380,7 +468,8 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
 
     def test_latest_pointer_cannot_move_backward(self):
         fixture = self.fixture()
-        self.assertEqual(fixture.run().returncode, 0)
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
 
         older = candidate(run_id="124", generated_at="2026-08-04T00:10:08Z")
         second_artifact = fixture.root / "older-artifact"
@@ -418,6 +507,9 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         first = fixture.run()
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         first_pointer = evaluator.load_object(fixture.latest)
+        first_record = fixture.store_root / "pipelock" / first_pointer["candidate_sha256"]
+        first_manifest_path = first_record / promotion.RECORD_MANIFEST_FILENAME
+        first_manifest_digest = evaluator.file_sha256(first_manifest_path)
 
         newer = candidate(run_id="124", generated_at="2026-08-06T00:10:08Z")
         second_artifact = fixture.root / "newer-artifact"
@@ -460,6 +552,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertEqual(
             manifest["previous_candidate_sha256"], first_pointer["candidate_sha256"]
         )
+        self.assertEqual(evaluator.file_sha256(first_manifest_path), first_manifest_digest)
         self.assertEqual(len(list((fixture.store_root / "pipelock").iterdir())), 2)
 
 

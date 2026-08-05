@@ -24,6 +24,9 @@ BASELINE_SNAPSHOT_FILENAME = "reviewed-baseline.json"
 SOURCE_BASELINE_FILENAME = "source-baseline.json"
 RECORD_MANIFEST_FILENAME = "record-manifest.json"
 LATEST_POINTER_FILENAME = "latest-verified.json"
+SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
+DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
+DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 REVIEWABLE_SCORE_FAILURE = re.compile(
     r"^scores\.(?:full|applicable)\.[a-z_]+=.+, "
@@ -98,13 +101,23 @@ def validate_candidate_origin(candidate, artifact_prefix, url_prefix, expected_r
     if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
         raise ValueError("canonical_url must be an absolute HTTPS URL")
     run_id = artifact_id.removeprefix(artifact_prefix)
-    if not run_id.isdigit() or run_id.startswith("0"):
+    if not run_id.isascii() or not run_id.isdigit() or run_id.startswith("0"):
         raise ValueError("artifact_id must end in a positive decimal run ID")
     expected_url = url_prefix + run_id
     if canonical_url != expected_url:
         raise ValueError("artifact_id and canonical_url run IDs do not match")
     if expected_run_id is not None and run_id != expected_run_id:
         raise ValueError("candidate run ID does not match the requested source run")
+
+
+def validate_reference_candidate(candidate):
+    if candidate.get("schema_version") != 2:
+        raise ValueError("candidate schema_version must be 2")
+    if candidate.get("tool") != "pipelock":
+        raise ValueError("reference promotion candidate tool must be pipelock")
+    tool_version = require_non_empty_string(candidate, "tool_version")
+    if tool_version != require_non_empty_string(candidate, "pipelock_version"):
+        raise ValueError("candidate tool_version and pipelock_version must match")
 
 
 def reviewable_policy_failure(failure):
@@ -210,6 +223,8 @@ def manifest_for(
 def validate_record(record_dir, candidate_sha256):
     manifest_path = record_dir / RECORD_MANIFEST_FILENAME
     manifest = require_object(manifest_path)
+    if manifest.get("schema_version") != 1:
+        raise ValueError("record manifest schema_version must be 1")
     require_sha256(manifest.get("candidate_sha256"), "record candidate_sha256")
     if manifest["candidate_sha256"] != candidate_sha256:
         raise ValueError("existing record candidate digest does not match its directory")
@@ -235,15 +250,34 @@ def validate_record(record_dir, candidate_sha256):
         require_sha256(expected, f"record files.{filename}")
         if evaluator.file_sha256(record_dir / filename) != expected:
             raise ValueError(f"existing record file changed: {filename}")
+    candidate = require_object(record_dir / CANDIDATE_FILENAME)
+    for field in ("tool", "tool_version", "artifact_id", "canonical_url", "generated_at"):
+        if manifest.get(field) != candidate.get(field):
+            raise ValueError(f"record manifest and candidate disagree on {field}")
     return manifest
+
+
+def canonical_pointer_paths(latest_path, candidate_sha256):
+    site_root = latest_path.resolve().parent
+    record_root = site_root / "results" / "pipelock" / candidate_sha256
+    base = "./" + record_root.relative_to(site_root).as_posix()
+    return (
+        f"{base}/{CANDIDATE_FILENAME}",
+        f"{base}/{RECORD_MANIFEST_FILENAME}",
+    )
+
+
+def validate_site_layout(store_root, latest_path):
+    expected_store_root = latest_path.resolve().parent / "results"
+    if store_root.resolve() != expected_store_root:
+        raise ValueError("store root must be the results directory beside latest-verified")
 
 
 def validate_pointer(pointer, latest_path):
     if pointer.get("schema_version") != 1 or pointer.get("status") != "verified":
         raise ValueError("latest pointer must be a schema-v1 verified pointer")
     candidate_sha256 = require_sha256(pointer.get("candidate_sha256"), "pointer candidate_sha256")
-    expected_record = f"./results/pipelock/{candidate_sha256}/{CANDIDATE_FILENAME}"
-    expected_manifest = f"./results/pipelock/{candidate_sha256}/{RECORD_MANIFEST_FILENAME}"
+    expected_record, expected_manifest = canonical_pointer_paths(latest_path, candidate_sha256)
     if pointer.get("record_path") != expected_record:
         raise ValueError("latest pointer record_path is not canonical")
     if pointer.get("record_manifest_path") != expected_manifest:
@@ -269,6 +303,10 @@ def existing_promotion_is_complete(latest_path, record_dir, candidate_sha256):
     if pointer["candidate_sha256"] != candidate_sha256:
         return False
     manifest = validate_record(record_dir, candidate_sha256)
+    candidate = require_object(record_dir / CANDIDATE_FILENAME)
+    for field in ("tool", "tool_version", "artifact_id", "canonical_url", "generated_at"):
+        if pointer.get(field) != candidate.get(field):
+            raise ValueError(f"latest pointer and record candidate disagree on {field}")
     if evaluator.file_sha256(record_dir / RECORD_MANIFEST_FILENAME) != pointer["record_manifest_sha256"]:
         raise ValueError("latest pointer record manifest digest does not match the record")
     if manifest["candidate_sha256"] != candidate_sha256:
@@ -374,12 +412,12 @@ def promote(args):
         raise ValueError("artifact directory is missing the candidate or source decision")
 
     candidate = require_object(candidate_path)
-    if candidate.get("schema_version") != 2:
-        raise ValueError("candidate schema_version must be 2")
+    validate_reference_candidate(candidate)
     validate_candidate_origin(
         candidate, args.artifact_prefix, args.url_prefix, args.expected_run_id
     )
     candidate_sha256 = evaluator.file_sha256(candidate_path)
+    validate_site_layout(args.store_root, args.latest)
     tool_root = args.store_root.resolve() / "pipelock"
     record_dir = tool_root / candidate_sha256
     latest_path = args.latest.resolve()
@@ -392,7 +430,9 @@ def promote(args):
             raise ValueError("latest-verified record and reviewed baseline are out of sync")
         if args.summary is not None:
             stored_candidate = require_object(record_dir / CANDIDATE_FILENAME)
-            stored_source_decision = require_object(record_dir / "source-promotion-decision.json")
+            stored_source_decision = require_object(
+                record_dir / SOURCE_PROMOTION_DECISION_FILENAME
+            )
             write_summary(
                 args.summary.resolve(),
                 stored_candidate,
@@ -458,7 +498,10 @@ def promote(args):
         temporary_record = Path(tempfile.mkdtemp(prefix=f".{candidate_sha256}.", dir=tool_root))
         try:
             atomic_copy(candidate_path, temporary_record / CANDIDATE_FILENAME)
-            atomic_copy(source_decision_path, temporary_record / "source-promotion-decision.json")
+            atomic_copy(
+                source_decision_path,
+                temporary_record / SOURCE_PROMOTION_DECISION_FILENAME,
+            )
             atomic_copy(args.baseline.resolve(), temporary_record / SOURCE_BASELINE_FILENAME)
             for path in paths.values():
                 atomic_copy(path, temporary_record / path.name)
@@ -484,6 +527,7 @@ def promote(args):
                 shutil.rmtree(temporary_record)
 
     manifest_sha256 = evaluator.file_sha256(record_dir / RECORD_MANIFEST_FILENAME)
+    record_path, record_manifest_path = canonical_pointer_paths(latest_path, candidate_sha256)
     pointer = {
         "schema_version": 1,
         "status": "verified",
@@ -496,8 +540,8 @@ def promote(args):
         "record_manifest_sha256": manifest_sha256,
         "previous_candidate_sha256": previous_candidate_sha256,
         "previous_record_manifest_sha256": previous_record_manifest_sha256,
-        "record_path": f"./results/pipelock/{candidate_sha256}/{CANDIDATE_FILENAME}",
-        "record_manifest_path": f"./results/pipelock/{candidate_sha256}/{RECORD_MANIFEST_FILENAME}",
+        "record_path": record_path,
+        "record_manifest_path": record_manifest_path,
     }
     evaluator.atomic_json_write(args.baseline.resolve(), baseline)
     evaluator.atomic_json_write(latest_path, pointer)
@@ -524,11 +568,11 @@ def parse_args():
     parser.add_argument("--summary", type=Path)
     parser.add_argument(
         "--artifact-prefix",
-        default="github-actions:luckyPipewrench/agent-egress-bench:",
+        default=DEFAULT_ARTIFACT_PREFIX,
     )
     parser.add_argument(
         "--url-prefix",
-        default="https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/",
+        default=DEFAULT_URL_PREFIX,
     )
     parser.add_argument("--expected-run-id")
     parser.add_argument("--accept-policy-change", action="store_true")
@@ -538,7 +582,7 @@ def parse_args():
 def main():
     try:
         promote(parse_args())
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         print(f"promotion: BLOCKED: {exc}")
         return 1
     return 0

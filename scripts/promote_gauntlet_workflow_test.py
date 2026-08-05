@@ -56,9 +56,18 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertLess(self.workflow.index(verify), self.workflow.index(download))
         self.assertIn('.path == ".github/workflows/continuous-gauntlet.yaml"', verify)
         self.assertIn('.head_repository.full_name == $repo', verify)
-        self.assertIn('.head_branch == "main"', verify)
+        self.assertIn('.head_branch == $branch', verify)
+        self.assertIn('"origin/$DEFAULT_BRANCH"', verify)
         self.assertIn("git merge-base --is-ancestor", verify)
         self.assertIn('[[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]', verify)
+
+    def test_runner_paths_are_initialized_at_step_scope(self):
+        job_env = self.workflow.split("    steps:", 1)[0]
+        initialize = step_block(self.workflow, "Initialize temporary paths")
+        self.assertNotIn("runner.temp", job_env)
+        self.assertIn("$RUNNER_TEMP/continuous-gauntlet-candidate", initialize)
+        self.assertIn("$RUNNER_TEMP/gauntlet-result-promotion.md", initialize)
+        self.assertIn('>> "$GITHUB_ENV"', initialize)
 
     def test_failed_run_requires_explicit_policy_review(self):
         verify = step_block(self.workflow, "Verify source workflow run")
@@ -102,6 +111,8 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("gh pr create", create)
         self.assertIn("existing promotion branch has different content", create)
         self.assertIn("promotion pull request already exists", create)
+        self.assertIn("existing promotion pull request targets the wrong base branch", create)
+        self.assertIn("baseRefName", create)
         self.assertIn('--body-file "$PR_BODY"', create)
         self.assertNotIn("git push origin main", create)
         self.assertNotIn("gh pr merge", self.workflow)
@@ -116,9 +127,12 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("gh workflow run validate.yaml", dispatch)
         self.assertIn('--ref "$branch"', dispatch)
         self.assertIn("GH_TOKEN:", dispatch)
+        self.assertIn("--immutable-base", validate)
+        self.assertIn("fetch-depth: 0", validate)
 
     def test_every_shell_step_parses(self):
         for name in (
+            "Initialize temporary paths",
             "Verify source workflow run",
             "Download candidate evidence",
             "Prepare append-only record",

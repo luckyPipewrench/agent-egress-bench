@@ -34,8 +34,6 @@ jobs:
       RUN_ID: ${{ inputs.run_id }}
       ACCEPT_POLICY_CHANGE: ${{ inputs.accept_policy_change }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      ARTIFACT_DIR: ${{ runner.temp }}/continuous-gauntlet-candidate
-      PR_BODY: ${{ runner.temp }}/gauntlet-result-promotion.md
     steps:
       - name: Check out trusted default branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -48,6 +46,13 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
+
+      - name: Initialize temporary paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'ARTIFACT_DIR=%s\n' "$RUNNER_TEMP/continuous-gauntlet-candidate" >> "$GITHUB_ENV"
+          printf 'PR_BODY=%s\n' "$RUNNER_TEMP/gauntlet-result-promotion.md" >> "$GITHUB_ENV"
 
       - name: Verify source workflow run
         shell: bash
@@ -65,14 +70,14 @@ jobs:
           }
           run_json="$RUNNER_TEMP/source-run.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$run_json"
-          jq -e --arg repo "$GITHUB_REPOSITORY" '
+          jq -e --arg repo "$GITHUB_REPOSITORY" --arg branch "$DEFAULT_BRANCH" '
             .status == "completed" and
             .path == ".github/workflows/continuous-gauntlet.yaml" and
             .head_repository.full_name == $repo and
-            .head_branch == "main" and
+            .head_branch == $branch and
             (.event == "schedule" or .event == "workflow_dispatch")
           ' "$run_json" >/dev/null || {
-            echo "source run is not a completed trusted Continuous Gauntlet run on main" >&2
+            echo "source run is not a completed trusted Continuous Gauntlet run on the default branch" >&2
             exit 1
           }
           conclusion="$(jq -r '.conclusion' "$run_json")"
@@ -88,8 +93,8 @@ jobs:
             }
           fi
           head_sha="$(jq -r '.head_sha' "$run_json")"
-          git merge-base --is-ancestor "$head_sha" origin/main || {
-            echo "source run head is not in current main history" >&2
+          git merge-base --is-ancestor "$head_sha" "origin/$DEFAULT_BRANCH" || {
+            echo "source run head is not in current default-branch history" >&2
             exit 1
           }
 
@@ -109,8 +114,8 @@ jobs:
             echo "candidate corpus_git_sha is invalid" >&2
             exit 1
           }
-          git merge-base --is-ancestor "$corpus_sha" origin/main || {
-            echo "candidate corpus commit is not in current main history" >&2
+          git merge-base --is-ancestor "$corpus_sha" "origin/$DEFAULT_BRANCH" || {
+            echo "candidate corpus commit is not in current default-branch history" >&2
             exit 1
           }
 
@@ -168,13 +173,18 @@ jobs:
           else
             git push origin "HEAD:refs/heads/$branch"
           fi
-          existing_pr="$(gh pr list \
+          existing_pr_json="$(gh pr list \
             --repo "$GITHUB_REPOSITORY" \
             --state open \
             --head "$branch" \
-            --json url \
-            --jq '.[0].url // empty')"
+            --json url,baseRefName \
+            --jq '.[0] // {}')"
+          existing_pr="$(jq -r '.url // empty' <<<"$existing_pr_json")"
           if [[ -n "$existing_pr" ]]; then
+            [[ "$(jq -r '.baseRefName' <<<"$existing_pr_json")" == "$DEFAULT_BRANCH" ]] || {
+              echo "existing promotion pull request targets the wrong base branch" >&2
+              exit 1
+            }
             echo "promotion pull request already exists: $existing_pr"
           else
             gh pr create \

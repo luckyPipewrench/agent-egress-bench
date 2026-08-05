@@ -19,6 +19,11 @@ const artifactText = JSON.stringify(artifact) + '\n';
 const digest = nodeCrypto.createHash('sha256').update(artifactText).digest('hex');
 const manifest = {
   schema_version: 1,
+  tool: artifact.tool,
+  tool_version: artifact.tool_version,
+  artifact_id: artifact.artifact_id,
+  canonical_url: artifact.canonical_url,
+  generated_at: artifact.generated_at,
   candidate_sha256: digest,
   previous_candidate_sha256: null,
   previous_record_manifest_sha256: null,
@@ -111,6 +116,22 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
       crypto
     ),
     /disagree on artifact_id/
+  );
+
+  const manifestIdentityMismatch = { ...manifest, tool_version: '9.9.9' };
+  const manifestIdentityMismatchText = JSON.stringify(manifestIdentityMismatch) + '\n';
+  const manifestIdentityMismatchPointer = {
+    ...pointer,
+    record_manifest_sha256: nodeCrypto.createHash('sha256')
+      .update(manifestIdentityMismatchText).digest('hex'),
+  };
+  await assert.rejects(
+    window.loadLatestVerifiedResult(
+      './latest-verified.json',
+      fetcher(manifestIdentityMismatchPointer, artifactText, manifestIdentityMismatchText),
+      crypto
+    ),
+    /record manifest and result record disagree on tool_version/
   );
 
   const missing = async () => response('', 404);

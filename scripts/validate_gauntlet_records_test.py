@@ -54,6 +54,14 @@ class ValidRecordFixture:
             check=True,
         )
         subprocess.run(
+            ["git", "-C", str(self.corpus_root), "config", "commit.gpgsign", "false"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.corpus_root), "config", "core.hooksPath", "/dev/null"],
+            check=True,
+        )
+        subprocess.run(
             ["git", "-C", str(self.corpus_root), "add", "cases/MANIFEST.txt"], check=True
         )
         subprocess.run(
@@ -227,6 +235,61 @@ class ValidRecordFixture:
             )
         )
 
+    def promote_newer(self):
+        run_metadata_path = self.artifact_dir / "run-metadata.json"
+        run_metadata = evaluator.load_object(run_metadata_path)
+        run_metadata["local_run_id"] = "local:test:2"
+        run_metadata["generated_at"] = "2026-08-06T00:10:08Z"
+        write_json(run_metadata_path, run_metadata)
+
+        bundle = provenance.build_complete_bundle(self.corpus_root, self.artifact_dir)
+        write_json(self.artifact_dir / promotion.RUN_BUNDLE_FILENAME, bundle)
+        write_json(
+            self.artifact_dir / promotion.EXECUTION_DECISION_FILENAME,
+            {
+                "schema_version": 1,
+                "local_run_id": bundle["local_run_id"],
+                "blocked": False,
+                "execution_status": "complete",
+                "publication_eligible": True,
+                "failures": [],
+                "review_notes": [],
+                "evidence_sha256": bundle["evidence_sha256"],
+            },
+        )
+        candidate = dict(bundle["candidate_scope"])
+        candidate.update(
+            {
+                "artifact_id": promotion.DEFAULT_ARTIFACT_PREFIX + "124",
+                "canonical_url": promotion.DEFAULT_URL_PREFIX + "124",
+                "portable_bundle_sha256": evaluator.file_sha256(
+                    self.artifact_dir / promotion.RUN_BUNDLE_FILENAME
+                ),
+            }
+        )
+        write_json(self.candidate_path, candidate)
+        evidence = {
+            label: self.artifact_dir / filename
+            for label, filename in promotion.EVIDENCE_FILES.items()
+        }
+        write_json(
+            self.artifact_dir / promotion.SOURCE_DECISION_FILENAME,
+            evaluator.evaluate(self.candidate_path, self.baseline, evidence),
+        )
+        promotion.promote(
+            SimpleNamespace(
+                artifact_dir=self.artifact_dir,
+                baseline=self.baseline,
+                store_root=self.site / "results",
+                latest=self.site / promotion.LATEST_POINTER_FILENAME,
+                summary=None,
+                artifact_prefix=promotion.DEFAULT_ARTIFACT_PREFIX,
+                url_prefix=promotion.DEFAULT_URL_PREFIX,
+                expected_run_id="124",
+                accept_policy_change=False,
+            )
+        )
+
 
 class ValidateGauntletRecordsTest(unittest.TestCase):
     def root(self):
@@ -234,11 +297,53 @@ class ValidateGauntletRecordsTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         return Path(temporary.name)
 
+    def immutable_repo(self):
+        root = self.root()
+        retained = root / validator.RESULTS_PATH / "record-a" / "evidence.json"
+        retained.parent.mkdir(parents=True)
+        retained.write_text('{"value":"original"}\n', encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        for key, value in (
+            ("user.name", "Gauntlet Test"),
+            ("user.email", "test@vendor.example"),
+            ("commit.gpgsign", "false"),
+            ("core.hooksPath", "/dev/null"),
+        ):
+            subprocess.run(
+                ["git", "-C", str(root), "config", key, value], check=True
+            )
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(root), "commit", "-q", "-m", "fixture"], check=True
+        )
+        base = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
+        ).strip()
+        return root, base, retained
+
     def test_no_promoted_records_is_valid_before_first_publication(self):
         root = self.root()
         baseline = root / "baseline.json"
         baseline.write_text("{}\n", encoding="utf-8")
         validator.validate(root / "site", baseline, REPO_ROOT)
+
+    def test_immutable_history_allows_new_records(self):
+        root, base, _ = self.immutable_repo()
+        added = root / validator.RESULTS_PATH / "record-b" / "evidence.json"
+        added.parent.mkdir(parents=True)
+        added.write_text('{"value":"new"}\n', encoding="utf-8")
+        validator.validate_immutable_history(root, base)
+
+    def test_immutable_history_rejects_modified_or_deleted_files(self):
+        for action in ("modified", "deleted"):
+            with self.subTest(action=action):
+                root, base, retained = self.immutable_repo()
+                if action == "modified":
+                    retained.write_text('{"value":"changed"}\n', encoding="utf-8")
+                else:
+                    retained.unlink()
+                with self.assertRaisesRegex(ValueError, f"{action} a retained file"):
+                    validator.validate_immutable_history(root, base)
 
     def test_complete_promoted_record_reconstructs_from_retained_evidence(self):
         fixture = ValidRecordFixture(self.root())
@@ -281,6 +386,56 @@ class ValidateGauntletRecordsTest(unittest.TestCase):
         write_json(pointer_path, pointer)
         with self.assertRaisesRegex(ValueError, "missing a predecessor"):
             validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
+
+    def test_record_outside_append_only_chain_is_rejected(self):
+        fixture = ValidRecordFixture(self.root())
+        fixture.promote_newer()
+        pointer_path = fixture.site / promotion.LATEST_POINTER_FILENAME
+        pointer = evaluator.load_object(pointer_path)
+        newest = fixture.site / "results" / "pipelock" / pointer["candidate_sha256"]
+        manifest_path = newest / promotion.RECORD_MANIFEST_FILENAME
+        manifest = evaluator.load_object(manifest_path)
+        manifest["previous_candidate_sha256"] = None
+        manifest["previous_record_manifest_sha256"] = None
+        write_json(manifest_path, manifest)
+        pointer["previous_candidate_sha256"] = None
+        pointer["previous_record_manifest_sha256"] = None
+        pointer["record_manifest_sha256"] = evaluator.file_sha256(manifest_path)
+        write_json(pointer_path, pointer)
+        with self.assertRaisesRegex(ValueError, "outside the append-only chain"):
+            validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
+
+    def test_latest_pointer_must_select_newest_record(self):
+        fixture = ValidRecordFixture(self.root())
+        first_pointer = evaluator.load_object(
+            fixture.site / promotion.LATEST_POINTER_FILENAME
+        )
+        first_record = (
+            fixture.site / "results" / "pipelock" / first_pointer["candidate_sha256"]
+        )
+        first_candidate = evaluator.load_object(first_record / promotion.CANDIDATE_FILENAME)
+        fixture.promote_newer()
+
+        pointer = {
+            **first_pointer,
+            **{
+                field: first_candidate[field]
+                for field in ("artifact_id", "canonical_url", "tool", "tool_version", "generated_at")
+            },
+        }
+        write_json(fixture.site / promotion.LATEST_POINTER_FILENAME, pointer)
+        (fixture.baseline).write_bytes(
+            (first_record / promotion.BASELINE_SNAPSHOT_FILENAME).read_bytes()
+        )
+        with self.assertRaisesRegex(ValueError, "does not select the newest"):
+            validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
+
+    def test_append_only_chain_timestamps_must_strictly_decrease(self):
+        with self.assertRaisesRegex(ValueError, "not strictly chronological"):
+            validator.require_predecessor_older(
+                {"generated_at": "2026-08-06T00:10:08Z"},
+                {"generated_at": "2026-08-06T00:10:08Z"},
+            )
 
 
 if __name__ == "__main__":
