@@ -1,0 +1,27 @@
+{
+  "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:30997880917",
+  "baseline_sha256": "f7eed83f9f719932f50e6184d84f034dea714e28a49a309926e5d52bf5b87c6f",
+  "blocked": false,
+  "candidate_sha256": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+  "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/30997880917",
+  "evidence_sha256": {
+    "case_index": "2a36b9f2ce028055f41d8781f5da68249a34f9b42a3b09beea9dc5e98c3fafa0",
+    "command": "158deca442751a2ad6b371f00260f4695eb3c6affef24afc18e860871fc23948",
+    "corpus_manifest": "ef82e319ad3efd7d407e15de27631f2b8fdf9f227ecc7f8253308ac44053916a",
+    "entrypoint_command": "5bb1e1a8b9a934a6dc818d8432ba4cba817b4da498744e80bd6610984df561d5",
+    "execution_decision": "dc5707b1151bb0a90f0a22034294fc4d9e0a831f3fe6df0dea7ef03aa3bdce35",
+    "pipelock_release": "016d9287cd2a63c000b5012f7ff0f24ae7d88b28e321ad08e3dbf3c9c6d6ee7f",
+    "pipelock_version_output": "f7475df97325d18fe948b25d17d390766c2a236b2c9617f0dd3b1a58db4ecfdd",
+    "raw_summary": "6d90c1db915a1f7623826f09a84826db14f07996931f705ce58a89ca8d605fae",
+    "release_checksums": "e8bed22541f2660700c9a58884da3a00f0270ad437b9483015b74ba19e438877",
+    "results": "4abc24358a3107aa3b8c50304d66ba6a085f88c6b27d796b52d782b80723f16f",
+    "run_bundle": "e4cbce2725d7b9afeaa2f29ecf200144adb20142d76e5bca1ee537eb7580cdd6",
+    "run_metadata": "b32407d7ea52794fd6dd1470a1676031c88e238ab4a7a3d20487bca625e759c3",
+    "runner_stderr": "497bd9e0ce33d70aa35b88eac25ab3de490cec256dd7e4b75b384cfa0898b304",
+    "stats": "a43158709df0fe447c3eb2e5ff3f89d66a907b1a102ff5210e635bf841f8ecfa"
+  },
+  "failures": [],
+  "promotion_status": "under_review",
+  "review_notes": [],
+  "schema_version": 1
+}

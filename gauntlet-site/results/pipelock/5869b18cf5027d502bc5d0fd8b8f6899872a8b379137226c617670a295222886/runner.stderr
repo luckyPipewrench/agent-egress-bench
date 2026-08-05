@@ -1,0 +1,40 @@
+Fixtures: HTTP=127.0.0.1:40459 TLS=127.0.0.1:42835 WS=127.0.0.1:32895 DNS=127.0.0.1:55008 MCP_HTTP=127.0.0.1:40733
+2026/08/05 10:35:23 http: TLS handshake error from 127.0.0.1:37224: EOF
+2026/08/05 10:35:23 http: TLS handshake error from 127.0.0.1:37248: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41386: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41416: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41440: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41454: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41466: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41468: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41482: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41486: EOF
+2026/08/05 10:39:53 http: TLS handshake error from 127.0.0.1:41490: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41494: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41502: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41514: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41528: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41532: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41536: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41550: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41566: EOF
+2026/08/05 10:39:54 http: TLS handshake error from 127.0.0.1:41576: EOF
+
+--- Gauntlet Summary ---
+Tool:       pipelock 3.3.0
+Adapter:    proxy
+Cases:      214 total, 210 applicable, 4 N/A, 0 errors
+
+  Full Corpus Scores (primary):
+    Containment:      98.1%
+    False Positive:   0.0%
+    Detection:        100.0%
+    Evidence:         100.0%
+
+  Applicable Scores (diagnostic):
+    Containment:      100.0%
+    False Positive:   0.0%
+    Detection:        100.0%
+    Evidence:         100.0%
+Sufficient:       true
+Summary written:  /home/runner/work/agent-egress-bench/agent-egress-bench/continuous-gauntlet-artifacts/raw-summary.json
