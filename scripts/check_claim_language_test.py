@@ -55,11 +55,34 @@ class DefinitionsDocumentTest(unittest.TestCase):
         findings = check.check_definitions(damaged)
         self.assertTrue(any("Challenge-verified" in finding for finding in findings))
 
-    def test_removing_the_adverse_result_permission_is_reported(self):
-        damaged = self.text.replace("without\nnotice, approval", "only with prior approval")
-        damaged = damaged.replace("without notice, approval", "only with prior approval")
+    def reverse_the_permission(self):
+        """Return the document with the adverse-results permission taken away."""
+        body = check.section_text(self.text, check.ADVERSE_SECTION)
+        self.assertIsNotNone(body)
+        damaged = self.text.replace(
+            body, "\nAn adverse result needs maintainer approval before publication.\n"
+        )
+        self.assertNotIn("may publish", check.section_text(damaged, check.ADVERSE_SECTION))
+        return damaged
+
+    def test_reversing_the_adverse_result_permission_is_reported(self):
+        findings = check.check_definitions(self.reverse_the_permission())
+        self.assertTrue(any("Adverse results" in finding for finding in findings))
+
+    def test_permission_phrase_elsewhere_does_not_satisfy_the_check(self):
+        damaged = self.reverse_the_permission().replace(
+            "## Scope\n",
+            "## Scope\n\nA lab may publish its schedule without notice, approval, or coordination.\n",
+            1,
+        )
+        self.assertIn("without notice, approval", damaged)
         findings = check.check_definitions(damaged)
-        self.assertTrue(any("adverse results" in finding for finding in findings))
+        self.assertTrue(any("Adverse results" in finding for finding in findings))
+
+    def test_deleting_the_adverse_results_section_is_reported(self):
+        damaged = self.text.replace("## Adverse results", "## Something else")
+        findings = check.check_definitions(damaged)
+        self.assertTrue(any("missing the 'Adverse results' section" in f for f in findings))
 
 
 class RepositoryTest(unittest.TestCase):

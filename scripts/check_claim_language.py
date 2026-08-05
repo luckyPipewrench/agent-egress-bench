@@ -53,6 +53,8 @@ BANNED = (
 
 COMPILED = tuple((re.compile(pattern, re.IGNORECASE), reason) for pattern, reason in BANNED)
 
+ADVERSE_SECTION = "Adverse results"
+
 REQUIRED_DEFINITIONS = (
     "Self-run",
     "Artifact-validated",
@@ -93,18 +95,42 @@ def scan_text(relative: Path, text: str):
     return findings
 
 
+def section_text(text: str, heading: str):
+    """Return the body of one level-two section, or None when it is absent."""
+    body = []
+    inside = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = line[3:].strip().lower() == heading.lower()
+            continue
+        if inside:
+            body.append(line)
+    return "\n".join(body) if inside or body else None
+
+
 def check_definitions(text: str):
     """Report missing required content in the definitions document."""
     findings = []
     for label in REQUIRED_DEFINITIONS:
         if label not in text:
             findings.append(f"{DEFINITIONS_DOC}: missing the {label} assurance label")
-    collapsed = " ".join(text.split()).lower()
-    if "without notice, approval" not in collapsed:
-        findings.append(
-            f"{DEFINITIONS_DOC}: missing the permission to publish adverse results "
-            "without notice or approval"
-        )
+
+    # The permission has to live in its own section. Matching the phrase anywhere
+    # in the document would pass while the adverse-results section itself said
+    # the opposite, which is the failure this gate exists to prevent.
+    adverse = section_text(text, ADVERSE_SECTION)
+    if adverse is None:
+        findings.append(f"{DEFINITIONS_DOC}: missing the '{ADVERSE_SECTION}' section")
+    else:
+        collapsed = " ".join(adverse.split()).lower()
+        granted = "may publish" in collapsed and "without notice, approval" in collapsed
+        if not granted:
+            findings.append(
+                f"{DEFINITIONS_DOC}: the '{ADVERSE_SECTION}' section no longer grants "
+                "permission to publish an adverse result without notice or approval"
+            )
     return findings
 
 

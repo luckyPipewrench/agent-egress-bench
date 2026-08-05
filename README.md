@@ -209,7 +209,7 @@ Full mapping with MITRE ATT&CK techniques: [docs/OWASP-MAPPING.md](docs/OWASP-MA
 
 This corpus evaluates the **security tool** that sits between an AI agent and the network (a proxy, firewall, or MCP wrapper): given an attack, did the tool catch it. It does not evaluate the agent or model's own behavior. Cases test observable outcomes at the wire level, such as whether an exfiltrated secret in a query string was blocked or whether prompt injection in a tool response was detected.
 
-Each tool publishes its own results independently; this repo produces no rankings or cross-tool comparisons.
+Each publisher publishes and owns its own results. This repository publishes no ranking, leaderboard, or cross-tool comparison table. <!-- claim-ok: states the non-claim -->
 
 ## Docs
 
@@ -236,7 +236,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Cases, runners, and documentation improv
 
 ## Governance
 
-This corpus was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author. Contributions from any vendor or individual are welcome. This repo does not produce rankings or cross-tool comparison tables, and the maintainer awards no verification mark to anyone else's result. Each tool publishes its own results independently, under the labels defined in [docs/RESULTS-USE.md](docs/RESULTS-USE.md). Publishing a result that reflects badly on Pipelock needs no notice or approval.
+This corpus was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author. Contributions from any vendor or individual are welcome. This repository publishes no ranking, leaderboard, or cross-tool comparison table, and the maintainer awards no verification mark to anyone else's result. <!-- claim-ok: states the non-claim --> Each publisher publishes and owns its own results, under the labels defined in [docs/RESULTS-USE.md](docs/RESULTS-USE.md). Publishing a result that reflects badly on Pipelock needs no notice or approval.
 
 **Conflict of interest disclosure:** The author builds an agent egress security tool. This corpus was designed to be tool-neutral: cases test observable behavior (did the request get blocked?), not implementation details. The [Pipelock runner](examples/pipelock/) is a reference implementation, not a privileged position.
 

@@ -165,7 +165,7 @@ Tools can still publish simple pass/fail results without the Gauntlet. The Gaunt
 
 The Gauntlet inherits all governance rules from [GOVERNANCE.md](GOVERNANCE.md):
 
-- Tool-neutral. No rankings or leaderboards in this repo, and no maintainer-awarded mark on anyone else's result. See [RESULTS-USE.md](RESULTS-USE.md). <!-- claim-ok: states the non-claim -->
+- Tool-neutral. This repository publishes no ranking, leaderboard, or cross-tool comparison table, and no maintainer-awarded mark on anyone else's result. See [RESULTS-USE.md](RESULTS-USE.md). <!-- claim-ok: states the non-claim -->
 - Case IDs are immutable. Scoring changes do not affect case identity.
 - Conflict of interest is disclosed. Contributions from any vendor are welcome.
 - Spec changes require a PR with rationale.

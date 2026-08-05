@@ -170,7 +170,7 @@ For other tools and adapter development, use the Go runner directly. Per-case JS
 
 Vendors, labs, and customers run the Gauntlet against their own target and publish the result themselves. This repository stores no third-party results and awards no verification mark to one. Whoever ran it owns it.
 
-Label the run with the assurance labels in [Results Use and Attribution](RESULTS-USE.md), and publish the identifying facts that policy lists: exact method commit, corpus and scoring version, capability profile and its digest, adapter identity and owner, target version and configuration, the applicable and not-applicable scope with N/A reasons, and the metrics reported separately. A number without those facts cannot be reproduced or disputed.
+Label the run with the assurance labels in [Results Use and Attribution](RESULTS-USE.md), and publish every identifying fact in that policy's table. The table is the complete list; it covers exact method commit, corpus and scoring version with `corpus_sha256`, capability profile and its digest, adapter identity and owner, target version and configuration, the applicable, not-applicable, and error counts with N/A reasons, the metrics reported separately, and the instructions to reproduce the run. A number without those facts cannot be reproduced or disputed.
 
 The maintainer-operated Pipelock lane is the one result set kept in this repository. Its records live under `gauntlet-site/results/pipelock/` as immutable evidence directories selected by a reviewed `latest-verified` pointer. That lane is disclosed self-run, artifact-validated regression evidence. It carries no independence claim, and the maintainer re-running somebody else's tool would not change that.
 
