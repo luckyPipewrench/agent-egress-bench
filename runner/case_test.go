@@ -279,3 +279,46 @@ func TestCheckApplicability(t *testing.T) {
 		})
 	}
 }
+
+func TestPipelockBudgetCasesAreNotApplicable(t *testing.T) {
+	profile, err := loadProfile("../examples/pipelock/tool-profile.json")
+	if err != nil {
+		t.Fatalf("loadProfile: %v", err)
+	}
+	cases, err := loadCases("../cases")
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+
+	wantIDs := map[string]bool{
+		"mcp-chain-dow-budget-exceeded-010":             true,
+		"mcp-chain-dow-under-budget-011":                true,
+		"mcp-chain-dow-interleaved-budget-exceeded-012": true,
+	}
+	seen := make(map[string]bool)
+	for _, c := range cases {
+		budgetCase := false
+		for _, requirement := range c.Requires {
+			if requirement == "budget_enforcement" {
+				budgetCase = true
+				break
+			}
+		}
+		if !budgetCase {
+			continue
+		}
+		seen[c.ID] = true
+		reason, applicable := checkApplicability(c, profile)
+		if applicable || reason != NAMissingRequires {
+			t.Errorf("case %s applicability = (%q, %t), want (%q, false)", c.ID, reason, applicable, NAMissingRequires)
+		}
+	}
+	if len(seen) != len(wantIDs) {
+		t.Fatalf("budget case IDs = %v, want %v", seen, wantIDs)
+	}
+	for id := range wantIDs {
+		if !seen[id] {
+			t.Errorf("missing budget case %s", id)
+		}
+	}
+}
