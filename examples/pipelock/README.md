@@ -72,9 +72,9 @@ That timer does not update the repository, delete old runs, upload evidence, or 
 
 ### Publication is separate from this example
 
-This directory is only a reference execution adapter. It does not grant Pipelock a benchmark endorsement, vendor submission path, ranking, or certification. Other tools use the same runner contract and control their own result publication.
+This directory is only a reference execution adapter. It does not grant Pipelock a benchmark endorsement, vendor submission path, ranking, or certification. <!-- claim-ok: states the non-claim --> Other tools use the same runner contract and control their own result publication.
 
-The repository maintainer's separately governed, first-party regression record is documented in [`../../docs/CONTINUOUS-RESULTS.md`](../../docs/CONTINUOUS-RESULTS.md). It is disclosed operational evidence for this reference adapter, not a status available through `examples/` and not the live pipelab.org leaderboard.
+The repository maintainer's separately governed, first-party regression record is documented in [`../../docs/CONTINUOUS-RESULTS.md`](../../docs/CONTINUOUS-RESULTS.md). It is disclosed operational evidence for this reference adapter, not a status available through `examples/` and not the published pipelab.org page that renders the same history.
 
 ## Advanced runner invocation
 

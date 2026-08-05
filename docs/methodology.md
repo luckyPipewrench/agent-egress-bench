@@ -166,15 +166,13 @@ The raw portable directory is the common execution layer. It has a local run ID 
 
 For other tools and adapter development, use the Go runner directly. Per-case JSONL results are written to stdout and the summary JSON file is written to the path specified by `--output`. See [RUNNER.md](RUNNER.md) for the full runner contract and verdict mapping rules.
 
-## Submission
+## Publishing a result
 
-Vendors run the Gauntlet locally against their own tool. Results may be submitted to a public leaderboard or published independently.
+Vendors, labs, and customers run the Gauntlet against their own target and publish the result themselves. This repository stores no third-party results and awards no verification mark to one. Whoever ran it owns it.
 
-Submitted results start as **self-reported**. A maintainer may verify results by re-running the Gauntlet against the same tool version. Verified results are marked accordingly on the leaderboard. The repository's Pipelock reference lane is explicitly first-party: it publishes only human-reviewed, append-only records and does not claim independent certification.
+Label the run with the assurance labels in [Results Use and Attribution](RESULTS-USE.md), and publish the identifying facts that policy lists: exact method commit, corpus and scoring version, capability profile and its digest, adapter identity and owner, target version and configuration, the applicable and not-applicable scope with N/A reasons, and the metrics reported separately. A number without those facts cannot be reproduced or disputed.
 
-Third-party leaderboard submissions are not stored in this repository. This repo contains attack cases, scoring methodology, and optional maintainer-published receipt profiles under `profiles/`. Each vendor owns its results and is expected to document reproduction steps.
-
-The maintainer-operated Pipelock reference lane is the narrow exception. Its first-party results live under `gauntlet-site/results/pipelock/` as immutable evidence records selected by a reviewed `latest-verified` pointer. This is disclosed self-operated regression evidence, not a ranking or independent certification. Independent lab results remain under the independent operator's control.
+The maintainer-operated Pipelock lane is the one result set kept in this repository. Its records live under `gauntlet-site/results/pipelock/` as immutable evidence directories selected by a reviewed `latest-verified` pointer. That lane is disclosed self-run, artifact-validated regression evidence. It carries no independence claim, and the maintainer re-running somebody else's tool would not change that.
 
 ## Dispute Resolution
 
@@ -202,7 +200,8 @@ Neutrality is maintained through design constraints:
 
 - **Cases test observable behavior.** Every case asks "was this traffic blocked?" not "did the tool use this internal technique?" No case requires a specific implementation approach.
 - **Pipelock runner is reference, not privileged.** The Pipelock runner in `examples/pipelock/` is a working example. It has no special status. Any vendor can add a runner in `examples/`.
-- **Third-party leaderboard results live outside this repo.** The append-only Pipelock reference history is disclosed first-party regression evidence, not a ranking or certification. Optional receipt profiles may live in `profiles/` as self-reported, reproducible evidence artifacts.
+- **Third-party results live outside this repo.** The append-only Pipelock history is disclosed first-party regression evidence. Optional receipt profiles may live in `profiles/` as self-reported, reproducible evidence artifacts.
 - **Methodology published before results.** The scoring rules, case corpus, and governance policy are public before any tool publishes Gauntlet results. No retroactive tuning.
+- **The rules bind the maintainer too.** Anyone may publish an adverse Pipelock result with no notice or approval, and the maintainer awards nobody a verification mark. See [RESULTS-USE.md](RESULTS-USE.md).
 
 Contributions from any vendor, researcher, or individual are welcome. See [GOVERNANCE.md](GOVERNANCE.md) for the full policy and [ADOPTION.md](ADOPTION.md) for how to build a runner and publish results.

@@ -1,4 +1,4 @@
-.PHONY: preflight stats stats-update check-stats cases-manifest check-gauntlet-site test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases
+.PHONY: preflight check-claim-language stats stats-update check-stats cases-manifest check-gauntlet-site test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -12,7 +12,14 @@ GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.j
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site
+preflight: test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language
+
+# Reject documentation that makes a claim the method cannot support, and keep
+# docs/RESULTS-USE.md defining the assurance labels and the adverse-result
+# permission it grants.
+check-claim-language:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_claim_language_test.py
+	@python3 scripts/check_claim_language.py
 
 test-validate:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"

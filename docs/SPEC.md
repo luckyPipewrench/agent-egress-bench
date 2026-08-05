@@ -227,4 +227,4 @@ See [GOVERNANCE.md](GOVERNANCE.md) for full policy. Key rules:
 2. Existing case semantics do not change silently. Semantic changes require a new case.
 3. New cases must include rationale, expected verdict, source or explanation, and false-positive assessment.
 4. Corpus versions are additive where possible.
-5. Author conflict is disclosed: created by the Pipelock author. Contributions from any vendor are welcome. No cross-tool leaderboard in this repo.
+5. Author conflict is disclosed: created by the Pipelock author. Contributions from any vendor are welcome. No cross-tool ranking in this repo.

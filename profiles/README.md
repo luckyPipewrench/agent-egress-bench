@@ -6,7 +6,7 @@ records, for every applicable corpus case, whether a tool blocked the action,
 explained the verdict, produced a signed receipt, produced one that is
 independently verifiable, and (for benign baselines) whether it blocked a
 case it should have allowed. Profiles are evidence artifacts published by
-the tool's maintainer. The corpus does not certify or audit them.
+the tool's maintainer. The corpus does not certify or audit them. <!-- claim-ok: states the non-claim -->
 
 ## Where profiles come from
 
@@ -41,7 +41,7 @@ runner or adapter; the schema is tool-neutral.
   "Each tool can publish its own results. Cross-tool comparison tables
   are not part of this repo." Aggregate scores across profiles are out
   of scope for this directory.
-- **It is not a certification.** Profile submissions are reviewed for
+- **It is not a certification.** <!-- claim-ok: states the non-claim --> Profile submissions are reviewed for
   shape and referenced case IDs. The corpus maintainers do not validate
   the values; relying parties reproduce the profile before trusting it.
 - **It is not a weight on which dimensions matter.** A buyer evaluating

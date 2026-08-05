@@ -19,7 +19,7 @@ not substitute one transport for another.
 | CONNECT-capable forward proxy | Supported by the proxy adapter as `http_proxy` | HTTP CONNECT and TLS-interception cases when the tool can be configured as an HTTPS forward proxy |
 | Reverse proxy or API gateway with `listen` and `upstream` routing semantics | Not supported by the proxy adapter today | A custom runner is required; the current adapter cannot route arbitrary case URLs through this shape |
 | In-process SDK or library | Not supported by the proxy adapter today | A custom runner or wrapper service is required, and the result should declare only the transports it can actually exercise |
-| MCP gateway | Not supported by a generic adapter today | Tool-specific MCP stdio or MCP HTTP commands can be driven now; a protocol-first MCP gateway adapter is planned |
+| MCP gateway | Narrow generic support today via `--adapter mcp-gateway` with a gateway plugin | Streamable HTTP only. One `tools/call` per `mcp_http` case and the `tools/list` tool-definition path for `mcp_stdio` cases. Gateway start and fixture-registration commands are declarative plugin fields the adapter does not execute yet, so sessions, multi-call sequences, resources, prompts, and multi-server topologies are out of scope. Tool-specific MCP stdio or MCP HTTP commands remain the fuller path. See [GATEWAY-ADAPTER.md](GATEWAY-ADAPTER.md) |
 
 If none of the supported shapes match your architecture, mark the unmatched
 transports as unsupported in `supports` or write a tool-specific runner. Do not
