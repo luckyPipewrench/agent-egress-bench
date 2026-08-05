@@ -158,8 +158,21 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- \
             ci/gauntlet-baseline.json \
-            gauntlet-site/latest-verified.json \
-            "$record_dir"
+            gauntlet-site/latest-verified.json
+          # Evidence extensions can overlap local-output ignore rules. Force-add
+          # only the validated immutable record, then prove its complete file
+          # set reached the index before committing.
+          git add -f -- "$record_dir"
+          expected_files="$RUNNER_TEMP/gauntlet-record-expected-files.txt"
+          staged_files="$RUNNER_TEMP/gauntlet-record-staged-files.txt"
+          {
+            printf '%s\n' record-manifest.json
+            jq -r '.files | keys[]' "$record_dir/record-manifest.json"
+          } | LC_ALL=C sort > "$expected_files"
+          git ls-files -- "$record_dir" \
+            | sed "s#^$record_dir/##" \
+            | LC_ALL=C sort > "$staged_files"
+          diff -u "$expected_files" "$staged_files"
           # Raw evidence is copied byte-for-byte and may legitimately preserve
           # command-line whitespace. Lint only the generated control files.
           git diff --cached --check -- \
@@ -199,13 +212,15 @@ jobs:
               --body-file "$PR_BODY"
           fi
 
-      - name: Dispatch required validation
+      - name: Dispatch required validations
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           branch="gauntlet-result-$RUN_ID"
-          gh workflow run validate.yaml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$branch"
+          for workflow in validate.yaml security.yaml pipelock.yaml; do
+            gh workflow run "$workflow" \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$branch"
+          done

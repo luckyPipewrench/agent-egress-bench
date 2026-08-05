@@ -114,6 +114,11 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("existing promotion pull request targets the wrong base branch", create)
         self.assertIn("baseRefName", create)
         self.assertIn("Raw evidence is copied byte-for-byte", create)
+        self.assertIn('git add -f -- "$record_dir"', create)
+        self.assertIn("gauntlet-record-expected-files.txt", create)
+        self.assertIn("gauntlet-record-staged-files.txt", create)
+        self.assertIn("git ls-files --", create)
+        self.assertIn('diff -u "$expected_files" "$staged_files"', create)
         self.assertIn("git diff --cached --check --", create)
         self.assertIn("ci/gauntlet-baseline.json", create)
         self.assertIn("gauntlet-site/latest-verified.json", create)
@@ -124,16 +129,41 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertNotIn("--force", self.workflow)
 
     def test_generated_pr_branch_gets_required_validation_dispatch(self):
-        validate = (REPO_ROOT / ".github" / "workflows" / "validate.yaml").read_text(
-            encoding="utf-8"
+        workflow_dir = REPO_ROOT / ".github" / "workflows"
+        required_workflows = ("validate.yaml", "security.yaml", "pipelock.yaml")
+        loaded = {
+            name: (workflow_dir / name).read_text(encoding="utf-8")
+            for name in required_workflows
+        }
+        dispatch = step_block(self.workflow, "Dispatch required validations")
+        for name, workflow in loaded.items():
+            with self.subTest(workflow=name):
+                self.assertRegex(workflow, r"(?m)^  workflow_dispatch:$")
+        self.assertIn(
+            "for workflow in validate.yaml security.yaml pipelock.yaml; do",
+            dispatch,
         )
-        dispatch = step_block(self.workflow, "Dispatch required validation")
-        self.assertRegex(validate, r"(?m)^  workflow_dispatch:$")
-        self.assertIn("gh workflow run validate.yaml", dispatch)
+        self.assertIn('gh workflow run "$workflow"', dispatch)
         self.assertIn('--ref "$branch"', dispatch)
         self.assertIn("GH_TOKEN:", dispatch)
-        self.assertIn("--immutable-base", validate)
-        self.assertIn("fetch-depth: 0", validate)
+        self.assertIn("--immutable-base", loaded["validate.yaml"])
+        self.assertIn("fetch-depth: 0", loaded["validate.yaml"])
+
+    def test_dispatched_pipelock_scan_checks_branch_diff(self):
+        pipelock = (REPO_ROOT / ".github" / "workflows" / "pipelock.yaml").read_text(
+            encoding="utf-8"
+        )
+        dispatched_scan = step_block(pipelock, "Scan dispatched branch diff")
+        self.assertIn("if: github.event_name == 'workflow_dispatch'", dispatched_scan)
+        self.assertIn('"origin/$DEFAULT_BRANCH...HEAD"', dispatched_scan)
+        self.assertIn("git diff --no-ext-diff --no-textconv", dispatched_scan)
+        self.assertIn('> "$diff_file"', dispatched_scan)
+        self.assertIn(
+            'pipelock git scan-diff "${scan_args[@]}" < "$diff_file"',
+            dispatched_scan,
+        )
+        self.assertIn("CONFIG_PATH:", dispatched_scan)
+        self.assertIn("--exclude cases/", dispatched_scan)
 
     def test_every_shell_step_parses(self):
         for name in (
@@ -142,7 +172,7 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
             "Download candidate evidence",
             "Prepare append-only record",
             "Create reviewed promotion pull request",
-            "Dispatch required validation",
+            "Dispatch required validations",
         ):
             with self.subTest(name=name):
                 block = step_block(self.workflow, name)
