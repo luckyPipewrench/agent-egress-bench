@@ -113,6 +113,7 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/evaluate_gauntlet_candidate_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/build_gauntlet_provenance_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/continuous_gauntlet_workflow_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/render_gauntlet_run_summary_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/promote_gauntlet_candidate_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/promote_gauntlet_workflow_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/gauntlet_site_index_test.py

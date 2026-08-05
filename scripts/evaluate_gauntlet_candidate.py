@@ -281,12 +281,50 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
     return decision
 
 
-def enforce(decision_path, candidate_path, baseline_path, evidence_paths=None):
+def enforcement_result(decision_path, candidate_path, baseline_path, verdict, promotion_status, failures):
+    result = {
+        "schema_version": 1,
+        "verdict": verdict,
+        "promotion_status": promotion_status,
+        "failures": failures,
+        "decision_sha256": None,
+        "candidate_sha256": None,
+        "baseline_sha256": None,
+    }
+    for field, path in (
+        ("decision_sha256", decision_path),
+        ("candidate_sha256", candidate_path),
+        ("baseline_sha256", baseline_path),
+    ):
+        try:
+            result[field] = file_sha256(path)
+        except OSError:
+            pass
+    return result
+
+
+def write_enforcement_result(result_path, result):
+    try:
+        atomic_json_write(result_path, result)
+    except OSError as exc:
+        print(f"::error::cannot write enforcement result: {exc}")
+        return False
+    return True
+
+
+def enforce(decision_path, candidate_path, baseline_path, result_path, evidence_paths=None):
     evidence_paths = evidence_paths or {}
     try:
         decision = load_object(decision_path)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(f"candidate decision: BLOCKED: {exc}")
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        failure = f"cannot read candidate decision: {exc}"
+        write_enforcement_result(
+            result_path,
+            enforcement_result(
+                decision_path, candidate_path, baseline_path, "blocked", "blocked", [failure]
+            ),
+        )
+        print(f"candidate decision: BLOCKED: {failure}")
         return 1
     integrity_failures = []
     recomputed = evaluate(candidate_path, baseline_path, evidence_paths)
@@ -320,14 +358,50 @@ def enforce(decision_path, candidate_path, baseline_path, evidence_paths=None):
 
     if decision.get("blocked") is not False or integrity_failures:
         failures = decision.get("failures")
-        if not isinstance(failures, list) or not failures:
+        if not isinstance(failures, list):
+            failures = []
+        if decision.get("blocked") is not False and not failures:
             failures = ["decision is blocked without a recorded reason"]
         failures = [*failures, *integrity_failures]
         for failure in failures:
             print(f"::error::{failure}")
+        result = enforcement_result(
+            decision_path, candidate_path, baseline_path, "blocked", "blocked", failures
+        )
+        if not write_enforcement_result(result_path, result):
+            return 1
         print(f"candidate decision: BLOCKED ({len(failures)} failure(s))")
         return 1
-    print("candidate decision: ACCEPTED FOR HUMAN REVIEW (not published)")
+    if decision.get("promotion_status") == "scope_changed_requires_review":
+        result = enforcement_result(
+            decision_path,
+            candidate_path,
+            baseline_path,
+            "review_required",
+            "scope_changed_requires_review",
+            [],
+        )
+        if not write_enforcement_result(result_path, result):
+            return 1
+        print("::warning::candidate scope changed and requires owner review; public record unchanged")
+        print("candidate decision: REVIEW REQUIRED (not published)")
+        return 2
+    if decision.get("promotion_status") != "under_review":
+        failure = "candidate decision has an unrecognized promotion status"
+        write_enforcement_result(
+            result_path,
+            enforcement_result(
+                decision_path, candidate_path, baseline_path, "blocked", "blocked", [failure]
+            ),
+        )
+        print(f"::error::{failure}")
+        return 1
+    result = enforcement_result(
+        decision_path, candidate_path, baseline_path, "pass", "under_review", []
+    )
+    if not write_enforcement_result(result_path, result):
+        return 1
+    print("candidate decision: PASS (no action required; not published)")
     return 0
 
 
@@ -345,6 +419,7 @@ def parse_args():
     enforce_parser.add_argument("decision", type=Path)
     enforce_parser.add_argument("--candidate", type=Path, required=True)
     enforce_parser.add_argument("--baseline", type=Path, required=True)
+    enforce_parser.add_argument("--result", type=Path, required=True)
     enforce_parser.add_argument("--evidence", action="append", default=[], metavar="NAME=PATH")
     return parser.parse_args()
 
@@ -369,7 +444,7 @@ def main():
         print(f"candidate decision: BLOCKED: {exc}")
         return 1
     if args.command == "enforce":
-        return enforce(args.decision, args.candidate, args.baseline, evidence_paths)
+        return enforce(args.decision, args.candidate, args.baseline, args.result, evidence_paths)
 
     decision = evaluate(args.candidate, args.baseline, evidence_paths)
     atomic_json_write(args.decision, decision)

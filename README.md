@@ -6,6 +6,7 @@
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml/badge.svg" alt="Validate Cases"></a>
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml/badge.svg" alt="Security"></a>
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" alt="Pipelock Scan"></a>
+  <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/continuous-gauntlet.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/continuous-gauntlet.yaml/badge.svg" alt="Continuous Gauntlet"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/agent-egress-bench"><img src="https://api.scorecard.dev/projects/github.com/luckyPipewrench/agent-egress-bench/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://goreportcard.com/report/github.com/luckyPipewrench/agent-egress-bench"><img src="https://goreportcard.com/badge/github.com/luckyPipewrench/agent-egress-bench" alt="Go Report Card"></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>

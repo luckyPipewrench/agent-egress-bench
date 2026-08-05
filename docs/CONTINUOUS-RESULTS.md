@@ -9,6 +9,10 @@ The Pipelock reference lane separates execution, review, and publication.
 
 The scheduled workflow cannot write repository contents or open a pull request. A raw run never moves the committed pointer by itself. Candidate Actions artifacts are retained for 14 days, so a maintainer must prepare the promotion before that download window closes.
 
+Daily runs do not create pull requests. The workflow summary says **PASS — NO ACTION REQUIRED** when the candidate matches the approved scope. Owner action is needed only when it says **REVIEW REQUIRED** for a scope or policy change, or **BLOCKED** for an incomplete or failed run.
+
+Clean runs finish green. Review-required and blocked runs finish red so the Actions badge and normal failed-workflow notifications surface the action; the first line of the run summary distinguishes a review from a broken run. Email delivery still depends on the owner's GitHub notification settings.
+
 ## Append-only layout
 
 Each approved candidate is stored at a digest-addressed path:

@@ -155,15 +155,6 @@ jobs:
             echo "DECISION_PATH=$decision_path"
             echo "ARTIFACT_JSON=$candidate_path"
           } >> "$GITHUB_ENV"
-          {
-            echo '## Continuous Gauntlet candidate'
-            echo
-            echo 'This run did not publish or replace a public result.'
-            echo
-            jq -r '"- Promotion status: `\(.promotion_status)`\n- Blocked: `\(.blocked)`\n- Candidate SHA-256: `\(.candidate_sha256)`"' "$decision_path"
-            jq -r '.review_notes[]? | "- Review: " + .' "$decision_path"
-            jq -r '.failures[]? | "- Failure: " + .' "$decision_path"
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload provenance artifact
         if: ${{ !cancelled() }}
@@ -195,12 +186,15 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           test -n "${DECISION_PATH:-}" || { echo "candidate decision was not produced" >&2; exit 1; }
+          test -n "${ARTIFACT_JSON:-}" || { echo "candidate artifact was not produced" >&2; exit 1; }
           artifact_dir="$GAUNTLET_ARTIFACT_DIR"
+          decision_exit=0
           python3 scripts/evaluate_gauntlet_candidate.py enforce "$DECISION_PATH" \
             --candidate "$ARTIFACT_JSON" \
             --baseline ci/gauntlet-baseline.json \
+            --result "$artifact_dir/enforcement-result.json" \
             --evidence "raw_summary=$artifact_dir/raw-summary.json" \
             --evidence "results=$artifact_dir/results.jsonl" \
             --evidence "runner_stderr=$artifact_dir/runner.stderr" \
@@ -214,4 +208,51 @@ jobs:
             --evidence "pipelock_version_output=$artifact_dir/pipelock-version.txt" \
             --evidence "corpus_manifest=$artifact_dir/corpus-manifest.txt" \
             --evidence "execution_decision=$artifact_dir/execution-decision.json" \
-            --evidence "run_bundle=$artifact_dir/run-bundle.json"
+            --evidence "run_bundle=$artifact_dir/run-bundle.json" || decision_exit=$?
+          exit "$decision_exit"
+
+      - name: Render owner-facing run summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$GAUNTLET_ARTIFACT_DIR"
+          mkdir -p "$artifact_dir"
+          candidate_path="${ARTIFACT_JSON:-$artifact_dir/continuous-gauntlet-pipelock.json}"
+          decision_path="${DECISION_PATH:-$artifact_dir/promotion-decision.json}"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          summary_path="$artifact_dir/owner-summary.md"
+          summary_exit=0
+          if [[ -f scripts/render_gauntlet_run_summary.py ]]; then
+            python3 scripts/render_gauntlet_run_summary.py \
+              --candidate "$candidate_path" \
+              --decision "$decision_path" \
+              --baseline ci/gauntlet-baseline.json \
+              --enforcement-result "$artifact_dir/enforcement-result.json" \
+              --repository "$GITHUB_REPOSITORY" \
+              --run-url "$run_url" > "$summary_path" || summary_exit=$?
+            if [[ ! -s "$summary_path" ]]; then
+              summary_exit=1
+            fi
+          else
+            summary_exit=1
+          fi
+          if (( summary_exit != 0 )) && [[ ! -s "$summary_path" ]]; then
+            {
+              echo '## Continuous Gauntlet: BLOCKED — ACTION REQUIRED'
+              echo
+              echo 'The owner summary could not be rendered after an earlier workflow failure. The public record is unchanged.'
+            } > "$summary_path"
+          fi
+          cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"
+          exit "$summary_exit"
+
+      - name: Upload owner review artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: continuous-gauntlet-owner-review
+          path: |
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/enforcement-result.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/owner-summary.md
+          retention-days: 14
