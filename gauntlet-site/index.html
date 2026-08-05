@@ -60,7 +60,7 @@ pre { background: var(--bg); border: 1px solid var(--border); border-radius: 0.3
 }
 </style>
 </head>
-<body data-results-url="./gauntlet-results.json" data-corpus-version="v2.0.0" data-scoring-version="2.0">
+<body data-latest-url="./latest-verified.json" data-results-url="./gauntlet-results.json" data-corpus-version="v2.3.0" data-scoring-version="2.4">
 
 <h1>Pipelock Gauntlet</h1>
 <p class="subtitle">Agent egress security benchmark. Tests the security tool, not the agent.</p>
@@ -77,10 +77,13 @@ go build -o aeb-gauntlet .
   <p style="margin-top:0.75rem">To submit results, open a <a href="https://github.com/luckyPipewrench/agent-egress-bench/discussions">discussion</a>.</p>
 </div>
 
+<script src="./scope-render.js"></script>
+<script src="./latest-result.js"></script>
 <script>
 (function() {
   'use strict';
   var container = document.getElementById('results');
+  var latestUrl = document.body.getAttribute('data-latest-url') || './latest-verified.json';
   var resultsUrl = document.body.getAttribute('data-results-url') || './gauntlet-results.json';
   var curCorpus = document.body.getAttribute('data-corpus-version');
   var curScoring = document.body.getAttribute('data-scoring-version');
@@ -160,7 +163,7 @@ go build -o aeb-gauntlet .
     return wrap;
   }
 
-  function renderTool(r) {
+  function renderTool(r, verified) {
     var card = el('div', 'tool-card');
     var hdr = el('div', 'tool-header');
     hdr.appendChild(txt('span', r.tool || 'Unknown', 'tool-name'));
@@ -168,8 +171,7 @@ go build -o aeb-gauntlet .
     var meta = el('div', 'tool-meta');
     meta.appendChild(txt('span', r.tool_version || '', 'tool-version'));
 
-    var verification = r.verification || 'self-reported';
-    meta.appendChild(makeBadge(verification, verification === 'verified' ? 'verified' : 'self-reported'));
+    if (!verified) meta.appendChild(makeBadge('self-reported', 'self-reported'));
     meta.appendChild(makeBadge(r.sufficient ? 'sufficient' : 'insufficient', r.sufficient ? 'sufficient' : 'insufficient'));
 
     var stale = r.corpus_version !== curCorpus || r.scoring_version !== curScoring;
@@ -179,7 +181,11 @@ go build -o aeb-gauntlet .
     card.appendChild(hdr);
 
     var cc = r.case_count || {};
-    card.appendChild(txt('div', 'Scored on ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+    if (verified) {
+      card.appendChild(window.renderGauntletScope(r));
+    } else {
+      card.appendChild(txt('div', 'Scored on ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+    }
 
     var scores = r.scores || {};
     var full = scores.full || scores;
@@ -206,7 +212,7 @@ go build -o aeb-gauntlet .
     var prov = el('div', 'provenance');
     var fields = [
       ['corpus', r.corpus_version], ['scoring', r.scoring_version],
-      ['runner', r.runner_version], ['date', r.date ? r.date.split('T')[0] : '?']
+      ['runner', r.runner_version], ['date', (r.generated_at || r.date) ? (r.generated_at || r.date).split('T')[0] : '?']
     ];
     fields.forEach(function(f) {
       var s = el('span');
@@ -217,7 +223,7 @@ go build -o aeb-gauntlet .
     return card;
   }
 
-  function render(results) {
+  function render(results, verified) {
     while (container.firstChild) container.removeChild(container.firstChild);
     if (!results || results.length === 0) {
       container.appendChild(txt('div', 'No results yet. Be the first to run the Gauntlet.', 'empty-state'));
@@ -231,16 +237,25 @@ go build -o aeb-gauntlet .
       };
       return s(b) - s(a);
     });
-    results.forEach(function(r) { container.appendChild(renderTool(r)); });
+    results.forEach(function(r) { container.appendChild(renderTool(r, verified)); });
   }
 
-  fetch(resultsUrl).then(function(resp) {
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    return resp.json();
-  }).then(function(data) {
-    render(Array.isArray(data) ? data : [data]);
+  function loadLegacyResult() {
+    return fetch(resultsUrl).then(function(resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    }).then(function(data) {
+      render(Array.isArray(data) ? data : [data], false);
+    });
+  }
+
+  window.loadLatestVerifiedResult(latestUrl, window.fetch.bind(window), window.crypto).then(function(data) {
+    render([data], true);
   }).catch(function(err) {
-    container.appendChild(txt('div', 'No results available. ' + err.message, 'empty-state'));
+    if (err.status === 404 && err.resource === 'pointer') return loadLegacyResult();
+    throw err;
+  }).catch(function(err) {
+    container.appendChild(txt('div', 'Verified result unavailable. ' + err.message, 'empty-state'));
   });
 })();
 </script>

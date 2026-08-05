@@ -70,6 +70,12 @@ CRON_TZ=UTC
 
 That timer does not update the repository, delete old runs, upload evidence, or publish a result. The machine operator must choose update, retention, and publication policies separately. Run the command manually once and inspect `execution-decision.json` and `run-bundle.json` before connecting it to any timer.
 
+### Publication is separate from this example
+
+This directory is only a reference execution adapter. It does not grant Pipelock a benchmark endorsement, vendor submission path, ranking, or certification. Other tools use the same runner contract and control their own result publication.
+
+The repository maintainer's separately governed, first-party regression record is documented in [`../../docs/CONTINUOUS-RESULTS.md`](../../docs/CONTINUOUS-RESULTS.md). It is disclosed operational evidence for this reference adapter, not a status available through `examples/` and not the live pipelab.org leaderboard.
+
 ## Advanced runner invocation
 
 The runner can either target already-running endpoints (`--proxy-addr`,

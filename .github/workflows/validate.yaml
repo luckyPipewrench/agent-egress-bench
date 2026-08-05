@@ -1,6 +1,10 @@
 name: Validate Cases
 
 on:
+  # Promotion branches are created with GITHUB_TOKEN, which intentionally does
+  # not emit a pull_request workflow run. The promotion workflow explicitly
+  # dispatches this trusted workflow against the resulting branch instead.
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -23,6 +27,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -32,6 +38,22 @@ jobs:
 
       - name: Run local preflight gate
         run: make preflight
+
+      - name: Enforce append-only Gauntlet history
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) immutable_base="$PR_BASE_SHA" ;;
+            push) immutable_base="$PUSH_BEFORE_SHA" ;;
+            workflow_dispatch) immutable_base="origin/$DEFAULT_BRANCH" ;;
+            *) echo "unsupported validation event: $GITHUB_EVENT_NAME" >&2; exit 1 ;;
+          esac
+          python3 scripts/validate_gauntlet_records.py --immutable-base "$immutable_base"
 
   # `runner` is a required status check. Keep the job so the requirement stays
   # satisfiable; the preflight target above already covers these tests, so this

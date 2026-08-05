@@ -1,0 +1,592 @@
+#!/usr/bin/env python3
+"""Prepare an append-only Gauntlet result and latest-verified pointer."""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
+
+import build_gauntlet_provenance as provenance
+import evaluate_gauntlet_candidate as evaluator
+
+
+CANDIDATE_FILENAME = "continuous-gauntlet-pipelock.json"
+SOURCE_DECISION_FILENAME = "promotion-decision.json"
+EXECUTION_DECISION_FILENAME = "execution-decision.json"
+RUN_BUNDLE_FILENAME = "run-bundle.json"
+PUBLISHED_DECISION_FILENAME = "reviewed-promotion-decision.json"
+BASELINE_SNAPSHOT_FILENAME = "reviewed-baseline.json"
+SOURCE_BASELINE_FILENAME = "source-baseline.json"
+RECORD_MANIFEST_FILENAME = "record-manifest.json"
+LATEST_POINTER_FILENAME = "latest-verified.json"
+SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
+DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
+DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
+SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+REVIEWABLE_SCORE_FAILURE = re.compile(
+    r"^scores\.(?:full|applicable)\.[a-z_]+=.+, "
+    r"(?:below baseline floor|above baseline ceiling) .+$"
+)
+
+EVIDENCE_FILES = {
+    **provenance.RAW_EVIDENCE,
+    "execution_decision": EXECUTION_DECISION_FILENAME,
+    "run_bundle": RUN_BUNDLE_FILENAME,
+}
+
+
+def require_object(path):
+    return evaluator.load_object(path)
+
+
+def require_non_empty_string(document, key):
+    value = document.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} must be a non-empty string")
+    return value
+
+
+def require_sha256(value, label):
+    if not isinstance(value, str) or not SHA256_HEX.fullmatch(value):
+        raise ValueError(f"{label} must be 64 lower-case hex characters")
+    return value
+
+
+def parse_timestamp(value, label):
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as exc:
+        raise ValueError(f"{label} must be an ISO-8601 timestamp with a timezone") from exc
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise ValueError(f"{label} must be an ISO-8601 timestamp with a timezone")
+    return timestamp
+
+
+def evidence_paths(artifact_dir):
+    paths = {}
+    for label, filename in EVIDENCE_FILES.items():
+        path = artifact_dir / filename
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f"required evidence is missing: {label} ({filename})")
+        paths[label] = path
+    return paths
+
+
+def validate_execution_decision(path):
+    decision = require_object(path)
+    if decision.get("execution_status") != "complete":
+        raise ValueError("execution decision is not complete")
+    if decision.get("blocked") is not False:
+        raise ValueError("execution decision is blocked")
+    if decision.get("publication_eligible") is not True:
+        raise ValueError("execution decision is not publication eligible")
+    failures = decision.get("failures")
+    if failures != []:
+        raise ValueError("execution decision failures must be an empty array")
+
+
+def validate_candidate_origin(candidate, artifact_prefix, url_prefix, expected_run_id):
+    artifact_id = require_non_empty_string(candidate, "artifact_id")
+    canonical_url = require_non_empty_string(candidate, "canonical_url")
+    if not artifact_id.startswith(artifact_prefix):
+        raise ValueError(f"artifact_id must start with {artifact_prefix!r}")
+    if not canonical_url.startswith(url_prefix):
+        raise ValueError(f"canonical_url must start with {url_prefix!r}")
+    parsed = urlparse(canonical_url)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
+        raise ValueError("canonical_url must be an absolute HTTPS URL")
+    run_id = artifact_id.removeprefix(artifact_prefix)
+    if not run_id.isascii() or not run_id.isdigit() or run_id.startswith("0"):
+        raise ValueError("artifact_id must end in a positive decimal run ID")
+    expected_url = url_prefix + run_id
+    if canonical_url != expected_url:
+        raise ValueError("artifact_id and canonical_url run IDs do not match")
+    if expected_run_id is not None and run_id != expected_run_id:
+        raise ValueError("candidate run ID does not match the requested source run")
+
+
+def validate_reference_candidate(candidate):
+    if candidate.get("schema_version") != 2:
+        raise ValueError("candidate schema_version must be 2")
+    if candidate.get("tool") != "pipelock":
+        raise ValueError("reference promotion candidate tool must be pipelock")
+    tool_version = require_non_empty_string(candidate, "tool_version")
+    if tool_version != require_non_empty_string(candidate, "pipelock_version"):
+        raise ValueError("candidate tool_version and pipelock_version must match")
+
+
+def reviewable_policy_failure(failure):
+    if not isinstance(failure, str):
+        return False
+    if REVIEWABLE_SCORE_FAILURE.fullmatch(failure):
+        return True
+    return failure.startswith("pipelock_version=") and ", baseline is " in failure
+
+
+def proposed_baseline(candidate, candidate_sha256):
+    generated_at = require_non_empty_string(candidate, "generated_at")
+    recorded_on = parse_timestamp(generated_at, "generated_at").date().isoformat()
+
+    counts = candidate.get("case_count")
+    scores = candidate.get("scores")
+    if not isinstance(counts, dict) or not isinstance(scores, dict):
+        raise ValueError("candidate case_count and scores must be objects")
+    applicable_scores = scores.get("applicable")
+    full_scores = scores.get("full")
+    if not isinstance(applicable_scores, dict) or not isinstance(full_scores, dict):
+        raise ValueError("candidate full and applicable scores must be objects")
+
+    return {
+        "_comment": (
+            "Reviewed baseline for the continuous Gauntlet lane. Exact candidate scores become "
+            "the next run's floors and ceiling only through a promotion PR. Public records remain "
+            "append-only and the latest-verified pointer moves only with that reviewed commit."
+        ),
+        "schema_version": 1,
+        "recorded_on": recorded_on,
+        "verified_candidate_sha256": candidate_sha256,
+        "verified_artifact_id": require_non_empty_string(candidate, "artifact_id"),
+        "pipelock_version": require_non_empty_string(candidate, "pipelock_version"),
+        "corpus_git_sha": require_non_empty_string(candidate, "corpus_git_sha"),
+        "corpus_sha256": require_non_empty_string(candidate, "corpus_sha256"),
+        "corpus_version": require_non_empty_string(candidate, "corpus_version"),
+        "scoring_version": require_non_empty_string(candidate, "scoring_version"),
+        "runner_version": require_non_empty_string(candidate, "runner_version"),
+        "observed_case_count": {
+            "total": counts.get("total"),
+            "applicable": counts.get("applicable"),
+            "not_applicable": counts.get("not_applicable"),
+            "not_applicable_reasons": counts.get("not_applicable_reasons"),
+        },
+        "score_floors": {
+            "full": {"containment": full_scores.get("containment")},
+            "applicable": {
+                "containment": applicable_scores.get("containment"),
+                "detection": applicable_scores.get("detection"),
+                "evidence": applicable_scores.get("evidence"),
+            },
+        },
+        "score_ceilings": {
+            "applicable": {"false_positive_rate": applicable_scores.get("false_positive_rate")}
+        },
+    }
+
+
+def atomic_copy(source, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=destination.name + ".", dir=destination.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as target, source.open("rb") as current:
+            shutil.copyfileobj(current, target)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary_name, destination)
+    except BaseException:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def manifest_for(
+    record_dir,
+    candidate,
+    previous_candidate_sha256,
+    previous_record_manifest_sha256,
+):
+    files = {}
+    for path in sorted(record_dir.iterdir(), key=lambda item: item.name):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"record contains a non-regular entry: {path.name}")
+        if path.name != RECORD_MANIFEST_FILENAME:
+            files[path.name] = evaluator.file_sha256(path)
+    return {
+        "schema_version": 1,
+        "tool": require_non_empty_string(candidate, "tool"),
+        "tool_version": require_non_empty_string(candidate, "tool_version"),
+        "artifact_id": require_non_empty_string(candidate, "artifact_id"),
+        "canonical_url": require_non_empty_string(candidate, "canonical_url"),
+        "generated_at": require_non_empty_string(candidate, "generated_at"),
+        "candidate_sha256": files[CANDIDATE_FILENAME],
+        "previous_candidate_sha256": previous_candidate_sha256,
+        "previous_record_manifest_sha256": previous_record_manifest_sha256,
+        "files": files,
+    }
+
+
+def validate_record(record_dir, candidate_sha256):
+    manifest_path = record_dir / RECORD_MANIFEST_FILENAME
+    manifest = require_object(manifest_path)
+    if manifest.get("schema_version") != 1:
+        raise ValueError("record manifest schema_version must be 1")
+    require_sha256(manifest.get("candidate_sha256"), "record candidate_sha256")
+    if manifest["candidate_sha256"] != candidate_sha256:
+        raise ValueError("existing record candidate digest does not match its directory")
+    previous_candidate = manifest.get("previous_candidate_sha256")
+    previous_manifest = manifest.get("previous_record_manifest_sha256")
+    if previous_candidate is None:
+        if previous_manifest is not None:
+            raise ValueError("first record cannot name a previous record manifest")
+    else:
+        require_sha256(previous_candidate, "record previous_candidate_sha256")
+        require_sha256(previous_manifest, "record previous_record_manifest_sha256")
+    files = manifest.get("files")
+    if not isinstance(files, dict) or not files:
+        raise ValueError("record manifest files must be a non-empty object")
+    entries = list(record_dir.iterdir())
+    if any(path.is_symlink() or not path.is_file() for path in entries):
+        raise ValueError("existing record contains a non-regular entry")
+    expected_names = set(files) | {RECORD_MANIFEST_FILENAME}
+    actual_names = {path.name for path in entries}
+    if actual_names != expected_names:
+        raise ValueError("existing record file set does not match its manifest")
+    for filename, expected in files.items():
+        require_sha256(expected, f"record files.{filename}")
+        if evaluator.file_sha256(record_dir / filename) != expected:
+            raise ValueError(f"existing record file changed: {filename}")
+    candidate = require_object(record_dir / CANDIDATE_FILENAME)
+    for field in ("tool", "tool_version", "artifact_id", "canonical_url", "generated_at"):
+        if manifest.get(field) != candidate.get(field):
+            raise ValueError(f"record manifest and candidate disagree on {field}")
+    return manifest
+
+
+def canonical_pointer_paths(latest_path, candidate_sha256):
+    site_root = latest_path.resolve().parent
+    record_root = site_root / "results" / "pipelock" / candidate_sha256
+    base = "./" + record_root.relative_to(site_root).as_posix()
+    return (
+        f"{base}/{CANDIDATE_FILENAME}",
+        f"{base}/{RECORD_MANIFEST_FILENAME}",
+    )
+
+
+def validate_site_layout(store_root, latest_path):
+    expected_store_root = latest_path.resolve().parent / "results"
+    if store_root.resolve() != expected_store_root:
+        raise ValueError("store root must be the results directory beside latest-verified")
+
+
+def validate_pointer(pointer, latest_path):
+    if pointer.get("schema_version") != 1 or pointer.get("status") != "verified":
+        raise ValueError("latest pointer must be a schema-v1 verified pointer")
+    candidate_sha256 = require_sha256(pointer.get("candidate_sha256"), "pointer candidate_sha256")
+    expected_record, expected_manifest = canonical_pointer_paths(latest_path, candidate_sha256)
+    if pointer.get("record_path") != expected_record:
+        raise ValueError("latest pointer record_path is not canonical")
+    if pointer.get("record_manifest_path") != expected_manifest:
+        raise ValueError("latest pointer record_manifest_path is not canonical")
+    require_sha256(pointer.get("record_manifest_sha256"), "pointer record_manifest_sha256")
+    previous_candidate = pointer.get("previous_candidate_sha256")
+    previous_manifest = pointer.get("previous_record_manifest_sha256")
+    if previous_candidate is None:
+        if previous_manifest is not None:
+            raise ValueError("first latest pointer cannot name a previous record manifest")
+    else:
+        require_sha256(previous_candidate, "pointer previous_candidate_sha256")
+        require_sha256(previous_manifest, "pointer previous_record_manifest_sha256")
+    generated_at = require_non_empty_string(pointer, "generated_at")
+    parse_timestamp(generated_at, f"{latest_path} generated_at")
+    return pointer
+
+
+def existing_promotion_is_complete(latest_path, record_dir, candidate_sha256):
+    if not latest_path.is_file() or not record_dir.is_dir():
+        return False
+    pointer = validate_pointer(require_object(latest_path), latest_path)
+    if pointer["candidate_sha256"] != candidate_sha256:
+        return False
+    manifest = validate_record(record_dir, candidate_sha256)
+    candidate = require_object(record_dir / CANDIDATE_FILENAME)
+    for field in ("tool", "tool_version", "artifact_id", "canonical_url", "generated_at"):
+        if pointer.get(field) != candidate.get(field):
+            raise ValueError(f"latest pointer and record candidate disagree on {field}")
+    if evaluator.file_sha256(record_dir / RECORD_MANIFEST_FILENAME) != pointer["record_manifest_sha256"]:
+        raise ValueError("latest pointer record manifest digest does not match the record")
+    if manifest["candidate_sha256"] != candidate_sha256:
+        raise ValueError("latest pointer and record candidate digests differ")
+    for field in ("previous_candidate_sha256", "previous_record_manifest_sha256"):
+        if manifest.get(field) != pointer.get(field):
+            raise ValueError(f"latest pointer and record manifest disagree on {field}")
+    return True
+
+
+def markdown_code(value):
+    return str(value).replace("`", "'").replace("\r", " ").replace("\n", " ")
+
+
+def nonpassing_case_lines(results_path):
+    lines = []
+    with results_path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"results JSONL line {line_number} is invalid") from exc
+            if not isinstance(row, dict):
+                raise ValueError(f"results JSONL line {line_number} must be an object")
+            if row.get("score") not in {"fail", "error"}:
+                continue
+            evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
+            detail = evidence.get("error_message") or evidence.get("reason") or row.get("notes") or ""
+            timing = evidence.get("budget_block_timing")
+            suffix = f"; {timing}" if timing else ""
+            if detail:
+                suffix += f"; {detail}"
+            lines.append(
+                "- `{}`: expected `{}`, observed `{}`, score `{}`{}".format(
+                    markdown_code(row.get("case_id", "unknown")),
+                    markdown_code(row.get("expected_verdict", "unknown")),
+                    markdown_code(row.get("actual_verdict", "unknown")),
+                    markdown_code(row.get("score", "unknown")),
+                    markdown_code(suffix),
+                )
+            )
+    return lines
+
+
+def write_summary(
+    path, candidate, candidate_sha256, source_decision, policy_change, results_path
+):
+    counts = candidate["case_count"]
+    applicable_scores = candidate["scores"]["applicable"]
+    full_scores = candidate["scores"]["full"]
+    lines = [
+        "## Continuous Gauntlet result promotion",
+        "",
+        (
+            f"- Source run: [{markdown_code(candidate['artifact_id'])}]"
+            f"({candidate['canonical_url']})"
+        ),
+        f"- Candidate SHA-256: `{candidate_sha256}`",
+        f"- Pipelock: `{markdown_code(candidate['pipelock_version'])}`",
+        (
+            f"- Corpus: `{markdown_code(candidate['corpus_version'])}` at "
+            f"`{markdown_code(candidate['corpus_git_sha'])}`"
+        ),
+        (
+            f"- Scope: `{counts['applicable']} / {counts['total']}` applicable, "
+            f"`{counts['not_applicable']}` N/A, `{counts['errors']}` errors"
+        ),
+        f"- Applicable containment: `{applicable_scores['containment']}`",
+        f"- Full-corpus containment: `{full_scores['containment']}`",
+        f"- Applicable false-positive rate: `{applicable_scores['false_positive_rate']}`",
+        f"- Reviewed policy change proposed: `{'yes' if policy_change else 'no'}`",
+        "",
+        (
+            "Merging this PR adds one immutable evidence record, updates the reviewed baseline, "
+            "and advances `latest-verified`. It does not replace or delete earlier records."
+        ),
+    ]
+    failures = source_decision.get("failures", [])
+    notes = source_decision.get("review_notes", [])
+    if failures or notes:
+        lines.extend(["", "### Source decision"])
+        lines.extend(f"- Failure: {markdown_code(value)}" for value in failures)
+        lines.extend(f"- Review: {markdown_code(value)}" for value in notes)
+    case_lines = nonpassing_case_lines(results_path)
+    if case_lines:
+        lines.extend(["", "### Non-passing applicable cases", *case_lines])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def promote(args):
+    artifact_dir = args.artifact_dir.resolve()
+    candidate_path = artifact_dir / CANDIDATE_FILENAME
+    source_decision_path = artifact_dir / SOURCE_DECISION_FILENAME
+    if (
+        not candidate_path.is_file()
+        or candidate_path.is_symlink()
+        or not source_decision_path.is_file()
+        or source_decision_path.is_symlink()
+    ):
+        raise ValueError("artifact directory is missing the candidate or source decision")
+
+    candidate = require_object(candidate_path)
+    validate_reference_candidate(candidate)
+    validate_candidate_origin(
+        candidate, args.artifact_prefix, args.url_prefix, args.expected_run_id
+    )
+    candidate_sha256 = evaluator.file_sha256(candidate_path)
+    validate_site_layout(args.store_root, args.latest)
+    tool_root = args.store_root.resolve() / "pipelock"
+    record_dir = tool_root / candidate_sha256
+    latest_path = args.latest.resolve()
+    previous_candidate_sha256 = None
+    previous_record_manifest_sha256 = None
+
+    if existing_promotion_is_complete(latest_path, record_dir, candidate_sha256):
+        baseline_snapshot = record_dir / BASELINE_SNAPSHOT_FILENAME
+        if evaluator.file_sha256(args.baseline.resolve()) != evaluator.file_sha256(baseline_snapshot):
+            raise ValueError("latest-verified record and reviewed baseline are out of sync")
+        if args.summary is not None:
+            stored_candidate = require_object(record_dir / CANDIDATE_FILENAME)
+            stored_source_decision = require_object(
+                record_dir / SOURCE_PROMOTION_DECISION_FILENAME
+            )
+            write_summary(
+                args.summary.resolve(),
+                stored_candidate,
+                candidate_sha256,
+                stored_source_decision,
+                bool(stored_source_decision.get("failures"))
+                or stored_source_decision.get("promotion_status")
+                == "scope_changed_requires_review",
+                record_dir / provenance.RAW_EVIDENCE["results"],
+            )
+        print(f"promotion already complete for {candidate_sha256}")
+        return record_dir
+
+    if latest_path.is_file():
+        previous = validate_pointer(require_object(latest_path), latest_path)
+        previous_candidate_sha256 = previous["candidate_sha256"]
+        previous_record_manifest_sha256 = previous["record_manifest_sha256"]
+        previous_record = tool_root / previous["candidate_sha256"]
+        validate_record(previous_record, previous["candidate_sha256"])
+        if (
+            evaluator.file_sha256(previous_record / RECORD_MANIFEST_FILENAME)
+            != previous["record_manifest_sha256"]
+        ):
+            raise ValueError("existing latest pointer does not match its append-only record")
+        previous_time = parse_timestamp(previous["generated_at"], "previous generated_at")
+        current_time = parse_timestamp(candidate.get("generated_at"), "candidate generated_at")
+        if current_time <= previous_time:
+            raise ValueError("refusing to move latest-verified backward or sideways in time")
+
+    paths = evidence_paths(artifact_dir)
+    validate_execution_decision(paths["execution_decision"])
+
+    source_decision = require_object(source_decision_path)
+    fresh_source_decision = evaluator.evaluate(candidate_path, args.baseline, paths)
+    if source_decision != fresh_source_decision:
+        raise ValueError("source decision does not match a fresh evaluation against the current baseline")
+    failures = fresh_source_decision.get("failures")
+    if not isinstance(failures, list):
+        raise ValueError("source decision failures must be an array")
+    scope_change = fresh_source_decision.get("promotion_status") == "scope_changed_requires_review"
+    policy_change = bool(failures) or scope_change
+    if policy_change and not args.accept_policy_change:
+        raise ValueError(
+            "candidate requires an explicit reviewed policy-change proposal"
+        )
+    if failures:
+        unreviewable = [failure for failure in failures if not reviewable_policy_failure(failure)]
+        if unreviewable:
+            raise ValueError("candidate has non-reviewable failures: " + "; ".join(unreviewable))
+
+    baseline = proposed_baseline(candidate, candidate_sha256)
+    with tempfile.TemporaryDirectory(prefix="gauntlet-promotion-") as temporary:
+        proposed_baseline_path = Path(temporary) / BASELINE_SNAPSHOT_FILENAME
+        evaluator.atomic_json_write(proposed_baseline_path, baseline)
+        reviewed_decision = evaluator.evaluate(candidate_path, proposed_baseline_path, paths)
+        if reviewed_decision.get("blocked") is not False:
+            raise ValueError(
+                "candidate remains blocked against its proposed baseline: "
+                + "; ".join(reviewed_decision.get("failures", []))
+            )
+
+        tool_root.mkdir(parents=True, exist_ok=True)
+        temporary_record = Path(tempfile.mkdtemp(prefix=f".{candidate_sha256}.", dir=tool_root))
+        try:
+            atomic_copy(candidate_path, temporary_record / CANDIDATE_FILENAME)
+            atomic_copy(
+                source_decision_path,
+                temporary_record / SOURCE_PROMOTION_DECISION_FILENAME,
+            )
+            atomic_copy(args.baseline.resolve(), temporary_record / SOURCE_BASELINE_FILENAME)
+            for path in paths.values():
+                atomic_copy(path, temporary_record / path.name)
+            evaluator.atomic_json_write(
+                temporary_record / PUBLISHED_DECISION_FILENAME, reviewed_decision
+            )
+            atomic_copy(proposed_baseline_path, temporary_record / BASELINE_SNAPSHOT_FILENAME)
+            record_manifest = manifest_for(
+                temporary_record,
+                candidate,
+                previous_candidate_sha256,
+                previous_record_manifest_sha256,
+            )
+            evaluator.atomic_json_write(
+                temporary_record / RECORD_MANIFEST_FILENAME, record_manifest
+            )
+            if record_dir.exists():
+                validate_record(record_dir, candidate_sha256)
+                raise ValueError("append-only record already exists without a matching latest pointer")
+            os.replace(temporary_record, record_dir)
+        finally:
+            if temporary_record.exists():
+                shutil.rmtree(temporary_record)
+
+    manifest_sha256 = evaluator.file_sha256(record_dir / RECORD_MANIFEST_FILENAME)
+    record_path, record_manifest_path = canonical_pointer_paths(latest_path, candidate_sha256)
+    pointer = {
+        "schema_version": 1,
+        "status": "verified",
+        "tool": "pipelock",
+        "tool_version": require_non_empty_string(candidate, "tool_version"),
+        "generated_at": require_non_empty_string(candidate, "generated_at"),
+        "artifact_id": require_non_empty_string(candidate, "artifact_id"),
+        "canonical_url": require_non_empty_string(candidate, "canonical_url"),
+        "candidate_sha256": candidate_sha256,
+        "record_manifest_sha256": manifest_sha256,
+        "previous_candidate_sha256": previous_candidate_sha256,
+        "previous_record_manifest_sha256": previous_record_manifest_sha256,
+        "record_path": record_path,
+        "record_manifest_path": record_manifest_path,
+    }
+    evaluator.atomic_json_write(args.baseline.resolve(), baseline)
+    evaluator.atomic_json_write(latest_path, pointer)
+    if args.summary is not None:
+        write_summary(
+            args.summary.resolve(),
+            candidate,
+            candidate_sha256,
+            fresh_source_decision,
+            policy_change,
+            paths["results"],
+        )
+    print(f"prepared append-only record {record_dir}")
+    print(f"advanced latest-verified to {candidate_sha256}")
+    return record_dir
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact-dir", type=Path, required=True)
+    parser.add_argument("--baseline", type=Path, required=True)
+    parser.add_argument("--store-root", type=Path, default=Path("gauntlet-site/results"))
+    parser.add_argument("--latest", type=Path, default=Path("gauntlet-site") / LATEST_POINTER_FILENAME)
+    parser.add_argument("--summary", type=Path)
+    parser.add_argument(
+        "--artifact-prefix",
+        default=DEFAULT_ARTIFACT_PREFIX,
+    )
+    parser.add_argument(
+        "--url-prefix",
+        default=DEFAULT_URL_PREFIX,
+    )
+    parser.add_argument("--expected-run-id")
+    parser.add_argument("--accept-policy-change", action="store_true")
+    return parser.parse_args()
+
+
+def main():
+    try:
+        promote(parse_args())
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        print(f"promotion: BLOCKED: {exc}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
