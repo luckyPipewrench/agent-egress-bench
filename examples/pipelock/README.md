@@ -116,7 +116,7 @@ runs.
 ### Budget capability scope
 
 The checked-in profile deliberately sets `budget_enforcement` to `false`.
-The current benchmark capability requires authenticated per-subject accounting,
+The current benchmark capability requires per-subject accounting with authenticated identities,
 but the canonical MCP stdio invocation above is one authenticated session.
 Caller-supplied tool arguments such as `subject_id` are payload data, not a
 trusted identity boundary. Pipelock can enforce a session-wide tool-call limit
