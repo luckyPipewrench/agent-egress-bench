@@ -28,9 +28,9 @@ Run your runner and save the JSONL output. How you share results is up to you. S
 - A separate GitHub repo with versioned results (tagged per tool version)
 - A blog post walking through your results
 
-**Do not submit Gauntlet leaderboard results to this repo.** This repo contains attack cases, scoring methodology, and optional receipt profiles under `profiles/`. There is no in-repo leaderboard. Each vendor publishes and owns its own results.
+**Do not submit Gauntlet results to this repo.** This repo contains attack cases, scoring methodology, and optional receipt profiles under `profiles/`. There is no in-repo results table and no maintainer-awarded mark. Each vendor publishes and owns its own results.
 
-When publishing, include:
+Label the run and publish the identifying facts described in [RESULTS-USE.md](RESULTS-USE.md). At minimum, include:
 - Your tool name and version
 - The corpus version (commit hash or tag of agent-egress-bench)
 - The raw JSONL file so others can verify

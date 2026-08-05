@@ -100,7 +100,7 @@ It requires Linux, Go 1.25 or newer, Python 3, Git, curl, jq, tar, GNU timeout, 
 
 The raw directory intentionally has no made-up public URL. GitHub Actions or another retaining platform adds its real artifact ID and HTTPS location later, without modifying the evidence bytes. Creating a schedule and publishing a result are separate operator decisions.
 
-The repository's scheduled Pipelock lane is read-only and produces review candidates, not automatic public claims. Approved candidates are retained as digest-addressed, hash-linked evidence directories, and a reviewed pull request advances the `latest-verified` pointer. The included reference renderer verifies and displays score, scope, N/A reasons, false-positive rate, and the canonical run URL together; it is not currently the live pipelab.org leaderboard. See [Continuous Gauntlet Results](docs/CONTINUOUS-RESULTS.md) for the repository review and publication contract.
+The repository's scheduled Pipelock lane is read-only and produces review candidates, not automatic public claims. Approved candidates are retained as digest-addressed, hash-linked evidence directories, and a reviewed pull request advances the `latest-verified` pointer. The included reference renderer verifies and displays score, scope, N/A reasons, false-positive rate, and the canonical run URL together. It renders this repository's first-party Pipelock history and ranks nothing. See [Continuous Gauntlet Results](docs/CONTINUOUS-RESULTS.md) for the repository review and publication contract.
 
 For other tools, the runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, detection, evidence, per-category, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)).
 
@@ -117,7 +117,7 @@ The Gauntlet evaluates tools on four independent metrics beyond pass/fail:
 | **Detection** | Whether the tool identified what it caught |
 | **Evidence** | Whether the tool emitted structured proof |
 
-Containment has a hard floor: below 80%, the run is marked insufficient. There is no composite score. Each metric is reported independently. Published results are available on the [Gauntlet leaderboard](https://pipelab.org/gauntlet/).
+Containment has a hard floor: below 80%, the run is marked insufficient. There is no composite score. Each metric is reported independently. The maintainer's own Pipelock run history is published at [pipelab.org/gauntlet](https://pipelab.org/gauntlet/) as disclosed first-party evidence. Every other tool publishes and owns its own results; see [Results Use and Attribution](docs/RESULTS-USE.md) for the facts that travel with a public result.
 
 Full methodology: [docs/gauntlet.md](docs/gauntlet.md)
 
@@ -209,7 +209,7 @@ Full mapping with MITRE ATT&CK techniques: [docs/OWASP-MAPPING.md](docs/OWASP-MA
 
 This corpus evaluates the **security tool** that sits between an AI agent and the network (a proxy, firewall, or MCP wrapper): given an attack, did the tool catch it. It does not evaluate the agent or model's own behavior. Cases test observable outcomes at the wire level, such as whether an exfiltrated secret in a query string was blocked or whether prompt injection in a tool response was detected.
 
-Each tool publishes its own results independently; this repo produces no rankings or cross-tool comparisons.
+Each publisher publishes and owns its own results. This repository publishes no ranking, leaderboard, or cross-tool comparison table. <!-- claim-ok: states the non-claim -->
 
 ## Docs
 
@@ -220,9 +220,11 @@ Each tool publishes its own results independently; this repo produces no ranking
 - [ARTIFACT-PROVENANCE.md](docs/ARTIFACT-PROVENANCE.md): opt-in external `schema-valid`, `authenticated-at(T)`, and `buyer-reproduced` provenance assessments
 - [gauntlet.md](docs/gauntlet.md): Gauntlet scoring methodology (containment, FP rate, detection, evidence)
 - [RUNNER.md](docs/RUNNER.md): runner output contract and verdict mapping
+- [GATEWAY-ADAPTER.md](docs/GATEWAY-ADAPTER.md): the narrow generic MCP gateway plugin contract and its current limits
 - [ADOPTION.md](docs/ADOPTION.md): guide for vendors adopting the benchmark
 - [GLOSSARY.md](docs/GLOSSARY.md): definitions of key terms (agent firewall, egress security, etc.)
 - [GOVERNANCE.md](docs/GOVERNANCE.md): neutrality policy, case immutability, contribution rules
+- [RESULTS-USE.md](docs/RESULTS-USE.md): assurance labels, required disclosure beside a public result, adverse-result and correction rules
 - [OWASP-MAPPING.md](docs/OWASP-MAPPING.md): case categories mapped to OWASP Agentic Top 10
 - [schemas/](schemas/): JSON Schema files for cases, tool profiles, and results
 
@@ -234,7 +236,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Cases, runners, and documentation improv
 
 ## Governance
 
-This corpus was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author. Contributions from any vendor or individual are welcome. This repo does not produce rankings or cross-tool comparison tables. Each tool publishes its own results independently.
+This corpus was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author. Contributions from any vendor or individual are welcome. This repository publishes no ranking, leaderboard, or cross-tool comparison table, and the maintainer awards no verification mark to anyone else's result. <!-- claim-ok: states the non-claim --> Each publisher publishes and owns its own results, under the labels defined in [docs/RESULTS-USE.md](docs/RESULTS-USE.md). Publishing a result that reflects badly on Pipelock needs no notice or approval.
 
 **Conflict of interest disclosure:** The author builds an agent egress security tool. This corpus was designed to be tool-neutral: cases test observable behavior (did the request get blocked?), not implementation details. The [Pipelock runner](examples/pipelock/) is a reference implementation, not a privileged position.
 
@@ -245,7 +247,7 @@ Full governance policy: [docs/GOVERNANCE.md](docs/GOVERNANCE.md).
 - [What is an Agent Firewall?](https://pipelab.org/agent-firewall/) — the security architecture this corpus tests
 - [AI Agent Security: Three Layers](https://pipelab.org/learn/ai-agent-security/) — hooks, guardrails, and egress inspection explained
 - [MCP Vulnerabilities](https://pipelab.org/learn/mcp-vulnerabilities/) — the MCP attack surface mapped
-- [Gauntlet Leaderboard](https://pipelab.org/gauntlet/) — published scoring results
+- [Pipelock Gauntlet history](https://pipelab.org/gauntlet/) — the maintainer's disclosed first-party run history
 
 ## License
 

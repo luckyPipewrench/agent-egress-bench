@@ -350,7 +350,7 @@ material ID. The conformance harness accepts only these four named profiles. An 
 ## Non-claims
 
 A valid package proves only that the verifier accepted the declared requirement, package bytes,
-and evidence under its supplied trust policy. It does not prove complete mediation, no bypass,
+and evidence under its supplied trust policy. It does not prove complete mediation, no bypass, <!-- claim-ok: states the non-claim -->
 policy correctness, product safety, operator honesty, key safety, continuous protection after the
 run, or independent observation unless the buyer separately required and verified those properties.
 Bracketing health controls must be distinct signed wrapper artifacts. The verifier requires the

@@ -100,7 +100,7 @@ count. The schema also requires `receipt_produced=yes` on any row claiming
 `partial` or `yes`, because a receipt that does not exist cannot be verified.
 
 A receipt profile is published by the tool's maintainer, not by this
-corpus. The corpus does not certify or audit profiles. A relying party
+corpus. The corpus does not certify or audit profiles. <!-- claim-ok: states the non-claim --> A relying party
 reads profiles directly and reproduces them before trusting them.
 
 ## Runner observation contract
@@ -194,7 +194,7 @@ Pointer.
 - A cross-tool ranking, percentage, or letter grade. Per `docs/SCORING.md`:
   "Each tool can publish its own results. Cross-tool comparison tables
   are not part of this repo."
-- A certification mark. A profile is published evidence, not a seal.
+- A certification mark. A profile is published evidence, not a seal. <!-- claim-ok: states the non-claim -->
 - A judgment of how much weight a buyer should give each dimension. A
   buyer evaluating a tool against a regulated workload weights
   `receipt_independently_verifiable` differently than a buyer doing
