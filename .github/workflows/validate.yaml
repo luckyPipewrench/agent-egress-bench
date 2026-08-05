@@ -50,7 +50,7 @@ jobs:
           case "$GITHUB_EVENT_NAME" in
             pull_request) immutable_base="$PR_BASE_SHA" ;;
             push) immutable_base="$PUSH_BEFORE_SHA" ;;
-            workflow_dispatch) immutable_base="origin/$DEFAULT_BRANCH" ;;
+            workflow_dispatch) immutable_base="$(git merge-base "origin/$DEFAULT_BRANCH" HEAD)" ;;
             *) echo "unsupported validation event: $GITHUB_EVENT_NAME" >&2; exit 1 ;;
           esac
           python3 scripts/validate_gauntlet_records.py --immutable-base "$immutable_base"

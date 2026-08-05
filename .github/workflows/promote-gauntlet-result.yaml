@@ -140,6 +140,7 @@ jobs:
             --baseline ci/gauntlet-baseline.json
 
       - name: Create reviewed promotion pull request
+        id: promotion
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -158,22 +159,30 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- \
             ci/gauntlet-baseline.json \
-            gauntlet-site/latest-verified.json \
-            "$record_dir"
+            gauntlet-site/latest-verified.json
+          # Evidence extensions can overlap local-output ignore rules. Force-add
+          # only the validated immutable record, then reject missing or extra
+          # staged record files before committing.
+          git add -f -- "$record_dir"
+          python3 scripts/verify_staged_gauntlet_record.py \
+            --record-dir "$record_dir"
           # Raw evidence is copied byte-for-byte and may legitimately preserve
           # command-line whitespace. Lint only the generated control files.
           git diff --cached --check -- \
             ci/gauntlet-baseline.json \
             gauntlet-site/latest-verified.json
+          if git diff --cached --quiet; then
+            echo "candidate is already promoted on $DEFAULT_BRANCH"
+            echo "needs_validation=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git commit -m "results: promote Gauntlet run $RUN_ID"
-          if remote_sha="$(git ls-remote --exit-code --heads origin "refs/heads/$branch" | awk '{print $1}')"; then
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null; then
             git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
-            local_tree="$(git rev-parse 'HEAD^{tree}')"
-            remote_tree="$(git rev-parse "refs/remotes/origin/$branch^{tree}")"
-            [[ "$local_tree" == "$remote_tree" ]] || {
-              echo "existing promotion branch has different content: $branch at $remote_sha" >&2
-              exit 1
-            }
+            python3 scripts/verify_existing_gauntlet_promotion.py \
+              --default-ref "origin/$DEFAULT_BRANCH" \
+              --remote-ref "refs/remotes/origin/$branch" \
+              --record-dir "$record_dir"
           else
             git push origin "HEAD:refs/heads/$branch"
           fi
@@ -198,14 +207,23 @@ jobs:
               --title "results: promote Gauntlet run $RUN_ID" \
               --body-file "$PR_BODY"
           fi
+          echo "needs_validation=true" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch required validation
+      - name: Dispatch required validations
+        if: steps.promotion.outputs.needs_validation == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           branch="gauntlet-result-$RUN_ID"
-          gh workflow run validate.yaml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$branch"
+          dispatch_failed=0
+          for workflow in validate.yaml security.yaml pipelock.yaml; do
+            if ! gh workflow run "$workflow" \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$branch"; then
+              echo "failed to dispatch required workflow: $workflow" >&2
+              dispatch_failed=1
+            fi
+          done
+          exit "$dispatch_failed"
