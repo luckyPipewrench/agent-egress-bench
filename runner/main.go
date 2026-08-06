@@ -34,6 +34,12 @@ func main() {
 	multiFileCases := flag.String("multifile-cases", "", "directory of multi-file MCP-drift cases (each subdirectory has case.yaml + before.json + after.json + expected.json). Driver replays before then after through a single MCP session and observes the verdict on the second tools/list response.")
 	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
 	caseIndex := flag.Bool("case-index", false, "print loader-normalized case IDs and expected verdicts as JSON (requires --cases; ignores runner profile flags)")
+	reportDir := flag.String("report", "", "render a buyer-readable Markdown report from an existing Gauntlet artifact directory")
+	reportOutput := flag.String("report-output", "gauntlet-report.md", "report output path, or - for stdout (used with --report)")
+	methodRepository := flag.String("method-repository", "", "repository this corpus came from, recorded in the summary so a reader can reproduce the run")
+	methodCommit := flag.String("method-commit", "", "exact commit of the corpus under test, recorded in the summary")
+	adapterOwner := flag.String("adapter-owner", "", "who authored the adapter driving the target; a vendor-authored adapter is normal, leaving it unstated is not")
+	targetConfig := flag.String("target-config", "", "path to the target's configuration file; its path and digest are recorded so the score can be repeated")
 
 	// --debug / -v: emit verbose per-case diagnostics to stderr. Both
 	// flag names point at the same variable so either can be used.
@@ -42,6 +48,13 @@ func main() {
 	flag.BoolVar(&debug, "v", false, "alias for --debug")
 
 	flag.Parse()
+	if *reportDir != "" {
+		if err := generateBuyerReport(*reportDir, *reportOutput); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *stats {
 		if *casesDir == "" {
 			flag.Usage()
@@ -80,7 +93,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion); err != nil {
+	prov := RunProvenance{
+		MethodRepository: *methodRepository,
+		MethodCommit:     *methodCommit,
+		AdapterID:        *adapterName,
+		AdapterOwner:     *adapterOwner,
+	}
+	if *targetConfig != "" {
+		sha, hashErr := computeProfileSHA256(*targetConfig)
+		if hashErr != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: hashing target config: %v\n", hashErr)
+			os.Exit(1)
+		}
+		prov.TargetConfigRef = *targetConfig
+		prov.TargetConfigSHA = sha
+	}
+
+	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion, prov); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -91,10 +120,10 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 }
 
 func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string) error {
-	return runWithGatewayPluginOptions(casesDir, profilePath, outputPath, timeout, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, "", useFixtures, emitReceiptProfile, receiptVerifierFile, multiFileCases, debug, toolVersion)
+	return runWithGatewayPluginOptions(casesDir, profilePath, outputPath, timeout, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, "", useFixtures, emitReceiptProfile, receiptVerifierFile, multiFileCases, debug, toolVersion, RunProvenance{AdapterID: adapterName})
 }
 
-func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, gatewayPluginPath string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string) error {
+func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, gatewayPluginPath string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string, prov RunProvenance) error {
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -324,7 +353,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	}
 
 	// Build and write summary.
-	summary, err := buildSummary(profile, cases, applicableResults, naReasons, casesDir, multiFileCases, casesByID, profilePath)
+	summary, err := buildSummary(profile, cases, applicableResults, naReasons, casesDir, multiFileCases, casesByID, profilePath, prov)
 	if err != nil {
 		return err
 	}

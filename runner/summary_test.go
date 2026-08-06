@@ -112,7 +112,7 @@ func TestWriteSummaryBadPath(t *testing.T) {
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json")
+	_, err := buildSummary(p, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json", RunProvenance{})
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -161,6 +161,7 @@ func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 		"",
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		profilePath,
+		RunProvenance{},
 	)
 	if err != nil {
 		t.Fatalf("buildSummary: %v", err)
@@ -191,6 +192,7 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 		"",
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		profilePath,
+		RunProvenance{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "must be empty or RFC3339") {
 		t.Fatalf("buildSummary error = %v, want invalid fixed-date rejection", err)

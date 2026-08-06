@@ -1,4 +1,4 @@
-.PHONY: preflight check-claim-language stats stats-update check-stats cases-manifest check-gauntlet-site test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases
+.PHONY: preflight check-claim-language stats stats-update check-stats cases-manifest check-gauntlet-site test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -24,6 +24,12 @@ check-claim-language:
 test-validate:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
 	@cd validate && go test -race -count=1 ./...
+
+# `validate` is an alias for validate-cases. It must stay .PHONY: a directory
+# named validate/ holds the validator source, so without the .PHONY entry Make
+# considers the target already satisfied and exits 0 having run nothing. A gate
+# that always passes is worse than no gate, because callers trust it.
+validate: validate-cases
 
 validate-cases:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"

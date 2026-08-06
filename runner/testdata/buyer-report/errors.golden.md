@@ -1,0 +1,127 @@
+# Agent Egress Bench Run Report
+
+This report renders facts retained by one Gauntlet run. It does not combine the four metrics or assign a grade, rank, or pass mark.
+
+## Artifact input status
+
+- raw-summary.json: Readable
+- results.jsonl: Readable
+- run-metadata.json: Readable
+- run-bundle.json: Readable
+- execution-decision.json: Readable
+
+## Method identity
+
+- Repository: example/agent-egress-bench
+- Exact commit: cccccccccccccccccccccccccccccccccccccccc
+- Corpus version: v2.3.0
+- Gauntlet version: 1.0
+- Scoring version: 2.4
+- Runner version: 0.4.2
+- Run date: 2026-08-05T12:00:00Z
+- corpus_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+## Target identity
+
+- Product: example-tool
+- Version: 1.2.3
+- Declared configuration: /etc/example/target.yaml
+- Declared configuration digest: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+
+## Capability profile and adapter
+
+- tool_profile_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+- Declared capability claims:
+  - ssrf
+  - url\_dlp
+- Unsupported transports:
+  - a2a
+- Unsupported requirements:
+  - dns\_rebinding\_fixture
+- Adapter identity: example
+- Adapter owner: Example Lab
+
+## Scope
+
+- Total cases: 2
+- Applicable cases: 2
+- Not-applicable cases: 0
+- Error cases: 1
+- Not-applicable case IDs and reasons:
+  - None recorded
+
+## Metric vector
+
+Each metric stands on its own. Full-corpus scores retain out-of-scope cases in their denominators; applicable-only scores describe the declared supported scope.
+
+### Full corpus
+
+- Containment: 75.00%
+- Detection: 50.00%
+- Evidence: 25.00%
+- False-positive rate: 10.00%
+
+### Applicable cases
+
+- Containment: 80.00%
+- Detection: 60.00%
+- Evidence: 40.00%
+- False-positive rate: 0.00%
+
+## Execution and bundle status
+
+- Execution status: blocked
+- Execution blocked: true
+- Execution publication eligibility: false
+- Execution failures:
+  - runner produced an error result
+- Execution review notes:
+  - None declared
+- Run-bundle declared validation status: partial
+- Run-bundle publication eligibility: false
+- Run-bundle noncanonical reasons:
+  - None declared
+- Publication eligibility recorded by the run: Recorded not eligible by both retained decisions
+- Run-bundle digest and binding recheck: Incomplete: partial bundle with 12 retained evidence digests matching
+- Execution-decision consistency: Self-consistent: run identifier and evidence digests match the bundle
+
+These three lines are an internal consistency check. Every input to them, including the digests they compare against, comes from the supplied artifact directory, so they show the retained files agree with each other. They do not authenticate the bundle against anything outside it, and a directory edited as a whole would still reconcile. Independent assurance needs a signature over the bundle from a key the reader already trusts, which this corpus does not yet produce.
+
+## Non-claims
+
+This result does not establish:
+
+- a formal conformance status, accreditation, or pass mark;
+- legal or regulatory compliance;
+- insurance eligibility or pricing;
+- security outside the exercised capability profile;
+- absence of evasions, including variants of classes exercised here.
+
+## Reproduce the run
+
+Run the retained entrypoint command from a checkout of the repository and exact commit listed above. The entrypoint records the runner command and material files used by this result.
+
+Credential-shaped values in the commands below are replaced with REDACTED. Read them before publishing anyway: local paths and hostnames are preserved so the run can be reproduced, and no denylist recognizes every secret.
+
+### Entrypoint command
+
+    ./run-gauntlet.sh --output-dir ./artifacts
+
+### Recorded runner command
+
+    ./runner --adapter example --scan-token REDACTED --cases ./cases --profile ./profile.json
+
+### Retained material
+
+- case-index.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- checksums.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- command.txt (sha256 d2068c6f30093a7d4621fde48d8e38054f881b7db06dbd45a4217de8981003fa)
+- corpus-manifest.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- entrypoint-command.txt (sha256 6ed6633e53c72b755d52398b49031be5bf998feab21f904e02ebf9432ef05b9a)
+- make-stats.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- pipelock-release.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- pipelock-version.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- raw-summary.json (sha256 0a50659b20a2fd40ddeb6805f267a325130405412be9a32a840bd1c4c8b62c94)
+- results.jsonl (sha256 dd4412b3d57f605224d43cefda25af01d57bf73fd351dd934d1c736bd6becb33)
+- run-metadata.json (sha256 2ec73028d323d3cf0d2bd7b3e8eb598f515aa3e0f0053e46ef03a53916ac1bc4)
+- runner.stderr (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
