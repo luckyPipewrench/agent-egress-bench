@@ -34,7 +34,7 @@ force a tool through the wrong shape just to get a numeric result.
 
 One JSON object per case, written to stdout (one per line, JSONL):
 
-> `--stats` is the one exception to this contract. It reports the loaded corpus rather than running it, so it writes a human-readable Markdown snapshot to stdout and exits without producing JSONL or a summary. It requires `--cases` and ignores the tool-profile and adapter flags. `make stats`, `make stats-update` and `make check-stats` are its only intended callers.
+> `--stats` and `--report` are the exceptions to this contract. It reports the loaded corpus rather than running it, so it writes a human-readable Markdown snapshot to stdout and exits without producing JSONL or a summary. It requires `--cases` and ignores the tool-profile and adapter flags. `make stats`, `make stats-update` and `make check-stats` are its only intended callers. `--report` likewise runs no cases: it reads an artifact directory an earlier run left behind and writes Markdown to the path given by `--report-output`, or to stdout when that is `-`.
 
 ```json
 {
@@ -239,6 +239,37 @@ After all cases, the runner should print a summary line to stderr:
 ```
 results: 22 passed, 3 failed, 10 not_applicable, 0 errors (35 total)
 ```
+
+## Buyer-readable report
+
+The Go runner can render a Markdown report from an artifact directory left by an existing run. Report mode does not execute cases or recalculate scores. It reads the retained facts and shows missing or malformed inputs in place.
+
+From the repository root:
+
+```bash
+(cd runner && go run . \
+  --report ../continuous-gauntlet-artifacts \
+  --report-output ../continuous-gauntlet-artifacts/run-report.md)
+```
+
+Use `--report-output -` to write the report to standard output.
+
+The renderer reads these artifacts when present:
+
+| Artifact | Report content |
+|---|---|
+| `raw-summary.json` | Method versions, target product and version, profile digest, declared capabilities, scope counts, and the four metric vectors |
+| `results.jsonl` | Every not-applicable case ID and its recorded reason |
+| `run-metadata.json` | Repository and exact method commit |
+| `run-bundle.json` | Bundle status, publication eligibility, retained material digests, and candidate bindings |
+| `execution-decision.json` | Execution status, failures, review notes, and publication eligibility |
+| `entrypoint-command.txt` and `command.txt` | The retained reproduction commands |
+
+The report checks every digest declared by the run bundle, checks the candidate bindings against the summary and run metadata, and checks the execution decision against the bundle. It reports these checks separately from the four metrics.
+
+Missing facts render as `Absent from run artifacts`. Wrong types and contradictory bindings render as invalid. A malformed JSON or JSONL input leaves the rest of the report readable and marks the affected section. A partial, blocked, errored, or publication-ineligible run still produces a report with that state visible.
+
+The summary carries `target_config_ref`, `target_config_sha256`, and `adapter_owner` when the operator declares them with `--target-config` and `--adapter-owner`, and `adapter_id` for the adapter that was selected. Adapter identity comes from that recorded field rather than from the runner command line. Anything the operator does not declare is omitted from the summary and the report names it absent, so an undeclared fact never reads as a blank the renderer failed to fill.
 
 ## Validating Output
 

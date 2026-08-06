@@ -51,7 +51,7 @@ Publish these next to any score, or the number is not reproducible.
 | Containment, detection, evidence, and false-positive rate, reported separately | There is no composite score in this corpus. |
 | The non-claims that apply | See below. |
 
-The runner writes most of these into the summary JSON already. Reproduction instructions belong
+The runner writes these into the summary JSON. The corpus-derived facts come from the run itself; repository and commit, adapter owner, and the target configuration are operator declarations, supplied with `--method-repository`, `--method-commit`, `--adapter-owner`, and `--target-config`. A fact you do not declare is omitted rather than guessed, and the buyer report names it as absent. Reproduction instructions belong
 beside a public result too, so a reader can run it rather than believe it.
 
 ## Non-claims

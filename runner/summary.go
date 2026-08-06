@@ -42,6 +42,31 @@ type GauntletSummary struct {
 	Scores            DualScores                `json:"scores"`
 	Sufficient        bool                      `json:"sufficient"`
 	PerCategory       map[string]CategoryScores `json:"per_category"`
+
+	// Identifying facts that docs/RESULTS-USE.md requires beside any public
+	// result and that cannot be derived from the corpus or the profile. They
+	// are omitted rather than guessed when the operator does not supply them,
+	// so a reader can tell the difference between "not declared" and "declared
+	// as empty". The buyer report renders each absence explicitly.
+	MethodRepository   string `json:"method_repository,omitempty"`
+	MethodCommit       string `json:"method_commit,omitempty"`
+	AdapterID          string `json:"adapter_id,omitempty"`
+	AdapterOwner       string `json:"adapter_owner,omitempty"`
+	TargetConfigRef    string `json:"target_config_ref,omitempty"`
+	TargetConfigSHA256 string `json:"target_config_sha256,omitempty"`
+}
+
+// RunProvenance carries the identifying facts a published result must declare.
+// A score against an unnamed configuration cannot be repeated, and an adapter
+// with no stated owner hides who wrote the code that produced the verdict.
+// A vendor-authored adapter is normal; concealing authorship is not.
+type RunProvenance struct {
+	MethodRepository string
+	MethodCommit     string
+	AdapterID        string
+	AdapterOwner     string
+	TargetConfigRef  string
+	TargetConfigSHA  string
 }
 
 // CaseCount tracks totals and N/A breakdown.
@@ -199,6 +224,7 @@ func buildSummary(
 	casesDir, multiFileDir string,
 	casesByID map[string]Case,
 	profilePath string,
+	prov RunProvenance,
 ) (GauntletSummary, error) {
 	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDir)
 	if err != nil {
@@ -256,6 +282,13 @@ func buildSummary(
 		},
 		Sufficient:  isSufficient(fullScores, len(applicableResults), errorCount),
 		PerCategory: perCategory,
+
+		MethodRepository:   prov.MethodRepository,
+		MethodCommit:       prov.MethodCommit,
+		AdapterID:          prov.AdapterID,
+		AdapterOwner:       prov.AdapterOwner,
+		TargetConfigRef:    prov.TargetConfigRef,
+		TargetConfigSHA256: prov.TargetConfigSHA,
 	}, nil
 }
 
