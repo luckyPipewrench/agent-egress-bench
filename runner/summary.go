@@ -39,6 +39,7 @@ type GauntletSummary struct {
 	Date              string                    `json:"date,omitempty"`
 	CaseCount         CaseCount                 `json:"case_count"`
 	ToolSupport       ToolSupport               `json:"tool_support"`
+	Exercised         ExercisedCapabilities     `json:"exercised"`
 	Scores            DualScores                `json:"scores"`
 	Sufficient        bool                      `json:"sufficient"`
 	PerCategory       map[string]CategoryScores `json:"per_category"`
@@ -276,6 +277,7 @@ func buildSummary(
 			Errors:               errorCount,
 		},
 		ToolSupport: buildToolSupport(p),
+		Exercised:   computeExercised(applicableResults, casesByID),
 		Scores: DualScores{
 			Full:       fullScores,
 			Applicable: applicableScores,
