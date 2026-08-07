@@ -106,7 +106,10 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
 		evidence["upstream_calls_before"] = upstreamBefore
 		evidence["upstream_calls_after"] = upstreamAfter
 	}
-	if !proofAvailable || !proofAvailableAfter || upstreamAfter <= upstreamBefore {
+	// Every permitted call must reach upstream: the counter must advance by at
+	// least the number of tools/call messages driven, not merely once, or a
+	// gateway that forwards the first and drops the rest would earn allow.
+	if !proofAvailable || !proofAvailableAfter || upstreamAfter-upstreamBefore < int64(len(toolsCalls)) {
 		evidence["upstream_reached"] = false
 		if !proofAvailable || !proofAvailableAfter {
 			evidence["upstream_proof"] = "unavailable"

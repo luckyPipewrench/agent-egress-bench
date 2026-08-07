@@ -7,8 +7,9 @@ it must not identify or depend on a particular gateway product.
 The adapter supports two narrow paths, both sent to a plugin with
 `"transport": "streamable_http"`:
 
-- A corpus `mcp_http` case containing exactly one `mcp_tool_call`: the adapter
-  sends `initialize`, `notifications/initialized`, and the case's `tools/call`.
+- A corpus `mcp_http` case containing one or more `mcp_tool_call` messages: the
+  adapter sends `initialize`, `notifications/initialized`, and each case
+  `tools/call` in order over the one session.
 - A corpus `mcp_stdio` case containing exactly one `mcp_tool_definition`: the
   corpus definition models the upstream inventory, while the adapter drives the
   gateway over HTTP. It configures the runner-managed fixture with the declared
@@ -16,13 +17,15 @@ The adapter supports two narrow paths, both sent to a plugin with
   `tools/list`.
 
 Other corpus transports and input types return `skip` with a reason rather than
-inventing a verdict. This does not model multi-call sequences or temporal tool
-drift.
+inventing a verdict. An ordered `tools/call` sequence is modelled; temporal tool
+drift is not.
 
 An allow is credited only when the runner-managed MCP fixture's `tools/call`
-counter advances after the gateway response. A successful response generated
-by a gateway without forwarding is therefore `skip`, with
-`upstream_reached: false`.
+counter advances by at least the number of `tools/call` messages in the case,
+so every permitted call is proven to reach upstream. A sequence in which the
+gateway answers a call without forwarding it is therefore `skip`, with
+`upstream_reached: false`. A deny on any call blocks the sequence and reports
+its `blocked_message_index`.
 
 For a `tools/list` path, an allow is credited only when the fixture's dedicated
 `tools/list` counter advances and every declared tool name is present in the
