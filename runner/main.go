@@ -227,13 +227,12 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		if gatewayPluginPath == "" {
 			return fmt.Errorf("--gateway-plugin is required when using the mcp-gateway adapter")
 		}
-		plugin, pluginErr := adapter.LoadGatewayPlugin(gatewayPluginPath)
-		if pluginErr != nil {
-			return pluginErr
-		}
-		gatewayAdapter, gatewayErr := adapter.NewMCPGatewayAdapter(plugin, fm)
+		gatewayAdapter, managedGW, gatewayErr := buildManagedGatewayAdapter(gatewayPluginPath, fm, timeout)
 		if gatewayErr != nil {
 			return gatewayErr
+		}
+		if managedGW != nil {
+			defer managedGW.Close()
 		}
 		adapt = gatewayAdapter
 	default:
