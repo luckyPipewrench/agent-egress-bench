@@ -15,10 +15,7 @@ on:
         default: false
         type: boolean
 
-permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   # Every promotion updates the same baseline and pointer. Serialize different
@@ -28,6 +25,10 @@ concurrency:
 
 jobs:
   prepare:
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
