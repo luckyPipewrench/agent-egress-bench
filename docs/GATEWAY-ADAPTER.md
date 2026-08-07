@@ -66,9 +66,12 @@ This managed path is proven end-to-end against an in-repo synthetic gateway.
 
 The adapter binds a session: when the gateway returns an `Mcp-Session-Id` header
 on initialize, the adapter replays it on the case's later requests, so a
-session-enforcing gateway is driven correctly. Multi-call sequences, resources,
-prompts, and multi-server topologies remain out of scope, and a maintainer-opt-in
-run against an unrelated third-party gateway is still pending.
+session-enforcing gateway is driven correctly. An `mcp_http` case may carry an
+ordered sequence of `tools/call` messages; the adapter drives them over the one
+session, blocks the sequence at the first denied call and reports its index, and
+allows only when every call reaches upstream. Resources, prompts, and
+multi-server topologies remain out of scope, and a maintainer-opt-in run against
+an unrelated third-party gateway is still pending.
 
 `client.endpoint` is the absolute HTTP(S) MCP endpoint and `client.headers`
 are literal HTTP headers sent with every MCP request.

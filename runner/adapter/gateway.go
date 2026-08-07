@@ -69,7 +69,7 @@ func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 }
 
 func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
-	toolsCall, err := oneToolsCall(c)
+	toolsCalls, err := toolsCallMessages(c)
 	if err != nil {
 		return Result{Err: err}
 	}
@@ -83,14 +83,24 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
 	}
 
 	upstreamBefore, proofAvailable := a.upstreamCalls()
-	result := a.send(ctx, client, c.ID, toolsCall, true, sess)
-	if result != nil {
-		a.preserveMalformedSSEToolsCallProof(result, upstreamBefore, proofAvailable)
-		return *result
+	// Drive the tools/call sequence in order over the one session. A deny on any
+	// call blocks the whole sequence and names which message the gateway stopped.
+	for i, toolsCall := range toolsCalls {
+		result := a.send(ctx, client, c.ID, toolsCall, true, sess)
+		if result != nil {
+			a.preserveMalformedSSEToolsCallProof(result, upstreamBefore, proofAvailable)
+			if len(toolsCalls) > 1 && result.Verdict == "block" && result.Evidence != nil {
+				result.Evidence["blocked_message_index"] = i
+			}
+			return *result
+		}
 	}
 	upstreamAfter, proofAvailableAfter := a.upstreamCalls()
 	evidence := map[string]interface{}{
 		"product_surface": "mcp_gateway_streamable_http",
+	}
+	if len(toolsCalls) > 1 {
+		evidence["tools_call_count"] = len(toolsCalls)
 	}
 	if proofAvailable && proofAvailableAfter {
 		evidence["upstream_calls_before"] = upstreamBefore
@@ -209,19 +219,23 @@ func gatewaySkip(c Case, reason string) Result {
 	}}
 }
 
-func oneToolsCall(c Case) (map[string]interface{}, error) {
+func toolsCallMessages(c Case) ([]map[string]interface{}, error) {
 	rawMessages, ok := c.Payload["jsonrpc_messages"].([]interface{})
-	if !ok || len(rawMessages) != 1 {
-		return nil, fmt.Errorf("case %s: PR1 requires exactly one jsonrpc_messages tools/call", c.ID)
+	if !ok || len(rawMessages) == 0 {
+		return nil, fmt.Errorf("case %s: requires at least one jsonrpc_messages tools/call", c.ID)
 	}
-	message, ok := rawMessages[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("case %s: tools/call message must be an object", c.ID)
+	messages := make([]map[string]interface{}, 0, len(rawMessages))
+	for i, raw := range rawMessages {
+		message, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("case %s: tools/call message %d must be an object", c.ID, i)
+		}
+		if method, _ := message["method"].(string); method != "tools/call" {
+			return nil, fmt.Errorf("case %s: message %d must be tools/call, got %q", c.ID, i, method)
+		}
+		messages = append(messages, message)
 	}
-	if method, _ := message["method"].(string); method != "tools/call" {
-		return nil, fmt.Errorf("case %s: PR1 requires tools/call, got %q", c.ID, method)
-	}
-	return message, nil
+	return messages, nil
 }
 
 func declaredTools(c Case) ([]json.RawMessage, []string, error) {

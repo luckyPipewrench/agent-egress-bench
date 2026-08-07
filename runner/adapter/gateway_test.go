@@ -844,6 +844,125 @@ func lateSessionGateway(t *testing.T, upstreamURL string) *httptest.Server {
 	}))
 }
 
+// A case may drive an ordered tools/call sequence over one session. The adapter
+// blocks when the gateway denies a forbidden call in the sequence and reports
+// which message was blocked, rather than only handling a single call.
+func TestMCPGatewayAdapterDrivesMultiCallSequenceAndBlocksForbiddenCall(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	var mu sync.Mutex
+	toolsCalls := 0
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method != "tools/call" {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
+			return
+		}
+		mu.Lock()
+		toolsCalls++
+		n := toolsCalls
+		mu.Unlock()
+		if n >= 2 {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32042,"message":"policy denied"}}`, id)
+			return
+		}
+		upReq, buildErr := http.NewRequestWithContext(r.Context(), http.MethodPost, fm.MCPHTTP().URL(), bytes.NewReader(body))
+		if buildErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, doErr := client.Do(upReq)
+		if doErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "multicall", Transport: "streamable_http",
+		Client:      GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{JSONRPCErrorCodeRange: [2]int{-32099, -32000}},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayMultiToolsCallCase("gateway-multicall-block", 2), time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q (evidence %v), want block on the forbidden second call", result.Verdict, result.Evidence)
+	}
+	if idx, _ := result.Evidence["blocked_message_index"].(int); idx != 1 {
+		t.Fatalf("blocked_message_index = %v, want 1", result.Evidence["blocked_message_index"])
+	}
+}
+
+// A sequence whose every call reaches upstream is allowed, and the evidence
+// reports how many calls the sequence drove.
+func TestMCPGatewayAdapterAllowsFullMultiCallSequence(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := forwardingGateway(t, fm.MCPHTTP().URL())
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "multicall-allow", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayMultiToolsCallCase("gateway-multicall-allow", 3), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want allow for a fully-permitted sequence", result)
+	}
+	if got, _ := result.Evidence["tools_call_count"].(int); got != 3 {
+		t.Fatalf("tools_call_count = %v, want 3", result.Evidence["tools_call_count"])
+	}
+}
+
+func gatewayMultiToolsCallCase(id string, n int) Case {
+	msgs := make([]interface{}, 0, n)
+	for i := 0; i < n; i++ {
+		msgs = append(msgs, map[string]interface{}{
+			"jsonrpc": "2.0", "id": i + 1, "method": "tools/call",
+			"params": map[string]interface{}{"name": "example", "arguments": map[string]interface{}{}},
+		})
+	}
+	return Case{
+		ID: id, Transport: "mcp_http", InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": msgs},
+	}
+}
+
 func writeGatewayPlugin(t *testing.T, plugin map[string]interface{}) string {
 	t.Helper()
 	data, err := json.Marshal(plugin)
