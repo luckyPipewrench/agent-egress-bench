@@ -765,6 +765,85 @@ func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httpt
 	}))
 }
 
+// The session id binds only on initialize. A gateway that returns an
+// Mcp-Session-Id on a later response must not have that id adopted, or the
+// adapter would carry an unnegotiated session onto the tools/call.
+func TestMCPGatewayAdapterCapturesSessionOnlyFromInitialize(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := lateSessionGateway(t, fm.MCPHTTP().URL())
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "late-session", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolsCallCase("gateway-late-session"), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want allow; a session id assigned after initialize must be ignored", result)
+	}
+}
+
+// lateSessionGateway assigns no session id on initialize but returns one on
+// notifications/initialized. It forwards a tools/call to upstream only when the
+// call carries no session id, so a client that wrongly adopted the late id fails.
+func lateSessionGateway(t *testing.T, upstreamURL string) *httptest.Server {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`, id)
+			return
+		case "notifications/initialized":
+			w.Header().Set("Mcp-Session-Id", "late-sess")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if r.Header.Get("Mcp-Session-Id") != "" {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"unexpected session"}}`, id)
+			return
+		}
+		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(body))
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(upReq)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	}))
+}
+
 func writeGatewayPlugin(t *testing.T, plugin map[string]interface{}) string {
 	t.Helper()
 	data, err := json.Marshal(plugin)

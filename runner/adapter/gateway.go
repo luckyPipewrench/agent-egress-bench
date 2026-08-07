@@ -348,9 +348,10 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// Capture the session id the gateway assigns on initialize so later requests
-	// in this case carry it. The first assignment wins; a gateway does not rotate
-	// it mid-session.
-	if sess != nil && sess.id == "" {
+	// in this case carry it. The binding is initialize-only: an Mcp-Session-Id on
+	// any later response is not adopted, so an unnegotiated id never reaches the
+	// tools/call.
+	if sess != nil && sess.id == "" && message["method"] == "initialize" {
 		if assigned := resp.Header.Get("Mcp-Session-Id"); assigned != "" {
 			sess.id = assigned
 		}
