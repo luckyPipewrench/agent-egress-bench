@@ -63,9 +63,12 @@ the benchmark's runner-owned MCP upstream:
 When `start_command` is set, the runner executes gateway lifecycle and
 registration commands; a run with an operator-started gateway leaves both empty.
 This managed path is proven end-to-end against an in-repo synthetic gateway.
-Sessions, multi-call sequences, resources, prompts, and multi-server topologies
-remain out of scope, and a maintainer-opt-in run against an unrelated third-party
-gateway is still pending.
+
+The adapter binds a session: when the gateway returns an `Mcp-Session-Id` header
+on initialize, the adapter replays it on the case's later requests, so a
+session-enforcing gateway is driven correctly. Multi-call sequences, resources,
+prompts, and multi-server topologies remain out of scope, and a maintainer-opt-in
+run against an unrelated third-party gateway is still pending.
 
 `client.endpoint` is the absolute HTTP(S) MCP endpoint and `client.headers`
 are literal HTTP headers sent with every MCP request.

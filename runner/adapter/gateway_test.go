@@ -682,6 +682,89 @@ func gatewayToolDefinitionCase(id, name string) Case {
 	}
 }
 
+// A Streamable HTTP gateway may bind a session on initialize and require the
+// Mcp-Session-Id header on every later request. The adapter must capture that
+// id and replay it, or a session-enforcing gateway rejects the tools/call and
+// the corpus case can never reach upstream.
+func TestMCPGatewayAdapterBindsSessionIDAcrossRequests(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := sessionEnforcingGateway(t, fm.MCPHTTP().URL(), "sess-abc-123")
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "session-forwarder", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolsCallCase("gateway-session-allow"), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want proven allow through a session-bound gateway", result)
+	}
+	if got, _ := result.Evidence["upstream_reached"].(bool); !got {
+		t.Fatalf("upstream_reached = %v, want true; evidence=%+v", result.Evidence["upstream_reached"], result.Evidence)
+	}
+}
+
+// sessionEnforcingGateway assigns an Mcp-Session-Id on initialize and forwards a
+// later request to upstream only when it carries that id, mirroring a
+// session-binding MCP gateway.
+func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httptest.Server {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method == "initialize" {
+			w.Header().Set("Mcp-Session-Id", sessionID)
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`, id)
+			return
+		}
+		if r.Header.Get("Mcp-Session-Id") != sessionID {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"missing session"}}`, id)
+			return
+		}
+		if req.Method == "notifications/initialized" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(body))
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(upReq)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	}))
+}
+
 func writeGatewayPlugin(t *testing.T, plugin map[string]interface{}) string {
 	t.Helper()
 	data, err := json.Marshal(plugin)

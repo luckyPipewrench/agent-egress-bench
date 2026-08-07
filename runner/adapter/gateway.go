@@ -77,12 +77,13 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	client := &http.Client{}
-	if result := a.initialize(ctx, client, c.ID); result != nil {
+	sess := &gatewaySession{}
+	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
 		return *result
 	}
 
 	upstreamBefore, proofAvailable := a.upstreamCalls()
-	result := a.send(ctx, client, c.ID, toolsCall, true)
+	result := a.send(ctx, client, c.ID, toolsCall, true, sess)
 	if result != nil {
 		a.preserveMalformedSSEToolsCallProof(result, upstreamBefore, proofAvailable)
 		return *result
@@ -128,7 +129,8 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 	}
 
 	client := &http.Client{}
-	if result := a.initialize(ctx, client, c.ID); result != nil {
+	sess := &gatewaySession{}
+	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
 		return *result
 	}
 
@@ -139,7 +141,7 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 		"method":  "tools/list",
 		"params":  map[string]interface{}{},
 	}
-	responseBody, result := a.sendResponse(ctx, client, c.ID, toolsList, true, "empty_tools_list_response")
+	responseBody, result := a.sendResponse(ctx, client, c.ID, toolsList, true, "empty_tools_list_response", sess)
 	if result != nil {
 		a.preserveMalformedSSEToolsListProof(result, upstreamBefore, proofAvailable)
 		return *result
@@ -177,7 +179,7 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 	return Result{Verdict: "allow", Evidence: evidence}
 }
 
-func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client, caseID string) *Result {
+func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client, caseID string, sess *gatewaySession) *Result {
 	initialize := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      "aeb-initialize",
@@ -188,7 +190,7 @@ func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client,
 			"clientInfo":      map[string]string{"name": "agent-egress-bench", "version": "1"},
 		},
 	}
-	if result := a.send(ctx, client, caseID, initialize, false); result != nil {
+	if result := a.send(ctx, client, caseID, initialize, false, sess); result != nil {
 		return result
 	}
 	initialized := map[string]interface{}{
@@ -196,7 +198,7 @@ func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client,
 		"method":  "notifications/initialized",
 		"params":  map[string]interface{}{},
 	}
-	return a.send(ctx, client, caseID, initialized, false)
+	return a.send(ctx, client, caseID, initialized, false, sess)
 }
 
 func gatewaySkip(c Case, reason string) Result {
@@ -302,12 +304,19 @@ func containsNormalizedToolName(names []string, wanted string) bool {
 	return false
 }
 
-func (a *MCPGatewayAdapter) send(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool) *Result {
-	_, result := a.sendResponse(ctx, client, caseID, message, requireResponse, "empty_tools_call_response")
+func (a *MCPGatewayAdapter) send(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, sess *gatewaySession) *Result {
+	_, result := a.sendResponse(ctx, client, caseID, message, requireResponse, "empty_tools_call_response", sess)
 	return result
 }
 
-func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, emptyResponseReason string) ([]byte, *Result) {
+// gatewaySession carries the Mcp-Session-Id a Streamable HTTP gateway binds on
+// initialize across the remaining requests of a single case. It is created per
+// case so a session never leaks between cases or races across concurrent runs.
+type gatewaySession struct {
+	id string
+}
+
+func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, emptyResponseReason string, sess *gatewaySession) ([]byte, *Result) {
 	body, err := json.Marshal(message)
 	if err != nil {
 		return nil, &Result{Err: fmt.Errorf("case %s: marshal MCP message: %w", caseID, err)}
@@ -321,6 +330,11 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 	for key, value := range a.plugin.Client.Headers {
 		req.Header.Set(key, value)
 	}
+	// Replay a bound session id on every request after initialize. Set it after
+	// the operator headers so the live session id is authoritative.
+	if sess != nil && sess.id != "" {
+		req.Header.Set("Mcp-Session-Id", sess.id)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -333,6 +347,14 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway request: %w", caseID, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
+	// Capture the session id the gateway assigns on initialize so later requests
+	// in this case carry it. The first assignment wins; a gateway does not rotate
+	// it mid-session.
+	if sess != nil && sess.id == "" {
+		if assigned := resp.Header.Get("Mcp-Session-Id"); assigned != "" {
+			sess.id = assigned
+		}
+	}
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, &Result{Err: fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err)}
