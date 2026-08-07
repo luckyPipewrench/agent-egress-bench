@@ -39,9 +39,13 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("accept_policy_change:", trigger)
 
     def test_write_permissions_are_isolated_from_scheduled_lane(self):
+        self.assertRegex(self.workflow, r"(?m)^permissions: \{\}$")
         self.assertRegex(
             self.workflow,
-            r"(?m)^permissions:\n  actions: write\n  contents: write\n  pull-requests: write$",
+            r"(?m)^  prepare:\n    permissions:\n"
+            r"      actions: write\n"
+            r"      contents: write\n"
+            r"      pull-requests: write$",
         )
         scheduled = (REPO_ROOT / ".github" / "workflows" / "continuous-gauntlet.yaml").read_text(
             encoding="utf-8"
