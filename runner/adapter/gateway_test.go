@@ -682,6 +682,368 @@ func gatewayToolDefinitionCase(id, name string) Case {
 	}
 }
 
+// A Streamable HTTP gateway may bind a session on initialize and require the
+// Mcp-Session-Id header on every later request. The adapter must capture that
+// id and replay it, or a session-enforcing gateway rejects the tools/call and
+// the corpus case can never reach upstream.
+func TestMCPGatewayAdapterBindsSessionIDAcrossRequests(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := sessionEnforcingGateway(t, fm.MCPHTTP().URL(), "sess-abc-123")
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "session-forwarder", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolsCallCase("gateway-session-allow"), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want proven allow through a session-bound gateway", result)
+	}
+	if got, _ := result.Evidence["upstream_reached"].(bool); !got {
+		t.Fatalf("upstream_reached = %v, want true; evidence=%+v", result.Evidence["upstream_reached"], result.Evidence)
+	}
+}
+
+// sessionEnforcingGateway assigns an Mcp-Session-Id on initialize and forwards a
+// later request to upstream only when it carries that id, mirroring a
+// session-binding MCP gateway.
+func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httptest.Server {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method == "initialize" {
+			w.Header().Set("Mcp-Session-Id", sessionID)
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`, id)
+			return
+		}
+		if r.Header.Get("Mcp-Session-Id") != sessionID {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"missing session"}}`, id)
+			return
+		}
+		if req.Method == "notifications/initialized" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(body))
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(upReq)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	}))
+}
+
+// The session id binds only on initialize. A gateway that returns an
+// Mcp-Session-Id on a later response must not have that id adopted, or the
+// adapter would carry an unnegotiated session onto the tools/call.
+func TestMCPGatewayAdapterCapturesSessionOnlyFromInitialize(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := lateSessionGateway(t, fm.MCPHTTP().URL())
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "late-session", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayToolsCallCase("gateway-late-session"), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want allow; a session id assigned after initialize must be ignored", result)
+	}
+}
+
+// lateSessionGateway assigns no session id on initialize but returns one on
+// notifications/initialized. It forwards a tools/call to upstream only when the
+// call carries no session id, so a client that wrongly adopted the late id fails.
+func lateSessionGateway(t *testing.T, upstreamURL string) *httptest.Server {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`, id)
+			return
+		case "notifications/initialized":
+			w.Header().Set("Mcp-Session-Id", "late-sess")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if r.Header.Get("Mcp-Session-Id") != "" {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"unexpected session"}}`, id)
+			return
+		}
+		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(body))
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(upReq)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	}))
+}
+
+// A case may drive an ordered tools/call sequence over one session. The adapter
+// blocks when the gateway denies a forbidden call in the sequence and reports
+// which message was blocked, rather than only handling a single call.
+func TestMCPGatewayAdapterDrivesMultiCallSequenceAndBlocksForbiddenCall(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	var mu sync.Mutex
+	toolsCalls := 0
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method != "tools/call" {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
+			return
+		}
+		mu.Lock()
+		toolsCalls++
+		n := toolsCalls
+		mu.Unlock()
+		if n >= 2 {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32042,"message":"policy denied"}}`, id)
+			return
+		}
+		upReq, buildErr := http.NewRequestWithContext(r.Context(), http.MethodPost, fm.MCPHTTP().URL(), bytes.NewReader(body))
+		if buildErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, doErr := client.Do(upReq)
+		if doErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "multicall", Transport: "streamable_http",
+		Client:      GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{JSONRPCErrorCodeRange: [2]int{-32099, -32000}},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayMultiToolsCallCase("gateway-multicall-block", 2), time.Second)
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q (evidence %v), want block on the forbidden second call", result.Verdict, result.Evidence)
+	}
+	if idx, _ := result.Evidence["blocked_message_index"].(int); idx != 1 {
+		t.Fatalf("blocked_message_index = %v, want 1", result.Evidence["blocked_message_index"])
+	}
+}
+
+// A sequence whose every call reaches upstream is allowed, and the evidence
+// reports how many calls the sequence drove.
+func TestMCPGatewayAdapterAllowsFullMultiCallSequence(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := forwardingGateway(t, fm.MCPHTTP().URL())
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "multicall-allow", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayMultiToolsCallCase("gateway-multicall-allow", 3), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want allow for a fully-permitted sequence", result)
+	}
+	if got, _ := result.Evidence["tools_call_count"].(int); got != 3 {
+		t.Fatalf("tools_call_count = %v, want 3", result.Evidence["tools_call_count"])
+	}
+	// Independent of the adapter's own evidence: the fixture must have received
+	// all three calls.
+	if got := fm.MCPHTTP().ToolCalls(); got != 3 {
+		t.Fatalf("fixture ToolCalls = %d, want 3 (every call forwarded)", got)
+	}
+}
+
+// A permitted sequence is allowed only when every call reaches upstream. A
+// gateway that forwards the first call but silently drops the rest advances the
+// fixture counter once, and must not earn allow for the whole sequence.
+func TestMCPGatewayAdapterSkipsSequenceWhenNotAllCallsReachUpstream(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	var mu sync.Mutex
+	toolsCalls := 0
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method != "tools/call" {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
+			return
+		}
+		mu.Lock()
+		toolsCalls++
+		n := toolsCalls
+		mu.Unlock()
+		if n >= 2 {
+			// Silently answered locally; never forwarded to upstream.
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
+			return
+		}
+		upReq, buildErr := http.NewRequestWithContext(r.Context(), http.MethodPost, fm.MCPHTTP().URL(), bytes.NewReader(body))
+		if buildErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, doErr := client.Do(upReq)
+		if doErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "multicall-partial", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+
+	result := a.Run(gatewayMultiToolsCallCase("gateway-multicall-partial", 2), time.Second)
+	if got := fm.MCPHTTP().ToolCalls(); got != 1 {
+		t.Fatalf("fixture ToolCalls = %d, want 1 (only the first call forwarded)", got)
+	}
+	if result.Verdict == "allow" {
+		t.Fatalf("verdict = allow, but only 1 of 2 calls reached upstream; want not-allow")
+	}
+}
+
+func gatewayMultiToolsCallCase(id string, n int) Case {
+	msgs := make([]interface{}, 0, n)
+	for i := 0; i < n; i++ {
+		msgs = append(msgs, map[string]interface{}{
+			"jsonrpc": "2.0", "id": i + 1, "method": "tools/call",
+			"params": map[string]interface{}{"name": "example", "arguments": map[string]interface{}{}},
+		})
+	}
+	return Case{
+		ID: id, Transport: "mcp_http", InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": msgs},
+	}
+}
+
 func writeGatewayPlugin(t *testing.T, plugin map[string]interface{}) string {
 	t.Helper()
 	data, err := json.Marshal(plugin)
