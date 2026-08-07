@@ -38,6 +38,12 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
   - a2a
 - Unsupported requirements:
   - dns\_rebinding\_fixture
+- Exercised transports (this run):
+  - Absent from run artifacts
+- Exercised categories (this run):
+  - Absent from run artifacts
+- Exercised capability tags (this run):
+  - Absent from run artifacts
 - Adapter identity: example
 - Adapter owner: Example Lab
 

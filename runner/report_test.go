@@ -76,6 +76,15 @@ func TestBuyerReportGoldens(t *testing.T) {
 		{name: "malformed-summary", mutate: func(f *reportFixture) {
 			f.malformedSummary = true
 		}},
+		{name: "exercised-capabilities", mutate: func(f *reportFixture) {
+			// A run that actually drove several surfaces reports them, so the
+			// exercised profile is distinct from the declared claims.
+			f.summary["exercised"] = map[string]interface{}{
+				"transports":      []interface{}{"fetch_proxy", "mcp_http"},
+				"categories":      []interface{}{"mcp_input", "url"},
+				"capability_tags": []interface{}{"mcp_input_scan", "url_dlp"},
+			}
+		}},
 	}
 
 	for _, tt := range tests {

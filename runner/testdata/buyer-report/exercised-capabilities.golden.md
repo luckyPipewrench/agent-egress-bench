@@ -5,7 +5,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Artifact input status
 
 - raw-summary.json: Readable
-- results.jsonl: Malformed JSONL at line 2
+- results.jsonl: Readable
 - run-metadata.json: Readable
 - run-bundle.json: Readable
 - execution-decision.json: Readable
@@ -39,11 +39,14 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 - Unsupported requirements:
   - dns\_rebinding\_fixture
 - Exercised transports (this run):
-  - Absent from run artifacts
+  - fetch\_proxy
+  - mcp\_http
 - Exercised categories (this run):
-  - Absent from run artifacts
+  - mcp\_input
+  - url
 - Exercised capability tags (this run):
-  - Absent from run artifacts
+  - mcp\_input\_scan
+  - url\_dlp
 - Adapter identity: example
 - Adapter owner: Example Lab
 
@@ -54,7 +57,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 - Not-applicable cases: 0
 - Error cases: 0
 - Not-applicable case IDs and reasons:
-  - Malformed JSONL at line 2
+  - None recorded
 
 ## Metric vector
 
@@ -87,8 +90,8 @@ Each metric stands on its own. Full-corpus scores retain out-of-scope cases in t
 - Run-bundle publication eligibility: true
 - Run-bundle noncanonical reasons:
   - None declared
-- Publication eligibility recorded by the run: Not established because retained validation checks are not valid
-- Run-bundle digest and binding recheck: Invalid: results.jsonl could not be validated: Malformed JSONL at line 2
+- Publication eligibility recorded by the run: Recorded eligible by both retained decisions
+- Run-bundle digest and binding recheck: Self-consistent: 12 retained evidence digests match the bundle
 - Execution-decision consistency: Self-consistent: run identifier and evidence digests match the bundle
 
 These three lines are an internal consistency check. Every input to them, including the digests they compare against, comes from the supplied artifact directory, so they show the retained files agree with each other. They do not authenticate the bundle against anything outside it, and a directory edited as a whole would still reconcile. Independent assurance needs a signature over the bundle from a key the reader already trusts, which this corpus does not yet produce.
@@ -127,7 +130,7 @@ Credential-shaped values in the commands below are replaced with REDACTED. Read 
 - make-stats.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - pipelock-release.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - pipelock-version.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
-- raw-summary.json (sha256 d144bc083fc6baf7b6841676f672e06aa8191720b1dcb9d0b887861c6f20ebf0)
-- results.jsonl (sha256 416dba184497ca4104aaace8e447ffbe9d596e9f96f6a70f24aa93e29713f850)
+- raw-summary.json (sha256 2eb453b27001650299063d415111516215f63134a29f5d6c647d7423733d65ae)
+- results.jsonl (sha256 d1413b853523d00171fb500f4c0bb02973cd4aa2276c1eed650295f9eace651f)
 - run-metadata.json (sha256 2ec73028d323d3cf0d2bd7b3e8eb598f515aa3e0f0053e46ef03a53916ac1bc4)
 - runner.stderr (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)

@@ -37,6 +37,12 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
   - Absent from run artifacts
 - Unsupported requirements:
   - Absent from run artifacts
+- Exercised transports (this run):
+  - Absent from run artifacts
+- Exercised categories (this run):
+  - Absent from run artifacts
+- Exercised capability tags (this run):
+  - Absent from run artifacts
 - Adapter identity: Absent from run artifacts
 - Adapter owner: Absent from run artifacts
 

@@ -45,6 +45,7 @@ Publish these next to any score, or the number is not reproducible.
 | Method identity: repository and exact commit | The corpus and scoring change over time. |
 | Corpus and scoring version, plus `corpus_sha256` | Pins the case surface that ran. |
 | Capability profile and `tool_profile_sha256` | Declares what the target claims to support. |
+| Exercised profile: the transports, categories, and capability tags the run actually drove | The declared profile is a claim; the exercised profile is what was tested. A result covers only the surface it drove. |
 | Adapter identity and owner | A vendor-authored adapter is normal. Hiding who wrote it is not. |
 | Target product, version, and configuration | A score against an unnamed configuration cannot be repeated. |
 | Applicable, not-applicable, and error counts, with N/A reasons | An N/A case that silently leaves the denominator inflates the score. |
