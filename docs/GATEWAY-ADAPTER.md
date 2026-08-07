@@ -101,18 +101,24 @@ The runner's fixture environment names are:
 - `AEB_DNS_FIXTURE_ADDR`
 - `AEB_MCP_HTTP_FIXTURE_ADDR`, `AEB_MCP_HTTP_FIXTURE_URL`
 
-When the runner manages the gateway lifecycle it also allocates the gateway
-listen address at run time and supplies:
+Only when the plugin declares a `start_command` does the runner manage the
+gateway lifecycle, allocate the gateway listen address at run time, and supply:
 
 - `AEB_GATEWAY_ADDR`: the allocated host:port the gateway must bind.
 - `AEB_GATEWAY_URL`: `http://AEB_GATEWAY_ADDR/`.
 
-All of these values are interpolated into the plugin at load time and exported
-to the gateway, registration, and deregistration commands. Because the loader
-fails on any unresolved `$AEB_*` variable, a managed plugin references
-`$AEB_GATEWAY_ADDR` for its listen address and `$AEB_MCP_HTTP_FIXTURE_URL` for
-its upstream rather than hardcoding a runtime address. For an operator-started
-gateway with no `start_command`, supply any additional `$AEB_*` values in the
-runner process environment.
+The fixture values are interpolated into every plugin at load time. The two
+gateway values are added only for a managed plugin and are exported to its
+gateway, registration, and deregistration commands. Because the loader fails on
+any unresolved `$AEB_*` variable, a managed plugin references `$AEB_GATEWAY_ADDR`
+for its listen address and `$AEB_MCP_HTTP_FIXTURE_URL` for its upstream rather
+than hardcoding a runtime address.
+
+An operator-started gateway with no `start_command` gets no runner-allocated
+gateway address. Point its `client.endpoint` at the address the operator
+started, either literally or through an `$AEB_*` value the operator sets in the
+runner process environment. Do not reference `$AEB_GATEWAY_ADDR` or
+`$AEB_GATEWAY_URL` from an operator-started plugin; the runner does not set them
+in that case.
 
 Start from [gateway-plugin-template.json](../examples/gateway-plugin-template.json).

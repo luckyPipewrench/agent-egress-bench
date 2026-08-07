@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -74,6 +75,105 @@ func TestBuildManagedGatewayAdapterDrivesCaseThroughStartedGateway(t *testing.T)
 	}
 }
 
+// An operator-started gateway declares no start command and supplies its own
+// address through the process environment. The runner must not overwrite that
+// $AEB_GATEWAY_URL with a freshly allocated loopback address it never started,
+// which would point the adapter at a dead endpoint.
+func TestBuildManagedGatewayAdapterKeepsOperatorEnvpointForUnmanagedPlugin(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatalf("StartAll: %v", err)
+	}
+	defer fm.Close()
+
+	operator := httptest.NewServer(forwardingGatewayHandler(fm.MCPHTTP().URL()))
+	defer operator.Close()
+	t.Setenv("AEB_GATEWAY_URL", operator.URL)
+
+	pluginPath := writeManagedGatewayPlugin(t, map[string]interface{}{
+		"name":      "operator gateway",
+		"transport": "streamable_http",
+		"client":    map[string]interface{}{"endpoint": "$AEB_GATEWAY_URL"},
+	})
+
+	adapt, gw, err := buildManagedGatewayAdapter(pluginPath, fm, 5*time.Second)
+	if err != nil {
+		t.Fatalf("buildManagedGatewayAdapter: %v", err)
+	}
+	if gw != nil {
+		gw.Close()
+		t.Fatal("unmanaged plugin must not produce a managed gateway")
+	}
+
+	result := adapt.Run(toolsCallCaseForGatewayTest(), 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("adapter run error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q (evidence %v), want allow via the operator endpoint", result.Verdict, result.Evidence)
+	}
+}
+
+// forwardingGatewayHandler answers initialize locally and forwards every other
+// JSON-RPC message to upstream, mirroring the subprocess forwarding helper.
+func forwardingGatewayHandler(upstream string) http.Handler {
+	client := &http.Client{Timeout: 3 * time.Second}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		_ = r.Body.Close()
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method == "initialize" {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`, id)
+			return
+		}
+		if req.Method == "notifications/initialized" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstream, bytes.NewReader(body))
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		upReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(upReq)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_, _ = w.Write(respBody)
+	})
+}
+
+func toolsCallCaseForGatewayTest() adapter.Case {
+	return adapter.Case{
+		ID:        "gw-e2e-op-001",
+		InputType: "mcp_tool_call",
+		Transport: "mcp_http",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{
+				map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      "1",
+					"method":  "tools/call",
+					"params":  map[string]interface{}{"name": "echo", "arguments": map[string]interface{}{}},
+				},
+			},
+		},
+	}
+}
+
 // writeManagedGatewayPlugin writes a plugin JSON file for the managed-lifecycle
 // tests in this package.
 func writeManagedGatewayPlugin(t *testing.T, plugin map[string]interface{}) string {
@@ -123,7 +223,7 @@ func TestGatewayForwardHelper(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
-		upReq, err := http.NewRequest(http.MethodPost, upstream, bytes.NewReader(body))
+		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstream, bytes.NewReader(body))
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
 			return
@@ -141,6 +241,7 @@ func TestGatewayForwardHelper(t *testing.T) {
 
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 3 * time.Second}
 	if err := server.ListenAndServe(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "forwarding gateway helper exited: %v\n", err)
 		return
 	}
 }

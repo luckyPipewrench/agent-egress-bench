@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/adapter"
@@ -26,18 +27,33 @@ func buildManagedGatewayAdapter(pluginPath string, fm *fixture.Manager, timeout 
 	if fm == nil {
 		return nil, nil, fmt.Errorf("mcp-gateway adapter requires fixtures")
 	}
-	gatewayAddr, err := freeLoopbackAddr()
+
+	// Decide managed-versus-operator from the raw plugin, before injecting any
+	// runtime value. An operator-started gateway supplies its own address through
+	// the process environment; only a runner-managed gateway gets a runner-allocated
+	// AEB_GATEWAY_ADDR/URL, so an operator's $AEB_GATEWAY_URL is never overwritten.
+	managed, err := adapter.GatewayPluginDeclaresStartCommand(pluginPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("allocate gateway listener: %w", err)
+		return nil, nil, err
 	}
-	env := gatewayEnvMap(fm, gatewayAddr)
+
+	env := fixtureEnvMap(fm)
+	if managed {
+		gatewayAddr, allocErr := freeLoopbackAddr()
+		if allocErr != nil {
+			return nil, nil, fmt.Errorf("allocate gateway listener: %w", allocErr)
+		}
+		env["AEB_GATEWAY_ADDR"] = gatewayAddr
+		env["AEB_GATEWAY_URL"] = "http://" + gatewayAddr + "/"
+	}
+
 	plugin, err := adapter.LoadGatewayPluginWithEnv(pluginPath, env)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var gw *managedGateway
-	if plugin.Gateway.StartCommand != "" {
+	if managed {
 		gw, err = startManagedGateway(plugin.Gateway, plugin.FixtureRegistration, envSlice(env), timeout)
 		if err != nil {
 			return nil, nil, err
@@ -52,18 +68,17 @@ func buildManagedGatewayAdapter(pluginPath string, fm *fixture.Manager, timeout 
 	return adapt, gw, nil
 }
 
-// gatewayEnvMap builds the $AEB_* environment the gateway lifecycle interpolates
-// and the gateway process inherits: the benchmark fixture addresses plus the
-// runtime-allocated gateway listen address and URL.
-func gatewayEnvMap(fm *fixture.Manager, gatewayAddr string) map[string]string {
+// fixtureEnvMap builds the $AEB_* fixture environment interpolated into every
+// gateway plugin and inherited by any managed gateway process: the benchmark
+// fixture addresses. The runtime-allocated gateway address is added separately
+// and only for a runner-managed gateway.
+func fixtureEnvMap(fm *fixture.Manager) map[string]string {
 	env := map[string]string{}
 	for _, kv := range managedFixtureEnv(fm) {
 		if k, v, ok := strings.Cut(kv, "="); ok {
 			env[k] = v
 		}
 	}
-	env["AEB_GATEWAY_ADDR"] = gatewayAddr
-	env["AEB_GATEWAY_URL"] = "http://" + gatewayAddr + "/"
 	return env
 }
 
@@ -84,6 +99,7 @@ type managedGateway struct {
 	deregister string
 	env        []string
 	timeout    time.Duration
+	closeOnce  sync.Once
 }
 
 // startManagedGateway launches the gateway from its declared start command,
@@ -121,12 +137,14 @@ func (m *managedGateway) Close() {
 	if m == nil {
 		return
 	}
-	if m.deregister != "" {
-		if err := runGatewayCommand(context.Background(), "fixture deregistration", m.deregister, m.env, m.timeout); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "gateway deregistration failed: %v\n", err)
+	m.closeOnce.Do(func() {
+		if m.deregister != "" {
+			if err := runGatewayCommand(context.Background(), "fixture deregistration", m.deregister, m.env, m.timeout); err != nil {
+				_, _ = fmt.Fprintf(os.Stderr, "gateway deregistration failed: %v\n", err)
+			}
 		}
-	}
-	m.procs.Close()
+		m.procs.Close()
+	})
 }
 
 // runGatewayCommand runs a one-shot gateway lifecycle command to completion. A

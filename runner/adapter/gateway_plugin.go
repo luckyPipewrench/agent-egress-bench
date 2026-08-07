@@ -75,6 +75,23 @@ func LoadGatewayPluginWithEnv(path string, env map[string]string) (GatewayPlugin
 	return plugin, nil
 }
 
+// GatewayPluginDeclaresStartCommand reports whether the plugin at path declares
+// a gateway start command, meaning the runner manages its lifecycle. It reads
+// the raw field before any $AEB_* interpolation so the managed-versus-operator
+// decision never depends on a runtime-allocated value, and so an operator-started
+// gateway's own $AEB_* environment is not overwritten by runner-generated ones.
+func GatewayPluginDeclaresStartCommand(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("read gateway plugin %q: %w", path, err)
+	}
+	var plugin GatewayPlugin
+	if err := json.Unmarshal(data, &plugin); err != nil {
+		return false, fmt.Errorf("parse gateway plugin %q: %w", path, err)
+	}
+	return plugin.Gateway.StartCommand != "", nil
+}
+
 func (p *GatewayPlugin) interpolateAEBEnvironment(env map[string]string) error {
 	var err error
 	interpolate := func(value *string) {

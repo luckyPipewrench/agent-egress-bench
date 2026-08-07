@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -42,7 +43,9 @@ func TestStartManagedGatewayStartsProcessAndRunsRegistration(t *testing.T) {
 		t.Fatalf("startManagedGateway: %v", err)
 	}
 
-	conn, dialErr := net.DialTimeout("tcp", gatewayAddr, time.Second)
+	dialCtx, dialCancel := context.WithTimeout(context.Background(), time.Second)
+	conn, dialErr := (&net.Dialer{}).DialContext(dialCtx, "tcp", gatewayAddr)
+	dialCancel()
 	if dialErr != nil {
 		mg.Close()
 		t.Fatalf("gateway not listening on ready addr after start: %v", dialErr)
@@ -69,7 +72,7 @@ func TestStartManagedGatewayFailsWhenReadyAddrNeverListens(t *testing.T) {
 		t.Fatal(err)
 	}
 	gateway := adapter.GatewayRuntime{
-		StartCommand: `sh -c 'sleep 5'`,
+		StartCommand: `sleep 5`,
 		ReadyAddr:    unusedAddr,
 	}
 
