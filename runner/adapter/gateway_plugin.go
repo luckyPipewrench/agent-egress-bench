@@ -49,10 +49,18 @@ type DenySignals struct {
 
 var aebVariable = regexp.MustCompile(`\$AEB_[A-Za-z0-9_]+`)
 
-// LoadGatewayPlugin loads a gateway plugin and substitutes only $AEB_* values.
-// Substituted text is returned as ordinary string data; it is never evaluated
-// as a shell expression by this loader.
+// LoadGatewayPlugin loads a gateway plugin and substitutes only $AEB_* values
+// from the process environment. Substituted text is returned as ordinary string
+// data; it is never evaluated as a shell expression by this loader.
 func LoadGatewayPlugin(path string) (GatewayPlugin, error) {
+	return LoadGatewayPluginWithEnv(path, nil)
+}
+
+// LoadGatewayPluginWithEnv loads a gateway plugin and substitutes $AEB_* values,
+// preferring the supplied runtime env map and falling back to the process
+// environment. The runner allocates the gateway listen address at run time, so
+// those values are not in the process environment and must be passed here.
+func LoadGatewayPluginWithEnv(path string, env map[string]string) (GatewayPlugin, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return GatewayPlugin{}, fmt.Errorf("read gateway plugin %q: %w", path, err)
@@ -61,19 +69,36 @@ func LoadGatewayPlugin(path string) (GatewayPlugin, error) {
 	if err := json.Unmarshal(data, &plugin); err != nil {
 		return GatewayPlugin{}, fmt.Errorf("parse gateway plugin %q: %w", path, err)
 	}
-	if err := plugin.interpolateAEBEnvironment(); err != nil {
+	if err := plugin.interpolateAEBEnvironment(env); err != nil {
 		return GatewayPlugin{}, fmt.Errorf("interpolate gateway plugin %q: %w", path, err)
 	}
 	return plugin, nil
 }
 
-func (p *GatewayPlugin) interpolateAEBEnvironment() error {
+// GatewayPluginDeclaresStartCommand reports whether the plugin at path declares
+// a gateway start command, meaning the runner manages its lifecycle. It reads
+// the raw field before any $AEB_* interpolation so the managed-versus-operator
+// decision never depends on a runtime-allocated value, and so an operator-started
+// gateway's own $AEB_* environment is not overwritten by runner-generated ones.
+func GatewayPluginDeclaresStartCommand(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("read gateway plugin %q: %w", path, err)
+	}
+	var plugin GatewayPlugin
+	if err := json.Unmarshal(data, &plugin); err != nil {
+		return false, fmt.Errorf("parse gateway plugin %q: %w", path, err)
+	}
+	return plugin.Gateway.StartCommand != "", nil
+}
+
+func (p *GatewayPlugin) interpolateAEBEnvironment(env map[string]string) error {
 	var err error
 	interpolate := func(value *string) {
 		if err != nil {
 			return
 		}
-		*value, err = interpolateAEBString(*value)
+		*value, err = interpolateAEBString(*value, env)
 	}
 	interpolate(&p.Name)
 	interpolate(&p.Transport)
@@ -91,11 +116,11 @@ func (p *GatewayPlugin) interpolateAEBEnvironment() error {
 	if len(p.Client.Headers) > 0 {
 		rebuilt := make(map[string]string, len(p.Client.Headers))
 		for key, value := range p.Client.Headers {
-			interpolatedKey, keyErr := interpolateAEBString(key)
+			interpolatedKey, keyErr := interpolateAEBString(key, env)
 			if keyErr != nil {
 				return keyErr
 			}
-			interpolatedValue, valueErr := interpolateAEBString(value)
+			interpolatedValue, valueErr := interpolateAEBString(value, env)
 			if valueErr != nil {
 				return valueErr
 			}
@@ -109,10 +134,13 @@ func (p *GatewayPlugin) interpolateAEBEnvironment() error {
 	return err
 }
 
-func interpolateAEBString(value string) (string, error) {
+func interpolateAEBString(value string, env map[string]string) (string, error) {
 	var missing string
 	interpolated := aebVariable.ReplaceAllStringFunc(value, func(variable string) string {
 		name := variable[1:]
+		if replacement, ok := env[name]; ok {
+			return replacement
+		}
 		if replacement, ok := os.LookupEnv(name); ok {
 			return replacement
 		}

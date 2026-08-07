@@ -55,6 +55,66 @@ func TestLoadGatewayPluginInterpolatesOnlyAEBVariablesLiterally(t *testing.T) {
 	}
 }
 
+func TestLoadGatewayPluginWithEnvResolvesRuntimeVarsAndFallsBackToProcessEnv(t *testing.T) {
+	// A gateway address the runner allocates at run time is not in the process
+	// environment, so the loader must interpolate it from an explicit env map.
+	// Process-env AEB_* values still resolve, so an operator's exported vars keep
+	// working alongside the runtime-supplied ones.
+	t.Setenv("AEB_ONLY_IN_PROCESS", "process-value")
+
+	path := writeGatewayPlugin(t, map[string]interface{}{
+		"name":      "test gateway",
+		"transport": "streamable_http",
+		"gateway": map[string]interface{}{
+			"start_command": "gateway --listen=$AEB_GATEWAY_ADDR",
+			"ready_addr":    "$AEB_GATEWAY_ADDR",
+		},
+		"client": map[string]interface{}{
+			"endpoint": "$AEB_GATEWAY_URL",
+			"headers":  map[string]string{"X-From-Process": "$AEB_ONLY_IN_PROCESS"},
+		},
+	})
+
+	plugin, err := LoadGatewayPluginWithEnv(path, map[string]string{
+		"AEB_GATEWAY_ADDR": "127.0.0.1:14000",
+		"AEB_GATEWAY_URL":  "http://127.0.0.1:14000/mcp",
+	})
+	if err != nil {
+		t.Fatalf("LoadGatewayPluginWithEnv: %v", err)
+	}
+	if got := plugin.Gateway.ReadyAddr; got != "127.0.0.1:14000" {
+		t.Fatalf("ready_addr = %q, want runtime-supplied address", got)
+	}
+	if got := plugin.Client.Endpoint; got != "http://127.0.0.1:14000/mcp" {
+		t.Fatalf("endpoint = %q, want runtime-supplied URL", got)
+	}
+	if got := plugin.Client.Headers["X-From-Process"]; got != "process-value" {
+		t.Fatalf("header = %q, want process-env fallback value", got)
+	}
+}
+
+func TestLoadGatewayPluginWithEnvPrefersRuntimeMapOverProcessEnv(t *testing.T) {
+	// If the same AEB_* name exists in both the runtime map and the process
+	// environment, the runtime map wins: the runner's allocated value is
+	// authoritative over any stale exported value.
+	t.Setenv("AEB_GATEWAY_ADDR", "127.0.0.1:9999")
+
+	path := writeGatewayPlugin(t, map[string]interface{}{
+		"name":      "test gateway",
+		"transport": "streamable_http",
+		"gateway":   map[string]interface{}{"ready_addr": "$AEB_GATEWAY_ADDR"},
+		"client":    map[string]interface{}{"endpoint": "http://$AEB_GATEWAY_ADDR/"},
+	})
+
+	plugin, err := LoadGatewayPluginWithEnv(path, map[string]string{"AEB_GATEWAY_ADDR": "127.0.0.1:14001"})
+	if err != nil {
+		t.Fatalf("LoadGatewayPluginWithEnv: %v", err)
+	}
+	if got := plugin.Gateway.ReadyAddr; got != "127.0.0.1:14001" {
+		t.Fatalf("ready_addr = %q, want runtime map to win over process env", got)
+	}
+}
+
 func TestMCPGatewayAdapterBlocksConfiguredJSONRPCDeny(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if method := requestMethod(t, r); method == "tools/call" {
