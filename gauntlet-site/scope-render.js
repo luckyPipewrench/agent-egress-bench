@@ -60,18 +60,22 @@
     return value;
   }
 
-  function validateMetricFraction(artifact, metric) {
-    var scorePath = 'scores.applicable.' + metric;
-    var countPath = 'metric_counts.applicable.' + metric;
+  // scope is 'applicable' or 'full'. The full-corpus block gets the same
+  // numerator/denominator agreement check as the applicable block, because it
+  // is the figure the card now leads with and an unvalidated headline is not
+  // evidence.
+  function validateMetricFraction(artifact, metric, scope) {
+    var scorePath = 'scores.' + scope + '.' + metric;
+    var countPath = 'metric_counts.' + scope + '.' + metric;
     var numerator = nonNegativeInteger(scopeValue(artifact,
-      ['metric_counts', 'applicable', metric, 'numerator']), countPath + '.numerator');
+      ['metric_counts', scope, metric, 'numerator']), countPath + '.numerator');
     var denominator = nonNegativeInteger(scopeValue(artifact,
-      ['metric_counts', 'applicable', metric, 'denominator']), countPath + '.denominator');
+      ['metric_counts', scope, metric, 'denominator']), countPath + '.denominator');
     if (numerator > denominator) {
       throw new Error('metric numerator cannot exceed denominator: ' + countPath);
     }
 
-    var score = finiteFraction(scopeValue(artifact, ['scores', 'applicable', metric]), scorePath, true);
+    var score = finiteFraction(scopeValue(artifact, ['scores', scope, metric]), scorePath, true);
     if (denominator === 0) {
       if (score !== null) {
         throw new Error('score must be null when metric denominator is zero: ' + scorePath);
@@ -137,8 +141,21 @@
     }
 
     var containment = scopeValue(artifact, ['scores', 'applicable', 'containment']);
-    var containmentCounts = validateMetricFraction(artifact, 'containment');
-    var falsePositiveCounts = validateMetricFraction(artifact, 'false_positive_rate');
+    var containmentCounts = validateMetricFraction(artifact, 'containment', 'applicable');
+    var falsePositiveCounts = validateMetricFraction(artifact, 'false_positive_rate', 'applicable');
+
+    // Full corpus is the published view, so it is validated rather than merely
+    // read. Its containment denominator covers every case, including the ones
+    // this tool did not declare, so it is bounded by total rather than by
+    // applicable.
+    var fullContainment = scopeValue(artifact, ['scores', 'full', 'containment']);
+    var fullContainmentCounts = validateMetricFraction(artifact, 'containment', 'full');
+    if (fullContainmentCounts.denominator > total) {
+      throw new Error('metric denominator cannot exceed case_count.total: metric_counts.full.containment');
+    }
+    if (fullContainmentCounts.denominator < containmentCounts.denominator) {
+      throw new Error('full containment denominator cannot be smaller than the applicable denominator');
+    }
     if (containmentCounts.denominator > applicable || falsePositiveCounts.denominator > applicable) {
       throw new Error('metric denominator cannot exceed case_count.applicable');
     }
@@ -161,6 +178,7 @@
       notApplicable: notApplicable,
       reasons: reasons,
       containment: containment,
+      fullContainment: fullContainment,
       falsePositiveRate: scopeValue(artifact, ['scores', 'applicable', 'false_positive_rate']),
       canonicalURL: validateCanonicalURL(scopeValue(artifact, ['canonical_url'])),
     };
@@ -180,9 +198,14 @@
 
     var block = document.createElement('div');
     block.className = 'denominator';
+    // Lead with full-corpus containment, the primary published view, and name
+    // the applicable figure as diagnostic behind it. Both denominators stay
+    // visible: the previous line quoted only the applicable score, which a tool
+    // improves by declaring fewer capabilities.
     block.appendChild(document.createTextNode(
-      'Containment ' + formatPercent(containment) + ' on ' + applicable + ' applicable of ' + total +
-      ' total cases (' + notApplicable + ' N/A: ' + formatReasons(reasons) +
+      'Containment ' + formatPercent(scope.fullContainment) + ' on all ' + total + ' cases; ' +
+      formatPercent(containment) + ' on the ' + applicable + ' applicable (diagnostic, ' +
+      notApplicable + ' N/A: ' + formatReasons(reasons) +
       '), false positives ' + formatPercent(falsePositiveRate) + ', '
     ));
 

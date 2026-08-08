@@ -38,10 +38,18 @@ function completeArtifact() {
     },
     scores: {
       applicable: { containment: 1, false_positive_rate: 0 },
+      // The card leads with full-corpus containment, so the artifact must carry
+      // it. 212 of 213 contained: the one non-applicable case counts against the
+      // full corpus, which is exactly why the two figures differ.
+      full: { containment: 212 / 213, false_positive_rate: 0 },
     },
     metric_counts: {
       applicable: {
         containment: { numerator: 1, denominator: 1 },
+        false_positive_rate: { numerator: 0, denominator: 1 },
+      },
+      full: {
+        containment: { numerator: 212, denominator: 213 },
         false_positive_rate: { numerator: 0, denominator: 1 },
       },
     },
@@ -56,7 +64,10 @@ function expectReject(mutator, message) {
 
 const rendered = window.renderGauntletScope(completeArtifact());
 assert.equal(rendered.className, 'denominator');
-assert.match(rendered.children[0].textContent, /Containment 100\.0% on 212 applicable of 213 total cases/);
+// Full corpus leads; the applicable figure follows, named as diagnostic. The
+// two numbers differ here precisely because a non-applicable case still counts
+// against the full corpus, which is the property that makes it non-gameable.
+assert.match(rendered.children[0].textContent, /Containment 99\.5% on all 213 cases; 100\.0% on the 212 applicable \(diagnostic/);
 assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
 
 expectReject((artifact) => { artifact.scores.applicable.containment = '100%'; }, 'non-numeric containment');
@@ -84,6 +95,15 @@ allNA.scores.applicable.containment = null;
 allNA.scores.applicable.false_positive_rate = null;
 allNA.metric_counts.applicable.containment = { numerator: 0, denominator: 0 };
 allNA.metric_counts.applicable.false_positive_rate = { numerator: 0, denominator: 0 };
-assert.match(window.renderGauntletScope(allNA).children[0].textContent, /Containment N\/A on 0 applicable/);
+// A tool declaring no capabilities contains nothing, so full-corpus containment
+// is 0 of 213 rather than the 212/213 the base fixture carries.
+allNA.scores.full.containment = 0;
+allNA.metric_counts.full.containment = { numerator: 0, denominator: 213 };
+// This is the whole point of leading with full corpus. Declaring nothing makes
+// the applicable score vanish into N/A, which under the old presentation left
+// no headline number at all. Full corpus reports it as 0.0%: the cases were
+// still attacks, and none of them were contained.
+assert.match(window.renderGauntletScope(allNA).children[0].textContent,
+  /Containment 0\.0% on all 213 cases; N\/A on the 0 applicable \(diagnostic/);
 
 console.log('scope renderer tests: OK');
