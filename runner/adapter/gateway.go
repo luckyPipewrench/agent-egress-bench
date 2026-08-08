@@ -500,6 +500,18 @@ type gatewaySession struct {
 }
 
 func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, emptyResponseReason string, sess *gatewaySession, request *gatewayRequest, expectation deliveryExpectation) ([]byte, *Result) {
+	// Response validation is selected by whether a gatewayRequest was supplied,
+	// so a caller that forgets one on a message carrying an id would silently
+	// take the notification path and skip correlation entirely. That is a guard
+	// bypassable by omission, which is the same shape as no guard at all. JSON-RPC
+	// already says which messages are requests: those with an id. Disagreement
+	// between the message and the caller is a programming error, so it fails
+	// loudly here rather than degrading to an unvalidated response.
+	if _, carriesID := message["id"]; carriesID != (request != nil) {
+		return nil, &Result{Err: fmt.Errorf(
+			"case %s: MCP message %v carries id=%t but gatewayRequest supplied=%t; a request must be correlated and a notification must not be",
+			caseID, message["method"], carriesID, request != nil)}
+	}
 	body, err := json.Marshal(message)
 	if err != nil {
 		return nil, &Result{Err: fmt.Errorf("case %s: marshal MCP message: %w", caseID, err)}

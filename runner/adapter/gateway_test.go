@@ -2121,3 +2121,57 @@ func forwardMCPGatewayRequest(client *http.Client, ctx context.Context, upstream
 	}
 	return responseBody, nil
 }
+
+// Response validation is selected by whether a gatewayRequest was supplied, so a
+// caller that omits one on a message carrying an id would silently take the
+// notification path and skip correlation. That is a guard bypassable by
+// omission, which is the same as no guard. JSON-RPC already decides which
+// messages are requests, so a disagreement between the message and the caller is
+// a programming error and must fail loudly rather than degrade to an unvalidated
+// response.
+func TestMCPGatewaySendRejectsIDAndCorrelationDisagreement(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSONRPC(t, w, json.RawMessage(`"aeb-initialize"`), nil)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "test gateway", Transport: "streamable_http",
+		Client: GatewayClient{Endpoint: server.URL},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		message map[string]interface{}
+		request *gatewayRequest
+	}{
+		{
+			name:    "request without correlation",
+			message: map[string]interface{}{"jsonrpc": "2.0", "id": "aeb-initialize", "method": "initialize"},
+			request: nil,
+		},
+		{
+			name:    "notification with correlation",
+			message: map[string]interface{}{"jsonrpc": "2.0", "method": "notifications/initialized"},
+			request: &gatewayRequest{identity: "aeb-initialize", method: "notifications/initialized"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_, result := a.sendResponse(ctx, &http.Client{}, "case-id", tt.message, false,
+				"empty", &gatewaySession{}, tt.request, deliveryAbsent)
+			if result == nil || result.Err == nil {
+				t.Fatalf("result = %+v, want a loud error rather than an unvalidated response", result)
+			}
+			if !strings.Contains(result.Err.Error(), "must be correlated") {
+				t.Fatalf("error = %v, want it to name the correlation invariant", result.Err)
+			}
+		})
+	}
+}
