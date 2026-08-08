@@ -2,8 +2,40 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"testing"
 )
+
+// Scoring must not consult anything a tool declares about itself. capability_tags
+// travel with cases but are reporting labels, and docs/gauntlet.md states plainly
+// that they affect no metric. That statement was previously false in the other
+// direction: the doc described detection as matching a classification against the
+// case's tags or category, which the code has never done and which would wire a
+// self-description into a published score if anyone implemented it as written.
+//
+// A prose promise is not a guard, so this asserts it structurally: the scoring
+// file may not reference the tag field at all. Phase F generalises this to every
+// scoring, applicability, sufficiency, and receipt-selection package.
+func TestScoringNeverReferencesCapabilityTags(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "score.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if ident.Name == "CapabilityTags" || ident.Name == "capability_tags" {
+			t.Errorf("score.go references %s at %s: scoring must not read a tool's own declarations",
+				ident.Name, fset.Position(ident.Pos()))
+		}
+		return true
+	})
+}
 
 func TestScoreCase(t *testing.T) {
 	tests := []struct {
