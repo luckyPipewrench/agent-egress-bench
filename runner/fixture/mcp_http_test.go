@@ -97,6 +97,12 @@ func TestMCPHTTPFixtureToolsListCopiesConcurrentInventory(t *testing.T) {
 	// runs until the reads finish rather than for a fixed count: a bounded
 	// writer loop completes in microseconds while the first HTTP round trip is
 	// still in flight, so the two never overlap and the test proves nothing.
+	//
+	// This is a probabilistic detector, not a gate. Measured against a
+	// deliberately neutralized handler it reported the race in 2 of 5 runs, and
+	// neither more read iterations nor more concurrent writers moved that rate.
+	// So it will catch a reintroduced alias across repeated CI runs but can pass
+	// on any single one; do not read one green run as proof the copy is intact.
 	const iterations = 50
 	done := make(chan struct{})
 	var wg sync.WaitGroup
