@@ -287,7 +287,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 				ExpectedVerdict: c.ExpectedVerdict,
 				ActualVerdict:   "error",
 				Score:           "error",
-				Evidence:        map[string]interface{}{},
+				Evidence:        adapterResult.Evidence,
 				Notes:           fmt.Sprintf("adapter error: %v", adapterResult.Err),
 			}
 			applicableResults = append(applicableResults, result)
