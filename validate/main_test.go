@@ -1809,6 +1809,19 @@ func TestMultiFileRequiresValidation(t *testing.T) {
 			yaml:    header + "requires: mcp_tool_baseline\n",
 			wantErr: "must be a list",
 		},
+		// Reading the first key and returning made a duplicate exploitable: a
+		// benign first requires satisfies this validator while another YAML
+		// consumer may take the last value or reject the document outright.
+		{
+			name:    "duplicate requires key is rejected, not resolved",
+			yaml:    header + "requires: []\nrequires: [encoding_evasion_scanning]\n",
+			wantErr: "duplicate top-level requires key",
+		},
+		{
+			name:    "duplicate requires key is rejected even when both are benign",
+			yaml:    header + "requires: [mcp_tool_baseline]\nrequires: [mcp_chain_memory]\n",
+			wantErr: "duplicate top-level requires key",
+		},
 		{
 			name:    "mapping under requires is rejected",
 			yaml:    header + "requires:\n  nested:\n    - mcp_tool_baseline\n",

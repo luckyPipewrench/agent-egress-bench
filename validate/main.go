@@ -838,11 +838,24 @@ func validateMultiFileRequires(path string) []string {
 // later lines parse as an empty list and accept a banned token.
 func parseRequiresFromYAML(content string) ([]string, error) {
 	lines := strings.Split(content, "\n")
+	var (
+		found     bool
+		foundLine int
+		result    []string
+	)
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "requires:") {
 			continue
 		}
+		// A duplicate key is ambiguous, and the ambiguity is exploitable: this
+		// validator would read the first value while another YAML consumer may
+		// take the last or reject the document, so a benign first requires can
+		// hide a prohibited token in a second one. Reject rather than pick.
+		if found {
+			return nil, fmt.Errorf("duplicate top-level requires key on lines %d and %d", foundLine, i+1)
+		}
+		found, foundLine = true, i+1
 		// Only a top-level key is understood. An indented requires: belongs to
 		// some nested structure this parser does not model, so reading it as
 		// the case's requires would be a guess.
@@ -855,19 +868,26 @@ func parseRequiresFromYAML(content string) ([]string, error) {
 			return nil, err
 		}
 
+		// Assign rather than return: the scan has to reach the end of the file
+		// to notice a second requires key. Returning the first value is exactly
+		// the behaviour that made a duplicate key exploitable.
 		switch {
 		case rest == "":
-			return parseRequiresBlockSequence(lines[i+1:])
+			block, err := parseRequiresBlockSequence(lines[i+1:])
+			if err != nil {
+				return nil, err
+			}
+			result = block
 		case strings.HasPrefix(rest, "["):
 			if !strings.HasSuffix(rest, "]") {
 				return nil, fmt.Errorf("requires uses a multi-line flow sequence on line %d, which this validator does not parse; use one line or a block sequence", i+1)
 			}
-			return parseRequiresFlowSequence(rest), nil
+			result = parseRequiresFlowSequence(rest)
 		default:
 			return nil, fmt.Errorf("requires must be a list, got %q on line %d", rest, i+1)
 		}
 	}
-	return nil, nil
+	return result, nil
 }
 
 // parseRequiresBlockSequence reads the entries of a block sequence, stopping at
