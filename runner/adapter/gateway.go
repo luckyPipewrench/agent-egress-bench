@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
@@ -26,6 +27,61 @@ type MCPGatewayAdapter struct {
 	fixtures *fixture.Manager
 }
 
+var gatewayRequestSequence atomic.Uint64
+
+const gatewayDenySettlement = 50 * time.Millisecond
+
+// gatewayRequest is the single correlation primitive for a case request. The
+// adapter mints it before configuring the fixture; the fixture then routes the
+// leased response and records the same identity, method, and fingerprint.
+type gatewayRequest struct {
+	identity    string
+	method      string
+	fingerprint string
+}
+
+func nextGatewayRequestIdentity() string {
+	return fmt.Sprintf("aeb-request-%d", gatewayRequestSequence.Add(1))
+}
+
+func withGatewayRequestIdentity(message map[string]interface{}, identity string) (map[string]interface{}, gatewayRequest, error) {
+	copyMessage := make(map[string]interface{}, len(message))
+	for key, value := range message {
+		copyMessage[key] = value
+	}
+	rawParams, present := message["params"]
+	params, ok := rawParams.(map[string]interface{})
+	if present && rawParams != nil && !ok {
+		return nil, gatewayRequest{}, fmt.Errorf("request params must be a JSON object")
+	}
+	copyParams := make(map[string]interface{}, len(params)+1)
+	for key, value := range params {
+		copyParams[key] = value
+	}
+	meta, _ := params["_meta"].(map[string]interface{})
+	copyMeta := make(map[string]interface{}, len(meta)+1)
+	for key, value := range meta {
+		copyMeta[key] = value
+	}
+	copyMeta["aeb_request_identity"] = identity
+	copyParams["_meta"] = copyMeta
+	copyMessage["params"] = copyParams
+	// The case's literal request ID is not a safe correlation key: many cases
+	// legitimately reuse it. The adapter owns this wire ID, so make it unique
+	// per request and use the same value in JSON and SSE response validation.
+	copyMessage["id"] = identity
+	body, err := json.Marshal(copyMessage)
+	if err != nil {
+		return nil, gatewayRequest{}, fmt.Errorf("marshal request identity: %w", err)
+	}
+	fingerprint, err := fixture.MCPRequestFingerprint(body)
+	if err != nil {
+		return nil, gatewayRequest{}, err
+	}
+	method, _ := copyMessage["method"].(string)
+	return copyMessage, gatewayRequest{identity: identity, method: method, fingerprint: fingerprint}, nil
+}
+
 // DeliveryTuples declares the exact wire paths this adapter can drive. The
 // runner does not use this declaration for scoring until the result-state
 // implementation supplies unreachable and evidence semantics.
@@ -33,6 +89,10 @@ func (a *MCPGatewayAdapter) DeliveryTuples() []DeliveryTuple {
 	return []DeliveryTuple{
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session"},
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
+		// The corpus historically models tool definitions as mcp_stdio input
+		// while this adapter drives their semantic inventory over Streamable HTTP.
+		{WireTransport: "mcp_stdio", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_result", Lifecycle: "mcp_session"},
 	}
 }
 
@@ -68,13 +128,76 @@ func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 		}
 		return a.runToolsCall(c, timeout)
 	case "mcp_tool_definition":
-		if c.Transport != "mcp_http" {
-			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http only")
+		if c.Transport != "mcp_http" && c.Transport != "mcp_stdio" {
+			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http or mcp_stdio")
 		}
 		return a.runToolDefinition(c, timeout)
+	case "mcp_tool_result":
+		if c.Transport != "mcp_http" {
+			return gatewaySkip(c, "gateway tool-result response supports corpus transport mcp_http only")
+		}
+		return a.runToolResult(c, timeout)
 	default:
 		return gatewaySkip(c, "gateway adapter does not support input type "+c.InputType)
 	}
+}
+
+func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result {
+	resultPayload, err := declaredToolResult(c)
+	if err != nil {
+		return gatewaySkip(c, "gateway tool-result response requires one JSON-RPC result: "+err.Error())
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	upstream := a.mcpHTTPFixture()
+	if upstream == nil {
+		return gatewaySkip(c, "gateway tool-result response requires the MCP HTTP fixture")
+	}
+	identity := nextGatewayRequestIdentity()
+	call := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      "aeb-tool-result",
+		"method":  "tools/call",
+		"params": map[string]interface{}{
+			"name":      "aeb_tool_result_fixture",
+			"arguments": map[string]interface{}{},
+		},
+	}
+	call, request, err := withGatewayRequestIdentity(call, identity)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare tool-result request: %w", c.ID, err)}
+	}
+	release, err := upstream.AcquireToolResultLease(ctx, request.identity, resultPayload)
+	if err != nil {
+		return gatewaySkip(c, "gateway tool-result lease timeout")
+	}
+	defer release()
+
+	client := &http.Client{}
+	sess := &gatewaySession{}
+	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
+		return *result
+	}
+
+	_, observed := a.sendResponse(ctx, client, c.ID, call, true, "empty_tool_result_response", sess, &request, deliveryRequired)
+	delivered, proofAvailable := a.requestDelivered(request)
+	if observed != nil {
+		return *observed
+	}
+	if !proofAvailable || !delivered {
+		return Result{Verdict: "skip", Evidence: map[string]interface{}{
+			"product_surface":  "mcp_gateway_streamable_http",
+			"reason":           "tool_result_upstream_unproven",
+			"upstream_reached": false,
+			"request_identity": request.identity,
+		}}
+	}
+	return Result{Verdict: "allow", Evidence: map[string]interface{}{
+		"product_surface":  "mcp_gateway_streamable_http",
+		"upstream_reached": true,
+		"request_identity": request.identity,
+	}}
 }
 
 func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
@@ -91,40 +214,44 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
 		return *result
 	}
 
-	upstreamBefore, proofAvailable := a.upstreamCalls()
 	// Drive the tools/call sequence in order over the one session. A deny on any
 	// call blocks the whole sequence and names which message the gateway stopped.
+	requests := make([]gatewayRequest, 0, len(toolsCalls))
 	for i, toolsCall := range toolsCalls {
-		result := a.send(ctx, client, c.ID, toolsCall, true, sess)
+		message, request, err := withGatewayRequestIdentity(toolsCall, nextGatewayRequestIdentity())
+		if err != nil {
+			return Result{Err: fmt.Errorf("case %s: prepare tools/call request %d: %w", c.ID, i, err)}
+		}
+		requests = append(requests, request)
+		result := a.send(ctx, client, c.ID, message, true, sess, &request, deliveryAbsent)
 		if result != nil {
-			a.preserveMalformedSSEToolsCallProof(result, upstreamBefore, proofAvailable)
 			if len(toolsCalls) > 1 && result.Verdict == "block" && result.Evidence != nil {
 				result.Evidence["blocked_message_index"] = i
 			}
 			return *result
 		}
 	}
-	upstreamAfter, proofAvailableAfter := a.upstreamCalls()
 	evidence := map[string]interface{}{
 		"product_surface": "mcp_gateway_streamable_http",
 	}
 	if len(toolsCalls) > 1 {
 		evidence["tools_call_count"] = len(toolsCalls)
 	}
-	if proofAvailable && proofAvailableAfter {
-		evidence["upstream_calls_before"] = upstreamBefore
-		evidence["upstream_calls_after"] = upstreamAfter
-	}
-	// Every permitted call must reach upstream: the counter must advance by at
-	// least the number of tools/call messages driven, not merely once, or a
-	// gateway that forwards the first and drops the rest would earn allow.
-	if !proofAvailable || !proofAvailableAfter || upstreamAfter-upstreamBefore < int64(len(toolsCalls)) {
-		evidence["upstream_reached"] = false
-		if !proofAvailable || !proofAvailableAfter {
-			evidence["upstream_proof"] = "unavailable"
+	requestIdentities := make([]string, 0, len(requests))
+	for _, request := range requests {
+		requestIdentities = append(requestIdentities, request.identity)
+		// The per-request observation avoids both counter-delta contamination and
+		// copied-token proof. This ordinary tools/call path allows only after its
+		// own request reached the fixture.
+		if delivered, proofAvailable := a.requestDelivered(request); !proofAvailable || !delivered {
+			evidence["upstream_reached"] = false
+			if !proofAvailable {
+				evidence["upstream_proof"] = "unavailable"
+			}
+			return Result{Verdict: "skip", Evidence: evidence}
 		}
-		return Result{Verdict: "skip", Evidence: evidence}
 	}
+	evidence["request_identities"] = requestIdentities
 	evidence["upstream_reached"] = true
 	return Result{Verdict: "allow", Evidence: evidence}
 }
@@ -137,8 +264,18 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	toolsList := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      "aeb-tools-list",
+		"method":  "tools/list",
+		"params":  map[string]interface{}{},
+	}
+	toolsList, request, err := withGatewayRequestIdentity(toolsList, nextGatewayRequestIdentity())
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare tools/list request: %w", c.ID, err)}
+	}
 	if upstream := a.mcpHTTPFixture(); upstream != nil {
-		release, err := upstream.AcquireToolDefinitionLease(ctx, tools)
+		release, err := upstream.AcquireToolDefinitionLease(ctx, request.identity, tools)
 		if err != nil {
 			return Result{Verdict: "skip", Evidence: map[string]interface{}{
 				"product_surface":     "mcp_gateway_streamable_http",
@@ -156,29 +293,18 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 		return *result
 	}
 
-	upstreamBefore, proofAvailable := a.upstreamListCalls()
-	toolsList := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      "aeb-tools-list",
-		"method":  "tools/list",
-		"params":  map[string]interface{}{},
-	}
-	responseBody, result := a.sendResponse(ctx, client, c.ID, toolsList, true, "empty_tools_list_response", sess)
+	responseBody, result := a.sendResponse(ctx, client, c.ID, toolsList, true, "empty_tools_list_response", sess, &request, deliveryRequired)
 	if result != nil {
-		a.preserveMalformedSSEToolsListProof(result, upstreamBefore, proofAvailable)
 		return *result
 	}
-	upstreamAfter, proofAvailableAfter := a.upstreamListCalls()
 	evidence := map[string]interface{}{
-		"product_surface": "mcp_gateway_streamable_http",
+		"product_surface":  "mcp_gateway_streamable_http",
+		"request_identity": request.identity,
 	}
-	if proofAvailable && proofAvailableAfter {
-		evidence["upstream_tools_list_calls_before"] = upstreamBefore
-		evidence["upstream_tools_list_calls_after"] = upstreamAfter
-	}
-	if !proofAvailable || !proofAvailableAfter || upstreamAfter <= upstreamBefore {
+	delivered, proofAvailable := a.requestDelivered(request)
+	if !proofAvailable || !delivered {
 		evidence["upstream_reached"] = false
-		if !proofAvailable || !proofAvailableAfter {
+		if !proofAvailable {
 			evidence["upstream_proof"] = "unavailable"
 		}
 		return Result{Verdict: "skip", Evidence: evidence}
@@ -201,10 +327,24 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 	return Result{Verdict: "allow", Evidence: evidence}
 }
 
+func (a *MCPGatewayAdapter) requestDelivered(request gatewayRequest) (bool, bool) {
+	upstream := a.mcpHTTPFixture()
+	if upstream == nil {
+		return false, false
+	}
+	observations := upstream.Observation(request.identity)
+	if len(observations) != 1 {
+		return false, true
+	}
+	observation := observations[0]
+	return observation.Identity == request.identity && observation.Method == request.method && observation.Fingerprint == request.fingerprint, true
+}
+
 func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client, caseID string, sess *gatewaySession) *Result {
+	identity := nextGatewayRequestIdentity()
 	initialize := map[string]interface{}{
 		"jsonrpc": "2.0",
-		"id":      "aeb-initialize",
+		"id":      identity,
 		"method":  "initialize",
 		"params": map[string]interface{}{
 			"protocolVersion": "2025-03-26",
@@ -212,7 +352,11 @@ func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client,
 			"clientInfo":      map[string]string{"name": "agent-egress-bench", "version": "1"},
 		},
 	}
-	if result := a.send(ctx, client, caseID, initialize, false, sess); result != nil {
+	// initialize carries an id, so it is a request and its response is
+	// correlated and validated like any other. notifications/initialized below
+	// carries none, so it stays a notification judged on HTTP status.
+	initializeRequest := &gatewayRequest{identity: identity, method: "initialize"}
+	if result := a.send(ctx, client, caseID, initialize, false, sess, initializeRequest, deliveryAbsent); result != nil {
 		return result
 	}
 	initialized := map[string]interface{}{
@@ -220,7 +364,7 @@ func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client,
 		"method":  "notifications/initialized",
 		"params":  map[string]interface{}{},
 	}
-	return a.send(ctx, client, caseID, initialized, false, sess)
+	return a.send(ctx, client, caseID, initialized, false, sess, nil, deliveryAbsent)
 }
 
 func gatewaySkip(c Case, reason string) Result {
@@ -288,6 +432,26 @@ func declaredTools(c Case) ([]json.RawMessage, []string, error) {
 	return tools, names, nil
 }
 
+func declaredToolResult(c Case) (json.RawMessage, error) {
+	rawMessages, ok := c.Payload["jsonrpc_messages"].([]interface{})
+	if !ok || len(rawMessages) != 1 {
+		return nil, fmt.Errorf("requires exactly one jsonrpc_messages entry")
+	}
+	message, ok := rawMessages[0].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("tool result message must be an object")
+	}
+	result, ok := message["result"]
+	if !ok || result == nil {
+		return nil, fmt.Errorf("tool result message must have a non-null result")
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tool result: %w", err)
+	}
+	return encoded, nil
+}
+
 func toolsListNames(body []byte) ([]string, bool) {
 	var response struct {
 		Result json.RawMessage `json:"result"`
@@ -330,8 +494,8 @@ func containsNormalizedToolName(names []string, wanted string) bool {
 	return false
 }
 
-func (a *MCPGatewayAdapter) send(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, sess *gatewaySession) *Result {
-	_, result := a.sendResponse(ctx, client, caseID, message, requireResponse, "empty_tools_call_response", sess)
+func (a *MCPGatewayAdapter) send(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, sess *gatewaySession, request *gatewayRequest, expectation deliveryExpectation) *Result {
+	_, result := a.sendResponse(ctx, client, caseID, message, requireResponse, "empty_tools_call_response", sess, request, expectation)
 	return result
 }
 
@@ -342,7 +506,19 @@ type gatewaySession struct {
 	id string
 }
 
-func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, emptyResponseReason string, sess *gatewaySession) ([]byte, *Result) {
+func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, emptyResponseReason string, sess *gatewaySession, request *gatewayRequest, expectation deliveryExpectation) ([]byte, *Result) {
+	// Response validation is selected by whether a gatewayRequest was supplied,
+	// so a caller that forgets one on a message carrying an id would silently
+	// take the notification path and skip correlation entirely. That is a guard
+	// bypassable by omission, which is the same shape as no guard at all. JSON-RPC
+	// already says which messages are requests: those with an id. Disagreement
+	// between the message and the caller is a programming error, so it fails
+	// loudly here rather than degrading to an unvalidated response.
+	if _, carriesID := message["id"]; carriesID != (request != nil) {
+		return nil, &Result{Err: fmt.Errorf(
+			"case %s: MCP message %v carries id=%t but gatewayRequest supplied=%t; a request must be correlated and a notification must not be",
+			caseID, message["method"], carriesID, request != nil)}
+	}
 	body, err := json.Marshal(message)
 	if err != nil {
 		return nil, &Result{Err: fmt.Errorf("case %s: marshal MCP message: %w", caseID, err)}
@@ -364,72 +540,242 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 
 	resp, err := client.Do(req)
 	if err != nil {
-		if a.plugin.DenySignals.ConnectionClosedNoOut {
-			return nil, &Result{Verdict: "block", Evidence: map[string]interface{}{
-				"product_surface": "mcp_gateway_streamable_http",
-				"reason":          "connection_closed_without_output",
-			}}
-		}
-		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway request: %w", caseID, err)}
+		return a.classifyGatewayResponse(nil, nil, err, requireResponse, emptyResponseReason, request, expectation, caseID)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	// Capture the session id the gateway assigns on initialize so later requests
-	// in this case carry it. The binding is initialize-only: an Mcp-Session-Id on
-	// any later response is not adopted, so an unnegotiated id never reaches the
-	// tools/call.
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err)}
+	}
+	response, result := a.classifyGatewayResponse(resp, responseBody, nil, requireResponse, emptyResponseReason, request, expectation, caseID)
+	if result != nil {
+		return nil, result
+	}
+	// Capture the session id only after a valid initialize response. A header on
+	// a rejected or malformed handshake is not a negotiated binding and must not
+	// escape into a later tools/call.
 	if sess != nil && sess.id == "" && message["method"] == "initialize" {
 		if assigned := resp.Header.Get("Mcp-Session-Id"); assigned != "" {
 			sess.id = assigned
 		}
 	}
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, &Result{Err: fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err)}
+	return response, nil
+}
+
+type deliveryExpectation bool
+
+const (
+	// deliveryAbsent applies where a gateway blocks an outbound tools/call. A
+	// block requires proof that the exact request did not reach the fixture.
+	deliveryAbsent deliveryExpectation = false
+	// deliveryRequired applies where the gateway must first see runner-owned
+	// upstream content: tool-result inspection and tools/list filtering.
+	deliveryRequired deliveryExpectation = true
+)
+
+// classifyGatewayResponse is the only place that turns a gateway response and
+// fixture observation into a disposition. The two directions are deliberate:
+// no stale, uncorrelated, or unproven denial can score block; a configured HTTP
+// status or documented body marker from http.Client.Do is already correlated to
+// this request and must not lose credit merely because it has no JSON-RPC body.
+func (a *MCPGatewayAdapter) classifyGatewayResponse(resp *http.Response, body []byte, transportErr error, requireResponse bool, emptyResponseReason string, request *gatewayRequest, expectation deliveryExpectation, caseID string) ([]byte, *Result) {
+	if transportErr != nil {
+		if !requireResponse && request != nil {
+			return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response: %w", caseID, request.method, transportErr)}
+		}
+		if a.plugin.DenySignals.ConnectionClosedNoOut {
+			// A connection failure has no response bound to the request. Even with
+			// fixture evidence it is indistinguishable from a network failure, so it
+			// cannot meet the correlation requirement for block.
+			return nil, a.gatewaySkipWithObservation("connection_closed_without_output", request, 0, "")
+		}
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway request: %w", caseID, transportErr)}
 	}
-	if slices.Contains(a.plugin.DenySignals.HTTPStatusCodes, resp.StatusCode) {
-		return nil, &Result{Verdict: "block", Evidence: map[string]interface{}{
-			"product_surface": "mcp_gateway_streamable_http",
-			"http_status":     resp.StatusCode,
-		}}
+	if !requireResponse {
+		// A lifecycle message carrying an id is a JSON-RPC request, and its
+		// response is subject to the same correlation and structure rules as any
+		// other. A notification has no id, expects no response, and is correctly
+		// judged on HTTP status alone. Distinguishing them by the presence of an
+		// id is the protocol's own rule rather than an adapter convention.
+		if request != nil {
+			return a.classifyLifecycleResponse(resp, body, request, caseID)
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return nil, a.gatewaySkipWithObservation("unclassified_initialization_status", request, resp.StatusCode, "")
+		}
+		return body, nil
 	}
-	if marker := matchingBodyMarker(string(responseBody), a.plugin.DenySignals.CustomBodyMarkers); marker != "" {
-		return nil, &Result{Verdict: "block", Evidence: map[string]interface{}{
-			"product_surface": "mcp_gateway_streamable_http",
-			"body_marker":     marker,
-		}}
-	}
-	if requireResponse {
-		responseBody, err = decodeGatewayResponse(resp.Header.Get("Content-Type"), responseBody, message["id"])
+	var decodedResponse []byte
+	if presentsJSONRPC(resp.Header.Get("Content-Type"), body) {
+		var err error
+		decodedResponse, err = decodeGatewayResponse(resp.Header.Get("Content-Type"), body, messageID(request))
 		if err != nil {
-			var malformedSSE *malformedSSEResponseError
-			if errors.As(err, &malformedSSE) {
-				return nil, &Result{Verdict: "skip", Evidence: map[string]interface{}{
-					"product_surface":  "mcp_gateway_streamable_http",
-					"reason":           "malformed_sse_response",
-					"upstream_reached": false,
-				}}
-			}
-			return nil, &Result{Err: fmt.Errorf("case %s: decode MCP gateway response: %w", caseID, err)}
+			return nil, a.gatewayDecodeFailure(err, request, resp.StatusCode)
 		}
 	}
-	if result := classifyGatewayJSONRPCError(responseBody, a.plugin.DenySignals.JSONRPCErrorCodeRange); result != nil {
-		return nil, result
+	if slices.Contains(a.plugin.DenySignals.HTTPStatusCodes, resp.StatusCode) {
+		return nil, a.gatewayDeny("http_status", request, expectation, resp.StatusCode, "")
+	}
+	if marker := matchingBodyMarker(string(body), a.plugin.DenySignals.CustomBodyMarkers); marker != "" {
+		return nil, a.gatewayDeny("body_marker", request, expectation, resp.StatusCode, marker)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, &Result{Verdict: "skip", Evidence: map[string]interface{}{
-			"product_surface": "mcp_gateway_streamable_http",
-			"reason":          "unclassified_http_status",
-			"http_status":     resp.StatusCode,
-		}}
+		return nil, a.gatewaySkipWithObservation("unclassified_http_status", request, resp.StatusCode, "")
 	}
-	if requireResponse && len(bytes.TrimSpace(responseBody)) == 0 {
-		return nil, &Result{Verdict: "skip", Evidence: map[string]interface{}{
-			"product_surface":  "mcp_gateway_streamable_http",
-			"reason":           emptyResponseReason,
-			"upstream_reached": false,
-		}}
+	if decodedResponse == nil {
+		var err error
+		decodedResponse, err = decodeGatewayResponse(resp.Header.Get("Content-Type"), body, messageID(request))
+		if err != nil {
+			return nil, a.gatewayDecodeFailure(err, request, resp.StatusCode)
+		}
 	}
-	return responseBody, nil
+	if result := classifyGatewayJSONRPCError(decodedResponse, a.plugin.DenySignals.JSONRPCErrorCodeRange); result != nil {
+		if result.Verdict == "block" {
+			return nil, a.gatewayDeny("jsonrpc_error", request, expectation, resp.StatusCode, "")
+		}
+		a.attachObservation(result, request)
+		return nil, result
+	}
+	return decodedResponse, nil
+}
+
+func presentsJSONRPC(contentType string, body []byte) bool {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return trimmed[0] == '{' || (err == nil && (mediaType == "application/json" || strings.HasSuffix(mediaType, "+json") || mediaType == "text/event-stream"))
+}
+
+// classifyLifecycleResponse validates the response to a lifecycle REQUEST.
+//
+// A failure here is an adapter error rather than a verdict. The target has not
+// refused the case; the session it would be measured through was never
+// established, so there is nothing to score either way. Returning a verdict
+// would attribute a measurement to a session that does not exist.
+func (a *MCPGatewayAdapter) classifyLifecycleResponse(resp *http.Response, body []byte, request *gatewayRequest, caseID string) ([]byte, *Result) {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response status %d", caseID, request.method, resp.StatusCode)}
+	}
+	response, err := decodeGatewayResponse(resp.Header.Get("Content-Type"), body, messageID(request))
+	if err != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response: %w", caseID, request.method, err)}
+	}
+	// decodeGatewayResponse uses jsonRPCMessageForRequest, the same correlation
+	// and structure primitive as normal request handling. At this point a valid
+	// message has exactly one of result or error; lifecycle errors establish no
+	// session and are adapter errors rather than case verdicts.
+	var outcome struct {
+		Error *json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(response, &outcome); err != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response: %w", caseID, request.method, err)}
+	}
+	if outcome.Error != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response is a JSON-RPC error", caseID, request.method)}
+	}
+	return response, nil
+}
+
+func messageID(request *gatewayRequest) interface{} {
+	if request == nil {
+		return nil
+	}
+	return request.identity
+}
+
+func (a *MCPGatewayAdapter) gatewayDeny(signal string, request *gatewayRequest, expectation deliveryExpectation, status int, marker string) *Result {
+	delivered, proofAvailable := false, false
+	if request != nil {
+		delivered, proofAvailable = a.requestDelivered(*request)
+		if expectation == deliveryAbsent && proofAvailable && !delivered {
+			delivered = a.awaitLateDelivery(*request, gatewayDenySettlement)
+		}
+	}
+	evidence := map[string]interface{}{"product_surface": "mcp_gateway_streamable_http", "deny_signal": signal}
+	if status != 0 {
+		evidence["http_status"] = status
+	}
+	if marker != "" {
+		evidence["body_marker"] = marker
+	}
+	a.attachObservationEvidence(evidence, request, delivered, proofAvailable)
+	if !proofAvailable || delivered != bool(expectation) {
+		evidence["reason"] = "deny_delivery_unproven"
+		return &Result{Verdict: "skip", Evidence: evidence}
+	}
+	return &Result{Verdict: "block", Evidence: evidence}
+}
+
+func (a *MCPGatewayAdapter) awaitLateDelivery(request gatewayRequest, settlement time.Duration) bool {
+	deadline := time.NewTimer(settlement)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if delivered, _ := a.requestDelivered(request); delivered {
+				return true
+			}
+		case <-deadline.C:
+			delivered, _ := a.requestDelivered(request)
+			return delivered
+		}
+	}
+}
+
+func (a *MCPGatewayAdapter) gatewaySkipWithObservation(reason string, request *gatewayRequest, status int, marker string) *Result {
+	delivered, proofAvailable := false, false
+	if request != nil {
+		delivered, proofAvailable = a.requestDelivered(*request)
+	}
+	evidence := map[string]interface{}{"product_surface": "mcp_gateway_streamable_http", "reason": reason}
+	if status != 0 {
+		evidence["http_status"] = status
+	}
+	if marker != "" {
+		evidence["body_marker"] = marker
+	}
+	a.attachObservationEvidence(evidence, request, delivered, proofAvailable)
+	return &Result{Verdict: "skip", Evidence: evidence}
+}
+
+func (a *MCPGatewayAdapter) gatewayDecodeFailure(err error, request *gatewayRequest, status int) *Result {
+	reason := "malformed_jsonrpc_response"
+	var mismatch *responseCorrelationError
+	var malformedSSE *malformedSSEResponseError
+	if errors.As(err, &mismatch) {
+		reason = "response_id_mismatch"
+	} else if errors.As(err, &malformedSSE) {
+		reason = "malformed_sse_response"
+	}
+	return a.gatewaySkipWithObservation(reason, request, status, "")
+}
+
+func (a *MCPGatewayAdapter) attachObservation(result *Result, request *gatewayRequest) {
+	if result == nil {
+		return
+	}
+	if result.Evidence == nil {
+		result.Evidence = map[string]interface{}{}
+	}
+	delivered, proofAvailable := false, false
+	if request != nil {
+		delivered, proofAvailable = a.requestDelivered(*request)
+	}
+	a.attachObservationEvidence(result.Evidence, request, delivered, proofAvailable)
+}
+
+func (a *MCPGatewayAdapter) attachObservationEvidence(evidence map[string]interface{}, request *gatewayRequest, delivered, proofAvailable bool) {
+	if request != nil {
+		evidence["request_identity"] = request.identity
+	}
+	evidence["upstream_reached"] = delivered
+	if !proofAvailable {
+		evidence["upstream_proof"] = "unavailable"
+	}
 }
 
 func classifyGatewayJSONRPCError(body []byte, denyRange [2]int) *Result {
@@ -455,13 +801,17 @@ func classifyGatewayJSONRPCError(body []byte, denyRange [2]int) *Result {
 }
 
 func decodeGatewayResponse(contentType string, body []byte, requestID interface{}) ([]byte, error) {
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil || mediaType != "text/event-stream" {
-		return body, nil
-	}
+	mediaType, _, mediaErr := mime.ParseMediaType(contentType)
 	wantedID, err := json.Marshal(requestID)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request id: %w", err)
+	}
+	if mediaErr != nil || mediaType != "text/event-stream" {
+		response, err := jsonRPCMessageForRequest(body, wantedID)
+		if err != nil {
+			return nil, fmt.Errorf("JSON response: %w", err)
+		}
+		return response, nil
 	}
 	response, err := jsonRPCMessageFromSSE(body, wantedID)
 	if err != nil {
@@ -476,8 +826,16 @@ func (e *malformedSSEResponseError) Error() string { return e.err.Error() }
 
 func (e *malformedSSEResponseError) Unwrap() error { return e.err }
 
+type responseCorrelationError struct{ err error }
+
+func (e *responseCorrelationError) Error() string { return e.err.Error() }
+
+func (e *responseCorrelationError) Unwrap() error { return e.err }
+
 func jsonRPCMessageFromSSE(body, wantedID []byte) ([]byte, error) {
 	var dataLines [][]byte
+	var mismatch error
+	var malformed error
 	for _, rawLine := range bytes.Split(body, []byte("\n")) {
 		line := bytes.TrimSuffix(rawLine, []byte("\r"))
 		if len(line) != 0 {
@@ -490,74 +848,90 @@ func jsonRPCMessageFromSSE(body, wantedID []byte) ([]byte, error) {
 			}
 			continue
 		}
-		if message := matchingSSEJSONRPCMessage(dataLines, wantedID); message != nil {
+		if message, err := matchingSSEJSONRPCMessage(dataLines, wantedID); err == nil && message != nil {
 			return message, nil
+		} else if err != nil {
+			var correlation *responseCorrelationError
+			if errors.As(err, &correlation) {
+				mismatch = err
+			} else {
+				malformed = err
+			}
 		}
 		dataLines = nil
 	}
-	if message := matchingSSEJSONRPCMessage(dataLines, wantedID); message != nil {
+	if message, err := matchingSSEJSONRPCMessage(dataLines, wantedID); err == nil && message != nil {
 		return message, nil
+	} else if err != nil {
+		var correlation *responseCorrelationError
+		if errors.As(err, &correlation) {
+			mismatch = err
+		} else {
+			malformed = err
+		}
 	}
-	return nil, fmt.Errorf("SSE response has no JSON-RPC message for request id %s", wantedID)
+	if mismatch != nil {
+		return nil, mismatch
+	}
+	if malformed != nil {
+		return nil, &malformedSSEResponseError{err: malformed}
+	}
+	return nil, &malformedSSEResponseError{err: fmt.Errorf("SSE response has no JSON-RPC message for request id %s", wantedID)}
 }
 
-func matchingSSEJSONRPCMessage(dataLines [][]byte, wantedID []byte) []byte {
+func matchingSSEJSONRPCMessage(dataLines [][]byte, wantedID []byte) ([]byte, error) {
 	if len(dataLines) == 0 {
-		return nil
+		return nil, nil
 	}
 	message := bytes.Join(dataLines, []byte("\n"))
-	var response struct {
-		ID json.RawMessage `json:"id"`
+	if _, err := jsonRPCMessageForRequest(message, wantedID); err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(message, &response); err != nil || len(response.ID) == 0 {
-		return nil
+	return message, nil
+}
+
+func jsonRPCMessageForRequest(message, wantedID []byte) ([]byte, error) {
+	var response map[string]json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(message), &response); err != nil {
+		return nil, fmt.Errorf("invalid JSON-RPC response: %w", err)
+	}
+	version, ok := response["jsonrpc"]
+	if !ok || !bytes.Equal(bytes.TrimSpace(version), []byte(`"2.0"`)) {
+		return nil, errors.New("JSON-RPC response must contain jsonrpc 2.0")
+	}
+	id, ok := response["id"]
+	if !ok || len(id) == 0 {
+		return nil, errors.New("JSON-RPC response has no id")
+	}
+	_, hasResult := response["result"]
+	_, hasError := response["error"]
+	if hasResult == hasError {
+		return nil, errors.New("JSON-RPC response must contain exactly one result or error")
+	}
+	if hasError {
+		var rpcError struct {
+			Code    *int    `json:"code"`
+			Message *string `json:"message"`
+		}
+		if err := json.Unmarshal(response["error"], &rpcError); err != nil || rpcError.Code == nil || rpcError.Message == nil {
+			return nil, errors.New("JSON-RPC response error must contain code and message")
+		}
 	}
 	var got, wanted interface{}
-	if json.Unmarshal(response.ID, &got) != nil || json.Unmarshal(wantedID, &wanted) != nil || !jsonRPCIDsEqual(got, wanted) {
-		return nil
+	if err := json.Unmarshal(id, &got); err != nil {
+		return nil, fmt.Errorf("decode response id: %w", err)
 	}
-	return message
+	if err := json.Unmarshal(wantedID, &wanted); err != nil {
+		return nil, fmt.Errorf("decode request id: %w", err)
+	}
+	if !jsonRPCIDsEqual(got, wanted) {
+		return nil, &responseCorrelationError{err: fmt.Errorf("JSON-RPC response id %s does not match request id %s", id, wantedID)}
+	}
+	return message, nil
 }
 
 func jsonRPCIDsEqual(got, wanted interface{}) bool {
 	return reflect.DeepEqual(got, wanted)
-}
-
-// preserveMalformedSSEProof upgrades the default no-upstream proof on a
-// malformed-SSE skip only when this fixture independently observed the
-// corresponding request. A malformed gateway response alone is not evidence of
-// egress, so both the tools/list and tools/call callers route through here to
-// keep their evidence handling identical.
-func (a *MCPGatewayAdapter) preserveMalformedSSEProof(result *Result, before int64, proofAvailable bool, counter func() (int64, bool), beforeKey, afterKey string) {
-	if result == nil || result.Verdict != "skip" || result.Evidence["reason"] != "malformed_sse_response" {
-		return
-	}
-	after, proofAvailableAfter := counter()
-	if proofAvailable && proofAvailableAfter {
-		result.Evidence[beforeKey] = before
-		result.Evidence[afterKey] = after
-	}
-	if proofAvailable && proofAvailableAfter && after > before {
-		result.Evidence["upstream_reached"] = true
-		return
-	}
-	if !proofAvailable || !proofAvailableAfter {
-		result.Evidence["upstream_proof"] = "unavailable"
-	}
-}
-
-// preserveMalformedSSEToolsListProof upgrades the default no-upstream proof
-// only when this fixture independently observed the corresponding tools/list
-// request.
-func (a *MCPGatewayAdapter) preserveMalformedSSEToolsListProof(result *Result, before int64, proofAvailable bool) {
-	a.preserveMalformedSSEProof(result, before, proofAvailable, a.upstreamListCalls, "upstream_tools_list_calls_before", "upstream_tools_list_calls_after")
-}
-
-// preserveMalformedSSEToolsCallProof is the tools/call equivalent of the
-// tools/list proof handling above. The decode failure remains a scored skip,
-// but a fixture counter can still prove that the gateway reached its upstream.
-func (a *MCPGatewayAdapter) preserveMalformedSSEToolsCallProof(result *Result, before int64, proofAvailable bool) {
-	a.preserveMalformedSSEProof(result, before, proofAvailable, a.upstreamCalls, "upstream_calls_before", "upstream_calls_after")
 }
 
 func matchingBodyMarker(body string, markers []string) string {
@@ -567,20 +941,6 @@ func matchingBodyMarker(body string, markers []string) string {
 		}
 	}
 	return ""
-}
-
-func (a *MCPGatewayAdapter) upstreamCalls() (int64, bool) {
-	if a.mcpHTTPFixture() == nil {
-		return 0, false
-	}
-	return a.mcpHTTPFixture().ToolCalls(), true
-}
-
-func (a *MCPGatewayAdapter) upstreamListCalls() (int64, bool) {
-	if a.mcpHTTPFixture() == nil {
-		return 0, false
-	}
-	return a.mcpHTTPFixture().ListCalls(), true
 }
 
 func (a *MCPGatewayAdapter) mcpHTTPFixture() *fixture.MCPHTTPFixture {

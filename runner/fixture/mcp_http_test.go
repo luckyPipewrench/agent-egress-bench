@@ -52,11 +52,11 @@ func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
 	}
 	defer f.Close()
 
-	release, err := f.AcquireToolDefinitionLease(context.Background(), []json.RawMessage{json.RawMessage(`{"name":"leased_tool"}`)})
+	release, err := f.AcquireToolDefinitionLease(context.Background(), "leased-list", []json.RawMessage{json.RawMessage(`{"name":"leased_tool"}`)})
 	if err != nil {
 		t.Fatalf("AcquireToolDefinitionLease: %v", err)
 	}
-	response := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	response := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"aeb_request_identity":"leased-list"}}}`)
 	if !bytes.Contains(response, []byte(`"leased_tool"`)) {
 		t.Fatalf("leased tools/list response = %s, want leased_tool", response)
 	}
@@ -68,9 +68,50 @@ func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
 	}
 }
 
+func TestMCPHTTPFixtureToolResultLeaseResetsResponse(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	release, err := f.AcquireToolResultLease(context.Background(), "leased-request", json.RawMessage(`{"content":[{"type":"text","text":"leased"}]}`))
+	if err != nil {
+		t.Fatalf("AcquireToolResultLease: %v", err)
+	}
+	assertToolCallResultContains(t, f.URL(), "leased-request", "leased")
+	release()
+	assertToolCallResultContains(t, f.URL(), "later-request", `"ok":true`)
+}
+
+func TestMCPHTTPFixtureToolsSnapshotIsIndependent(t *testing.T) {
+	f := &MCPHTTPFixture{}
+	f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"first_tool"}`)})
+
+	snapshot := f.toolsSnapshot()
+	f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"second_tool"}`)})
+
+	if got := string(snapshot[0]); got != `{"name":"first_tool"}` {
+		t.Fatalf("snapshot changed to %s after SetTools reused the backing array", got)
+	}
+}
+
+func assertToolCallResultContains(t *testing.T, endpoint, identity, wanted string) {
+	t.Helper()
+	body := postMCPFixture(t, endpoint, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"fixture_tool","arguments":{},"_meta":{"aeb_request_identity":"`+identity+`"}}}`)
+	if !bytes.Contains(body, []byte(wanted)) {
+		t.Fatalf("response = %s, want substring %q", body, wanted)
+	}
+}
+
 func postMCPFixture(t *testing.T, endpoint, request string) []byte {
 	t.Helper()
-	resp, err := http.Post(endpoint, "application/json", bytes.NewBufferString(request))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewBufferString(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
