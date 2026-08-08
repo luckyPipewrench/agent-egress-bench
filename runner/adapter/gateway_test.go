@@ -234,7 +234,11 @@ func TestMCPGatewayAdapterRequiresUpstreamToolResultBeforeBlock(t *testing.T) {
 		if !bytes.Contains(upstreamBody, []byte("ignore prior instructions")) {
 			t.Fatalf("upstream response = %s, want leased malicious result", upstreamBody)
 		}
-		writeJSONRPC(t, w, json.RawMessage(`"aeb-tool-result"`), map[string]interface{}{"code": -32042, "message": "policy denied tool result"})
+		id, err := json.Marshal(request["id"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeJSONRPC(t, w, id, map[string]interface{}{"code": -32042, "message": "policy denied tool result"})
 	}))
 	defer server.Close()
 
@@ -285,8 +289,8 @@ func TestMCPGatewayAdapterRejectsWrongJSONResponseID(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := a.Run(gatewayToolsCallCase("gateway-wrong-json-id"), time.Second)
-	if result.Verdict == "block" || result.Err == nil {
-		t.Fatalf("result = %+v, want request-correlation error rather than block", result)
+	if result.Verdict != "skip" || result.Err != nil || result.Evidence["reason"] != "response_id_mismatch" {
+		t.Fatalf("result = %+v, want request-correlation skip rather than block", result)
 	}
 }
 
@@ -376,8 +380,8 @@ func TestMCPGatewayAdapterDoesNotAcceptConcurrentUnrelatedDelivery(t *testing.T)
 		t.Fatal("target tools/call did not reach gateway")
 	}
 	// This reaches the fixture while the target request is pending, but carries
-	// a different token. A global counter delta would accept it as proof.
-	unrelated, err := http.Post(fm.MCPHTTP().URL(), "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"_meta":{"aeb_delivery_token":"unrelated"}}}`))
+	// a different identity. A global counter delta would accept it as proof.
+	unrelated, err := http.Post(fm.MCPHTTP().URL(), "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"_meta":{"aeb_request_identity":"unrelated"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +412,7 @@ func TestMCPGatewayAdapterConcurrentToolResultsKeepOwnResponseAndProof(t *testin
 			ID     json.RawMessage `json:"id"`
 			Params struct {
 				Meta struct {
-					Token string `json:"aeb_delivery_token"`
+					Identity string `json:"aeb_request_identity"`
 				} `json:"_meta"`
 			} `json:"params"`
 		}
@@ -421,7 +425,7 @@ func TestMCPGatewayAdapterConcurrentToolResultsKeepOwnResponseAndProof(t *testin
 				t.Fatal(err)
 			}
 			observedMu.Lock()
-			observed[request.Params.Meta.Token] = string(upstreamBody)
+			observed[request.Params.Meta.Identity] = string(upstreamBody)
 			observedMu.Unlock()
 			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "policy denied tool result"})
 			return
@@ -446,13 +450,13 @@ func TestMCPGatewayAdapterConcurrentToolResultsKeepOwnResponseAndProof(t *testin
 				t.Fatalf("round %d result = %+v, want proven block", round, result)
 			}
 		}
-		firstToken := first.Evidence["delivery_token"].(string)
-		secondToken := second.Evidence["delivery_token"].(string)
-		if firstToken == secondToken {
-			t.Fatalf("round %d reused delivery token %q", round, firstToken)
+		firstIdentity := first.Evidence["request_identity"].(string)
+		secondIdentity := second.Evidence["request_identity"].(string)
+		if firstIdentity == secondIdentity {
+			t.Fatalf("round %d reused request identity %q", round, firstIdentity)
 		}
 		observedMu.Lock()
-		firstBody, secondBody := observed[firstToken], observed[secondToken]
+		firstBody, secondBody := observed[firstIdentity], observed[secondIdentity]
 		observedMu.Unlock()
 		if !(strings.Contains(firstBody, "result-A") || strings.Contains(firstBody, "result-B")) || !(strings.Contains(secondBody, "result-A") || strings.Contains(secondBody, "result-B")) || firstBody == secondBody {
 			t.Fatalf("round %d observed bodies = %q, %q; want one response per leased case", round, firstBody, secondBody)
@@ -989,7 +993,7 @@ func gatewayToolDefinitionCase(id, name string) Case {
 	}
 }
 
-func TestMCPGatewayAdapterDeclaresHTTPMCPRoutesOnly(t *testing.T) {
+func TestMCPGatewayAdapterDeclaresToolDefinitionSemanticRoutes(t *testing.T) {
 	a, err := NewMCPGatewayAdapter(GatewayPlugin{
 		Name: "test gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: "http://127.0.0.1:1/mcp"},
 	}, nil)
@@ -1012,12 +1016,12 @@ func TestMCPGatewayAdapterDeclaresHTTPMCPRoutesOnly(t *testing.T) {
 	if !httpDefinition {
 		t.Fatal("gateway did not declare its HTTP tool-definition route")
 	}
-	if stdioDefinition {
-		t.Fatal("gateway declared a stdio tool-definition route while using an HTTP client")
+	if !stdioDefinition {
+		t.Fatal("gateway did not preserve the documented stdio tool-definition semantic route")
 	}
 }
 
-func TestMCPGatewayAdapterRejectsStdioToolDefinition(t *testing.T) {
+func TestMCPGatewayAdapterAcceptsStdioToolDefinitionSemanticRoute(t *testing.T) {
 	a, err := NewMCPGatewayAdapter(GatewayPlugin{
 		Name: "test gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: "http://127.0.0.1:1/mcp"},
 	}, nil)
@@ -1026,15 +1030,31 @@ func TestMCPGatewayAdapterRejectsStdioToolDefinition(t *testing.T) {
 	}
 	caseRecord := gatewayToolDefinitionCase("stdio-tool-definition", "example")
 	caseRecord.Transport = "mcp_stdio"
-	result := a.Run(caseRecord, time.Second)
-	if result.Err != nil || result.Verdict != "skip" {
-		t.Fatalf("result = %+v, want stdio tool-definition skip", result)
+	if _, ok := SupportsTuple(a, caseRecord); !ok {
+		t.Fatal("documented stdio tool-definition semantic route was not selectable")
 	}
 	if _, ok := SupportsTuple(a, Case{Transport: "mcp_http", InputType: "mcp_tool_result"}); !ok {
 		t.Fatal("declared HTTP tool-result tuple was not selectable")
 	}
 	if _, ok := SupportsTuple(a, Case{Transport: "mcp_stdio", InputType: "mcp_tool_result"}); ok {
 		t.Fatal("gateway declared a stdio tool-result route while delivering it over HTTP")
+	}
+}
+
+func TestMCPGatewayAdapterDrivesStdioToolDefinitionOverHTTP(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	server := forwardingGateway(t, fm.MCPHTTP().URL())
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "forwarder", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caseRecord := gatewayToolDefinitionCase("stdio-tool-definition-http-wire", "example")
+	caseRecord.Transport = "mcp_stdio"
+	result := a.Run(caseRecord, time.Second)
+	if result.Err != nil || result.Verdict != "allow" || result.Evidence["upstream_reached"] != true {
+		t.Fatalf("result = %+v, want documented stdio semantic case driven over HTTP", result)
 	}
 }
 
@@ -1409,6 +1429,328 @@ func gatewayMultiToolsCallCase(id string, n int) Case {
 		ID: id, Transport: "mcp_http", InputType: "mcp_tool_call",
 		Payload: map[string]interface{}{"jsonrpc_messages": msgs},
 	}
+}
+
+func TestMCPGatewayAdapterConfiguredHTTPAndBodyDeniesScoreBlock(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		plugin DenySignals
+		write  func(http.ResponseWriter)
+	}{
+		{
+			name:   "http status",
+			plugin: DenySignals{HTTPStatusCodes: []int{http.StatusForbidden}},
+			write: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusForbidden)
+			},
+		},
+		{
+			name:   "body marker",
+			plugin: DenySignals{CustomBodyMarkers: []string{"policy denied"}},
+			write: func(w http.ResponseWriter) {
+				_, _ = w.Write([]byte("policy denied by gateway"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if requestMethod(t, r) == "tools/call" {
+					tc.write(w)
+					return
+				}
+				writeJSONRPC(t, w, json.RawMessage(`"initialize"`), nil)
+			}))
+			defer server.Close()
+			a, err := NewMCPGatewayAdapter(GatewayPlugin{
+				Name: "documented deny", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}, DenySignals: tc.plugin,
+			}, fixtureManagerForGatewayTest(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := a.Run(gatewayToolsCallCase("gateway-"+strings.ReplaceAll(tc.name, " ", "-")), time.Second)
+			if result.Err != nil || result.Verdict != "block" || result.Evidence["upstream_reached"] != false {
+				t.Fatalf("result = %+v, want request-correlated documented deny block", result)
+			}
+		})
+	}
+}
+
+func TestMCPGatewayAdapterConnectionCloseIsNamedButNotBlock(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requestMethod(t, r) != "tools/call" {
+			writeJSONRPC(t, w, json.RawMessage(`"initialize"`), nil)
+			return
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "close denier", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}, DenySignals: DenySignals{ConnectionClosedNoOut: true},
+	}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-connection-close"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "connection_closed_without_output" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want named uncorrelated connection-close skip", result)
+	}
+}
+
+func TestMCPGatewayAdapterMalformedJSONRPCResponseDoesNotScoreAllow(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestMethodFromBody(t, body) != "tools/call" {
+			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+			return
+		}
+		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write(append([]byte(`{"jsonrpc":"2.0","id":`), append(requestIDFromBody(t, body), []byte(`}`)...)...))
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "malformed response", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-malformed-jsonrpc"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "malformed_jsonrpc_response" || result.Evidence["upstream_reached"] != true {
+		t.Fatalf("result = %+v, want delivered malformed response skip", result)
+	}
+}
+
+func TestMCPGatewayAdapterSSEWrongIDIsCorrelationFailure(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestMethodFromBody(t, body) != "tools/call" {
+			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+			return
+		}
+		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"jsonrpc\":\"2.0\",\"id\":\"wrong-id\",\"result\":{\"ok\":true}}\n\n"))
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "wrong sse id", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-wrong-sse-id"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "response_id_mismatch" || result.Evidence["upstream_reached"] != true {
+		t.Fatalf("result = %+v, want distinguishable SSE correlation skip", result)
+	}
+}
+
+func TestMCPGatewayAdapterReplayDoesNotProveDelivery(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestMethodFromBody(t, body) != "tools/call" {
+			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+			return
+		}
+		first, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(first)
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "replayer", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolResultCase("gateway-replayed-tool-result", "leased result"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want replayed request to fail delivery proof", result)
+	}
+}
+
+func TestMCPGatewayAdapterCopiedIdentityWithChangedContentDoesNotProveDelivery(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestMethodFromBody(t, body) != "tools/call" {
+			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+			return
+		}
+		var copied map[string]interface{}
+		if err := json.Unmarshal(body, &copied); err != nil {
+			t.Fatal(err)
+		}
+		copied["method"] = "tools/list"
+		forged, err := json.Marshal(copied)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), forged); err != nil {
+			t.Fatal(err)
+		}
+		writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "identity copier", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolResultCase("gateway-copied-identity", "leased result"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want changed-content identity copy to fail proof", result)
+	}
+}
+
+func TestMCPGatewayAdapterConcurrentToolResultAndToolCallKeepOwnResponses(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var once sync.Once
+	var observedMu sync.Mutex
+	observed := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestMethodFromBody(t, body) != "tools/call" {
+			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+			return
+		}
+		arrived <- struct{}{}
+		<-release
+		upstreamBody, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identity := requestIdentityFromBody(t, body)
+		observedMu.Lock()
+		observed[identity] = string(upstreamBody)
+		observedMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(upstreamBody)
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "forwarder", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 3; round++ {
+		resultCh := make(chan Result, 2)
+		go func() {
+			resultCh <- a.Run(gatewayToolResultCase(fmt.Sprintf("gateway-tool-result-%d", round), "leased-only"), time.Second)
+		}()
+		go func() {
+			resultCh <- a.Run(gatewayToolsCallCase(fmt.Sprintf("gateway-tool-call-%d", round)), time.Second)
+		}()
+		<-arrived
+		<-arrived
+		once.Do(func() { close(release) })
+		first, second := <-resultCh, <-resultCh
+		for _, result := range []Result{first, second} {
+			if result.Err != nil || result.Verdict != "allow" || result.Evidence["upstream_reached"] != true {
+				t.Fatalf("round %d result = %+v, want independently proven allow", round, result)
+			}
+		}
+		var resultIdentity, callIdentity string
+		for _, result := range []Result{first, second} {
+			if identity, ok := result.Evidence["request_identity"].(string); ok {
+				resultIdentity = identity
+			} else {
+				identities := result.Evidence["request_identities"].([]string)
+				callIdentity = identities[0]
+			}
+		}
+		observedMu.Lock()
+		resultBody, callBody := observed[resultIdentity], observed[callIdentity]
+		observedMu.Unlock()
+		if !strings.Contains(resultBody, "leased-only") || strings.Contains(callBody, "leased-only") || !strings.Contains(callBody, `"ok":true`) {
+			t.Fatalf("round %d responses crossed: result=%q call=%q", round, resultBody, callBody)
+		}
+	}
+}
+
+func fixtureManagerForGatewayTest(t *testing.T) *fixture.Manager {
+	t.Helper()
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fm
+}
+
+func requestMethodFromBody(t *testing.T, body []byte) string {
+	t.Helper()
+	var request struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		t.Fatal(err)
+	}
+	return request.Method
+}
+
+func requestIDFromBody(t *testing.T, body []byte) json.RawMessage {
+	t.Helper()
+	var request struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		t.Fatal(err)
+	}
+	return request.ID
+}
+
+func requestIdentityFromBody(t *testing.T, body []byte) string {
+	t.Helper()
+	var request struct {
+		Params struct {
+			Meta struct {
+				Identity string `json:"aeb_request_identity"`
+			} `json:"_meta"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Params.Meta.Identity == "" {
+		t.Fatal("gateway request is missing identity")
+	}
+	return request.Params.Meta.Identity
 }
 
 func writeGatewayPlugin(t *testing.T, plugin map[string]interface{}) string {

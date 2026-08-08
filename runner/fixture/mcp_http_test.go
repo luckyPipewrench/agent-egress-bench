@@ -75,18 +75,18 @@ func TestMCPHTTPFixtureToolResultLeaseResetsResponse(t *testing.T) {
 	}
 	defer f.Close()
 
-	release, err := f.AcquireToolResultLease(context.Background(), json.RawMessage(`{"content":[{"type":"text","text":"leased"}]}`))
+	release, err := f.AcquireToolResultLease(context.Background(), "leased-request", json.RawMessage(`{"content":[{"type":"text","text":"leased"}]}`))
 	if err != nil {
 		t.Fatalf("AcquireToolResultLease: %v", err)
 	}
-	assertToolCallResultContains(t, f.URL(), "leased")
+	assertToolCallResultContains(t, f.URL(), "leased-request", "leased")
 	release()
-	assertToolCallResultContains(t, f.URL(), `"ok":true`)
+	assertToolCallResultContains(t, f.URL(), "later-request", `"ok":true`)
 }
 
-func assertToolCallResultContains(t *testing.T, endpoint, wanted string) {
+func assertToolCallResultContains(t *testing.T, endpoint, identity, wanted string) {
 	t.Helper()
-	body := postMCPFixture(t, endpoint, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"fixture_tool","arguments":{}}}`)
+	body := postMCPFixture(t, endpoint, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"fixture_tool","arguments":{},"_meta":{"aeb_request_identity":"`+identity+`"}}}`)
 	if !bytes.Contains(body, []byte(wanted)) {
 		t.Fatalf("response = %s, want substring %q", body, wanted)
 	}

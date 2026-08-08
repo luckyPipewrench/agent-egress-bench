@@ -2,6 +2,7 @@ package fixture
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,13 +25,20 @@ type MCPHTTPFixture struct {
 	// SetTools alone cannot keep simultaneous tool-definition cases isolated.
 	// A channel permits acquisition to honor each case's deadline.
 	toolDefinitionLease chan struct{}
-	toolResultLease     chan struct{}
 	toolsMu             sync.RWMutex
 	tools               []json.RawMessage
-	toolResultMu        sync.RWMutex
-	toolResult          json.RawMessage
-	deliveryMu          sync.RWMutex
-	deliveryTokens      map[string]struct{}
+	requestMu           sync.RWMutex
+	toolResults         map[string]json.RawMessage
+	observations        map[string][]MCPRequestObservation
+}
+
+// MCPRequestObservation is the runner-owned evidence recorded for an upstream
+// MCP request. An identity alone is deliberately insufficient: a copied token
+// must not prove a different method or payload was delivered.
+type MCPRequestObservation struct {
+	Identity    string
+	Method      string
+	Fingerprint string
 }
 
 // Addr returns the listener address (host:port).
@@ -45,39 +53,60 @@ func (f *MCPHTTPFixture) URL() string { return "http://" + f.Addr() + "/" }
 func (f *MCPHTTPFixture) Calls() int64 { return f.calls.Load() }
 
 // ToolCalls returns the number of tools/call requests that reached the
-// upstream. It remains useful fixture telemetry; gateway delivery proof uses
-// DeliveryTokenSeen so another tools/call cannot satisfy a case's proof.
+// upstream. It remains fixture telemetry; adapter proof uses Observation.
 func (f *MCPHTTPFixture) ToolCalls() int64 { return f.toolCalls.Load() }
 
 // ListCalls returns the number of tools/list requests that reached the
-// upstream. It remains useful fixture telemetry; token proof identifies the
-// exact tools/list request for a case.
+// upstream. It remains fixture telemetry; adapter proof uses Observation.
 func (f *MCPHTTPFixture) ListCalls() int64 { return f.listCalls.Load() }
 
-// DeliveryTokenSeen reports whether this fixture received the exact token the
-// adapter attached to a case request. Unlike a counter delta, another case's
-// request cannot satisfy this proof.
-func (f *MCPHTTPFixture) DeliveryTokenSeen(token string) bool {
-	f.deliveryMu.RLock()
-	defer f.deliveryMu.RUnlock()
-	_, found := f.deliveryTokens[token]
-	return found
+// MCPRequestFingerprint produces the canonical fingerprint used by both the
+// adapter and the fixture. JSON object key order is not evidence, so both ends
+// normalize the JSON before hashing it.
+func MCPRequestFingerprint(body []byte) (string, error) {
+	var message interface{}
+	if err := json.Unmarshal(body, &message); err != nil {
+		return "", fmt.Errorf("decode MCP request: %w", err)
+	}
+	normalized, err := json.Marshal(message)
+	if err != nil {
+		return "", fmt.Errorf("normalize MCP request: %w", err)
+	}
+	sum := sha256.Sum256(normalized)
+	return fmt.Sprintf("%x", sum[:]), nil
 }
 
-func (f *MCPHTTPFixture) recordDeliveryToken(body []byte) {
+// Observation returns all arrivals bearing identity. Delivery is proven only
+// when the adapter finds exactly one observation with its expected method and
+// fingerprint. A replay therefore makes proof fail rather than satisfying it.
+func (f *MCPHTTPFixture) Observation(identity string) []MCPRequestObservation {
+	f.requestMu.RLock()
+	defer f.requestMu.RUnlock()
+	return append([]MCPRequestObservation(nil), f.observations[identity]...)
+}
+
+func (f *MCPHTTPFixture) recordObservation(body []byte) string {
 	var request struct {
+		Method string `json:"method"`
 		Params struct {
 			Meta struct {
-				DeliveryToken string `json:"aeb_delivery_token"`
+				Identity string `json:"aeb_request_identity"`
 			} `json:"_meta"`
 		} `json:"params"`
 	}
-	if json.Unmarshal(body, &request) != nil || request.Params.Meta.DeliveryToken == "" {
-		return
+	if json.Unmarshal(body, &request) != nil || request.Params.Meta.Identity == "" {
+		return ""
 	}
-	f.deliveryMu.Lock()
-	f.deliveryTokens[request.Params.Meta.DeliveryToken] = struct{}{}
-	f.deliveryMu.Unlock()
+	fingerprint, err := MCPRequestFingerprint(body)
+	if err != nil {
+		return ""
+	}
+	f.requestMu.Lock()
+	f.observations[request.Params.Meta.Identity] = append(f.observations[request.Params.Meta.Identity], MCPRequestObservation{
+		Identity: request.Params.Meta.Identity, Method: request.Method, Fingerprint: fingerprint,
+	})
+	f.requestMu.Unlock()
+	return request.Params.Meta.Identity
 }
 
 // SetTools configures the tools returned by a later tools/list request.
@@ -114,32 +143,29 @@ func (f *MCPHTTPFixture) AcquireToolDefinitionLease(ctx context.Context, tools [
 	}, nil
 }
 
-// AcquireToolResultLease installs a case's tools/call result and exclusively
-// leases it until the returned release function is called. This prevents
-// concurrent gateway cases from receiving one another's upstream responses.
-func (f *MCPHTTPFixture) AcquireToolResultLease(ctx context.Context, result json.RawMessage) (func(), error) {
+// AcquireToolResultLease installs a tools/call response for identity. The
+// fixture routes the response only to that identity, so unrelated concurrent
+// calls keep the default response rather than inheriting another case's lease.
+func (f *MCPHTTPFixture) AcquireToolResultLease(ctx context.Context, identity string, result json.RawMessage) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-f.toolResultLease:
+	if identity == "" {
+		return nil, fmt.Errorf("tool-result lease identity is required")
 	}
-	if err := ctx.Err(); err != nil {
-		f.toolResultLease <- struct{}{}
-		return nil, err
+	f.requestMu.Lock()
+	if _, exists := f.toolResults[identity]; exists {
+		f.requestMu.Unlock()
+		return nil, fmt.Errorf("tool-result lease %q already exists", identity)
 	}
-	f.toolResultMu.Lock()
-	f.toolResult = append(f.toolResult[:0], result...)
-	f.toolResultMu.Unlock()
+	f.toolResults[identity] = append(json.RawMessage(nil), result...)
+	f.requestMu.Unlock()
 	var released sync.Once
 	return func() {
 		released.Do(func() {
-			f.toolResultMu.Lock()
-			f.toolResult = nil
-			f.toolResultMu.Unlock()
-			f.toolResultLease <- struct{}{}
+			f.requestMu.Lock()
+			delete(f.toolResults, identity)
+			f.requestMu.Unlock()
 		})
 	}, nil
 }
@@ -154,11 +180,10 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 	f := &MCPHTTPFixture{
 		listener:            ln,
 		toolDefinitionLease: make(chan struct{}, 1),
-		toolResultLease:     make(chan struct{}, 1),
-		deliveryTokens:      make(map[string]struct{}),
+		toolResults:         make(map[string]json.RawMessage),
+		observations:        make(map[string][]MCPRequestObservation),
 	}
 	f.toolDefinitionLease <- struct{}{}
-	f.toolResultLease <- struct{}{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -168,7 +193,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		f.calls.Add(1)
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		_ = r.Body.Close()
-		f.recordDeliveryToken(body)
+		identity := f.recordObservation(body)
 		var req struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      json.RawMessage `json:"id"`
@@ -199,9 +224,9 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":%s}}`, id, tools)
 		case "tools/call":
 			f.toolCalls.Add(1)
-			f.toolResultMu.RLock()
-			result := append(json.RawMessage(nil), f.toolResult...)
-			f.toolResultMu.RUnlock()
+			f.requestMu.RLock()
+			result := append(json.RawMessage(nil), f.toolResults[identity]...)
+			f.requestMu.RUnlock()
 			if len(result) == 0 {
 				result = json.RawMessage(`{"ok":true}`)
 			}
