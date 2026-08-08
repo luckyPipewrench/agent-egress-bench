@@ -150,10 +150,20 @@ runner can deliver its exact input to the tool and observe a trustworthy verdict
 Attack-difficulty and evasion-resistance flags (`encoding_evasion_scanning`,
 `ssrf_bypass_scanning`) no longer gate applicability, so a tool cannot render a
 hard variant `not_applicable` by declining a difficulty claim for a surface it
-already inspects. Full-corpus scores remain primary and directly comparable across
-this change (a malicious not-applicable case already counts as unblocked). Applicable-only
-scores from before 2.5 are not comparable to those after it, because the closed loophole
-inflated them. Full-corpus scores are treated as diagnostic-versus-primary as in 2.1, and
+already inspects. 2.5 also rejects enforcement claims such as `budget_enforcement`
+in `requires`, because gating a case on the feature it exists to test lets a tool
+delete both the case and the benign control that measures its over-blocking.
+
+Comparability across this change is not uniform, so state which component is being
+compared. **Full-corpus containment is comparable**: a malicious case that was
+`not_applicable` already counted as unblocked, so moving it into the applicable set
+does not change the number. **Full-corpus false-positive rates are not strictly
+comparable** wherever a benign control changed applicability, because a control that
+was previously skipped now contributes to the measurement; `mcp-chain-dow-under-budget-011`
+is exactly such a case in 2.5. **Applicable-only scores are not comparable** across
+the boundary at all, because the closed loophole inflated them.
+
+Full-corpus scores are treated as diagnostic-versus-primary as in 2.1, and
 an adapter's inability to execute a declared applicable transport still counts as an error.
 
 `corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which capability claims were active. Together, these five fields make any run fully reproducible.

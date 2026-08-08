@@ -1794,6 +1794,46 @@ func TestMultiFileRequiresValidation(t *testing.T) {
 			yaml:    header + "requires:\n  - budget_enforcement\n",
 			wantErr: "enforcement claim",
 		},
+		// A multi-line flow sequence is valid YAML. The previous parser saw
+		// "requires: [", trimmed it to nothing, and reported an empty list, so
+		// every token on the following lines was accepted unexamined. That made
+		// the multi-file shape a working bypass of the whole applicability rule
+		// set rather than a second door onto it.
+		{
+			name:    "multi-line flow sequence is rejected, not read as empty",
+			yaml:    header + "requires: [\n  mcp_tool_baseline,\n  encoding_evasion_scanning\n]\n",
+			wantErr: "multi-line flow sequence",
+		},
+		{
+			name:    "scalar requires is rejected",
+			yaml:    header + "requires: mcp_tool_baseline\n",
+			wantErr: "must be a list",
+		},
+		{
+			name:    "mapping under requires is rejected",
+			yaml:    header + "requires:\n  nested:\n    - mcp_tool_baseline\n",
+			wantErr: "expected a list entry",
+		},
+		{
+			name:    "unterminated quote is rejected",
+			yaml:    header + "requires: [\"mcp_tool_baseline]\n",
+			wantErr: "unterminated quote",
+		},
+		// Availability matters as much as the bypass: a trailing comment on an
+		// inline sequence is ordinary YAML, and rejecting it would push authors
+		// toward the shapes this validator handles worst.
+		{
+			name: "inline sequence with a trailing comment is accepted",
+			yaml: header + "requires: [mcp_tool_baseline] # rationale\n",
+		},
+		{
+			name: "quoted tokens are accepted",
+			yaml: header + "requires: [\"mcp_tool_baseline\", 'mcp_chain_memory']\n",
+		},
+		{
+			name: "empty flow sequence is accepted",
+			yaml: header + "requires: []\n",
+		},
 		{
 			name:    "unknown token",
 			yaml:    header + "requires:\n  - totally_bogus_token\n",

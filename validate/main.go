@@ -93,7 +93,7 @@ var (
 		"websocket_dlp_scanning": true, "websocket_prompt_injection_scanning": true,
 		"ssrf_scanning":    true,
 		"domain_blocklist": true, "entropy_scanning": true,
-		"shell_analysis": true,
+		"shell_analysis":      true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
 		"dns_rebinding_fixture": true, "budget_enforcement": true,
 	}
@@ -811,36 +811,13 @@ func validateMultiFileRequires(path string) []string {
 	if err != nil {
 		return []string{fmt.Sprintf("%s: cannot read case.yaml: %v", path, err)}
 	}
-	lines := strings.Split(string(data), "\n")
-	var toks []string
-	for i, ln := range lines {
-		t := strings.TrimSpace(ln)
-		if !strings.HasPrefix(t, "requires:") {
-			continue
-		}
-		rest := strings.TrimSpace(strings.TrimPrefix(t, "requires:"))
-		if strings.HasPrefix(rest, "[") { // inline: requires: [a, b]
-			for _, p := range strings.Split(strings.Trim(rest, "[]"), ",") {
-				if p = strings.TrimSpace(strings.Trim(p, `"'`)); p != "" {
-					toks = append(toks, p)
-				}
-			}
-		} else { // block: requires: then indented "- token" lines (comments allowed between)
-			for _, bl := range lines[i+1:] {
-				bt := strings.TrimSpace(bl)
-				if bt == "" || strings.HasPrefix(bt, "#") {
-					continue
-				}
-				if strings.HasPrefix(bt, "- ") {
-					if v := strings.Fields(strings.TrimPrefix(bt, "- ")); len(v) > 0 {
-						toks = append(toks, strings.Trim(v[0], `"'`))
-					}
-					continue
-				}
-				break // next top-level key ends the block
-			}
-		}
-		break
+	toks, err := parseRequiresFromYAML(string(data))
+	if err != nil {
+		// Fail closed. A requires block this validator cannot read
+		// unambiguously is rejected rather than treated as empty, because
+		// treating it as empty silently waives every applicability rule the
+		// single-file shape enforces.
+		return []string{fmt.Sprintf("%s: %v", path, err)}
 	}
 	var errs []string
 	for _, tok := range toks {
@@ -849,6 +826,117 @@ func validateMultiFileRequires(path string) []string {
 		}
 	}
 	return errs
+}
+
+// parseRequiresFromYAML reads the top-level requires list out of a case.yaml.
+//
+// The validator is deliberately stdlib-only, so this recognises a restricted
+// subset of YAML rather than pulling in a parser: a single-line flow sequence
+// (requires: [a, b]) or a block sequence of "- token" lines. Every other shape,
+// including a multi-line flow sequence, a scalar, or a mapping, is an error.
+// The alternative, guessing, is what let a "requires: [" with its items on
+// later lines parse as an empty list and accept a banned token.
+func parseRequiresFromYAML(content string) ([]string, error) {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "requires:") {
+			continue
+		}
+		// Only a top-level key is understood. An indented requires: belongs to
+		// some nested structure this parser does not model, so reading it as
+		// the case's requires would be a guess.
+		if line != trimmed {
+			return nil, fmt.Errorf("requires must be a top-level key; found it indented on line %d", i+1)
+		}
+
+		rest, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "requires:")))
+		if err != nil {
+			return nil, err
+		}
+
+		switch {
+		case rest == "":
+			return parseRequiresBlockSequence(lines[i+1:])
+		case strings.HasPrefix(rest, "["):
+			if !strings.HasSuffix(rest, "]") {
+				return nil, fmt.Errorf("requires uses a multi-line flow sequence on line %d, which this validator does not parse; use one line or a block sequence", i+1)
+			}
+			return parseRequiresFlowSequence(rest), nil
+		default:
+			return nil, fmt.Errorf("requires must be a list, got %q on line %d", rest, i+1)
+		}
+	}
+	return nil, nil
+}
+
+// parseRequiresBlockSequence reads the entries of a block sequence, stopping at
+// the first line that ends the block. Anything indented that is not an entry, a
+// comment, or blank is an error rather than a stop signal.
+func parseRequiresBlockSequence(lines []string) ([]string, error) {
+	var toks []string
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if line == trimmed {
+			return toks, nil // next top-level key ends the block
+		}
+		if !strings.HasPrefix(trimmed, "- ") && trimmed != "-" {
+			return nil, fmt.Errorf("unexpected %q inside the requires block at offset %d; expected a list entry", trimmed, i+1)
+		}
+		entry, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "-")))
+		if err != nil {
+			return nil, err
+		}
+		if entry == "" {
+			return nil, fmt.Errorf("empty entry inside the requires block at offset %d", i+1)
+		}
+		toks = append(toks, trimQuotes(entry))
+	}
+	return toks, nil
+}
+
+// parseRequiresFlowSequence splits a single-line flow sequence.
+func parseRequiresFlowSequence(rest string) []string {
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(rest, "["), "]"))
+	if inner == "" {
+		return nil
+	}
+	var toks []string
+	for _, part := range strings.Split(inner, ",") {
+		if part = trimQuotes(strings.TrimSpace(part)); part != "" {
+			toks = append(toks, part)
+		}
+	}
+	return toks
+}
+
+func trimQuotes(value string) string {
+	return strings.Trim(value, "\"'")
+}
+
+// stripYAMLComment removes a trailing comment. A marker inside a quoted scalar
+// is not a comment, and an unterminated quote is an error rather than a guess.
+func stripYAMLComment(value string) (string, error) {
+	var quote rune
+	for i, r := range value {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '\'' || r == '"':
+			quote = r
+		case r == '#':
+			return strings.TrimSpace(value[:i]), nil
+		}
+	}
+	if quote != 0 {
+		return "", fmt.Errorf("unterminated quote in %q", value)
+	}
+	return strings.TrimSpace(value), nil
 }
 
 // ResultLine represents a single line in a runner results JSONL file.

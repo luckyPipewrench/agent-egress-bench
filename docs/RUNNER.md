@@ -148,7 +148,7 @@ If your tool does not support domain blocklisting, set `supports.domain_blocklis
 
 ### Budget enforcement
 
-Cases with `requires: ["budget_enforcement"]` require the runner or tool under test to enforce the call-count budget metadata carried in the case payload. The current single-session cases use MCP `mcp_tool_sequence` payloads with neutral fields:
+Cases carrying the `denial_of_wallet` capability tag exercise the call-count budget metadata in the case payload. They gate on `mcp_chain_memory`, the surface the runner needs in order to deliver the sequence and observe a verdict, and never on `budget_enforcement` itself. A tool that does not enforce budgets is still measured on these cases and is expected to miss the malicious ones; that miss is the finding, not a reason to skip the case. The current single-session cases use MCP `mcp_tool_sequence` payloads with neutral fields:
 
 - `budget_scope: "per_subject"`
 - `subject_id`

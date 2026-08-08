@@ -84,7 +84,7 @@ Tags describe what the case exercises. Used for reporting and result interpretat
 
 ## requires (v2)
 
-`tls_interception`, `url_dlp_scanning`, `request_body_dlp_scanning`, `header_dlp_scanning`, `response_prompt_injection_scanning`, `mcp_input_dlp_scanning`, `mcp_input_prompt_injection_scanning`, `mcp_tool_policy`, `mcp_tool_result_prompt_injection_scanning`, `mcp_tool_poison_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `a2a_dlp_scanning`, `a2a_prompt_injection_scanning`, `a2a_card_prompt_injection_scanning`, `a2a_card_drift_scanning`, `a2a_ssrf_scanning`, `websocket_dlp_scanning`, `websocket_prompt_injection_scanning`, `ssrf_scanning`, `domain_blocklist`, `entropy_scanning`, `shell_analysis`, `crypto_dlp_scanning`, `hostname_exfil_scanning`, `dns_rebinding_fixture`, `budget_enforcement`
+`tls_interception`, `url_dlp_scanning`, `request_body_dlp_scanning`, `header_dlp_scanning`, `response_prompt_injection_scanning`, `mcp_input_dlp_scanning`, `mcp_input_prompt_injection_scanning`, `mcp_tool_policy`, `mcp_tool_result_prompt_injection_scanning`, `mcp_tool_poison_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `a2a_dlp_scanning`, `a2a_prompt_injection_scanning`, `a2a_card_prompt_injection_scanning`, `a2a_card_drift_scanning`, `a2a_ssrf_scanning`, `websocket_dlp_scanning`, `websocket_prompt_injection_scanning`, `ssrf_scanning`, `domain_blocklist`, `entropy_scanning`, `shell_analysis`, `crypto_dlp_scanning`, `hostname_exfil_scanning`, `dns_rebinding_fixture`
 
 Delivery, fixture, and base-observation prerequisites only. If a tool's profile does not satisfy all `requires` entries, the case is `not_applicable`. `requires` must never encode attack difficulty or evasion resistance (e.g. `encoding_evasion_scanning`, `ssrf_bypass_scanning`); those belong in `capability_tags`. This holds for `block` and `allow` cases equally: a tool cannot render a hard variant `not_applicable` by declining a difficulty claim for a surface it already inspects. The validator rejects difficulty flags in `requires` for both single-file and multi-file cases.
 
@@ -142,8 +142,15 @@ Delivery, fixture, and base-observation prerequisites only. If a tool's profile 
 ```
 
 Denial-of-wallet budget cases are MCP tool-call sequences that use a
-scoreable call-count model. They set `requires: ["budget_enforcement"]` and
-carry these payload fields alongside `jsonrpc_messages`:
+scoreable call-count model. They carry the `denial_of_wallet` capability tag,
+which is what selects them for the payload rules below, and they gate on the
+observation surface (`mcp_chain_memory`) rather than on `budget_enforcement`.
+`budget_enforcement` is a valid `supports` key that a tool may claim for
+reporting, but it is rejected in `requires`: gating a case on the feature it
+exists to test lets a tool delete the case, and the benign control measuring
+its over-blocking, simply by not claiming it.
+
+These cases carry the following payload fields alongside `jsonrpc_messages`:
 
 | Field | Type | Description |
 |-------|------|-------------|
