@@ -187,9 +187,14 @@ func TestLoadProfileRejectsEmptySupports(t *testing.T) {
 }
 
 type supportsSchema struct {
-	Properties           map[string]json.RawMessage `json:"properties"`
-	Required             []string                   `json:"required"`
-	AdditionalProperties bool                       `json:"additionalProperties"`
+	Properties map[string]json.RawMessage `json:"properties"`
+	Required   []string                   `json:"required"`
+	// Pointer, so an ABSENT keyword is distinguishable from an explicit false.
+	// A plain bool decodes an absent keyword as false, which would read as
+	// "unknown keys are forbidden" while JSON Schema treats the absent case as
+	// permissive. Deleting the line would then silently reopen the contract
+	// with this guard still passing.
+	AdditionalProperties *bool `json:"additionalProperties"`
 }
 
 func supportsVocabularyFromSchema(t *testing.T, path string) (map[string]struct{}, []byte) {
@@ -208,7 +213,10 @@ func supportsVocabularyFromSchema(t *testing.T, path string) (map[string]struct{
 	if err := json.Unmarshal(schema.Properties["supports"], &supports); err != nil {
 		t.Fatal(err)
 	}
-	if supports.AdditionalProperties {
+	if supports.AdditionalProperties == nil {
+		t.Fatalf("%s omits additionalProperties on supports; JSON Schema treats that as permissive, so it must be stated explicitly", path)
+	}
+	if *supports.AdditionalProperties {
 		t.Fatalf("%s permits unknown supports keys", path)
 	}
 	vocabulary := make(map[string]struct{}, len(supports.Properties))
