@@ -130,6 +130,8 @@ mcp-input-dlp-001
 mcp-input-double-encode-009
 mcp-input-env-leak-003
 mcp-input-hex-apikey-008
+mcp-input-http-benign-013
+mcp-input-http-injection-012
 mcp-input-injection-002
 mcp-input-jwt-url-007
 mcp-input-nested-deep-011
@@ -140,6 +142,11 @@ mcp-tool-exfil-description-005
 mcp-tool-homoglyph-name-013
 mcp-tool-http-benign-verbose-002
 mcp-tool-http-description-poison-007
+mcp-tool-http-homoglyph-name-011
+mcp-tool-http-result-benign-010
+mcp-tool-http-result-injection-009
+mcp-tool-http-result-resource-benign-013
+mcp-tool-http-result-resource-injection-012
 mcp-tool-http-schema-poison-008
 mcp-tool-poison-001
 mcp-tool-priority-006
