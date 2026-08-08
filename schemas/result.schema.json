@@ -5,6 +5,7 @@
   "description": "A single result line from a benchmark runner (JSONL output). One result per case, recording the expected verdict, actual verdict, score, and tool-specific evidence. Note: cross-field constraints (e.g. score consistency with actual_verdict) are enforced by the Go validator, not this schema.",
   "type": "object",
   "required": [
+    "schema_version",
     "case_id",
     "tool",
     "tool_version",
@@ -16,6 +17,11 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 3,
+      "description": "Schema version. Must be 3 for active scoring; v2 is frozen for historical reproduction only."
+    },
     "case_id": {
       "type": "string",
       "description": "The case ID from the case file."
@@ -35,8 +41,8 @@
     },
     "actual_verdict": {
       "type": "string",
-      "enum": ["block", "allow", "not_applicable", "error"],
-      "description": "Verdict observed by the runner. not_applicable if the case does not apply to this tool. error if the runner or tool failed."
+      "enum": ["block", "allow", "not_applicable", "unreachable", "error"],
+      "description": "Verdict observed by the runner. not_applicable is a legacy v2 state. unreachable means unreachable by this adapter and configuration, never unsupported by product. error means a declared route failed during startup, fixture setup, delivery, correlation, or observation."
     },
     "score": {
       "type": "string",

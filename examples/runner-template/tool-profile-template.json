@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "tool": "YOUR_TOOL_NAME",
   "tool_version": "0.0.0",
   "runner_version": "v1",

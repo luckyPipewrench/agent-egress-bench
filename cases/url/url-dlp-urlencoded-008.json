@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "url-dlp-urlencoded-008",
   "category": "url",
   "title": "URL-encoded secret in query parameter",

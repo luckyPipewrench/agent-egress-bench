@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary.schema.json",
+  "title": "agent-egress-bench Gauntlet Summary",
+  "description": "Top-level summary emitted by a v3 runner. The exact scoring and support fields remain defined by the runner contract; this schema establishes the coordinated artifact-version boundary.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "gauntlet_version",
+    "scoring_version",
+    "runner_version",
+    "tool",
+    "tool_version",
+    "corpus_version",
+    "corpus_sha256",
+    "tool_profile_sha256",
+    "case_count",
+    "tool_support",
+    "exercised",
+    "scores",
+    "sufficient",
+    "per_category"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 3,
+      "description": "Schema version. Must be 3 for active scoring; older summaries are historical records."
+    }
+  },
+  "additionalProperties": true
+}

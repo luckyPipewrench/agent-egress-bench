@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "response-injection-ignore-002",
   "category": "response_fetch",
   "title": "Ignore previous instructions pattern",

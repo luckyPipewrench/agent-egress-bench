@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 id: mcp-drift-benign-001
 category: mcp_drift
 title: Benign drift — server adds a new tool between sessions

@@ -38,8 +38,8 @@ var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": t
 func ValidateReceiptProfile(rp ReceiptProfile) []string {
 	var issues []string
 
-	if rp.SchemaVersion != 1 {
-		issues = append(issues, fmt.Sprintf("schema_version must be 1, got %d", rp.SchemaVersion))
+	if rp.SchemaVersion != activeSchemaVersion {
+		issues = append(issues, fmt.Sprintf("schema_version must be %d, got %d", activeSchemaVersion, rp.SchemaVersion))
 	}
 	if strings.TrimSpace(rp.Tool) == "" {
 		issues = append(issues, "tool must be a non-empty string")

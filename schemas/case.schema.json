@@ -26,8 +26,8 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 2,
-      "description": "Schema version. Must be 2."
+      "const": 3,
+      "description": "Schema version. Must be 3 for active scoring; v2 is frozen for historical reproduction only."
     },
     "id": {
       "type": "string",
@@ -174,15 +174,12 @@
           "websocket_dlp_scanning",
           "websocket_prompt_injection_scanning",
           "ssrf_scanning",
-          "ssrf_bypass_scanning",
           "domain_blocklist",
           "entropy_scanning",
-          "encoding_evasion_scanning",
           "shell_analysis",
           "crypto_dlp_scanning",
           "hostname_exfil_scanning",
-          "dns_rebinding_fixture",
-          "budget_enforcement"
+          "dns_rebinding_fixture"
         ]
       },
       "description": "Runtime capability prerequisites. If a tool profile does not satisfy all entries, the case is not_applicable."

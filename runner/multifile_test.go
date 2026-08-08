@@ -10,7 +10,7 @@ import (
 )
 
 func validMultiFileCaseYAML(id string) string {
-	return fmt.Sprintf(`schema_version: 2
+	return fmt.Sprintf(`schema_version: 3
 id: %s
 category: mcp_drift
 title: Test multi-file case
@@ -468,7 +468,7 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	receiptPath := filepath.Join(tmpDir, "receipt-profile.json")
 
 	if err := os.WriteFile(profilePath, []byte(`{
-		"schema_version": 1,
+		"schema_version": 3,
 		"tool": "test-tool",
 		"tool_version": "0.0.0",
 		"runner_version": "test",

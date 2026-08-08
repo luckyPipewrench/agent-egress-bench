@@ -2,6 +2,7 @@ package main
 
 // CaseResult holds the outcome of running a single case.
 type CaseResult struct {
+	SchemaVersion   int                    `json:"schema_version"`
 	CaseID          string                 `json:"case_id"`
 	Tool            string                 `json:"tool"`
 	ToolVersion     string                 `json:"tool_version"`

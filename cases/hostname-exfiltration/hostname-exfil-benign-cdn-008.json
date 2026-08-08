@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "hostname-exfil-benign-cdn-008",
   "category": "hostname_exfiltration",
   "title": "Legitimate CDN hostname for a versioned asset",

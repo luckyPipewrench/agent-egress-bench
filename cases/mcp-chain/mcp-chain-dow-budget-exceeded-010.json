@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "mcp-chain-dow-budget-exceeded-010",
   "category": "mcp_chain",
   "title": "Per-subject call budget exceeded",

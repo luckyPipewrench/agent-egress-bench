@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "mcp-input-jwt-url-007",
   "category": "mcp_input",
   "title": "JWT token embedded in URL tool argument",

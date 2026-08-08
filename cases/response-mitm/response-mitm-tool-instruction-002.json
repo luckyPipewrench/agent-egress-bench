@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "response-mitm-tool-instruction-002",
   "category": "response_mitm",
   "title": "Tool-use instruction injected in HTTPS response",

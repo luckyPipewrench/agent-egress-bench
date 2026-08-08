@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "header-dlp-custom-002",
   "category": "headers",
   "title": "API key in custom X-Api-Key header",

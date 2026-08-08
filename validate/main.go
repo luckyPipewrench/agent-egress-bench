@@ -99,7 +99,7 @@ var (
 	}
 
 	validActualVerdicts = map[string]bool{
-		"block": true, "allow": true, "not_applicable": true, "error": true,
+		"block": true, "allow": true, "not_applicable": true, "unreachable": true, "error": true,
 	}
 
 	validScores = map[string]bool{
@@ -337,11 +337,11 @@ func validateFile(path string, ids map[string]string) []string {
 		addErr(fmt.Sprintf("JSON parse error: %v", err))
 		return errors
 	}
+	if c.SchemaVersion != 3 {
+		addErr(fmt.Sprintf("schema_version must be 3, got %d", c.SchemaVersion))
+	}
 
 	// Required fields
-	if c.SchemaVersion != 2 {
-		addErr(fmt.Sprintf("schema_version must be 2, got %d", c.SchemaVersion))
-	}
 	if c.ID == "" {
 		addErr("missing id")
 	}
@@ -961,6 +961,7 @@ func stripYAMLComment(value string) (string, error) {
 
 // ResultLine represents a single line in a runner results JSONL file.
 type ResultLine struct {
+	SchemaVersion   int                    `json:"schema_version"`
 	CaseID          string                 `json:"case_id"`
 	Tool            string                 `json:"tool"`
 	ToolVersion     string                 `json:"tool_version"`
@@ -979,6 +980,9 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 
 	if r.CaseID == "" {
 		addErr("missing case_id")
+	}
+	if r.SchemaVersion != 3 {
+		addErr(fmt.Sprintf("schema_version must be 3, got %d", r.SchemaVersion))
 	}
 	if r.Tool == "" {
 		addErr("missing tool")
@@ -1096,8 +1100,8 @@ type Profile struct {
 func validateProfile(p Profile) []string {
 	var errors []string
 
-	if p.SchemaVersion != 1 {
-		errors = append(errors, fmt.Sprintf("schema_version must be 1, got %d", p.SchemaVersion))
+	if p.SchemaVersion != 3 {
+		errors = append(errors, fmt.Sprintf("schema_version must be 3, got %d", p.SchemaVersion))
 	}
 	if p.Tool == "" {
 		errors = append(errors, "missing tool")

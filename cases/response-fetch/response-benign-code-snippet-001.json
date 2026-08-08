@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "response-benign-code-snippet-001",
   "category": "response_fetch",
   "title": "Technical article mentioning system prompts",
