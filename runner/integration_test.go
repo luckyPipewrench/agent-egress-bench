@@ -362,3 +362,59 @@ func captureStderr(t *testing.T, fn func() error) string {
 	}
 	return string(data)
 }
+
+// A profile that declares a capability unsupported must render the cases needing
+// it not_applicable, rather than running and scoring them against the tool.
+//
+// This exists because that gate was removed once and NOTHING in this package
+// failed: a profile declaring a capability false had its cases executed and
+// scored anyway, and every test stayed green. A check with no test is
+// indistinguishable from an absent one. The direction matters, because scoring a
+// case the profile excluded charges a target for something it never claimed.
+//
+// Written as a comparison rather than an absolute count so it cannot rot as the
+// corpus grows: declining a capability must strictly increase the number of
+// not-applicable cases.
+func TestRunHonoursProfileDeclaredUnsupported(t *testing.T) {
+	naCountFor := func(t *testing.T, profileJSON string) int {
+		t.Helper()
+		dir := t.TempDir()
+		profilePath := filepath.Join(dir, "profile.json")
+		if err := os.WriteFile(profilePath, []byte(profileJSON), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		outPath := filepath.Join(dir, "summary.json")
+		if err := run(filepath.Join("..", "cases"), profilePath, outPath,
+			10*1e9, "dryrun", "", "", "", "", false, "", "", "", false); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		data, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var summary struct {
+			CaseCount struct {
+				NotApplicable int `json:"not_applicable"`
+			} `json:"case_count"`
+		}
+		if err := json.Unmarshal(data, &summary); err != nil {
+			t.Fatalf("decode summary: %v", err)
+		}
+		return summary.CaseCount.NotApplicable
+	}
+
+	baseline, err := os.ReadFile(filepath.Join("..", "examples", "pipelock", "tool-profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declined := strings.Replace(string(baseline), `"crypto_dlp_scanning": true`, `"crypto_dlp_scanning": false`, 1)
+	if declined == string(baseline) {
+		t.Fatal("fixture profile no longer declares crypto_dlp_scanning true; update this test")
+	}
+
+	before := naCountFor(t, string(baseline))
+	after := naCountFor(t, declined)
+	if after <= before {
+		t.Fatalf("not_applicable count = %d after declining a capability, was %d; declining a capability must exclude its cases rather than scoring them", after, before)
+	}
+}

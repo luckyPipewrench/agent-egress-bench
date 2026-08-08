@@ -71,6 +71,13 @@ type NAKind string
 const (
 	NAMissingRequires      NAKind = "missing_requires"
 	NAUnsupportedTransport NAKind = "unsupported_transport"
+	// NAAdapterNoRoute means the selected adapter declared no delivery route
+	// for this case. It is scoped to this adapter and configuration and says
+	// nothing about the target's product: an adapter can establish its own
+	// limits but cannot prove a negative about a tool. Kept distinct from the
+	// profile-driven reasons above so a coverage gap in our own integration is
+	// never read as a capability the target lacks.
+	NAAdapterNoRoute NAKind = "adapter_no_declared_route"
 )
 
 // multiFileCaseCategories lists case-directory names that use the multi-file
@@ -190,13 +197,41 @@ func validateProfileForRun(p Profile) error {
 	if p.Supports == nil {
 		return fmt.Errorf("missing required field supports")
 	}
+	// An UNKNOWN key is rejected; an OMITTED known key defaults to false.
+	//
+	// The value of validating a profile before a run is catching a key the
+	// author got wrong, because a typo silently reads as false and can turn an
+	// entire run not-applicable with nothing to say the profile was at fault.
+	// Rejecting an omitted key does not add to that: omission already means
+	// unsupported, unambiguously. It only breaks every previously valid profile
+	// at an unchanged schema version, which is the same
+	// break-the-contract-without-moving-the-version defect this branch's base
+	// was corrected for.
+	for key := range p.Supports {
+		if !validSupportsKeys[key] {
+			return fmt.Errorf("unknown supports key %q", key)
+		}
+	}
 	for _, key := range requiredSupportsKeys {
 		if _, ok := p.Supports[key]; !ok {
-			return fmt.Errorf("missing required supports key %q", key)
+			p.Supports[key] = false
 		}
 	}
 	return nil
 }
+
+// validSupportsKeys is derived from requiredSupportsKeys so the two cannot
+// drift. A key absent from this set is a typo or an invented capability and is
+// rejected; that rejection is the reason profile validation runs before a case
+// does, since a misspelled key would otherwise read as an unsupported
+// capability and quietly shrink the run.
+var validSupportsKeys = func() map[string]bool {
+	keys := make(map[string]bool, len(requiredSupportsKeys))
+	for _, key := range requiredSupportsKeys {
+		keys[key] = true
+	}
+	return keys
+}()
 
 var requiredSupportsKeys = []string{
 	"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a", "tls_interception",

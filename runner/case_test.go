@@ -123,19 +123,49 @@ func TestLoadProfileRejectsPreV3Artifact(t *testing.T) {
 	}
 }
 
-func TestLoadProfileRejectsOmittedSupportsKey(t *testing.T) {
+// This test previously asserted that an OMITTED supports key is rejected. That
+// was changed deliberately, not relaxed: omission already means unsupported,
+// unambiguously, so rejecting it added nothing except breaking every profile
+// written before the key existed, at an unchanged schema version. What profile
+// validation is actually worth having is the case below it: a MISSPELLED key,
+// which silently reads as unsupported and can shrink a whole run with nothing
+// to indicate the profile was at fault.
+func TestLoadProfileDefaultsOmittedSupportsKeyToFalse(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
 	data, err := os.ReadFile("../examples/pipelock/tool-profile.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	broken := strings.Replace(string(data), `"mcp_http": true,`, ``, 1)
-	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+	trimmed := strings.Replace(string(data), `"mcp_http": true,`, ``, 1)
+	if err := os.WriteFile(path, []byte(trimmed), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), `missing required supports key "mcp_http"`) {
-		t.Fatalf("loadProfile error = %v, want named omitted supports key", err)
+
+	profile, err := loadProfile(path)
+	if err != nil {
+		t.Fatalf("loadProfile error = %v, want an omitted key to be accepted as unsupported", err)
+	}
+	if supported, present := profile.Supports["mcp_http"]; !present || supported {
+		t.Fatalf("supports[mcp_http] = (%t, present=%t), want (false, present=true)", supported, present)
+	}
+}
+
+func TestLoadProfileRejectsUnknownSupportsKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	data, err := os.ReadFile("../examples/pipelock/tool-profile.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A plausible misspelling of a real key, which is the failure mode that
+	// matters: it reads as unsupported and nothing says the profile was wrong.
+	typo := strings.Replace(string(data), `"mcp_http": true,`, `"mcp_htttp": true,`, 1)
+	if err := os.WriteFile(path, []byte(typo), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), `unknown supports key "mcp_htttp"`) {
+		t.Fatalf("loadProfile error = %v, want the misspelled key named", err)
 	}
 }
 
