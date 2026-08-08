@@ -52,7 +52,7 @@
   "expected_verdict": "allow",
   "severity": "low",
   "capability_tags": ["mcp_chain", "denial_of_wallet", "benign"],
-  "requires": ["budget_enforcement"],
+  "requires": [],
   "false_positive_risk": "medium",
   "safe_example": true,
   "why_expected": "call_sequence_within_per_subject_budget",

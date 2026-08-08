@@ -20,7 +20,7 @@ A case is `not_applicable` if either:
 
 This is checked before running the case. Not-applicable cases are never executed.
 
-Benign `allow` cases should stay broadly applicable. Use `capability_tags` to report which detector family the control belongs to; reserve `requires` for prerequisites that must be present before the runner can exercise the case.
+`requires` lists only what the runner needs to deliver the input to the tool and observe a trustworthy verdict: the transport, genuine runtime fixtures (e.g. `tls_interception`, `dns_rebinding_fixture`), and the base surface or detector family the tool must inspect. It must never contain an attack-difficulty or evasion-technique flag (e.g. `encoding_evasion_scanning`, `ssrf_bypass_scanning`); those are `capability_tags` for reporting. This holds for malicious `block` cases and benign `allow` cases alike: a tool must not dodge a hard variant of a surface it already inspects by declining a difficulty claim. Use `capability_tags` to report which detector family a control belongs to.
 
 ## Summary Format
 

@@ -15,7 +15,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["request_body_dlp", "entropy"],
-  "requires": ["request_body_dlp_scanning", "entropy_scanning"],
+  "requires": ["entropy_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "opaque_high_entropy_body_blob",
   "notes": "The payload is deliberately random-looking and has no AWS, GitHub, JWT, private-key, or other recognizable credential shape.",

@@ -91,9 +91,9 @@ var (
 		"a2a_card_prompt_injection_scanning": true, "a2a_card_drift_scanning": true,
 		"a2a_ssrf_scanning":      true,
 		"websocket_dlp_scanning": true, "websocket_prompt_injection_scanning": true,
-		"ssrf_scanning": true, "ssrf_bypass_scanning": true,
+		"ssrf_scanning":    true,
 		"domain_blocklist": true, "entropy_scanning": true,
-		"encoding_evasion_scanning": true, "shell_analysis": true,
+		"shell_analysis":      true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
 		"dns_rebinding_fixture": true, "budget_enforcement": true,
 	}
@@ -254,6 +254,15 @@ func runCases(casesDir string) int {
 		// their own per-directory schema and are not validated by this tool
 		// in v0 — the README in the directory documents the schema.
 		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
+			// The full multi-file schema is documented per-directory and not
+			// validated here in v0, but the requires vocabulary IS enforced so
+			// the applicability rules (including the ban on attack-difficulty
+			// flags) cannot be bypassed through the multi-file case shape.
+			matches, _ := filepath.Glob(filepath.Join(path, "*", "case.yaml"))
+			for _, y := range matches {
+				errors = append(errors, validateMultiFileRequires(y)...)
+				fileCount++
+			}
 			return filepath.SkipDir
 		}
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
@@ -395,8 +404,8 @@ func validateFile(path string, ids map[string]string) []string {
 
 	// Requires
 	for _, req := range c.Requires {
-		if !validRequires[req] {
-			addErr(fmt.Sprintf("invalid requires value: %q", req))
+		if problem := requiresTokenProblem(req); problem != "" {
+			addErr(problem)
 		}
 	}
 
@@ -767,6 +776,187 @@ var multiFileCaseCategories = map[string]bool{
 // under cases/) uses the multi-file case format.
 func isMultiFileCaseDir(name string) bool {
 	return multiFileCaseCategories[name]
+}
+
+// validateMultiFileRequires enforces the requires vocabulary on a multi-file
+// case.yaml so the applicability rules cannot be bypassed through the multi-file
+// case shape. It extracts the requires list (block or inline) with a minimal
+// stdlib parser rather than a full YAML dependency, then applies the same
+// difficulty-flag ban and vocabulary check as single-file cases.
+// requiresTokenProblem returns the reason a token may not appear in a case's
+// requires, or "" when it is allowed. Both the single-file JSON shape and the
+// multi-file case.yaml shape route through here: when each carried its own copy
+// of these rules, the multi-file shape silently kept accepting tokens the
+// single-file shape had already banned.
+func requiresTokenProblem(token string) string {
+	switch {
+	// Attack-difficulty and evasion-technique flags describe how hard an input
+	// is on a surface the tool already inspects. Gating on one lets a tool dodge
+	// the hard variant by declining the claim. See docs/SCORING.md.
+	case token == "encoding_evasion_scanning", token == "ssrf_bypass_scanning":
+		return fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", token)
+	// Enforcement claims name the feature the case exists to test. Gating on one
+	// lets a tool delete the case, and the benign control that measures its
+	// over-blocking, by declining the claim. They stay valid supports keys.
+	case token == "budget_enforcement":
+		return fmt.Sprintf("%q is an enforcement claim and cannot appear in requires; gate on the observation surface and keep the claim in capability_tags", token)
+	case !validRequires[token]:
+		return fmt.Sprintf("invalid requires value: %q", token)
+	}
+	return ""
+}
+
+func validateMultiFileRequires(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: cannot read case.yaml: %v", path, err)}
+	}
+	toks, err := parseRequiresFromYAML(string(data))
+	if err != nil {
+		// Fail closed. A requires block this validator cannot read
+		// unambiguously is rejected rather than treated as empty, because
+		// treating it as empty silently waives every applicability rule the
+		// single-file shape enforces.
+		return []string{fmt.Sprintf("%s: %v", path, err)}
+	}
+	var errs []string
+	for _, tok := range toks {
+		if problem := requiresTokenProblem(tok); problem != "" {
+			errs = append(errs, fmt.Sprintf("%s: %s", path, problem))
+		}
+	}
+	return errs
+}
+
+// parseRequiresFromYAML reads the top-level requires list out of a case.yaml.
+//
+// The validator is deliberately stdlib-only, so this recognises a restricted
+// subset of YAML rather than pulling in a parser: a single-line flow sequence
+// (requires: [a, b]) or a block sequence of "- token" lines. Every other shape,
+// including a multi-line flow sequence, a scalar, or a mapping, is an error.
+// The alternative, guessing, is what let a "requires: [" with its items on
+// later lines parse as an empty list and accept a banned token.
+func parseRequiresFromYAML(content string) ([]string, error) {
+	lines := strings.Split(content, "\n")
+	var (
+		found     bool
+		foundLine int
+		result    []string
+	)
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "requires:") {
+			continue
+		}
+		// A duplicate key is ambiguous, and the ambiguity is exploitable: this
+		// validator would read the first value while another YAML consumer may
+		// take the last or reject the document, so a benign first requires can
+		// hide a prohibited token in a second one. Reject rather than pick.
+		if found {
+			return nil, fmt.Errorf("duplicate top-level requires key on lines %d and %d", foundLine, i+1)
+		}
+		found, foundLine = true, i+1
+		// Only a top-level key is understood. An indented requires: belongs to
+		// some nested structure this parser does not model, so reading it as
+		// the case's requires would be a guess.
+		if line != trimmed {
+			return nil, fmt.Errorf("requires must be a top-level key; found it indented on line %d", i+1)
+		}
+
+		rest, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "requires:")))
+		if err != nil {
+			return nil, err
+		}
+
+		// Assign rather than return: the scan has to reach the end of the file
+		// to notice a second requires key. Returning the first value is exactly
+		// the behaviour that made a duplicate key exploitable.
+		switch {
+		case rest == "":
+			block, err := parseRequiresBlockSequence(lines[i+1:])
+			if err != nil {
+				return nil, err
+			}
+			result = block
+		case strings.HasPrefix(rest, "["):
+			if !strings.HasSuffix(rest, "]") {
+				return nil, fmt.Errorf("requires uses a multi-line flow sequence on line %d, which this validator does not parse; use one line or a block sequence", i+1)
+			}
+			result = parseRequiresFlowSequence(rest)
+		default:
+			return nil, fmt.Errorf("requires must be a list, got %q on line %d", rest, i+1)
+		}
+	}
+	return result, nil
+}
+
+// parseRequiresBlockSequence reads the entries of a block sequence, stopping at
+// the first line that ends the block. Anything indented that is not an entry, a
+// comment, or blank is an error rather than a stop signal.
+func parseRequiresBlockSequence(lines []string) ([]string, error) {
+	var toks []string
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if line == trimmed {
+			return toks, nil // next top-level key ends the block
+		}
+		if !strings.HasPrefix(trimmed, "- ") && trimmed != "-" {
+			return nil, fmt.Errorf("unexpected %q inside the requires block at offset %d; expected a list entry", trimmed, i+1)
+		}
+		entry, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "-")))
+		if err != nil {
+			return nil, err
+		}
+		if entry == "" {
+			return nil, fmt.Errorf("empty entry inside the requires block at offset %d", i+1)
+		}
+		toks = append(toks, trimQuotes(entry))
+	}
+	return toks, nil
+}
+
+// parseRequiresFlowSequence splits a single-line flow sequence.
+func parseRequiresFlowSequence(rest string) []string {
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(rest, "["), "]"))
+	if inner == "" {
+		return nil
+	}
+	var toks []string
+	for _, part := range strings.Split(inner, ",") {
+		if part = trimQuotes(strings.TrimSpace(part)); part != "" {
+			toks = append(toks, part)
+		}
+	}
+	return toks
+}
+
+func trimQuotes(value string) string {
+	return strings.Trim(value, "\"'")
+}
+
+// stripYAMLComment removes a trailing comment. A marker inside a quoted scalar
+// is not a comment, and an unterminated quote is an error rather than a guess.
+func stripYAMLComment(value string) (string, error) {
+	var quote rune
+	for i, r := range value {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '\'' || r == '"':
+			quote = r
+		case r == '#':
+			return strings.TrimSpace(value[:i]), nil
+		}
+	}
+	if quote != 0 {
+		return "", fmt.Errorf("unterminated quote in %q", value)
+	}
+	return strings.TrimSpace(value), nil
 }
 
 // ResultLine represents a single line in a runner results JSONL file.

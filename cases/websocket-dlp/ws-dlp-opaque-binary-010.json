@@ -21,10 +21,7 @@
     "websocket_dlp",
     "entropy"
   ],
-  "requires": [
-    "websocket_dlp_scanning",
-    "entropy_scanning"
-  ],
+  "requires": ["entropy_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "opaque_high_entropy_websocket_frame_to_untrusted_sink",
   "notes": "The chunk is random-looking opaque data and intentionally does not match known credential syntaxes. The destination is the reserved untrusted WebSocket sink so entropy scanning is exercised without trusted-destination exemption.",

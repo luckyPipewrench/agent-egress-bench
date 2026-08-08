@@ -14,9 +14,9 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	scoringVersion  = "2.4"
+	scoringVersion  = "2.5"
 	runnerVersion   = "0.4.2"
-	corpusVersion   = "v2.3.0"
+	corpusVersion   = "v2.4.0"
 	summaryDateEnv  = "AEB_GAUNTLET_SUMMARY_DATE"
 )
 
