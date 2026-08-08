@@ -3,13 +3,13 @@
   "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
   "case_index_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
-  "corpus_manifest_sha256": "ef82e319ad3efd7d407e15de27631f2b8fdf9f227ecc7f8253308ac44053916a",
-  "logical_case_count": 214,
+  "corpus_manifest_sha256": "6623621c2bae172e19de04120bf8eca5978990dfe46b4e7dea31d4bd0a26a668",
+  "logical_case_count": 217,
   "runner_version": "0.4.2",
   "scoring_version": "2.4",
   "case_count": {
-    "total": 214,
-    "applicable": 213,
+    "total": 217,
+    "applicable": 216,
     "not_applicable": 1,
     "not_applicable_reasons": {
       "missing_requires": 1
@@ -18,7 +18,7 @@
   },
   "scores": {
     "full": {
-      "containment": 0.9937106918238994,
+      "containment": 0.9937888198757764,
       "false_positive_rate": 0,
       "detection": 1,
       "evidence": 1
@@ -33,38 +33,38 @@
   "metric_counts": {
     "applicable": {
       "containment": {
-        "numerator": 158,
-        "denominator": 158
+        "numerator": 160,
+        "denominator": 160
       },
       "false_positive_rate": {
         "numerator": 0,
-        "denominator": 55
+        "denominator": 56
       },
       "detection": {
-        "numerator": 158,
-        "denominator": 158
+        "numerator": 160,
+        "denominator": 160
       },
       "evidence": {
-        "numerator": 158,
-        "denominator": 158
+        "numerator": 160,
+        "denominator": 160
       }
     },
     "full": {
       "containment": {
-        "numerator": 158,
-        "denominator": 159
+        "numerator": 160,
+        "denominator": 161
       },
       "false_positive_rate": {
         "numerator": 0,
-        "denominator": 55
+        "denominator": 56
       },
       "detection": {
-        "numerator": 158,
-        "denominator": 158
+        "numerator": 160,
+        "denominator": 160
       },
       "evidence": {
-        "numerator": 158,
-        "denominator": 158
+        "numerator": 160,
+        "denominator": 160
       }
     }
   }

@@ -4,21 +4,25 @@ The `mcp-gateway` runner adapter drives a gateway through a generic MCP client
 endpoint. A plugin describes the gateway's protocol surface and deny signals;
 it must not identify or depend on a particular gateway product.
 
-The adapter supports two narrow paths, both sent to a plugin with
+The adapter supports three narrow paths, all sent to a plugin with
 `"transport": "streamable_http"`:
 
 - A corpus `mcp_http` case containing one or more `mcp_tool_call` messages: the
   adapter sends `initialize`, `notifications/initialized`, and each case
   `tools/call` in order over the one session.
-- A corpus `mcp_stdio` case containing exactly one `mcp_tool_definition`: the
-  corpus definition models the upstream inventory, while the adapter drives the
-  gateway over HTTP. It configures the runner-managed fixture with the declared
-  definitions, then sends `initialize`, `notifications/initialized`, and
-  `tools/list`.
+- A corpus `mcp_http` case containing exactly one `mcp_tool_definition`: the
+  adapter exclusively leases the runner-managed fixture's inventory, then sends
+  `initialize`, `notifications/initialized`, and `tools/list`.
+- A corpus `mcp_http` case containing exactly one `mcp_tool_result`: the adapter
+  exclusively leases that result as the fixture's next `tools/call` response,
+  then drives a correlated call through the gateway.
 
-Other corpus transports and input types return `skip` with a reason rather than
-inventing a verdict. An ordered `tools/call` sequence is modelled; temporal tool
-drift is not.
+Other corpus transport and input-type tuples are not selected for this adapter;
+the runner records a named error when no declared delivery tuple exists. If a
+declared route cannot establish its delivery proof, the adapter returns `skip`
+and the runner promotes that out-of-contract verdict to an error rather than
+inventing a product verdict. An ordered `tools/call` sequence is modelled;
+temporal tool drift is not.
 
 An allow is credited only when the runner-managed MCP fixture's `tools/call`
 counter advances by at least the number of `tools/call` messages in the case,
@@ -34,6 +38,13 @@ gateway that only changes case is not credited as filtering a tool. A declared
 tool absent from the returned list is a `block`; a JSON-RPC error in the
 configured deny range is also a `block`. A successful local `tools/list`
 response without a fixture counter advance is always `skip`, never `allow`.
+
+For a tool-result path, both allow and block require the fixture's dedicated
+`tools/call` counter to advance while the case owns the response lease. A deny
+before the call reaches the fixture is `skip`, because it does not prove that
+the gateway inspected the declared result. The lease is released and cleared
+after each case so concurrent or later cases cannot observe another case's
+response.
 
 ## Plugin fields
 
