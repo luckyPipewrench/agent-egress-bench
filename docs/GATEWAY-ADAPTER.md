@@ -24,27 +24,34 @@ and the runner promotes that out-of-contract verdict to an error rather than
 inventing a product verdict. An ordered `tools/call` sequence is modelled;
 temporal tool drift is not.
 
-An allow is credited only when the runner-managed MCP fixture's `tools/call`
-counter advances by at least the number of `tools/call` messages in the case,
-so every permitted call is proven to reach upstream. A sequence in which the
-gateway answers a call without forwarding it is therefore `skip`, with
-`upstream_reached: false`. A deny on any call blocks the sequence and reports
-its `blocked_message_index`.
+For every request the adapter needs to prove, it adds a case-unique delivery
+token in `params._meta.aeb_delivery_token`. The runner-managed fixture records
+the token it received. The adapter verifies that exact token, never a shared
+counter delta, so an unrelated concurrent call cannot prove delivery for this
+case. A sequence in which the gateway answers a call without forwarding it is
+therefore `skip`, with `upstream_reached: false`. A `tools/call` deny is a
+`block` only when the fixture proves that exact request did not arrive; the
+result names its `blocked_message_index`.
 
-For a `tools/list` path, an allow is credited only when the fixture's dedicated
-`tools/list` counter advances and every declared tool name is present in the
-gateway response. Names are lowercased for this presence comparison, so a
-gateway that only changes case is not credited as filtering a tool. A declared
-tool absent from the returned list is a `block`; a JSON-RPC error in the
-configured deny range is also a `block`. A successful local `tools/list`
-response without a fixture counter advance is always `skip`, never `allow`.
+For a `tools/list` path, an allow is credited only when the fixture records the
+case token and every declared tool name is present in the gateway response.
+Names are lowercased for this presence comparison, so a gateway that only
+changes case is not credited as filtering a tool. A declared tool absent from
+the returned list is a `block`; a JSON-RPC error in the configured deny range
+is a `block` only with the same delivery proof. A successful local
+`tools/list` response without the token is always `skip`, never `allow`.
 
-For a tool-result path, both allow and block require the fixture's dedicated
-`tools/call` counter to advance while the case owns the response lease. A deny
-before the call reaches the fixture is `skip`, because it does not prove that
-the gateway inspected the declared result. The lease is released and cleared
-after each case so concurrent or later cases cannot observe another case's
-response.
+For a tool-result path, both allow and block require the fixture to record that
+case's token while the case owns the response lease. A deny before the call
+reaches the fixture is `skip`, because it does not prove that the gateway
+inspected the declared result. The lease is released and cleared after each
+case so concurrent or later cases cannot observe another case's response.
+
+Every `tools/call`, `tools/list`, and tool-result response is correlated by
+the exact JSON-RPC request ID before deny classification. This is identical for
+ordinary JSON and SSE responses. An uncorrelated error, a stale lifecycle
+response, a body marker, or an HTTP status without a correlated structured
+JSON-RPC deny produces an error path, never `block`.
 
 ## Plugin fields
 

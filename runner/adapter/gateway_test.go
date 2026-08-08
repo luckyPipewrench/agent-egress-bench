@@ -115,7 +115,7 @@ func TestLoadGatewayPluginWithEnvPrefersRuntimeMapOverProcessEnv(t *testing.T) {
 	}
 }
 
-func TestMCPGatewayAdapterBlocksConfiguredJSONRPCDeny(t *testing.T) {
+func TestMCPGatewayAdapterRejectsUnprovenJSONRPCDeny(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if method := requestMethod(t, r); method == "tools/call" {
 			writeJSONRPC(t, w, json.RawMessage(`1`), map[string]interface{}{"code": -32042, "message": "policy denied"})
@@ -136,8 +136,8 @@ func TestMCPGatewayAdapterBlocksConfiguredJSONRPCDeny(t *testing.T) {
 	}
 
 	result := a.Run(gatewayToolsCallCase("gateway-block"), time.Second)
-	if result.Err != nil || result.Verdict != "block" {
-		t.Fatalf("result = %+v, want configured JSON-RPC deny block", result)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven JSON-RPC deny skip", result)
 	}
 }
 
@@ -254,6 +254,212 @@ func TestMCPGatewayAdapterRequiresUpstreamToolResultBeforeBlock(t *testing.T) {
 	}
 }
 
+func TestMCPGatewayAdapterRejectsWrongJSONResponseID(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "tools/call" {
+			writeJSONRPC(t, w, json.RawMessage(`"wrong-request"`), map[string]interface{}{"code": -32042, "message": "policy denied"})
+			return
+		}
+		writeJSONRPC(t, w, request.ID, nil)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "wrong id gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{JSONRPCErrorCodeRange: [2]int{-32099, -32000}},
+	}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-wrong-json-id"), time.Second)
+	if result.Verdict == "block" || result.Err == nil {
+		t.Fatalf("result = %+v, want request-correlation error rather than block", result)
+	}
+}
+
+func TestMCPGatewayAdapterIgnoresInitializationDeny(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "initialize" {
+			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "stale initialization deny"})
+			return
+		}
+		if request.Method == "tools/call" {
+			response, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(response)
+			return
+		}
+		writeJSONRPC(t, w, request.ID, nil)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "stale initialization deny", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{JSONRPCErrorCodeRange: [2]int{-32099, -32000}},
+	}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-stale-initialize-deny"), time.Second)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want correlated tools/call allow", result)
+	}
+}
+
+func TestMCPGatewayAdapterDoesNotAcceptConcurrentUnrelatedDelivery(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+	targetSeen := make(chan struct{})
+	respond := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "tools/call" {
+			close(targetSeen)
+			<-respond
+		}
+		writeJSONRPC(t, w, request.ID, nil)
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "local responder", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := make(chan Result, 1)
+	go func() {
+		results <- a.Run(gatewayToolResultCase("gateway-unrelated-delivery", "target result"), time.Second)
+	}()
+	select {
+	case <-targetSeen:
+	case <-time.After(time.Second):
+		t.Fatal("target tools/call did not reach gateway")
+	}
+	// This reaches the fixture while the target request is pending, but carries
+	// a different token. A global counter delta would accept it as proof.
+	unrelated, err := http.Post(fm.MCPHTTP().URL(), "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"_meta":{"aeb_delivery_token":"unrelated"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = unrelated.Body.Close()
+	close(respond)
+	result := <-results
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want unproven target delivery skip", result)
+	}
+}
+
+func TestMCPGatewayAdapterConcurrentToolResultsKeepOwnResponseAndProof(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	var observedMu sync.Mutex
+	observed := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+			Params struct {
+				Meta struct {
+					Token string `json:"aeb_delivery_token"`
+				} `json:"_meta"`
+			} `json:"params"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "tools/call" {
+			upstreamBody, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observedMu.Lock()
+			observed[request.Params.Meta.Token] = string(upstreamBody)
+			observedMu.Unlock()
+			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "policy denied tool result"})
+			return
+		}
+		writeJSONRPC(t, w, request.ID, nil)
+	}))
+	defer server.Close()
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "result scanner", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{JSONRPCErrorCodeRange: [2]int{-32099, -32000}},
+	}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 3; round++ {
+		results := make(chan Result, 2)
+		go func() { results <- a.Run(gatewayToolResultCase("gateway-result-A", "result-A"), time.Second) }()
+		go func() { results <- a.Run(gatewayToolResultCase("gateway-result-B", "result-B"), time.Second) }()
+		first, second := <-results, <-results
+		for _, result := range []Result{first, second} {
+			if result.Err != nil || result.Verdict != "block" || result.Evidence["upstream_reached"] != true {
+				t.Fatalf("round %d result = %+v, want proven block", round, result)
+			}
+		}
+		firstToken := first.Evidence["delivery_token"].(string)
+		secondToken := second.Evidence["delivery_token"].(string)
+		if firstToken == secondToken {
+			t.Fatalf("round %d reused delivery token %q", round, firstToken)
+		}
+		observedMu.Lock()
+		firstBody, secondBody := observed[firstToken], observed[secondToken]
+		observedMu.Unlock()
+		if !(strings.Contains(firstBody, "result-A") || strings.Contains(firstBody, "result-B")) || !(strings.Contains(secondBody, "result-A") || strings.Contains(secondBody, "result-B")) || firstBody == secondBody {
+			t.Fatalf("round %d observed bodies = %q, %q; want one response per leased case", round, firstBody, secondBody)
+		}
+	}
+}
+
 func TestMCPGatewayAdapterSkipsUnprovenLocalSuccess(t *testing.T) {
 	fm, err := fixture.StartAll()
 	if err != nil {
@@ -332,11 +538,18 @@ func TestMCPGatewayAdapterAllowsPassedToolsListWithUpstreamProof(t *testing.T) {
 
 func TestMCPGatewayAdapterBlocksConfiguredJSONRPCDenyForToolsList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if method := requestMethod(t, r); method == "tools/list" {
-			writeJSONRPC(t, w, json.RawMessage(`1`), map[string]interface{}{"code": -32042, "message": "policy denied"})
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "tools/list" {
+			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "policy denied"})
 			return
 		}
-		writeJSONRPC(t, w, json.RawMessage(`1`), nil)
+		writeJSONRPC(t, w, request.ID, nil)
 	}))
 	defer server.Close()
 	a, err := NewMCPGatewayAdapter(GatewayPlugin{
@@ -348,8 +561,8 @@ func TestMCPGatewayAdapterBlocksConfiguredJSONRPCDenyForToolsList(t *testing.T) 
 	}
 
 	result := a.Run(gatewayToolDefinitionCase("gateway-tools-list-deny", "poisoned_tool"), time.Second)
-	if result.Err != nil || result.Verdict != "block" {
-		t.Fatalf("result = %+v, want configured JSON-RPC deny block", result)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven JSON-RPC deny skip", result)
 	}
 }
 
@@ -506,11 +719,18 @@ func TestMCPGatewayAdapterPreservesFixtureProofForMalformedSSEToolsListResponse(
 
 func TestMCPGatewayAdapterSkipsUnclassifiedJSONRPCErrorForToolsList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if method := requestMethod(t, r); method == "tools/list" {
-			writeJSONRPC(t, w, json.RawMessage(`1`), map[string]interface{}{"code": -32603, "message": "upstream unavailable"})
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "tools/list" {
+			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32603, "message": "upstream unavailable"})
 			return
 		}
-		writeJSONRPC(t, w, json.RawMessage(`1`), nil)
+		writeJSONRPC(t, w, request.ID, nil)
 	}))
 	defer server.Close()
 	a, err := NewMCPGatewayAdapter(GatewayPlugin{

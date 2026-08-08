@@ -29,6 +29,8 @@ type MCPHTTPFixture struct {
 	tools               []json.RawMessage
 	toolResultMu        sync.RWMutex
 	toolResult          json.RawMessage
+	deliveryMu          sync.RWMutex
+	deliveryTokens      map[string]struct{}
 }
 
 // Addr returns the listener address (host:port).
@@ -43,14 +45,40 @@ func (f *MCPHTTPFixture) URL() string { return "http://" + f.Addr() + "/" }
 func (f *MCPHTTPFixture) Calls() int64 { return f.calls.Load() }
 
 // ToolCalls returns the number of tools/call requests that reached the
-// upstream. The gateway adapter proves an allow by this tool-call-specific
-// count so an initialize/tools-list POST cannot inflate the proof.
+// upstream. It remains useful fixture telemetry; gateway delivery proof uses
+// DeliveryTokenSeen so another tools/call cannot satisfy a case's proof.
 func (f *MCPHTTPFixture) ToolCalls() int64 { return f.toolCalls.Load() }
 
 // ListCalls returns the number of tools/list requests that reached the
-// upstream. The gateway adapter uses this dedicated count to prove that a
-// tools/list response was not generated locally by the gateway.
+// upstream. It remains useful fixture telemetry; token proof identifies the
+// exact tools/list request for a case.
 func (f *MCPHTTPFixture) ListCalls() int64 { return f.listCalls.Load() }
+
+// DeliveryTokenSeen reports whether this fixture received the exact token the
+// adapter attached to a case request. Unlike a counter delta, another case's
+// request cannot satisfy this proof.
+func (f *MCPHTTPFixture) DeliveryTokenSeen(token string) bool {
+	f.deliveryMu.RLock()
+	defer f.deliveryMu.RUnlock()
+	_, found := f.deliveryTokens[token]
+	return found
+}
+
+func (f *MCPHTTPFixture) recordDeliveryToken(body []byte) {
+	var request struct {
+		Params struct {
+			Meta struct {
+				DeliveryToken string `json:"aeb_delivery_token"`
+			} `json:"_meta"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(body, &request) != nil || request.Params.Meta.DeliveryToken == "" {
+		return
+	}
+	f.deliveryMu.Lock()
+	f.deliveryTokens[request.Params.Meta.DeliveryToken] = struct{}{}
+	f.deliveryMu.Unlock()
+}
 
 // SetTools configures the tools returned by a later tools/list request.
 func (f *MCPHTTPFixture) SetTools(tools []json.RawMessage) {
@@ -127,6 +155,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		listener:            ln,
 		toolDefinitionLease: make(chan struct{}, 1),
 		toolResultLease:     make(chan struct{}, 1),
+		deliveryTokens:      make(map[string]struct{}),
 	}
 	f.toolDefinitionLease <- struct{}{}
 	f.toolResultLease <- struct{}{}
@@ -139,6 +168,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		f.calls.Add(1)
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		_ = r.Body.Close()
+		f.recordDeliveryToken(body)
 		var req struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      json.RawMessage `json:"id"`
