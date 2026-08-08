@@ -250,6 +250,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			debugf(debug, "case %s: not_applicable (%s)", c.ID, reason)
 			naReasons[reason]++
 			result := CaseResult{
+				SchemaVersion:   activeSchemaVersion,
 				CaseID:          c.ID,
 				Tool:            profile.Tool,
 				ToolVersion:     profile.ToolVersion,
@@ -280,6 +281,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			debugf(debug, "case %s: ERROR expected=%s err=%v evidence=%v",
 				c.ID, c.ExpectedVerdict, adapterResult.Err, adapterResult.Evidence)
 			result := CaseResult{
+				SchemaVersion:   activeSchemaVersion,
 				CaseID:          c.ID,
 				Tool:            profile.Tool,
 				ToolVersion:     profile.ToolVersion,
@@ -304,6 +306,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		if verdictError, invalid := adapterVerdictError(adapterResult); invalid {
 			debugf(debug, "case %s: ERROR %s (%v)", c.ID, verdictError, adapterResult.Evidence)
 			result := CaseResult{
+				SchemaVersion:   activeSchemaVersion,
 				CaseID:          c.ID,
 				Tool:            profile.Tool,
 				ToolVersion:     profile.ToolVersion,
@@ -334,6 +337,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		}
 
 		result := CaseResult{
+			SchemaVersion:   activeSchemaVersion,
 			CaseID:          c.ID,
 			Tool:            profile.Tool,
 			ToolVersion:     profile.ToolVersion,

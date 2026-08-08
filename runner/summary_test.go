@@ -110,6 +110,13 @@ func TestWriteSummaryBadPath(t *testing.T) {
 	}
 }
 
+func TestWriteSummaryRejectsPreV3Artifact(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "summary.json")
+	if err := writeSummary(GauntletSummary{SchemaVersion: 2, Tool: "test"}, path); err == nil {
+		t.Fatal("writeSummary accepted a pre-v3 summary")
+	}
+}
+
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
 	_, err := buildSummary(p, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json", RunProvenance{})
@@ -357,6 +364,9 @@ func TestWriteSummary(t *testing.T) {
 
 	if parsed.Tool != "test-tool" {
 		t.Errorf("tool = %q, want test-tool", parsed.Tool)
+	}
+	if parsed.SchemaVersion != activeSchemaVersion {
+		t.Errorf("summary schema_version = %d, want %d", parsed.SchemaVersion, activeSchemaVersion)
 	}
 	if parsed.Sufficient != true {
 		t.Error("sufficient should be true")

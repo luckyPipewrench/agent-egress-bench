@@ -1787,7 +1787,7 @@ func TestSummaryToolSupportMatchesExactProfile(t *testing.T) {
 
 func TestToolProfileArtifactBinding(t *testing.T) {
 	files := allFiles()
-	schema := compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "tool-profile.schema.json")))
+	schemas := toolProfileSchemas(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas")))
 	exceptions := map[string]bool{
 		"malicious/m49-tool-profile-member-absent":            true,
 		"malicious/m50-tool-profile-approved-digest-mismatch": true,
@@ -1803,7 +1803,7 @@ func TestToolProfileArtifactBinding(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			base := key + "/"
 			profile := files[base+"tool-profile.json"]
-			validateJSONBytes(t, schema, key+" tool profile", profile)
+			validateToolProfileJSONBytes(t, schemas, key+" tool profile", profile)
 			_, req := decoded(t, files[base+"requirement.dsse.json"])
 			approved := req["approved_tool_profile"].(map[string]any)
 			if len(approved) != 1 || approved["sha256"] != digest(profile) {
@@ -1846,7 +1846,7 @@ func TestToolProfileArtifactBinding(t *testing.T) {
 
 func TestToolProfileAttackVectorsAreIsolated(t *testing.T) {
 	files := allFiles()
-	schema := compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "tool-profile.schema.json")))
+	schemas := toolProfileSchemas(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas")))
 	load := func(t *testing.T, id string) (map[string]any, map[string]any, map[string]any, map[string]any, []byte) {
 		t.Helper()
 		base := "malicious/" + id + "/"
@@ -1894,7 +1894,7 @@ func TestToolProfileAttackVectorsAreIsolated(t *testing.T) {
 	})
 	t.Run("m50 signed digest mismatch", func(t *testing.T) {
 		req, _, manifest, summary, profile := load(t, "m50-tool-profile-approved-digest-mismatch")
-		validateJSONBytes(t, schema, "m50 tool profile", profile)
+		validateToolProfileJSONBytes(t, schemas, "m50 tool profile", profile)
 		member(t, manifest, profile)
 		if req["approved_tool_profile"].(map[string]any)["sha256"] == digest(profile) || summary["tool_profile_sha256"] != digest(profile) {
 			t.Fatal("m50 exact-profile prerequisite")
@@ -1902,7 +1902,7 @@ func TestToolProfileAttackVectorsAreIsolated(t *testing.T) {
 	})
 	t.Run("m51 summary digest mismatch", func(t *testing.T) {
 		req, _, manifest, summary, profile := load(t, "m51-tool-profile-summary-digest-mismatch")
-		validateJSONBytes(t, schema, "m51 tool profile", profile)
+		validateToolProfileJSONBytes(t, schemas, "m51 tool profile", profile)
 		member(t, manifest, profile)
 		if req["approved_tool_profile"].(map[string]any)["sha256"] != digest(profile) || summary["tool_profile_sha256"] == digest(profile) {
 			t.Fatal("m51 exact-profile prerequisite")
@@ -1910,7 +1910,7 @@ func TestToolProfileAttackVectorsAreIsolated(t *testing.T) {
 	})
 	t.Run("m52 decoded identity mismatch", func(t *testing.T) {
 		req, env, manifest, summary, profile := load(t, "m52-tool-profile-identity-mismatch")
-		validateJSONBytes(t, schema, "m52 tool profile", profile)
+		validateToolProfileJSONBytes(t, schemas, "m52 tool profile", profile)
 		member(t, manifest, profile)
 		if req["approved_tool_profile"].(map[string]any)["sha256"] != digest(profile) || summary["tool_profile_sha256"] != digest(profile) {
 			t.Fatal("m52 exact-profile prerequisite")
@@ -1925,7 +1925,7 @@ func TestToolProfileAttackVectorsAreIsolated(t *testing.T) {
 	})
 	t.Run("m53 summary support mismatch", func(t *testing.T) {
 		req, _, manifest, summary, profile := load(t, "m53-tool-profile-summary-support-mismatch")
-		validateJSONBytes(t, schema, "m53 tool profile", profile)
+		validateToolProfileJSONBytes(t, schemas, "m53 tool profile", profile)
 		member(t, manifest, profile)
 		if req["approved_tool_profile"].(map[string]any)["sha256"] != digest(profile) || summary["tool_profile_sha256"] != digest(profile) || string(compact(summary["tool_support"])) == string(compact(expectedToolSupportFromProfile(t, profile))) {
 			t.Fatal("m53 summary-only support mismatch not isolated")

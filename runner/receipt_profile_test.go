@@ -21,7 +21,7 @@ func stringPtr(s string) *string { return &s }
 func validProfile() ReceiptProfile {
 	zeros := strings.Repeat("0", 64)
 	return ReceiptProfile{
-		SchemaVersion:     1,
+		SchemaVersion:     3,
 		Tool:              "example-tool",
 		ToolVersion:       "0.0.0-example",
 		CorpusVersion:     "v2.0.0",
@@ -95,7 +95,7 @@ func TestValidateReceiptProfile_CommittedPipelock(t *testing.T) {
 func TestValidateReceiptProfile_RejectsBadSchemaVersion(t *testing.T) {
 	rp := validProfile()
 	rp.SchemaVersion = 2
-	expectIssueMatch(t, rp, "schema_version must be 1")
+	expectIssueMatch(t, rp, "schema_version must be 3")
 }
 
 func TestValidateReceiptProfile_RejectsBadCorpusSHA(t *testing.T) {

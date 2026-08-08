@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -11,7 +12,7 @@ func TestLoadCases(t *testing.T) {
 	dir := t.TempDir()
 
 	caseJSON := `{
-		"schema_version": 2,
+		"schema_version": 3,
 		"id": "test-case-001",
 		"category": "url",
 		"title": "Test case",
@@ -48,6 +49,34 @@ func TestLoadCases(t *testing.T) {
 	}
 }
 
+func TestScorerRejectsV2CaseButHistoricalReaderPreservesIt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "historical-v2.json")
+	v2 := `{"schema_version":2,"id":"historical-v2","category":"url","title":"Historical","description":"Frozen v2 record","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"historical","notes":"","source":"original"}`
+	if err := os.WriteFile(path, []byte(v2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadCases(dir); err == nil {
+		t.Fatal("scorer accepted a v2 case instead of rejecting the active/historical version mix")
+	}
+	historical, err := readHistoricalCase(path)
+	if err != nil {
+		t.Fatalf("readHistoricalCase: %v", err)
+	}
+	if historical.SchemaVersion != 2 || historical.ID != "historical-v2" {
+		t.Fatalf("historical record changed while reading: %#v", historical)
+	}
+
+	v3Path := filepath.Join(dir, "active-v3.json")
+	if err := os.WriteFile(v3Path, []byte(strings.Replace(v2, `"schema_version":2`, `"schema_version":3`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readHistoricalCase(v3Path); err == nil {
+		t.Fatal("historical reader accepted an active v3 case")
+	}
+}
+
 func TestLoadCasesEmpty(t *testing.T) {
 	dir := t.TempDir()
 	_, err := loadCases(dir)
@@ -59,7 +88,7 @@ func TestLoadCasesEmpty(t *testing.T) {
 func TestLoadProfile(t *testing.T) {
 	dir := t.TempDir()
 	profileJSON := `{
-		"schema_version": 2,
+		"schema_version": 3,
 		"tool": "test-tool",
 		"tool_version": "1.0.0",
 		"runner_version": "v1",
@@ -100,6 +129,17 @@ func TestLoadProfile(t *testing.T) {
 	}
 }
 
+func TestLoadProfileRejectsPreV3Artifact(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(path, []byte(`{"schema_version":2,"tool":"old-tool","tool_version":"1.0.0","runner_version":"v1","claims":[],"supports":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadProfile(path); err == nil {
+		t.Fatal("scorer accepted a pre-v3 profile")
+	}
+}
+
 func TestLoadCasesInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{invalid"), 0o600); err != nil {
@@ -121,7 +161,7 @@ func TestLoadCasesNonexistentDir(t *testing.T) {
 func TestLoadCasesSkipsNonJSON(t *testing.T) {
 	dir := t.TempDir()
 	// Write a valid case and a non-JSON file.
-	caseJSON := `{"schema_version":2,"id":"test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"test"}`
+	caseJSON := `{"schema_version": 3,"id":"test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.com"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"test"}`
 	if err := os.WriteFile(filepath.Join(dir, "test-001.json"), []byte(caseJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +199,7 @@ func TestLoadProfileInvalidJSON(t *testing.T) {
 func TestLoadProfileRejectsUnknownReceiptEvidenceField(t *testing.T) {
 	dir := t.TempDir()
 	profileJSON := `{
-		"schema_version": 1,
+		"schema_version": 3,
 		"tool": "test-tool",
 		"tool_version": "1.0.0",
 		"runner_version": "v1",

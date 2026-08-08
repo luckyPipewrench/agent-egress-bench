@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "response-mitm-xml-comment-005",
   "category": "response_mitm",
   "title": "Prompt injection hidden in XML comment within SOAP response",

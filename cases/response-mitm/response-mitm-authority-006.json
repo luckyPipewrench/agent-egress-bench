@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "response-mitm-authority-006",
   "category": "response_mitm",
   "title": "Authority escalation with command execution in HTTPS response",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "a2a-msg-benign-content-hash-014",
   "category": "a2a_message",
   "title": "Benign A2A content hash",

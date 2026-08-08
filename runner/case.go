@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const activeSchemaVersion = 3
+
 // Case represents a single benchmark case loaded from JSON.
 type Case struct {
 	SchemaVersion   int                    `json:"schema_version"`
@@ -83,7 +85,8 @@ func isMultiFileCaseDir(name string) bool {
 	return multiFileCaseCategories[name]
 }
 
-// loadCases walks a directory recursively and loads all .json files as Cases.
+// loadCases walks a directory recursively and loads active v3 cases only.
+// Historical v2 cases have a separate reader below and cannot enter scoring.
 func loadCases(dir string) ([]Case, error) {
 	var cases []Case
 
@@ -108,6 +111,9 @@ func loadCases(dir string) ([]Case, error) {
 		if jsonErr := json.Unmarshal(data, &c); jsonErr != nil {
 			return fmt.Errorf("parsing %s: %w", path, jsonErr)
 		}
+		if c.SchemaVersion != activeSchemaVersion {
+			return fmt.Errorf("%s: schema_version must be %d for scoring, got %d", path, activeSchemaVersion, c.SchemaVersion)
+		}
 
 		cases = append(cases, c)
 		return nil
@@ -123,6 +129,24 @@ func loadCases(dir string) ([]Case, error) {
 	return cases, nil
 }
 
+// readHistoricalCase reads a frozen v2 case for historical reproduction. It
+// deliberately does not return an active scoring input: callers that score
+// must use loadCases, which accepts v3 only.
+func readHistoricalCase(path string) (Case, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Case{}, fmt.Errorf("reading historical case: %w", err)
+	}
+	var c Case
+	if err := json.Unmarshal(data, &c); err != nil {
+		return Case{}, fmt.Errorf("parsing historical case: %w", err)
+	}
+	if c.SchemaVersion != 2 {
+		return Case{}, fmt.Errorf("%s: historical case schema_version must be 2, got %d", path, c.SchemaVersion)
+	}
+	return c, nil
+}
+
 // loadProfile reads and parses a tool profile JSON file.
 func loadProfile(path string) (Profile, error) {
 	data, err := os.ReadFile(path)
@@ -135,6 +159,9 @@ func loadProfile(path string) (Profile, error) {
 		return Profile{}, fmt.Errorf("parsing profile: %w", jsonErr)
 	}
 	p.profileDir = filepath.Dir(path)
+	if p.SchemaVersion != activeSchemaVersion {
+		return Profile{}, fmt.Errorf("profile schema_version must be %d for scoring, got %d", activeSchemaVersion, p.SchemaVersion)
+	}
 
 	return p, nil
 }

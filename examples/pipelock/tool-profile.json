@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "tool": "pipelock",
   "tool_version": "3.3.0",
   "runner_version": "v2",

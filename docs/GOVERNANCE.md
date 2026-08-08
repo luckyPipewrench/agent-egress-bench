@@ -19,7 +19,7 @@ Existing case semantics do not change silently. This includes the expected verdi
 
 ## Versioning
 
-The spec uses `schema_version`. v2 is the current case schema. Future versions are additive where possible: new fields are optional, new enum values extend existing lists. Breaking changes (removing fields, changing field semantics, altering scoring rules) increment the schema version. The validator enforces the active schema version.
+The spec uses `schema_version`. v3 is the active coordinated schema for cases, tool profiles, results, summaries, and receipt profiles. v2 cases are frozen for historical reproduction only; active scoring rejects them and never normalizes them into v3 semantics. A breaking change increments the schema version and publishes the affected artifacts together. The validator enforces the active schema version.
 
 ## Contribution acceptance
 

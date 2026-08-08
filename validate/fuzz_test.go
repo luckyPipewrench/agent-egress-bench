@@ -9,7 +9,7 @@ import (
 
 func FuzzValidateCaseFile(f *testing.F) {
 	f.Add([]byte(`{
-		"schema_version": 2,
+		"schema_version": 3,
 		"id": "fuzz",
 		"category": "url",
 		"title": "fuzz seed",
@@ -26,7 +26,7 @@ func FuzzValidateCaseFile(f *testing.F) {
 		"notes": "",
 		"source": ""
 	}`))
-	f.Add([]byte(`{"schema_version":2,"id":"fuzz","payload":{"jsonrpc_messages":[{"jsonrpc":"2.0"}]}}`))
+	f.Add([]byte(`{"schema_version": 3,"id":"fuzz","payload":{"jsonrpc_messages":[{"jsonrpc":"2.0"}]}}`))
 	f.Add([]byte(`not json`))
 	f.Add([]byte(`[]`))
 

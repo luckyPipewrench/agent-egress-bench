@@ -35,7 +35,7 @@ detection should be able to load a directory, replay `before.json`, replay
 ## `case.yaml` schema (v0, inline)
 
 ```yaml
-schema_version: 2
+schema_version: 3
 id: <unique, immutable>
 category: mcp_drift                # new category — not in case.schema.json yet
 title: <human-readable>

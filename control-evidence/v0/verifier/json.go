@@ -18,8 +18,9 @@ import (
 )
 
 type schemaSet struct {
-	dsse, requirement, envelope, manifest, outcomes, clock, observer, tokenMaterial, healthMaterial, context, toolProfile,
+	dsse, requirement, envelope, manifest, outcomes, clock, observer, tokenMaterial, healthMaterial, context,
 	buyerReproduction, buyerReproductionStatement, buyerReproductionTranscript *jsonschema.Schema
+	toolProfiles map[int]*jsonschema.Schema
 }
 
 const maxJSONDepth = 128
@@ -61,24 +62,45 @@ func loadSchemas() (*schemaSet, error) {
 		"control-evidence-token-material.schema.json",
 		"control-evidence-health-control-material.schema.json",
 		"control-evidence-context.schema.json",
+		"tool-profile-v1.schema.json",
 		"tool-profile.schema.json",
 		"control-evidence-buyer-reproduction.schema.json",
 		"control-evidence-buyer-reproduction-statement.schema.json",
 		"control-evidence-buyer-reproduction-transcript.schema.json",
 	}
-	compiled := make([]*jsonschema.Schema, len(names))
-	for i, name := range names {
-		var err error
-		compiled[i], err = compile(name)
+	// Keyed by filename rather than by position. The previous form indexed a
+	// slice, so inserting a schema anywhere above shifted every index below it
+	// and silently rebound the wrong schema to a name. In a verifier that
+	// decides which schema an artifact is judged against, that failure mode is
+	// invisible: the artifact still validates, just against the wrong contract.
+	compiled := make(map[string]*jsonschema.Schema, len(names))
+	for _, name := range names {
+		schema, err := compile(name)
 		if err != nil {
 			return nil, err
 		}
+		compiled[name] = schema
 	}
 	return &schemaSet{
-		dsse: compiled[0], requirement: compiled[1], envelope: compiled[2], manifest: compiled[3],
-		outcomes: compiled[4], clock: compiled[5], observer: compiled[6], tokenMaterial: compiled[7],
-		healthMaterial: compiled[8], context: compiled[9], toolProfile: compiled[10],
-		buyerReproduction: compiled[11], buyerReproductionStatement: compiled[12], buyerReproductionTranscript: compiled[13],
+		dsse:           compiled["control-evidence-dsse.schema.json"],
+		requirement:    compiled["control-evidence-requirement.schema.json"],
+		envelope:       compiled["control-evidence-run-envelope.schema.json"],
+		manifest:       compiled["control-evidence-manifest.schema.json"],
+		outcomes:       compiled["control-evidence-outcomes.schema.json"],
+		clock:          compiled["control-evidence-clock-evidence.schema.json"],
+		observer:       compiled["control-evidence-observer-evidence.schema.json"],
+		tokenMaterial:  compiled["control-evidence-token-material.schema.json"],
+		healthMaterial: compiled["control-evidence-health-control-material.schema.json"],
+		context:        compiled["control-evidence-context.schema.json"],
+		// Superseded profile versions stay compiled so historical evidence keeps
+		// validating against the contract it was recorded under.
+		toolProfiles: map[int]*jsonschema.Schema{
+			1: compiled["tool-profile-v1.schema.json"],
+			3: compiled["tool-profile.schema.json"],
+		},
+		buyerReproduction:           compiled["control-evidence-buyer-reproduction.schema.json"],
+		buyerReproductionStatement:  compiled["control-evidence-buyer-reproduction-statement.schema.json"],
+		buyerReproductionTranscript: compiled["control-evidence-buyer-reproduction-transcript.schema.json"],
 	}, nil
 }
 

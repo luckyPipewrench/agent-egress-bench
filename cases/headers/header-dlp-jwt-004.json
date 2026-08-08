@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "header-dlp-jwt-004",
   "category": "headers",
   "title": "Full JWT token in Authorization header",

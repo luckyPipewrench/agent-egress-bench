@@ -18,14 +18,13 @@ func TestGoldenAndEdgeArtifactsMatchSchemas(t *testing.T) {
 
 	schemaDir := filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas"))
 	schemas := map[string]*jsonschema.Schema{
-		"dsse":         compileSchema(t, filepath.Join(schemaDir, "control-evidence-dsse.schema.json")),
-		"requirement":  compileSchema(t, filepath.Join(schemaDir, "control-evidence-requirement.schema.json")),
-		"envelope":     compileSchema(t, filepath.Join(schemaDir, "control-evidence-run-envelope.schema.json")),
-		"manifest":     compileSchema(t, filepath.Join(schemaDir, "control-evidence-manifest.schema.json")),
-		"outcomes":     compileSchema(t, filepath.Join(schemaDir, "control-evidence-outcomes.schema.json")),
-		"clock":        compileSchema(t, filepath.Join(schemaDir, "control-evidence-clock-evidence.schema.json")),
-		"observer":     compileSchema(t, filepath.Join(schemaDir, "control-evidence-observer-evidence.schema.json")),
-		"tool-profile": compileSchema(t, filepath.Join(schemaDir, "tool-profile.schema.json")),
+		"dsse":        compileSchema(t, filepath.Join(schemaDir, "control-evidence-dsse.schema.json")),
+		"requirement": compileSchema(t, filepath.Join(schemaDir, "control-evidence-requirement.schema.json")),
+		"envelope":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-run-envelope.schema.json")),
+		"manifest":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-manifest.schema.json")),
+		"outcomes":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-outcomes.schema.json")),
+		"clock":       compileSchema(t, filepath.Join(schemaDir, "control-evidence-clock-evidence.schema.json")),
+		"observer":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-observer-evidence.schema.json")),
 	}
 
 	for _, category := range []string{"golden", "edge"} {
@@ -41,7 +40,7 @@ func TestGoldenAndEdgeArtifactsMatchSchemas(t *testing.T) {
 			t.Run(category+"/"+entry.Name(), func(t *testing.T) {
 				validateJSONFile(t, schemas["manifest"], filepath.Join(fixtureDir, "manifest.json"))
 				validateJSONFile(t, schemas["outcomes"], filepath.Join(fixtureDir, "outcomes.json"))
-				validateJSONFile(t, schemas["tool-profile"], filepath.Join(fixtureDir, "tool-profile.json"))
+				validateToolProfileFile(t, toolProfileSchemas(t, schemaDir), filepath.Join(fixtureDir, "tool-profile.json"))
 				validateDSSEFile(t, schemas["dsse"], schemas["requirement"], filepath.Join(fixtureDir, "requirement.dsse.json"))
 				validateDSSEFile(t, schemas["dsse"], schemas["envelope"], filepath.Join(fixtureDir, "envelope.dsse.json"))
 
@@ -239,4 +238,79 @@ func dsseSchemaErrors(t *testing.T, dsseSchema, payloadSchema *jsonschema.Schema
 		return schemaValidationError(t, dsseSchema, path), err
 	}
 	return schemaValidationError(t, dsseSchema, path), payloadSchema.Validate(instance)
+}
+
+func toolProfileSchemas(t *testing.T, schemaDir string) map[int]*jsonschema.Schema {
+	t.Helper()
+	return map[int]*jsonschema.Schema{
+		1: compileSchema(t, filepath.Join(schemaDir, "tool-profile-v1.schema.json")),
+		3: compileSchema(t, filepath.Join(schemaDir, "tool-profile.schema.json")),
+	}
+}
+
+func selectToolProfileSchema(schemas map[int]*jsonschema.Schema, data []byte) (*jsonschema.Schema, error) {
+	var header struct {
+		SchemaVersion *int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return nil, fmt.Errorf("decode tool-profile schema_version: %w", err)
+	}
+	if header.SchemaVersion == nil {
+		return nil, fmt.Errorf("tool-profile is missing schema_version")
+	}
+	schema, ok := schemas[*header.SchemaVersion]
+	if !ok {
+		return nil, fmt.Errorf("no frozen tool-profile schema for declared version %d", *header.SchemaVersion)
+	}
+	return schema, nil
+}
+
+func validateToolProfileJSONBytes(t *testing.T, schemas map[int]*jsonschema.Schema, name string, data []byte) {
+	t.Helper()
+	schema, err := selectToolProfileSchema(schemas, data)
+	if err != nil {
+		t.Fatalf("select schema for %s: %v", name, err)
+	}
+	validateJSONBytes(t, schema, name, data)
+}
+
+func validateToolProfileFile(t *testing.T, schemas map[int]*jsonschema.Schema, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	validateToolProfileJSONBytes(t, schemas, path, data)
+}
+
+func TestToolProfileSchemaSelection(t *testing.T) {
+	schemaDir := filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas"))
+	schemas := toolProfileSchemas(t, schemaDir)
+	v1, err := os.ReadFile(filepath.Join("..", "golden", "g01-vendor-time", "tool-profile.json"))
+	if err != nil {
+		t.Fatalf("read v1 fixture: %v", err)
+	}
+	selected, err := selectToolProfileSchema(schemas, v1)
+	if err != nil {
+		t.Fatalf("select v1 schema: %v", err)
+	}
+	if err := selected.Validate(mustJSONInstance(t, v1)); err != nil {
+		t.Fatalf("v1 fixture must validate against v1 schema: %v", err)
+	}
+	if err := schemas[3].Validate(mustJSONInstance(t, v1)); err == nil {
+		t.Fatal("v1 fixture unexpectedly validates against v3 schema")
+	}
+	unsupported := []byte(strings.Replace(string(v1), `"schema_version": 1`, `"schema_version": 99`, 1))
+	if _, err := selectToolProfileSchema(schemas, unsupported); err == nil {
+		t.Fatal("unsupported declared version selected a schema")
+	}
+}
+
+func mustJSONInstance(t *testing.T, data []byte) any {
+	t.Helper()
+	instance, err := jsonschema.UnmarshalJSON(strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("parse JSON: %v", err)
+	}
+	return instance
 }

@@ -41,7 +41,7 @@ Edit the file. Here is what each field means:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Always `1` for now |
+| `schema_version` | integer | Always `3` for active scoring |
 | `tool` | string | Your tool's name (lowercase, no spaces) |
 | `tool_version` | string | The version you are testing against |
 | `runner_version` | string | Version of your runner script (use `v1` to start) |

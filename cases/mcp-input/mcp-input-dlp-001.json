@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "mcp-input-dlp-001",
   "category": "mcp_input",
   "title": "Secret in MCP tool call arguments",

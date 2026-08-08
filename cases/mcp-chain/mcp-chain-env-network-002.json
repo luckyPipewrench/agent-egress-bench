@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version":3,
   "id": "mcp-chain-env-network-002",
   "category": "mcp_chain",
   "title": "Environment credential read then network exfiltration",

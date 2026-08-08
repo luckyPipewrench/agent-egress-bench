@@ -28,6 +28,7 @@ type DualScores struct {
 
 // GauntletSummary is the top-level output written to --output.
 type GauntletSummary struct {
+	SchemaVersion     int                       `json:"schema_version"`
 	GauntletVersion   string                    `json:"gauntlet_version"`
 	ScoringVersion    string                    `json:"scoring_version"`
 	RunnerVersion     string                    `json:"runner_version"`
@@ -260,6 +261,7 @@ func buildSummary(
 	}
 
 	return GauntletSummary{
+		SchemaVersion:     activeSchemaVersion,
 		GauntletVersion:   gauntletVersion,
 		ScoringVersion:    scoringVersion,
 		RunnerVersion:     runnerVersion,
@@ -311,6 +313,15 @@ func countErrors(results []CaseResult) (int, error) {
 
 // writeSummary writes the GauntletSummary as indented JSON to a file.
 func writeSummary(s GauntletSummary, path string) error {
+	// Every newly emitted summary belongs to the active coordinated artifact
+	// set. Tests and library callers may construct a summary directly, so make
+	// the writer enforce the same boundary as buildSummary.
+	if s.SchemaVersion == 0 {
+		s.SchemaVersion = activeSchemaVersion
+	}
+	if s.SchemaVersion != activeSchemaVersion {
+		return fmt.Errorf("summary schema_version must be %d, got %d", activeSchemaVersion, s.SchemaVersion)
+	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling summary: %w", err)

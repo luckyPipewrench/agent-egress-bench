@@ -16,8 +16,8 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 1,
-      "description": "Schema version. Must be 1."
+      "const": 3,
+      "description": "Schema version. Must be 3 for active scoring. This lineage moved from 1 to 3 with no version 2: the case, profile, result, summary, and receipt schemas are published as one coordinated set and share a generation number, so a reader can tell at a glance that artifacts belong together. A profile declaring 2 was never published and is rejected rather than tolerated. Version 1 profiles remain valid for reading historical evidence and are validated against the frozen tool-profile-v1 schema."
     },
     "tool": {
       "type": "string",

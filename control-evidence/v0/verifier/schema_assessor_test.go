@@ -180,6 +180,14 @@ func TestAssessSchemaHostilePackages(t *testing.T) {
 			mustWrite(t, path, marshalJSON(t, value))
 			rebindManifestAndEnvelope(t, root)
 		}},
+		{"unknown-tool-profile-schema-version", "tool_profile_schema_invalid", func(t *testing.T, root string) {
+			path := filepath.Join(root, "tool-profile.json")
+			var value map[string]any
+			strictDecodeTest(t, mustRead(t, path), &value)
+			value["schema_version"] = json.Number("99")
+			mustWrite(t, path, marshalJSON(t, value))
+			rebindManifestAndEnvelope(t, root)
+		}},
 		{"wrong-tool-profile-media-type", "tool_profile_schema_invalid", func(t *testing.T, root string) {
 			changeRoleMediaType(t, root, "tool-profile", "application/octet-stream")
 		}},

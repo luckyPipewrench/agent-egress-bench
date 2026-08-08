@@ -48,7 +48,7 @@ This is separate from the runner capability profile described in
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "tool": "example-tool",
   "tool_version": "1.2.3",
   "corpus_version": "v2.1.0",

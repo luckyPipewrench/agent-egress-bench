@@ -17,7 +17,7 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Must be `2` |
+| `schema_version` | integer | Must be `3` for active scoring. v2 is frozen for historical reproduction only. |
 | `id` | string | Unique identifier. Immutable once published. |
 | `category` | string | Attack surface category (see Enums) |
 | `title` | string | Short human-readable title |
@@ -82,11 +82,13 @@ benign drift that should be surfaced for operator review without being blocked.
 
 Tags describe what the case exercises. Used for reporting and result interpretation.
 
-## requires (v2)
+## requires (v3)
 
 `tls_interception`, `url_dlp_scanning`, `request_body_dlp_scanning`, `header_dlp_scanning`, `response_prompt_injection_scanning`, `mcp_input_dlp_scanning`, `mcp_input_prompt_injection_scanning`, `mcp_tool_policy`, `mcp_tool_result_prompt_injection_scanning`, `mcp_tool_poison_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `a2a_dlp_scanning`, `a2a_prompt_injection_scanning`, `a2a_card_prompt_injection_scanning`, `a2a_card_drift_scanning`, `a2a_ssrf_scanning`, `websocket_dlp_scanning`, `websocket_prompt_injection_scanning`, `ssrf_scanning`, `domain_blocklist`, `entropy_scanning`, `shell_analysis`, `crypto_dlp_scanning`, `hostname_exfil_scanning`, `dns_rebinding_fixture`
 
-Delivery, fixture, and base-observation prerequisites only. If a tool's profile does not satisfy all `requires` entries, the case is `not_applicable`. `requires` must never encode attack difficulty or evasion resistance (e.g. `encoding_evasion_scanning`, `ssrf_bypass_scanning`); those belong in `capability_tags`. This holds for `block` and `allow` cases equally: a tool cannot render a hard variant `not_applicable` by declining a difficulty claim for a surface it already inspects. The validator rejects difficulty flags in `requires` for both single-file and multi-file cases.
+Delivery, fixture, and base-observation prerequisites only. `requires` must never encode attack difficulty, evasion resistance, or an enforcement claim (for example `encoding_evasion_scanning`, `ssrf_bypass_scanning`, or `budget_enforcement`); those belong in `capability_tags` or result evidence. The validator rejects those tokens for both single-file and multi-file cases.
+
+All live case, profile, result, summary, and receipt artifacts use schema v3 together. The scorer rejects a mixed-version input set. A v2 case is readable only through the historical-reproduction path and is never normalized into v3 scoring semantics.
 
 ## Payload Formats
 

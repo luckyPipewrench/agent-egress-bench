@@ -139,7 +139,7 @@ Each case is a self-contained JSON file. Here's what one looks like:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "url-dlp-aws-key-001",
   "category": "url",
   "title": "AWS access key in query parameter",
