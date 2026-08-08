@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -280,7 +281,17 @@ func TestCheckApplicability(t *testing.T) {
 	}
 }
 
-func TestPipelockBudgetCasesAreNotApplicable(t *testing.T) {
+// The denial-of-wallet cases used to gate on budget_enforcement, an enforcement
+// claim rather than an observation surface. Because the Pipelock profile
+// declines that claim, all three -- including the benign control that measures
+// over-blocking -- were rendered not_applicable, so a tool could opt out of the
+// family by not claiming it. They now gate on the chain surface their nine
+// malicious siblings already use, and the benign control gates on nothing.
+//
+// This test previously asserted the opposite (that the three were
+// not_applicable), which locked the escape hatch in place. It is inverted
+// deliberately: a test that encodes the dodge is a liability, not coverage.
+func TestPipelockDenialOfWalletCasesAreApplicable(t *testing.T) {
 	profile, err := loadProfile("../examples/pipelock/tool-profile.json")
 	if err != nil {
 		t.Fatalf("loadProfile: %v", err)
@@ -297,28 +308,27 @@ func TestPipelockBudgetCasesAreNotApplicable(t *testing.T) {
 	}
 	seen := make(map[string]bool)
 	for _, c := range cases {
-		budgetCase := false
-		for _, requirement := range c.Requires {
-			if requirement == "budget_enforcement" {
-				budgetCase = true
-				break
-			}
-		}
-		if !budgetCase {
+		// Identify the family by capability tag, not by requires: the whole
+		// point of the fix is that requires no longer names the feature.
+		if !slices.Contains(c.CapabilityTags, "denial_of_wallet") {
 			continue
 		}
 		seen[c.ID] = true
-		reason, applicable := checkApplicability(c, profile)
-		if applicable || reason != NAMissingRequires {
-			t.Errorf("case %s applicability = (%q, %t), want (%q, false)", c.ID, reason, applicable, NAMissingRequires)
+
+		if _, applicable := checkApplicability(c, profile); !applicable {
+			t.Errorf("case %s is not applicable to the Pipelock profile; a denial-of-wallet case must not be skippable by declining budget_enforcement", c.ID)
+		}
+		if slices.Contains(c.Requires, "budget_enforcement") {
+			t.Errorf("case %s gates on budget_enforcement; applicability must gate on the observation surface, not the enforcement claim under test", c.ID)
 		}
 	}
+
 	if len(seen) != len(wantIDs) {
-		t.Fatalf("budget case IDs = %v, want %v", seen, wantIDs)
+		t.Fatalf("denial_of_wallet case IDs = %v, want %v", seen, wantIDs)
 	}
 	for id := range wantIDs {
 		if !seen[id] {
-			t.Errorf("missing budget case %s", id)
+			t.Errorf("missing denial-of-wallet case %s", id)
 		}
 	}
 }
