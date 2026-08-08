@@ -48,9 +48,7 @@ class PayloadTest(unittest.TestCase):
             reasoning_effort=pr_review.DEEP_REASONING_EFFORT,
         )
         self.assertEqual(payload["reasoning_effort"], "xhigh")
-        self.assertEqual(
-            payload["max_completion_tokens"], pr_review.DEEP_MAX_COMPLETION_TOKENS
-        )
+        self.assertEqual(payload["max_completion_tokens"], 64000)
 
     def test_legacy_model_keeps_temperature_without_reasoning_effort(self) -> None:
         payload = pr_review.build_llm_payload("gpt-4.1", "diff")
