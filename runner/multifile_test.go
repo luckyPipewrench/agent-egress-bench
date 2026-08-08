@@ -467,21 +467,11 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	profilePath := filepath.Join(tmpDir, "profile.json")
 	receiptPath := filepath.Join(tmpDir, "receipt-profile.json")
 
-	if err := os.WriteFile(profilePath, []byte(`{
-		"schema_version": 3,
-		"tool": "test-tool",
-		"tool_version": "0.0.0",
-		"runner_version": "test",
-		"claims": ["mcp_tool_poison", "mcp_chain"],
-		"supports": {
-			"mcp_stdio": true,
-			"mcp_tool_poison_scanning": true,
-			"mcp_tool_baseline": true,
-			"mcp_chain_memory": true,
-			"mcp_cross_server_chain_memory": true,
-			"mcp_data_class_labels": true
-		}
-	}`), 0o600); err != nil {
+	profileJSON, marshalErr := json.Marshal(Profile{SchemaVersion: 3, Tool: "test-tool", ToolVersion: "0.0.0", RunnerVersion: "test", Claims: []string{"mcp_tool_poison", "mcp_chain"}, Supports: summaryTestSupports(true)})
+	if marshalErr != nil {
+		t.Fatalf("marshal profile: %v", marshalErr)
+	}
+	if err := os.WriteFile(profilePath, profileJSON, 0o600); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}
 

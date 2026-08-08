@@ -89,6 +89,34 @@ type ProxyAdapter struct {
 	mcpHTTPUpstreamCalls func() int64 // runner-managed MCP HTTP fixture request counter
 }
 
+func (p *ProxyAdapter) DeliveryTuples() []DeliveryTuple {
+	proof := func(transport, surface string) DeliveryTuple {
+		lifecycle := "single_request"
+		if transport == "mcp_stdio" || transport == "mcp_http" {
+			lifecycle = "mcp_session"
+		}
+		return DeliveryTuple{transport, surface, lifecycle, "runner-owned fixture upstream observation", "request-correlated adapter response and upstream observation"}
+	}
+	var routes []DeliveryTuple
+	for _, transport := range []string{"fetch_proxy", "http_proxy"} {
+		for _, surface := range []string{"url", "request_body", "header", "response_content"} {
+			routes = append(routes, proof(transport, surface))
+		}
+	}
+	for _, surface := range []string{"websocket_frame", "url", "header"} {
+		routes = append(routes, proof("websocket", surface))
+	}
+	for _, transport := range []string{"mcp_stdio", "mcp_http"} {
+		for _, surface := range []string{"mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence"} {
+			routes = append(routes, proof(transport, surface))
+		}
+	}
+	for _, surface := range []string{"a2a_message", "a2a_agent_card"} {
+		routes = append(routes, proof("a2a", surface))
+	}
+	return routes
+}
+
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
 // scanAddr is for the scan API, mcpCmd is for MCP/A2A/shell cases.
 func NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd string) (*ProxyAdapter, error) {

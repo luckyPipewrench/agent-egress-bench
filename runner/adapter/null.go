@@ -7,6 +7,10 @@ import "time"
 // connecting a real tool.
 type NullAdapter struct{}
 
+func (n NullAdapter) DeliveryTuples() []DeliveryTuple {
+	return syntheticTuples("synthetic allow baseline")
+}
+
 // Run always returns "allow" with empty evidence.
 func (n NullAdapter) Run(_ Case, _ time.Duration) Result {
 	return Result{

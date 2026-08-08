@@ -18,12 +18,19 @@ import (
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
 
-// MCPGatewayAdapter drives a plugin-configured MCP gateway. It supports the
-// Streamable HTTP tools/call path and the MCP tool-definition tools/list path;
-// lifecycle and fixture registration commands remain plugin contract fields.
+// MCPGatewayAdapter drives a plugin-configured MCP gateway over Streamable
+// HTTP. Tool definitions are also delivered on that HTTP wire; they are not
+// substitutes for corpus mcp_stdio cases.
 type MCPGatewayAdapter struct {
 	plugin   GatewayPlugin
 	fixtures *fixture.Manager
+}
+
+func (a *MCPGatewayAdapter) DeliveryTuples() []DeliveryTuple {
+	return []DeliveryTuple{
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session", DeliveryProof: "MCP HTTP fixture tools/call counter", VerdictProof: "request-correlated JSON-RPC response and upstream counter"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session", DeliveryProof: "MCP HTTP fixture tools/list counter", VerdictProof: "request-correlated tools/list inventory and upstream counter"},
+	}
 }
 
 // NewMCPGatewayAdapter creates an adapter for a loaded gateway plugin.
@@ -48,9 +55,8 @@ func NewMCPGatewayAdapter(plugin GatewayPlugin, fixtures *fixture.Manager) (*MCP
 	return &MCPGatewayAdapter{plugin: plugin, fixtures: fixtures}, nil
 }
 
-// Run drives a supported corpus case through the gateway's Streamable HTTP
-// endpoint. Corpus mcp_stdio tool definitions represent the upstream MCP tool
-// inventory even though the gateway-facing client transport is HTTP.
+// Run drives a declared corpus tuple through the gateway's Streamable HTTP
+// endpoint.
 func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 	switch c.InputType {
 	case "mcp_tool_call":
@@ -59,8 +65,8 @@ func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 		}
 		return a.runToolsCall(c, timeout)
 	case "mcp_tool_definition":
-		if c.Transport != "mcp_stdio" {
-			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_stdio only")
+		if c.Transport != "mcp_http" {
+			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http only")
 		}
 		return a.runToolDefinition(c, timeout)
 	default:

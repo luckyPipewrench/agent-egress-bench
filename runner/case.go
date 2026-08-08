@@ -162,8 +162,48 @@ func loadProfile(path string) (Profile, error) {
 	if p.SchemaVersion != activeSchemaVersion {
 		return Profile{}, fmt.Errorf("profile schema_version must be %d for scoring, got %d", activeSchemaVersion, p.SchemaVersion)
 	}
+	if err := validateProfileForRun(p); err != nil {
+		return Profile{}, fmt.Errorf("invalid profile: %w", err)
+	}
 
 	return p, nil
+}
+
+// validateProfileForRun duplicates the active profile's required-field gate at
+// the execution boundary. JSON decoding alone cannot distinguish an omitted
+// boolean from false, which used to let a truncated profile silently change a
+// run's applicability. Keep this here so every runner invocation fails before
+// fixtures, targets, or result files are touched.
+func validateProfileForRun(p Profile) error {
+	if p.Tool == "" {
+		return fmt.Errorf("missing required field tool")
+	}
+	if p.ToolVersion == "" {
+		return fmt.Errorf("missing required field tool_version")
+	}
+	if p.RunnerVersion == "" {
+		return fmt.Errorf("missing required field runner_version")
+	}
+	if p.Claims == nil {
+		return fmt.Errorf("missing required field claims")
+	}
+	if p.Supports == nil {
+		return fmt.Errorf("missing required field supports")
+	}
+	for _, key := range requiredSupportsKeys {
+		if _, ok := p.Supports[key]; !ok {
+			return fmt.Errorf("missing required supports key %q", key)
+		}
+	}
+	return nil
+}
+
+var requiredSupportsKeys = []string{
+	"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a", "tls_interception",
+	"url_dlp_scanning", "request_body_dlp_scanning", "header_dlp_scanning", "response_prompt_injection_scanning",
+	"mcp_input_dlp_scanning", "mcp_input_prompt_injection_scanning", "mcp_tool_policy", "mcp_tool_result_prompt_injection_scanning", "mcp_tool_poison_scanning", "mcp_tool_baseline", "mcp_chain_memory", "mcp_cross_server_chain_memory", "mcp_data_class_labels",
+	"a2a_dlp_scanning", "a2a_prompt_injection_scanning", "a2a_card_prompt_injection_scanning", "a2a_card_drift_scanning", "a2a_ssrf_scanning",
+	"websocket_dlp_scanning", "websocket_prompt_injection_scanning", "ssrf_scanning", "ssrf_bypass_scanning", "domain_blocklist", "entropy_scanning", "encoding_evasion_scanning", "shell_analysis", "crypto_dlp_scanning", "hostname_exfil_scanning", "dns_rebinding_fixture", "budget_enforcement",
 }
 
 // checkApplicability determines if a case is applicable given a profile.

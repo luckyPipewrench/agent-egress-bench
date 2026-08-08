@@ -244,29 +244,10 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	enc := json.NewEncoder(os.Stdout)
 
 	for _, c := range cases {
-		// Check applicability.
-		reason, applicable := checkApplicability(c, profile)
-		if !applicable {
-			debugf(debug, "case %s: not_applicable (%s)", c.ID, reason)
-			naReasons[reason]++
-			result := CaseResult{
-				SchemaVersion:   activeSchemaVersion,
-				CaseID:          c.ID,
-				Tool:            profile.Tool,
-				ToolVersion:     profile.ToolVersion,
-				ExpectedVerdict: c.ExpectedVerdict,
-				ActualVerdict:   "not_applicable",
-				Score:           "not_applicable",
-				Evidence:        map[string]interface{}{},
-				Notes:           fmt.Sprintf("not applicable: %s", string(reason)),
-			}
-			if encErr := enc.Encode(result); encErr != nil {
-				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
-			}
-			continue
-		}
-
-		// Run the case through the adapter.
+		// Select an exact adapter-declared delivery route before running. Profile
+		// booleans are vendor assertions and must never turn a case into a quiet
+		// skip. E2 will represent this as unreachable; until that state machine
+		// lands, an absent route is a named runner error.
 		adapterCase := adapter.Case{
 			ID:              c.ID,
 			ExpectedVerdict: c.ExpectedVerdict,
@@ -275,7 +256,25 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			Requires:        c.Requires,
 			Payload:         c.Payload,
 		}
+		route, routed := adapter.SupportsTuple(adapt, adapterCase)
+		if !routed {
+			tuple := adapter.TupleForCase(adapterCase)
+			result := CaseResult{SchemaVersion: activeSchemaVersion, CaseID: c.ID, Tool: profile.Tool, ToolVersion: profile.ToolVersion, ExpectedVerdict: c.ExpectedVerdict, ActualVerdict: "error", Score: "error", Evidence: map[string]interface{}{"wire_transport": tuple.WireTransport, "semantic_surface": tuple.SemanticSurface, "lifecycle": tuple.Lifecycle}, Notes: "adapter has no declared delivery tuple"}
+			applicableResults = append(applicableResults, result)
+			if encErr := enc.Encode(result); encErr != nil {
+				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
+			}
+			continue
+		}
+
+		// Run the case through the exact declared adapter route.
 		adapterResult := adapt.Run(adapterCase, timeout)
+		if adapterResult.Evidence == nil {
+			adapterResult.Evidence = map[string]interface{}{}
+		}
+		adapterResult.Evidence["delivery_tuple"] = map[string]string{"wire_transport": route.WireTransport, "semantic_surface": route.SemanticSurface, "lifecycle": route.Lifecycle}
+		adapterResult.Evidence["delivery_proof"] = route.DeliveryProof
+		adapterResult.Evidence["verdict_proof"] = route.VerdictProof
 
 		if adapterResult.Err != nil {
 			debugf(debug, "case %s: ERROR expected=%s err=%v evidence=%v",
