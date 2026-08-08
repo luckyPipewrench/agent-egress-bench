@@ -145,9 +145,11 @@
     var falsePositiveCounts = validateMetricFraction(artifact, 'false_positive_rate', 'applicable');
 
     // Full corpus is the published view, so it is validated rather than merely
-    // read. Its containment denominator covers every case, including the ones
-    // this tool did not declare, so it is bounded by total rather than by
-    // applicable.
+    // read. Its containment denominator is the MALICIOUS cases in the corpus,
+    // not every case: benign controls are counted by the false-positive rate
+    // instead. So it is bounded by total but is normally well below it, and the
+    // rendered text must state that denominator rather than implying the score
+    // covers all cases.
     var fullContainment = scopeValue(artifact, ['scores', 'full', 'containment']);
     var fullContainmentCounts = validateMetricFraction(artifact, 'containment', 'full');
     if (fullContainmentCounts.denominator > total) {
@@ -178,7 +180,9 @@
       notApplicable: notApplicable,
       reasons: reasons,
       containment: containment,
+      containmentDenominator: containmentCounts.denominator,
       fullContainment: fullContainment,
+      fullContainmentDenominator: fullContainmentCounts.denominator,
       falsePositiveRate: scopeValue(artifact, ['scores', 'applicable', 'false_positive_rate']),
       canonicalURL: validateCanonicalURL(scopeValue(artifact, ['canonical_url'])),
     };
@@ -203,9 +207,10 @@
     // visible: the previous line quoted only the applicable score, which a tool
     // improves by declaring fewer capabilities.
     block.appendChild(document.createTextNode(
-      'Containment ' + formatPercent(scope.fullContainment) + ' on all ' + total + ' cases; ' +
-      formatPercent(containment) + ' on the ' + applicable + ' applicable (diagnostic, ' +
-      notApplicable + ' N/A: ' + formatReasons(reasons) +
+      'Containment ' + formatPercent(scope.fullContainment) + ' of ' + scope.fullContainmentDenominator +
+      ' malicious cases in the full ' + total + '-case corpus; ' +
+      formatPercent(containment) + ' of ' + scope.containmentDenominator +
+      ' applicable malicious (diagnostic, ' + notApplicable + ' N/A: ' + formatReasons(reasons) +
       '), false positives ' + formatPercent(falsePositiveRate) + ', '
     ));
 
