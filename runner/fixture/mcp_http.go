@@ -112,6 +112,12 @@ func (f *MCPHTTPFixture) SetTools(tools []json.RawMessage) {
 	f.tools = append(f.tools[:0], tools...)
 }
 
+func (f *MCPHTTPFixture) toolsSnapshot() []json.RawMessage {
+	f.toolsMu.RLock()
+	defer f.toolsMu.RUnlock()
+	return append([]json.RawMessage(nil), f.tools...)
+}
+
 // AcquireToolDefinitionLease installs a tools/list inventory for identity.
 // Like tool results, inventories must route by request identity rather than a
 // fixture-wide semaphore or one concurrent case can receive another's tools.
@@ -205,9 +211,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"aeb-mcp-fixture","version":"1"}}}`, id)
 		case "tools/list":
 			f.listCalls.Add(1)
-			f.toolsMu.RLock()
-			toolList := append([]json.RawMessage(nil), f.tools...)
-			f.toolsMu.RUnlock()
+			toolList := f.toolsSnapshot()
 			f.requestMu.RLock()
 			if leased, found := f.toolDefinitions[identity]; found {
 				toolList = leased

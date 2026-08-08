@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"sync"
 	"testing"
 )
 
@@ -85,47 +84,16 @@ func TestMCPHTTPFixtureToolResultLeaseResetsResponse(t *testing.T) {
 	assertToolCallResultContains(t, f.URL(), "later-request", `"ok":true`)
 }
 
-func TestMCPHTTPFixtureToolsListCopiesConcurrentInventory(t *testing.T) {
-	f, err := StartMCPHTTP()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
+func TestMCPHTTPFixtureToolsSnapshotIsIndependent(t *testing.T) {
+	f := &MCPHTTPFixture{}
+	f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"first_tool"}`)})
 
-	// SetTools rewrites the backing array in place, so a handler that aliases
-	// f.tools rather than copying it races with a concurrent update. The writer
-	// runs until the reads finish rather than for a fixed count: a bounded
-	// writer loop completes in microseconds while the first HTTP round trip is
-	// still in flight, so the two never overlap and the test proves nothing.
-	//
-	// This is a probabilistic detector, not a gate. Measured against a
-	// deliberately neutralized handler it reported the race in 2 of 5 runs, and
-	// neither more read iterations nor more concurrent writers moved that rate.
-	// So it will catch a reintroduced alias across repeated CI runs but can pass
-	// on any single one; do not read one green run as proof the copy is intact.
-	const iterations = 50
-	done := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"fixture_tool"}`)})
-			}
-		}
-	}()
-	for i := 0; i < iterations; i++ {
-		body := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
-		if !bytes.Contains(body, []byte(`"tools"`)) {
-			t.Fatalf("tools/list response = %s, want tools inventory", body)
-		}
+	snapshot := f.toolsSnapshot()
+	f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"second_tool"}`)})
+
+	if got := string(snapshot[0]); got != `{"name":"first_tool"}` {
+		t.Fatalf("snapshot changed to %s after SetTools reused the backing array", got)
 	}
-	close(done)
-	wg.Wait()
 }
 
 func assertToolCallResultContains(t *testing.T, endpoint, identity, wanted string) {
