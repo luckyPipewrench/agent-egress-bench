@@ -30,8 +30,51 @@ type Result struct {
 }
 
 // Adapter runs a single benchmark case against a tool and returns the verdict.
+//
+// DeliveryPlanner is deliberately NOT embedded here. Embedding it would break
+// every external adapter that implements only Run, at no version boundary, so
+// the runner type-asserts for the optional capability instead.
 type Adapter interface {
 	Run(c Case, timeout time.Duration) Result
+}
+
+// TupleForCase derives the tuple vocabulary shared by the built-in adapters.
+func TupleForCase(c Case) DeliveryTuple {
+	lifecycle := "single_request"
+	if c.Transport == "mcp_stdio" || c.Transport == "mcp_http" {
+		lifecycle = "mcp_session"
+	}
+	return DeliveryTuple{WireTransport: c.Transport, SemanticSurface: c.InputType, Lifecycle: lifecycle}
+}
+
+// DeliveryPlanner is the optional capability of declaring which exact routes an
+// adapter can drive. It is a query surface only: an adapter states what it can
+// deliver, and callers ask. Nothing here decides a score.
+//
+// That separation is the point. Letting a declaration drive scoring meant an
+// adapter that simply omitted a hard route shrank its own denominator, and a
+// route it could not drive charged the target for a gap in the benchmark's own
+// integration. The result-state implementation owns that transition, where an
+// absent route becomes an explicit state that marks the run non-scoreable
+// rather than quietly improving it.
+type DeliveryPlanner interface {
+	DeliveryTuples() []DeliveryTuple
+}
+
+// SupportsTuple reports whether the adapter declares an exact route for the
+// case. It answers a question and changes nothing.
+func SupportsTuple(a interface{}, c Case) (DeliveryTuple, bool) {
+	planner, ok := a.(DeliveryPlanner)
+	if !ok {
+		return DeliveryTuple{}, false
+	}
+	want := TupleForCase(c)
+	for _, declared := range planner.DeliveryTuples() {
+		if declared == want {
+			return declared, true
+		}
+	}
+	return DeliveryTuple{}, false
 }
 
 // DryRunAdapter returns the expected verdict for every case.
