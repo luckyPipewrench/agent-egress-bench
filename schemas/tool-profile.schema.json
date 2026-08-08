@@ -62,46 +62,7 @@
     },
     "supports": {
       "type": "object",
-      "description": "Transport mechanisms and runtime features the tool supports.",
-      "required": [
-        "fetch_proxy",
-        "http_proxy",
-        "mcp_stdio",
-        "mcp_http",
-        "websocket",
-        "a2a",
-        "tls_interception",
-        "url_dlp_scanning",
-        "request_body_dlp_scanning",
-        "header_dlp_scanning",
-        "response_prompt_injection_scanning",
-        "mcp_input_dlp_scanning",
-        "mcp_input_prompt_injection_scanning",
-        "mcp_tool_policy",
-        "mcp_tool_result_prompt_injection_scanning",
-        "mcp_tool_poison_scanning",
-        "mcp_tool_baseline",
-        "mcp_chain_memory",
-        "mcp_cross_server_chain_memory",
-        "mcp_data_class_labels",
-        "a2a_dlp_scanning",
-        "a2a_prompt_injection_scanning",
-        "a2a_card_prompt_injection_scanning",
-        "a2a_card_drift_scanning",
-        "a2a_ssrf_scanning",
-        "websocket_dlp_scanning",
-        "websocket_prompt_injection_scanning",
-        "ssrf_scanning",
-        "ssrf_bypass_scanning",
-        "domain_blocklist",
-        "entropy_scanning",
-        "encoding_evasion_scanning",
-        "shell_analysis",
-        "crypto_dlp_scanning",
-        "hostname_exfil_scanning",
-        "dns_rebinding_fixture",
-        "budget_enforcement"
-      ],
+      "description": "Declared capability surface. Keys are optional: an omitted key means the capability is unsupported, which is what omission already conveys, so requiring every key only invalidated profiles written before a key existed. additionalProperties stays true so a profile may carry a capability this schema version does not yet name.",
       "additionalProperties": true,
       "properties": {
         "fetch_proxy": {
@@ -287,7 +248,11 @@
           "description": "JSON Pointer to the receipt detail object or JSON-encoded detail string within each JSONL row."
         },
         "detail_encoding": {
-          "enum": ["object", "json_string", "object_or_json_string"],
+          "enum": [
+            "object",
+            "json_string",
+            "object_or_json_string"
+          ],
           "description": "How to decode the value at detail_json_pointer."
         },
         "record_case_id_json_pointer": {
