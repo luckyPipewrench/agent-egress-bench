@@ -853,7 +853,7 @@ func TestBudgetPayloadCallCountValid(t *testing.T) {
 			]
 		},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["mcp_chain", "denial_of_wallet"], "requires": ["budget_enforcement"],
+		"capability_tags": ["mcp_chain", "denial_of_wallet"], "requires": ["mcp_chain_memory"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": "synthetic: test"
 	}`)
@@ -886,7 +886,7 @@ func TestBudgetPayloadRejectsWeightedUnits(t *testing.T) {
 			]
 		},
 		"expected_verdict": "block", "severity": "high",
-		"capability_tags": ["mcp_chain", "denial_of_wallet"], "requires": ["budget_enforcement"],
+		"capability_tags": ["mcp_chain", "denial_of_wallet"], "requires": ["mcp_chain_memory"],
 		"false_positive_risk": "low", "why_expected": "test",
 		"notes": "", "source": "synthetic: test"
 	}`)
@@ -1731,6 +1731,29 @@ func TestRequiresRejectsDifficultyFlags(t *testing.T) {
 	}
 }
 
+// Enforcement claims name the feature under test. Gating on one lets a tool
+// delete both the attack cases and the benign control that measures its
+// over-blocking, which is what budget_enforcement did to the denial-of-wallet
+// family. Rejecting the token closes the class, not just the instance the
+// corpus happened to contain.
+func TestRequiresRejectsEnforcementClaims(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCase(t, dir, "url", "url-test-001.json",
+		caseWithRequires(`["budget_enforcement"]`))
+
+	errors := validateFile(path, make(map[string]string))
+	assertContainsError(t, errors, "enforcement claim")
+}
+
+// The same token must stay a valid supports key: a tool may legitimately
+// declare that it enforces budgets, and that claim is reported. Only its use as
+// an applicability gate is banned.
+func TestEnforcementClaimRemainsAValidSupportsKey(t *testing.T) {
+	if !validSupportsKeys["budget_enforcement"] {
+		t.Error("budget_enforcement must remain a valid supports key; only its use in requires is rejected")
+	}
+}
+
 // Positive control for the test above: a legitimate runtime prerequisite in the
 // same field must still pass, so the guard is proven to reject the flag rather
 // than to reject requires in general.
@@ -1765,6 +1788,11 @@ func TestMultiFileRequiresValidation(t *testing.T) {
 			name:    "difficulty flag in inline form",
 			yaml:    header + "requires: [mcp_tool_baseline, ssrf_bypass_scanning]\n",
 			wantErr: "attack-difficulty flag",
+		},
+		{
+			name:    "enforcement claim in block form",
+			yaml:    header + "requires:\n  - budget_enforcement\n",
+			wantErr: "enforcement claim",
 		},
 		{
 			name:    "unknown token",

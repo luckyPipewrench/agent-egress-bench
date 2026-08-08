@@ -404,16 +404,8 @@ func validateFile(path string, ids map[string]string) []string {
 
 	// Requires
 	for _, req := range c.Requires {
-		// Attack-difficulty / evasion-technique flags describe how hard an
-		// input is on a surface the tool already inspects; they must never gate
-		// applicability, or a tool could dodge a hard variant by declining the
-		// claim. They belong in capability_tags for reporting. See docs/SCORING.md.
-		if req == "encoding_evasion_scanning" || req == "ssrf_bypass_scanning" {
-			addErr(fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", req))
-			continue
-		}
-		if !validRequires[req] {
-			addErr(fmt.Sprintf("invalid requires value: %q", req))
+		if problem := requiresTokenProblem(req); problem != "" {
+			addErr(problem)
 		}
 	}
 
@@ -791,6 +783,29 @@ func isMultiFileCaseDir(name string) bool {
 // case shape. It extracts the requires list (block or inline) with a minimal
 // stdlib parser rather than a full YAML dependency, then applies the same
 // difficulty-flag ban and vocabulary check as single-file cases.
+// requiresTokenProblem returns the reason a token may not appear in a case's
+// requires, or "" when it is allowed. Both the single-file JSON shape and the
+// multi-file case.yaml shape route through here: when each carried its own copy
+// of these rules, the multi-file shape silently kept accepting tokens the
+// single-file shape had already banned.
+func requiresTokenProblem(token string) string {
+	switch {
+	// Attack-difficulty and evasion-technique flags describe how hard an input
+	// is on a surface the tool already inspects. Gating on one lets a tool dodge
+	// the hard variant by declining the claim. See docs/SCORING.md.
+	case token == "encoding_evasion_scanning", token == "ssrf_bypass_scanning":
+		return fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", token)
+	// Enforcement claims name the feature the case exists to test. Gating on one
+	// lets a tool delete the case, and the benign control that measures its
+	// over-blocking, by declining the claim. They stay valid supports keys.
+	case token == "budget_enforcement":
+		return fmt.Sprintf("%q is an enforcement claim and cannot appear in requires; gate on the observation surface and keep the claim in capability_tags", token)
+	case !validRequires[token]:
+		return fmt.Sprintf("invalid requires value: %q", token)
+	}
+	return ""
+}
+
 func validateMultiFileRequires(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -829,10 +844,8 @@ func validateMultiFileRequires(path string) []string {
 	}
 	var errs []string
 	for _, tok := range toks {
-		if tok == "encoding_evasion_scanning" || tok == "ssrf_bypass_scanning" {
-			errs = append(errs, fmt.Sprintf("%s: %q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", path, tok))
-		} else if !validRequires[tok] {
-			errs = append(errs, fmt.Sprintf("%s: invalid requires value: %q", path, tok))
+		if problem := requiresTokenProblem(tok); problem != "" {
+			errs = append(errs, fmt.Sprintf("%s: %s", path, problem))
 		}
 	}
 	return errs
