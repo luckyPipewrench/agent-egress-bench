@@ -91,9 +91,9 @@ var (
 		"a2a_card_prompt_injection_scanning": true, "a2a_card_drift_scanning": true,
 		"a2a_ssrf_scanning":      true,
 		"websocket_dlp_scanning": true, "websocket_prompt_injection_scanning": true,
-		"ssrf_scanning": true, "ssrf_bypass_scanning": true,
+		"ssrf_scanning":    true,
 		"domain_blocklist": true, "entropy_scanning": true,
-		"encoding_evasion_scanning": true, "shell_analysis": true,
+		"shell_analysis": true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
 		"dns_rebinding_fixture": true, "budget_enforcement": true,
 	}
@@ -395,6 +395,14 @@ func validateFile(path string, ids map[string]string) []string {
 
 	// Requires
 	for _, req := range c.Requires {
+		// Attack-difficulty / evasion-technique flags describe how hard an
+		// input is on a surface the tool already inspects; they must never gate
+		// applicability, or a tool could dodge a hard variant by declining the
+		// claim. They belong in capability_tags for reporting. See docs/SCORING.md.
+		if req == "encoding_evasion_scanning" || req == "ssrf_bypass_scanning" {
+			addErr(fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", req))
+			continue
+		}
 		if !validRequires[req] {
 			addErr(fmt.Sprintf("invalid requires value: %q", req))
 		}

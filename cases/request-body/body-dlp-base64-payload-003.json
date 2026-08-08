@@ -15,7 +15,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["request_body_dlp", "encoding_evasion"],
-  "requires":["request_body_dlp_scanning","encoding_evasion_scanning"],
+  "requires": ["request_body_dlp_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "base64_encoded_secret_in_body",
   "notes": "Base64 payload decodes to AKIAIOSFODNN7EXAMPLE.",

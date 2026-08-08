@@ -26,7 +26,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["mcp_input_scan", "encoding_evasion"],
-  "requires":["mcp_input_dlp_scanning","encoding_evasion_scanning"],
+  "requires": ["mcp_input_dlp_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "hex_encoded_github_token_in_tool_args",
   "notes": "The hex string decodes to a string starting with 'ghp_EXAMPLETOKEN...' matching the GitHub PAT pattern. Tests whether DLP decodes hex before pattern matching.",
