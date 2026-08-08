@@ -92,13 +92,24 @@ func TestMCPHTTPFixtureToolsListCopiesConcurrentInventory(t *testing.T) {
 	}
 	defer f.Close()
 
+	// SetTools rewrites the backing array in place, so a handler that aliases
+	// f.tools rather than copying it races with a concurrent update. The writer
+	// runs until the reads finish rather than for a fixed count: a bounded
+	// writer loop completes in microseconds while the first HTTP round trip is
+	// still in flight, so the two never overlap and the test proves nothing.
 	const iterations = 50
+	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < iterations; i++ {
-			f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"fixture_tool"}`)})
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"fixture_tool"}`)})
+			}
 		}
 	}()
 	for i := 0; i < iterations; i++ {
@@ -107,6 +118,7 @@ func TestMCPHTTPFixtureToolsListCopiesConcurrentInventory(t *testing.T) {
 			t.Fatalf("tools/list response = %s, want tools inventory", body)
 		}
 	}
+	close(done)
 	wg.Wait()
 }
 
