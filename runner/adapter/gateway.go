@@ -345,7 +345,11 @@ func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client,
 			"clientInfo":      map[string]string{"name": "agent-egress-bench", "version": "1"},
 		},
 	}
-	if result := a.send(ctx, client, caseID, initialize, false, sess, nil, deliveryAbsent); result != nil {
+	// initialize carries an id, so it is a request and its response is
+	// correlated and validated like any other. notifications/initialized below
+	// carries none, so it stays a notification judged on HTTP status.
+	initializeRequest := &gatewayRequest{identity: "aeb-initialize", method: "initialize"}
+	if result := a.send(ctx, client, caseID, initialize, false, sess, initializeRequest, deliveryAbsent); result != nil {
 		return result
 	}
 	initialized := map[string]interface{}{
@@ -520,20 +524,23 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 		return a.classifyGatewayResponse(nil, nil, err, requireResponse, emptyResponseReason, request, expectation, caseID)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	// Capture the session id the gateway assigns on initialize so later requests
-	// in this case carry it. The binding is initialize-only: an Mcp-Session-Id on
-	// any later response is not adopted, so an unnegotiated id never reaches the
-	// tools/call.
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err)}
+	}
+	response, result := a.classifyGatewayResponse(resp, responseBody, nil, requireResponse, emptyResponseReason, request, expectation, caseID)
+	if result != nil {
+		return nil, result
+	}
+	// Capture the session id only after a valid initialize response. A header on
+	// a rejected or malformed handshake is not a negotiated binding and must not
+	// escape into a later tools/call.
 	if sess != nil && sess.id == "" && message["method"] == "initialize" {
 		if assigned := resp.Header.Get("Mcp-Session-Id"); assigned != "" {
 			sess.id = assigned
 		}
 	}
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, &Result{Err: fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err)}
-	}
-	return a.classifyGatewayResponse(resp, responseBody, nil, requireResponse, emptyResponseReason, request, expectation, caseID)
+	return response, nil
 }
 
 type deliveryExpectation bool
@@ -554,6 +561,9 @@ const (
 // this request and must not lose credit merely because it has no JSON-RPC body.
 func (a *MCPGatewayAdapter) classifyGatewayResponse(resp *http.Response, body []byte, transportErr error, requireResponse bool, emptyResponseReason string, request *gatewayRequest, expectation deliveryExpectation, caseID string) ([]byte, *Result) {
 	if transportErr != nil {
+		if !requireResponse && request != nil {
+			return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response: %w", caseID, request.method, transportErr)}
+		}
 		if a.plugin.DenySignals.ConnectionClosedNoOut {
 			// A connection failure has no response bound to the request. Even with
 			// fixture evidence it is indistinguishable from a network failure, so it
@@ -563,6 +573,14 @@ func (a *MCPGatewayAdapter) classifyGatewayResponse(resp *http.Response, body []
 		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway request: %w", caseID, transportErr)}
 	}
 	if !requireResponse {
+		// A lifecycle message carrying an id is a JSON-RPC request, and its
+		// response is subject to the same correlation and structure rules as any
+		// other. A notification has no id, expects no response, and is correctly
+		// judged on HTTP status alone. Distinguishing them by the presence of an
+		// id is the protocol's own rule rather than an adapter convention.
+		if request != nil {
+			return a.classifyLifecycleResponse(resp, body, request, caseID)
+		}
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 			return nil, a.gatewaySkipWithObservation("unclassified_initialization_status", request, resp.StatusCode, "")
 		}
@@ -587,6 +605,36 @@ func (a *MCPGatewayAdapter) classifyGatewayResponse(resp *http.Response, body []
 		}
 		a.attachObservation(result, request)
 		return nil, result
+	}
+	return response, nil
+}
+
+// classifyLifecycleResponse validates the response to a lifecycle REQUEST.
+//
+// A failure here is an adapter error rather than a verdict. The target has not
+// refused the case; the session it would be measured through was never
+// established, so there is nothing to score either way. Returning a verdict
+// would attribute a measurement to a session that does not exist.
+func (a *MCPGatewayAdapter) classifyLifecycleResponse(resp *http.Response, body []byte, request *gatewayRequest, caseID string) ([]byte, *Result) {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response status %d", caseID, request.method, resp.StatusCode)}
+	}
+	response, err := decodeGatewayResponse(resp.Header.Get("Content-Type"), body, messageID(request))
+	if err != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response: %w", caseID, request.method, err)}
+	}
+	// decodeGatewayResponse uses jsonRPCMessageForRequest, the same correlation
+	// and structure primitive as normal request handling. At this point a valid
+	// message has exactly one of result or error; lifecycle errors establish no
+	// session and are adapter errors rather than case verdicts.
+	var outcome struct {
+		Error *json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(response, &outcome); err != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response: %w", caseID, request.method, err)}
+	}
+	if outcome.Error != nil {
+		return nil, &Result{Err: fmt.Errorf("case %s: MCP gateway %s response is a JSON-RPC error", caseID, request.method)}
 	}
 	return response, nil
 }

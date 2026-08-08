@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -117,11 +118,18 @@ func TestLoadGatewayPluginWithEnvPrefersRuntimeMapOverProcessEnv(t *testing.T) {
 
 func TestMCPGatewayAdapterRejectsUnprovenJSONRPCDeny(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if method := requestMethod(t, r); method == "tools/call" {
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "tools/call" {
 			writeJSONRPC(t, w, json.RawMessage(`1`), map[string]interface{}{"code": -32042, "message": "policy denied"})
 			return
 		}
-		writeJSONRPC(t, w, json.RawMessage(`1`), nil)
+		writeJSONRPC(t, w, request.ID, nil)
 	}))
 	defer server.Close()
 
@@ -294,7 +302,7 @@ func TestMCPGatewayAdapterRejectsWrongJSONResponseID(t *testing.T) {
 	}
 }
 
-func TestMCPGatewayAdapterIgnoresInitializationDeny(t *testing.T) {
+func TestMCPGatewayAdapterInitializationDenyIsAdapterError(t *testing.T) {
 	fm, err := fixture.StartAll()
 	if err != nil {
 		t.Fatal(err)
@@ -338,8 +346,100 @@ func TestMCPGatewayAdapterIgnoresInitializationDeny(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := a.Run(gatewayToolsCallCase("gateway-stale-initialize-deny"), time.Second)
-	if result.Err != nil || result.Verdict != "allow" {
-		t.Fatalf("result = %+v, want correlated tools/call allow", result)
+	if result.Err == nil || result.Verdict != "" || !strings.Contains(result.Err.Error(), "MCP gateway initialize") {
+		t.Fatalf("result = %+v, want initialize adapter error rather than a scored verdict", result)
+	}
+}
+
+func TestMCPGatewayAdapterMissingInitializeResponseIsAdapterError(t *testing.T) {
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if method := requestMethod(t, r); method != "initialize" {
+			t.Fatalf("received %s after missing initialize response", method)
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "closed initialize", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}, DenySignals: DenySignals{ConnectionClosedNoOut: true},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-missing-initialize-response"), time.Second)
+	if result.Err == nil || result.Verdict != "" || !strings.Contains(result.Err.Error(), "MCP gateway initialize") {
+		t.Fatalf("result = %+v, want initialize adapter error rather than a verdict", result)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("gateway calls = %d, want only initialize after its missing response", got)
+	}
+}
+
+func TestMCPGatewayAdapterRejectsInvalidInitializeResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		write func(t *testing.T, w http.ResponseWriter, id json.RawMessage)
+	}{
+		{
+			name: "malformed",
+			write: func(_ *testing.T, w http.ResponseWriter, _ json.RawMessage) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0",`))
+			},
+		},
+		{
+			name: "wrong id",
+			write: func(t *testing.T, w http.ResponseWriter, _ json.RawMessage) {
+				writeJSONRPC(t, w, json.RawMessage(`"wrong-initialize-id"`), nil)
+			},
+		},
+		{
+			name: "jsonrpc error",
+			write: func(t *testing.T, w http.ResponseWriter, id json.RawMessage) {
+				writeJSONRPC(t, w, id, map[string]interface{}{"code": -32042, "message": "initialization denied"})
+			},
+		},
+		{
+			name: "neither result nor error",
+			write: func(_ *testing.T, w http.ResponseWriter, id json.RawMessage) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s}`, id)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Method string          `json:"method"`
+					ID     json.RawMessage `json:"id"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Fatal(err)
+				}
+				if request.Method != "initialize" {
+					t.Fatalf("received %s after rejected initialize; lifecycle guard did not stop the session", request.Method)
+				}
+				tc.write(t, w, request.ID)
+			}))
+			defer server.Close()
+
+			a, err := NewMCPGatewayAdapter(GatewayPlugin{
+				Name: "invalid initialize", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := a.Run(gatewayToolsCallCase("gateway-invalid-initialize-"+strings.ReplaceAll(tc.name, " ", "-")), time.Second)
+			if result.Err == nil || result.Verdict != "" || !strings.Contains(result.Err.Error(), "MCP gateway initialize") {
+				t.Fatalf("result = %+v, want initialize adapter error rather than a verdict", result)
+			}
+		})
 	}
 }
 
@@ -1455,11 +1555,18 @@ func TestMCPGatewayAdapterConfiguredHTTPAndBodyDeniesScoreBlock(t *testing.T) {
 			fm := fixtureManagerForGatewayTest(t)
 			defer fm.Close()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if requestMethod(t, r) == "tools/call" {
+				var request struct {
+					Method string          `json:"method"`
+					ID     json.RawMessage `json:"id"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Fatal(err)
+				}
+				if request.Method == "tools/call" {
 					tc.write(w)
 					return
 				}
-				writeJSONRPC(t, w, json.RawMessage(`"initialize"`), nil)
+				writeJSONRPC(t, w, request.ID, nil)
 			}))
 			defer server.Close()
 			a, err := NewMCPGatewayAdapter(GatewayPlugin{
@@ -1480,8 +1587,15 @@ func TestMCPGatewayAdapterConnectionCloseIsNamedButNotBlock(t *testing.T) {
 	fm := fixtureManagerForGatewayTest(t)
 	defer fm.Close()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if requestMethod(t, r) != "tools/call" {
-			writeJSONRPC(t, w, json.RawMessage(`"initialize"`), nil)
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != "tools/call" {
+			writeJSONRPC(t, w, request.ID, nil)
 			return
 		}
 		conn, _, err := w.(http.Hijacker).Hijack()
