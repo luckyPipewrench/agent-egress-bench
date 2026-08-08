@@ -62,6 +62,9 @@ is already correlated to that request, so configured HTTP status and body-marker
 denies may score `block` without a JSON-RPC body, but only when the fixture
 observation satisfies that surface's delivery direction. A stale JSON-RPC deny,
 malformed response, or unproven fixture observation never scores `block`.
+For an outbound `tools/call` deny, the adapter keeps observing the request
+identity for a 50 ms settlement window before it credits absence. A matching
+late arrival during that window changes the result to `skip`.
 
 ## Plugin fields
 
@@ -119,8 +122,10 @@ are literal HTTP headers sent with every MCP request.
   directly and never reads `DenySignals.ToolFilteredFromList`.
 - `connection_closed_no_output` and `non_zero_exit`: declared signals reserved
   for relevant follow-on paths. The adapter records a configured connection
-  close as `skip`, not `block`, because no response exists to bind the failure to
-  this request rather than a transport fault.
+  close on a measured case request as `skip`, not `block`, because no response
+  exists to bind the failure to this request rather than a transport fault. A
+  close during `initialize` is an adapter error because no measurable session
+  was established.
 
 ## Managed variables and interpolation
 

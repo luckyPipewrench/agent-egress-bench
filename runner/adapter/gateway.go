@@ -29,6 +29,8 @@ type MCPGatewayAdapter struct {
 
 var gatewayRequestSequence atomic.Uint64
 
+const gatewayDenySettlement = 50 * time.Millisecond
+
 // gatewayRequest is the single correlation primitive for a case request. The
 // adapter mints it before configuring the fixture; the fixture then routes the
 // leased response and records the same identity, method, and fingerprint.
@@ -339,9 +341,10 @@ func (a *MCPGatewayAdapter) requestDelivered(request gatewayRequest) (bool, bool
 }
 
 func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client, caseID string, sess *gatewaySession) *Result {
+	identity := nextGatewayRequestIdentity()
 	initialize := map[string]interface{}{
 		"jsonrpc": "2.0",
-		"id":      "aeb-initialize",
+		"id":      identity,
 		"method":  "initialize",
 		"params": map[string]interface{}{
 			"protocolVersion": "2025-03-26",
@@ -352,7 +355,7 @@ func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client,
 	// initialize carries an id, so it is a request and its response is
 	// correlated and validated like any other. notifications/initialized below
 	// carries none, so it stays a notification judged on HTTP status.
-	initializeRequest := &gatewayRequest{identity: "aeb-initialize", method: "initialize"}
+	initializeRequest := &gatewayRequest{identity: identity, method: "initialize"}
 	if result := a.send(ctx, client, caseID, initialize, false, sess, initializeRequest, deliveryAbsent); result != nil {
 		return result
 	}
@@ -602,6 +605,14 @@ func (a *MCPGatewayAdapter) classifyGatewayResponse(resp *http.Response, body []
 		}
 		return body, nil
 	}
+	var decodedResponse []byte
+	if presentsJSONRPC(resp.Header.Get("Content-Type"), body) {
+		var err error
+		decodedResponse, err = decodeGatewayResponse(resp.Header.Get("Content-Type"), body, messageID(request))
+		if err != nil {
+			return nil, a.gatewayDecodeFailure(err, request, resp.StatusCode)
+		}
+	}
 	if slices.Contains(a.plugin.DenySignals.HTTPStatusCodes, resp.StatusCode) {
 		return nil, a.gatewayDeny("http_status", request, expectation, resp.StatusCode, "")
 	}
@@ -611,18 +622,30 @@ func (a *MCPGatewayAdapter) classifyGatewayResponse(resp *http.Response, body []
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, a.gatewaySkipWithObservation("unclassified_http_status", request, resp.StatusCode, "")
 	}
-	response, err := decodeGatewayResponse(resp.Header.Get("Content-Type"), body, messageID(request))
-	if err != nil {
-		return nil, a.gatewayDecodeFailure(err, request, resp.StatusCode)
+	if decodedResponse == nil {
+		var err error
+		decodedResponse, err = decodeGatewayResponse(resp.Header.Get("Content-Type"), body, messageID(request))
+		if err != nil {
+			return nil, a.gatewayDecodeFailure(err, request, resp.StatusCode)
+		}
 	}
-	if result := classifyGatewayJSONRPCError(response, a.plugin.DenySignals.JSONRPCErrorCodeRange); result != nil {
+	if result := classifyGatewayJSONRPCError(decodedResponse, a.plugin.DenySignals.JSONRPCErrorCodeRange); result != nil {
 		if result.Verdict == "block" {
 			return nil, a.gatewayDeny("jsonrpc_error", request, expectation, resp.StatusCode, "")
 		}
 		a.attachObservation(result, request)
 		return nil, result
 	}
-	return response, nil
+	return decodedResponse, nil
+}
+
+func presentsJSONRPC(contentType string, body []byte) bool {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return trimmed[0] == '{' || (err == nil && (mediaType == "application/json" || strings.HasSuffix(mediaType, "+json") || mediaType == "text/event-stream"))
 }
 
 // classifyLifecycleResponse validates the response to a lifecycle REQUEST.
@@ -666,6 +689,9 @@ func (a *MCPGatewayAdapter) gatewayDeny(signal string, request *gatewayRequest, 
 	delivered, proofAvailable := false, false
 	if request != nil {
 		delivered, proofAvailable = a.requestDelivered(*request)
+		if expectation == deliveryAbsent && proofAvailable && !delivered {
+			delivered = a.awaitLateDelivery(*request, gatewayDenySettlement)
+		}
 	}
 	evidence := map[string]interface{}{"product_surface": "mcp_gateway_streamable_http", "deny_signal": signal}
 	if status != 0 {
@@ -680,6 +706,24 @@ func (a *MCPGatewayAdapter) gatewayDeny(signal string, request *gatewayRequest, 
 		return &Result{Verdict: "skip", Evidence: evidence}
 	}
 	return &Result{Verdict: "block", Evidence: evidence}
+}
+
+func (a *MCPGatewayAdapter) awaitLateDelivery(request gatewayRequest, settlement time.Duration) bool {
+	deadline := time.NewTimer(settlement)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if delivered, _ := a.requestDelivered(request); delivered {
+				return true
+			}
+		case <-deadline.C:
+			delivered, _ := a.requestDelivered(request)
+			return delivered
+		}
+	}
 }
 
 func (a *MCPGatewayAdapter) gatewaySkipWithObservation(reason string, request *gatewayRequest, status int, marker string) *Result {

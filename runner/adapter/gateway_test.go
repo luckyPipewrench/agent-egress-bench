@@ -456,6 +456,124 @@ func TestMCPGatewayAdapterRejectsInvalidInitializeResponses(t *testing.T) {
 	}
 }
 
+func TestMCPGatewayAdapterUsesUniqueInitializeIDs(t *testing.T) {
+	initializeIDs := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method == "initialize" {
+			initializeIDs <- string(request.ID)
+		}
+		if len(request.ID) > 0 {
+			writeJSONRPC(t, w, request.ID, nil)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "unique initialize ids", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		_ = a.Run(gatewayToolsCallCase(fmt.Sprintf("gateway-initialize-id-%d", i)), time.Second)
+	}
+	first, second := <-initializeIDs, <-initializeIDs
+	if first == second {
+		t.Fatalf("initialize IDs reused %s across sessions", first)
+	}
+}
+
+func TestMCPGatewayAdapterRejectsLateForwardAfterDeny(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+	forwarded := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != "tools/call" {
+			writeJSONRPC(t, w, request.ID, nil)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		go func() {
+			timer := time.NewTimer(10 * time.Millisecond)
+			defer timer.Stop()
+			<-timer.C
+			_, err := forwardMCPGatewayRequest(&http.Client{Timeout: time.Second}, context.Background(), fm.MCPHTTP().URL(), body)
+			forwarded <- err
+		}()
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "late forwarder", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{HTTPStatusCodes: []int{http.StatusForbidden}},
+	}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-late-forward"), time.Second)
+	if err := <-forwarded; err != nil {
+		t.Fatalf("late forward: %v", err)
+	}
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "deny_delivery_unproven" || result.Evidence["upstream_reached"] != true {
+		t.Fatalf("result = %+v, want late delivery to invalidate block", result)
+	}
+}
+
+func TestMCPGatewayAdapterCorrelatesStructuredHTTPDeny(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != "tools/call" {
+			writeJSONRPC(t, w, request.ID, nil)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"stale-request","error":{"code":-32042,"message":"denied"}}`))
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "structured HTTP deny", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL},
+		DenySignals: DenySignals{HTTPStatusCodes: []int{http.StatusForbidden}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-structured-http-deny"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "response_id_mismatch" {
+		t.Fatalf("result = %+v, want structured deny correlation failure", result)
+	}
+}
+
 func TestMCPGatewayAdapterDoesNotAcceptConcurrentUnrelatedDelivery(t *testing.T) {
 	fm, err := fixture.StartAll()
 	if err != nil {
