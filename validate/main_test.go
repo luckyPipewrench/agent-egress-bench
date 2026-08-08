@@ -1690,3 +1690,162 @@ func TestProfileValidation_RejectsUnknownFields(t *testing.T) {
 	errors := validateProfileFile(path)
 	assertContainsError(t, errors, "unknown field")
 }
+
+// caseWithRequires renders a minimal valid single-file case carrying the given
+// requires array, so a test can vary requires and nothing else.
+func caseWithRequires(requires string) string {
+	return fmt.Sprintf(`{
+		"schema_version": 2,
+		"id": "url-test-001",
+		"category": "url",
+		"title": "Test URL case",
+		"description": "Valid URL test case",
+		"input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://example.com/test"},
+		"expected_verdict": "block",
+		"severity": "high",
+		"capability_tags": ["url_dlp"],
+		"requires": %s,
+		"false_positive_risk": "low",
+		"why_expected": "test_reason",
+		"notes": "",
+		"source": ""
+	}`, requires)
+}
+
+// Attack-difficulty flags describe how hard an input is on a surface the tool
+// already inspects. Letting one gate applicability would let a tool dodge the
+// hard variant by declining the claim, so requires must reject them on every
+// case shape. This test covers the single-file JSON shape.
+func TestRequiresRejectsDifficultyFlags(t *testing.T) {
+	for _, flag := range []string{"encoding_evasion_scanning", "ssrf_bypass_scanning"} {
+		t.Run(flag, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeCase(t, dir, "url", "url-test-001.json",
+				caseWithRequires(fmt.Sprintf(`["%s"]`, flag)))
+
+			errors := validateFile(path, make(map[string]string))
+			assertContainsError(t, errors, "attack-difficulty flag")
+		})
+	}
+}
+
+// Positive control for the test above: a legitimate runtime prerequisite in the
+// same field must still pass, so the guard is proven to reject the flag rather
+// than to reject requires in general.
+func TestRequiresAcceptsRuntimePrerequisite(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCase(t, dir, "url", "url-test-001.json",
+		caseWithRequires(`["tls_interception"]`))
+
+	if errors := validateFile(path, make(map[string]string)); len(errors) > 0 {
+		t.Errorf("expected no errors for a valid requires entry, got: %v", errors)
+	}
+}
+
+// The multi-file case shape (case.yaml) is a second door into the same
+// applicability rules. Before this guard existed the loader read requires from
+// case.yaml and no validator ever saw it, so the single-file guard above was
+// bypassable by authoring the case in the multi-file shape.
+func TestMultiFileRequiresValidation(t *testing.T) {
+	const header = "schema_version: 1\nid: mcp-drift-test-001\n"
+
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name:    "difficulty flag in block form",
+			yaml:    header + "requires:\n  - mcp_tool_baseline\n  - encoding_evasion_scanning\n",
+			wantErr: "attack-difficulty flag",
+		},
+		{
+			name:    "difficulty flag in inline form",
+			yaml:    header + "requires: [mcp_tool_baseline, ssrf_bypass_scanning]\n",
+			wantErr: "attack-difficulty flag",
+		},
+		{
+			name:    "unknown token",
+			yaml:    header + "requires:\n  - totally_bogus_token\n",
+			wantErr: "invalid requires value",
+		},
+		{
+			name: "valid tokens pass",
+			yaml: header + "requires:\n  - mcp_tool_poison_scanning\n  - mcp_tool_baseline\n",
+		},
+		{
+			name: "comments inside the block are ignored",
+			yaml: header + "requires:\n  # why this case needs a baseline\n  - mcp_tool_baseline\n",
+		},
+		{
+			name: "block ends at the next top-level key",
+			yaml: header + "requires:\n  - mcp_tool_baseline\nfalse_positive_risk: medium\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "case.yaml")
+			if err := os.WriteFile(path, []byte(tt.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			errors := validateMultiFileRequires(path)
+			if tt.wantErr == "" {
+				if len(errors) > 0 {
+					t.Errorf("expected no errors, got: %v", errors)
+				}
+				return
+			}
+			assertContainsError(t, errors, tt.wantErr)
+		})
+	}
+}
+
+// The corpus walk must actually reach case.yaml files inside a multi-file case
+// directory. Without this the guard above is correct but never invoked, which
+// is the exact shape of a check that exists and checks nothing.
+func TestRunCasesReachesMultiFileCases(t *testing.T) {
+	// A valid single-file case must be present, otherwise runCases fails with
+	// "no case files found" and the assertion below would pass for a reason
+	// that has nothing to do with the multi-file walk.
+	newCorpus := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		writeCase(t, dir, "url", "url-test-001.json", caseWithRequires(`[]`))
+		return dir
+	}
+
+	writeDriftCase := func(t *testing.T, dir, requires string) {
+		t.Helper()
+		caseDir := filepath.Join(dir, "mcp-drift", "mcp-drift-test-001")
+		if err := os.MkdirAll(caseDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		yaml := "schema_version: 1\nid: mcp-drift-test-001\nrequires:\n  - " + requires + "\n"
+		if err := os.WriteFile(filepath.Join(caseDir, "case.yaml"), []byte(yaml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Control: the same corpus without a multi-file offender must pass, proving
+	// the failure below comes from the case.yaml and not from the corpus shape.
+	t.Run("clean corpus passes", func(t *testing.T) {
+		dir := newCorpus(t)
+		writeDriftCase(t, dir, "mcp_tool_baseline")
+		if code := runCases(dir); code != 0 {
+			t.Errorf("expected a clean corpus to pass, got exit %d", code)
+		}
+	})
+
+	t.Run("difficulty flag in a multi-file case fails the run", func(t *testing.T) {
+		dir := newCorpus(t)
+		writeDriftCase(t, dir, "encoding_evasion_scanning")
+		if code := runCases(dir); code == 0 {
+			t.Error("expected runCases to fail on a multi-file case carrying a difficulty flag, got exit 0")
+		}
+	})
+}

@@ -261,6 +261,7 @@ func runCases(casesDir string) int {
 			matches, _ := filepath.Glob(filepath.Join(path, "*", "case.yaml"))
 			for _, y := range matches {
 				errors = append(errors, validateMultiFileRequires(y)...)
+				fileCount++
 			}
 			return filepath.SkipDir
 		}

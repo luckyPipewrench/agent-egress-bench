@@ -37,10 +37,7 @@
     "a2a_scan",
     "entropy"
   ],
-  "requires": [
-    "a2a_dlp_scanning",
-    "entropy_scanning"
-  ],
+  "requires": ["entropy_scanning"],
   "false_positive_risk": "medium",
   "why_expected": "opaque_high_entropy_a2a_data_part_to_untrusted_sink",
   "notes": "The data blob is intentionally opaque and has no decodable credential syntax. The destination is the reserved untrusted A2A sink so entropy scanning is exercised without trusted-destination exemption.",

@@ -89,7 +89,7 @@
   "expected_verdict": "block",
   "severity": "high",
   "capability_tags": ["mcp_chain", "denial_of_wallet"],
-  "requires": ["budget_enforcement"],
+  "requires": ["mcp_chain_memory"],
   "false_positive_risk": "medium",
   "why_expected": "per_subject_call_budget_exceeded_on_interleaved_call_6",
   "notes": "Project alpha's calls at message positions 1, 3, and 5 are within its three-call budget. Message 6 is alpha's first over-budget call and must be blocked; project beta's interleaved calls must not change that boundary.",
