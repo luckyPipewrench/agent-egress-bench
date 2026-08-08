@@ -15,21 +15,17 @@ import (
 
 // MCPHTTPFixture runs a minimal Streamable HTTP MCP upstream.
 type MCPHTTPFixture struct {
-	listener  net.Listener
-	server    *http.Server
-	calls     atomic.Int64
-	toolCalls atomic.Int64
-	listCalls atomic.Int64
-	// toolDefinitionLease leases the fixture-wide tools/list inventory to one
-	// adapter run. The fixture is shared by all adapters in a gauntlet run, so
-	// SetTools alone cannot keep simultaneous tool-definition cases isolated.
-	// A channel permits acquisition to honor each case's deadline.
-	toolDefinitionLease chan struct{}
-	toolsMu             sync.RWMutex
-	tools               []json.RawMessage
-	requestMu           sync.RWMutex
-	toolResults         map[string]json.RawMessage
-	observations        map[string][]MCPRequestObservation
+	listener        net.Listener
+	server          *http.Server
+	calls           atomic.Int64
+	toolCalls       atomic.Int64
+	listCalls       atomic.Int64
+	toolsMu         sync.RWMutex
+	tools           []json.RawMessage
+	requestMu       sync.RWMutex
+	toolDefinitions map[string][]json.RawMessage
+	toolResults     map[string]json.RawMessage
+	observations    map[string][]MCPRequestObservation
 }
 
 // MCPRequestObservation is the runner-owned evidence recorded for an upstream
@@ -116,29 +112,29 @@ func (f *MCPHTTPFixture) SetTools(tools []json.RawMessage) {
 	f.tools = append(f.tools[:0], tools...)
 }
 
-// AcquireToolDefinitionLease installs a case's tools/list inventory and
-// exclusively leases it until the returned release function is called. It
-// returns promptly when ctx expires while another case owns the lease. Release
-// resets the inventory so a completed case cannot influence a later one.
-func (f *MCPHTTPFixture) AcquireToolDefinitionLease(ctx context.Context, tools []json.RawMessage) (func(), error) {
+// AcquireToolDefinitionLease installs a tools/list inventory for identity.
+// Like tool results, inventories must route by request identity rather than a
+// fixture-wide semaphore or one concurrent case can receive another's tools.
+func (f *MCPHTTPFixture) AcquireToolDefinitionLease(ctx context.Context, identity string, tools []json.RawMessage) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-f.toolDefinitionLease:
+	if identity == "" {
+		return nil, fmt.Errorf("tool-definition lease identity is required")
 	}
-	if err := ctx.Err(); err != nil {
-		f.toolDefinitionLease <- struct{}{}
-		return nil, err
+	f.requestMu.Lock()
+	if _, exists := f.toolDefinitions[identity]; exists {
+		f.requestMu.Unlock()
+		return nil, fmt.Errorf("tool-definition lease %q already exists", identity)
 	}
-	f.SetTools(tools)
+	f.toolDefinitions[identity] = append([]json.RawMessage(nil), tools...)
+	f.requestMu.Unlock()
 	var released sync.Once
 	return func() {
 		released.Do(func() {
-			f.SetTools(nil)
-			f.toolDefinitionLease <- struct{}{}
+			f.requestMu.Lock()
+			delete(f.toolDefinitions, identity)
+			f.requestMu.Unlock()
 		})
 	}, nil
 }
@@ -178,12 +174,11 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 	}
 
 	f := &MCPHTTPFixture{
-		listener:            ln,
-		toolDefinitionLease: make(chan struct{}, 1),
-		toolResults:         make(map[string]json.RawMessage),
-		observations:        make(map[string][]MCPRequestObservation),
+		listener:        ln,
+		toolDefinitions: make(map[string][]json.RawMessage),
+		toolResults:     make(map[string]json.RawMessage),
+		observations:    make(map[string][]MCPRequestObservation),
 	}
-	f.toolDefinitionLease <- struct{}{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -212,11 +207,16 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			f.listCalls.Add(1)
 			f.toolsMu.RLock()
 			toolList := f.tools
+			f.toolsMu.RUnlock()
+			f.requestMu.RLock()
+			if leased, found := f.toolDefinitions[identity]; found {
+				toolList = leased
+			}
+			f.requestMu.RUnlock()
 			if toolList == nil {
 				toolList = []json.RawMessage{}
 			}
 			tools, err := json.Marshal(toolList)
-			f.toolsMu.RUnlock()
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return

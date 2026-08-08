@@ -269,7 +269,7 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 		return Result{Err: fmt.Errorf("case %s: prepare tools/list request: %w", c.ID, err)}
 	}
 	if upstream := a.mcpHTTPFixture(); upstream != nil {
-		release, err := upstream.AcquireToolDefinitionLease(ctx, tools)
+		release, err := upstream.AcquireToolDefinitionLease(ctx, request.identity, tools)
 		if err != nil {
 			return Result{Verdict: "skip", Evidence: map[string]interface{}{
 				"product_surface":     "mcp_gateway_streamable_http",

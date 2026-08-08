@@ -794,7 +794,7 @@ func TestMCPGatewayAdapterToolDefinitionRunsDoNotShareFixtureInventory(t *testin
 	}
 }
 
-func TestMCPGatewayAdapterTimesOutWaitingForToolDefinitionLease(t *testing.T) {
+func TestMCPGatewayAdapterConcurrentToolDefinitionsDoNotSerialize(t *testing.T) {
 	fm, err := fixture.StartAll()
 	if err != nil {
 		t.Fatal(err)
@@ -833,12 +833,11 @@ func TestMCPGatewayAdapterTimesOutWaitingForToolDefinitionLease(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	defer close(releaseHolder)
 
 	newAdapter := func(caseName string) *MCPGatewayAdapter {
 		t.Helper()
 		a, err := NewMCPGatewayAdapter(GatewayPlugin{
-			Name: "lease timeout gateway", Transport: "streamable_http",
+			Name: "identity-routed definition gateway", Transport: "streamable_http",
 			Client: GatewayClient{Endpoint: server.URL, Headers: map[string]string{"X-AEB-Case": caseName}},
 		}, fm)
 		if err != nil {
@@ -866,23 +865,23 @@ func TestMCPGatewayAdapterTimesOutWaitingForToolDefinitionLease(t *testing.T) {
 	select {
 	case result = <-waiterResult:
 	case <-time.After(900 * time.Millisecond):
-		t.Fatal("waiter did not respect its case timeout while waiting for the fixture lease")
+		t.Fatal("waiter did not complete while another definition case was paused")
 	}
-	// The waiter's own case timeout is 40ms and the holder's is 1s. A generous
-	// 500ms upper bound still proves the waiter returned on its own timeout
-	// rather than blocking for the holder's full second, without flaking on CI
-	// scheduling, goroutine startup, HTTP setup, or lease contention.
+	// The waiter's own case timeout is 40ms and the holder's is paused. A
+	// generous 500ms upper bound proves identity routing removed the global lease
+	// rather than merely timing out sooner.
 	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
-		t.Fatalf("waiter returned after %s, want its single case timeout to cover lease acquisition", elapsed)
+		t.Fatalf("waiter returned after %s, want concurrent identity-routed inventory", elapsed)
 	}
-	if result.Err != nil || result.Verdict != "skip" {
-		t.Fatalf("waiter result = %+v, want lease-timeout skip", result)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("waiter result = %+v, want independently routed allow", result)
 	}
-	if got := result.Evidence["reason"]; got != "tool_definition_lease_timeout" {
-		t.Fatalf("reason = %v, want tool_definition_lease_timeout; evidence=%+v", got, result.Evidence)
+	if got := result.Evidence["upstream_reached"]; got != true {
+		t.Fatalf("upstream_reached = %v, want true; evidence=%+v", got, result.Evidence)
 	}
-	if got := result.Evidence["upstream_reached"]; got != false {
-		t.Fatalf("upstream_reached = %v, want false; evidence=%+v", got, result.Evidence)
+	close(releaseHolder)
+	if holder := <-holderResult; holder.Err != nil || holder.Verdict != "allow" {
+		t.Fatalf("holder result = %+v, want independently routed allow", holder)
 	}
 }
 
@@ -1453,6 +1452,8 @@ func TestMCPGatewayAdapterConfiguredHTTPAndBodyDeniesScoreBlock(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			fm := fixtureManagerForGatewayTest(t)
+			defer fm.Close()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if requestMethod(t, r) == "tools/call" {
 					tc.write(w)
@@ -1463,7 +1464,7 @@ func TestMCPGatewayAdapterConfiguredHTTPAndBodyDeniesScoreBlock(t *testing.T) {
 			defer server.Close()
 			a, err := NewMCPGatewayAdapter(GatewayPlugin{
 				Name: "documented deny", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}, DenySignals: tc.plugin,
-			}, fixtureManagerForGatewayTest(t))
+			}, fm)
 			if err != nil {
 				t.Fatal(err)
 			}

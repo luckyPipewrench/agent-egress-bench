@@ -52,11 +52,11 @@ func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
 	}
 	defer f.Close()
 
-	release, err := f.AcquireToolDefinitionLease(context.Background(), []json.RawMessage{json.RawMessage(`{"name":"leased_tool"}`)})
+	release, err := f.AcquireToolDefinitionLease(context.Background(), "leased-list", []json.RawMessage{json.RawMessage(`{"name":"leased_tool"}`)})
 	if err != nil {
 		t.Fatalf("AcquireToolDefinitionLease: %v", err)
 	}
-	response := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	response := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"aeb_request_identity":"leased-list"}}}`)
 	if !bytes.Contains(response, []byte(`"leased_tool"`)) {
 		t.Fatalf("leased tools/list response = %s, want leased_tool", response)
 	}

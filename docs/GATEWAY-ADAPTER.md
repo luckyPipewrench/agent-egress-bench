@@ -12,8 +12,8 @@ The adapter supports three narrow paths, all sent to a plugin with
   `tools/call` in order over the one session.
 - A corpus `mcp_stdio` or `mcp_http` case containing exactly one
   `mcp_tool_definition`: the case models the upstream inventory while the
-  adapter drives the gateway over Streamable HTTP. It exclusively leases the
-  runner-managed fixture's inventory, then sends `initialize`,
+  adapter drives the gateway over Streamable HTTP. It installs the inventory
+  under one request identity in the runner-managed fixture, then sends `initialize`,
   `notifications/initialized`, and `tools/list`.
 - A corpus `mcp_http` case containing exactly one `mcp_tool_result`: the adapter
   installs that result under one request identity, then drives a correlated call
