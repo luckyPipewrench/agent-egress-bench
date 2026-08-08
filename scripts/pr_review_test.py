@@ -40,14 +40,14 @@ class PayloadTest(unittest.TestCase):
             payload["max_completion_tokens"], pr_review.DEFAULT_MAX_COMPLETION_TOKENS
         )
 
-    def test_deep_payload_uses_medium_reasoning_effort(self) -> None:
+    def test_deep_payload_uses_xhigh_reasoning_effort(self) -> None:
         payload = pr_review.build_llm_payload(
             "gpt-5.6-terra",
             "diff",
             max_completion_tokens=pr_review.DEEP_MAX_COMPLETION_TOKENS,
             reasoning_effort=pr_review.DEEP_REASONING_EFFORT,
         )
-        self.assertEqual(payload["reasoning_effort"], "medium")
+        self.assertEqual(payload["reasoning_effort"], "xhigh")
         self.assertEqual(
             payload["max_completion_tokens"], pr_review.DEEP_MAX_COMPLETION_TOKENS
         )
@@ -104,7 +104,7 @@ class ModelRoutingTest(unittest.TestCase):
         self.assertEqual(default_payload["model"], pr_review.DEFAULT_MODEL_FAST)
         self.assertEqual(default_payload["reasoning_effort"], "low")
         self.assertEqual(deep_payload["model"], pr_review.DEFAULT_MODEL_DEEP)
-        self.assertEqual(deep_payload["reasoning_effort"], "medium")
+        self.assertEqual(deep_payload["reasoning_effort"], "xhigh")
 
     def test_empty_overrides_fall_back_to_python_defaults(self) -> None:
         with mock.patch.dict(

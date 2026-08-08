@@ -35,11 +35,13 @@ DEFAULT_MODEL_FAST = "gpt-5.6-luna"
 DEFAULT_MODEL_DEEP = "gpt-5.6-terra"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_COMPLETION_TOKENS = 8192
-DEEP_MAX_COMPLETION_TOKENS = 25000
+# max_completion_tokens is shared by reasoning and visible output. At xhigh
+# effort, 25000 was consumed by reasoning alone and produced an empty review.
+DEEP_MAX_COMPLETION_TOKENS = 64000
 DEFAULT_LLM_TIMEOUT_SECONDS = 120
 DEEP_LLM_TIMEOUT_SECONDS = 300
 FAST_REASONING_EFFORT = "low"
-DEEP_REASONING_EFFORT = "medium"
+DEEP_REASONING_EFFORT = "xhigh"
 
 
 class LLMReviewError(RuntimeError):
