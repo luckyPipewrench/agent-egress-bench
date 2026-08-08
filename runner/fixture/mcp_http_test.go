@@ -68,6 +68,30 @@ func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
 	}
 }
 
+func TestMCPHTTPFixtureToolResultLeaseResetsResponse(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	release, err := f.AcquireToolResultLease(context.Background(), json.RawMessage(`{"content":[{"type":"text","text":"leased"}]}`))
+	if err != nil {
+		t.Fatalf("AcquireToolResultLease: %v", err)
+	}
+	assertToolCallResultContains(t, f.URL(), "leased")
+	release()
+	assertToolCallResultContains(t, f.URL(), `"ok":true`)
+}
+
+func assertToolCallResultContains(t *testing.T, endpoint, wanted string) {
+	t.Helper()
+	body := postMCPFixture(t, endpoint, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"fixture_tool","arguments":{}}}`)
+	if !bytes.Contains(body, []byte(wanted)) {
+		t.Fatalf("response = %s, want substring %q", body, wanted)
+	}
+}
+
 func postMCPFixture(t *testing.T, endpoint, request string) []byte {
 	t.Helper()
 	resp, err := http.Post(endpoint, "application/json", bytes.NewBufferString(request))

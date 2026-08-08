@@ -24,8 +24,11 @@ type MCPHTTPFixture struct {
 	// SetTools alone cannot keep simultaneous tool-definition cases isolated.
 	// A channel permits acquisition to honor each case's deadline.
 	toolDefinitionLease chan struct{}
+	toolResultLease     chan struct{}
 	toolsMu             sync.RWMutex
 	tools               []json.RawMessage
+	toolResultMu        sync.RWMutex
+	toolResult          json.RawMessage
 }
 
 // Addr returns the listener address (host:port).
@@ -83,6 +86,36 @@ func (f *MCPHTTPFixture) AcquireToolDefinitionLease(ctx context.Context, tools [
 	}, nil
 }
 
+// AcquireToolResultLease installs a case's tools/call result and exclusively
+// leases it until the returned release function is called. This prevents
+// concurrent gateway cases from receiving one another's upstream responses.
+func (f *MCPHTTPFixture) AcquireToolResultLease(ctx context.Context, result json.RawMessage) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-f.toolResultLease:
+	}
+	if err := ctx.Err(); err != nil {
+		f.toolResultLease <- struct{}{}
+		return nil, err
+	}
+	f.toolResultMu.Lock()
+	f.toolResult = append(f.toolResult[:0], result...)
+	f.toolResultMu.Unlock()
+	var released sync.Once
+	return func() {
+		released.Do(func() {
+			f.toolResultMu.Lock()
+			f.toolResult = nil
+			f.toolResultMu.Unlock()
+			f.toolResultLease <- struct{}{}
+		})
+	}, nil
+}
+
 // StartMCPHTTP creates and starts a minimal MCP HTTP upstream on a random port.
 func StartMCPHTTP() (*MCPHTTPFixture, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -93,8 +126,10 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 	f := &MCPHTTPFixture{
 		listener:            ln,
 		toolDefinitionLease: make(chan struct{}, 1),
+		toolResultLease:     make(chan struct{}, 1),
 	}
 	f.toolDefinitionLease <- struct{}{}
+	f.toolResultLease <- struct{}{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -134,7 +169,13 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":%s}}`, id, tools)
 		case "tools/call":
 			f.toolCalls.Add(1)
-			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
+			f.toolResultMu.RLock()
+			result := append(json.RawMessage(nil), f.toolResult...)
+			f.toolResultMu.RUnlock()
+			if len(result) == 0 {
+				result = json.RawMessage(`{"ok":true}`)
+			}
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":%s}`, id, result)
 		default:
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
 		}

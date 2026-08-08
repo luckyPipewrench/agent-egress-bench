@@ -33,6 +33,7 @@ func (a *MCPGatewayAdapter) DeliveryTuples() []DeliveryTuple {
 	return []DeliveryTuple{
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session"},
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_result", Lifecycle: "mcp_session"},
 	}
 }
 
@@ -72,9 +73,80 @@ func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http only")
 		}
 		return a.runToolDefinition(c, timeout)
+	case "mcp_tool_result":
+		if c.Transport != "mcp_http" {
+			return gatewaySkip(c, "gateway tool-result response supports corpus transport mcp_http only")
+		}
+		return a.runToolResult(c, timeout)
 	default:
 		return gatewaySkip(c, "gateway adapter does not support input type "+c.InputType)
 	}
+}
+
+func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result {
+	resultPayload, err := declaredToolResult(c)
+	if err != nil {
+		return gatewaySkip(c, "gateway tool-result response requires one JSON-RPC result: "+err.Error())
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	upstream := a.mcpHTTPFixture()
+	if upstream == nil {
+		return gatewaySkip(c, "gateway tool-result response requires the MCP HTTP fixture")
+	}
+	release, err := upstream.AcquireToolResultLease(ctx, resultPayload)
+	if err != nil {
+		return gatewaySkip(c, "gateway tool-result lease timeout")
+	}
+	defer release()
+
+	client := &http.Client{}
+	sess := &gatewaySession{}
+	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
+		return *result
+	}
+
+	upstreamBefore := upstream.ToolCalls()
+	call := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      "aeb-tool-result",
+		"method":  "tools/call",
+		"params": map[string]interface{}{
+			"name":      "aeb_tool_result_fixture",
+			"arguments": map[string]interface{}{},
+		},
+	}
+	_, observed := a.sendResponse(ctx, client, c.ID, call, true, "empty_tool_result_response", sess)
+	upstreamAfter := upstream.ToolCalls()
+	if observed != nil {
+		if observed.Evidence == nil {
+			observed.Evidence = map[string]interface{}{}
+		}
+		observed.Evidence["upstream_tool_calls_before"] = upstreamBefore
+		observed.Evidence["upstream_tool_calls_after"] = upstreamAfter
+		observed.Evidence["upstream_reached"] = upstreamAfter > upstreamBefore
+		if upstreamAfter <= upstreamBefore {
+			observed.Verdict = "skip"
+			observed.Evidence["reason"] = "tool_call_blocked_before_result"
+		}
+		return *observed
+	}
+	if upstreamAfter <= upstreamBefore {
+		return Result{Verdict: "skip", Evidence: map[string]interface{}{
+			"product_surface":            "mcp_gateway_streamable_http",
+			"reason":                     "tool_result_upstream_unproven",
+			"upstream_reached":           false,
+			"upstream_tool_calls_before": upstreamBefore,
+			"upstream_tool_calls_after":  upstreamAfter,
+		}}
+	}
+	return Result{Verdict: "allow", Evidence: map[string]interface{}{
+		"product_surface":            "mcp_gateway_streamable_http",
+		"upstream_reached":           true,
+		"upstream_tool_calls_before": upstreamBefore,
+		"upstream_tool_calls_after":  upstreamAfter,
+	}}
 }
 
 func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
@@ -286,6 +358,26 @@ func declaredTools(c Case) ([]json.RawMessage, []string, error) {
 		names = append(names, name)
 	}
 	return tools, names, nil
+}
+
+func declaredToolResult(c Case) (json.RawMessage, error) {
+	rawMessages, ok := c.Payload["jsonrpc_messages"].([]interface{})
+	if !ok || len(rawMessages) != 1 {
+		return nil, fmt.Errorf("requires exactly one jsonrpc_messages entry")
+	}
+	message, ok := rawMessages[0].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("tool result message must be an object")
+	}
+	result, ok := message["result"]
+	if !ok || result == nil {
+		return nil, fmt.Errorf("tool result message must have a non-null result")
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tool result: %w", err)
+	}
+	return encoded, nil
 }
 
 func toolsListNames(body []byte) ([]string, bool) {
