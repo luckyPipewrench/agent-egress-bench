@@ -126,7 +126,7 @@ func TestMCPGatewayAdapterRejectsUnprovenJSONRPCDeny(t *testing.T) {
 			t.Fatal(err)
 		}
 		if request.Method == "tools/call" {
-			writeJSONRPC(t, w, json.RawMessage(`1`), map[string]interface{}{"code": -32042, "message": "policy denied"})
+			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "policy denied"})
 			return
 		}
 		writeJSONRPC(t, w, request.ID, nil)
@@ -146,6 +146,29 @@ func TestMCPGatewayAdapterRejectsUnprovenJSONRPCDeny(t *testing.T) {
 	result := a.Run(gatewayToolsCallCase("gateway-block"), time.Second)
 	if result.Err != nil || result.Verdict != "skip" {
 		t.Fatalf("result = %+v, want unproven JSON-RPC deny skip", result)
+	}
+	if got := result.Evidence["reason"]; got != "deny_delivery_unproven" {
+		t.Fatalf("reason = %v, want deny_delivery_unproven; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestWithGatewayRequestIdentityRejectsNonObjectParams(t *testing.T) {
+	message := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params":  "not-an-object",
+	}
+
+	prepared, _, err := withGatewayRequestIdentity(message, "request-id")
+	if err == nil || !strings.Contains(err.Error(), "params must be a JSON object") {
+		t.Fatalf("error = %v, want non-object params rejection", err)
+	}
+	if prepared != nil {
+		t.Fatalf("prepared request = %#v, want nil after invalid params", prepared)
+	}
+	if got := message["params"]; got != "not-an-object" {
+		t.Fatalf("original params = %#v, want preserved payload", got)
 	}
 }
 
@@ -225,17 +248,7 @@ func TestMCPGatewayAdapterRequiresUpstreamToolResultBeforeBlock(t *testing.T) {
 			writeJSONRPC(t, w, id, nil)
 			return
 		}
-		upstreamReq, err := http.NewRequest(http.MethodPost, fm.MCPHTTP().URL(), bytes.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		upstreamReq.Header.Set("Content-Type", "application/json")
-		resp, err := client.Do(upstreamReq)
-		if err != nil {
-			t.Fatal(err)
-		}
-		upstreamBody, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
+		upstreamBody, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -481,11 +494,10 @@ func TestMCPGatewayAdapterDoesNotAcceptConcurrentUnrelatedDelivery(t *testing.T)
 	}
 	// This reaches the fixture while the target request is pending, but carries
 	// a different identity. A global counter delta would accept it as proof.
-	unrelated, err := http.Post(fm.MCPHTTP().URL(), "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"_meta":{"aeb_request_identity":"unrelated"}}}`))
-	if err != nil {
+	if _, err := forwardMCPGatewayRequest(&http.Client{Timeout: time.Second}, context.Background(), fm.MCPHTTP().URL(),
+		[]byte(`{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"_meta":{"aeb_request_identity":"unrelated"}}}`)); err != nil {
 		t.Fatal(err)
 	}
-	_ = unrelated.Body.Close()
 	close(respond)
 	result := <-results
 	if result.Err != nil || result.Verdict != "skip" || result.Evidence["upstream_reached"] != false {
@@ -558,7 +570,9 @@ func TestMCPGatewayAdapterConcurrentToolResultsKeepOwnResponseAndProof(t *testin
 		observedMu.Lock()
 		firstBody, secondBody := observed[firstIdentity], observed[secondIdentity]
 		observedMu.Unlock()
-		if !(strings.Contains(firstBody, "result-A") || strings.Contains(firstBody, "result-B")) || !(strings.Contains(secondBody, "result-A") || strings.Contains(secondBody, "result-B")) || firstBody == secondBody {
+		firstHasResult := strings.Contains(firstBody, "result-A") || strings.Contains(firstBody, "result-B")
+		secondHasResult := strings.Contains(secondBody, "result-A") || strings.Contains(secondBody, "result-B")
+		if !firstHasResult || !secondHasResult || firstBody == secondBody {
 			t.Fatalf("round %d observed bodies = %q, %q; want one response per leased case", round, firstBody, secondBody)
 		}
 	}
@@ -959,7 +973,7 @@ func TestMCPGatewayAdapterConcurrentToolDefinitionsDoNotSerialize(t *testing.T) 
 	started := time.Now()
 	waiterResult := make(chan Result, 1)
 	go func() {
-		waiterResult <- newAdapter("waiter").Run(gatewayToolDefinitionCase("gateway-lease-waiter", "waiter_tool"), 40*time.Millisecond)
+		waiterResult <- newAdapter("waiter").Run(gatewayToolDefinitionCase("gateway-lease-waiter", "waiter_tool"), 250*time.Millisecond)
 	}()
 	var result Result
 	select {
@@ -967,9 +981,9 @@ func TestMCPGatewayAdapterConcurrentToolDefinitionsDoNotSerialize(t *testing.T) 
 	case <-time.After(900 * time.Millisecond):
 		t.Fatal("waiter did not complete while another definition case was paused")
 	}
-	// The waiter's own case timeout is 40ms and the holder's is paused. A
-	// generous 500ms upper bound proves identity routing removed the global lease
-	// rather than merely timing out sooner.
+	// The waiter's own case timeout leaves room for initialization on a loaded
+	// runner while the holder remains paused. The 500ms upper bound proves
+	// identity routing removed the global lease rather than merely timing out.
 	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
 		t.Fatalf("waiter returned after %s, want concurrent identity-routed inventory", elapsed)
 	}

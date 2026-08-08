@@ -47,7 +47,11 @@ func withGatewayRequestIdentity(message map[string]interface{}, identity string)
 	for key, value := range message {
 		copyMessage[key] = value
 	}
-	params, _ := message["params"].(map[string]interface{})
+	rawParams, present := message["params"]
+	params, ok := rawParams.(map[string]interface{})
+	if present && rawParams != nil && !ok {
+		return nil, gatewayRequest{}, fmt.Errorf("request params must be a JSON object")
+	}
 	copyParams := make(map[string]interface{}, len(params)+1)
 	for key, value := range params {
 		copyParams[key] = value
@@ -753,12 +757,12 @@ func classifyGatewayJSONRPCError(body []byte, denyRange [2]int) *Result {
 }
 
 func decodeGatewayResponse(contentType string, body []byte, requestID interface{}) ([]byte, error) {
-	mediaType, _, err := mime.ParseMediaType(contentType)
+	mediaType, _, mediaErr := mime.ParseMediaType(contentType)
 	wantedID, err := json.Marshal(requestID)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request id: %w", err)
 	}
-	if err != nil || mediaType != "text/event-stream" {
+	if mediaErr != nil || mediaType != "text/event-stream" {
 		response, err := jsonRPCMessageForRequest(body, wantedID)
 		if err != nil {
 			return nil, fmt.Errorf("JSON response: %w", err)

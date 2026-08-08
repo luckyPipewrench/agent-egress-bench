@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sync"
 	"testing"
 )
 
@@ -84,6 +85,31 @@ func TestMCPHTTPFixtureToolResultLeaseResetsResponse(t *testing.T) {
 	assertToolCallResultContains(t, f.URL(), "later-request", `"ok":true`)
 }
 
+func TestMCPHTTPFixtureToolsListCopiesConcurrentInventory(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	const iterations = 50
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			f.SetTools([]json.RawMessage{json.RawMessage(`{"name":"fixture_tool"}`)})
+		}
+	}()
+	for i := 0; i < iterations; i++ {
+		body := postMCPFixture(t, f.URL(), `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+		if !bytes.Contains(body, []byte(`"tools"`)) {
+			t.Fatalf("tools/list response = %s, want tools inventory", body)
+		}
+	}
+	wg.Wait()
+}
+
 func assertToolCallResultContains(t *testing.T, endpoint, identity, wanted string) {
 	t.Helper()
 	body := postMCPFixture(t, endpoint, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"fixture_tool","arguments":{},"_meta":{"aeb_request_identity":"`+identity+`"}}}`)
@@ -94,7 +120,12 @@ func assertToolCallResultContains(t *testing.T, endpoint, identity, wanted strin
 
 func postMCPFixture(t *testing.T, endpoint, request string) []byte {
 	t.Helper()
-	resp, err := http.Post(endpoint, "application/json", bytes.NewBufferString(request))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewBufferString(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

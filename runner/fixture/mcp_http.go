@@ -206,7 +206,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		case "tools/list":
 			f.listCalls.Add(1)
 			f.toolsMu.RLock()
-			toolList := f.tools
+			toolList := append([]json.RawMessage(nil), f.tools...)
 			f.toolsMu.RUnlock()
 			f.requestMu.RLock()
 			if leased, found := f.toolDefinitions[identity]; found {
