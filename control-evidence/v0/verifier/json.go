@@ -18,8 +18,9 @@ import (
 )
 
 type schemaSet struct {
-	dsse, requirement, envelope, manifest, outcomes, clock, observer, tokenMaterial, healthMaterial, context, toolProfile,
+	dsse, requirement, envelope, manifest, outcomes, clock, observer, tokenMaterial, healthMaterial, context,
 	buyerReproduction, buyerReproductionStatement, buyerReproductionTranscript *jsonschema.Schema
+	toolProfiles map[int]*jsonschema.Schema
 }
 
 const maxJSONDepth = 128
@@ -61,6 +62,7 @@ func loadSchemas() (*schemaSet, error) {
 		"control-evidence-token-material.schema.json",
 		"control-evidence-health-control-material.schema.json",
 		"control-evidence-context.schema.json",
+		"tool-profile-v1.schema.json",
 		"tool-profile.schema.json",
 		"control-evidence-buyer-reproduction.schema.json",
 		"control-evidence-buyer-reproduction-statement.schema.json",
@@ -77,8 +79,9 @@ func loadSchemas() (*schemaSet, error) {
 	return &schemaSet{
 		dsse: compiled[0], requirement: compiled[1], envelope: compiled[2], manifest: compiled[3],
 		outcomes: compiled[4], clock: compiled[5], observer: compiled[6], tokenMaterial: compiled[7],
-		healthMaterial: compiled[8], context: compiled[9], toolProfile: compiled[10],
-		buyerReproduction: compiled[11], buyerReproductionStatement: compiled[12], buyerReproductionTranscript: compiled[13],
+		healthMaterial: compiled[8], context: compiled[9],
+		toolProfiles:      map[int]*jsonschema.Schema{1: compiled[10], 3: compiled[11]},
+		buyerReproduction: compiled[12], buyerReproductionStatement: compiled[13], buyerReproductionTranscript: compiled[14],
 	}, nil
 }
 

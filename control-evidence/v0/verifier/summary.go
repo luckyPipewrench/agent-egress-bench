@@ -13,8 +13,8 @@ func (s *verificationState) verifySummary() *Result {
 		return failure(outcomeInvalid, "tool_profile_ambiguous")
 	}
 	profileBytes := s.files[entries[0].Path]
-	profileValue, err := strictJSON(profileBytes, &s.toolProfile)
-	if err != nil || validateSchema(s.schemas.toolProfile, profileValue) != nil {
+	_, err := strictJSON(profileBytes, &s.toolProfile)
+	if err != nil || !validToolProfileSchema(profileBytes, s.schemas) {
 		return failure(outcomeInvalid, "tool_profile_invalid")
 	}
 	profileSHA := digestBytes(profileBytes)

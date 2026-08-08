@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -148,7 +149,7 @@ func validateGovernedMembers(files map[string][]byte, entriesByRole map[string][
 		}
 	}
 	for _, entry := range entriesByRole["tool-profile"] {
-		if entry.MediaType != "application/json" || !validJSONSchema(files[entry.Path], schemas.toolProfile) {
+		if entry.MediaType != "application/json" || !validToolProfileSchema(files[entry.Path], schemas) {
 			return "tool_profile_schema_invalid"
 		}
 	}
@@ -179,6 +180,27 @@ func validateGovernedMembers(files map[string][]byte, entriesByRole map[string][
 		}
 	}
 	return ""
+}
+
+func validToolProfileSchema(data []byte, schemas *schemaSet) bool {
+	value, err := strictJSON(data, nil)
+	if err != nil {
+		return false
+	}
+	profile, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	rawVersion, ok := profile["schema_version"].(json.Number)
+	if !ok {
+		return false
+	}
+	version, err := rawVersion.Int64()
+	if err != nil {
+		return false
+	}
+	schema, ok := schemas.toolProfiles[int(version)]
+	return ok && validateSchema(schema, value) == nil
 }
 
 func validJSONSchema(data []byte, schema *jsonschema.Schema) bool {

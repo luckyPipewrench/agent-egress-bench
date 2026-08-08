@@ -16,8 +16,8 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 3,
-      "description": "Schema version. Must be 3 for active scoring."
+      "const": 1,
+      "description": "Schema version. Must be 1."
     },
     "tool": {
       "type": "string",
