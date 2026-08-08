@@ -71,13 +71,6 @@ type NAKind string
 const (
 	NAMissingRequires      NAKind = "missing_requires"
 	NAUnsupportedTransport NAKind = "unsupported_transport"
-	// NAAdapterNoRoute means the selected adapter declared no delivery route
-	// for this case. It is scoped to this adapter and configuration and says
-	// nothing about the target's product: an adapter can establish its own
-	// limits but cannot prove a negative about a tool. Kept distinct from the
-	// profile-driven reasons above so a coverage gap in our own integration is
-	// never read as a capability the target lacks.
-	NAAdapterNoRoute NAKind = "adapter_no_declared_route"
 )
 
 // multiFileCaseCategories lists case-directory names that use the multi-file
@@ -176,11 +169,9 @@ func loadProfile(path string) (Profile, error) {
 	return p, nil
 }
 
-// validateProfileForRun duplicates the active profile's required-field gate at
-// the execution boundary. JSON decoding alone cannot distinguish an omitted
-// boolean from false, which used to let a truncated profile silently change a
-// run's applicability. Keep this here so every runner invocation fails before
-// fixtures, targets, or result files are touched.
+// validateProfileForRun checks the fields whose absence would otherwise turn
+// into zero values before a run begins. Supports remains open at schema v3:
+// profile extensions are records and must not be rejected by a newer runner.
 func validateProfileForRun(p Profile) error {
 	if p.Tool == "" {
 		return fmt.Errorf("missing required field tool")
@@ -197,48 +188,7 @@ func validateProfileForRun(p Profile) error {
 	if p.Supports == nil {
 		return fmt.Errorf("missing required field supports")
 	}
-	// An UNKNOWN key is rejected; an OMITTED known key defaults to false.
-	//
-	// The value of validating a profile before a run is catching a key the
-	// author got wrong, because a typo silently reads as false and can turn an
-	// entire run not-applicable with nothing to say the profile was at fault.
-	// Rejecting an omitted key does not add to that: omission already means
-	// unsupported, unambiguously. It only breaks every previously valid profile
-	// at an unchanged schema version, which is the same
-	// break-the-contract-without-moving-the-version defect this branch's base
-	// was corrected for.
-	for key := range p.Supports {
-		if !validSupportsKeys[key] {
-			return fmt.Errorf("unknown supports key %q", key)
-		}
-	}
-	for _, key := range requiredSupportsKeys {
-		if _, ok := p.Supports[key]; !ok {
-			p.Supports[key] = false
-		}
-	}
 	return nil
-}
-
-// validSupportsKeys is derived from requiredSupportsKeys so the two cannot
-// drift. A key absent from this set is a typo or an invented capability and is
-// rejected; that rejection is the reason profile validation runs before a case
-// does, since a misspelled key would otherwise read as an unsupported
-// capability and quietly shrink the run.
-var validSupportsKeys = func() map[string]bool {
-	keys := make(map[string]bool, len(requiredSupportsKeys))
-	for _, key := range requiredSupportsKeys {
-		keys[key] = true
-	}
-	return keys
-}()
-
-var requiredSupportsKeys = []string{
-	"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a", "tls_interception",
-	"url_dlp_scanning", "request_body_dlp_scanning", "header_dlp_scanning", "response_prompt_injection_scanning",
-	"mcp_input_dlp_scanning", "mcp_input_prompt_injection_scanning", "mcp_tool_policy", "mcp_tool_result_prompt_injection_scanning", "mcp_tool_poison_scanning", "mcp_tool_baseline", "mcp_chain_memory", "mcp_cross_server_chain_memory", "mcp_data_class_labels",
-	"a2a_dlp_scanning", "a2a_prompt_injection_scanning", "a2a_card_prompt_injection_scanning", "a2a_card_drift_scanning", "a2a_ssrf_scanning",
-	"websocket_dlp_scanning", "websocket_prompt_injection_scanning", "ssrf_scanning", "ssrf_bypass_scanning", "domain_blocklist", "entropy_scanning", "encoding_evasion_scanning", "shell_analysis", "crypto_dlp_scanning", "hostname_exfil_scanning", "dns_rebinding_fixture", "budget_enforcement",
 }
 
 // checkApplicability determines if a case is applicable given a profile.

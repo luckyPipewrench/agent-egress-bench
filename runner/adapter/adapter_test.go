@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+type runOnlyAdapter struct{}
+
+func (runOnlyAdapter) Run(Case, time.Duration) Result { return Result{} }
+
+func TestAdapterRemainsRunOnlyCompatible(t *testing.T) {
+	var _ Adapter = runOnlyAdapter{}
+}
+
 func TestDryRunAdapter(t *testing.T) {
 	a := DryRunAdapter{}
 

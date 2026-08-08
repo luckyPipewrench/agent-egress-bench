@@ -363,18 +363,9 @@ func captureStderr(t *testing.T, fn func() error) string {
 	return string(data)
 }
 
-// A profile that declares a capability unsupported must render the cases needing
-// it not_applicable, rather than running and scoring them against the tool.
-//
-// This exists because that gate was removed once and NOTHING in this package
-// failed: a profile declaring a capability false had its cases executed and
-// scored anyway, and every test stayed green. A check with no test is
-// indistinguishable from an absent one. The direction matters, because scoring a
-// case the profile excluded charges a target for something it never claimed.
-//
-// Written as a comparison rather than an absolute count so it cannot rot as the
-// corpus grows: declining a capability must strictly increase the number of
-// not-applicable cases.
+// Until the result-state implementation replaces legacy profile applicability,
+// a profile-declared false capability must remain not_applicable. This descope
+// must not accidentally change current scoring before that replacement lands.
 func TestRunHonoursProfileDeclaredUnsupported(t *testing.T) {
 	naCountFor := func(t *testing.T, profileJSON string) int {
 		t.Helper()

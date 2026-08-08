@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -93,7 +94,24 @@ func TestLoadProfile(t *testing.T) {
 		"tool_version": "1.0.0",
 		"runner_version": "v1",
 		"claims": ["url_dlp"],
-		"supports": {"fetch_proxy":true,"http_proxy":true,"mcp_stdio":false,"mcp_http":false,"websocket":false,"a2a":false,"tls_interception":false,"url_dlp_scanning":false,"request_body_dlp_scanning":false,"header_dlp_scanning":false,"response_prompt_injection_scanning":false,"mcp_input_dlp_scanning":false,"mcp_input_prompt_injection_scanning":false,"mcp_tool_policy":false,"mcp_tool_result_prompt_injection_scanning":false,"mcp_tool_poison_scanning":false,"mcp_tool_baseline":false,"mcp_chain_memory":false,"mcp_cross_server_chain_memory":false,"mcp_data_class_labels":false,"a2a_dlp_scanning":false,"a2a_prompt_injection_scanning":false,"a2a_card_prompt_injection_scanning":false,"a2a_card_drift_scanning":false,"a2a_ssrf_scanning":false,"websocket_dlp_scanning":false,"websocket_prompt_injection_scanning":false,"ssrf_scanning":false,"ssrf_bypass_scanning":false,"domain_blocklist":false,"entropy_scanning":false,"encoding_evasion_scanning":false,"shell_analysis":false,"crypto_dlp_scanning":false,"hostname_exfil_scanning":false,"dns_rebinding_fixture":false,"budget_enforcement":false}
+		"supports": {
+			"fetch_proxy": true,
+			"http_proxy": true,
+			"mcp_stdio": false,
+			"mcp_http": false,
+			"websocket": false,
+			"a2a": false,
+			"tls_interception": false,
+			"request_body_dlp_scanning": false,
+			"header_dlp_scanning": false,
+			"response_prompt_injection_scanning": false,
+			"mcp_tool_baseline": false,
+			"mcp_chain_memory": false,
+			"websocket_dlp_scanning": false,
+			"a2a_dlp_scanning": false,
+			"shell_analysis": false,
+			"dns_rebinding_fixture": false
+		}
 	}`
 	path := filepath.Join(dir, "profile.json")
 	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
@@ -112,24 +130,34 @@ func TestLoadProfile(t *testing.T) {
 	}
 }
 
-func TestLoadProfileRejectsPreV3Artifact(t *testing.T) {
+func TestLoadProfileRejectsMissingRunField(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
-	if err := os.WriteFile(path, []byte(`{"schema_version":2,"tool":"old-tool","tool_version":"1.0.0","runner_version":"v1","claims":[],"supports":{}}`), 0o600); err != nil {
+	profileJSON := `{"schema_version":3,"tool":"test-tool","tool_version":"1.0.0","claims":[],"supports":{}}`
+	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadProfile(path); err == nil {
-		t.Fatal("scorer accepted a pre-v3 profile")
+	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), "missing required field runner_version") {
+		t.Fatalf("loadProfile error = %v, want missing runner_version", err)
 	}
 }
 
-// This test previously asserted that an OMITTED supports key is rejected. That
-// was changed deliberately, not relaxed: omission already means unsupported,
-// unambiguously, so rejecting it added nothing except breaking every profile
-// written before the key existed, at an unchanged schema version. What profile
-// validation is actually worth having is the case below it: a MISSPELLED key,
-// which silently reads as unsupported and can shrink a whole run with nothing
-// to indicate the profile was at fault.
+func TestLoadProfilePreservesSupportsExtensionAtV3(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	profileJSON := `{"schema_version":3,"tool":"test-tool","tool_version":"1.0.0","runner_version":"v1","claims":[],"supports":{"future_delivery_mode":true}}`
+	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := loadProfile(path)
+	if err != nil {
+		t.Fatalf("loadProfile rejected a v3 supports extension: %v", err)
+	}
+	if got, ok := profile.Supports["future_delivery_mode"]; !ok || !got {
+		t.Fatalf("supports extension = (%t, present=%t), want (true, true)", got, ok)
+	}
+}
+
 func TestLoadProfileDefaultsOmittedSupportsKeyToFalse(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
@@ -146,26 +174,40 @@ func TestLoadProfileDefaultsOmittedSupportsKeyToFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadProfile error = %v, want an omitted key to be accepted as unsupported", err)
 	}
-	if supported, present := profile.Supports["mcp_http"]; !present || supported {
-		t.Fatalf("supports[mcp_http] = (%t, present=%t), want (false, present=true)", supported, present)
+	if _, present := profile.Supports["mcp_http"]; present {
+		t.Fatal("loadProfile rewrote an omitted supports key into the recorded profile")
+	}
+	if reason, applicable := checkApplicability(Case{Transport: "mcp_http"}, profile); applicable || reason != NAUnsupportedTransport {
+		t.Fatalf("omitted mcp_http applicability = (%q, %t), want (%q, false)", reason, applicable, NAUnsupportedTransport)
 	}
 }
 
-func TestLoadProfileRejectsUnknownSupportsKey(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "profile.json")
-	data, err := os.ReadFile("../examples/pipelock/tool-profile.json")
+func TestToolProfileSchemaAllowsSupportsExtensionsAtV3(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "schemas", "tool-profile.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A plausible misspelling of a real key, which is the failure mode that
-	// matters: it reads as unsupported and nothing says the profile was wrong.
-	typo := strings.Replace(string(data), `"mcp_http": true,`, `"mcp_htttp": true,`, 1)
-	if err := os.WriteFile(path, []byte(typo), 0o600); err != nil {
+	var schema struct {
+		Properties map[string]struct {
+			AdditionalProperties any `json:"additionalProperties"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), `unknown supports key "mcp_htttp"`) {
-		t.Fatalf("loadProfile error = %v, want the misspelled key named", err)
+	if got, ok := schema.Properties["supports"].AdditionalProperties.(bool); !ok || !got {
+		t.Fatalf("supports.additionalProperties = %#v, want true", schema.Properties["supports"].AdditionalProperties)
+	}
+}
+
+func TestLoadProfileRejectsPreV3Artifact(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(path, []byte(`{"schema_version":2,"tool":"old-tool","tool_version":"1.0.0","runner_version":"v1","claims":[],"supports":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadProfile(path); err == nil {
+		t.Fatal("scorer accepted a pre-v3 profile")
 	}
 }
 

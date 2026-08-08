@@ -244,15 +244,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	enc := json.NewEncoder(os.Stdout)
 
 	for _, c := range cases {
-		// Applicability still gates the run, deliberately, until the result
-		// state machine lands. Removing it here and letting tuple selection
-		// decide alone changed scoring in both directions at once: a profile
-		// declaring a transport or capability false no longer produced
-		// not_applicable, so the case ran and was scored anyway, and a case the
-		// adapter cannot route became a scored error instead of an exclusion.
-		// The end state replaces this with delivery-and-observation states, but
-		// an intermediate that scores incorrectly is not worth shipping to get
-		// there.
+		// Check applicability.
 		reason, applicable := checkApplicability(c, profile)
 		if !applicable {
 			debugf(debug, "case %s: not_applicable (%s)", c.ID, reason)
@@ -274,10 +266,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			continue
 		}
 
-		// Select an exact adapter-declared delivery route before running, so a
-		// case is driven only over a transport and surface the adapter states
-		// it can actually deliver rather than one inferred from a profile
-		// boolean.
+		// Run the case through the adapter.
 		adapterCase := adapter.Case{
 			ID:              c.ID,
 			ExpectedVerdict: c.ExpectedVerdict,
@@ -286,48 +275,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			Requires:        c.Requires,
 			Payload:         c.Payload,
 		}
-		route, routed := adapter.SupportsTuple(adapt, adapterCase)
-		if !routed {
-			// The adapter declares no route for this case. That is a limit of
-			// this adapter and configuration, never a statement about the
-			// product, so it is excluded rather than scored. Scoring it as an
-			// error charged a target for the benchmark's own coverage gap and
-			// counted toward run sufficiency. The state machine replaces this
-			// with an explicit unreachable disposition carrying the tuple that
-			// was missing; the exclusion is recorded under its own reason so
-			// the count is visible in the meantime rather than silent.
-			tuple := adapter.TupleForCase(adapterCase)
-			debugf(debug, "case %s: no adapter route (%s/%s/%s)", c.ID, tuple.WireTransport, tuple.SemanticSurface, tuple.Lifecycle)
-			naReasons[NAAdapterNoRoute]++
-			result := CaseResult{
-				SchemaVersion:   activeSchemaVersion,
-				CaseID:          c.ID,
-				Tool:            profile.Tool,
-				ToolVersion:     profile.ToolVersion,
-				ExpectedVerdict: c.ExpectedVerdict,
-				ActualVerdict:   "not_applicable",
-				Score:           "not_applicable",
-				Evidence: map[string]interface{}{
-					"wire_transport":   tuple.WireTransport,
-					"semantic_surface": tuple.SemanticSurface,
-					"lifecycle":        tuple.Lifecycle,
-				},
-				Notes: "not applicable: " + string(NAAdapterNoRoute),
-			}
-			if encErr := enc.Encode(result); encErr != nil {
-				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
-			}
-			continue
-		}
-
-		// Run the case through the exact declared adapter route.
 		adapterResult := adapt.Run(adapterCase, timeout)
-		if adapterResult.Evidence == nil {
-			adapterResult.Evidence = map[string]interface{}{}
-		}
-		adapterResult.Evidence["delivery_tuple"] = map[string]string{"wire_transport": route.WireTransport, "semantic_surface": route.SemanticSurface, "lifecycle": route.Lifecycle}
-		adapterResult.Evidence["delivery_proof"] = route.DeliveryProof
-		adapterResult.Evidence["verdict_proof"] = route.VerdictProof
 
 		if adapterResult.Err != nil {
 			debugf(debug, "case %s: ERROR expected=%s err=%v evidence=%v",
@@ -340,7 +288,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 				ExpectedVerdict: c.ExpectedVerdict,
 				ActualVerdict:   "error",
 				Score:           "error",
-				Evidence:        adapterResult.Evidence,
+				Evidence:        map[string]interface{}{},
 				Notes:           fmt.Sprintf("adapter error: %v", adapterResult.Err),
 			}
 			applicableResults = append(applicableResults, result)

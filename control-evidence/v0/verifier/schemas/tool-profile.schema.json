@@ -102,7 +102,7 @@
         "dns_rebinding_fixture",
         "budget_enforcement"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "fetch_proxy": {
           "type": "boolean",

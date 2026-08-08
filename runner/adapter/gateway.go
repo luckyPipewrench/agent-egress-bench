@@ -19,17 +19,20 @@ import (
 )
 
 // MCPGatewayAdapter drives a plugin-configured MCP gateway over Streamable
-// HTTP. Tool definitions are also delivered on that HTTP wire; they are not
-// substitutes for corpus mcp_stdio cases.
+// HTTP. Tool definitions use that same client transport and do not substitute
+// for corpus mcp_stdio cases.
 type MCPGatewayAdapter struct {
 	plugin   GatewayPlugin
 	fixtures *fixture.Manager
 }
 
+// DeliveryTuples declares the exact wire paths this adapter can drive. The
+// runner does not use this declaration for scoring until the result-state
+// implementation supplies unreachable and evidence semantics.
 func (a *MCPGatewayAdapter) DeliveryTuples() []DeliveryTuple {
 	return []DeliveryTuple{
-		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session", DeliveryProof: "MCP HTTP fixture tools/call counter", VerdictProof: "request-correlated JSON-RPC response and upstream counter"},
-		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session", DeliveryProof: "MCP HTTP fixture tools/list counter", VerdictProof: "request-correlated tools/list inventory and upstream counter"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
 	}
 }
 
@@ -55,7 +58,7 @@ func NewMCPGatewayAdapter(plugin GatewayPlugin, fixtures *fixture.Manager) (*MCP
 	return &MCPGatewayAdapter{plugin: plugin, fixtures: fixtures}, nil
 }
 
-// Run drives a declared corpus tuple through the gateway's Streamable HTTP
+// Run drives a supported corpus case through the gateway's Streamable HTTP
 // endpoint.
 func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 	switch c.InputType {

@@ -682,16 +682,46 @@ func gatewayToolDefinitionCase(id, name string) Case {
 	}
 }
 
-func TestMCPGatewayAdapterDeclaresHTTPToolDefinitionOnly(t *testing.T) {
-	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "test", Transport: "streamable_http", Client: GatewayClient{Endpoint: "http://127.0.0.1:1"}}, nil)
+func TestMCPGatewayAdapterDeclaresOnlyHTTPToolDefinitionRoute(t *testing.T) {
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "test gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: "http://127.0.0.1:1/mcp"},
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := SupportsTuple(a, Case{Transport: "mcp_http", InputType: "mcp_tool_definition"}); !ok {
-		t.Fatal("declared HTTP tool-definition tuple was not selectable")
+
+	var httpDefinition, stdioDefinition bool
+	for _, route := range a.DeliveryTuples() {
+		if route.SemanticSurface != "mcp_tool_definition" {
+			continue
+		}
+		switch route.WireTransport {
+		case "mcp_http":
+			httpDefinition = true
+		case "mcp_stdio":
+			stdioDefinition = true
+		}
 	}
-	if _, ok := SupportsTuple(a, Case{Transport: "mcp_stdio", InputType: "mcp_tool_definition"}); ok {
-		t.Fatal("gateway declared a stdio tool-definition route while delivering it over HTTP")
+	if !httpDefinition {
+		t.Fatal("gateway did not declare its HTTP tool-definition route")
+	}
+	if stdioDefinition {
+		t.Fatal("gateway declared a stdio tool-definition route while using an HTTP client")
+	}
+}
+
+func TestMCPGatewayAdapterRejectsStdioToolDefinition(t *testing.T) {
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{
+		Name: "test gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: "http://127.0.0.1:1/mcp"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caseRecord := gatewayToolDefinitionCase("stdio-tool-definition", "example")
+	caseRecord.Transport = "mcp_stdio"
+	result := a.Run(caseRecord, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want stdio tool-definition skip", result)
 	}
 }
 
