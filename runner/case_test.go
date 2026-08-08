@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -88,33 +93,12 @@ func TestLoadCasesEmpty(t *testing.T) {
 
 func TestLoadProfile(t *testing.T) {
 	dir := t.TempDir()
-	profileJSON := `{
-		"schema_version": 3,
-		"tool": "test-tool",
-		"tool_version": "1.0.0",
-		"runner_version": "v1",
-		"claims": ["url_dlp"],
-		"supports": {
-			"fetch_proxy": true,
-			"http_proxy": true,
-			"mcp_stdio": false,
-			"mcp_http": false,
-			"websocket": false,
-			"a2a": false,
-			"tls_interception": false,
-			"request_body_dlp_scanning": false,
-			"header_dlp_scanning": false,
-			"response_prompt_injection_scanning": false,
-			"mcp_tool_baseline": false,
-			"mcp_chain_memory": false,
-			"websocket_dlp_scanning": false,
-			"a2a_dlp_scanning": false,
-			"shell_analysis": false,
-			"dns_rebinding_fixture": false
-		}
-	}`
 	path := filepath.Join(dir, "profile.json")
-	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
+	data, err := os.ReadFile(filepath.Join("..", "examples", "runner-template", "tool-profile-template.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,10 +106,10 @@ func TestLoadProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadProfile: %v", err)
 	}
-	if p.Tool != "test-tool" {
-		t.Errorf("expected tool test-tool, got %s", p.Tool)
+	if p.Tool != "YOUR_TOOL_NAME" {
+		t.Errorf("expected tool YOUR_TOOL_NAME, got %s", p.Tool)
 	}
-	if len(p.Claims) != 1 || p.Claims[0] != "url_dlp" {
+	if len(p.Claims) != 0 {
 		t.Errorf("unexpected claims: %v", p.Claims)
 	}
 }
@@ -142,61 +126,200 @@ func TestLoadProfileRejectsMissingRunField(t *testing.T) {
 	}
 }
 
-func TestLoadProfilePreservesSupportsExtensionAtV3(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "profile.json")
-	profileJSON := `{"schema_version":3,"tool":"test-tool","tool_version":"1.0.0","runner_version":"v1","claims":[],"supports":{"future_delivery_mode":true}}`
-	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
+func validV3Profile(t *testing.T) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "examples", "runner-template", "tool-profile-template.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	profile, err := loadProfile(path)
-	if err != nil {
-		t.Fatalf("loadProfile rejected a v3 supports extension: %v", err)
+	var profile map[string]any
+	if err := json.Unmarshal(data, &profile); err != nil {
+		t.Fatal(err)
 	}
-	if got, ok := profile.Supports["future_delivery_mode"]; !ok || !got {
-		t.Fatalf("supports extension = (%t, present=%t), want (true, true)", got, ok)
+	return profile
+}
+
+func writeV3Profile(t *testing.T, path string, mutate func(map[string]any)) {
+	t.Helper()
+	profile := validV3Profile(t)
+	mutate(profile["supports"].(map[string]any))
+	data, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestLoadProfileDefaultsOmittedSupportsKeyToFalse(t *testing.T) {
+// These replace permissive tests added on this branch. An omitted capability
+// does not mean unsupported in v3: it is an invalid scored profile because a
+// typo otherwise silently removes cases from execution.
+func TestLoadProfileRejectsMissingSupportsKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")
-	data, err := os.ReadFile("../examples/pipelock/tool-profile.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	trimmed := strings.Replace(string(data), `"mcp_http": true,`, ``, 1)
-	if err := os.WriteFile(path, []byte(trimmed), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	profile, err := loadProfile(path)
-	if err != nil {
-		t.Fatalf("loadProfile error = %v, want an omitted key to be accepted as unsupported", err)
-	}
-	if _, present := profile.Supports["mcp_http"]; present {
-		t.Fatal("loadProfile rewrote an omitted supports key into the recorded profile")
-	}
-	if reason, applicable := checkApplicability(Case{Transport: "mcp_http"}, profile); applicable || reason != NAUnsupportedTransport {
-		t.Fatalf("omitted mcp_http applicability = (%q, %t), want (%q, false)", reason, applicable, NAUnsupportedTransport)
+	writeV3Profile(t, path, func(supports map[string]any) { delete(supports, "mcp_http") })
+	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), `missing required supports key: "mcp_http"`) {
+		t.Fatalf("loadProfile error = %v, want missing mcp_http", err)
 	}
 }
 
-func TestToolProfileSchemaAllowsSupportsExtensionsAtV3(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "schemas", "tool-profile.schema.json"))
+func TestLoadProfileRejectsUnknownSupportsKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	writeV3Profile(t, path, func(supports map[string]any) { supports["mcp_htttp"] = true })
+	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), `unknown supports key: "mcp_htttp"`) {
+		t.Fatalf("loadProfile error = %v, want unknown mcp_htttp", err)
+	}
+}
+
+func TestLoadProfileRejectsEmptySupports(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	writeV3Profile(t, path, func(supports map[string]any) {
+		for key := range supports {
+			delete(supports, key)
+		}
+	})
+	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), "missing required supports key") {
+		t.Fatalf("loadProfile error = %v, want missing required supports key", err)
+	}
+}
+
+type supportsSchema struct {
+	Properties map[string]json.RawMessage `json:"properties"`
+	Required   []string                   `json:"required"`
+	// Pointer, so an ABSENT keyword is distinguishable from an explicit false.
+	// A plain bool decodes an absent keyword as false, which would read as
+	// "unknown keys are forbidden" while JSON Schema treats the absent case as
+	// permissive. Deleting the line would then silently reopen the contract
+	// with this guard still passing.
+	AdditionalProperties *bool `json:"additionalProperties"`
+}
+
+func supportsVocabularyFromSchema(t *testing.T, path string) (map[string]struct{}, []byte) {
+	t.Helper()
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var schema struct {
-		Properties map[string]struct {
-			AdditionalProperties any `json:"additionalProperties"`
-		} `json:"properties"`
+		Properties map[string]json.RawMessage `json:"properties"`
 	}
 	if err := json.Unmarshal(data, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := schema.Properties["supports"].AdditionalProperties.(bool); !ok || !got {
-		t.Fatalf("supports.additionalProperties = %#v, want true", schema.Properties["supports"].AdditionalProperties)
+	var supports supportsSchema
+	if err := json.Unmarshal(schema.Properties["supports"], &supports); err != nil {
+		t.Fatal(err)
+	}
+	if supports.AdditionalProperties == nil {
+		t.Fatalf("%s omits additionalProperties on supports; JSON Schema treats that as permissive, so it must be stated explicitly", path)
+	}
+	if *supports.AdditionalProperties {
+		t.Fatalf("%s permits unknown supports keys", path)
+	}
+	vocabulary := make(map[string]struct{}, len(supports.Properties))
+	for key := range supports.Properties {
+		vocabulary[key] = struct{}{}
+	}
+	assertSameVocabulary(t, path+" properties", vocabulary, path+" required", stringsToSet(supports.Required))
+	return vocabulary, data
+}
+
+func supportsVocabularyFromValidator(t *testing.T) map[string]struct{} {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join("..", "validate", "main.go"), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok || len(value.Names) != 1 || value.Names[0].Name != "validSupportsKeys" || len(value.Values) != 1 {
+				continue
+			}
+			literal, ok := value.Values[0].(*ast.CompositeLit)
+			if !ok {
+				t.Fatal("validate validSupportsKeys is not a composite literal")
+			}
+			vocabulary := make(map[string]struct{}, len(literal.Elts))
+			for _, element := range literal.Elts {
+				pair, ok := element.(*ast.KeyValueExpr)
+				if !ok {
+					t.Fatal("validate validSupportsKeys contains a non-keyed entry")
+				}
+				key, ok := pair.Key.(*ast.BasicLit)
+				if !ok || key.Kind != token.STRING {
+					t.Fatal("validate validSupportsKeys contains a non-string key")
+				}
+				name, err := strconv.Unquote(key.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				vocabulary[name] = struct{}{}
+			}
+			return vocabulary
+		}
+	}
+	t.Fatal("validate validSupportsKeys declaration not found")
+	return nil
+}
+
+func stringsToSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func assertSameVocabulary(t *testing.T, leftName string, left map[string]struct{}, rightName string, right map[string]struct{}) {
+	t.Helper()
+	if len(left) != len(right) {
+		t.Fatalf("%s has %d keys; %s has %d", leftName, len(left), rightName, len(right))
+	}
+	for key := range left {
+		if _, found := right[key]; !found {
+			t.Fatalf("%s contains %q but %s does not", leftName, key, rightName)
+		}
+	}
+}
+
+// TestToolProfileSupportsVocabularyParity keeps all five v3 contract copies in
+// lockstep: the runner's preflight, the Go validator, schema properties and
+// required list, plus the embedded verifier mirror. The branch used to test a
+// permissive runner and schema against a strict validator; this test makes that
+// disagreement fail before a profile can hide cases by typo or omission.
+func TestToolProfileSupportsVocabularyParity(t *testing.T) {
+	rootPath := filepath.Join("..", "schemas", "tool-profile.schema.json")
+	embeddedPath := filepath.Join("..", "control-evidence", "v0", "verifier", "schemas", "tool-profile.schema.json")
+	rootVocabulary, rootBytes := supportsVocabularyFromSchema(t, rootPath)
+	embeddedVocabulary, embeddedBytes := supportsVocabularyFromSchema(t, embeddedPath)
+	if !bytes.Equal(rootBytes, embeddedBytes) {
+		t.Fatal("tool-profile schema and embedded verifier mirror differ")
+	}
+	assertSameVocabulary(t, "runner required set", requiredSupportsKeys, "validator vocabulary", supportsVocabularyFromValidator(t))
+	assertSameVocabulary(t, "runner required set", requiredSupportsKeys, "schema properties", rootVocabulary)
+	assertSameVocabulary(t, "runner required set", requiredSupportsKeys, "embedded schema properties", embeddedVocabulary)
+}
+
+// Every active tool-profile artifact must pass runner preflight. The profiles/
+// receipt records use their own historical reader and are covered by the
+// committed-profile validation tests in receipt_profile_test.go.
+func TestShippedToolProfilesSatisfyV3Contract(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
+		filepath.Join("..", "examples", "runner-template", "tool-profile-template.json"),
+	} {
+		if _, err := loadProfile(path); err != nil {
+			t.Errorf("%s violates the v3 tool-profile contract: %v", path, err)
+		}
 	}
 }
 

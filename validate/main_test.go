@@ -1573,7 +1573,7 @@ func TestProfileValidation_MissingFields(t *testing.T) {
 
 func TestProfileValidation_InvalidSupportsKey(t *testing.T) {
 	sup := allSupportsKeys()
-	sup["fake_key"] = true
+	sup["mcp_htttp"] = true
 	p := Profile{
 		SchemaVersion: 3, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
 		Claims:   []string{"url_dlp"},
@@ -1582,12 +1582,12 @@ func TestProfileValidation_InvalidSupportsKey(t *testing.T) {
 	errors := validateProfile(p)
 	found := false
 	for _, e := range errors {
-		if strings.Contains(e, "invalid supports key") {
+		if strings.Contains(e, `invalid supports key: "mcp_htttp"`) {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("expected invalid supports key error")
+		t.Fatal("expected mcp_htttp invalid supports key error")
 	}
 }
 
@@ -1689,6 +1689,15 @@ func TestProfileValidation_MissingSupportsKeys(t *testing.T) {
 		SchemaVersion: 3, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
 		Claims:   []string{"url_dlp"},
 		Supports: map[string]interface{}{"fetch_proxy": true},
+	}
+	errors := validateProfile(p)
+	assertContainsError(t, errors, `missing required supports key: "mcp_http"`)
+}
+
+func TestProfileValidation_EmptySupportsRejectsEveryRequiredKey(t *testing.T) {
+	p := Profile{
+		SchemaVersion: 3, Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+		Claims: []string{"url_dlp"}, Supports: map[string]interface{}{},
 	}
 	errors := validateProfile(p)
 	assertContainsError(t, errors, "missing required supports key")

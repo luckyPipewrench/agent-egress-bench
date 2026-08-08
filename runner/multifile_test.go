@@ -467,28 +467,30 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	profilePath := filepath.Join(tmpDir, "profile.json")
 	receiptPath := filepath.Join(tmpDir, "receipt-profile.json")
 
-	if err := os.WriteFile(profilePath, []byte(`{
-		"schema_version": 3,
-		"tool": "test-tool",
-		"tool_version": "0.0.0",
-		"runner_version": "test",
-		"claims": ["mcp_tool_poison", "mcp_chain"],
-		"supports": {
-			"mcp_stdio": true,
-			"mcp_tool_poison_scanning": true,
-			"mcp_tool_baseline": true,
-			"mcp_chain_memory": true,
-			"mcp_cross_server_chain_memory": true,
-			"mcp_data_class_labels": true
-		}
-	}`), 0o600); err != nil {
+	profile := validV3Profile(t)
+	profile["tool"] = "test-tool"
+	profile["tool_version"] = "0.0.0"
+	profile["runner_version"] = "test"
+	profile["claims"] = []string{"mcp_tool_poison", "mcp_chain"}
+	supports := profile["supports"].(map[string]any)
+	for _, key := range []string{
+		"mcp_stdio", "mcp_tool_poison_scanning", "mcp_tool_baseline",
+		"mcp_chain_memory", "mcp_cross_server_chain_memory", "mcp_data_class_labels",
+	} {
+		supports[key] = true
+	}
+	profileData, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatalf("marshal profile: %v", err)
+	}
+	if err := os.WriteFile(profilePath, profileData, 0o600); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}
 
 	casesDir := filepath.Join("..", "cases")
 	multiFileDir := filepath.Join("..", "cases", "mcp-drift")
 
-	err := run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, receiptPath, "", multiFileDir, false)
+	err = run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, receiptPath, "", multiFileDir, false)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

@@ -10,6 +10,28 @@ import (
 
 const activeSchemaVersion = 3
 
+// requiredSupportsKeys is the complete, closed v3 supports vocabulary. A
+// profile is a scored input, so omitted keys must never silently become false
+// and an unknown key must never disappear from applicability decisions.
+var requiredSupportsKeys = map[string]struct{}{
+	"fetch_proxy": {}, "http_proxy": {}, "mcp_stdio": {}, "mcp_http": {},
+	"websocket": {}, "a2a": {}, "tls_interception": {},
+	"url_dlp_scanning": {}, "request_body_dlp_scanning": {},
+	"header_dlp_scanning": {}, "response_prompt_injection_scanning": {},
+	"mcp_input_dlp_scanning": {}, "mcp_input_prompt_injection_scanning": {},
+	"mcp_tool_policy": {}, "mcp_tool_result_prompt_injection_scanning": {},
+	"mcp_tool_poison_scanning": {}, "mcp_tool_baseline": {},
+	"mcp_chain_memory": {}, "mcp_cross_server_chain_memory": {},
+	"mcp_data_class_labels": {}, "a2a_dlp_scanning": {},
+	"a2a_prompt_injection_scanning": {}, "a2a_card_prompt_injection_scanning": {},
+	"a2a_card_drift_scanning": {}, "a2a_ssrf_scanning": {},
+	"websocket_dlp_scanning": {}, "websocket_prompt_injection_scanning": {},
+	"ssrf_scanning": {}, "ssrf_bypass_scanning": {}, "domain_blocklist": {},
+	"entropy_scanning": {}, "encoding_evasion_scanning": {}, "shell_analysis": {},
+	"crypto_dlp_scanning": {}, "hostname_exfil_scanning": {},
+	"dns_rebinding_fixture": {}, "budget_enforcement": {},
+}
+
 // Case represents a single benchmark case loaded from JSON.
 type Case struct {
 	SchemaVersion   int                    `json:"schema_version"`
@@ -170,8 +192,8 @@ func loadProfile(path string) (Profile, error) {
 }
 
 // validateProfileForRun checks the fields whose absence would otherwise turn
-// into zero values before a run begins. Supports remains open at schema v3:
-// profile extensions are records and must not be rejected by a newer runner.
+// into zero values before a run begins. Supports is closed at schema v3 so a
+// typo cannot quietly disable an exercised surface.
 func validateProfileForRun(p Profile) error {
 	if p.Tool == "" {
 		return fmt.Errorf("missing required field tool")
@@ -187,6 +209,16 @@ func validateProfileForRun(p Profile) error {
 	}
 	if p.Supports == nil {
 		return fmt.Errorf("missing required field supports")
+	}
+	for key := range p.Supports {
+		if _, known := requiredSupportsKeys[key]; !known {
+			return fmt.Errorf("unknown supports key: %q", key)
+		}
+	}
+	for key := range requiredSupportsKeys {
+		if _, present := p.Supports[key]; !present {
+			return fmt.Errorf("missing required supports key: %q", key)
+		}
 	}
 	return nil
 }
