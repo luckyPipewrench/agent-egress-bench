@@ -35,11 +35,32 @@ var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": t
 // Validation is intentionally stdlib-only so callers can re-verify a
 // profile without pulling a JSON Schema dependency into this module.
 // The returned slice is empty when the profile is valid.
+// readableReceiptProfileVersions lists the receipt-profile schema versions this
+// reader accepts. The active version is what new profiles are emitted at;
+// superseded entries exist so historical records stay verifiable without being
+// rewritten. A version absent from this set is an error rather than a silent
+// fall through to the active contract.
+var readableReceiptProfileVersions = map[int]bool{
+	1:                   true, // records emitted before the coordinated v3 set
+	activeSchemaVersion: true,
+}
+
+func isReadableReceiptProfileVersion(version int) bool {
+	return readableReceiptProfileVersions[version]
+}
+
 func ValidateReceiptProfile(rp ReceiptProfile) []string {
 	var issues []string
 
-	if rp.SchemaVersion != activeSchemaVersion {
-		issues = append(issues, fmt.Sprintf("schema_version must be %d, got %d", activeSchemaVersion, rp.SchemaVersion))
+	// A receipt profile is a recorded result, so a superseded version is read
+	// under the contract it was recorded under rather than rejected or, worse,
+	// rewritten to satisfy the current one. profiles/pipelock.json records
+	// Pipelock 3.1.0 against corpus v2.0.0 and is generated, never hand-edited;
+	// bumping its declared version would make it claim a schema generation that
+	// did not exist when it was produced. Emission still uses the active
+	// version, so nothing new is written at a superseded one.
+	if !isReadableReceiptProfileVersion(rp.SchemaVersion) {
+		issues = append(issues, fmt.Sprintf("schema_version must be %d for scoring, or a readable historical version, got %d", activeSchemaVersion, rp.SchemaVersion))
 	}
 	if strings.TrimSpace(rp.Tool) == "" {
 		issues = append(issues, "tool must be a non-empty string")

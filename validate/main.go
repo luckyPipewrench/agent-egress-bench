@@ -8,8 +8,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
+
+// activeCaseSchemaVersion is the case schema version this validator enforces.
+// Both case shapes read it, so the single-file and multi-file paths cannot
+// drift apart on the version boundary the way they previously did on the
+// requires vocabulary. It mirrors activeSchemaVersion in the runner; the two
+// move together whenever the coordinated artifact set is bumped.
+const activeCaseSchemaVersion = 3
 
 // Valid enum values for v1 schema.
 var (
@@ -337,8 +345,8 @@ func validateFile(path string, ids map[string]string) []string {
 		addErr(fmt.Sprintf("JSON parse error: %v", err))
 		return errors
 	}
-	if c.SchemaVersion != 3 {
-		addErr(fmt.Sprintf("schema_version must be 3, got %d", c.SchemaVersion))
+	if c.SchemaVersion != activeCaseSchemaVersion {
+		addErr(fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, c.SchemaVersion))
 	}
 
 	// Required fields
@@ -806,10 +814,47 @@ func requiresTokenProblem(token string) string {
 	return ""
 }
 
+// validateMultiFileSchemaVersion enforces the active schema version on a
+// case.yaml. A missing or unparseable version is an error rather than an
+// assumed default, so an unclassifiable case can never validate.
+func validateMultiFileSchemaVersion(path, content string) []string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "schema_version:") {
+			continue
+		}
+		if line != trimmed {
+			return []string{fmt.Sprintf("%s: schema_version must be a top-level key", path)}
+		}
+		raw, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "schema_version:")))
+		if err != nil {
+			return []string{fmt.Sprintf("%s: %v", path, err)}
+		}
+		version, err := strconv.Atoi(strings.Trim(raw, `"'`))
+		if err != nil {
+			return []string{fmt.Sprintf("%s: schema_version must be an integer, got %q", path, raw)}
+		}
+		if version != activeCaseSchemaVersion {
+			return []string{fmt.Sprintf("%s: schema_version must be %d, got %d", path, activeCaseSchemaVersion, version)}
+		}
+		return nil
+	}
+	return []string{fmt.Sprintf("%s: missing schema_version", path)}
+}
+
 func validateMultiFileRequires(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: cannot read case.yaml: %v", path, err)}
+	}
+	// The multi-file shape has to enforce the same version boundary as the
+	// single-file one. Checking only `requires` here left the validator
+	// fail-open: a case.yaml declaring any version at all, including one that
+	// does not exist, passed as long as its requirements were legal. The runner
+	// rejects it later, but the validator is what authors and CI run, so a
+	// corpus can be declared valid while carrying cases the scorer will refuse.
+	if errs := validateMultiFileSchemaVersion(path, string(data)); len(errs) > 0 {
+		return errs
 	}
 	toks, err := parseRequiresFromYAML(string(data))
 	if err != nil {

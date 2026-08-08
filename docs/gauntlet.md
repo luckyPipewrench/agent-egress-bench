@@ -72,7 +72,7 @@ The Gauntlet produces two outputs:
 
 ### Per-case results (JSONL)
 
-One JSON object per line to stdout, using the existing result format defined in [SCORING.md](SCORING.md) and [`schemas/result.schema.json`](../schemas/result.schema.json). No changes to this format.
+One JSON object per line to stdout, using the existing result format defined in [SCORING.md](SCORING.md) and [`schemas/result.schema.json`](../schemas/result.schema.json). The result format gains the `unreachable` actual verdict in schema v3; see [`schemas/result.schema.json`](../schemas/result.schema.json) for the current vocabulary.
 
 ### Gauntlet summary (JSON file)
 

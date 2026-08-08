@@ -84,7 +84,7 @@ The corpus holds two fixture shapes, and a logical case is one of either.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | int | Must be `2` |
+| `schema_version` | int | Must be `3` |
 | `id` | string | Unique, immutable identifier |
 | `category` | string | Attack surface category |
 | `title` | string | Short human-readable title |

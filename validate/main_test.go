@@ -1814,6 +1814,31 @@ func TestMultiFileRequiresValidation(t *testing.T) {
 			yaml:    header + "requires: [mcp_tool_baseline, ssrf_bypass_scanning]\n",
 			wantErr: "attack-difficulty flag",
 		},
+		// The multi-file path checked only requires, so a case.yaml declaring
+		// any version at all, including one that does not exist, validated
+		// clean as long as its requirements were legal. The runner rejected it
+		// later, but the validator is what authors and CI run, so a corpus
+		// could be declared valid while carrying cases the scorer refuses.
+		{
+			name:    "unknown schema version is rejected",
+			yaml:    "schema_version: 99\nid: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
+			wantErr: "schema_version must be 3, got 99",
+		},
+		{
+			name:    "superseded schema version is rejected",
+			yaml:    "schema_version: 2\nid: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
+			wantErr: "schema_version must be 3, got 2",
+		},
+		{
+			name:    "missing schema version is an error, not an assumed default",
+			yaml:    "id: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
+			wantErr: "missing schema_version",
+		},
+		{
+			name:    "non-integer schema version is rejected",
+			yaml:    "schema_version: three\nid: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
+			wantErr: "must be an integer",
+		},
 		{
 			name:    "enforcement claim in block form",
 			yaml:    header + "requires:\n  - budget_enforcement\n",
