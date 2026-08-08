@@ -18,12 +18,22 @@ import (
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
 
-// MCPGatewayAdapter drives a plugin-configured MCP gateway. It supports the
-// Streamable HTTP tools/call path and the MCP tool-definition tools/list path;
-// lifecycle and fixture registration commands remain plugin contract fields.
+// MCPGatewayAdapter drives a plugin-configured MCP gateway over Streamable
+// HTTP. Tool definitions use that same client transport and do not substitute
+// for corpus mcp_stdio cases.
 type MCPGatewayAdapter struct {
 	plugin   GatewayPlugin
 	fixtures *fixture.Manager
+}
+
+// DeliveryTuples declares the exact wire paths this adapter can drive. The
+// runner does not use this declaration for scoring until the result-state
+// implementation supplies unreachable and evidence semantics.
+func (a *MCPGatewayAdapter) DeliveryTuples() []DeliveryTuple {
+	return []DeliveryTuple{
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
+	}
 }
 
 // NewMCPGatewayAdapter creates an adapter for a loaded gateway plugin.
@@ -49,8 +59,7 @@ func NewMCPGatewayAdapter(plugin GatewayPlugin, fixtures *fixture.Manager) (*MCP
 }
 
 // Run drives a supported corpus case through the gateway's Streamable HTTP
-// endpoint. Corpus mcp_stdio tool definitions represent the upstream MCP tool
-// inventory even though the gateway-facing client transport is HTTP.
+// endpoint.
 func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 	switch c.InputType {
 	case "mcp_tool_call":
@@ -59,8 +68,8 @@ func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 		}
 		return a.runToolsCall(c, timeout)
 	case "mcp_tool_definition":
-		if c.Transport != "mcp_stdio" {
-			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_stdio only")
+		if c.Transport != "mcp_http" {
+			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http only")
 		}
 		return a.runToolDefinition(c, timeout)
 	default:

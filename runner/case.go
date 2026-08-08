@@ -162,8 +162,33 @@ func loadProfile(path string) (Profile, error) {
 	if p.SchemaVersion != activeSchemaVersion {
 		return Profile{}, fmt.Errorf("profile schema_version must be %d for scoring, got %d", activeSchemaVersion, p.SchemaVersion)
 	}
+	if err := validateProfileForRun(p); err != nil {
+		return Profile{}, fmt.Errorf("invalid profile: %w", err)
+	}
 
 	return p, nil
+}
+
+// validateProfileForRun checks the fields whose absence would otherwise turn
+// into zero values before a run begins. Supports remains open at schema v3:
+// profile extensions are records and must not be rejected by a newer runner.
+func validateProfileForRun(p Profile) error {
+	if p.Tool == "" {
+		return fmt.Errorf("missing required field tool")
+	}
+	if p.ToolVersion == "" {
+		return fmt.Errorf("missing required field tool_version")
+	}
+	if p.RunnerVersion == "" {
+		return fmt.Errorf("missing required field runner_version")
+	}
+	if p.Claims == nil {
+		return fmt.Errorf("missing required field claims")
+	}
+	if p.Supports == nil {
+		return fmt.Errorf("missing required field supports")
+	}
+	return nil
 }
 
 // checkApplicability determines if a case is applicable given a profile.

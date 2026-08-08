@@ -362,3 +362,50 @@ func captureStderr(t *testing.T, fn func() error) string {
 	}
 	return string(data)
 }
+
+// Until the result-state implementation replaces legacy profile applicability,
+// a profile-declared false capability must remain not_applicable. This descope
+// must not accidentally change current scoring before that replacement lands.
+func TestRunHonoursProfileDeclaredUnsupported(t *testing.T) {
+	naCountFor := func(t *testing.T, profileJSON string) int {
+		t.Helper()
+		dir := t.TempDir()
+		profilePath := filepath.Join(dir, "profile.json")
+		if err := os.WriteFile(profilePath, []byte(profileJSON), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		outPath := filepath.Join(dir, "summary.json")
+		if err := run(filepath.Join("..", "cases"), profilePath, outPath,
+			10*1e9, "dryrun", "", "", "", "", false, "", "", "", false); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		data, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var summary struct {
+			CaseCount struct {
+				NotApplicable int `json:"not_applicable"`
+			} `json:"case_count"`
+		}
+		if err := json.Unmarshal(data, &summary); err != nil {
+			t.Fatalf("decode summary: %v", err)
+		}
+		return summary.CaseCount.NotApplicable
+	}
+
+	baseline, err := os.ReadFile(filepath.Join("..", "examples", "pipelock", "tool-profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declined := strings.Replace(string(baseline), `"crypto_dlp_scanning": true`, `"crypto_dlp_scanning": false`, 1)
+	if declined == string(baseline) {
+		t.Fatal("fixture profile no longer declares crypto_dlp_scanning true; update this test")
+	}
+
+	before := naCountFor(t, string(baseline))
+	after := naCountFor(t, declined)
+	if after <= before {
+		t.Fatalf("not_applicable count = %d after declining a capability, was %d; declining a capability must exclude its cases rather than scoring them", after, before)
+	}
+}

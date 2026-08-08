@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -126,6 +127,76 @@ func TestLoadProfile(t *testing.T) {
 	}
 	if len(p.Claims) != 1 || p.Claims[0] != "url_dlp" {
 		t.Errorf("unexpected claims: %v", p.Claims)
+	}
+}
+
+func TestLoadProfileRejectsMissingRunField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	profileJSON := `{"schema_version":3,"tool":"test-tool","tool_version":"1.0.0","claims":[],"supports":{}}`
+	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), "missing required field runner_version") {
+		t.Fatalf("loadProfile error = %v, want missing runner_version", err)
+	}
+}
+
+func TestLoadProfilePreservesSupportsExtensionAtV3(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	profileJSON := `{"schema_version":3,"tool":"test-tool","tool_version":"1.0.0","runner_version":"v1","claims":[],"supports":{"future_delivery_mode":true}}`
+	if err := os.WriteFile(path, []byte(profileJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := loadProfile(path)
+	if err != nil {
+		t.Fatalf("loadProfile rejected a v3 supports extension: %v", err)
+	}
+	if got, ok := profile.Supports["future_delivery_mode"]; !ok || !got {
+		t.Fatalf("supports extension = (%t, present=%t), want (true, true)", got, ok)
+	}
+}
+
+func TestLoadProfileDefaultsOmittedSupportsKeyToFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	data, err := os.ReadFile("../examples/pipelock/tool-profile.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	trimmed := strings.Replace(string(data), `"mcp_http": true,`, ``, 1)
+	if err := os.WriteFile(path, []byte(trimmed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := loadProfile(path)
+	if err != nil {
+		t.Fatalf("loadProfile error = %v, want an omitted key to be accepted as unsupported", err)
+	}
+	if _, present := profile.Supports["mcp_http"]; present {
+		t.Fatal("loadProfile rewrote an omitted supports key into the recorded profile")
+	}
+	if reason, applicable := checkApplicability(Case{Transport: "mcp_http"}, profile); applicable || reason != NAUnsupportedTransport {
+		t.Fatalf("omitted mcp_http applicability = (%q, %t), want (%q, false)", reason, applicable, NAUnsupportedTransport)
+	}
+}
+
+func TestToolProfileSchemaAllowsSupportsExtensionsAtV3(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "schemas", "tool-profile.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Properties map[string]struct {
+			AdditionalProperties any `json:"additionalProperties"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := schema.Properties["supports"].AdditionalProperties.(bool); !ok || !got {
+		t.Fatalf("supports.additionalProperties = %#v, want true", schema.Properties["supports"].AdditionalProperties)
 	}
 }
 
