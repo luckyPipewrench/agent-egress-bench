@@ -4,36 +4,67 @@ The `mcp-gateway` runner adapter drives a gateway through a generic MCP client
 endpoint. A plugin describes the gateway's protocol surface and deny signals;
 it must not identify or depend on a particular gateway product.
 
-The adapter supports two narrow paths, both sent to a plugin with
+The adapter supports three narrow paths, all sent to a plugin with
 `"transport": "streamable_http"`:
 
 - A corpus `mcp_http` case containing one or more `mcp_tool_call` messages: the
   adapter sends `initialize`, `notifications/initialized`, and each case
   `tools/call` in order over the one session.
-- A corpus `mcp_stdio` case containing exactly one `mcp_tool_definition`: the
-  corpus definition models the upstream inventory, while the adapter drives the
-  gateway over HTTP. It configures the runner-managed fixture with the declared
-  definitions, then sends `initialize`, `notifications/initialized`, and
-  `tools/list`.
+- A corpus `mcp_stdio` or `mcp_http` case containing exactly one
+  `mcp_tool_definition`: the case models the upstream inventory while the
+  adapter drives the gateway over Streamable HTTP. It installs the inventory
+  under one request identity in the runner-managed fixture, then sends `initialize`,
+  `notifications/initialized`, and `tools/list`.
+- A corpus `mcp_http` case containing exactly one `mcp_tool_result`: the adapter
+  installs that result under one request identity, then drives a correlated call
+  through the gateway.
 
-Other corpus transports and input types return `skip` with a reason rather than
-inventing a verdict. An ordered `tools/call` sequence is modelled; temporal tool
-drift is not.
+Other corpus transport and input-type tuples are not selected for this adapter;
+the runner records a named error when no declared delivery tuple exists. If a
+declared route cannot establish its delivery proof, the adapter returns `skip`
+and the runner promotes that out-of-contract verdict to an error rather than
+inventing a product verdict. An ordered `tools/call` sequence is modelled;
+temporal tool drift is not.
 
-An allow is credited only when the runner-managed MCP fixture's `tools/call`
-counter advances by at least the number of `tools/call` messages in the case,
-so every permitted call is proven to reach upstream. A sequence in which the
-gateway answers a call without forwarding it is therefore `skip`, with
-`upstream_reached: false`. A deny on any call blocks the sequence and reports
-its `blocked_message_index`.
+For every request the adapter needs to prove, it mints one request identity and
+adds it in `params._meta.aeb_request_identity`. It also uses that identity as
+the JSON-RPC request ID. The runner-managed fixture records the identity,
+method, and canonical JSON fingerprint it received. The adapter accepts exactly
+one matching observation, so an unrelated request, a copied identity on changed
+content, or a replay cannot prove delivery for this case. A sequence in which
+the gateway answers a call without forwarding it is therefore `skip`, with
+`upstream_reached: false`. A `tools/call` deny is a `block` only when the fixture
+proves that exact request did not arrive; the result names its
+`blocked_message_index`.
 
-For a `tools/list` path, an allow is credited only when the fixture's dedicated
-`tools/list` counter advances and every declared tool name is present in the
-gateway response. Names are lowercased for this presence comparison, so a
-gateway that only changes case is not credited as filtering a tool. A declared
-tool absent from the returned list is a `block`; a JSON-RPC error in the
-configured deny range is also a `block`. A successful local `tools/list`
-response without a fixture counter advance is always `skip`, never `allow`.
+For a `tools/list` path, an allow is credited only when the fixture records the
+case's matching observation and every declared tool name is present in the
+gateway response.
+Names are lowercased for this presence comparison, so a gateway that only
+changes case is not credited as filtering a tool. A declared tool absent from
+the returned list is a `block`; a JSON-RPC error in the configured deny range
+is a `block` only with the same delivery proof. A successful local
+`tools/list` response without the matching observation is always `skip`, never
+`allow`.
+
+For a tool-result path, both allow and block require the fixture to record that
+case's matching observation while the case owns the identity-scoped response
+lease. A deny before the call reaches the fixture is `skip`, because it does not
+prove that the gateway inspected the declared result. The lease is released and
+cleared after each case, and an ordinary concurrent `tools/call` has no matching
+identity so it receives the fixture's default response.
+
+Every JSON-RPC response is structurally validated and correlated by the exact
+request ID before deny classification. This is identical for ordinary JSON and
+SSE responses; a valid SSE response with another ID is a named correlation
+failure, not malformed SSE. An HTTP response from the adapter's `http.Client`
+is already correlated to that request, so configured HTTP status and body-marker
+denies may score `block` without a JSON-RPC body, but only when the fixture
+observation satisfies that surface's delivery direction. A stale JSON-RPC deny,
+malformed response, or unproven fixture observation never scores `block`.
+For an outbound `tools/call` deny, the adapter keeps observing the request
+identity for a 50 ms settlement window before it credits absence. A matching
+late arrival during that window changes the result to `skip`.
 
 ## Plugin fields
 
@@ -90,9 +121,11 @@ are literal HTTP headers sent with every MCP request.
   does not gate detection. `runToolDefinition` detects an omitted declared tool
   directly and never reads `DenySignals.ToolFilteredFromList`.
 - `connection_closed_no_output` and `non_zero_exit`: declared signals reserved
-  for relevant follow-on paths; the adapter applies
-  `connection_closed_no_output` when an MCP request fails before a response is
-  received.
+  for relevant follow-on paths. The adapter records a configured connection
+  close on a measured case request as `skip`, not `block`, because no response
+  exists to bind the failure to this request rather than a transport fault. A
+  close during `initialize` is an adapter error because no measurable session
+  was established.
 
 ## Managed variables and interpolation
 

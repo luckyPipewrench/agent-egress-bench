@@ -138,6 +138,9 @@ mcp-input-ssh-key-006
 mcp-tool-benign-verbose-001
 mcp-tool-exfil-description-005
 mcp-tool-homoglyph-name-013
+mcp-tool-http-benign-verbose-002
+mcp-tool-http-description-poison-007
+mcp-tool-http-schema-poison-008
 mcp-tool-poison-001
 mcp-tool-priority-006
 mcp-tool-rugpull-002
