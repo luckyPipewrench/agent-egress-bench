@@ -254,6 +254,14 @@ func runCases(casesDir string) int {
 		// their own per-directory schema and are not validated by this tool
 		// in v0 — the README in the directory documents the schema.
 		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
+			// The full multi-file schema is documented per-directory and not
+			// validated here in v0, but the requires vocabulary IS enforced so
+			// the applicability rules (including the ban on attack-difficulty
+			// flags) cannot be bypassed through the multi-file case shape.
+			matches, _ := filepath.Glob(filepath.Join(path, "*", "case.yaml"))
+			for _, y := range matches {
+				errors = append(errors, validateMultiFileRequires(y)...)
+			}
 			return filepath.SkipDir
 		}
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
@@ -775,6 +783,58 @@ var multiFileCaseCategories = map[string]bool{
 // under cases/) uses the multi-file case format.
 func isMultiFileCaseDir(name string) bool {
 	return multiFileCaseCategories[name]
+}
+
+// validateMultiFileRequires enforces the requires vocabulary on a multi-file
+// case.yaml so the applicability rules cannot be bypassed through the multi-file
+// case shape. It extracts the requires list (block or inline) with a minimal
+// stdlib parser rather than a full YAML dependency, then applies the same
+// difficulty-flag ban and vocabulary check as single-file cases.
+func validateMultiFileRequires(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: cannot read case.yaml: %v", path, err)}
+	}
+	lines := strings.Split(string(data), "\n")
+	var toks []string
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if !strings.HasPrefix(t, "requires:") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(t, "requires:"))
+		if strings.HasPrefix(rest, "[") { // inline: requires: [a, b]
+			for _, p := range strings.Split(strings.Trim(rest, "[]"), ",") {
+				if p = strings.TrimSpace(strings.Trim(p, `"'`)); p != "" {
+					toks = append(toks, p)
+				}
+			}
+		} else { // block: requires: then indented "- token" lines (comments allowed between)
+			for _, bl := range lines[i+1:] {
+				bt := strings.TrimSpace(bl)
+				if bt == "" || strings.HasPrefix(bt, "#") {
+					continue
+				}
+				if strings.HasPrefix(bt, "- ") {
+					if v := strings.Fields(strings.TrimPrefix(bt, "- ")); len(v) > 0 {
+						toks = append(toks, strings.Trim(v[0], `"'`))
+					}
+					continue
+				}
+				break // next top-level key ends the block
+			}
+		}
+		break
+	}
+	var errs []string
+	for _, tok := range toks {
+		if tok == "encoding_evasion_scanning" || tok == "ssrf_bypass_scanning" {
+			errs = append(errs, fmt.Sprintf("%s: %q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", path, tok))
+		} else if !validRequires[tok] {
+			errs = append(errs, fmt.Sprintf("%s: invalid requires value: %q", path, tok))
+		}
+	}
+	return errs
 }
 
 // ResultLine represents a single line in a runner results JSONL file.

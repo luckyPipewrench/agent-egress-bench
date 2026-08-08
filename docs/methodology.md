@@ -145,10 +145,16 @@ Five provenance fields identify a Gauntlet run:
 
 **Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other three fields are informational: they support reproducibility and audit trails but do not trigger staleness.
 
-Scoring version 2.1 makes full-corpus scores primary, treats applicable-only
-scores as diagnostic, and counts an adapter's inability to execute a declared
-applicable transport as an error. Results from 2.0 are stale even when the case
-corpus bytes are unchanged.
+Scoring version 2.5 gates applicability on observability: a case applies when the
+runner can deliver its exact input to the tool and observe a trustworthy verdict.
+Attack-difficulty and evasion-resistance flags (`encoding_evasion_scanning`,
+`ssrf_bypass_scanning`) no longer gate applicability, so a tool cannot render a
+hard variant `not_applicable` by declining a difficulty claim for a surface it
+already inspects. Full-corpus scores remain primary and directly comparable across
+this change (a malicious not-applicable case already counts as unblocked). Applicable-only
+scores from before 2.5 are not comparable to those after it, because the closed loophole
+inflated them. Full-corpus scores are treated as diagnostic-versus-primary as in 2.1, and
+an adapter's inability to execute a declared applicable transport still counts as an error.
 
 `corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which capability claims were active. Together, these five fields make any run fully reproducible.
 

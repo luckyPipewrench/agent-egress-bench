@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Applicability now gates on observability (scoring 2.5, corpus v2.4.0).** `requires` lists only delivery, fixture, and base-observation prerequisites. Attack-difficulty and evasion-resistance flags (`encoding_evasion_scanning`, `ssrf_bypass_scanning`) no longer gate applicability: they moved to `capability_tags` on the 32 affected cases, so a tool can no longer render a hard variant `not_applicable` by declining a difficulty claim for a surface it already inspects. The validator rejects difficulty flags in `requires` for both single-file and multi-file cases. Full-corpus scores stay comparable across this change; applicable-only scores from before 2.5 are not comparable to those after it.
 - Corpus expanded from 73 to 197 logical cases: 193 single-file JSON cases plus 4 multi-file MCP-drift fixtures across 18 categories
 - Pipelock reference profile updated with new capability claims
 - Runner template profile updated with new supports fields

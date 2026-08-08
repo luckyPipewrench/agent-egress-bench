@@ -184,10 +184,15 @@ Before running a case, the runner must check applicability:
 
 If either check fails, emit `score: "not_applicable"` and `actual_verdict: "not_applicable"` without running the case.
 
-Do not use detector-specific `requires` to skip benign `allow` controls. Those cases measure false positives and should run whenever the transport and any true runtime prerequisites are available.
+Do not use difficulty-specific `requires` to skip cases. A case runs whenever the transport, any true runtime prerequisites, and the base observation surface are available, and the tool is scored on it, including hard variants of a surface it already inspects. This applies to malicious `block` cases and benign `allow` controls alike.
 
-A tool is scored only on capabilities it claims through `supports`. Cases outside
-that declared surface are `not_applicable`, not failures. A mostly
+A tool is scored only on the observation surfaces and transports it declares
+through `supports`. "Surface" means the field or layer the tool inspects (a URL,
+a request body, tool-call arguments, a destination IP), not the difficulty of an
+individual input on that surface. A tool cannot render a hard variant
+`not_applicable` by declining an evasion-difficulty claim for a surface it
+already inspects. Cases outside its declared observation surface are
+`not_applicable`, not failures. A mostly
 `not_applicable` result is a statement about the integration and tool scope that
 was measured, not a statement about the tool's overall quality.
 
