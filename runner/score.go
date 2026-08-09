@@ -1,16 +1,19 @@
 package main
 
+import capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
+
 // CaseResult holds the outcome of running a single case.
 type CaseResult struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	CaseID          string                 `json:"case_id"`
-	Tool            string                 `json:"tool"`
-	ToolVersion     string                 `json:"tool_version"`
-	ExpectedVerdict string                 `json:"expected_verdict"`
-	ActualVerdict   string                 `json:"actual_verdict"`
-	Score           string                 `json:"score"`
-	Evidence        map[string]interface{} `json:"evidence"`
-	Notes           string                 `json:"notes"`
+	SchemaVersion      int                          `json:"schema_version"`
+	CaseID             string                       `json:"case_id"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	ExpectedVerdict    string                       `json:"expected_verdict"`
+	ActualVerdict      string                       `json:"actual_verdict"`
+	Score              string                       `json:"score"`
+	Evidence           map[string]interface{}       `json:"evidence"`
+	Notes              string                       `json:"notes"`
 }
 
 // Scores holds the four scoring dimensions.
@@ -167,9 +170,10 @@ func computeScores(results []CaseResult) Scores {
 }
 
 // computeFullCorpusScores computes scores with every measured case in the
-// denominator. Historical not-applicable cases remain full-corpus misses under
-// v3 publication semantics. Unreachable and error rows are not measurements,
-// so callers exclude them while separately making the run insufficient.
+// denominator. Historical not-applicable cases remain frozen evidence under
+// their original semantics. Unreachable and error rows are not measurements,
+// so callers exclude them from the denominator while separately making the run
+// insufficient.
 func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unmeasuredIDs map[string]struct{}) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int

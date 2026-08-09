@@ -30,20 +30,20 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 
 ## Capability profile and adapter
 
-- tool_profile_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-- Declared capability claims:
+- tool_profile_sha256: 5ff9c3781a107a41fb75d76e48e980fe265ffa2d0dec4cf55aa3c6c3b4509296
+- Registry ID: aeb.core-capabilities
+- Registry format: 1
+- Registry revision: 1
+- Registry SHA-256: 9c5461fc6eff394ea11c70dedfee328263ea7a811f270b6983d9301d3bf3c5d9
+- Reporting labels:
   - ssrf
   - url\_dlp
-- Unsupported transports:
-  - a2a
-- Unsupported requirements:
-  - dns\_rebinding\_fixture
 - Exercised transports (this run):
   - Absent from run artifacts
 - Exercised categories (this run):
   - Absent from run artifacts
 - Exercised capability tags (this run):
-  - Absent from run artifacts
+  - None declared
 - Adapter identity: example
 - Adapter owner: Example Lab
 
@@ -88,7 +88,7 @@ Each metric stands on its own. Full-corpus scores retain historical N/A rows as 
 - Run-bundle noncanonical reasons:
   - development execution
 - Publication eligibility recorded by the run: Recorded not eligible by both retained decisions
-- Run-bundle digest and binding recheck: Self-consistent: 12 retained evidence digests match the bundle
+- Run-bundle digest and binding recheck: Self-consistent: 15 retained evidence digests match the bundle
 - Execution-decision consistency: Self-consistent: run identifier and evidence digests match the bundle
 
 These three lines are an internal consistency check. Every input to them, including the digests they compare against, comes from the supplied artifact directory, so they show the retained files agree with each other. They do not authenticate the bundle against anything outside it, and a directory edited as a whole would still reconcile. Independent assurance needs a signature over the bundle from a key the reader already trusts, which this corpus does not yet produce.
@@ -119,6 +119,7 @@ Credential-shaped values in the commands below are replaced with REDACTED. Read 
 
 ### Retained material
 
+- capability-registry.json (sha256 9c5461fc6eff394ea11c70dedfee328263ea7a811f270b6983d9301d3bf3c5d9)
 - case-index.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - checksums.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - command.txt (sha256 d2068c6f30093a7d4621fde48d8e38054f881b7db06dbd45a4217de8981003fa)
@@ -127,7 +128,9 @@ Credential-shaped values in the commands below are replaced with REDACTED. Read 
 - make-stats.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - pipelock-release.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - pipelock-version.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
-- raw-summary.json (sha256 d144bc083fc6baf7b6841676f672e06aa8191720b1dcb9d0b887861c6f20ebf0)
+- raw-summary.json (sha256 970da5aa7b820292eea56fcb0218b445e1f73d057b4c32b322baee55804d1c2c)
+- receipt-profile.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - results.jsonl (sha256 d1413b853523d00171fb500f4c0bb02973cd4aa2276c1eed650295f9eace651f)
 - run-metadata.json (sha256 2ec73028d323d3cf0d2bd7b3e8eb598f515aa3e0f0053e46ef03a53916ac1bc4)
 - runner.stderr (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- tool-profile.json (sha256 5ff9c3781a107a41fb75d76e48e980fe265ffa2d0dec4cf55aa3c6c3b4509296)

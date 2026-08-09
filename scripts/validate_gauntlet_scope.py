@@ -159,6 +159,9 @@ def validate_scope(document):
     if version == 2:
         validate_scope_v2(document)
         return
+    if version == 4:
+        validate_scope_v4(document)
+        return
     raise ValueError(f"unsupported schema_version: {version!r}")
 
 
@@ -318,6 +321,23 @@ def validate_scope_v2(document):
                 )
 
     validate_canonical_url(document)
+
+
+def validate_scope_v4(document):
+    """Validate an active registry-bound artifact without reusing a v2 claim."""
+    copied = dict(document)
+    copied["schema_version"] = 2
+    validate_scope_v2(copied)
+    reference = document.get("capability_registry")
+    if not isinstance(reference, dict) or set(reference) != {"id", "format", "revision", "sha256"}:
+        raise ValueError("capability_registry must be an exact registry reference")
+    if not isinstance(reference["id"], str) or not reference["id"]:
+        raise ValueError("capability_registry.id must be non-empty")
+    for key in ("format", "revision"):
+        if isinstance(reference[key], bool) or not isinstance(reference[key], int) or reference[key] < 1:
+            raise ValueError(f"capability_registry.{key} must be a positive integer")
+    if not isinstance(reference["sha256"], str) or not SHA256_HEX.fullmatch(reference["sha256"]):
+        raise ValueError("capability_registry.sha256 must be 64 lower-case hex characters")
 
 
 def main(argv):

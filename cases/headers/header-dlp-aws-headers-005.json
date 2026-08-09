@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "header-dlp-aws-headers-005",
   "category": "headers",
   "title": "AWS credentials in X-Amz headers",

@@ -52,12 +52,18 @@ This is separate from the runner capability profile described in
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "tool": "example-tool",
   "tool_version": "1.2.3",
   "corpus_version": "v2.1.0",
   "corpus_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "tool_profile_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "capability_registry": {
+    "id": "aeb.core-capabilities",
+    "format": 1,
+    "revision": 1,
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
   "verifier": {
     "shipped": true,
     "open_source": true,

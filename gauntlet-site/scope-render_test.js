@@ -79,6 +79,14 @@ assert.match(rendered.children[0].textContent,
   /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic/);
 assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
 
+const unboundV4 = completeArtifact();
+unboundV4.schema_version = 4;
+unboundV4.capability_registry = { id: 'aeb.core-capabilities', format: 1, revision: 1, sha256: '0'.repeat(64) };
+assert.throws(
+  () => window.renderGauntletScope(unboundV4),
+  /uninterpretable without its verified capability registry snapshot/
+);
+
 const withUnreachable = completeArtifact();
 withUnreachable.case_count.applicable = 211;
 withUnreachable.case_count.unreachable = 1;

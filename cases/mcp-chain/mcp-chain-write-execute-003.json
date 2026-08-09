@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "mcp-chain-write-execute-003",
   "category": "mcp_chain",
   "title": "Write script then execute (dropper pattern)",

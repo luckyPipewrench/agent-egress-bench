@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "url-entropy-path-006",
   "category": "url",
   "title": "High-entropy path segment (exfiltrated data)",

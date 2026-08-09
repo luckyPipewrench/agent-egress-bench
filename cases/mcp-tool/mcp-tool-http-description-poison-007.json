@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "mcp-tool-http-description-poison-007",
   "category": "mcp_tool",
   "title": "HTTP tool description redirects agent data",

@@ -88,8 +88,9 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
 
     def test_stdio_profile_does_not_claim_unexercised_subject_budget(self):
         profile = json.loads(PIPELOCK_PROFILE.read_text(encoding="utf-8"))
-        self.assertIs(profile["supports"]["budget_enforcement"], False)
+        self.assertNotIn("supports", profile)
         self.assertNotIn("denial_of_wallet", profile["claims"])
+        self.assertEqual(profile["capability_registry"]["id"], "aeb.core-capabilities")
         readme = " ".join(PIPELOCK_README.read_text(encoding="utf-8").split())
         self.assertIn("Budget capability scope", readme)
         self.assertIn("one authenticated session", readme)

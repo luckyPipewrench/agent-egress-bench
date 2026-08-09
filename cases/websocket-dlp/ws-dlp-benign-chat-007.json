@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "ws-dlp-benign-chat-007",
   "category": "websocket_dlp",
   "title": "Benign WebSocket chat message",

@@ -2,31 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary.schema.json",
   "title": "agent-egress-bench Gauntlet Summary",
-  "description": "Top-level summary emitted by a v3 runner. The exact scoring and support fields remain defined by the runner contract; this schema establishes the coordinated artifact-version boundary.",
+  "description": "Active v4 summary. Reporting labels are registry-bound metadata and cannot affect measured scope or score.",
   "type": "object",
-  "required": [
-    "schema_version",
-    "gauntlet_version",
-    "scoring_version",
-    "runner_version",
-    "tool",
-    "tool_version",
-    "corpus_version",
-    "corpus_sha256",
-    "tool_profile_sha256",
-    "case_count",
-    "tool_support",
-    "exercised",
-    "scores",
-    "sufficient",
-    "per_category"
-  ],
+  "required": ["schema_version", "gauntlet_version", "scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "tool_profile_sha256", "capability_registry", "reported_claims", "case_count", "exercised", "scores", "sufficient", "per_category"],
   "properties": {
-    "schema_version": {
-      "type": "integer",
-      "const": 3,
-      "description": "Schema version. Must be 3 for active scoring; older summaries are historical records."
-    }
+    "schema_version": {"type": "integer", "const": 4},
+    "capability_registry": {"$ref": "#/$defs/capability_registry"},
+    "reported_claims": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "$defs": {
+    "capability_registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "format", "revision", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "format": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
 }

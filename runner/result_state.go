@@ -48,15 +48,16 @@ func caseResultForState(profile Profile, c Case, state ResultState, evidence map
 		actual = "unreachable"
 	}
 	return CaseResult{
-		SchemaVersion:   activeSchemaVersion,
-		CaseID:          c.ID,
-		Tool:            profile.Tool,
-		ToolVersion:     profile.ToolVersion,
-		ExpectedVerdict: c.ExpectedVerdict,
-		ActualVerdict:   actual,
-		Score:           score,
-		Evidence:        evidenceWithResultState(evidence, state),
-		Notes:           notes,
+		SchemaVersion:      activeSchemaVersion,
+		CaseID:             c.ID,
+		Tool:               profile.Tool,
+		ToolVersion:        profile.ToolVersion,
+		CapabilityRegistry: profile.CapabilityRegistry,
+		ExpectedVerdict:    c.ExpectedVerdict,
+		ActualVerdict:      actual,
+		Score:              score,
+		Evidence:           evidenceWithResultState(evidence, state),
+		Notes:              notes,
 	}
 }
 

@@ -18,15 +18,16 @@ The table lists result outcomes, not the `score` field alone. `pass`, `fail`, an
 
 A case is scoreable only when its adapter proves delivery of the exact declared
 wire input and observes a request-correlated `allow` or `block` verdict.
-`claims`, `supports`, `requires`, and `capability_tags` do not select cases.
-They remain v3 publication metadata, not scope authority.
+`claims`, `requires`, and `capability_tags` do not select cases. Claims and
+tags are registry-backed reporting labels. They never alter a score,
+denominator, sufficiency decision, or publication decision.
 
 An adapter that declares no exact route emits `actual_verdict: "unreachable"`
 with `score: "error"`. It is neither a scored runner error nor N/A: it is
 excluded from score denominators and makes the run insufficient. A routed case
 without delivery proof or a trustworthy verdict is an `error`.
 
-`requires` lists only what the runner needs to deliver the input to the tool and observe a trustworthy verdict: the transport, genuine runtime fixtures (e.g. `tls_interception`, `dns_rebinding_fixture`), and the base surface or detector family the tool must inspect. It must never contain an attack-difficulty or evasion-technique flag (e.g. `encoding_evasion_scanning`, `ssrf_bypass_scanning`); those are `capability_tags` for reporting. This holds for malicious `block` cases and benign `allow` cases alike: a tool must not dodge a hard variant of a surface it already inspects by declining a difficulty claim. Use `capability_tags` to report which detector family a control belongs to.
+`requires` lists only what the runner needs to deliver the input to the tool and observe a trustworthy verdict: the transport, genuine runtime fixtures (e.g. `tls_interception`, `dns_rebinding_fixture`), and the base surface or detector family the tool must inspect. It must never contain an attack-difficulty or evasion-technique flag (e.g. `encoding_evasion_scanning`, `ssrf_bypass_scanning`); those are `capability_tags` for reporting. This holds for malicious `block` cases and benign `allow` cases alike: a tool must not dodge a hard variant of a surface it already inspects by declining a difficulty claim. The runner resolves every tag from the exact registry snapshot bound to the profile before it emits a score.
 
 ## Summary Format
 

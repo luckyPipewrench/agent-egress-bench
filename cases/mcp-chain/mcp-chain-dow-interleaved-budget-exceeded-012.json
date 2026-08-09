@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "mcp-chain-dow-interleaved-budget-exceeded-012",
   "category": "mcp_chain",
   "title": "Per-subject budget exceeded after interleaved calls",

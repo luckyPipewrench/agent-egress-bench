@@ -110,16 +110,17 @@ If full-corpus containment falls below 80%, the run is marked `insufficient`. A 
 
 ## Capability Profiles
 
-Each tool declares a **tool profile** (`tool-profile.json`) with two sections:
+Each active tool declares a **tool profile** (`tool-profile.json`) with:
 
 - **claims**: reporting labels that help interpret results (e.g., `url_dlp`, `mcp_input_scan`, `ssrf`)
-- **supports**: a retained v3 declaration of transports and prerequisites (e.g., `fetch_proxy: true`, `url_dlp_scanning: true`, `tls_interception: true`)
+- **capability_registry**: the immutable registry snapshot that defines those labels, bound by ID, format, revision, and raw-byte SHA-256
 
 ### Result state
 
 A case is scoreable only when its adapter has an exact route, proves delivery of
 the case's exact wire input, and observes a request-correlated verdict. Profile
-claims, `supports`, case `requires`, and capability tags never select it.
+claims, case `requires`, and capability tags never select it. Claims and tags
+cannot alter a denominator, score, sufficiency decision, or publication decision.
 
 No exact route is `unreachable`: visible in output, outside measurement
 denominators, and sufficient to make the run insufficient. A route that cannot
@@ -140,7 +141,7 @@ WebSocket cases also need careful interpretation when a fixture address is local
 
 ## Versioning
 
-Five provenance fields identify a Gauntlet run:
+Six provenance fields identify an active Gauntlet run:
 
 | Field | What it tracks | Source |
 |-------|---------------|--------|
@@ -149,8 +150,9 @@ Five provenance fields identify a Gauntlet run:
 | `corpus_sha256` | Hash of all case file contents (sorted by path) | Computed at runtime |
 | `runner_version` | Version of the runner binary | Hardcoded in runner |
 | `tool_profile_sha256` | Hash of the tool profile used | Computed at runtime |
+| `capability_registry` | Immutable snapshot defining reporting labels | Profile and every active result |
 
-**Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other three fields are informational: they support reproducibility and audit trails but do not trigger staleness.
+**Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other fields support reproducibility and audit trails but do not trigger staleness.
 
 Scoring version 2.6 is a deliberate boundary. It treats `requires` as delivery
 and observation constraints rather than difficulty claims, and the result state
@@ -173,7 +175,7 @@ diagnostic, unchanged from 2.1. An
 adapter with no exact route is an explicit unreachable coverage gap; a routed
 case with missing delivery or observation proof is an error.
 
-`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which capability claims were active. Together, these five fields make any run fully reproducible.
+`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which reporting claims were present. `capability_registry.sha256` proves the exact raw snapshot that defined them. Together, these fields make an active run reproducible without letting labels affect measurement.
 
 ## Running the Gauntlet
 

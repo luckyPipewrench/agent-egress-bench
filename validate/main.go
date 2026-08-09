@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 // activeCaseSchemaVersion is the case schema version this validator enforces.
@@ -17,7 +19,7 @@ import (
 // drift apart on the version boundary the way they previously did on the
 // requires vocabulary. It mirrors activeSchemaVersion in the runner; the two
 // move together whenever the coordinated artifact set is bumped.
-const activeCaseSchemaVersion = 3
+const activeCaseSchemaVersion = 4
 
 // Valid enum values for v1 schema.
 var (
@@ -52,9 +54,9 @@ var (
 		"a2a": true,
 	}
 
-	validVerdicts = map[string]bool{
-		"block": true, "allow": true,
-	}
+	validVerdicts = map[string]bool{"block": true, "allow": true, "warn": true}
+
+	validMeasuredVerdicts = map[string]bool{"block": true, "allow": true}
 
 	validSeverities = map[string]bool{
 		"critical": true, "high": true, "medium": true, "low": true,
@@ -62,16 +64,6 @@ var (
 
 	validFPRisk = map[string]bool{
 		"low": true, "medium": true, "high": true,
-	}
-
-	validCapabilityTags = map[string]bool{
-		"url_dlp": true, "request_body_dlp": true, "header_dlp": true,
-		"response_injection": true, "mcp_input_scan": true, "mcp_tool_poison": true,
-		"mcp_chain": true, "ssrf": true, "domain_blocklist": true,
-		"entropy": true, "encoding_evasion": true, "benign": true,
-		"a2a_scan": true, "a2a_card_poison": true, "websocket_dlp": true,
-		"ssrf_bypass": true, "shell_obfuscation": true, "crypto_dlp": true,
-		"hostname_exfil": true, "denial_of_wallet": true,
 	}
 
 	validRequires = map[string]bool{
@@ -107,33 +99,11 @@ var (
 	}
 
 	validActualVerdicts = map[string]bool{
-		"block": true, "allow": true, "not_applicable": true, "unreachable": true, "error": true,
+		"block": true, "allow": true, "unreachable": true, "error": true,
 	}
 
 	validScores = map[string]bool{
-		"pass": true, "fail": true, "not_applicable": true, "error": true,
-	}
-
-	validSupportsKeys = map[string]bool{
-		"fetch_proxy": true, "http_proxy": true, "mcp_stdio": true, "mcp_http": true,
-		"websocket": true, "a2a": true, "tls_interception": true,
-		"url_dlp_scanning": true, "request_body_dlp_scanning": true,
-		"header_dlp_scanning": true, "response_prompt_injection_scanning": true,
-		"mcp_input_dlp_scanning": true, "mcp_input_prompt_injection_scanning": true,
-		"mcp_tool_policy": true, "mcp_tool_result_prompt_injection_scanning": true,
-		"mcp_tool_poison_scanning": true, "mcp_tool_baseline": true,
-		"mcp_chain_memory":              true,
-		"mcp_cross_server_chain_memory": true,
-		"mcp_data_class_labels":         true,
-		"a2a_dlp_scanning":              true, "a2a_prompt_injection_scanning": true,
-		"a2a_card_prompt_injection_scanning": true, "a2a_card_drift_scanning": true,
-		"a2a_ssrf_scanning":      true,
-		"websocket_dlp_scanning": true, "websocket_prompt_injection_scanning": true,
-		"ssrf_scanning": true, "ssrf_bypass_scanning": true,
-		"domain_blocklist": true, "entropy_scanning": true,
-		"encoding_evasion_scanning": true, "shell_analysis": true,
-		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
-		"dns_rebinding_fixture": true, "budget_enforcement": true,
+		"pass": true, "fail": true, "error": true,
 	}
 
 	// Valid category → input_type combinations per SPEC.md.
@@ -326,6 +296,24 @@ func runProfile(path string) int {
 	return 0
 }
 
+func registryRootForArtifact(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	for dir := filepath.Dir(abs); ; dir = filepath.Dir(dir) {
+		candidate := filepath.Join(dir, "capability-registry")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+	return "", fmt.Errorf("capability registry not found for %s", path)
+}
+
 func validateFile(path string, ids map[string]string) []string {
 	var errors []string
 	addErr := func(msg string) {
@@ -404,10 +392,15 @@ func validateFile(path string, ids map[string]string) []string {
 	if len(c.CapabilityTags) == 0 {
 		addErr("capability_tags must not be empty")
 	}
+	seenTags := make(map[string]bool, len(c.CapabilityTags))
 	for _, tag := range c.CapabilityTags {
-		if !validCapabilityTags[tag] {
-			addErr(fmt.Sprintf("invalid capability_tag: %q", tag))
+		if strings.TrimSpace(tag) == "" {
+			addErr("capability_tag must be non-empty")
 		}
+		if seenTags[tag] {
+			addErr(fmt.Sprintf("duplicate capability_tag: %q", tag))
+		}
+		seenTags[tag] = true
 	}
 
 	// Requires
@@ -805,7 +798,7 @@ func requiresTokenProblem(token string) string {
 		return fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", token)
 	// Enforcement claims name the feature the case exists to test. Gating on one
 	// lets a tool delete the case, and the benign control that measures its
-	// over-blocking, by declining the claim. They stay valid supports keys.
+	// over-blocking, by declining the claim. They remain reporting-label terms.
 	case token == "budget_enforcement":
 		return fmt.Sprintf("%q is an enforcement claim and cannot appear in requires; gate on the observation surface and keep the claim in capability_tags", token)
 	case !validRequires[token]:
@@ -1006,15 +999,16 @@ func stripYAMLComment(value string) (string, error) {
 
 // ResultLine represents a single line in a runner results JSONL file.
 type ResultLine struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	CaseID          string                 `json:"case_id"`
-	Tool            string                 `json:"tool"`
-	ToolVersion     string                 `json:"tool_version"`
-	ExpectedVerdict string                 `json:"expected_verdict"`
-	ActualVerdict   string                 `json:"actual_verdict"`
-	Score           string                 `json:"score"`
-	Evidence        map[string]interface{} `json:"evidence"`
-	Notes           *string                `json:"notes"`
+	SchemaVersion      int                          `json:"schema_version"`
+	CaseID             string                       `json:"case_id"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	ExpectedVerdict    string                       `json:"expected_verdict"`
+	ActualVerdict      string                       `json:"actual_verdict"`
+	Score              string                       `json:"score"`
+	Evidence           map[string]interface{}       `json:"evidence"`
+	Notes              *string                      `json:"notes"`
 }
 
 func validateResultLine(lineNum int, r ResultLine) []string {
@@ -1026,8 +1020,8 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	if r.CaseID == "" {
 		addErr("missing case_id")
 	}
-	if r.SchemaVersion != 3 {
-		addErr(fmt.Sprintf("schema_version must be 3, got %d", r.SchemaVersion))
+	if r.SchemaVersion != activeCaseSchemaVersion {
+		addErr(fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, r.SchemaVersion))
 	}
 	if r.Tool == "" {
 		addErr("missing tool")
@@ -1035,7 +1029,7 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	if r.ToolVersion == "" {
 		addErr("missing tool_version")
 	}
-	if !validVerdicts[r.ExpectedVerdict] {
+	if !validMeasuredVerdicts[r.ExpectedVerdict] {
 		addErr(fmt.Sprintf("invalid expected_verdict: %q (must be block or allow)", r.ExpectedVerdict))
 	}
 	if !validActualVerdicts[r.ActualVerdict] {
@@ -1050,6 +1044,9 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	if r.Notes == nil {
 		addErr("missing notes (must be a string, use empty string if no context)")
 	}
+	if err := validateRegistryReference(r.CapabilityRegistry); err != nil {
+		addErr(fmt.Sprintf("invalid capability_registry: %v", err))
+	}
 
 	// Score consistency checks.
 	if validActualVerdicts[r.ActualVerdict] && validVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
@@ -1057,8 +1054,6 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 		case r.ActualVerdict == r.ExpectedVerdict && r.Score != "pass" && !hasCaseSpecificFailureEvidence(r):
 			addErr(fmt.Sprintf("inconsistent score: actual_verdict matches expected_verdict (%q) but score is %q (should be pass)",
 				r.ActualVerdict, r.Score))
-		case r.ActualVerdict == "not_applicable" && r.Score != "not_applicable":
-			addErr(fmt.Sprintf("inconsistent score: actual_verdict is not_applicable but score is %q (should be not_applicable)", r.Score))
 		case r.ActualVerdict == "unreachable" && r.Score != "error":
 			addErr(fmt.Sprintf("inconsistent score: actual_verdict is unreachable but score is %q (should be error)", r.Score))
 		case r.ActualVerdict == "error" && r.Score != "error":
@@ -1094,6 +1089,7 @@ func validateResultsFile(path string) []string {
 	seenIDs := make(map[string]int)
 	lineNum := 0
 	resultCount := 0
+	var registryReference *capabilityregistry.Reference
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -1114,6 +1110,12 @@ func validateResultsFile(path string) []string {
 
 		lineErrors := validateResultLine(lineNum, r)
 		allErrors = append(allErrors, lineErrors...)
+		if registryReference == nil {
+			copy := r.CapabilityRegistry
+			registryReference = &copy
+		} else if *registryReference != r.CapabilityRegistry {
+			allErrors = append(allErrors, fmt.Sprintf("line %d: capability_registry differs from prior result rows", lineNum))
+		}
 
 		if r.CaseID != "" {
 			if prevLine, exists := seenIDs[r.CaseID]; exists {
@@ -1130,25 +1132,33 @@ func validateResultsFile(path string) []string {
 	if resultCount == 0 {
 		allErrors = append(allErrors, fmt.Sprintf("%s: file contains no result lines", path))
 	}
+	if registryReference != nil {
+		root, err := registryRootForArtifact(path)
+		if err != nil {
+			allErrors = append(allErrors, err.Error())
+		} else if _, err := (capabilityregistry.Resolver{Root: root}).Resolve(*registryReference); err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("capability_registry: %v", err))
+		}
+	}
 
 	return allErrors
 }
 
 // Profile represents a tool profile JSON file.
 type Profile struct {
-	SchemaVersion int                    `json:"schema_version"`
-	Tool          string                 `json:"tool"`
-	ToolVersion   string                 `json:"tool_version"`
-	RunnerVersion string                 `json:"runner_version"`
-	Claims        []string               `json:"claims"`
-	Supports      map[string]interface{} `json:"supports"`
+	SchemaVersion      int                          `json:"schema_version"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	RunnerVersion      string                       `json:"runner_version"`
+	Claims             []string                     `json:"claims"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
 }
 
 func validateProfile(p Profile) []string {
 	var errors []string
 
-	if p.SchemaVersion != 3 {
-		errors = append(errors, fmt.Sprintf("schema_version must be 3, got %d", p.SchemaVersion))
+	if p.SchemaVersion != activeCaseSchemaVersion {
+		errors = append(errors, fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, p.SchemaVersion))
 	}
 	if p.Tool == "" {
 		errors = append(errors, "missing tool")
@@ -1162,32 +1172,42 @@ func validateProfile(p Profile) []string {
 	if p.Claims == nil {
 		errors = append(errors, "missing claims (must be an array)")
 	}
+	seen := make(map[string]bool, len(p.Claims))
 	for _, claim := range p.Claims {
-		if !validCapabilityTags[claim] {
-			errors = append(errors, fmt.Sprintf("invalid claim: %q", claim))
+		if strings.TrimSpace(claim) == "" {
+			errors = append(errors, "claim must be non-empty")
 		}
+		if seen[claim] {
+			errors = append(errors, fmt.Sprintf("duplicate claim: %q", claim))
+		}
+		seen[claim] = true
 	}
-	if p.Supports == nil {
-		errors = append(errors, "missing supports (must be an object)")
-	} else {
-		// Validate present keys.
-		for key, val := range p.Supports {
-			if !validSupportsKeys[key] {
-				errors = append(errors, fmt.Sprintf("invalid supports key: %q", key))
-			}
-			if _, isBool := val.(bool); !isBool {
-				errors = append(errors, fmt.Sprintf("supports.%s must be a boolean", key))
-			}
-		}
-		// Require all supports keys per schema.
-		for key := range validSupportsKeys {
-			if _, exists := p.Supports[key]; !exists {
-				errors = append(errors, fmt.Sprintf("missing required supports key: %q", key))
-			}
-		}
+	if err := validateRegistryReference(p.CapabilityRegistry); err != nil {
+		errors = append(errors, fmt.Sprintf("invalid capability_registry: %v", err))
 	}
 
 	return errors
+}
+
+func validateRegistryReference(ref capabilityregistry.Reference) error {
+	if ref.ID == "" || filepath.Base(ref.ID) != ref.ID || strings.Contains(ref.ID, "..") {
+		return fmt.Errorf("invalid id")
+	}
+	if ref.Format != capabilityregistry.SupportedFormat {
+		return fmt.Errorf("unsupported format: %d", ref.Format)
+	}
+	if ref.Revision < 1 {
+		return fmt.Errorf("invalid revision: %d", ref.Revision)
+	}
+	if len(ref.SHA256) != 64 || strings.ToLower(ref.SHA256) != ref.SHA256 {
+		return fmt.Errorf("invalid sha256")
+	}
+	for _, r := range ref.SHA256 {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return fmt.Errorf("invalid sha256")
+		}
+	}
+	return nil
 }
 
 func validateProfileFile(path string) []string {
@@ -1203,5 +1223,20 @@ func validateProfileFile(path string) []string {
 		return []string{fmt.Sprintf("%s: JSON parse error: %v", path, err)}
 	}
 
-	return validateProfile(p)
+	errors := validateProfile(p)
+	if len(errors) != 0 {
+		return errors
+	}
+	root, rootErr := registryRootForArtifact(path)
+	if rootErr != nil {
+		return []string{fmt.Sprintf("%s: %v", path, rootErr)}
+	}
+	resolved, resolveErr := (capabilityregistry.Resolver{Root: root}).Resolve(p.CapabilityRegistry)
+	if resolveErr != nil {
+		return []string{fmt.Sprintf("%s: capability_registry: %v", path, resolveErr)}
+	}
+	if err := resolved.ValidateActiveIDs("claim", p.Claims); err != nil {
+		return []string{fmt.Sprintf("%s: %v", path, err)}
+	}
+	return nil
 }
