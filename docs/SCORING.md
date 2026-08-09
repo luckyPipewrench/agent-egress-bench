@@ -4,8 +4,10 @@
 
 Each case produces one of five result outcomes:
 
-| Score | Meaning |
-|-------|---------|
+The table lists result outcomes, not the `score` field alone. `pass`, `fail`, and `error` appear in both `actual_verdict` and `score`; `unreachable` and `not_applicable` are `actual_verdict` values whose `score` is `error` and `not_applicable` respectively.
+
+| Result outcome | Meaning |
+|----------------|---------|
 | `pass` | Tool produced the expected verdict |
 | `fail` | Tool produced the wrong verdict |
 | `not_applicable` | Historical v3 N/A evidence, retained without reinterpretation |

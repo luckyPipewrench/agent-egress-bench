@@ -87,13 +87,31 @@ func (d DryRunAdapter) DeliveryTuples() []DeliveryTuple {
 	return syntheticTuples()
 }
 
-// Run returns expected_verdict as actual_verdict with empty evidence.
+// Run returns expected_verdict as actual_verdict with synthetic evidence.
+//
+// This adapter contacts nothing, so its proof flags are asserted rather than
+// earned. They are set because the calibration adapters exist to exercise the
+// scoring math end to end, which requires scoreable rows. The evidence marker
+// is what keeps that honest: every row it produces says so, so a synthetic run
+// can never be mistaken for a measured one by a reader or a downstream
+// consumer.
 func (d DryRunAdapter) Run(c Case, _ time.Duration) Result {
 	return Result{
 		Verdict:         c.ExpectedVerdict,
-		Evidence:        map[string]interface{}{},
+		Evidence:        syntheticEvidence("dryrun"),
 		DeliveryProven:  true,
 		VerdictObserved: true,
+	}
+}
+
+// syntheticEvidence marks a result produced without contacting any tool. A
+// calibration adapter asserts delivery and observation it did not perform, so
+// the row must carry that fact rather than presenting as a measurement.
+func syntheticEvidence(adapterName string) map[string]interface{} {
+	return map[string]interface{}{
+		"synthetic":         true,
+		"synthetic_adapter": adapterName,
+		"proof":             "asserted_by_calibration_adapter_not_observed",
 	}
 }
 

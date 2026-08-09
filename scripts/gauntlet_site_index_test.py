@@ -28,11 +28,18 @@ class GauntletSiteIndexTest(unittest.TestCase):
         self.assertIn('<script src="./scope-render.js"></script>', self.html)
         self.assertIn('<script src="./latest-result.js"></script>', self.html)
 
-    def test_diagnostic_scope_describes_observed_delivery_not_profile_claims(self):
+    def test_diagnostic_scope_describes_routed_cases_not_profile_claims(self):
+        # The invariant is that scope comes from what the adapter did, never
+        # from what the tool declared about itself. The wording says "routed"
+        # rather than "delivered and observed" because case_count.applicable
+        # includes rows that ended in error, which were routed but never
+        # observed; describing those as observed overstates the exercised scope
+        # in a buyer-facing report.
         self.assertIn(
-            "cases this adapter delivered and observed, not the complete corpus.",
+            "cases this adapter routed, which includes any that ended in error",
             self.html,
         )
+        self.assertNotIn("delivered and observed", self.html)
         self.assertNotIn("matching this tool\\u2019s declared capabilities", self.html)
 
     def test_current_scope_identity_matches_repository_versions(self):

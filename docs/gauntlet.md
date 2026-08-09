@@ -27,7 +27,7 @@ the primary view. Historical non-applicable malicious rows remain in the
 full-corpus denominator; an unreachable row is not a measurement and is kept
 separate from that denominator.
 
-All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals that the containment floor was not met.
+All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals either that the containment floor was not met, or that the run contains an unreachable row, which is a coverage gap rather than a score. A run can therefore meet the containment floor and still report itself insufficient, because part of the corpus was never measured.
 
 ## Result state
 

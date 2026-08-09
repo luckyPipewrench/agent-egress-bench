@@ -190,7 +190,7 @@ go build -o aeb-gauntlet .
       card.appendChild(window.renderGauntletScope(r));
     } else {
       var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? (cc.unreachable || 0) + ' unreachable, ' : '';
-      card.appendChild(txt('div', 'Scored on ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + unreachable + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+      card.appendChild(txt('div', 'Routed ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + unreachable + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
     }
 
     var scores = r.scores || {};
@@ -199,7 +199,8 @@ go build -o aeb-gauntlet .
 
     if (applicable) {
       // Full corpus is the primary view. Applicable-only is a diagnostic of the
-      // cases this adapter delivered and observed, rather than the whole corpus.
+      // cases this adapter routed, rather than the whole corpus. Routed is not
+      // the same as observed: the count includes rows that ended in error.
       card.appendChild(txt('div', 'Full Corpus Scores (' + (cc.total || 0) + ' cases)', 'section-label'));
       card.appendChild(makeScoresGrid(full));
 
@@ -210,7 +211,7 @@ go build -o aeb-gauntlet .
       aToggle.type = 'button';
       var aWrap = el('div', 'hidden');
       aToggle.setAttribute('aria-expanded', 'false');
-      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases this adapter delivered and observed, not the complete corpus.', 'denominator'));
+      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
       aWrap.appendChild(makeScoresGrid(applicable));
       aToggle.addEventListener('click', function() {
         aWrap.classList.toggle('hidden');

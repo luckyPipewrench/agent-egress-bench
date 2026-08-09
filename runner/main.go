@@ -320,9 +320,12 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 			Payload:         c.Payload,
 		}
 
-		tuple, routed := adapter.SupportsTuple(adapt, adapterCase)
+		_, routed := adapter.SupportsTuple(adapt, adapterCase)
 		if !routed {
-			tuple = adapter.TupleForCase(adapterCase)
+			// The adapter declared no exact route, so its tuple carries no
+			// information about this case. Derive the tuple from the case
+			// itself for the evidence record.
+			tuple := adapter.TupleForCase(adapterCase)
 			result := caseResultForState(
 				profile, c, ResultStateUnreachable, tupleEvidence(tuple),
 				"unreachable: adapter has no exact delivery route for this case",

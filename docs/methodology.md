@@ -168,7 +168,8 @@ does not rewrite them. A new unreachable row is intentionally not a score
 movement: it is a visible measurement gap and makes the run insufficient until
 the adapter proves the route.
 
-Full-corpus scores are treated as diagnostic-versus-primary as in 2.1. An
+Full-corpus scoring is the primary view and applicable-only scoring is
+diagnostic, unchanged from 2.1. An
 adapter with no exact route is an explicit unreachable coverage gap; a routed
 case with missing delivery or observation proof is an error.
 
