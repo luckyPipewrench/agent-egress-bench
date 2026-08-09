@@ -300,6 +300,15 @@ func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) 
 		evidence["changed_inventory_delivered_to_agent"] = false
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
+	// Past this guard the changed inventory is proven to have reached the
+	// runner-owned upstream, which is what delivery means for this path. Run
+	// derives DeliveryProven and VerdictObserved from upstream_reached alone,
+	// so recording delivery only under temporal-specific keys left every
+	// temporal allow and block unproven, scored as an error, and made the
+	// drift cases this path exists for unscoreable. It is set here rather than
+	// on each return so a later branch cannot forget it, and only after the
+	// proof is established so it can never assert delivery that did not happen.
+	evidence["upstream_reached"] = true
 	changedCanonical, changedValid := toolsListCanonical(changedBody)
 	if !changedValid {
 		evidence["reason"] = "malformed_changed_inventory"
@@ -452,6 +461,19 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration, requireF
 	toolsCalls, err := toolsCallMessages(c)
 	if err != nil {
 		return Result{Err: err}
+	}
+	// The documented split is that mcp_tool_call is exactly one call and
+	// mcp_tool_sequence carries dependent multi-call flows with prefix and
+	// final-sink proof. Nothing enforced it, so a case labeled mcp_tool_call
+	// carrying several calls took the weaker path: it could be credited as
+	// allow without final-sink proof, or have a denial evaluated without
+	// prefix-delivery checks. No corpus case does this today, which is why it
+	// was invisible, but a documented contract that only holds by convention
+	// is not a contract.
+	if !requireFinalSink && len(toolsCalls) > 1 {
+		return gatewaySkip(c, fmt.Sprintf(
+			"gateway mcp_tool_call is exactly one call, got %d; a dependent sequence must be labeled mcp_tool_sequence so it is scored with final-sink proof",
+			len(toolsCalls)))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
