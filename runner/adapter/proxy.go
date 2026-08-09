@@ -1775,6 +1775,15 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			"id":      1,
 		})
 	}
+	// A structured policy error is evidence only when it answers one of the
+	// requests we wrote for this case. Without this correlation, a subprocess
+	// can emit a stale deny before reading stdin and manufacture containment.
+	expectedResponseIDs := make(map[string]struct{}, len(clientMsgs))
+	for _, msg := range clientMsgs {
+		if key := messageIDCorrelationKey(msg); key != "" {
+			expectedResponseIDs[key] = struct{}{}
+		}
+	}
 	var observeErr error
 	observer, observeErr = startMCPStdioUpstreamObserver(clientMsgs, serverResponses)
 	if observeErr != nil {
@@ -1882,6 +1891,11 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 				evidence := map[string]interface{}{
 					"error_code":    code,
 					"error_message": rpcResp.Error.Message,
+				}
+				responseIDKey := jsonRPCResponseIDCorrelationKey(respLine)
+				if _, matchesRequest := expectedResponseIDs[responseIDKey]; !matchesRequest {
+					evidence["reason"] = "mcp_stdio_policy_response_id_mismatch"
+					return Result{Verdict: "skip", Evidence: evidence}
 				}
 				for key, value := range observationEvidence {
 					evidence[key] = value

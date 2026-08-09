@@ -301,6 +301,20 @@ func TestRunMCPStdio_UnobservedPolicyDenyBlocks(t *testing.T) {
 	}
 }
 
+func TestProxyAdapterRunMCPStdioStalePolicyDenySkips(t *testing.T) {
+	// A policy-looking error for a different request can be left over from a
+	// prior session or emitted by a process that never reads this case. It does
+	// not observe a verdict for the corpus request and must not earn a block.
+	a := &ProxyAdapter{mcpCmd: `printf '%s\n' '{"jsonrpc":"2.0","id":999,"error":{"code":-32001,"message":"stale policy deny"}}'`}
+	result := a.Run(mcpStdioExpectedBlockResponseCase("mcp-stdio-stale-policy-deny"), 5*time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("stale policy deny became observed proof: %+v", result)
+	}
+}
+
 func TestRunMCPStdio_UnobservedDenyExitSkipsButStructuredPolicyDenyBlocks(t *testing.T) {
 	// A clean exit without an MCP response has no verifiable deny semantics: a
 	// no-op command, discarded stdin, and a policy denial are indistinguishable.
