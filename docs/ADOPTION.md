@@ -12,13 +12,19 @@ A runner connects your tool to the corpus. It feeds each case to your tool, obse
 2. Read the [Runner Template README](../examples/runner-template/README.md) for a step-by-step walkthrough
 3. Read [docs/RUNNER.md](RUNNER.md) for the formal output contract
 
-The skeleton gives you applicability checks, JSONL emission, and the main loop for free. You fill in three things: starting your tool, checking transport support, and feeding cases to your tool.
+The skeleton gives you JSONL emission and the main loop. You fill in three
+things: starting your tool, proving an exact delivery route, and feeding cases
+to your tool while observing a verdict.
 
 The [Pipelock reference runner](../examples/pipelock/) is a working example you can study. It handles HTTP fetch cases through a proxy endpoint. MCP and response cases are marked `not_applicable` in its v1 harness.
 
 ### What to claim
 
-Your tool profile declares what your tool detects (`claims`, for reporting) and what it can actually evaluate (`supports`, for applicability). Be honest. Cases whose `requires` entries or transport are unsupported are scored `not_applicable`, not `fail`. Overstating `supports` produces `error` scores when your runner cannot actually test those cases.
+Your active v4 tool profile declares reporting labels (`claims`) and the exact
+capability-registry snapshot that defines them. Labels do not select cases or
+alter a denominator, score, sufficiency decision, or publication decision. A
+runner needs adapter-proven exact delivery and verdict observation to score; no
+exact route is `unreachable`, and a routed case without proof is an `error`.
 
 ## Publish results
 
@@ -44,6 +50,7 @@ results/
     results.jsonl       # Raw JSONL output
     summary.txt         # Summary line from stderr
     tool-profile.json   # Copy of your tool profile
+    capability-registry.json # Exact raw registry snapshot named by the profile
     README.md           # Verdict mapping, notes, how to reproduce
 ```
 

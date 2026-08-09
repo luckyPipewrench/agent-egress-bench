@@ -68,6 +68,20 @@ def non_negative_integer(document, path):
     return value
 
 
+def optional_non_negative_integer(document, path, default=0):
+    current = document
+    for key in path[:-1]:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    if not isinstance(current, dict) or path[-1] not in current:
+        return default
+    value = current[path[-1]]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("scope field must be a non-negative integer: " + ".".join(path))
+    return value
+
+
 def finite_fraction(document, path, allow_null=False):
     value = path_value(document, path)
     if value is None and allow_null:
@@ -145,6 +159,9 @@ def validate_scope(document):
     if version == 2:
         validate_scope_v2(document)
         return
+    if version == 4:
+        validate_scope_v4(document)
+        return
     raise ValueError(f"unsupported schema_version: {version!r}")
 
 
@@ -170,11 +187,15 @@ def validate_scope_v1(document):
 
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
+    # Explicit unreachable coverage was added after frozen v2 artifacts were
+    # published. Missing stays zero for those immutable readers; a present row
+    # is outside score denominators but still part of the logical corpus.
+    unreachable = optional_non_negative_integer(document, ("case_count", "unreachable"))
     not_applicable = non_negative_integer(document, ("case_count", "not_applicable"))
     if total == 0 or total != checked_out_count:
         raise ValueError("case_count.total does not match checked-out logical corpus count")
-    if applicable + not_applicable != total:
-        raise ValueError("case_count.applicable plus not_applicable must equal case_count.total")
+    if applicable + unreachable + not_applicable != total:
+        raise ValueError("case_count.applicable, unreachable, and not_applicable must equal case_count.total")
     reasons = path_value(document, ("case_count", "not_applicable_reasons"))
     if not isinstance(reasons, dict):
         raise ValueError("scope field must be an object: case_count.not_applicable_reasons")
@@ -231,6 +252,7 @@ def validate_scope_v2(document):
 
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
+    unreachable = optional_non_negative_integer(document, ("case_count", "unreachable"))
     not_applicable = non_negative_integer(document, ("case_count", "not_applicable"))
     errors = non_negative_integer(document, ("case_count", "errors"))
     if total == 0:
@@ -239,8 +261,10 @@ def validate_scope_v2(document):
         raise ValueError("case_count.total does not match checked-out logical corpus count")
     if applicable > total:
         raise ValueError("case_count.applicable cannot exceed case_count.total")
-    if applicable + not_applicable != total:
-        raise ValueError("case_count.applicable plus not_applicable must equal case_count.total")
+    if applicable + unreachable + not_applicable != total:
+        raise ValueError(
+            "case_count.applicable, unreachable, and not_applicable must equal case_count.total"
+        )
     if errors > applicable:
         raise ValueError("case_count.errors cannot exceed case_count.applicable")
 
@@ -282,8 +306,8 @@ def validate_scope_v2(document):
         raise ValueError("false_positive_rate must have a zero denominator when case_count.applicable is zero")
     if containment_denominator + false_positive_denominator != applicable:
         raise ValueError("applicable metric denominators must partition case_count.applicable")
-    if counts["full"]["containment"][1] + counts["full"]["false_positive_rate"][1] != total:
-        raise ValueError("full metric denominators must partition case_count.total")
+    if counts["full"]["containment"][1] + counts["full"]["false_positive_rate"][1] != total - unreachable:
+        raise ValueError("full metric denominators must partition scoreable cases")
     for metric in METRICS:
         if counts["full"][metric][0] != counts["applicable"][metric][0]:
             raise ValueError(
@@ -297,6 +321,23 @@ def validate_scope_v2(document):
                 )
 
     validate_canonical_url(document)
+
+
+def validate_scope_v4(document):
+    """Validate an active registry-bound artifact without reusing a v2 claim."""
+    copied = dict(document)
+    copied["schema_version"] = 2
+    validate_scope_v2(copied)
+    reference = document.get("capability_registry")
+    if not isinstance(reference, dict) or set(reference) != {"id", "format", "revision", "sha256"}:
+        raise ValueError("capability_registry must be an exact registry reference")
+    if not isinstance(reference["id"], str) or not reference["id"]:
+        raise ValueError("capability_registry.id must be non-empty")
+    for key in ("format", "revision"):
+        if isinstance(reference[key], bool) or not isinstance(reference[key], int) or reference[key] < 1:
+            raise ValueError(f"capability_registry.{key} must be a positive integer")
+    if not isinstance(reference["sha256"], str) or not SHA256_HEX.fullmatch(reference["sha256"]):
+        raise ValueError("capability_registry.sha256 must be 64 lower-case hex characters")
 
 
 def main(argv):

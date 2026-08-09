@@ -24,34 +24,6 @@ command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; exit 1; }
 # Read tool identity from profile
 TOOL=$(jq -r '.tool' "$PROFILE")
 TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
-SUPPORTS=$(jq -r '.supports | to_entries[] | select(.value == true) | .key' "$PROFILE")
-
-# --- Applicability check ---
-# This function is complete. Copy it as-is.
-# Returns 0 if the case applies to this tool, 1 if not.
-check_applicable() {
-    local case_file="$1"
-
-    # Every requires entry must be in the tool's supports
-    local reqs
-    reqs=$(jq -r '.requires[]' "$case_file" 2>/dev/null)
-    for req in $reqs; do
-        [ -z "$req" ] && continue
-        if ! echo "$SUPPORTS" | grep -qx "$req"; then
-            return 1
-        fi
-    done
-
-    # The case transport must be in the tool's supports
-    local transport
-    transport=$(jq -r '.transport' "$case_file")
-    if ! echo "$SUPPORTS" | grep -qx "$transport"; then
-        return 1
-    fi
-
-    return 0
-}
-
 # --- Emit a single JSONL result line to stdout ---
 # This function is complete. Copy it as-is.
 emit_result() {
@@ -105,6 +77,7 @@ exit 1
 passed=0
 failed=0
 na=0
+unreachable=0
 errors=0
 total=0
 
@@ -115,31 +88,23 @@ while read -r case_file; do
     input_type=$(jq -r '.input_type' "$case_file")
     transport=$(jq -r '.transport' "$case_file")
 
-    # --- Applicability check (profile-based) ---
-    if ! check_applicable "$case_file"; then
-        emit_result "$case_id" "$expected" "not_applicable" "not_applicable" \
-            '{"reason": "case requires capabilities not claimed by tool profile"}' ""
-        na=$((na + 1))
-        echo "  SKIP  $case_id (not applicable)" >&2
-        continue
-    fi
-
     # ============================================================
-    # TODO 2: Check transport support
+    # TODO 2: Prove an exact delivery route
     # ============================================================
-    # Skip cases with transports your runner does not handle yet.
-    # Even if your tool supports a transport, your runner might not
-    # have the plumbing for it. Be honest about what works.
+    # Profile claims are registry-backed reporting metadata, not selection.
+    # If this runner has no route for this exact transport/input/lifecycle,
+    # emit unreachable. A route declaration alone is not proof; TODO 3 must
+    # prove delivery and observe a request-correlated verdict before allow/block.
     #
     # Example (fetch_proxy only):
     #
     #   case "$transport" in
     #       fetch_proxy) ;;  # supported by this runner
     #       *)
-    #           emit_result "$case_id" "$expected" "not_applicable" "not_applicable" \
-    #               "{\"reason\": \"transport '$transport' not supported by runner\"}" ""
-    #           na=$((na + 1))
-    #           echo "  SKIP  $case_id (transport: $transport)" >&2
+    #           emit_result "$case_id" "$expected" "unreachable" "error" \
+    #               "{\"result_state\": \"unreachable\", \"wire_transport\": \"$transport\"}" ""
+    #           unreachable=$((unreachable + 1))
+    #           echo "  UNREACHABLE  $case_id (transport: $transport)" >&2
     #           continue
     #           ;;
     #   esac
@@ -195,10 +160,16 @@ while read -r case_file; do
         pass)           passed=$((passed + 1));  echo "  PASS  $case_id" >&2 ;;
         fail)           failed=$((failed + 1));  echo "  FAIL  $case_id" >&2 ;;
         not_applicable) na=$((na + 1));          echo "  SKIP  $case_id" >&2 ;;
-        error)          errors=$((errors + 1));  echo "  ERR   $case_id" >&2 ;;
+        error)
+            if [ "$actual_verdict" = "unreachable" ]; then
+                unreachable=$((unreachable + 1)); echo "  UNREACHABLE  $case_id" >&2
+            else
+                errors=$((errors + 1)); echo "  ERR   $case_id" >&2
+            fi
+            ;;
     esac
 done < <(find "$CASES_DIR" -name '*.json' -type f | sort)
 
 # --- Summary ---
 echo "" >&2
-echo "results: $passed passed, $failed failed, $na not_applicable, $errors errors ($total total)" >&2
+echo "results: $passed passed, $failed failed, $unreachable unreachable, $na not_applicable, $errors errors ($total total)" >&2

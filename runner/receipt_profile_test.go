@@ -94,8 +94,8 @@ func TestValidateReceiptProfile_CommittedPipelock(t *testing.T) {
 
 func TestValidateReceiptProfile_RejectsBadSchemaVersion(t *testing.T) {
 	rp := validProfile()
-	rp.SchemaVersion = 2
-	expectIssueMatch(t, rp, "schema_version must be 3")
+	rp.SchemaVersion = 99
+	expectIssueMatch(t, rp, "schema_version must be 4")
 }
 
 func TestValidateReceiptProfile_RejectsBadCorpusSHA(t *testing.T) {
@@ -129,7 +129,7 @@ func TestValidateReceiptProfile_RejectsBlockedAndFalsePositiveBoth(t *testing.T)
 	rp.PerCase[0].Blocked = "yes"
 	rp.PerCase[0].FalsePositive = "yes"
 	rp.Summary.FalsePositiveYesCount = 1
-	expectIssueMatch(t, rp, "blocked/false_positive must split")
+	expectIssueMatch(t, rp, "blocked/false_positive must be")
 }
 
 func TestValidateReceiptProfile_RejectsBenignWithBlockedResult(t *testing.T) {
@@ -138,7 +138,59 @@ func TestValidateReceiptProfile_RejectsBenignWithBlockedResult(t *testing.T) {
 	rp.PerCase[1].Blocked = "yes"
 	rp.PerCase[1].FalsePositive = "no"
 	rp.Summary.BlockedYesCount = 2
-	expectIssueMatch(t, rp, "blocked/false_positive must split")
+	expectIssueMatch(t, rp, "blocked/false_positive must be")
+}
+
+func TestReceiptProfileSchemaAllowsUnmeasuredRow(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "schemas", "receipt-scoring-profile.schema.json"))
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	var schema map[string]interface{}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+
+	properties, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("schema properties missing")
+	}
+	perCase, ok := properties["per_case"].(map[string]interface{})
+	if !ok {
+		t.Fatal("per_case schema missing")
+	}
+	items, ok := perCase["items"].(map[string]interface{})
+	if !ok {
+		t.Fatal("per_case item schema missing")
+	}
+	allOf, ok := items["allOf"].([]interface{})
+	if !ok || len(allOf) == 0 {
+		t.Fatal("per_case allOf missing")
+	}
+	axis, ok := allOf[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("per_case axis invariant missing")
+	}
+	shapes, ok := axis["oneOf"].([]interface{})
+	if !ok {
+		t.Fatal("per_case axis shapes missing")
+	}
+	for _, rawShape := range shapes {
+		shape, ok := rawShape.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		shapeProperties, ok := shape["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		blocked, blockedOK := shapeProperties["blocked"].(map[string]interface{})
+		falsePositive, fpOK := shapeProperties["false_positive"].(map[string]interface{})
+		if blockedOK && fpOK && blocked["const"] == "n/a" && falsePositive["const"] == "n/a" {
+			return
+		}
+	}
+	t.Fatal("receipt schema does not allow the unmeasured blocked=false_positive=n/a row")
 }
 
 func TestValidateReceiptProfile_RejectsVerifiableWithoutReceipt(t *testing.T) {
@@ -276,7 +328,7 @@ func TestLoadReceiptVerifier_RejectsUnknownField(t *testing.T) {
 // the mapping logic (blocked / explained / false_positive) break here
 // instead of leaking into the runner output silently.
 func TestBuildReceiptProfile_PerCaseShape(t *testing.T) {
-	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
 	verifier := ReceiptVerifier{}
 	zeros := strings.Repeat("0", 64)
 	applicable := []CaseResult{
@@ -472,7 +524,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+			profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
 			if tt.configure != nil {
 				decl := baseReceiptEvidenceDeclaration(dir, helper)
 				tt.configure(t, dir, &decl)
@@ -525,7 +577,7 @@ func TestBuildReceiptProfile_EvidenceDirUnreadableFailsClosed(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(evidenceDir, 0o700) })
 
 	decl := baseReceiptEvidenceDeclaration(evidenceDir, receiptVerifierHelper(t))
-	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", ReceiptEvidence: &decl}
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference, ReceiptEvidence: &decl}
 	rp := buildReceiptProfile(
 		profile,
 		[]CaseResult{receiptObservationCaseResult()},
@@ -719,4 +771,116 @@ func expectIssueMatch(t *testing.T, rp ReceiptProfile, substr string) {
 		}
 	}
 	t.Fatalf("expected issue containing %q, got:\n%s", substr, strings.Join(issues, "\n"))
+}
+
+// A runner-layer error is not a measurement, so it must not be scored as an
+// outcome on either axis. Before this guard, a malicious error row recorded
+// blocked="no" (reading as an observed failure to block) and a benign error
+// row recorded false_positive="no" (silently crediting the tool for a correct
+// allow nobody observed). Both directions are asserted here.
+func TestBuildReceiptProfile_ErrorRowsAreNotScoredAsOutcomes(t *testing.T) {
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
+	verifier := ReceiptVerifier{}
+	zeros := strings.Repeat("0", 64)
+	applicable := []CaseResult{
+		{CaseID: "mal-errored", ExpectedVerdict: "block", ActualVerdict: "error", Evidence: map[string]interface{}{}},
+		{CaseID: "benign-errored", ExpectedVerdict: "allow", ActualVerdict: "error", Evidence: map[string]interface{}{}},
+	}
+	rp := buildReceiptProfile(profile, applicable, nil, verifier, "v2.0.0", zeros, zeros)
+
+	if got := len(rp.PerCase); got != 2 {
+		t.Fatalf("per_case length: got %d want 2 (error rows stay visible)", got)
+	}
+	for _, row := range rp.PerCase {
+		if row.Blocked != "n/a" {
+			t.Errorf("%s: blocked = %q, want \"n/a\"; an unmeasured case must not assert a containment outcome", row.CaseID, row.Blocked)
+		}
+		if row.FalsePositive != "n/a" {
+			t.Errorf("%s: false_positive = %q, want \"n/a\"; an unmeasured case must not assert a false-positive outcome", row.CaseID, row.FalsePositive)
+		}
+	}
+
+	if rp.Summary.BlockedNoCount != 0 {
+		t.Errorf("blocked_no_count = %d, want 0; an error is not an observed failure to block", rp.Summary.BlockedNoCount)
+	}
+	if rp.Summary.BlockedYesCount != 0 {
+		t.Errorf("blocked_yes_count = %d, want 0", rp.Summary.BlockedYesCount)
+	}
+	if rp.Summary.FalsePositiveYesCount != 0 {
+		t.Errorf("false_positive_yes_count = %d, want 0", rp.Summary.FalsePositiveYesCount)
+	}
+	if rp.Summary.ExplainedYesCount != 0 {
+		t.Errorf("explained_yes_count = %d, want 0", rp.Summary.ExplainedYesCount)
+	}
+
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		t.Fatalf("error-row output failed schema validation:\n%s", strings.Join(issues, "\n"))
+	}
+}
+
+func TestBuildReceiptProfile_ErrorRowsRetainFactualReceiptObservations(t *testing.T) {
+	dir := t.TempDir()
+	helper := receiptVerifierHelper(t)
+	decl := baseReceiptEvidenceDeclaration(dir, helper)
+	writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference, ReceiptEvidence: &decl}
+	result := receiptObservationCaseResult()
+	result.ActualVerdict = "error"
+	rp := buildReceiptProfile(
+		profile,
+		[]CaseResult{result},
+		map[string]Case{result.CaseID: receiptObservationCase()},
+		ReceiptVerifier{},
+		"v2.0.0",
+		strings.Repeat("0", 64),
+		strings.Repeat("0", 64),
+	)
+
+	row := rp.PerCase[0]
+	if row.Blocked != "n/a" || row.FalsePositive != "n/a" {
+		t.Fatalf("error row outcome axes = blocked:%q false_positive:%q, want both n/a", row.Blocked, row.FalsePositive)
+	}
+	if row.ReceiptProduced != "yes" || row.ReceiptIndependentlyVerifiable != "yes" {
+		t.Fatalf("error row receipt observations = produced:%q verifiable:%q, want both yes", row.ReceiptProduced, row.ReceiptIndependentlyVerifiable)
+	}
+	if rp.Summary.BlockedYesCount != 0 || rp.Summary.BlockedNoCount != 0 || rp.Summary.FalsePositiveYesCount != 0 || rp.Summary.ExplainedYesCount != 0 {
+		t.Fatalf("error row changed outcome summary counts: %+v", rp.Summary)
+	}
+	if rp.Summary.ReceiptProducedYesCount != 1 || rp.Summary.ReceiptIndependentlyVerifiableYesCount != 1 {
+		t.Fatalf("receipt summary counts = %+v, want factual receipt counts", rp.Summary)
+	}
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		t.Fatalf("error-row receipt profile validation failed:\n%s", strings.Join(issues, "\n"))
+	}
+}
+
+// An unreachable row is not a measurement. It cannot reach buildReceiptProfile
+// today only because runCases emits it and continues before appending to the
+// applicable slice, which is an invariant held by one caller's control flow
+// rather than by this function. Assert the function defends itself, so a future
+// caller assembling a profile from a different slice cannot score a case the
+// adapter never routed.
+func TestBuildReceiptProfile_UnreachableRowsAreNotScoredAsOutcomes(t *testing.T) {
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
+	zeros := strings.Repeat("0", 64)
+	applicable := []CaseResult{
+		{CaseID: "mal-unreachable", ExpectedVerdict: "block", ActualVerdict: "unreachable", Evidence: map[string]interface{}{}},
+		{CaseID: "benign-unreachable", ExpectedVerdict: "allow", ActualVerdict: "unreachable", Evidence: map[string]interface{}{}},
+	}
+	rp := buildReceiptProfile(profile, applicable, nil, ReceiptVerifier{}, "v2.0.0", zeros, zeros)
+
+	for _, row := range rp.PerCase {
+		if row.Blocked != "n/a" || row.FalsePositive != "n/a" {
+			t.Errorf("%s: blocked=%q false_positive=%q, want both n/a; an unrouted case must not assert an outcome", row.CaseID, row.Blocked, row.FalsePositive)
+		}
+	}
+	if rp.Summary.BlockedNoCount != 0 {
+		t.Errorf("blocked_no_count = %d, want 0; an unreachable case is not an observed failure to block", rp.Summary.BlockedNoCount)
+	}
+	if rp.Summary.FalsePositiveYesCount != 0 || rp.Summary.BlockedYesCount != 0 {
+		t.Errorf("unreachable rows must not increment outcome counters: %+v", rp.Summary)
+	}
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		t.Fatalf("unreachable-row output failed validation:\n%s", strings.Join(issues, "\n"))
+	}
 }

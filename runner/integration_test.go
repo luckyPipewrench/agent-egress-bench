@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,25 +11,24 @@ import (
 	"github.com/luckyPipewrench/agent-egress-bench/runner/adapter"
 )
 
-func TestAdapterVerdictError(t *testing.T) {
+func TestResultStateFor(t *testing.T) {
 	tests := []struct {
-		name    string
-		result  adapter.Result
-		want    string
-		invalid bool
+		name      string
+		result    adapter.Result
+		wantState ResultState
 	}{
-		{name: "allow", result: adapter.Result{Verdict: "allow"}},
-		{name: "block", result: adapter.Result{Verdict: "block"}},
-		{name: "warn", result: adapter.Result{Verdict: "warn"}, want: `invalid adapter verdict: "warn"`, invalid: true},
-		{name: "skip", result: adapter.Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "unsupported path"}}, want: "adapter skip: unsupported path", invalid: true},
-		{name: "empty", result: adapter.Result{}, want: `invalid adapter verdict: ""`, invalid: true},
-		{name: "unknown", result: adapter.Result{Verdict: "bypass"}, want: `invalid adapter verdict: "bypass"`, invalid: true},
+		{name: "observed allow", result: adapter.Result{Verdict: "allow", DeliveryProven: true, VerdictObserved: true}, wantState: ResultStateObserved},
+		{name: "observed block", result: adapter.Result{Verdict: "block", DeliveryProven: true, VerdictObserved: true}, wantState: ResultStateObserved},
+		{name: "delivery unavailable", result: adapter.Result{Verdict: "allow", VerdictObserved: true}, wantState: ResultStateDeliveryUnavailable},
+		{name: "verdict unobservable", result: adapter.Result{Verdict: "skip", DeliveryProven: true}, wantState: ResultStateVerdictUnobservable},
+		{name: "adapter error", result: adapter.Result{Err: errors.New("fixture unavailable")}, wantState: ResultStateAdapterError},
+		{name: "invalid observed verdict", result: adapter.Result{Verdict: "warn", DeliveryProven: true, VerdictObserved: true}, wantState: ResultStateInvalidVerdict},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, invalid := adapterVerdictError(tt.result)
-			if got != tt.want || invalid != tt.invalid {
-				t.Fatalf("adapterVerdictError() = (%q, %v), want (%q, %v)", got, invalid, tt.want, tt.invalid)
+			got, _ := resultStateFor(tt.result)
+			if got != tt.wantState {
+				t.Fatalf("resultStateFor() = %q, want %q", got, tt.wantState)
 			}
 		})
 	}
@@ -181,10 +181,10 @@ func TestIntegrationRealCases(t *testing.T) {
 	if summary.CaseCount.Applicable == 0 {
 		t.Error("case_count.applicable should not be 0")
 	}
-	if summary.CaseCount.Total != summary.CaseCount.Applicable+summary.CaseCount.NotApplicable {
-		t.Errorf("case counts don't add up: total=%d, applicable=%d (including %d errors), na=%d",
+	if summary.CaseCount.Total != summary.CaseCount.Applicable+summary.CaseCount.Unreachable+summary.CaseCount.NotApplicable {
+		t.Errorf("case counts don't add up: total=%d, applicable=%d (including %d errors), unreachable=%d, na=%d",
 			summary.CaseCount.Total, summary.CaseCount.Applicable,
-			summary.CaseCount.Errors, summary.CaseCount.NotApplicable)
+			summary.CaseCount.Errors, summary.CaseCount.Unreachable, summary.CaseCount.NotApplicable)
 	}
 	if summary.CorpusSHA256 == "" {
 		t.Error("corpus_sha256 should not be empty")
@@ -203,7 +203,7 @@ func TestIntegrationRealCases(t *testing.T) {
 		t.Errorf("dry-run applicable containment = %f, want 1.0", *summary.Scores.Applicable.Containment)
 	}
 
-	// Full containment may be < 1.0 if there are N/A malicious cases.
+	// Full containment exists whenever the corpus has malicious cases.
 	if summary.Scores.Full.Containment == nil {
 		t.Error("full containment should not be nil when malicious cases exist")
 	}
@@ -221,9 +221,10 @@ func TestIntegrationRealCases(t *testing.T) {
 		t.Errorf("dry-run applicable evidence = %f, want 0.0", *summary.Scores.Applicable.Evidence)
 	}
 
-	// Should be sufficient in dry-run mode (full corpus scores used for gate).
-	if !summary.Sufficient {
-		t.Error("expected sufficient=true in dry-run mode")
+	// Dry-run keeps scoreable calibration rows but cannot become publication
+	// sufficient because it asserted, rather than observed, delivery and verdicts.
+	if summary.Sufficient {
+		t.Error("expected sufficient=false in dry-run mode")
 	}
 
 	// Per-category should have entries.
@@ -243,9 +244,9 @@ func TestIntegrationRealCases(t *testing.T) {
 		}
 	}
 
-	t.Logf("Summary: %d total, %d applicable, %d N/A, sufficient=%v",
+	t.Logf("Summary: %d total, %d applicable, %d unreachable, %d N/A, sufficient=%v",
 		summary.CaseCount.Total, summary.CaseCount.Applicable,
-		summary.CaseCount.NotApplicable, summary.Sufficient)
+		summary.CaseCount.Unreachable, summary.CaseCount.NotApplicable, summary.Sufficient)
 }
 
 func TestToolVersionOverrideFlag(t *testing.T) {
@@ -295,15 +296,13 @@ func TestDebugFlag_EmitsPerCaseDiagnostics(t *testing.T) {
 		return run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", "", true)
 	})
 
-	// With debug=true, every case should produce at least one [DEBUG]
-	// line. The dryrun adapter returns expected_verdict for every case,
-	// so applicable cases produce PASS lines and N/A cases produce
-	// not_applicable lines.
+	// With debug=true, every dryrun case produces a PASS line because the
+	// synthetic adapter proves delivery and returns the expected verdict.
 	if !strings.Contains(stderrStr, debugPrefix) {
 		t.Error("expected at least one [DEBUG] line on stderr with debug=true, got none")
 	}
-	if !strings.Contains(stderrStr, "PASS") && !strings.Contains(stderrStr, "not_applicable") {
-		t.Error("expected per-case diagnostic (PASS or not_applicable) in debug output")
+	if !strings.Contains(stderrStr, "PASS") {
+		t.Error("expected PASS diagnostic in debug output")
 	}
 }
 
@@ -363,11 +362,15 @@ func captureStderr(t *testing.T, fn func() error) string {
 	return string(data)
 }
 
-// Until the result-state implementation replaces legacy profile applicability,
-// a profile-declared false capability must remain not_applicable. This descope
-// must not accidentally change current scoring before that replacement lands.
-func TestRunHonoursProfileDeclaredUnsupported(t *testing.T) {
-	naCountFor := func(t *testing.T, profileJSON string) int {
+// Claims are registry-backed reporting labels. Changing valid labels must not
+// shrink the adapter-proven measured denominator.
+func TestRunIgnoresProfileClaimsForSelection(t *testing.T) {
+	type caseCount struct {
+		Applicable    int `json:"applicable"`
+		Unreachable   int `json:"unreachable"`
+		NotApplicable int `json:"not_applicable"`
+	}
+	countFor := func(t *testing.T, profileJSON string) caseCount {
 		t.Helper()
 		dir := t.TempDir()
 		profilePath := filepath.Join(dir, "profile.json")
@@ -384,28 +387,34 @@ func TestRunHonoursProfileDeclaredUnsupported(t *testing.T) {
 			t.Fatal(err)
 		}
 		var summary struct {
-			CaseCount struct {
-				NotApplicable int `json:"not_applicable"`
-			} `json:"case_count"`
+			CaseCount caseCount `json:"case_count"`
 		}
 		if err := json.Unmarshal(data, &summary); err != nil {
 			t.Fatalf("decode summary: %v", err)
 		}
-		return summary.CaseCount.NotApplicable
+		return summary.CaseCount
 	}
 
 	baseline, err := os.ReadFile(filepath.Join("..", "examples", "pipelock", "tool-profile.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	declined := strings.Replace(string(baseline), `"crypto_dlp_scanning": true`, `"crypto_dlp_scanning": false`, 1)
-	if declined == string(baseline) {
-		t.Fatal("fixture profile no longer declares crypto_dlp_scanning true; update this test")
+	var changed map[string]interface{}
+	if err := json.Unmarshal(baseline, &changed); err != nil {
+		t.Fatal(err)
+	}
+	changed["claims"] = []string{"url_dlp"}
+	declinedBytes, err := json.Marshal(changed)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	before := naCountFor(t, string(baseline))
-	after := naCountFor(t, declined)
-	if after <= before {
-		t.Fatalf("not_applicable count = %d after declining a capability, was %d; declining a capability must exclude its cases rather than scoring them", after, before)
+	before := countFor(t, string(baseline))
+	after := countFor(t, string(declinedBytes))
+	if before != after {
+		t.Fatalf("case counts changed after valid reporting claims changed: before=%+v after=%+v", before, after)
+	}
+	if after.NotApplicable != 0 || after.Unreachable != 0 {
+		t.Fatalf("dryrun profile declaration produced N/A/unreachable rows: %+v", after)
 	}
 }

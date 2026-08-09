@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "url-dlp-aws-key-001",
   "category": "url",
   "title": "AWS access key in query parameter",

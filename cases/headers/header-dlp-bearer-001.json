@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "header-dlp-bearer-001",
   "category": "headers",
   "title": "AWS key leaked as Bearer token",

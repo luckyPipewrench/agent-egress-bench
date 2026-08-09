@@ -16,16 +16,17 @@ Use this check before writing code:
 
 | Tool shape | Current status | What to do |
 |------------|----------------|------------|
-| Forward proxy with a fetch endpoint such as `/fetch?url=...` | Yes | Use `supports.fetch_proxy: true` if your runner can call that endpoint with the case method/body/headers and observe block signals |
-| CONNECT-capable forward proxy | Yes | Use `supports.http_proxy: true` if your runner can send requests through it as an HTTPS forward proxy |
+| Forward proxy with a fetch endpoint such as `/fetch?url=...` | Yes | Prove your runner can call that endpoint with the case method/body/headers and observe block signals |
+| CONNECT-capable forward proxy | Yes | Prove your runner can send requests through it as an HTTPS forward proxy |
 | Reverse proxy or API gateway with `listen` and `upstream` routing | Not today | Write a custom runner or leave the unmatched transports unsupported |
 | In-process SDK or library | Not today | Wrap it in a runner-owned service or leave the unmatched transports unsupported |
 | MCP gateway | Not as a generic adapter today | Tool-specific MCP stdio or MCP HTTP commands can be driven now; a protocol-first MCP gateway adapter is planned |
 
-A result is scored only on capabilities you declare in `supports`. Cases outside
-that surface are `not_applicable`, not failures. A mostly `not_applicable` result
-is a statement about what was in scope for the run, not a statement about your
-tool's overall quality.
+A result is scoreable only when its adapter proves delivery of the exact wire
+input and observes a verdict. Claims are registry-backed reporting labels. They
+do not select cases or change a score, denominator, sufficiency decision, or
+publication decision. No exact route is `unreachable`, not N/A, and makes the
+run insufficient.
 
 ## Step 1: Create your tool profile
 
@@ -41,14 +42,15 @@ Edit the file. Here is what each field means:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Always `3` for active scoring |
+| `schema_version` | integer | Always `4` for active scoring |
 | `tool` | string | Your tool's name (lowercase, no spaces) |
 | `tool_version` | string | The version you are testing against |
 | `runner_version` | string | Version of your runner script (use `v1` to start) |
 
 ### `claims` array
 
-Reporting labels for what your tool detects. Applicability is controlled by `supports`, not by `claims`. Pick from:
+Reporting labels for what your tool detects. They do not control selection.
+Pick them from the exact capability-registry snapshot named below:
 
 | Claim | What it means |
 |-------|---------------|
@@ -75,49 +77,13 @@ Reporting labels for what your tool detects. Applicability is controlled by `sup
 
 Only claim what your tool actually does; these labels help readers interpret results.
 
-### `supports` object
+### `capability_registry` object
 
-Which transport and scanning modes your tool supports. These map to the `requires` field in case files. If a case requires a capability you don't support, it is not executed and is reported as `not_applicable`, which is a statement about scope rather than a failure.
-
-| Key | What it means |
-|-----|---------------|
-| `fetch_proxy` | Tool provides a runner-drivable HTTP fetch endpoint such as `/fetch?url=...` |
-| `http_proxy` | Tool works as a CONNECT-capable forward proxy |
-| `mcp_stdio` | Tool can wrap MCP servers via stdio |
-| `mcp_http` | Tool can proxy MCP over HTTP |
-| `websocket` | Tool can proxy WebSocket connections |
-| `a2a` | Tool can inspect A2A protocol traffic |
-| `tls_interception` | Tool can intercept and inspect TLS traffic |
-| `url_dlp_scanning` | Tool detects secrets in URL components |
-| `request_body_dlp_scanning` | Tool detects secrets in HTTP request bodies |
-| `header_dlp_scanning` | Tool detects secrets in HTTP headers |
-| `response_prompt_injection_scanning` | Tool detects prompt injection in response content |
-| `mcp_input_dlp_scanning` | Tool detects secrets in MCP tool arguments |
-| `mcp_input_prompt_injection_scanning` | Tool detects prompt injection in MCP tool arguments |
-| `mcp_tool_policy` | Tool enforces policy on MCP tool names/actions |
-| `mcp_tool_result_prompt_injection_scanning` | Tool detects prompt injection in MCP tool results |
-| `mcp_tool_poison_scanning` | Tool detects poisoned MCP tool definitions |
-| `mcp_tool_baseline` | Tool tracks MCP tool definitions over time (rug-pull detection) |
-| `mcp_chain_memory` | Tool tracks sequences of MCP tool calls |
-| `mcp_cross_server_chain_memory` | Tool correlates MCP chains across server sessions |
-| `mcp_data_class_labels` | Tool tracks sensitivity labels on MCP tool outputs |
-| `a2a_dlp_scanning` | Tool detects secrets in A2A messages |
-| `a2a_prompt_injection_scanning` | Tool detects prompt injection in A2A messages |
-| `a2a_card_prompt_injection_scanning` | Tool detects poisoned A2A Agent Cards |
-| `a2a_card_drift_scanning` | Tool detects A2A Agent Card drift |
-| `a2a_ssrf_scanning` | Tool detects SSRF-capable A2A URLs or file URIs |
-| `websocket_dlp_scanning` | Tool detects secrets in WebSocket frames |
-| `websocket_prompt_injection_scanning` | Tool detects prompt injection in WebSocket frames |
-| `ssrf_scanning` | Tool detects direct SSRF attempts in URL requests |
-| `ssrf_bypass_scanning` | Tool detects SSRF bypass encodings and alternate IP forms |
-| `domain_blocklist` | Tool can block benchmark-configured known-bad domains |
-| `entropy_scanning` | Tool detects high-entropy exfiltration strings |
-| `encoding_evasion_scanning` | Tool decodes or normalizes encoded payloads before detection |
-| `shell_analysis` | Tool detects obfuscated shell commands in tool arguments |
-| `crypto_dlp_scanning` | Tool detects cryptocurrency, wallet, or financial material |
-| `hostname_exfil_scanning` | Tool detects exfiltration encoded into DNS hostnames or labels |
-| `dns_rebinding_fixture` | Runner provides controlled DNS for rebinding tests |
-| `budget_enforcement` | Tool can enforce per-subject MCP tool-call count budgets during a run |
+Copy the exact `id`, `format`, `revision`, and `sha256` from the registry
+snapshot you use. The SHA-256 is over the raw snapshot file, not re-serialized
+JSON. The runner rejects an unknown label, missing snapshot, digest mismatch,
+duplicate label, or unsupported format before it emits any score. Keep that raw
+snapshot with every published profile and result.
 
 ## Step 2: Write the runner
 
@@ -130,7 +96,7 @@ cp tool-profile-template.json ../your-tool/tool-profile.json
 
 The skeleton handles:
 - Reading the tool profile
-- Checking case applicability
+- Declaring delivery routes and result-state proof
 - Iterating over all case files
 - Emitting JSONL results
 - Printing a summary
@@ -145,7 +111,7 @@ You fill in:
 Look for `TODO` markers in `skeleton.sh`. There are three:
 
 1. **Start your tool.** Launch your proxy/service, wait for it to be ready.
-2. **Check transport support.** Skip cases with transports your runner can't handle yet (even if your tool supports them in theory, your runner might not have the plumbing).
+2. **Prove the route.** For every case, establish exact delivery and a request-correlated verdict. If no exact route exists, emit `unreachable`; do not emit N/A from a declaration.
 3. **Feed and observe.** Send the case payload to your tool and determine the verdict.
 
 The Go runner can start managed commands and pass runner-owned fixture addresses
@@ -220,14 +186,14 @@ Response cases (`input_type: response_content`) include a `response_body` in the
 
 - Start a local HTTP server that returns the `response_body`
 - Use a tool-specific runner only if it can prove the case exercised the declared transport
-- Mark as `not_applicable` in v1 and add support later
+- Emit `unreachable` until an exact delivery route exists
 
 ### Cases you cannot handle
 
-If your runner does not support a transport or input type, emit `not_applicable`
-with a reason. This is normal. A narrow v1 runner can support one transport and
-mark the rest `not_applicable` while still producing honest results for the
-surface it actually exercises.
+If your runner does not support a transport or input type, emit `unreachable`
+with route evidence. This is an explicit coverage gap, not a scored error or
+N/A. A narrow runner can support one transport while still reporting the rest
+honestly.
 
 Do not fake results. If you cannot observe the verdict, say so.
 
@@ -251,9 +217,9 @@ jq -e 'has("case_id") and has("tool") and has("tool_version") and has("expected_
 ### Check verdicts are valid
 
 ```bash
-# All actual_verdict values must be one of: block, allow, not_applicable, error
+# All actual_verdict values must be one of: block, allow, not_applicable, unreachable, error
 jq -r '.actual_verdict' results.jsonl | sort -u
-# Expected output: some subset of {allow, block, error, not_applicable}
+# Expected output: some subset of {allow, block, error, not_applicable, unreachable}
 
 # All score values must be one of: pass, fail, not_applicable, error
 jq -r '.score' results.jsonl | sort -u
@@ -266,8 +232,8 @@ jq -r '.score' results.jsonl | sort -u
 jq -r 'select(.actual_verdict == .expected_verdict and .score != "pass" and .score != "not_applicable") | .case_id' results.jsonl
 # Should print nothing
 
-# Every case where actual != expected (and neither is error/na) should be "fail"
-jq -r 'select(.actual_verdict != .expected_verdict and .actual_verdict != "error" and .actual_verdict != "not_applicable" and .score != "fail") | .case_id' results.jsonl
+# Every case where actual != expected (and neither is error/N/A/unreachable) should be "fail"
+jq -r 'select(.actual_verdict != .expected_verdict and .actual_verdict != "error" and .actual_verdict != "not_applicable" and .actual_verdict != "unreachable" and .score != "fail") | .case_id' results.jsonl
 # Should print nothing
 ```
 
@@ -285,13 +251,16 @@ wc -l < results.jsonl
 
 ## Common mistakes
 
-**Claiming supports you do not test.** If your profile sets `mcp_chain_memory` and `mcp_stdio` to `true`, those cases will run and produce `error` if your runner cannot actually test them. Set unsupported capabilities or transports to `false`.
+**Treating claims as proof.** A reporting label never proves a route. Validate
+it against the profile's retained registry snapshot, then add delivery and
+verdict observation before scoring.
 
 **Hardcoding verdicts.** Every verdict must come from observing your tool's actual behavior. If you return `block` without sending the request through your tool, the result is meaningless.
 
 **Mixing stdout and stderr.** JSONL goes to stdout. Status messages, progress, and summaries go to stderr. If you print status to stdout, the JSONL will be unparseable.
 
-**Forgetting false-positive coverage.** Benign cases use the same `requires` taxonomy as attack cases. If you set the relevant supports to `false`, those false-positive cases are marked `not_applicable` and your results will not show whether your tool over-blocks.
+**Forgetting false-positive coverage.** Benign cases need the same delivery and
+verdict proof as attacks. A profile declaration cannot remove them from scope.
 
 ## Reference
 

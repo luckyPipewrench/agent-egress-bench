@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "mcp-tool-schema-inject-004",
   "category": "mcp_tool",
   "title": "Injection hidden in inputSchema property description",

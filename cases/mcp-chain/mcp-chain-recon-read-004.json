@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "mcp-chain-recon-read-004",
   "category": "mcp_chain",
   "title": "Directory reconnaissance then SSH key theft",

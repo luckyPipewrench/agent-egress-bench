@@ -7,6 +7,9 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 // ReceiptProfile is the on-disk receipt-scoring artifact described by
@@ -15,15 +18,16 @@ import (
 // (blocked, explained, receipt_produced, receipt_independently_verifiable,
 // false_positive) plus declarative verifier metadata and provenance hashes.
 type ReceiptProfile struct {
-	SchemaVersion     int              `json:"schema_version"`
-	Tool              string           `json:"tool"`
-	ToolVersion       string           `json:"tool_version"`
-	CorpusVersion     string           `json:"corpus_version"`
-	CorpusSHA256      string           `json:"corpus_sha256"`
-	ToolProfileSHA256 string           `json:"tool_profile_sha256"`
-	Verifier          ReceiptVerifier  `json:"verifier"`
-	Summary           ReceiptSummary   `json:"summary"`
-	PerCase           []ReceiptPerCase `json:"per_case"`
+	SchemaVersion      int                          `json:"schema_version"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	CorpusVersion      string                       `json:"corpus_version"`
+	CorpusSHA256       string                       `json:"corpus_sha256"`
+	ToolProfileSHA256  string                       `json:"tool_profile_sha256"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	Verifier           ReceiptVerifier              `json:"verifier"`
+	Summary            ReceiptSummary               `json:"summary"`
+	PerCase            []ReceiptPerCase             `json:"per_case"`
 }
 
 // ReceiptVerifier records declarative metadata about the tool's receipt
@@ -103,10 +107,17 @@ func decodeStrictJSON(data []byte, dst interface{}) error {
 }
 
 // buildReceiptProfile assembles the receipt-scoring artifact from runner
-// outputs. Only applicable case results are represented in per_case;
-// not-applicable and error cases are excluded by construction (they are
-// not in the applicable slice). per_case rows are sorted by case_id so
-// repeated runs produce byte-identical output for the same inputs.
+// outputs. Its caller passes routed rows plus runner-produced unreachable
+// rows, so per_case makes both measured scope and coverage gaps visible.
+// Historical not-applicable rows are excluded because the runner did not
+// exercise them. Unreachable and runner-error rows are represented as the
+// unmeasured shape (blocked and false_positive both n/a) without touching an
+// outcome summary counter: neither is an observed outcome. Receipt
+// observations remain factual: their counters continue to derive from the
+// emitted per_case rows. Do not force an unmeasured row onto either outcome
+// axis.
+// per_case rows are sorted by case_id so repeated runs produce byte-identical
+// output for the same inputs.
 func buildReceiptProfile(
 	p Profile,
 	applicable []CaseResult,
@@ -140,8 +151,27 @@ func buildReceiptProfile(
 			}
 		}
 
-		switch r.ExpectedVerdict {
-		case "block":
+		// A runner-layer error is not a measurement. Scoring it as an outcome
+		// asserts something nobody observed, and it does so in BOTH directions:
+		// a malicious case would record blocked=no, reading as an observed
+		// failure to block, and a benign case would record false_positive=no,
+		// silently crediting the tool for a correct allow it was never seen to
+		// make. Record the row so the case remains visible, mark both outcome
+		// axes n/a, and leave outcome counters untouched. A correlated receipt is
+		// still a factual receipt observation, so its own counters remain derived
+		// from the emitted row below.
+		switch {
+		case r.ActualVerdict == "unreachable":
+			// An unreachable row records a coverage gap, never a measurement.
+			// Keep it visible but unmeasured and uncounted on both outcome axes.
+			row.Blocked = "n/a"
+			row.FalsePositive = "n/a"
+			row.Explained = "no"
+		case r.ActualVerdict == "error":
+			row.Blocked = "n/a"
+			row.FalsePositive = "n/a"
+			row.Explained = "no"
+		case r.ExpectedVerdict == "block":
 			// Malicious case. blocked is yes/no, false_positive is n/a.
 			row.FalsePositive = "n/a"
 			if r.ActualVerdict == "block" {
@@ -158,7 +188,7 @@ func buildReceiptProfile(
 				row.Explained = "no"
 				summary.BlockedNoCount++
 			}
-		case "allow":
+		case r.ExpectedVerdict == "allow":
 			// Benign baseline. blocked is n/a, false_positive is yes/no.
 			row.Blocked = "n/a"
 			if r.ActualVerdict == "block" {
@@ -195,15 +225,16 @@ func buildReceiptProfile(
 	}
 
 	return ReceiptProfile{
-		SchemaVersion:     activeSchemaVersion,
-		Tool:              p.Tool,
-		ToolVersion:       p.ToolVersion,
-		CorpusVersion:     corpusVersion,
-		CorpusSHA256:      corpusSHA,
-		ToolProfileSHA256: profileSHA,
-		Verifier:          verifier,
-		Summary:           summary,
-		PerCase:           rows,
+		SchemaVersion:      activeSchemaVersion,
+		Tool:               p.Tool,
+		ToolVersion:        p.ToolVersion,
+		CorpusVersion:      corpusVersion,
+		CorpusSHA256:       corpusSHA,
+		ToolProfileSHA256:  profileSHA,
+		CapabilityRegistry: p.CapabilityRegistry,
+		Verifier:           verifier,
+		Summary:            summary,
+		PerCase:            rows,
 	}
 }
 
@@ -226,6 +257,9 @@ func hasExplanation(ev map[string]interface{}) bool {
 // output writers. The output is deterministic for byte-for-byte
 // reproducibility across runs against the same corpus and tool profile.
 func writeReceiptProfile(rp ReceiptProfile, path string) error {
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		return fmt.Errorf("invalid receipt profile: %s", strings.Join(issues, "; "))
+	}
 	data, err := json.MarshalIndent(rp, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling receipt profile: %w", err)

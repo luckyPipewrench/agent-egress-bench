@@ -17,7 +17,7 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Must be `3` for active scoring. v2 is frozen for historical reproduction only. |
+| `schema_version` | integer | Must be `4` for active scoring. Earlier schemas are frozen readers only. |
 | `id` | string | Unique identifier. Immutable once published. |
 | `category` | string | Attack surface category (see Enums) |
 | `title` | string | Short human-readable title |
@@ -76,11 +76,14 @@ benign drift that should be surfaced for operator review without being blocked.
 
 `low`, `medium`, `high`
 
-## capability_tags (v1)
+## capability_tags (registry-backed reporting labels)
 
 `url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`, `hostname_exfil`, `denial_of_wallet`
 
-Tags describe what the case exercises. Used for reporting and result interpretation.
+Tags describe what the case exercises. They are validated against the immutable
+capability-registry snapshot bound by the active profile and result. Tags are
+reporting labels only. They never select cases, alter a denominator, affect
+sufficiency, change a score, or gate publication.
 
 ## requires (v3)
 
@@ -88,7 +91,7 @@ Tags describe what the case exercises. Used for reporting and result interpretat
 
 Delivery, fixture, and base-observation prerequisites only. `requires` must never encode attack difficulty, evasion resistance, or an enforcement claim (for example `encoding_evasion_scanning`, `ssrf_bypass_scanning`, or `budget_enforcement`); those belong in `capability_tags` or result evidence. The validator rejects those tokens for both single-file and multi-file cases.
 
-All live case, profile, result, summary, and receipt artifacts use schema v3 together. The scorer rejects a mixed-version input set. A v2 case is readable only through the historical-reproduction path and is never normalized into v3 scoring semantics.
+All live case, profile, result, summary, and receipt artifacts use schema v4 together. The scorer rejects a mixed-version input set. Each active profile and result names the exact capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Historical artifacts are readable only through their frozen readers and are never normalized into v4 scoring semantics. See [Capability Vocabulary and Profile Evolution](CAPABILITY-VOCABULARY.md).
 
 ## Payload Formats
 
@@ -147,10 +150,9 @@ Denial-of-wallet budget cases are MCP tool-call sequences that use a
 scoreable call-count model. They carry the `denial_of_wallet` capability tag,
 which is what selects them for the payload rules below, and they gate on the
 observation surface (`mcp_chain_memory`) rather than on `budget_enforcement`.
-`budget_enforcement` is a valid `supports` key that a tool may claim for
-reporting, but it is rejected in `requires`: gating a case on the feature it
-exists to test lets a tool delete the case, and the benign control measuring
-its over-blocking, simply by not claiming it.
+`budget_enforcement` is not a scope declaration. It is rejected in `requires`:
+gating a case on the feature it exists to test lets a tool delete the case, and
+the benign control measuring its over-blocking, simply by not claiming it.
 
 These cases carry the following payload fields alongside `jsonrpc_messages`:
 
@@ -211,14 +213,16 @@ WebSocket cases that must exercise destination-sensitive detectors such as opaqu
 entropy scanning. Runners may route it to a local reachable fixture, but must not
 rewrite it to a trusted fixture hostname or add it to a trusted-destination list.
 
-## Applicability
+## Result state
 
-A case is `not_applicable` for a tool if either:
+`requires` and `capability_tags` describe the case; they do not select it. A
+case is scoreable only when an adapter proves exact delivery of its declared
+wire input and observes a request-correlated verdict. Profile claims and case
+tags are registry-backed reporting labels, not selection authority.
 
-1. Any entry in `requires` is not supported by the tool's profile, or
-2. The case `transport` is not supported by the tool's profile
-
-This is deterministic. No judgment calls.
+No exact adapter route is `unreachable`. A routed case without delivery proof
+or verdict observation is `error`. Historical N/A records retain their frozen
+meaning and are not rewritten.
 
 ## Machine-Readable Schemas
 

@@ -196,6 +196,9 @@ func TestMCPGatewayAdapterAllowsOnlyWhenFixtureReceivedToolsCall(t *testing.T) {
 	if got, _ := result.Evidence["upstream_reached"].(bool); !got {
 		t.Fatalf("upstream_reached = %v, want true; evidence=%+v", result.Evidence["upstream_reached"], result.Evidence)
 	}
+	if !result.DeliveryProven || !result.VerdictObserved {
+		t.Fatalf("result = %+v, want explicit delivery and verdict proof", result)
+	}
 }
 
 func TestMCPGatewayAdapterExecutesToolResultResponse(t *testing.T) {
@@ -360,7 +363,7 @@ func TestMCPGatewayAdapterInitializationDenyIsAdapterError(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := a.Run(gatewayToolsCallCase("gateway-stale-initialize-deny"), time.Second)
-	if result.Err == nil || result.Verdict != "" || !strings.Contains(result.Err.Error(), "MCP gateway initialize") {
+	if result.Err == nil || result.Verdict != "" || result.DeliveryProven || result.VerdictObserved || !strings.Contains(result.Err.Error(), "MCP gateway initialize") {
 		t.Fatalf("result = %+v, want initialize adapter error rather than a scored verdict", result)
 	}
 }
@@ -1247,7 +1250,7 @@ func gatewayToolDefinitionCase(id, name string) Case {
 	}
 }
 
-func TestMCPGatewayAdapterDeclaresToolDefinitionSemanticRoutes(t *testing.T) {
+func TestMCPGatewayAdapterDeclaresExactHTTPToolDefinitionRoute(t *testing.T) {
 	a, err := NewMCPGatewayAdapter(GatewayPlugin{
 		Name: "test gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: "http://127.0.0.1:1/mcp"},
 	}, nil)
@@ -1270,8 +1273,8 @@ func TestMCPGatewayAdapterDeclaresToolDefinitionSemanticRoutes(t *testing.T) {
 	if !httpDefinition {
 		t.Fatal("gateway did not declare its HTTP tool-definition route")
 	}
-	if !stdioDefinition {
-		t.Fatal("gateway did not preserve the documented stdio tool-definition semantic route")
+	if stdioDefinition {
+		t.Fatal("HTTP gateway declared an mcp_stdio input it cannot deliver on its exact wire")
 	}
 }
 
@@ -1404,7 +1407,13 @@ func gatewayTemporalInventoryCase(id, beforeDescription, afterDescription string
 	}
 }
 
-func TestMCPGatewayAdapterAcceptsStdioToolDefinitionSemanticRoute(t *testing.T) {
+// This branch originally asserted the gateway ACCEPTS an mcp_stdio
+// tool-definition case as a semantic route. Main since decided the opposite,
+// and main is right: an adapter must not claim a stdio case merely because it
+// can send similar semantics over HTTP. Applicability comes from delivering
+// the case's exact wire input, so a transport substitution is a different
+// measurement wearing the same name. Main's assertion is kept.
+func TestMCPGatewayAdapterRejectsStdioToolDefinitionRoute(t *testing.T) {
 	a, err := NewMCPGatewayAdapter(GatewayPlugin{
 		Name: "test gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: "http://127.0.0.1:1/mcp"},
 	}, nil)
@@ -1413,8 +1422,8 @@ func TestMCPGatewayAdapterAcceptsStdioToolDefinitionSemanticRoute(t *testing.T) 
 	}
 	caseRecord := gatewayToolDefinitionCase("stdio-tool-definition", "example")
 	caseRecord.Transport = "mcp_stdio"
-	if _, ok := SupportsTuple(a, caseRecord); !ok {
-		t.Fatal("documented stdio tool-definition semantic route was not selectable")
+	if _, ok := SupportsTuple(a, caseRecord); ok {
+		t.Fatal("gateway declared an mcp_stdio tool-definition route while delivering it over HTTP")
 	}
 	if _, ok := SupportsTuple(a, Case{Transport: "mcp_http", InputType: "mcp_tool_result"}); !ok {
 		t.Fatal("declared HTTP tool-result tuple was not selectable")
@@ -1424,7 +1433,7 @@ func TestMCPGatewayAdapterAcceptsStdioToolDefinitionSemanticRoute(t *testing.T) 
 	}
 }
 
-func TestMCPGatewayAdapterDrivesStdioToolDefinitionOverHTTP(t *testing.T) {
+func TestMCPGatewayAdapterDoesNotDriveStdioToolDefinitionOverHTTP(t *testing.T) {
 	fm := fixtureManagerForGatewayTest(t)
 	defer fm.Close()
 	server := forwardingGateway(t, fm.MCPHTTP().URL())
@@ -1436,8 +1445,8 @@ func TestMCPGatewayAdapterDrivesStdioToolDefinitionOverHTTP(t *testing.T) {
 	caseRecord := gatewayToolDefinitionCase("stdio-tool-definition-http-wire", "example")
 	caseRecord.Transport = "mcp_stdio"
 	result := a.Run(caseRecord, time.Second)
-	if result.Err != nil || result.Verdict != "allow" || result.Evidence["upstream_reached"] != true {
-		t.Fatalf("result = %+v, want documented stdio semantic case driven over HTTP", result)
+	if result.Err != nil || result.Verdict != "skip" || result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("result = %+v, want fail-closed refusal for an mcp_stdio case", result)
 	}
 }
 

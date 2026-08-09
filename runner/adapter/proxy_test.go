@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"runtime"
@@ -301,6 +302,33 @@ func TestRunMCPStdio_UnobservedPolicyDenyBlocks(t *testing.T) {
 	}
 }
 
+func TestProxyAdapterRunMCPStdioStalePolicyDenySkips(t *testing.T) {
+	// A policy-looking error for a different request can be left over from a
+	// prior session or emitted by a process that never reads this case. It does
+	// not observe a verdict for the corpus request and must not earn a block.
+	a := &ProxyAdapter{mcpCmd: `printf '%s\n' '{"jsonrpc":"2.0","id":999,"error":{"code":-32001,"message":"stale policy deny"}}'`}
+	result := a.Run(mcpStdioExpectedBlockResponseCase("mcp-stdio-stale-policy-deny"), 5*time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("stale policy deny became observed proof: %+v", result)
+	}
+}
+
+func TestProxyAdapterRunMCPStdioStalePolicyDenyWithCaseIDSkips(t *testing.T) {
+	// Case payloads commonly use small fixed JSON-RPC IDs. Matching one of
+	// those IDs does not prove the subprocess read this run's stdin.
+	a := &ProxyAdapter{mcpCmd: `printf '%s\n' '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"stale policy deny"}}'`}
+	result := a.Run(mcpStdioExpectedBlockResponseCase("mcp-stdio-stale-policy-deny-case-id"), 5*time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("case-ID stale policy deny became observed proof: %+v", result)
+	}
+}
+
 func TestRunMCPStdio_UnobservedDenyExitSkipsButStructuredPolicyDenyBlocks(t *testing.T) {
 	// A clean exit without an MCP response has no verifiable deny semantics: a
 	// no-op command, discarded stdin, and a policy denial are indistinguishable.
@@ -444,6 +472,58 @@ func TestRunMCPStdio_ExpectedBlockForwardedAllowIsMiss(t *testing.T) {
 	}
 }
 
+func TestProxyAdapterDeclaresExactDeliveryTuples(t *testing.T) {
+	p := &ProxyAdapter{}
+	for _, c := range []Case{
+		{Transport: "fetch_proxy", InputType: "url"},
+		{Transport: "http_proxy", InputType: "response_content"},
+		{Transport: "websocket", InputType: "websocket_frame"},
+		{Transport: "mcp_stdio", InputType: "mcp_tool_sequence"},
+		{Transport: "mcp_http", InputType: "mcp_tool_result"},
+		{Transport: "a2a", InputType: "a2a_agent_card"},
+	} {
+		if _, ok := SupportsTuple(p, c); !ok {
+			t.Fatalf("proxy did not declare %s/%s", c.Transport, c.InputType)
+		}
+	}
+	if _, ok := SupportsTuple(p, Case{Transport: "mcp_stdio", InputType: "a2a_message"}); ok {
+		t.Fatal("proxy declared an unsupported mixed wire tuple")
+	}
+}
+
+func TestProxyResultProofDoesNotTrustBareVerdict(t *testing.T) {
+	bareAllow := Result{Verdict: "allow", Evidence: map[string]interface{}{}}
+	for name, proof := range map[string]func(Result) Result{
+		"websocket": webSocketResultWithProof,
+		"mcp":       mcpResultWithProof,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := proof(bareAllow)
+			if got.DeliveryProven || got.VerdictObserved {
+				t.Fatalf("bare %s allow became proof: %+v", name, got)
+			}
+		})
+	}
+
+	confirmed := webSocketResultWithProof(Result{
+		Verdict:  "allow",
+		Evidence: map[string]interface{}{"upstream_reached": true},
+	})
+	if !confirmed.DeliveryProven || !confirmed.VerdictObserved {
+		t.Fatalf("fixture-confirmed WebSocket allow did not become proof: %+v", confirmed)
+	}
+
+	for _, reason := range []string{"connection_closed", "connection_closed_while_writing_frame"} {
+		got := webSocketResultWithProof(Result{
+			Verdict:  "block",
+			Evidence: map[string]interface{}{"scanner": "websocket_proxy", "reason": reason},
+		})
+		if got.DeliveryProven || got.VerdictObserved {
+			t.Fatalf("abrupt WebSocket %q became proof: %+v", reason, got)
+		}
+	}
+}
+
 func TestMCPStdioUpstreamCommandEnvStripsAmbientAddress(t *testing.T) {
 	t.Setenv(mcpStdioUpstreamAddrEnv, "127.0.0.1:12345")
 	prefix := mcpStdioUpstreamAddrEnv + "="
@@ -531,7 +611,17 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 	}
 	mode := os.Args[len(os.Args)-1]
 	if mode == "policy-deny-no-forward" {
-		_, _ = fmt.Fprintln(os.Stdout, `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}`)
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		input := bufio.NewScanner(os.Stdin)
+		if !input.Scan() {
+			return
+		}
+		if err := json.Unmarshal(input.Bytes(), &request); err != nil || len(request.ID) == 0 {
+			return
+		}
+		_, _ = fmt.Fprintf(os.Stdout, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"policy denied"}}`+"\n", request.ID)
 		return
 	}
 	addr := os.Getenv(mcpStdioUpstreamAddrEnv)
@@ -1668,6 +1758,45 @@ func TestRunWebSocketFrameViaProxy_ProxySynthesizedFrameIsUnproven(t *testing.T)
 	}
 }
 
+func TestProxyAdapterRunWebSocketAbruptCloseIsUnproven(t *testing.T) {
+	// A peer can complete the upgrade, accept the corpus frame, then vanish
+	// without returning a WebSocket close frame. That is an availability
+	// failure, not an observed deny verdict from the evaluated proxy.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(Case{
+		ID: "ws-abrupt-close", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+		},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("abrupt close became observed proof: %+v", result)
+	}
+}
+
 func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
 	var gotTarget string
 	var upstreamMessages atomic.Int64
@@ -1791,6 +1920,7 @@ func readClientWebSocketFrame(r *bufio.Reader) (clientWSFrame, error) {
 }
 
 func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
+	var upstreamMessages atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
@@ -1804,14 +1934,15 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
 			t.Fatalf("read websocket frame: %v", err)
 		}
-		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xe8}, []byte("blocked by policy")...)); err != nil {
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("blocked by policy")...)); err != nil {
 			t.Fatalf("write close frame: %v", err)
 		}
 	}))
 	defer srv.Close()
 
 	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
-	result := a.runWebSocketFrameViaProxy(Case{
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
+	result := a.Run(Case{
 		ID:        "ws-close",
 		Transport: "websocket",
 		InputType: "websocket_frame",
@@ -1823,6 +1954,136 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 	if result.Verdict != "block" {
 		t.Fatalf("verdict = %q, err = %v, evidence = %+v", result.Verdict, result.Err, result.Evidence)
 	}
+	if !result.DeliveryProven || !result.VerdictObserved {
+		t.Fatalf("policy close did not become proof: %+v", result)
+	}
+}
+
+func TestProxyAdapterRunWebSocketNormalCloseIsUnproven(t *testing.T) {
+	// Close 1000 means normal completion, not a policy decision. Treating it as
+	// a block lets a generic upstream shutdown manufacture containment.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xe8}, []byte("normal close")...)); err != nil {
+			t.Fatalf("write close: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(Case{
+		ID: "ws-normal-close", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+		},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("normal close became observed proof: %+v", result)
+	}
+}
+
+func TestProxyAdapterRunWebSocketPolicyCloseAfterUpstreamDeliverySkips(t *testing.T) {
+	// An upstream can emit code 1008 after it has received the corpus frame.
+	// The code alone does not identify the proxy as the decision-maker, and the
+	// successful upstream delivery means the protected action already escaped.
+	var upstreamMessages atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		upstreamMessages.Add(1)
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("origin policy")...)); err != nil {
+			t.Fatalf("write policy close: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
+	result := a.Run(Case{
+		ID: "ws-upstream-policy-close", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+		},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("upstream policy close became observed proxy proof: %+v", result)
+	}
+}
+
+func TestProxyAdapterRunWebSocketPolicyCloseWithoutUpstreamProofSkips(t *testing.T) {
+	// A raw 1008 close does not establish a proxy block when the runner cannot
+	// tell whether the complete corpus payload reached its controlled upstream.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("policy")...)); err != nil {
+			t.Fatalf("write policy close: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(Case{
+		ID: "ws-policy-close-no-proof", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+		},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("policy close without upstream proof became observed proof: %+v", result)
+	}
 }
 
 // TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock covers the cross-message
@@ -1831,6 +2092,7 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 // test guards against would read the echo first and return allow even though
 // the proxy actually wrote a close frame after the echo.
 func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
+	var upstreamMessages atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
@@ -1845,6 +2107,7 @@ func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
 			t.Fatalf("read msg1: %v", err)
 		}
+		upstreamMessages.Add(1)
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
 			t.Fatalf("read msg2: %v", err)
 		}
@@ -1854,13 +2117,14 @@ func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
 		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo of msg1")); err != nil {
 			t.Fatalf("write echo: %v", err)
 		}
-		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xe8}, []byte("DLP violation")...)); err != nil {
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("DLP violation")...)); err != nil {
 			t.Fatalf("write close: %v", err)
 		}
 	}))
 	defer srv.Close()
 
 	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
 	result := a.runWebSocketFrameViaProxy(Case{
 		ID:        "ws-block-after-echo",
 		Transport: "websocket",
@@ -3052,5 +3316,63 @@ func TestClassifyResponse_BareUpstream502IsNotABlock(t *testing.T) {
 	blocked := classifyResponse(502, `{"block_reason":"DLP match: AWS Access ID","scanner":"dlp"}`)
 	if blocked.Verdict != "block" {
 		t.Errorf("502 with block_reason verdict = %q, want block", blocked.Verdict)
+	}
+}
+
+// A connection reset is not a policy verdict. It can come from the proxy, the
+// upstream, the fixture, or the network, and it carries no request correlation,
+// so it cannot prove this request was refused on purpose. Before this guard the
+// CONNECT path converted any "reset by peer" error into an observed block with
+// both proof flags set, which awarded containment for a connection that merely
+// died. This is the same class as the WebSocket abrupt-close and stale MCP
+// denial guards; the CONNECT path was the surviving sibling.
+func TestProxyAdapter_ConnectionResetIsNotAnObservedBlock(t *testing.T) {
+	// A listener that accepts and immediately closes with linger 0 produces a
+	// reset on the client side without any policy response ever being written.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	// Count accepted connections. Without this the test passes whenever
+	// runHTTPProxy returns any non-block for any reason, including never
+	// reaching the listener at all, which would make it prove nothing about
+	// the reset path it exists to cover.
+	var accepted atomic.Int64
+	go func() {
+		for {
+			conn, aerr := ln.Accept()
+			if aerr != nil {
+				return
+			}
+			accepted.Add(1)
+			if tcp, ok := conn.(*net.TCPConn); ok {
+				_ = tcp.SetLinger(0)
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	u, err := url.Parse("http://" + ln.Addr().String())
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	p := &ProxyAdapter{proxyURL: u}
+	res := p.runHTTPProxy(Case{
+		ID:              "reset-case",
+		Transport:       "http_proxy",
+		ExpectedVerdict: "block",
+		Payload:         map[string]interface{}{"url": "https://blocked.vendor.example/x"},
+	}, 3*time.Second)
+
+	if res.Verdict == "block" {
+		t.Fatalf("a connection reset scored as an observed block: %+v", res)
+	}
+	if res.DeliveryProven || res.VerdictObserved {
+		t.Fatalf("a connection reset must prove neither delivery nor observation: delivery=%v observed=%v", res.DeliveryProven, res.VerdictObserved)
+	}
+	if got := accepted.Load(); got == 0 {
+		t.Fatalf("the reset fixture was never contacted, so this test proved nothing about the reset path")
 	}
 }

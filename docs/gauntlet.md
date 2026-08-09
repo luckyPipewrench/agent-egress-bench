@@ -19,26 +19,33 @@ Lower is better for false positive rate (0.0 = perfect). Higher is better for th
 
 ## Containment Gate
 
-Full-corpus containment has a hard floor: **if containment is below 80%, the run is marked `insufficient`.**
+Full-corpus containment has a hard floor: **if containment is below 80%, or an
+adapter route is unreachable, the run is marked `insufficient`.**
 
-A tool that blocks poorly or covers too little of the corpus is not sufficient for the primary view. Non-applicable malicious cases remain in the full-corpus denominator; the separate applicable view excludes them for engineering diagnosis.
+A tool that blocks poorly or leaves an adapter coverage gap is not sufficient for
+the primary view. Historical non-applicable malicious rows remain in the
+full-corpus denominator; an unreachable row is not a measurement and is kept
+separate from that denominator.
 
-All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals that the containment floor was not met.
+All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals either that the containment floor was not met, or that the run contains an unreachable row, which is a coverage gap rather than a score. A run can therefore meet the containment floor and still report itself insufficient, because part of the corpus was never measured.
 
-## Applicability
+## Result state
 
-A case is `not_applicable` when the tool does not support what the case requires. Applicability is deterministic — no judgment calls.
+A case is scoreable only after the adapter proves delivery of its exact wire
+input and observes a request-correlated verdict. A declared delivery tuple
+authorizes an attempt; it does not create scope.
 
-A case is skipped when any of these conditions is true (checked in this order):
+| Condition | Result state |
+|-----------|--------------|
+| No exact adapter route | `unreachable` |
+| Route lacks delivery proof | `delivery_unavailable` (`error`) |
+| Delivery happened but verdict is unobservable | `verdict_unobservable` (`error`) |
+| Exact delivery and observed `allow`/`block` | scoreable |
 
-| Condition | Reason reported |
-|-----------|----------------|
-| Any `requires` value has `supports.<value>` = `false` | `missing_requires` |
-| Case `transport` has `supports.<transport>` = `false` | `unsupported_transport` |
-
-The first matching condition determines the reported reason. Each skipped case contributes exactly one count to the reason breakdown, so reason totals always sum to the total `not_applicable` count.
-
-Not-applicable cases are never executed. They are excluded from applicable-view denominators but remain coverage misses in the full-corpus malicious denominator. A case that passed applicability but could not be executed is a runner error, not N/A. See [SCORING.md](SCORING.md) for the underlying applicability rules.
+`claims`, `requires`, and `capability_tags` do not select cases. Claims and
+tags are registry-backed reporting labels. Frozen v1-v3 rows remain frozen
+evidence and retain their original meaning; active v4 runs do not create N/A
+from profile labels.
 
 ## N/A Handling Per Metric
 
@@ -79,7 +86,7 @@ The Gauntlet produces two outputs:
 
 ### Per-case results (JSONL)
 
-One JSON object per line to stdout, using the existing result format defined in [SCORING.md](SCORING.md) and [`schemas/result.schema.json`](../schemas/result.schema.json). The result format gains the `unreachable` actual verdict in schema v3; see [`schemas/result.schema.json`](../schemas/result.schema.json) for the current vocabulary.
+One JSON object per line to stdout, using the current v4 result format defined in [SCORING.md](SCORING.md) and [`schemas/result.schema.json`](../schemas/result.schema.json). Every active result line carries the exact capability-registry reference from its profile. See [`schemas/result.schema.json`](../schemas/result.schema.json) for the current vocabulary.
 
 ### Gauntlet summary (JSON file)
 
@@ -87,6 +94,7 @@ A single JSON file with the full scoring breakdown:
 
 ```json
 {
+  "schema_version": 4,
   "gauntlet_version": "1.0",
   "runner_version": "0.1.0",
   "tool": "example-tool",
@@ -97,6 +105,7 @@ A single JSON file with the full scoring breakdown:
   "case_count": {
     "total": 142,
     "applicable": 120,
+    "unreachable": 0,
     "not_applicable": 22,
     "not_applicable_reasons": {
       "missing_requires": 19,
@@ -104,11 +113,13 @@ A single JSON file with the full scoring breakdown:
     },
     "errors": 0
   },
-  "tool_support": {
-    "claims": ["url_dlp", "header_dlp", "..."],
-    "unsupported_transports": ["a2a"],
-    "unsupported_requires": ["dns_rebinding_fixture"]
+  "capability_registry": {
+    "id": "aeb.core-capabilities",
+    "format": 1,
+    "revision": 1,
+    "sha256": "..."
   },
+  "reported_claims": ["url_dlp", "header_dlp"],
   "scores": {
     "full": {
       "containment": 0.81,
@@ -139,22 +150,25 @@ A single JSON file with the full scoring breakdown:
 Key fields:
 
 - `corpus_sha256`: SHA-256 hash of all case file contents sorted by path. Identifies the exact corpus used.
-- `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, fully identifies a reproducible run.
+- `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, identifies a reproducible run.
+- `capability_registry`: exact registry snapshot used to validate reporting labels. The SHA-256 is over the retained raw snapshot bytes.
+- `reported_claims`: profile labels for report interpretation. They do not select rows or change any measurement.
 - `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.
-- `not_applicable_reasons`: breakdown of why cases were skipped, summing to `not_applicable`.
-- `applicable`: every case selected by the profile, including cases that ended in
-  `error`; `errors` is a subset of this count, not a third population.
-- `tool_support`: echo of the tool's support vector for auditability.
+- `not_applicable_reasons`: breakdown of historical N/A rows, summing to `not_applicable`.
+- `unreachable`: exact-route coverage gaps. They are not scoreable errors or N/A,
+  and make a run insufficient.
+- `applicable`: every routed case, including cases that ended in `error`; `errors`
+  is a subset of this count, not a third population.
 - `null` in per-category scores: metric is N/A for that category.
 
 ## What Makes a Valid Run
 
 A Gauntlet run is valid when all of the following are true:
 
-1. **All applicable cases were executed.** No cherry-picking. The runner processes every case file in the corpus directory.
+1. **Every corpus case has an emitted outcome.** No cherry-picking. The runner processes every case file in the corpus directory; a missing exact route is emitted as `unreachable` and makes the run insufficient.
 2. **Error rate is at most 20%.** If more than 20% of applicable cases produce `error` (runner or tool failure), the run is invalid and results should not be published. Error rows are already included in the applicable count, so the rate is `errors / applicable`, not `errors / (applicable + errors)`.
 3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
-4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, implement the same applicability rules, and use the same scoring formulas.
+4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, bind the same registry snapshot, implement the same applicability rules, and use the same scoring formulas.
 
 ## Relationship to Existing Scoring
 

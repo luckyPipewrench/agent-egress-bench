@@ -33,3 +33,7 @@ CLAUDE.local.md
 
 # Opt-in receipt-axis evidence and its runtime signing key. Never commit keys.
 examples/pipelock/.receipt-evidence/
+
+# Python bytecode from the publication scripts and their tests
+__pycache__/
+*.pyc

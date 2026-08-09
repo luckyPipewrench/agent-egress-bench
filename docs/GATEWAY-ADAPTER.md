@@ -12,11 +12,14 @@ The adapter supports five narrow paths, all sent to a plugin with
   adapter sends each `tools/call` in order over one session, proves every
   dependency at the runner-owned upstream, and records a separate execution
   proof for the final sink.
-- A corpus `mcp_stdio` or `mcp_http` case containing exactly one
-  `mcp_tool_definition`: the case models the upstream inventory while the
-  adapter drives the gateway over Streamable HTTP. It installs the inventory
-  under one request identity in the runner-managed fixture, then sends `initialize`,
-  `notifications/initialized`, and `tools/list`.
+- A corpus `mcp_http` case containing exactly one `mcp_tool_definition`: the
+  case models the upstream inventory while the adapter drives the gateway over
+  Streamable HTTP. It installs the inventory under one request identity in the
+  runner-managed fixture, then sends `initialize`, `notifications/initialized`,
+  and `tools/list`. An `mcp_stdio` case is a different wire input and is not
+  declared as this HTTP adapter's route, because applicability comes from
+  delivering the case's exact wire input rather than from sending comparable
+  semantics over whichever transport the adapter happens to speak.
 - A corpus `mcp_http` case containing exactly one `mcp_tool_result`: the adapter
   installs that result under one request identity, then drives a correlated call
   through the gateway.
@@ -28,7 +31,7 @@ The adapter supports five narrow paths, all sent to a plugin with
   definitions. Name-only matches do not prove delivery.
 
 Other corpus transport and input-type tuples are not selected for this adapter;
-the runner records a named error when no declared delivery tuple exists. If a
+the runner emits an explicit `unreachable` coverage row when no declared delivery tuple exists. If a
 declared route cannot establish its delivery proof, the adapter returns `skip`
 and the runner promotes that out-of-contract verdict to an error rather than
 inventing a product verdict. Native `mcp_http` temporal drift is modelled only

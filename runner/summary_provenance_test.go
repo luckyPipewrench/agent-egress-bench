@@ -24,8 +24,9 @@ func provenanceTestDirs(t *testing.T) (dir, profilePath string) {
 func buildProvenanceSummary(t *testing.T, dir, profilePath string, prov RunProvenance) GauntletSummary {
 	t.Helper()
 	summary, err := buildSummary(
-		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		testProfile(),
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		nil,
 		nil,
 		nil,
 		dir,

@@ -38,6 +38,34 @@ func TestDryRunAdapter(t *testing.T) {
 			if result.Evidence == nil {
 				t.Error("evidence should not be nil")
 			}
+			if !result.DeliveryProven || !result.VerdictObserved {
+				t.Fatalf("synthetic result = %+v, want delivery and verdict proof", result)
+			}
+		})
+	}
+}
+
+func TestSyntheticAdaptersDeclareAndProveAllCorpusTuples(t *testing.T) {
+	c := Case{Transport: "mcp_http", InputType: "mcp_tool_result", ExpectedVerdict: "block"}
+	for _, tt := range []struct {
+		name string
+		a    Adapter
+	}{
+		{name: "dryrun", a: DryRunAdapter{}},
+		{name: "null", a: NullAdapter{}},
+		{name: "blockall", a: BlockAllAdapter{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, ok := SupportsTuple(tt.a, c); !ok {
+				t.Fatal("synthetic adapter did not declare its corpus tuple")
+			}
+			result := tt.a.Run(c, time.Second)
+			if !result.DeliveryProven || !result.VerdictObserved {
+				t.Fatalf("result = %+v, want explicit synthetic delivery and observation proof", result)
+			}
+			if result.Evidence["synthetic"] != true || result.Evidence["synthetic_adapter"] != tt.name {
+				t.Fatalf("result evidence = %+v, want synthetic marker for %q", result.Evidence, tt.name)
+			}
 		})
 	}
 }

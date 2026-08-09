@@ -4,7 +4,7 @@
 
 This directory contains the Pipelock-specific artifacts the Go runner needs to score Pipelock:
 
-- [`tool-profile.json`](tool-profile.json): Pipelock's capability claims (what it supports, what it does not).
+- [`tool-profile.json`](tool-profile.json): Pipelock's registry-bound reporting labels.
 - [`pipelock-benchmark.yaml`](pipelock-benchmark.yaml): bench-only config (every scanner enabled, action=block, test blocklist domain included).
 - [`receipt-verifier.json`](receipt-verifier.json): Pipelock's verifier metadata for the optional receipt-scoring profile.
 - [`release.env`](release.env): the single reviewed Pipelock release tag and version used by the portable runner and GitHub workflow.
@@ -34,6 +34,7 @@ Important files in the completed directory:
 | `run-bundle.json` | Hash-bound portable bundle used by a later platform finalizer |
 | `raw-summary.json` | Four-axis Gauntlet summary and case counts |
 | `results.jsonl` | One result row per logical case |
+| `tool-profile.json` and `capability-registry.json` | Raw profile and exact registry snapshot that define the reporting labels |
 | `runner.stderr` | Fixture startup proof and runner diagnostics |
 | `command.txt` | Exact internal runner command, including timeout and all canonical flags |
 | `case-index.json` | Loader-normalized case IDs and expected verdicts |

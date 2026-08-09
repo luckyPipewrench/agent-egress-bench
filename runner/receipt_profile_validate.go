@@ -41,7 +41,9 @@ var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": t
 // rewritten. A version absent from this set is an error rather than a silent
 // fall through to the active contract.
 var readableReceiptProfileVersions = map[int]bool{
-	1:                   true, // records emitted before the coordinated v3 set
+	1:                   true,
+	2:                   true,
+	3:                   true,
 	activeSchemaVersion: true,
 }
 
@@ -77,6 +79,11 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 	if !sha256HexPattern.MatchString(rp.ToolProfileSHA256) {
 		issues = append(issues, "tool_profile_sha256 must be 64 lower-case hex characters")
 	}
+	if rp.SchemaVersion == activeSchemaVersion {
+		if rp.CapabilityRegistry.ID == "" || rp.CapabilityRegistry.Format != 1 || rp.CapabilityRegistry.Revision < 1 || !sha256HexPattern.MatchString(rp.CapabilityRegistry.SHA256) {
+			issues = append(issues, "capability_registry must contain a supported id, format, revision, and 64-character sha256")
+		}
+	}
 
 	// Per-row validation, plus accumulators for the summary cross-check.
 	var derived ReceiptSummary
@@ -108,18 +115,28 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 			issues = append(issues, fmt.Sprintf("%s: false_positive must be yes|no|n/a, got %q", prefix, row.FalsePositive))
 		}
 
-		// Cross-field invariant: malicious vs benign split.
-		// Malicious: blocked in {yes, no} and false_positive == n/a.
-		// Benign:    blocked == n/a       and false_positive in {yes, no}.
+		// Cross-field invariant: exactly three legal row shapes.
+		// Malicious:  blocked in {yes, no} and false_positive == n/a.
+		// Benign:     blocked == n/a       and false_positive in {yes, no}.
+		// Unmeasured: blocked == n/a       and false_positive == n/a.
+		//
+		// The unmeasured shape exists because a runner-layer error is not an
+		// observation. Forcing such a row into the malicious or benign shape
+		// would make it assert an outcome on one axis, which is precisely the
+		// false claim this shape prevents: blocked=no reads as an observed
+		// failure to block, and false_positive=no silently credits a correct
+		// allow nobody saw. Both are wrong for the same reason. A row may
+		// therefore decline BOTH axes, but it may never assert both.
 		blockedIsResult := row.Blocked == "yes" || row.Blocked == "no"
 		blockedIsNA := row.Blocked == "n/a"
 		fpIsResult := row.FalsePositive == "yes" || row.FalsePositive == "no"
 		fpIsNA := row.FalsePositive == "n/a"
 		malicious := blockedIsResult && fpIsNA
 		benign := blockedIsNA && fpIsResult
-		if !malicious && !benign {
+		unmeasured := blockedIsNA && fpIsNA
+		if !malicious && !benign && !unmeasured {
 			issues = append(issues, fmt.Sprintf(
-				"%s: blocked/false_positive must split malicious(blocked=yes|no, false_positive=n/a) or benign(blocked=n/a, false_positive=yes|no); got blocked=%q false_positive=%q",
+				"%s: blocked/false_positive must be malicious(blocked=yes|no, false_positive=n/a), benign(blocked=n/a, false_positive=yes|no), or unmeasured(both n/a); got blocked=%q false_positive=%q",
 				prefix, row.Blocked, row.FalsePositive))
 		}
 

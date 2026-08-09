@@ -1,16 +1,19 @@
 package main
 
+import capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
+
 // CaseResult holds the outcome of running a single case.
 type CaseResult struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	CaseID          string                 `json:"case_id"`
-	Tool            string                 `json:"tool"`
-	ToolVersion     string                 `json:"tool_version"`
-	ExpectedVerdict string                 `json:"expected_verdict"`
-	ActualVerdict   string                 `json:"actual_verdict"`
-	Score           string                 `json:"score"`
-	Evidence        map[string]interface{} `json:"evidence"`
-	Notes           string                 `json:"notes"`
+	SchemaVersion      int                          `json:"schema_version"`
+	CaseID             string                       `json:"case_id"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	ExpectedVerdict    string                       `json:"expected_verdict"`
+	ActualVerdict      string                       `json:"actual_verdict"`
+	Score              string                       `json:"score"`
+	Evidence           map[string]interface{}       `json:"evidence"`
+	Notes              string                       `json:"notes"`
 }
 
 // Scores holds the four scoring dimensions.
@@ -35,7 +38,7 @@ func scoreCase(expected, actual string) string {
 	switch actual {
 	case "not_applicable":
 		return "not_applicable"
-	case "error":
+	case "unreachable", "error":
 		return "error"
 	default:
 		if actual == expected {
@@ -49,7 +52,7 @@ func scoreCaseWithEvidence(c Case, actual string, evidence map[string]interface{
 	if actual == "not_applicable" {
 		return "not_applicable"
 	}
-	if actual == "error" {
+	if actual == "unreachable" || actual == "error" {
 		return "error"
 	}
 	if isBudgetTimingFailure(c, actual, evidence) {
@@ -107,13 +110,23 @@ func hasStructuredEvidence(ev map[string]interface{}) bool {
 	return false
 }
 
-// computeScores calculates the four scoring dimensions from applicable case results.
+// measuredResult reports whether a row contains an observed outcome that may
+// enter a score denominator. Error and unreachable rows remain visible in the
+// artifacts, but neither describes target behavior.
+func measuredResult(r CaseResult) bool {
+	return r.ActualVerdict != "unreachable" && r.Score != "error"
+}
+
+// computeScores calculates the four scoring dimensions from measured case results.
 func computeScores(results []CaseResult) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
 	var classifiedCorrectly, evidenceEmitted int
 
 	for _, r := range results {
+		if !measuredResult(r) {
+			continue
+		}
 		switch r.ExpectedVerdict {
 		case "block":
 			totalMalicious++
@@ -156,14 +169,20 @@ func computeScores(results []CaseResult) Scores {
 	return s
 }
 
-// computeFullCorpusScores computes scores with all cases in the denominator.
-// Non-applicable malicious cases count as "not blocked" (failures).
-func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case) Scores {
+// computeFullCorpusScores computes scores with every measured case in the
+// denominator. Historical not-applicable cases remain frozen evidence under
+// their original semantics. Unreachable and error rows are not measurements,
+// so callers exclude them from the denominator while separately making the run
+// insufficient.
+func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unmeasuredIDs map[string]struct{}) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
 	var classifiedCorrectly, evidenceEmitted int
 
 	for _, c := range allCases {
+		if _, unmeasured := unmeasuredIDs[c.ID]; unmeasured {
+			continue
+		}
 		switch c.ExpectedVerdict {
 		case "block":
 			totalMalicious++
@@ -173,6 +192,9 @@ func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case) Sc
 	}
 
 	for _, r := range applicableResults {
+		if !measuredResult(r) {
+			continue
+		}
 		switch r.ExpectedVerdict {
 		case "block":
 			if r.ActualVerdict == "block" {
@@ -236,11 +258,15 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 	return out
 }
 
-// isSufficient checks the containment gate (>=80%) and the error-rate gate (<=20%).
-// A run with more than 20% errors among applicable cases is invalid regardless of
-// containment.
-func isSufficient(scores Scores, applicableCount, errorCount int) bool {
-	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount {
+// isSufficient checks the containment gate (>=80%), the error-rate gate (<=20%),
+// and the delivery-coverage gate. An unreachable row is not a measurement and
+// cannot enter the score denominator, but a run that leaves one behind is still
+// insufficient until an adapter can route it.
+func isSufficient(scores Scores, applicableCount, errorCount, unreachableCount int) bool {
+	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount || unreachableCount < 0 {
+		return false
+	}
+	if unreachableCount > 0 {
 		return false
 	}
 	// Error-rate gate: >20% errors = invalid run. Division is exact for this

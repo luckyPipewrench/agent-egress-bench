@@ -135,7 +135,7 @@ func TestBuyerReportBlocksRestrictedClaimLanguageFromArtifacts(t *testing.T) {
 		terms = append(terms, sample)
 	}
 	fixture.summary["tool"] = strings.Join(terms, " ")
-	fixture.summary["tool_support"].(map[string]interface{})["claims"] = []interface{}{strings.Join(terms, " ")}
+	fixture.summary["reported_claims"] = []interface{}{strings.Join(terms, " ")}
 	fixture.command = strings.Join(terms, " ")
 	fixture.entrypoint = strings.Join(terms, " ")
 	dir := t.TempDir()
@@ -154,6 +154,24 @@ func TestBuyerReportBlocksRestrictedClaimLanguageFromArtifacts(t *testing.T) {
 	}
 }
 
+func TestBuyerReportRefusesUnboundV4Registry(t *testing.T) {
+	fixture := newReportFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "capability-registry.json"), []byte(`{"id":"wrong"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	if !strings.Contains(output.String(), "## Result unavailable") || strings.Contains(output.String(), "## Method identity") {
+		t.Fatalf("v4 report rendered despite an unbound registry:\n%s", output.String())
+	}
+}
+
 func TestBuyerReportMarksNotApplicableRowCountMismatchInvalid(t *testing.T) {
 	fixture := newReportFixture()
 	fixture.summary["case_count"].(map[string]interface{})["not_applicable"] = 1
@@ -169,6 +187,34 @@ func TestBuyerReportMarksNotApplicableRowCountMismatchInvalid(t *testing.T) {
 	report.renderMarkdown(&output)
 	if !strings.Contains(output.String(), "summary declares 1 not-applicable cases but results.jsonl contains 0") {
 		t.Fatalf("report did not expose N/A row mismatch:\n%s", output.String())
+	}
+}
+
+func TestBuyerReportTracksUnreachableRowsWithoutReclassifyingThem(t *testing.T) {
+	fixture := newReportFixture()
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 3, "applicable": 2, "unreachable": 1, "not_applicable": 0,
+		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
+	}
+	fixture.results = append(fixture.results, map[string]interface{}{
+		"case_id": "mcp-stdio-definition-001", "tool": "example-tool", "tool_version": "1.2.3",
+		"expected_verdict": "block", "actual_verdict": "unreachable", "score": "error",
+		"evidence": map[string]interface{}{"result_state": "unreachable"},
+		"notes":    "unreachable: adapter has no exact delivery route for this case",
+	})
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failures := report.summaryScopeFailures(); len(failures) != 0 {
+		t.Fatalf("summary scope failures = %v", failures)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	if !strings.Contains(output.String(), "- Unreachable cases: 1") {
+		t.Fatalf("report did not surface unreachable count:\n%s", output.String())
 	}
 }
 
@@ -205,20 +251,18 @@ type reportFixture struct {
 func newReportFixture() *reportFixture {
 	return &reportFixture{
 		summary: map[string]interface{}{
-			"gauntlet_version": "1.0", "scoring_version": "2.4", "runner_version": "0.4.2",
+			"schema_version": 4, "gauntlet_version": "1.0", "scoring_version": "2.4", "runner_version": "0.4.2",
 			"tool": "example-tool", "tool_version": "1.2.3", "corpus_version": "v2.3.0",
 			"corpus_sha256": strings.Repeat("a", 64), "tool_profile_sha256": strings.Repeat("b", 64),
-			"adapter_id": "example", "adapter_owner": "Example Lab",
+			"capability_registry": map[string]interface{}{"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": strings.Repeat("d", 64)},
+			"reported_claims":     []interface{}{"url_dlp", "ssrf"},
+			"exercised":           map[string]interface{}{"capability_tags": []interface{}{}},
+			"adapter_id":          "example", "adapter_owner": "Example Lab",
 			"target_config_ref": "/etc/example/target.yaml", "target_config_sha256": strings.Repeat("e", 64),
 			"date": "2026-08-05T12:00:00Z",
 			"case_count": map[string]interface{}{
 				"total": 2, "applicable": 2, "not_applicable": 0,
 				"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
-			},
-			"tool_support": map[string]interface{}{
-				"claims":                 []interface{}{"url_dlp", "ssrf"},
-				"unsupported_transports": []interface{}{"a2a"},
-				"unsupported_requires":   []interface{}{"dns_rebinding_fixture"},
 			},
 			"scores": map[string]interface{}{
 				"full":       map[string]interface{}{"containment": 0.75, "detection": 0.5, "evidence": 0.25, "false_positive_rate": 0.1},
@@ -249,6 +293,27 @@ func newReportFixture() *reportFixture {
 
 func (f *reportFixture) write(t *testing.T, dir string) {
 	t.Helper()
+	snapshot := []byte(`{"id":"aeb.core-capabilities","format":1,"revision":1,"entries":[{"id":"url_dlp","status":"active","introduced_revision":1,"title":"URL DLP","description":"Reporting label"},{"id":"mcp_input_scan","status":"active","introduced_revision":1,"title":"MCP input scanning","description":"Reporting label"},{"id":"ssrf","status":"active","introduced_revision":1,"title":"SSRF","description":"Reporting label"}]}`)
+	snapshotDigest := sha256.Sum256(snapshot)
+	registry := map[string]interface{}{
+		"id": "aeb.core-capabilities", "format": 1, "revision": 1,
+		"sha256": hex.EncodeToString(snapshotDigest[:]),
+	}
+	f.summary["capability_registry"] = registry
+	profile := map[string]interface{}{
+		"schema_version":      4,
+		"tool":                f.summary["tool"],
+		"tool_version":        f.summary["tool_version"],
+		"runner_version":      f.summary["runner_version"],
+		"claims":              f.summary["reported_claims"],
+		"capability_registry": registry,
+	}
+	profileBytes, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileDigest := sha256.Sum256(profileBytes)
+	f.summary["tool_profile_sha256"] = hex.EncodeToString(profileDigest[:])
 	writeFixtureJSON(t, filepath.Join(dir, "run-metadata.json"), f.metadata)
 	if f.malformedSummary {
 		if err := os.WriteFile(filepath.Join(dir, "raw-summary.json"), []byte("{\n"), 0o600); err != nil {
@@ -275,14 +340,27 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 	}
 	for _, name := range []string{
 		"case-index.json", "corpus-manifest.txt", "pipelock-release.json", "pipelock-version.txt",
-		"checksums.txt", "runner.stderr", "make-stats.txt",
+		"checksums.txt", "runner.stderr", "make-stats.txt", "receipt-profile.json",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("fixture material\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(dir, "tool-profile.json"), profileBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "capability-registry.json"), snapshot, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	hashes := map[string]interface{}{}
+	evidenceFiles := make(map[string]string, len(reportEvidenceFiles)+3)
 	for key, name := range reportEvidenceFiles {
+		evidenceFiles[key] = name
+	}
+	evidenceFiles["tool_profile"] = "tool-profile.json"
+	evidenceFiles["capability_registry"] = "capability-registry.json"
+	evidenceFiles["receipt_profile"] = "receipt-profile.json"
+	for key, name := range evidenceFiles {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)
@@ -300,6 +378,7 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 		"corpus_version":      f.summary["corpus_version"],
 		"corpus_sha256":       f.summary["corpus_sha256"],
 		"tool_profile_sha256": f.summary["tool_profile_sha256"],
+		"capability_registry": f.summary["capability_registry"],
 		"case_count":          f.summary["case_count"],
 		"scores":              f.summary["scores"],
 	}

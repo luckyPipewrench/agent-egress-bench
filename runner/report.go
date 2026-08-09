@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 const absentFact = "Absent from run artifacts"
@@ -160,6 +162,7 @@ func loadReportText(dir, name string) string {
 type reportRowCounts struct {
 	total         int
 	applicable    int
+	unreachable   int
 	notApplicable int
 	errors        int
 }
@@ -197,6 +200,8 @@ func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 		switch actual {
 		case "not_applicable":
 			counts.notApplicable++
+		case "unreachable":
+			counts.unreachable++
 		case "error":
 			counts.errors++
 			counts.applicable++
@@ -391,6 +396,12 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	bullet("run-bundle.json", r.bundle.status)
 	bullet("execution-decision.json", r.decision.status)
 	line("")
+	if problem := r.v4RegistryBindingError(); problem != "" {
+		line("## Result unavailable")
+		line("")
+		line("This v4 result is uninterpretable: %s.", markdownInline(problem))
+		return
+	}
 	line("## Method identity")
 	line("")
 	bullet("Repository", firstReportFact(
@@ -418,12 +429,12 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("## Capability profile and adapter")
 	line("")
 	bullet("tool_profile_sha256", reportString(r.summary, "tool_profile_sha256"))
-	line("- Declared capability claims:")
-	list(reportStringList(r.summary, "tool_support", "claims"))
-	line("- Unsupported transports:")
-	list(reportStringList(r.summary, "tool_support", "unsupported_transports"))
-	line("- Unsupported requirements:")
-	list(reportStringList(r.summary, "tool_support", "unsupported_requires"))
+	bullet("Registry ID", reportString(r.summary, "capability_registry", "id"))
+	bullet("Registry format", reportNumber(r.summary, "capability_registry", "format"))
+	bullet("Registry revision", reportNumber(r.summary, "capability_registry", "revision"))
+	bullet("Registry SHA-256", reportString(r.summary, "capability_registry", "sha256"))
+	line("- Reporting labels:")
+	list(reportStringList(r.summary, "reported_claims"))
 	line("- Exercised transports (this run):")
 	list(reportStringList(r.summary, "exercised", "transports"))
 	line("- Exercised categories (this run):")
@@ -437,6 +448,9 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("")
 	bullet("Total cases", reportCount(r.summary, "case_count", "total"))
 	bullet("Applicable cases", reportCount(r.summary, "case_count", "applicable"))
+	if _, present := reportIntegerValue(r.summary, "case_count", "unreachable"); present {
+		bullet("Unreachable cases", reportCount(r.summary, "case_count", "unreachable"))
+	}
 	bullet("Not-applicable cases", reportCount(r.summary, "case_count", "not_applicable"))
 	bullet("Error cases", reportCount(r.summary, "case_count", "errors"))
 	line("- Not-applicable case IDs and reasons:")
@@ -457,7 +471,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("")
 	line("## Metric vector")
 	line("")
-	line("Each metric stands on its own. Full-corpus scores retain out-of-scope cases in their denominators; applicable-only scores describe the declared supported scope.")
+	line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; unreachable rows are excluded and make the run insufficient. Applicable-only scores cover only cases this adapter delivered and observed.")
 	line("")
 	line("### Full corpus")
 	line("")
@@ -581,6 +595,19 @@ var reportEvidenceFiles = map[string]string{
 	"stats":                   "make-stats.txt",
 }
 
+func (r *buyerReport) evidenceFiles() map[string]string {
+	files := make(map[string]string, len(reportEvidenceFiles)+3)
+	for key, name := range reportEvidenceFiles {
+		files[key] = name
+	}
+	if reportNumber(r.summary, "schema_version") == "4" {
+		files["tool_profile"] = "tool-profile.json"
+		files["capability_registry"] = "capability-registry.json"
+		files["receipt_profile"] = "receipt-profile.json"
+	}
+	return files
+}
+
 func (r *buyerReport) bundleValidation() string {
 	if r.bundle.data == nil {
 		return absentFact
@@ -609,7 +636,7 @@ func (r *buyerReport) bundleValidation() string {
 			failures = append(failures, "run-metadata.json is not readable JSON")
 		}
 		failures = append(failures, r.summaryScopeFailures()...)
-		for key := range reportEvidenceFiles {
+		for key := range r.evidenceFiles() {
 			if _, present := hashes[key]; !present {
 				failures = append(failures, key+" digest is absent from a complete bundle")
 			}
@@ -619,7 +646,11 @@ func (r *buyerReport) bundleValidation() string {
 		} else if candidateMap, object := candidate.(map[string]interface{}); !object {
 			failures = append(failures, "candidate_scope is malformed")
 		} else if r.summary.data != nil && r.metadata.data != nil {
-			for _, key := range []string{"scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "tool_profile_sha256", "case_count", "scores"} {
+			keys := []string{"scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "tool_profile_sha256", "case_count", "scores"}
+			if reportNumber(r.summary, "schema_version") == "4" {
+				keys = append(keys, "capability_registry")
+			}
+			for _, key := range keys {
 				candidateValue, candidatePresent := candidateMap[key]
 				summaryValue, summaryPresent := r.summary.data[key]
 				if !candidatePresent || !summaryPresent || candidateValue == nil || summaryValue == nil || !reportValuesEqual(candidateValue, summaryValue) {
@@ -639,7 +670,7 @@ func (r *buyerReport) bundleValidation() string {
 			failures = append(failures, key+" has an invalid digest")
 			continue
 		}
-		name, known := reportEvidenceFiles[key]
+		name, known := r.evidenceFiles()[key]
 		if !known {
 			failures = append(failures, key+" has no report filename mapping")
 			continue
@@ -664,17 +695,111 @@ func (r *buyerReport) bundleValidation() string {
 	return fmt.Sprintf("%s %d retained evidence digests match the bundle", reportSelfConsistentPrefix, len(hashes))
 }
 
+func (r *buyerReport) v4RegistryBindingError() string {
+	if reportNumber(r.summary, "schema_version") != "4" {
+		return ""
+	}
+	value, present := nestedValue(r.summary.data, "capability_registry")
+	if !present {
+		return "v4 capability_registry is absent"
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "v4 capability_registry is malformed"
+	}
+	var reference capabilityregistry.Reference
+	if err := json.Unmarshal(encoded, &reference); err != nil {
+		return "v4 capability_registry is malformed"
+	}
+	snapshot, err := os.ReadFile(filepath.Join(r.dir, "capability-registry.json"))
+	if err != nil {
+		return "v4 capability registry snapshot is absent or unreadable"
+	}
+	resolved, err := capabilityregistry.ResolveRaw(reference, snapshot)
+	if err != nil {
+		return "v4 capability registry snapshot does not match the result"
+	}
+	profilePath := filepath.Join(r.dir, "tool-profile.json")
+	profile, err := loadProfile(profilePath)
+	if err != nil {
+		return "v4 tool profile is invalid"
+	}
+	if profile.CapabilityRegistry != reference {
+		return "v4 tool profile registry reference does not match the result"
+	}
+	profileBytes, err := os.ReadFile(profilePath)
+	if err != nil || capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
+		return "v4 tool profile digest does not match the result"
+	}
+	reported, err := reportRegistryLabels(r.summary, "reported_claims")
+	if err != nil || resolved.ValidateActiveIDs("reported_claim", reported) != nil {
+		return "v4 reported_claims are not active IDs in the retained registry"
+	}
+	if !sameStrings(profile.Claims, reported) {
+		return "v4 tool profile claims do not match reported_claims"
+	}
+	tags, err := reportRegistryLabels(r.summary, "exercised", "capability_tags")
+	if err != nil || resolved.ValidateActiveIDs("exercised capability_tag", tags) != nil {
+		return "v4 exercised capability_tags are not active IDs in the retained registry"
+	}
+	return ""
+}
+
+func reportRegistryLabels(doc reportDocument, path ...string) ([]string, error) {
+	value, ok := nestedValue(doc.data, path...)
+	if !ok {
+		return nil, fmt.Errorf("absent labels")
+	}
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("labels are not an array")
+	}
+	seen := make(map[string]struct{}, len(items))
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		label, ok := item.(string)
+		if !ok || label == "" {
+			return nil, fmt.Errorf("label is invalid")
+		}
+		if _, duplicate := seen[label]; duplicate {
+			return nil, fmt.Errorf("duplicate label")
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
+	}
+	return labels, nil
+}
+
+func sameStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *buyerReport) summaryScopeFailures() []string {
 	total, totalOK := reportIntegerValue(r.summary, "case_count", "total")
 	applicable, applicableOK := reportIntegerValue(r.summary, "case_count", "applicable")
+	unreachable, unreachableOK := reportIntegerValue(r.summary, "case_count", "unreachable")
 	notApplicable, notApplicableOK := reportIntegerValue(r.summary, "case_count", "not_applicable")
 	errors, errorsOK := reportIntegerValue(r.summary, "case_count", "errors")
 	if !totalOK || !applicableOK || !notApplicableOK || !errorsOK {
 		return []string{"summary case counts are absent or malformed"}
 	}
+	// Frozen v3 records predate the explicit unreachable count. They are read
+	// under their frozen semantics, where absence means no emitted unreachable
+	// row, rather than being rewritten to the active runner's output shape.
+	if !unreachableOK {
+		unreachable = 0
+	}
 	var failures []string
-	if applicable+notApplicable != total {
-		failures = append(failures, "summary applicable and not-applicable counts do not sum to total")
+	if applicable+unreachable+notApplicable != total {
+		failures = append(failures, "summary applicable, unreachable, and not-applicable counts do not sum to total")
 	}
 	if errors > applicable {
 		failures = append(failures, "summary error count exceeds applicable count")
@@ -728,6 +853,7 @@ func (r *buyerReport) summaryScopeFailures() []string {
 		}{
 			{"total", total, r.rowCounts.total},
 			{"applicable", applicable, r.rowCounts.applicable},
+			{"unreachable", unreachable, r.rowCounts.unreachable},
 			{"error", errors, r.rowCounts.errors},
 		} {
 			if declared, actual := c.declared, c.actual; declared != actual {
@@ -828,7 +954,7 @@ func (r *buyerReport) materialList() []string {
 	}
 	var items []string
 	for key, raw := range hashes {
-		name, known := reportEvidenceFiles[key]
+		name, known := r.evidenceFiles()[key]
 		if !known {
 			name = key
 		}

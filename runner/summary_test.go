@@ -8,93 +8,6 @@ import (
 	"testing"
 )
 
-func summaryTestSupports(v bool) map[string]bool {
-	keys := []string{
-		"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a",
-		"tls_interception",
-		"url_dlp_scanning", "request_body_dlp_scanning", "header_dlp_scanning",
-		"response_prompt_injection_scanning",
-		"mcp_input_dlp_scanning", "mcp_input_prompt_injection_scanning",
-		"mcp_tool_policy", "mcp_tool_result_prompt_injection_scanning",
-		"mcp_tool_poison_scanning", "mcp_tool_baseline", "mcp_chain_memory",
-		"mcp_cross_server_chain_memory", "mcp_data_class_labels",
-		"a2a_dlp_scanning", "a2a_prompt_injection_scanning",
-		"a2a_card_prompt_injection_scanning", "a2a_card_drift_scanning",
-		"a2a_ssrf_scanning",
-		"websocket_dlp_scanning", "websocket_prompt_injection_scanning",
-		"ssrf_scanning", "ssrf_bypass_scanning", "domain_blocklist",
-		"entropy_scanning", "encoding_evasion_scanning", "shell_analysis",
-		"crypto_dlp_scanning", "hostname_exfil_scanning", "dns_rebinding_fixture",
-		"budget_enforcement",
-	}
-	out := make(map[string]bool, len(keys))
-	for _, k := range keys {
-		out[k] = v
-	}
-	return out
-}
-
-func TestBuildToolSupport(t *testing.T) {
-	supports := summaryTestSupports(false)
-	supports["fetch_proxy"] = true
-	supports["http_proxy"] = true
-	supports["tls_interception"] = true
-
-	p := Profile{
-		Claims:   []string{"url_dlp", "ssrf"},
-		Supports: supports,
-	}
-
-	ts := buildToolSupport(p)
-
-	if len(ts.Claims) != 2 {
-		t.Errorf("claims count = %d, want 2", len(ts.Claims))
-	}
-
-	// mcp_stdio, mcp_http, websocket, a2a are unsupported transports.
-	expectedTransports := map[string]bool{
-		"mcp_stdio": true, "mcp_http": true, "websocket": true, "a2a": true,
-	}
-	for _, ut := range ts.UnsupportedTransports {
-		if !expectedTransports[ut] {
-			t.Errorf("unexpected unsupported transport: %s", ut)
-		}
-	}
-	if len(ts.UnsupportedTransports) != len(expectedTransports) {
-		t.Errorf("unsupported transports count = %d, want %d",
-			len(ts.UnsupportedTransports), len(expectedTransports))
-	}
-}
-
-func TestBuildToolSupportNilClaims(t *testing.T) {
-	p := Profile{
-		Claims:   nil,
-		Supports: map[string]bool{},
-	}
-	ts := buildToolSupport(p)
-	if ts.Claims == nil {
-		t.Error("claims should not be nil")
-	}
-	if ts.UnsupportedTransports == nil {
-		t.Error("unsupported_transports should not be nil")
-	}
-	if ts.UnsupportedRequires == nil {
-		t.Error("unsupported_requires should not be nil")
-	}
-}
-
-func TestBuildToolSupportAllSupported(t *testing.T) {
-	supports := summaryTestSupports(true)
-	p := Profile{Claims: []string{"url_dlp"}, Supports: supports}
-	ts := buildToolSupport(p)
-	if len(ts.UnsupportedTransports) != 0 {
-		t.Errorf("expected no unsupported transports, got %v", ts.UnsupportedTransports)
-	}
-	if len(ts.UnsupportedRequires) != 0 {
-		t.Errorf("expected no unsupported requires, got %v", ts.UnsupportedRequires)
-	}
-}
-
 func TestComputeCorpusSHA256NonexistentDir(t *testing.T) {
 	_, err := computeCorpusSHA256("/nonexistent/dir", "")
 	if err == nil {
@@ -112,14 +25,14 @@ func TestWriteSummaryBadPath(t *testing.T) {
 
 func TestWriteSummaryRejectsPreV3Artifact(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "summary.json")
-	if err := writeSummary(GauntletSummary{SchemaVersion: 2, Tool: "test"}, path); err == nil {
-		t.Fatal("writeSummary accepted a pre-v3 summary")
+	if err := writeSummary(GauntletSummary{SchemaVersion: 3, Tool: "test"}, path); err == nil {
+		t.Fatal("writeSummary accepted a pre-v4 summary")
 	}
 }
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json", RunProvenance{})
+	_, err := buildSummary(p, nil, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json", RunProvenance{})
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -160,8 +73,9 @@ func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 	}
 
 	summary, err := buildSummary(
-		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		Profile{Tool: "test", ToolVersion: "1.0", CapabilityRegistry: testRegistryReference},
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		nil,
 		nil,
 		nil,
 		dir,
@@ -191,8 +105,9 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 	}
 
 	_, err := buildSummary(
-		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		Profile{Tool: "test", ToolVersion: "1.0", CapabilityRegistry: testRegistryReference},
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
+		nil,
 		nil,
 		nil,
 		dir,
@@ -206,12 +121,83 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 	}
 }
 
+func TestBuildSummaryKeepsUnreachableOutsideScoreableErrors(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", CapabilityRegistry: testRegistryReference},
+		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		nil,
+		map[string]struct{}{"a": {}},
+		nil,
+		dir,
+		"",
+		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		profilePath,
+		RunProvenance{},
+	)
+	if err != nil {
+		t.Fatalf("buildSummary: %v", err)
+	}
+	if summary.CaseCount.Applicable != 0 || summary.CaseCount.Unreachable != 1 || summary.CaseCount.Errors != 0 {
+		t.Fatalf("case count = %+v, want unreachable distinct from scoreable errors", summary.CaseCount)
+	}
+	if summary.Sufficient {
+		t.Fatal("summary with an unreachable case must be insufficient")
+	}
+}
+
+func TestBuildSummarySyntheticRowsAreNotPublicationSufficient(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := CaseResult{
+		CaseID:          "a",
+		ExpectedVerdict: "block",
+		ActualVerdict:   "block",
+		Score:           "pass",
+		Evidence:        map[string]interface{}{"synthetic": true},
+	}
+	summary, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", CapabilityRegistry: testRegistryReference},
+		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		[]CaseResult{result},
+		nil,
+		nil,
+		dir,
+		"",
+		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		profilePath,
+		RunProvenance{},
+	)
+	if err != nil {
+		t.Fatalf("buildSummary: %v", err)
+	}
+	if summary.Scores.Full.Containment == nil || *summary.Scores.Full.Containment != 1.0 {
+		t.Fatalf("synthetic calibration score = %v, want scoreable 1.0", ptrVal(summary.Scores.Full.Containment))
+	}
+	if summary.Sufficient {
+		t.Fatal("synthetic calibration summary must not be publication sufficient")
+	}
+}
+
 func TestWriteSummaryOmitsEmptyDate(t *testing.T) {
 	t.Setenv(summaryDateEnv, "")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "summary.json")
-	if err := writeSummary(GauntletSummary{Tool: "test", Date: ""}, path); err != nil {
+	if err := writeSummary(GauntletSummary{Tool: "test", Date: "", CapabilityRegistry: testRegistryReference}, path); err != nil {
 		t.Fatalf("writeSummary: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -306,15 +292,17 @@ func TestWriteSummary(t *testing.T) {
 	evidence := 0.0
 
 	s := GauntletSummary{
-		GauntletVersion:   gauntletVersion,
-		ScoringVersion:    scoringVersion,
-		RunnerVersion:     runnerVersion,
-		Tool:              "test-tool",
-		ToolVersion:       "1.0.0",
-		CorpusVersion:     corpusVersion,
-		CorpusSHA256:      "abc123",
-		ToolProfileSHA256: "def456",
-		Date:              "2026-03-28T00:00:00Z",
+		GauntletVersion:    gauntletVersion,
+		ScoringVersion:     scoringVersion,
+		RunnerVersion:      runnerVersion,
+		Tool:               "test-tool",
+		ToolVersion:        "1.0.0",
+		CorpusVersion:      corpusVersion,
+		CorpusSHA256:       "abc123",
+		ToolProfileSHA256:  "def456",
+		CapabilityRegistry: testRegistryReference,
+		ReportedClaims:     []string{"url_dlp"},
+		Date:               "2026-03-28T00:00:00Z",
 		CaseCount: CaseCount{
 			Total:         100,
 			Applicable:    90,
@@ -324,11 +312,6 @@ func TestWriteSummary(t *testing.T) {
 				"unsupported_transport": 2,
 			},
 			Errors: 0,
-		},
-		ToolSupport: ToolSupport{
-			Claims:                []string{"url_dlp"},
-			UnsupportedTransports: []string{"a2a"},
-			UnsupportedRequires:   []string{"dns_rebinding_fixture"},
 		},
 		Scores: DualScores{
 			Full: Scores{

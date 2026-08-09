@@ -24,6 +24,7 @@ REQUIRED_IDENTITIES = (
     "runner_version",
 )
 SCOPE_IDENTITIES = {"corpus_sha256", "corpus_version", "scoring_version", "runner_version"}
+SHA256_HEX = set("0123456789abcdef")
 
 
 def load_object(path):
@@ -62,6 +63,19 @@ def nested_value(document, path):
             raise ValueError("missing field: " + ".".join(path))
         current = current[key]
     return current
+
+
+def require_capability_registry(candidate):
+    reference = candidate.get("capability_registry")
+    if not isinstance(reference, dict) or set(reference) != {"id", "format", "revision", "sha256"}:
+        raise ValueError("candidate capability_registry must be an exact reference")
+    if not isinstance(reference["id"], str) or not reference["id"]:
+        raise ValueError("candidate capability_registry.id must be non-empty")
+    if any(isinstance(reference[key], bool) or not isinstance(reference[key], int) or reference[key] < 1 for key in ("format", "revision")):
+        raise ValueError("candidate capability_registry format and revision must be positive integers")
+    if not isinstance(reference["sha256"], str) or len(reference["sha256"]) != 64 or any(character not in SHA256_HEX for character in reference["sha256"]):
+        raise ValueError("candidate capability_registry.sha256 must be lower-case SHA-256")
+    return reference
 
 
 def atomic_json_write(path, value):
@@ -108,8 +122,10 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         candidate = load_object(candidate_path)
         baseline = load_object(baseline_path)
 
-        if candidate.get("schema_version") != 2:
-            raise ValueError("candidate schema_version must be 2")
+        if candidate.get("schema_version") not in {2, 4}:
+            raise ValueError("candidate schema_version must be 2 or 4")
+        if candidate.get("schema_version") == 4:
+            require_capability_registry(candidate)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))
@@ -219,6 +235,9 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             raise ValueError(
                 f"baseline observed_case_count missing required keys: {missing_count_keys!r}"
             )
+        observed_unreachable = observed.get("unreachable", 0)
+        if isinstance(observed_unreachable, bool) or not isinstance(observed_unreachable, int) or observed_unreachable < 0:
+            raise ValueError("baseline observed_case_count.unreachable must be a non-negative integer")
         for key in ("total", "applicable", "not_applicable"):
             value = observed[key]
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -237,21 +256,55 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             raise ValueError(
                 "baseline observed_case_count.not_applicable_reasons must map non-empty strings to non-negative integers"
             )
-        if observed["applicable"] + observed["not_applicable"] != observed["total"]:
+        if observed["applicable"] + observed_unreachable + observed["not_applicable"] != observed["total"]:
             raise ValueError("baseline observed case counts must partition total")
         if sum(reasons.values()) != observed["not_applicable"]:
             raise ValueError("baseline not_applicable reasons must sum to not_applicable")
-        scope_changed = False
+
+        candidate_counts = candidate.get("case_count")
+        if not isinstance(candidate_counts, dict):
+            raise ValueError("candidate case_count must be an object")
         for key in ("total", "applicable", "not_applicable"):
-            previous = observed.get(key)
-            current = nested_value(candidate, ("case_count", key))
+            value = candidate_counts.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"candidate case_count.{key} must be a non-negative integer")
+        candidate_unreachable = candidate_counts.get("unreachable", 0)
+        if (
+            isinstance(candidate_unreachable, bool)
+            or not isinstance(candidate_unreachable, int)
+            or candidate_unreachable < 0
+        ):
+            raise ValueError("candidate case_count.unreachable must be a non-negative integer")
+        candidate_reasons = candidate_counts.get("not_applicable_reasons")
+        if not isinstance(candidate_reasons, dict):
+            raise ValueError("candidate case_count.not_applicable_reasons must be an object")
+        if any(
+            not isinstance(reason, str)
+            or not reason
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            for reason, count in candidate_reasons.items()
+        ):
+            raise ValueError(
+                "candidate case_count.not_applicable_reasons must map non-empty strings to non-negative integers"
+            )
+        if candidate_counts["applicable"] + candidate_unreachable + candidate_counts["not_applicable"] != candidate_counts["total"]:
+            raise ValueError("candidate case counts must partition total")
+        if sum(candidate_reasons.values()) != candidate_counts["not_applicable"]:
+            raise ValueError("candidate not_applicable reasons must sum to not_applicable")
+
+        scope_changed = False
+        for key in ("total", "applicable", "unreachable", "not_applicable"):
+            previous = observed.get(key, 0)
+            current = candidate_counts.get(key, 0)
             if previous is not None and current != previous:
                 scope_changed = True
                 decision["review_notes"].append(
                     f"case_count.{key} moved {previous!r} -> {current!r}"
                 )
         previous_reasons = observed.get("not_applicable_reasons")
-        current_reasons = nested_value(candidate, ("case_count", "not_applicable_reasons"))
+        current_reasons = candidate_reasons
         if previous_reasons is not None and current_reasons != previous_reasons:
             scope_changed = True
             decision["review_notes"].append(

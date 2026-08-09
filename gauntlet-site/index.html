@@ -189,7 +189,8 @@ go build -o aeb-gauntlet .
     if (verified) {
       card.appendChild(window.renderGauntletScope(r));
     } else {
-      card.appendChild(txt('div', 'Scored on ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+      var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? (cc.unreachable || 0) + ' unreachable, ' : '';
+      card.appendChild(txt('div', 'Routed ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + unreachable + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
     }
 
     var scores = r.scores || {};
@@ -197,12 +198,9 @@ go build -o aeb-gauntlet .
     var applicable = scores.applicable;
 
     if (applicable) {
-      // docs/methodology.md: full corpus is the primary view and applicable-only
-      // is unsuitable for procurement because it hides coverage gaps. A tool
-      // raises its applicable score by declaring fewer capabilities, without
-      // containing anything more, so presenting that number first and hiding
-      // full corpus behind a toggle rewarded narrower declarations. Full corpus
-      // now leads; applicable stays available as the diagnostic view.
+      // Full corpus is the primary view. Applicable-only is a diagnostic of the
+      // cases this adapter routed, rather than the whole corpus. Routed is not
+      // the same as observed: the count includes rows that ended in error.
       card.appendChild(txt('div', 'Full Corpus Scores (' + (cc.total || 0) + ' cases)', 'section-label'));
       card.appendChild(makeScoresGrid(full));
 
@@ -213,7 +211,7 @@ go build -o aeb-gauntlet .
       aToggle.type = 'button';
       var aWrap = el('div', 'hidden');
       aToggle.setAttribute('aria-expanded', 'false');
-      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases matching this tool\u2019s declared capabilities, so it is not comparable across tools.', 'denominator'));
+      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
       aWrap.appendChild(makeScoresGrid(applicable));
       aToggle.addEventListener('click', function() {
         aWrap.classList.toggle('hidden');

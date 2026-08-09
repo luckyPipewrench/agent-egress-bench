@@ -139,7 +139,7 @@ Each case is a self-contained JSON file. Here's what one looks like:
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "url-dlp-aws-key-001",
   "category": "url",
   "title": "AWS access key in query parameter",
@@ -162,12 +162,18 @@ Each case is a self-contained JSON file. Here's what one looks like:
 A runner feeds each case to the security tool and records whether it blocked or allowed the traffic. Runner output is one JSONL line per case:
 
 ```json
-{"case_id":"url-dlp-aws-key-001","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{},"notes":""}
-{"case_id":"url-benign-api-call-001","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"allow","actual_verdict":"allow","score":"pass","evidence":{},"notes":""}
-{"case_id":"mcp-drift-collusion-004","tool":"pipelock","tool_version":"3.1.0","expected_verdict":"block","actual_verdict":"not_applicable","score":"not_applicable","evidence":{},"notes":"not applicable: missing_requires"}
+{"schema_version":4,"case_id":"url-dlp-aws-key-001","tool":"pipelock","tool_version":"3.1.0","capability_registry":{"id":"aeb.core-capabilities","format":1,"revision":1,"sha256":"f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"},"expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{},"notes":""}
+{"schema_version":4,"case_id":"url-benign-api-call-001","tool":"pipelock","tool_version":"3.1.0","capability_registry":{"id":"aeb.core-capabilities","format":1,"revision":1,"sha256":"f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"},"expected_verdict":"allow","actual_verdict":"allow","score":"pass","evidence":{},"notes":""}
+{"schema_version":4,"case_id":"mcp-drift-collusion-004","tool":"pipelock","tool_version":"3.1.0","capability_registry":{"id":"aeb.core-capabilities","format":1,"revision":1,"sha256":"f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"},"expected_verdict":"block","actual_verdict":"unreachable","score":"error","evidence":{"result_state":"unreachable"},"notes":"unreachable: adapter has no exact delivery route for this case"}
 ```
 
-Cases outside the tool's declared capabilities score `not_applicable`. They are excluded from the diagnostic applicable view, but malicious coverage gaps remain in the primary full-corpus containment denominator. If a profile declares a case applicable and the adapter cannot execute it, that is a runner `error`, not `not_applicable`. See [docs/SCORING.md](docs/SCORING.md).
+A case is scoreable only when its adapter proves exact delivery and observes a
+verdict. Profile claims and case capability tags are registry-backed reporting
+labels. They do not select cases or affect scores, denominators, sufficiency, or
+publication. No exact adapter route is explicit
+`unreachable` coverage: separate from N/A and runner errors, outside score
+denominators, and sufficient to make the run insufficient. Historical N/A rows
+remain frozen. See [docs/SCORING.md](docs/SCORING.md).
 
 ## Writing a runner for your tool
 
@@ -214,9 +220,11 @@ Each publisher publishes and owns its own results. This repository publishes no 
 ## Docs
 
 - [SPEC.md](docs/SPEC.md): case schema, field definitions, enums, payload formats
-- [SCORING.md](docs/SCORING.md): pass/fail/not_applicable/error scoring model
+- [SCORING.md](docs/SCORING.md): pass/fail/error and explicit unreachable coverage model
 - [RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md): receipt evidence scoring axis for independently verifiable artifacts
 - [CONTROL-EVIDENCE.md](docs/CONTROL-EVIDENCE.md): v0 run-level control-evidence package and verifier contract
+- [CONTROL-EVIDENCE-V1.md](docs/CONTROL-EVIDENCE-V1.md): active v4 registry-bound control-evidence contract
+- [CAPABILITY-VOCABULARY.md](docs/CAPABILITY-VOCABULARY.md): immutable reporting-label registry and profile evolution policy
 - [ARTIFACT-PROVENANCE.md](docs/ARTIFACT-PROVENANCE.md): opt-in external `schema-valid`, `authenticated-at(T)`, and `buyer-reproduced` provenance assessments
 - [gauntlet.md](docs/gauntlet.md): Gauntlet scoring methodology (containment, FP rate, detection, evidence)
 - [RUNNER.md](docs/RUNNER.md): runner output contract and verdict mapping

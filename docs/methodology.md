@@ -94,9 +94,13 @@ Combining these into a single number would hide real trade-offs. A tool with 99%
 
 ### Two views
 
-**Full corpus (primary).** All cases in the denominator. This is the procurement view. If a tool does not claim a capability, unclaimed cases count as failures. A tool that claims to handle 40% of attack surfaces gets scored on 100% of them.
+**Full corpus (primary).** All measured cases in the denominator. Historical
+v3 N/A rows remain frozen evidence in that view. An adapter-unreachable case is
+not a measurement: it stays visibly separate and makes the run insufficient.
 
-**Applicable (diagnostic).** Only cases matching the tool's declared `supports` map are in the denominator. This is the engineering view. Useful for understanding how well a tool performs within its stated scope. Not suitable for cross-tool procurement decisions because it hides coverage gaps.
+**Applicable (diagnostic).** Only cases with adapter-proven delivery and an
+observed verdict are in the denominator. This is the engineering view. It is
+not selected from a tool's declarations.
 
 The full corpus view is primary. Published results should use full corpus scoring. Applicable scoring is available in the summary JSON for diagnostic use.
 
@@ -106,25 +110,29 @@ If full-corpus containment falls below 80%, the run is marked `insufficient`. A 
 
 ## Capability Profiles
 
-Each tool declares a **tool profile** (`tool-profile.json`) with two sections:
+Each active tool declares a **tool profile** (`tool-profile.json`) with:
 
 - **claims**: reporting labels that help interpret results (e.g., `url_dlp`, `mcp_input_scan`, `ssrf`)
-- **supports**: which transports and fine-grained prerequisites the tool satisfies (e.g., `fetch_proxy: true`, `url_dlp_scanning: true`, `tls_interception: true`)
+- **capability_registry**: the immutable registry snapshot that defines those labels, bound by ID, format, revision, and raw-byte SHA-256
 
-### Applicability filtering
+### Result state
 
-A case is `not_applicable` when any of these conditions is true (checked in order, first match wins):
+A case is scoreable only when its adapter has an exact route, proves delivery of
+the case's exact wire input, and observes a request-correlated verdict. Profile
+claims, case `requires`, and capability tags never select it. Claims and tags
+cannot alter a denominator, score, sufficiency decision, or publication decision.
 
-1. Any value in the case's `requires` has `supports.<value>` set to `false` in the profile.
-2. The case's `transport` has `supports.<transport>` set to `false` in the profile.
-
-Not-applicable cases are never executed and are excluded from applicable-view denominators. In the primary full-corpus view, non-applicable malicious cases remain in the denominator as attacks not blocked. The applicability check is deterministic. No judgment calls.
+No exact route is `unreachable`: visible in output, outside measurement
+denominators, and sufficient to make the run insufficient. A route that cannot
+prove delivery or cannot observe a verdict is `error`. Existing published N/A
+rows remain frozen and are read under their original semantics.
 
 ### Adapter transport integrity
 
 An adapter must execute the case's declared transport. A scan API result is not evidence that a fetch, forward-proxy, WebSocket, MCP, or A2A transport enforced the same payload. Adapters therefore must not substitute transports or fall back from one transport to another.
 
-Applicability is decided before adapter execution. If an adapter cannot execute a case that the tool profile declared applicable, the result is `error`, not `not_applicable`. This makes missing fixtures visible and lets the error-rate gate invalidate incomplete runs.
+An adapter declaration authorizes an attempt only. It does not prove delivery,
+does not observe a verdict, and cannot create N/A.
 
 `mcp_http` cases target the tool's MCP HTTP listener directly. They are a
 distinct MCP ingress surface, not evidence for HTTP forward-proxy enforcement.
@@ -133,7 +141,7 @@ WebSocket cases also need careful interpretation when a fixture address is local
 
 ## Versioning
 
-Five provenance fields identify a Gauntlet run:
+Six provenance fields identify an active Gauntlet run:
 
 | Field | What it tracks | Source |
 |-------|---------------|--------|
@@ -142,31 +150,32 @@ Five provenance fields identify a Gauntlet run:
 | `corpus_sha256` | Hash of all case file contents (sorted by path) | Computed at runtime |
 | `runner_version` | Version of the runner binary | Hardcoded in runner |
 | `tool_profile_sha256` | Hash of the tool profile used | Computed at runtime |
+| `capability_registry` | Immutable snapshot defining reporting labels | Profile and every active result |
 
-**Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other three fields are informational: they support reproducibility and audit trails but do not trigger staleness.
+**Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other fields support reproducibility and audit trails but do not trigger staleness.
 
-Scoring version 2.5 gates applicability on observability: a case applies when the
-runner can deliver its exact input to the tool and observe a trustworthy verdict.
+Scoring version 2.6 is a deliberate boundary. It treats `requires` as delivery
+and observation constraints rather than difficulty claims, and the result state
+machine makes that concrete: a case is scoreable only after adapter-proven exact
+delivery and verdict observation. Because applicability, the full-corpus
+denominator, and sufficiency all changed, results scored under 2.5 and earlier
+are stale by the rule stated above and are not comparable to 2.6 results. They
+remain valid records of what was measured under their own rules.
 Attack-difficulty and evasion-resistance flags (`encoding_evasion_scanning`,
-`ssrf_bypass_scanning`) no longer gate applicability, so a tool cannot render a
-hard variant `not_applicable` by declining a difficulty claim for a surface it
-already inspects. 2.5 also rejects enforcement claims such as `budget_enforcement`
-in `requires`, because gating a case on the feature it exists to test lets a tool
-delete both the case and the benign control that measures its over-blocking.
+`ssrf_bypass_scanning`) cannot select out a hard variant, and enforcement claims
+such as `budget_enforcement` cannot remove the case that tests them.
 
-Comparability across this change is not uniform, so state which component is being
-compared. **Full-corpus containment is comparable**: a malicious case that was
-`not_applicable` already counted as unblocked, so moving it into the applicable set
-does not change the number. **Full-corpus false-positive rates are not strictly
-comparable** wherever a benign control changed applicability, because a control that
-was previously skipped now contributes to the measurement; `mcp-chain-dow-under-budget-011`
-is exactly such a case in 2.5. **Applicable-only scores are not comparable** across
-the boundary at all, because the closed loophole inflated them.
+Historical N/A records remain comparable only within their frozen readers; E3
+does not rewrite them. A new unreachable row is intentionally not a score
+movement: it is a visible measurement gap and makes the run insufficient until
+the adapter proves the route.
 
-Full-corpus scores are treated as diagnostic-versus-primary as in 2.1, and
-an adapter's inability to execute a declared applicable transport still counts as an error.
+Full-corpus scoring is the primary view and applicable-only scoring is
+diagnostic, unchanged from 2.1. An
+adapter with no exact route is an explicit unreachable coverage gap; a routed
+case with missing delivery or observation proof is an error.
 
-`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which capability claims were active. Together, these five fields make any run fully reproducible.
+`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which reporting claims were present. `capability_registry.sha256` proves the exact raw snapshot that defined them. Together, these fields make an active run reproducible without letting labels affect measurement.
 
 ## Running the Gauntlet
 
@@ -186,7 +195,7 @@ For other tools and adapter development, use the Go runner directly. Per-case JS
 
 Vendors, labs, and customers run the Gauntlet against their own target and publish the result themselves. This repository stores no third-party results and awards no verification mark to one. Whoever ran it owns it.
 
-Label the run with the assurance labels in [Results Use and Attribution](RESULTS-USE.md), and publish every identifying fact in that policy's table. The table is the complete list; it covers exact method commit, corpus and scoring version with `corpus_sha256`, capability profile and its digest, adapter identity and owner, target version and configuration, the applicable, not-applicable, and error counts with N/A reasons, the metrics reported separately, and the instructions to reproduce the run. A number without those facts cannot be reproduced or disputed.
+Label the run with the assurance labels in [Results Use and Attribution](RESULTS-USE.md), and publish every identifying fact in that policy's table. The table is the complete list; it covers exact method commit, corpus and scoring version with `corpus_sha256`, capability profile and its digest, adapter identity and owner, target version and configuration, the applicable, unreachable, historical not-applicable, and error counts with N/A reasons, the metrics reported separately, and the instructions to reproduce the run. A number without those facts cannot be reproduced or disputed.
 
 The maintainer-operated Pipelock lane is the one result set kept in this repository. Its records live under `gauntlet-site/results/pipelock/` as immutable evidence directories selected by a reviewed `latest-verified` pointer. That lane is disclosed self-run, artifact-validated regression evidence. It carries no independence claim, and the maintainer re-running somebody else's tool would not change that.
 

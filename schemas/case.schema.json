@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case.schema.json",
   "title": "agent-egress-bench Case",
-  "description": "A single test case for evaluating AI agent egress security tools. Each case specifies an input, the expected verdict (block or allow), and the capabilities required to evaluate it.",
+  "description": "A single test case for evaluating AI agent egress security tools. Each case specifies an input, the expected verdict (block or allow), and its delivery and observation prerequisites.",
   "type": "object",
   "required": [
     "schema_version",
@@ -26,8 +26,8 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 3,
-      "description": "Schema version. Must be 3 for active scoring; v2 is frozen for historical reproduction only."
+      "const": 4,
+      "description": "Schema version. Must be 4 for active scoring; prior schemas are frozen historical formats."
     },
     "id": {
       "type": "string",
@@ -103,7 +103,8 @@
       "type": "string",
       "enum": [
         "block",
-        "allow"
+        "allow",
+        "warn"
       ],
       "description": "Expected tool verdict. v1 is binary (no warn)."
     },
@@ -120,32 +121,8 @@
     "capability_tags": {
       "type": "array",
       "minItems": 1,
-      "items": {
-        "type": "string",
-        "enum": [
-          "url_dlp",
-          "request_body_dlp",
-          "header_dlp",
-          "response_injection",
-          "mcp_input_scan",
-          "mcp_tool_poison",
-          "mcp_chain",
-          "ssrf",
-          "domain_blocklist",
-          "entropy",
-          "encoding_evasion",
-          "benign",
-          "a2a_scan",
-          "a2a_card_poison",
-          "websocket_dlp",
-          "ssrf_bypass",
-          "shell_obfuscation",
-          "crypto_dlp",
-          "hostname_exfil",
-          "denial_of_wallet"
-        ]
-      },
-      "description": "What capabilities this case exercises. Used for reporting and result interpretation."
+      "items": {"type": "string", "minLength": 1},
+      "description": "Registry-backed reporting labels only. The pinned registry snapshot validates IDs; tags never determine delivery, applicability, score, sufficiency, publication eligibility, or coverage denominators."
     },
     "requires": {
       "type": "array",
@@ -182,7 +159,7 @@
           "dns_rebinding_fixture"
         ]
       },
-      "description": "Runtime capability prerequisites. If a tool profile does not satisfy all entries, the case is not_applicable."
+      "description": "Runtime delivery and observation prerequisites. Active scoring selects cases from adapter-proven delivery and verdict observation, not tool-profile supports."
     },
     "false_positive_risk": {
       "type": "string",
