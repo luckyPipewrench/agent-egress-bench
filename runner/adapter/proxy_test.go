@@ -315,6 +315,19 @@ func TestProxyAdapterRunMCPStdioStalePolicyDenySkips(t *testing.T) {
 	}
 }
 
+func TestProxyAdapterRunMCPStdioStalePolicyDenyWithCaseIDSkips(t *testing.T) {
+	// Case payloads commonly use small fixed JSON-RPC IDs. Matching one of
+	// those IDs does not prove the subprocess read this run's stdin.
+	a := &ProxyAdapter{mcpCmd: `printf '%s\n' '{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"stale policy deny"}}'`}
+	result := a.Run(mcpStdioExpectedBlockResponseCase("mcp-stdio-stale-policy-deny-case-id"), 5*time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("case-ID stale policy deny became observed proof: %+v", result)
+	}
+}
+
 func TestRunMCPStdio_UnobservedDenyExitSkipsButStructuredPolicyDenyBlocks(t *testing.T) {
 	// A clean exit without an MCP response has no verifiable deny semantics: a
 	// no-op command, discarded stdin, and a policy denial are indistinguishable.
@@ -597,7 +610,17 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 	}
 	mode := os.Args[len(os.Args)-1]
 	if mode == "policy-deny-no-forward" {
-		_, _ = fmt.Fprintln(os.Stdout, `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}`)
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		input := bufio.NewScanner(os.Stdin)
+		if !input.Scan() {
+			return
+		}
+		if err := json.Unmarshal(input.Bytes(), &request); err != nil || len(request.ID) == 0 {
+			return
+		}
+		_, _ = fmt.Fprintf(os.Stdout, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"policy denied"}}`+"\n", request.ID)
 		return
 	}
 	addr := os.Getenv(mcpStdioUpstreamAddrEnv)

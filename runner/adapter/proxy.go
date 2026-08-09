@@ -1695,6 +1695,65 @@ func mcpStdioSuccessResponse(request interface{}) map[string]interface{} {
 	}
 }
 
+// correlateMCPStdioSessionMessages assigns a fresh JSON-RPC ID to every
+// request that expects a response. The corpus uses stable example IDs, which
+// are part of its fixture data but cannot prove a subprocess read this run's
+// input. Response fixtures are paired with client requests by position in
+// startMCPStdioUpstreamObserver, so update the paired response ID as well.
+func correlateMCPStdioSessionMessages(clientMsgs, serverResponses []interface{}) ([]interface{}, []interface{}, error) {
+	correlatedClients := make([]interface{}, len(clientMsgs))
+	copy(correlatedClients, clientMsgs)
+	correlatedResponses := make([]interface{}, len(serverResponses))
+	copy(correlatedResponses, serverResponses)
+
+	for i, rawClient := range clientMsgs {
+		client, ok := rawClient.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		originalID, hasID := client["id"]
+		if !hasID || originalID == nil {
+			// JSON-RPC notifications carry no response ID and cannot establish a
+			// policy-denial verdict through this branch.
+			continue
+		}
+		identity, err := freshMCPStdioRequestIdentity()
+		if err != nil {
+			return nil, nil, err
+		}
+		correlatedClient := make(map[string]interface{}, len(client))
+		for key, value := range client {
+			correlatedClient[key] = value
+		}
+		correlatedClient["id"] = identity
+		correlatedClients[i] = correlatedClient
+
+		if i >= len(serverResponses) {
+			continue
+		}
+		response, ok := serverResponses[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		correlatedResponse := make(map[string]interface{}, len(response))
+		for key, value := range response {
+			correlatedResponse[key] = value
+		}
+		correlatedResponse["id"] = identity
+		correlatedResponses[i] = correlatedResponse
+	}
+
+	return correlatedClients, correlatedResponses, nil
+}
+
+func freshMCPStdioRequestIdentity() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("generate random request identity: %w", err)
+	}
+	return "aeb-stdio-" + base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
 func mcpStdioObservationEvidence(observer *mcpStdioUpstreamObserver) (map[string]interface{}, bool) {
 	if observer == nil {
 		return nil, false
@@ -1821,6 +1880,18 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			"id":      1,
 		})
 	}
+	// Corpus JSON-RPC IDs are stable fixture data, often small integers such as
+	// 1. They cannot correlate a policy denial: a subprocess can print a stale
+	// deny with that ID before it reads this run's stdin. The stdio adapter owns
+	// this session-level correlation field, so replace request IDs with fresh
+	// unpredictable values and keep paired fixture responses in the same
+	// session. The attack payload, transport, method, and lifecycle stay intact.
+	correlatedClientMsgs, correlatedServerResponses, correlationErr := correlateMCPStdioSessionMessages(clientMsgs, serverResponses)
+	if correlationErr != nil {
+		return Result{Err: fmt.Errorf("case %s: assign MCP stdio request identities: %w", c.ID, correlationErr)}
+	}
+	clientMsgs = correlatedClientMsgs
+	serverResponses = correlatedServerResponses
 	// A structured policy error is evidence only when it answers one of the
 	// requests we wrote for this case. Without this correlation, a subprocess
 	// can emit a stale deny before reading stdin and manufacture containment.
