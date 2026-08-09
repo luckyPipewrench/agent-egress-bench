@@ -3376,3 +3376,32 @@ func TestProxyAdapter_ConnectionResetIsNotAnObservedBlock(t *testing.T) {
 		t.Fatalf("the reset fixture was never contacted, so this test proved nothing about the reset path")
 	}
 }
+
+// A verdict must never depend on which ephemeral port the OS handed out. Bare
+// substring matching on "403" read the port in "127.0.0.1:40320" as a policy
+// decision, so a transport failure scored as an observed block whenever the
+// draw happened to contain those digits. It passed ten local runs and failed in
+// CI, because that is what luck looks like.
+func TestProxyPolicyRejectionIgnoresNumbersInsideAddresses(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"port containing 403", `Get "": read tcp 127.0.0.1:40320->127.0.0.1:33597: read: connection reset by peer`, false},
+		{"port containing 405", `Get "": write tcp 127.0.0.1:14051->127.0.0.1:9: write: broken pipe`, false},
+		{"port equal to 403 digits inside longer run", `dial tcp 10.0.0.1:34031: i/o timeout`, false},
+		{"plain reset", `Get "": read tcp 127.0.0.1:1->127.0.0.1:2: read: connection reset by peer`, false},
+		{"real forbidden status", `Get "": 403 Forbidden`, true},
+		{"real forbidden phrase", `Get "": Forbidden`, true},
+		{"real method not allowed", `Get "": 405 Method Not Allowed`, true},
+		{"proxy said blocked", `Get "": proxy blocked this request`, true},
+		{"standalone code", `Get "": proxy returned 403`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := proxyPolicyRejection(tc.text); got != tc.want {
+				t.Fatalf("proxyPolicyRejection(%q) = %v, want %v", tc.text, got, tc.want)
+			}
+		})
+	}
+}
