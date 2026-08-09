@@ -304,6 +304,12 @@ func webSocketResultWithProof(result Result) Result {
 	if result.Verdict == "block" {
 		// A close frame, rejected upgrade, or structured proxy block is direct
 		// WebSocket protocol evidence. Bare local success is not.
+		// A socket error is neither a WebSocket close frame nor a decision from
+		// the proxy. Keep these result reasons unproven even if a future caller
+		// mistakenly labels them as blocks.
+		if reason, _ := result.Evidence["reason"].(string); reason == "connection_closed" || reason == "connection_closed_while_writing_frame" {
+			return result
+		}
 		if _, hasScanner := result.Evidence["scanner"]; hasScanner {
 			return observedProxyVerdict(result)
 		}
@@ -440,11 +446,10 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		frame, _ := raw.(map[string]interface{})
 		if err := writeCorpusWebSocketFrame(conn, frame); err != nil {
 			return Result{
-				Verdict: "block",
+				Verdict: "skip",
 				Evidence: map[string]interface{}{
-					"scanner": "websocket_proxy",
-					"reason":  "connection_closed_while_writing_frame",
-					"detail":  truncate(err.Error(), 120),
+					"reason": "connection_closed_while_writing_frame",
+					"detail": truncate(err.Error(), 120),
 				},
 			}
 		}
@@ -495,8 +500,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 			// useful wire evidence, but it is only an allow when the
 			// runner-managed upstream fixture also observed the corpus
 			// message. If we never received any frame, an abrupt closure
-			// suggests the proxy actively dropped the connection (RST or
-			// close without frame): block.
+			// is a transport failure, not an observed deny verdict.
 			if lastFrame.seen {
 				ev := map[string]interface{}{
 					"scanner": "websocket_proxy",
@@ -507,11 +511,10 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 				return p.classifyWebSocketAllow(ev, upstreamBefore, expectedUpstreamMessages)
 			}
 			return Result{
-				Verdict: "block",
+				Verdict: "skip",
 				Evidence: map[string]interface{}{
-					"scanner": "websocket_proxy",
-					"reason":  "connection_closed",
-					"detail":  truncate(err.Error(), 120),
+					"reason": "connection_closed",
+					"detail": truncate(err.Error(), 120),
 				},
 			}
 		}

@@ -484,6 +484,16 @@ func TestProxyResultProofDoesNotTrustBareVerdict(t *testing.T) {
 	if !confirmed.DeliveryProven || !confirmed.VerdictObserved {
 		t.Fatalf("fixture-confirmed WebSocket allow did not become proof: %+v", confirmed)
 	}
+
+	for _, reason := range []string{"connection_closed", "connection_closed_while_writing_frame"} {
+		got := webSocketResultWithProof(Result{
+			Verdict:  "block",
+			Evidence: map[string]interface{}{"scanner": "websocket_proxy", "reason": reason},
+		})
+		if got.DeliveryProven || got.VerdictObserved {
+			t.Fatalf("abrupt WebSocket %q became proof: %+v", reason, got)
+		}
+	}
 }
 
 func TestMCPStdioUpstreamCommandEnvStripsAmbientAddress(t *testing.T) {
@@ -1707,6 +1717,45 @@ func TestRunWebSocketFrameViaProxy_ProxySynthesizedFrameIsUnproven(t *testing.T)
 	}, time.Second)
 	if result.Verdict != "skip" {
 		t.Fatalf("verdict = %q, want skip for proxy-origin frame; evidence = %+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestProxyAdapterRunWebSocketAbruptCloseIsUnproven(t *testing.T) {
+	// A peer can complete the upgrade, accept the corpus frame, then vanish
+	// without returning a WebSocket close frame. That is an availability
+	// failure, not an observed deny verdict from the evaluated proxy.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(Case{
+		ID: "ws-abrupt-close", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+		},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("abrupt close became observed proof: %+v", result)
 	}
 }
 
