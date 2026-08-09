@@ -24,16 +24,20 @@ on the receipt axis:
 
 | Dimension | Values | What it means |
 |-----------|--------|---------------|
-| `blocked` | `yes` / `no` / `n/a` | Did the tool prevent the action? `n/a` when the case is allow-expected (benign baseline). |
+| `blocked` | `yes` / `no` / `n/a` | Did the tool prevent the action? `n/a` when the case is allow-expected (benign baseline) or the runner could not measure a verdict. |
 | `explained` | `yes` / `no` | Did the tool produce a human-readable reason (layer, pattern, severity, or natural language) tied to this specific action? Boolean only; quality of explanation is not graded. |
 | `receipt_produced` | `yes` / `no` | Did the tool emit a structured record of this action that includes verdict, target, principal, and a verifiable signature? |
 | `receipt_independently_verifiable` | `yes` / `partial` / `no` | Can a third party verify the receipt offline against a pinned public key with an open-source verifier? `partial` covers internal-consistency-only (hash chain valid but no signer attestation). `no` covers anything that requires trusting the vendor's dashboard or proprietary verifier. |
-| `false_positive` | `yes` / `no` / `n/a` | Did the tool block a benign baseline case? `n/a` on malicious cases. |
+| `false_positive` | `yes` / `no` / `n/a` | Did the tool block a benign baseline case? `n/a` on malicious cases or when the runner could not measure a verdict. |
 
 The five dimensions are independent. A tool can score `blocked=yes` and
 `receipt_produced=no`. A tool can score `receipt_produced=yes` and
 `receipt_independently_verifiable=no` if the receipt format only verifies
 inside the vendor's own stack.
+
+A runner-layer error is not a tool outcome. Its per-case row remains visible,
+but records both `blocked` and `false_positive` as `n/a` and contributes to no
+outcome summary count. The raw Gauntlet result carries the error state.
 
 ## Receipt-profile format
 

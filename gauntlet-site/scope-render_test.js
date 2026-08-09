@@ -30,6 +30,7 @@ function completeArtifact() {
     logical_case_count: 213,
     runner_version: '0.4.0',
     scoring_version: '2.2',
+    sufficient: true,
     case_count: {
       total: 213,
       applicable: 212,
@@ -42,7 +43,7 @@ function completeArtifact() {
       // it. Containment is scored over MALICIOUS cases only, so its denominator
       // is 158 rather than the 213 total: the benign controls are counted by the
       // false-positive rate instead. 157 of 158 contained, the miss being the
-      // case this tool did not declare, which is why the full and applicable
+      // retained historical N/A case, which is why the full and applicable
       // figures differ.
       full: { containment: 157 / 158, false_positive_rate: 0 },
     },
@@ -77,6 +78,25 @@ assert.equal(rendered.className, 'denominator');
 assert.match(rendered.children[0].textContent,
   /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic/);
 assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
+
+const withUnreachable = completeArtifact();
+withUnreachable.case_count.applicable = 211;
+withUnreachable.case_count.unreachable = 1;
+withUnreachable.metric_counts.applicable.false_positive_rate.denominator = 0;
+withUnreachable.metric_counts.full.false_positive_rate.denominator = 0;
+withUnreachable.scores.applicable.false_positive_rate = null;
+withUnreachable.scores.full.false_positive_rate = null;
+assert.throws(
+  () => window.renderGauntletScope(withUnreachable),
+  /unreachable case requires sufficient=false/
+);
+
+const insufficient = completeArtifact();
+insufficient.sufficient = false;
+assert.throws(
+  () => window.renderGauntletScope(insufficient),
+  /insufficient runs cannot render as verified/
+);
 
 expectReject((artifact) => { artifact.scores.applicable.containment = '100%'; }, 'non-numeric containment');
 expectReject((artifact) => { artifact.scores.applicable.false_positive_rate = 1.1; }, 'out-of-range FP rate');
@@ -119,16 +139,15 @@ allNA.scores.applicable.containment = null;
 allNA.scores.applicable.false_positive_rate = null;
 allNA.metric_counts.applicable.containment = { numerator: 0, denominator: 0 };
 allNA.metric_counts.applicable.false_positive_rate = { numerator: 0, denominator: 0 };
-// A tool declaring no capabilities contains nothing, so full-corpus containment
-// is 0 of the 158 malicious cases rather than the 157/158 the base fixture
-// carries. The denominator stays 158 because it counts attacks present in the
-// corpus, which does not change with what a tool declares.
+// This retained historical all-N/A fixture contains nothing, so full-corpus
+// containment is 0 of the 158 malicious cases rather than the 157/158 the base
+// fixture carries. The denominator stays 158 because it counts attacks present
+// in the corpus.
 allNA.scores.full.containment = 0;
 allNA.metric_counts.full.containment = { numerator: 0, denominator: 158 };
-// This is the whole point of leading with full corpus. Declaring nothing makes
-// the applicable score vanish into N/A, which under the old presentation left
-// no headline number at all. Full corpus reports it as 0.0%: the cases were
-// still attacks, and none of them were contained.
+// This is the point of leading with full corpus. Historical all-N/A data makes
+// the applicable score vanish into N/A, but full corpus reports 0.0%: the cases
+// were still attacks, and none of them were contained.
 assert.match(window.renderGauntletScope(allNA).children[0].textContent,
   /Containment 0\.0% of 158 malicious cases in the full 213-case corpus; N\/A of 0 applicable malicious \(diagnostic/);
 

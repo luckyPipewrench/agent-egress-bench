@@ -1059,6 +1059,8 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 				r.ActualVerdict, r.Score))
 		case r.ActualVerdict == "not_applicable" && r.Score != "not_applicable":
 			addErr(fmt.Sprintf("inconsistent score: actual_verdict is not_applicable but score is %q (should be not_applicable)", r.Score))
+		case r.ActualVerdict == "unreachable" && r.Score != "error":
+			addErr(fmt.Sprintf("inconsistent score: actual_verdict is unreachable but score is %q (should be error)", r.Score))
 		case r.ActualVerdict == "error" && r.Score != "error":
 			addErr(fmt.Sprintf("inconsistent score: actual_verdict is error but score is %q (should be error)", r.Score))
 		}

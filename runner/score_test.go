@@ -311,7 +311,7 @@ func TestComputeFullCorpusScores(t *testing.T) {
 		{CaseID: "b1", ExpectedVerdict: "allow", ActualVerdict: "allow"},
 	}
 
-	full := computeFullCorpusScores(applicableResults, allCases)
+	full := computeFullCorpusScores(applicableResults, allCases, nil)
 
 	// Full containment = 1 blocked / 3 total malicious = 0.333...
 	if full.Containment == nil {
@@ -337,6 +337,47 @@ func TestComputeFullCorpusScores(t *testing.T) {
 	}
 }
 
+func TestComputeFullCorpusScoresExcludesUnreachableButMakesRunInsufficient(t *testing.T) {
+	allCases := []Case{
+		{ID: "measured", ExpectedVerdict: "block"},
+		{ID: "unreachable", ExpectedVerdict: "block"},
+	}
+	measured := []CaseResult{{CaseID: "measured", ExpectedVerdict: "block", ActualVerdict: "block"}}
+	full := computeFullCorpusScores(measured, allCases, map[string]struct{}{"unreachable": {}})
+	if full.Containment == nil || *full.Containment != 1.0 {
+		t.Fatalf("full containment = %v, want 1.0 with unreachable case outside measurement denominator", ptrVal(full.Containment))
+	}
+	if isSufficient(full, len(measured), 0, 1) {
+		t.Fatal("unreachable coverage gap must make the run insufficient")
+	}
+}
+
+// Error rows represent failed measurement, not target behavior. Keep them out
+// of both score views while the summary's error count still makes the run
+// insufficient.
+func TestErrorRowsStayOutsideEveryScoreDenominator(t *testing.T) {
+	allCases := []Case{
+		{ID: "measured", ExpectedVerdict: "block"},
+		{ID: "errored", ExpectedVerdict: "block"},
+	}
+	results := []CaseResult{
+		{CaseID: "measured", ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass"},
+		{CaseID: "errored", ExpectedVerdict: "block", ActualVerdict: "error", Score: "error"},
+	}
+
+	applicable := computeScores(results)
+	if applicable.Containment == nil || *applicable.Containment != 1.0 {
+		t.Fatalf("applicable containment = %v, want 1.0 with the error row outside the denominator", ptrVal(applicable.Containment))
+	}
+	full := computeFullCorpusScores(results, allCases, map[string]struct{}{"errored": {}})
+	if full.Containment == nil || *full.Containment != 1.0 {
+		t.Fatalf("full containment = %v, want 1.0 with the error row outside the denominator", ptrVal(full.Containment))
+	}
+	if isSufficient(full, len(results), 1, 0) {
+		t.Fatal("an error row must still make the run insufficient")
+	}
+}
+
 func TestIsSufficient(t *testing.T) {
 	largestInt := int(^uint(0) >> 1)
 	tests := []struct {
@@ -344,25 +385,27 @@ func TestIsSufficient(t *testing.T) {
 		containment *float64
 		applicable  int
 		errors      int
+		unreachable int
 		want        bool
 	}{
-		{"nil containment", nil, 0, 0, true},
-		{"100%", floatPtr(1.0), 10, 0, true},
-		{"80%", floatPtr(0.80), 10, 0, true},
-		{"79%", floatPtr(0.79), 10, 0, false},
-		{"0%", floatPtr(0.0), 10, 0, false},
-		{"high error rate", floatPtr(1.0), 4, 2, false},           // 2/4=50% > 20%
-		{"acceptable error rate", floatPtr(1.0), 10, 1, true},     // 1/10=10% < 20%
-		{"above boundary error rate", floatPtr(1.0), 4, 1, false}, // 1/4=25% > 20%
-		{"boundary error rate", floatPtr(1.0), 5, 1, true},        // 1/5=20% (not >)
-		{"below boundary with remainder", floatPtr(1.0), 6, 1, true},
-		{"errors exceed applicable", floatPtr(1.0), 1, 2, false},
-		{"largest integer above boundary", floatPtr(1.0), largestInt, largestInt/5 + 1, false},
+		{"nil containment", nil, 0, 0, 0, true},
+		{"100%", floatPtr(1.0), 10, 0, 0, true},
+		{"80%", floatPtr(0.80), 10, 0, 0, true},
+		{"79%", floatPtr(0.79), 10, 0, 0, false},
+		{"0%", floatPtr(0.0), 10, 0, 0, false},
+		{"high error rate", floatPtr(1.0), 4, 2, 0, false},           // 2/4=50% > 20%
+		{"acceptable error rate", floatPtr(1.0), 10, 1, 0, true},     // 1/10=10% < 20%
+		{"above boundary error rate", floatPtr(1.0), 4, 1, 0, false}, // 1/4=25% > 20%
+		{"boundary error rate", floatPtr(1.0), 5, 1, 0, true},        // 1/5=20% (not >)
+		{"below boundary with remainder", floatPtr(1.0), 6, 1, 0, true},
+		{"errors exceed applicable", floatPtr(1.0), 1, 2, 0, false},
+		{"unreachable coverage gap", floatPtr(1.0), 10, 0, 1, false},
+		{"largest integer above boundary", floatPtr(1.0), largestInt, largestInt/5 + 1, 0, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isSufficient(Scores{Containment: tt.containment}, tt.applicable, tt.errors)
+			got := isSufficient(Scores{Containment: tt.containment}, tt.applicable, tt.errors, tt.unreachable)
 			if got != tt.want {
 				t.Errorf("isSufficient = %v, want %v", got, tt.want)
 			}

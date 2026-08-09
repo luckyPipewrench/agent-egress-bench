@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json",
   "title": "agent-egress-bench Tool Profile",
-  "description": "Declares a tool's claimed capabilities and supported transports/features. Used by runners to determine case applicability before execution.",
+  "description": "Declares a tool's claimed capabilities and supported transports/features. Retained as publication metadata; active runners determine applicability from adapter-proven delivery and verdict observation.",
   "type": "object",
   "required": [
     "schema_version",
@@ -58,7 +58,7 @@
           "denial_of_wallet"
         ]
       },
-      "description": "Capability tags this tool claims for reporting and result interpretation. Applicability is determined by supports and case requires."
+      "description": "Capability tags this tool claims for reporting and result interpretation. They do not determine active runner applicability."
     },
     "supports": {
       "type": "object",

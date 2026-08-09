@@ -121,6 +121,18 @@ class ValidateGauntletScopeTest(unittest.TestCase):
         result = self.run_validator(complete_artifact())
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_unreachable_coverage_is_visible_but_outside_full_denominator(self):
+        artifact = complete_artifact()
+        total = artifact["case_count"]["total"]
+        artifact["case_count"]["applicable"] = total - 2
+        artifact["case_count"]["unreachable"] = 1
+        artifact["metric_counts"]["applicable"]["false_positive_rate"]["denominator"] -= 1
+        artifact["metric_counts"]["full"]["false_positive_rate"]["denominator"] -= 1
+
+        result = self.run_validator(artifact)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_each_required_scope_field_fails_when_missing(self):
         required_paths = [
             ("schema_version",),

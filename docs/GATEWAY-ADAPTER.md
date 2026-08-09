@@ -10,17 +10,18 @@ The adapter supports three narrow paths, all sent to a plugin with
 - A corpus `mcp_http` case containing one or more `mcp_tool_call` messages: the
   adapter sends `initialize`, `notifications/initialized`, and each case
   `tools/call` in order over the one session.
-- A corpus `mcp_stdio` or `mcp_http` case containing exactly one
-  `mcp_tool_definition`: the case models the upstream inventory while the
-  adapter drives the gateway over Streamable HTTP. It installs the inventory
-  under one request identity in the runner-managed fixture, then sends `initialize`,
-  `notifications/initialized`, and `tools/list`.
+- A corpus `mcp_http` case containing exactly one `mcp_tool_definition`: the
+  case models the upstream inventory while the adapter drives the gateway over
+  Streamable HTTP. It installs the inventory under one request identity in the
+  runner-managed fixture, then sends `initialize`, `notifications/initialized`,
+  and `tools/list`. An `mcp_stdio` case is a different wire input and is not
+  declared as this HTTP adapter's route.
 - A corpus `mcp_http` case containing exactly one `mcp_tool_result`: the adapter
   installs that result under one request identity, then drives a correlated call
   through the gateway.
 
 Other corpus transport and input-type tuples are not selected for this adapter;
-the runner records a named error when no declared delivery tuple exists. If a
+the runner emits an explicit `unreachable` coverage row when no declared delivery tuple exists. If a
 declared route cannot establish its delivery proof, the adapter returns `skip`
 and the runner promotes that out-of-contract verdict to an error rather than
 inventing a product verdict. An ordered `tools/call` sequence is modelled;

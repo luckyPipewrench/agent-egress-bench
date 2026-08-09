@@ -76,6 +76,13 @@ def count(document, key, failures):
     return value
 
 
+def optional_count(document, key, failures, default=0):
+    case_count = document.get("case_count")
+    if not isinstance(case_count, dict) or key not in case_count:
+        return default
+    return count(document, key, failures)
+
+
 def score(document, scope, metric, failures):
     scores = document.get("scores")
     value = scores.get(scope, {}).get(metric) if isinstance(scores, dict) and isinstance(scores.get(scope), dict) else None
@@ -156,6 +163,7 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
             details[key] = required_string(candidate, (key,), failures)
         for key in ("total", "applicable", "not_applicable", "errors"):
             details[key] = count(candidate, key, failures)
+        details["unreachable"] = optional_count(candidate, "unreachable", failures)
         if candidate.get("sufficient") is not True:
             failures.append("candidate sufficient must be true")
         if details["errors"] not in (None, 0):
@@ -165,7 +173,7 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
             failures.append("invalid field: case_count.not_applicable_reasons")
         elif details["not_applicable"] is not None and sum(reasons.values()) != details["not_applicable"]:
             failures.append("candidate N/A reasons do not match case_count.not_applicable")
-        if all(details[key] is not None for key in ("total", "applicable", "not_applicable")) and details["applicable"] + details["not_applicable"] != details["total"]:
+        if all(details[key] is not None for key in ("total", "applicable", "unreachable", "not_applicable")) and details["applicable"] + details["unreachable"] + details["not_applicable"] != details["total"]:
             failures.append("candidate case counts do not partition total")
         details["applicable_containment"] = score(candidate, "applicable", "containment", failures)
         details["full_containment"] = score(candidate, "full", "containment", failures)
@@ -245,8 +253,8 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
     if candidate is not None:
         lines.append(f"- Pipelock: `{code_text(details.get('pipelock_version'))}`")
         lines.append(f"- Generated: `{code_text(details.get('generated_at'))}`")
-        if all(details.get(key) is not None for key in ("total", "applicable", "not_applicable", "errors")):
-            lines.append(f"- Cases: {details['total']} total; {details['applicable']} applicable; {details['not_applicable']} N/A; {details['errors']} errors")
+        if all(details.get(key) is not None for key in ("total", "applicable", "unreachable", "not_applicable", "errors")):
+            lines.append(f"- Cases: {details['total']} total; {details['applicable']} applicable; {details['unreachable']} unreachable; {details['not_applicable']} N/A; {details['errors']} errors")
         if details.get("applicable_containment") is not None:
             lines.append(f"- Applicable containment: {percent(details['applicable_containment'])}")
         if details.get("full_containment") is not None:

@@ -108,18 +108,28 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 			issues = append(issues, fmt.Sprintf("%s: false_positive must be yes|no|n/a, got %q", prefix, row.FalsePositive))
 		}
 
-		// Cross-field invariant: malicious vs benign split.
-		// Malicious: blocked in {yes, no} and false_positive == n/a.
-		// Benign:    blocked == n/a       and false_positive in {yes, no}.
+		// Cross-field invariant: exactly three legal row shapes.
+		// Malicious:  blocked in {yes, no} and false_positive == n/a.
+		// Benign:     blocked == n/a       and false_positive in {yes, no}.
+		// Unmeasured: blocked == n/a       and false_positive == n/a.
+		//
+		// The unmeasured shape exists because a runner-layer error is not an
+		// observation. Forcing such a row into the malicious or benign shape
+		// would make it assert an outcome on one axis, which is precisely the
+		// false claim this shape prevents: blocked=no reads as an observed
+		// failure to block, and false_positive=no silently credits a correct
+		// allow nobody saw. Both are wrong for the same reason. A row may
+		// therefore decline BOTH axes, but it may never assert both.
 		blockedIsResult := row.Blocked == "yes" || row.Blocked == "no"
 		blockedIsNA := row.Blocked == "n/a"
 		fpIsResult := row.FalsePositive == "yes" || row.FalsePositive == "no"
 		fpIsNA := row.FalsePositive == "n/a"
 		malicious := blockedIsResult && fpIsNA
 		benign := blockedIsNA && fpIsResult
-		if !malicious && !benign {
+		unmeasured := blockedIsNA && fpIsNA
+		if !malicious && !benign && !unmeasured {
 			issues = append(issues, fmt.Sprintf(
-				"%s: blocked/false_positive must split malicious(blocked=yes|no, false_positive=n/a) or benign(blocked=n/a, false_positive=yes|no); got blocked=%q false_positive=%q",
+				"%s: blocked/false_positive must be malicious(blocked=yes|no, false_positive=n/a), benign(blocked=n/a, false_positive=yes|no), or unmeasured(both n/a); got blocked=%q false_positive=%q",
 				prefix, row.Blocked, row.FalsePositive))
 		}
 

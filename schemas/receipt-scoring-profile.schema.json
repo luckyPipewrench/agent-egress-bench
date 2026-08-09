@@ -128,7 +128,7 @@
     },
     "per_case": {
       "type": "array",
-      "description": "One row per applicable corpus case the runner exercised against the tool. Cases that were not applicable to the tool or that errored at the runner layer are not represented here; see the runner gauntlet summary for those counts.",
+      "description": "One row per corpus case the runner routed to the tool, plus every runner-produced unreachable row. An unreachable row records that this adapter had no exact delivery route; it remains visible as the unmeasured shape with blocked and false_positive both n/a and is excluded from outcome summary counts. Runner-error rows use the same unmeasured shape because a failed measurement is not an observed outcome in either direction. Historical not-applicable rows are not represented. Factual receipt observations, if any, remain represented and counted by their corresponding receipt dimensions.",
       "minItems": 0,
       "items": {
         "type": "object",
@@ -149,7 +149,7 @@
           },
           "blocked": {
             "enum": ["yes", "no", "n/a"],
-            "description": "Did the tool prevent the action? n/a when the case expects allow (benign baseline)."
+            "description": "Did the tool prevent the action? n/a for an allow-expected benign baseline or an unmeasured runner-error row."
           },
           "explained": {
             "enum": ["yes", "no"],
@@ -165,7 +165,7 @@
           },
           "false_positive": {
             "enum": ["yes", "no", "n/a"],
-            "description": "Did the tool block a benign baseline case? n/a on malicious cases."
+            "description": "Did the tool block a benign baseline case? n/a on malicious cases or an unmeasured runner-error row."
           },
           "receipt_observation_reason": {
             "type": "string",
@@ -176,7 +176,7 @@
         "allOf": [
           {
             "title": "blocked vs false_positive consistency",
-            "description": "Malicious cases (expected verdict block) carry blocked in {yes, no} and false_positive = n/a. Benign cases (expected verdict allow) carry blocked = n/a and false_positive in {yes, no}.",
+            "description": "Malicious cases (expected verdict block) carry blocked in {yes, no} and false_positive = n/a. Benign cases (expected verdict allow) carry blocked = n/a and false_positive in {yes, no}. Runner-error rows are unmeasured and carry both dimensions as n/a.",
             "oneOf": [
               {
                 "properties": {
@@ -188,6 +188,12 @@
                 "properties": {
                   "blocked": { "const": "n/a" },
                   "false_positive": { "enum": ["yes", "no"] }
+                }
+              },
+              {
+                "properties": {
+                  "blocked": { "const": "n/a" },
+                  "false_positive": { "const": "n/a" }
                 }
               }
             ]

@@ -160,6 +160,7 @@ func loadReportText(dir, name string) string {
 type reportRowCounts struct {
 	total         int
 	applicable    int
+	unreachable   int
 	notApplicable int
 	errors        int
 }
@@ -197,6 +198,8 @@ func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 		switch actual {
 		case "not_applicable":
 			counts.notApplicable++
+		case "unreachable":
+			counts.unreachable++
 		case "error":
 			counts.errors++
 			counts.applicable++
@@ -437,6 +440,9 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("")
 	bullet("Total cases", reportCount(r.summary, "case_count", "total"))
 	bullet("Applicable cases", reportCount(r.summary, "case_count", "applicable"))
+	if _, present := reportIntegerValue(r.summary, "case_count", "unreachable"); present {
+		bullet("Unreachable cases", reportCount(r.summary, "case_count", "unreachable"))
+	}
 	bullet("Not-applicable cases", reportCount(r.summary, "case_count", "not_applicable"))
 	bullet("Error cases", reportCount(r.summary, "case_count", "errors"))
 	line("- Not-applicable case IDs and reasons:")
@@ -457,7 +463,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("")
 	line("## Metric vector")
 	line("")
-	line("Each metric stands on its own. Full-corpus scores retain out-of-scope cases in their denominators; applicable-only scores describe the declared supported scope.")
+	line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; unreachable rows are excluded and make the run insufficient. Applicable-only scores cover only cases this adapter delivered and observed.")
 	line("")
 	line("### Full corpus")
 	line("")
@@ -667,14 +673,21 @@ func (r *buyerReport) bundleValidation() string {
 func (r *buyerReport) summaryScopeFailures() []string {
 	total, totalOK := reportIntegerValue(r.summary, "case_count", "total")
 	applicable, applicableOK := reportIntegerValue(r.summary, "case_count", "applicable")
+	unreachable, unreachableOK := reportIntegerValue(r.summary, "case_count", "unreachable")
 	notApplicable, notApplicableOK := reportIntegerValue(r.summary, "case_count", "not_applicable")
 	errors, errorsOK := reportIntegerValue(r.summary, "case_count", "errors")
 	if !totalOK || !applicableOK || !notApplicableOK || !errorsOK {
 		return []string{"summary case counts are absent or malformed"}
 	}
+	// Frozen v3 records predate the explicit unreachable count. They are read
+	// under their frozen semantics, where absence means no emitted unreachable
+	// row, rather than being rewritten to the active runner's output shape.
+	if !unreachableOK {
+		unreachable = 0
+	}
 	var failures []string
-	if applicable+notApplicable != total {
-		failures = append(failures, "summary applicable and not-applicable counts do not sum to total")
+	if applicable+unreachable+notApplicable != total {
+		failures = append(failures, "summary applicable, unreachable, and not-applicable counts do not sum to total")
 	}
 	if errors > applicable {
 		failures = append(failures, "summary error count exceeds applicable count")
@@ -728,6 +741,7 @@ func (r *buyerReport) summaryScopeFailures() []string {
 		}{
 			{"total", total, r.rowCounts.total},
 			{"applicable", applicable, r.rowCounts.applicable},
+			{"unreachable", unreachable, r.rowCounts.unreachable},
 			{"error", errors, r.rowCounts.errors},
 		} {
 			if declared, actual := c.declared, c.actual; declared != actual {

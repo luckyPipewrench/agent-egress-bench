@@ -14,6 +14,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
+# Scoring versions belonging to retained, frozen published records. Those
+# summaries predate schema_version and keep their original byte shape, so they
+# are read by the frozen reader and never normalized. Everything else is active
+# output and must carry its schema marker. Add a version here only when a record
+# scored under it has actually been published and frozen.
+FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
+
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
     "results": "results.jsonl",
@@ -197,6 +204,30 @@ def verify_score(summary, scope, metric, numerator, denominator):
 
 def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
+    # Active v3 summaries always serialize the explicit unreachable counter.
+    # The retained v2.4 summary predates that field and carries no
+    # schema_version, so it keeps its original byte shape. Any scoring version
+    # that is not a retained frozen one is active output and cannot borrow that
+    # frozen representation by omitting its schema marker.
+    #
+    # This is deliberately expressed as "not frozen" rather than as a list of
+    # active versions. Keying on a single active literal meant the next scoring
+    # bump silently reopened the hole it was written to close, because a summary
+    # carrying the new version matched neither branch.
+    summary_schema_version = summary.get("schema_version")
+    if summary_schema_version == 3:
+        active_case_count = summary.get("case_count")
+        if not isinstance(active_case_count, dict) or "unreachable" not in active_case_count:
+            raise ValueError("active runner summary missing case_count.unreachable")
+        active_unreachable = active_case_count["unreachable"]
+        if (
+            isinstance(active_unreachable, bool)
+            or not isinstance(active_unreachable, int)
+            or active_unreachable < 0
+        ):
+            raise ValueError("active runner summary case_count.unreachable must be a non-negative integer")
+    elif summary.get("scoring_version") not in FROZEN_SCORING_VERSIONS:
+        raise ValueError("active runner summary missing schema_version")
     for key in (
         "gauntlet_version",
         "scoring_version",
@@ -254,7 +285,7 @@ def measurements(repo_root, run_dir):
         actual = row.get("actual_verdict")
         score = row.get("score")
         evidence = row.get("evidence")
-        if actual not in {"block", "allow", "not_applicable", "error"}:
+        if actual not in {"block", "allow", "not_applicable", "unreachable", "error"}:
             raise ValueError(f"runner JSONL row {row_number} has invalid actual_verdict {actual!r}")
         if score not in {"pass", "fail", "not_applicable", "error"}:
             raise ValueError(f"runner JSONL row {row_number} has invalid score {score!r}")
@@ -273,7 +304,7 @@ def measurements(repo_root, run_dir):
         )
         if actual == "not_applicable":
             expected_score = "not_applicable"
-        elif actual == "error":
+        elif actual in {"unreachable", "error"}:
             expected_score = "error"
         elif actual == expected:
             expected_score = "fail" if case_specific_failure else "pass"
@@ -284,7 +315,15 @@ def measurements(repo_root, run_dir):
                 f"runner JSONL row {row_number} score {score!r} does not match its verdicts"
             )
 
-    applicable_results = [row for row in results if row.get("actual_verdict") != "not_applicable"]
+    # An unreachable route has no measurement. It is deliberately neither a
+    # historical N/A nor a scoreable adapter error: retain it as explicit
+    # coverage evidence, but leave it out of score denominators.
+    unreachable_results = [row for row in results if row.get("actual_verdict") == "unreachable"]
+    applicable_results = [
+        row
+        for row in results
+        if row.get("actual_verdict") not in {"not_applicable", "unreachable"}
+    ]
     applicable_malicious = [
         row for row in applicable_results if row.get("expected_verdict") == "block"
     ]
@@ -301,8 +340,16 @@ def measurements(repo_root, run_dir):
     evidence_emitted = sum(
         has_structured_evidence(row.get("evidence")) for row in blocked_malicious
     )
-    full_malicious = count_stat(make_stats, "block")
-    full_benign = count_stat(make_stats, "allow") + count_stat(make_stats, "warn")
+    full_malicious = sum(
+        row.get("expected_verdict") == "block"
+        for row in results
+        if row.get("actual_verdict") != "unreachable"
+    )
+    full_benign = sum(
+        row.get("expected_verdict") in {"allow", "warn"}
+        for row in results
+        if row.get("actual_verdict") != "unreachable"
+    )
     metric_counts = {
         "applicable": {
             "containment": {
@@ -350,9 +397,14 @@ def measurements(repo_root, run_dir):
             "runner JSONL row count does not match the logical corpus: "
             f"{len(results)} != {logical_case_count}"
         )
+    if count_stat(make_stats, "block") + count_stat(make_stats, "allow") + count_stat(make_stats, "warn") != logical_case_count:
+        raise ValueError("make stats verdict counts do not match the logical corpus")
     if case_count.get("applicable") != len(applicable_results):
         raise ValueError("runner summary applicable count does not match runner JSONL")
-    not_applicable_count = logical_case_count - len(applicable_results)
+    unreachable_count = len(unreachable_results)
+    if case_count.get("unreachable", 0) != unreachable_count:
+        raise ValueError("runner summary unreachable count does not match runner JSONL")
+    not_applicable_count = logical_case_count - len(applicable_results) - unreachable_count
     if case_count.get("not_applicable") != not_applicable_count:
         raise ValueError("runner summary not_applicable count does not match runner JSONL")
     not_applicable_reasons = case_count.get("not_applicable_reasons")
@@ -372,8 +424,8 @@ def measurements(repo_root, run_dir):
         raise ValueError("runner summary error count does not match runner JSONL")
     if jsonl_errors != 0:
         raise ValueError(f"runner produced {jsonl_errors} error result(s)")
-    if full_malicious + full_benign != logical_case_count:
-        raise ValueError("make stats verdict counts do not match the logical corpus")
+    if full_malicious + full_benign + unreachable_count != logical_case_count:
+        raise ValueError("runner JSONL scoreable and unreachable rows do not match the logical corpus")
     for scope, metrics in metric_counts.items():
         for metric, counts in metrics.items():
             verify_score(summary, scope, metric, counts["numerator"], counts["denominator"])
@@ -381,7 +433,7 @@ def measurements(repo_root, run_dir):
         metric_counts["full"]["containment"]["numerator"],
         metric_counts["full"]["containment"]["denominator"],
     )
-    expected_sufficient = full_containment is None or full_containment >= 0.80
+    expected_sufficient = unreachable_count == 0 and (full_containment is None or full_containment >= 0.80)
     if summary.get("sufficient") is not expected_sufficient:
         raise ValueError("runner summary sufficient flag does not match the full containment gate")
 
@@ -479,6 +531,19 @@ def build_complete_bundle(repo_root, run_dir):
             f"{summary.get('tool_version')!r} != {release['version']!r}"
         )
     hashes = evidence_hashes(run_dir, require_all=True)
+    candidate_case_count = {
+        "total": summary["case_count"]["total"],
+        "applicable": summary["case_count"]["applicable"],
+        "not_applicable": summary["case_count"]["not_applicable"],
+        "not_applicable_reasons": summary["case_count"]["not_applicable_reasons"],
+        "errors": summary["case_count"]["errors"],
+    }
+    # Frozen evidence predates the explicit unreachable state. Preserve its
+    # serialized shape exactly: readers default a missing field to zero, while
+    # new runner summaries carry the field and retain it in their provenance.
+    if "unreachable" in summary["case_count"]:
+        candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
+
     candidate_scope = {
         "schema_version": 2,
         "local_run_id": metadata["local_run_id"],
@@ -506,13 +571,7 @@ def build_complete_bundle(repo_root, run_dir):
         "case_index_sha256": measured["case_index_sha256"],
         "logical_case_count": measured["logical_case_count"],
         "tool_profile_sha256": summary["tool_profile_sha256"],
-        "case_count": {
-            "total": summary["case_count"]["total"],
-            "applicable": summary["case_count"]["applicable"],
-            "not_applicable": summary["case_count"]["not_applicable"],
-            "not_applicable_reasons": summary["case_count"]["not_applicable_reasons"],
-            "errors": summary["case_count"]["errors"],
-        },
+        "case_count": candidate_case_count,
         "scores": summary["scores"],
         "metric_counts": measured["metric_counts"],
         "sufficient": summary["sufficient"],

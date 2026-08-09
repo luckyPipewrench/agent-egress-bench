@@ -92,6 +92,39 @@ type ProxyAdapter struct {
 	mcpHTTPFixture       *fixture.MCPHTTPFixture
 }
 
+// DeliveryTuples declares the exact corpus inputs the proxy adapter can drive.
+// The declaration only determines whether a run can be attempted. Result state
+// still requires the per-case execution path to prove delivery and observe a
+// verdict before the runner can score it.
+func (p *ProxyAdapter) DeliveryTuples() []DeliveryTuple {
+	tuple := func(transport, surface string) DeliveryTuple {
+		lifecycle := "single_request"
+		if transport == "mcp_stdio" || transport == "mcp_http" {
+			lifecycle = "mcp_session"
+		}
+		return DeliveryTuple{WireTransport: transport, SemanticSurface: surface, Lifecycle: lifecycle}
+	}
+
+	var routes []DeliveryTuple
+	for _, transport := range []string{"fetch_proxy", "http_proxy"} {
+		for _, surface := range []string{"url", "request_body", "header", "response_content"} {
+			routes = append(routes, tuple(transport, surface))
+		}
+	}
+	for _, surface := range []string{"websocket_frame", "url", "header"} {
+		routes = append(routes, tuple("websocket", surface))
+	}
+	for _, transport := range []string{"mcp_stdio", "mcp_http"} {
+		for _, surface := range []string{"mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence", "mcp_tool_sequence_temporal"} {
+			routes = append(routes, tuple(transport, surface))
+		}
+	}
+	for _, surface := range []string{"a2a_message", "a2a_agent_card"} {
+		routes = append(routes, tuple("a2a", surface))
+	}
+	return routes
+}
+
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
 // scanAddr is for the scan API, mcpCmd is for MCP/A2A/shell cases.
 func NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd string) (*ProxyAdapter, error) {
@@ -214,16 +247,16 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 	case "websocket":
 		switch c.InputType {
 		case "websocket_frame":
-			result = p.runWebSocketFrameViaProxy(c, timeout)
+			result = webSocketResultWithProof(p.runWebSocketFrameViaProxy(c, timeout))
 		case "url", "header":
-			result = p.runWebSocket(c, timeout)
+			result = webSocketResultWithProof(p.runWebSocket(c, timeout))
 		default:
 			result = unsupportedTransport(c, "websocket payload execution is not implemented for this input type")
 		}
 	case "mcp_stdio":
-		result = p.runMCPStdio(c, timeout)
+		result = mcpResultWithProof(p.runMCPStdio(c, timeout))
 	case "mcp_http":
-		result = p.runMCPHTTP(c, timeout)
+		result = mcpResultWithProof(p.runMCPHTTP(c, timeout))
 	case "a2a":
 		result = p.runA2A(c, timeout)
 	default:
@@ -243,6 +276,70 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 		result.Evidence["observed_transport"] = c.Transport
 	}
 	delete(result.Evidence, "transport_attempted")
+	return result
+}
+
+// observedProxyVerdict records a proof only where a transport method has
+// completed the request/response exchange itself. It deliberately does not
+// infer proof from the verdict string: a local synthetic response, an empty
+// subprocess exit, and a stale protocol response can all look like a verdict.
+func observedProxyVerdict(result Result) Result {
+	if result.Err == nil && (result.Verdict == "allow" || result.Verdict == "block") {
+		result.DeliveryProven = true
+		result.VerdictObserved = true
+	}
+	return result
+}
+
+func webSocketResultWithProof(result Result) Result {
+	if result.Err != nil || result.Evidence == nil {
+		return result
+	}
+	if result.Verdict == "allow" {
+		if delivered, _ := result.Evidence["upstream_reached"].(bool); delivered {
+			return observedProxyVerdict(result)
+		}
+		return result
+	}
+	if result.Verdict == "block" {
+		// A policy close that passed the upstream-delivery check, a rejected
+		// upgrade, or a structured proxy block is WebSocket protocol evidence.
+		// Bare local success is not.
+		// A socket error is neither a WebSocket close frame nor a decision from
+		// the proxy. Keep these result reasons unproven even if a future caller
+		// mistakenly labels them as blocks.
+		if reason, _ := result.Evidence["reason"].(string); reason == "connection_closed" || reason == "connection_closed_while_writing_frame" {
+			return result
+		}
+		if _, hasScanner := result.Evidence["scanner"]; hasScanner {
+			return observedProxyVerdict(result)
+		}
+		if _, hasReason := result.Evidence["reason"]; hasReason {
+			return observedProxyVerdict(result)
+		}
+	}
+	return result
+}
+
+func mcpResultWithProof(result Result) Result {
+	if result.Err != nil || result.Evidence == nil {
+		return result
+	}
+	if result.Verdict == "allow" {
+		if delivered, _ := result.Evidence["upstream_reached"].(bool); delivered {
+			return observedProxyVerdict(result)
+		}
+		return result
+	}
+	if result.Verdict == "block" {
+		// MCP block paths validate their protocol response before returning a
+		// block and attach at least one structured decision field.
+		for _, key := range []string{"error_code", "filtered_tool_name", "block_reason", "scanner", "kind", "decision", "blocked_call_id"} {
+			if _, present := result.Evidence[key]; present {
+				return observedProxyVerdict(result)
+			}
+		}
+	}
 	return result
 }
 
@@ -350,18 +447,18 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		frame, _ := raw.(map[string]interface{})
 		if err := writeCorpusWebSocketFrame(conn, frame); err != nil {
 			return Result{
-				Verdict: "block",
+				Verdict: "skip",
 				Evidence: map[string]interface{}{
-					"scanner": "websocket_proxy",
-					"reason":  "connection_closed_while_writing_frame",
-					"detail":  truncate(err.Error(), 120),
+					"reason": "connection_closed_while_writing_frame",
+					"detail": truncate(err.Error(), 120),
 				},
 			}
 		}
 	}
 
-	// Drain frames until we either observe a close (definitive block signal)
-	// or the wire goes idle (allow). A single-read classifier races the
+	// Drain frames until we either observe a policy close that did not allow the
+	// complete corpus payload upstream, or the wire goes idle (allow). A
+	// single-read classifier races the
 	// upstream echo against the proxy's close frame: if the proxy blocks on
 	// a later client frame (e.g. cross-message DLP firing on frame N), the
 	// echo of an earlier forwarded frame can arrive before the close,
@@ -405,8 +502,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 			// useful wire evidence, but it is only an allow when the
 			// runner-managed upstream fixture also observed the corpus
 			// message. If we never received any frame, an abrupt closure
-			// suggests the proxy actively dropped the connection (RST or
-			// close without frame): block.
+			// is a transport failure, not an observed deny verdict.
 			if lastFrame.seen {
 				ev := map[string]interface{}{
 					"scanner": "websocket_proxy",
@@ -417,19 +513,53 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 				return p.classifyWebSocketAllow(ev, upstreamBefore, expectedUpstreamMessages)
 			}
 			return Result{
-				Verdict: "block",
+				Verdict: "skip",
 				Evidence: map[string]interface{}{
-					"scanner": "websocket_proxy",
-					"reason":  "connection_closed",
-					"detail":  truncate(err.Error(), 120),
+					"reason": "connection_closed",
+					"detail": truncate(err.Error(), 120),
 				},
 			}
 		}
 		if opcode == wsOpcodeClose {
+			closeCode, policyClose := webSocketCloseCode(payload)
+			if !policyClose {
+				return Result{
+					Verdict: "skip",
+					Evidence: map[string]interface{}{
+						"reason":     "ws_close_not_policy_violation",
+						"close_code": closeCode,
+						"detail":     truncate(webSocketCloseReason(payload), 160),
+					},
+				}
+			}
+			upstreamAfter, upstreamProofAvailable := p.webSocketUpstreamMessageCount()
+			if !upstreamProofAvailable {
+				return Result{
+					Verdict: "skip",
+					Evidence: map[string]interface{}{
+						"reason":     "ws_policy_close_upstream_proof_unavailable",
+						"close_code": closeCode,
+						"detail":     truncate(webSocketCloseReason(payload), 160),
+					},
+				}
+			}
+			if upstreamAfter-upstreamBefore >= int64(expectedUpstreamMessages) {
+				return Result{
+					Verdict: "skip",
+					Evidence: map[string]interface{}{
+						"reason":                   "ws_policy_close_after_upstream_delivery",
+						"close_code":               closeCode,
+						"upstream_messages_before": upstreamBefore,
+						"upstream_messages_after":  upstreamAfter,
+						"detail":                   truncate(webSocketCloseReason(payload), 160),
+					},
+				}
+			}
 			return Result{
 				Verdict: "block",
 				Evidence: map[string]interface{}{
 					"scanner":      "websocket_proxy",
+					"close_code":   closeCode,
 					"block_reason": truncate(webSocketCloseReason(payload), 160),
 				},
 			}
@@ -625,10 +755,10 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 		if fetchResp.Scanner != "" {
 			ev["scanner"] = fetchResp.Scanner
 		}
-		return Result{Verdict: "block", Evidence: ev}
+		return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 	}
 
-	return classifyResponse(resp.StatusCode, string(body))
+	return observedProxyVerdict(classifyResponse(resp.StatusCode, string(body)))
 }
 
 // isBenchmarkFixtureHost reports whether a case's declared host is one of the
@@ -837,17 +967,35 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
+		// Go embeds the requested URL in the transport error text, so matching
+		// policy markers against the raw string lets the CASE's own target
+		// decide the verdict: a host named blocked.vendor.example, or a path
+		// containing 403, scores an observed block on ANY transport failure.
+		// Match against the error with the target URL removed, so only text the
+		// PROXY produced can assert a policy decision.
+		policyText := strings.ReplaceAll(errStr, targetURL, "")
 		// Proxy actively rejected the CONNECT (policy decision).
-		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
+		if strings.Contains(policyText, "Forbidden") || strings.Contains(policyText, "blocked") || strings.Contains(policyText, "403") || strings.Contains(policyText, "Method Not Allowed") || strings.Contains(policyText, "405") {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
-			return Result{Verdict: "block", Evidence: ev}
+			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 		}
-		// Proxy or upstream connection reset may be an active block.
+		// A connection reset is NOT a policy verdict. It can originate from the
+		// proxy, the upstream, the fixture, or the network, and it carries no
+		// request correlation, so it cannot establish that this request was
+		// refused on purpose. Scoring it as a block awarded containment for a
+		// connection that merely died. Record it as an unproven skip: the
+		// attempt is visible, and the case becomes a non-measurement rather
+		// than a pass.
 		if strings.Contains(errStr, "reset by peer") {
-			ev := map[string]interface{}{"reason": "connection_reset"}
-			extractBlockEvidence(errStr, ev)
-			return Result{Verdict: "block", Evidence: ev}
+			return Result{
+				Verdict: "skip",
+				Evidence: map[string]interface{}{
+					"reason":              "connection_reset_unproven",
+					"detail":              truncate(errStr, 120),
+					"transport_attempted": true,
+				},
+			}
 		}
 		// Proxy unreachable means adapter infrastructure problem.
 		if strings.Contains(errStr, "connection refused") {
@@ -863,7 +1011,7 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return classifyResponse(resp.StatusCode, string(body))
+	return observedProxyVerdict(classifyResponse(resp.StatusCode, string(body)))
 }
 
 func (p *ProxyAdapter) runResponseContentViaTLSIntercept(c Case, timeout time.Duration, responseBody string) Result {
@@ -1021,7 +1169,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
-			return Result{Verdict: "block", Evidence: ev}
+			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 		}
 		if strings.Contains(errStr, "connection refused") {
 			return Result{Err: fmt.Errorf("case %s: proxy unreachable: %w", caseID, err)}
@@ -1038,9 +1186,22 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 	// can synthesize a response after CONNECT without ever forwarding. Credit a
 	// passthrough allow only when the runner-managed fixture counter advanced.
 	if caFile != "" && p.tlsFixtureServed(fixtureBaseline) {
-		return classifyUpstreamResponse(resp.StatusCode, string(respBody))
+		return observedProxyVerdict(classifyUpstreamResponse(resp.StatusCode, string(respBody)))
 	}
-	return classifyResponse(resp.StatusCode, string(respBody))
+	result := classifyResponse(resp.StatusCode, string(respBody))
+	if caFile != "" && result.Verdict == "allow" {
+		result.Verdict = "skip"
+		if result.Evidence == nil {
+			result.Evidence = map[string]interface{}{}
+		}
+		result.Evidence["reason"] = "tls_fixture_unproven"
+		result.Evidence["upstream_reached"] = false
+		// The proxy endpoint answered our exact CONNECT request, but without the
+		// fixture observation it is not a verdict about the case payload.
+		result.DeliveryProven = true
+		return result
+	}
+	return observedProxyVerdict(result)
 }
 
 func certPoolFromFile(path string) (*x509.CertPool, error) {
@@ -1132,10 +1293,11 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 }
 
 const (
-	wsOpcodeContinuation = 0
-	wsOpcodeText         = 1
-	wsOpcodeBinary       = 2
-	wsOpcodeClose        = 8
+	wsOpcodeContinuation   = 0
+	wsOpcodeText           = 1
+	wsOpcodeBinary         = 2
+	wsOpcodeClose          = 8
+	wsClosePolicyViolation = 1008
 )
 
 func (p *ProxyAdapter) writeWebSocketUpgrade(conn net.Conn, targetURL string) error {
@@ -1274,6 +1436,14 @@ func webSocketCloseReason(payload []byte) string {
 		return "websocket closed"
 	}
 	return string(payload[2:])
+}
+
+func webSocketCloseCode(payload []byte) (int, bool) {
+	if len(payload) < 2 {
+		return 0, false
+	}
+	code := int(payload[0])<<8 | int(payload[1])
+	return code, code == wsClosePolicyViolation
 }
 
 func shellQuote(s string) string {
@@ -1543,6 +1713,65 @@ func mcpStdioSuccessResponse(request interface{}) map[string]interface{} {
 	}
 }
 
+// correlateMCPStdioSessionMessages assigns a fresh JSON-RPC ID to every
+// request that expects a response. The corpus uses stable example IDs, which
+// are part of its fixture data but cannot prove a subprocess read this run's
+// input. Response fixtures are paired with client requests by position in
+// startMCPStdioUpstreamObserver, so update the paired response ID as well.
+func correlateMCPStdioSessionMessages(clientMsgs, serverResponses []interface{}) ([]interface{}, []interface{}, error) {
+	correlatedClients := make([]interface{}, len(clientMsgs))
+	copy(correlatedClients, clientMsgs)
+	correlatedResponses := make([]interface{}, len(serverResponses))
+	copy(correlatedResponses, serverResponses)
+
+	for i, rawClient := range clientMsgs {
+		client, ok := rawClient.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		originalID, hasID := client["id"]
+		if !hasID || originalID == nil {
+			// JSON-RPC notifications carry no response ID and cannot establish a
+			// policy-denial verdict through this branch.
+			continue
+		}
+		identity, err := freshMCPStdioRequestIdentity()
+		if err != nil {
+			return nil, nil, err
+		}
+		correlatedClient := make(map[string]interface{}, len(client))
+		for key, value := range client {
+			correlatedClient[key] = value
+		}
+		correlatedClient["id"] = identity
+		correlatedClients[i] = correlatedClient
+
+		if i >= len(serverResponses) {
+			continue
+		}
+		response, ok := serverResponses[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		correlatedResponse := make(map[string]interface{}, len(response))
+		for key, value := range response {
+			correlatedResponse[key] = value
+		}
+		correlatedResponse["id"] = identity
+		correlatedResponses[i] = correlatedResponse
+	}
+
+	return correlatedClients, correlatedResponses, nil
+}
+
+func freshMCPStdioRequestIdentity() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("generate random request identity: %w", err)
+	}
+	return "aeb-stdio-" + base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
 func mcpStdioObservationEvidence(observer *mcpStdioUpstreamObserver) (map[string]interface{}, bool) {
 	if observer == nil {
 		return nil, false
@@ -1669,6 +1898,27 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 			"id":      1,
 		})
 	}
+	// Corpus JSON-RPC IDs are stable fixture data, often small integers such as
+	// 1. They cannot correlate a policy denial: a subprocess can print a stale
+	// deny with that ID before it reads this run's stdin. The stdio adapter owns
+	// this session-level correlation field, so replace request IDs with fresh
+	// unpredictable values and keep paired fixture responses in the same
+	// session. The attack payload, transport, method, and lifecycle stay intact.
+	correlatedClientMsgs, correlatedServerResponses, correlationErr := correlateMCPStdioSessionMessages(clientMsgs, serverResponses)
+	if correlationErr != nil {
+		return Result{Err: fmt.Errorf("case %s: assign MCP stdio request identities: %w", c.ID, correlationErr)}
+	}
+	clientMsgs = correlatedClientMsgs
+	serverResponses = correlatedServerResponses
+	// A structured policy error is evidence only when it answers one of the
+	// requests we wrote for this case. Without this correlation, a subprocess
+	// can emit a stale deny before reading stdin and manufacture containment.
+	expectedResponseIDs := make(map[string]struct{}, len(clientMsgs))
+	for _, msg := range clientMsgs {
+		if key := messageIDCorrelationKey(msg); key != "" {
+			expectedResponseIDs[key] = struct{}{}
+		}
+	}
 	var observeErr error
 	observer, observeErr = startMCPStdioUpstreamObserver(clientMsgs, serverResponses)
 	if observeErr != nil {
@@ -1776,6 +2026,11 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 				evidence := map[string]interface{}{
 					"error_code":    code,
 					"error_message": rpcResp.Error.Message,
+				}
+				responseIDKey := jsonRPCResponseIDCorrelationKey(respLine)
+				if _, matchesRequest := expectedResponseIDs[responseIDKey]; !matchesRequest {
+					evidence["reason"] = "mcp_stdio_policy_response_id_mismatch"
+					return Result{Verdict: "skip", Evidence: evidence}
 				}
 				for key, value := range observationEvidence {
 					evidence[key] = value

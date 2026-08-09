@@ -14,10 +14,17 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	scoringVersion  = "2.5"
-	runnerVersion   = "0.4.2"
-	corpusVersion   = "v2.4.0"
-	summaryDateEnv  = "AEB_GAUNTLET_SUMMARY_DATE"
+	// 2.6 is the result-state boundary. Applicability moved from profile
+	// declarations to adapter-proven delivery and verdict observation, an
+	// unreachable state was added outside every score denominator, and a run
+	// with any unreachable row reports itself insufficient. Results scored
+	// under 2.5 and earlier are therefore not comparable to these, and the
+	// repository's own staleness rule requires the bump rather than allowing
+	// two different rule sets to publish under one label.
+	scoringVersion = "2.6"
+	runnerVersion  = "0.4.2"
+	corpusVersion  = "v2.4.0"
+	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 )
 
 // DualScores holds both full-corpus and applicable-only score views.
@@ -71,10 +78,11 @@ type RunProvenance struct {
 	TargetConfigSHA  string
 }
 
-// CaseCount tracks totals and N/A breakdown.
+// CaseCount tracks scoreable, historical N/A, and adapter-unreachable rows.
 type CaseCount struct {
 	Total                int            `json:"total"`
 	Applicable           int            `json:"applicable"`
+	Unreachable          int            `json:"unreachable"`
 	NotApplicable        int            `json:"not_applicable"`
 	NotApplicableReasons map[string]int `json:"not_applicable_reasons"`
 	Errors               int            `json:"errors"`
@@ -222,6 +230,7 @@ func buildSummary(
 	p Profile,
 	allCases []Case,
 	applicableResults []CaseResult,
+	unreachableIDs map[string]struct{},
 	naReasons map[NAKind]int,
 	casesDir, multiFileDir string,
 	casesByID map[string]Case,
@@ -242,8 +251,18 @@ func buildSummary(
 		return GauntletSummary{}, err
 	}
 
+	unmeasuredIDs := make(map[string]struct{}, len(unreachableIDs))
+	for caseID := range unreachableIDs {
+		unmeasuredIDs[caseID] = struct{}{}
+	}
+	for _, result := range applicableResults {
+		if !measuredResult(result) {
+			unmeasuredIDs[result.CaseID] = struct{}{}
+		}
+	}
+
 	applicableScores := computeScores(applicableResults)
-	fullScores := computeFullCorpusScores(applicableResults, allCases)
+	fullScores := computeFullCorpusScores(applicableResults, allCases, unmeasuredIDs)
 	perCategory := computeCategoryScores(applicableResults, casesByID)
 
 	naReasonsStr := make(map[string]int, len(naReasons))
@@ -274,6 +293,7 @@ func buildSummary(
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),
+			Unreachable:          len(unreachableIDs),
 			NotApplicable:        totalNA,
 			NotApplicableReasons: naReasonsStr,
 			Errors:               errorCount,
@@ -284,7 +304,11 @@ func buildSummary(
 			Full:       fullScores,
 			Applicable: applicableScores,
 		},
-		Sufficient:  isSufficient(fullScores, len(applicableResults), errorCount),
+		// Calibration adapters assert their proof flags so the runner can test
+		// scoring math. Their per-case marker keeps that assertion visible;
+		// this gate keeps the resulting summary out of a publication path,
+		// which requires sufficient=true.
+		Sufficient:  !hasSyntheticEvidence(applicableResults) && isSufficient(fullScores, len(applicableResults), errorCount, len(unreachableIDs)),
 		PerCategory: perCategory,
 
 		MethodRepository:   prov.MethodRepository,
@@ -294,6 +318,18 @@ func buildSummary(
 		TargetConfigRef:    prov.TargetConfigRef,
 		TargetConfigSHA256: prov.TargetConfigSHA,
 	}, nil
+}
+
+// hasSyntheticEvidence reports whether a row came from a calibration adapter.
+// Treat an unrecognized marker conservatively: an accidental synthetic claim
+// can make a run insufficient, but can never make a measured run publishable.
+func hasSyntheticEvidence(results []CaseResult) bool {
+	for _, result := range results {
+		if synthetic, ok := result.Evidence["synthetic"].(bool); ok && synthetic {
+			return true
+		}
+	}
+	return false
 }
 
 func countErrors(results []CaseResult) (int, error) {
