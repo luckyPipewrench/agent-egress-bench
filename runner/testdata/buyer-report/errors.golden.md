@@ -31,13 +31,13 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Capability profile and adapter
 
 - tool_profile_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-- Declared capability claims:
+- Registry ID: aeb.core-capabilities
+- Registry format: 1
+- Registry revision: 1
+- Registry SHA-256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+- Reporting labels:
   - ssrf
   - url\_dlp
-- Unsupported transports:
-  - a2a
-- Unsupported requirements:
-  - dns\_rebinding\_fixture
 - Exercised transports (this run):
   - Absent from run artifacts
 - Exercised categories (this run):
@@ -127,7 +127,7 @@ Credential-shaped values in the commands below are replaced with REDACTED. Read 
 - make-stats.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - pipelock-release.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - pipelock-version.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
-- raw-summary.json (sha256 0a50659b20a2fd40ddeb6805f267a325130405412be9a32a840bd1c4c8b62c94)
+- raw-summary.json (sha256 dbbbba9bb943e0d3a72cea8f31421a2950dd3f2a81c0d8ddd790a802c030f73d)
 - results.jsonl (sha256 dd4412b3d57f605224d43cefda25af01d57bf73fd351dd934d1c736bd6becb33)
 - run-metadata.json (sha256 2ec73028d323d3cf0d2bd7b3e8eb598f515aa3e0f0053e46ef03a53916ac1bc4)
 - runner.stderr (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)

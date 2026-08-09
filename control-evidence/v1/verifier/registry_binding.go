@@ -2,6 +2,7 @@ package verifier
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
@@ -19,7 +20,8 @@ func (s *verificationState) verifyRegistryBinding() *Result {
 	if !reflect.DeepEqual(ref, s.env.Payload.CapabilityRegistry) || !reflect.DeepEqual(ref, s.outcomes.CapabilityRegistry) {
 		return failure(outcomeScopeMismatch, "capability_registry_envelope_mismatch")
 	}
-	if _, err := capabilityregistry.ResolveRaw(ref, s.files[entries[0].Path]); err != nil {
+	resolved, err := capabilityregistry.ResolveRaw(ref, s.files[entries[0].Path])
+	if err != nil {
 		return failure(outcomeScopeMismatch, "capability_registry_snapshot_mismatch")
 	}
 	profileEntries := s.entriesByRole["tool-profile"]
@@ -38,7 +40,37 @@ func (s *verificationState) verifyRegistryBinding() *Result {
 	if !ok || !reflect.DeepEqual(ref, summaryRef) {
 		return failure(outcomeScopeMismatch, "capability_registry_summary_mismatch")
 	}
+	for label, value := range map[string]any{
+		"profile_claims":                    profile["claims"],
+		"summary_reported_claims":           s.summary["reported_claims"],
+		"summary_exercised_capability_tags": mapField(s.summary, "exercised")["capability_tags"],
+	} {
+		if err := validateRegistryLabels(resolved, label, value); err != nil {
+			return failure(outcomeScopeMismatch, "capability_registry_label_mismatch")
+		}
+	}
 	return nil
+}
+
+func validateRegistryLabels(resolved capabilityregistry.ResolvedSnapshot, label string, value any) error {
+	items, ok := value.([]any)
+	if !ok {
+		return fmt.Errorf("%s is not an array", label)
+	}
+	ids := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		id, ok := item.(string)
+		if !ok || id == "" {
+			return fmt.Errorf("%s has a non-string label", label)
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return fmt.Errorf("%s has duplicate label %q", label, id)
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return resolved.ValidateActiveIDs(label, ids)
 }
 
 func registryReferenceFromMap(value map[string]any) (capabilityregistry.Reference, bool) {

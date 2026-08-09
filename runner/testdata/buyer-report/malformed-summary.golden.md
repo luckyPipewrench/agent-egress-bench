@@ -31,11 +31,11 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Capability profile and adapter
 
 - tool_profile_sha256: Absent from run artifacts
-- Declared capability claims:
-  - Absent from run artifacts
-- Unsupported transports:
-  - Absent from run artifacts
-- Unsupported requirements:
+- Registry ID: Absent from run artifacts
+- Registry format: Absent from run artifacts
+- Registry revision: Absent from run artifacts
+- Registry SHA-256: Absent from run artifacts
+- Reporting labels:
   - Absent from run artifacts
 - Exercised transports (this run):
   - Absent from run artifacts

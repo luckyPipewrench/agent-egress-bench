@@ -153,13 +153,14 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   assert.equal(recordError.resource, 'record');
 
   const snapshotText = JSON.stringify({
-    id: 'aeb.core-capabilities', format: 1, revision: 1,
-    entries: [{ id: 'url_dlp', status: 'active' }],
+  id: 'aeb.core-capabilities', format: 1, revision: 1,
+    entries: [{ id: 'url_dlp', status: 'active', title: 'URL DLP' }],
   }) + '\n';
   const snapshotDigest = nodeCrypto.createHash('sha256').update(snapshotText).digest('hex');
   const profileText = JSON.stringify({
     schema_version: 4,
     capability_registry: { id: 'aeb.core-capabilities', format: 1, revision: 1, sha256: snapshotDigest },
+    claims: ['url_dlp'],
   }) + '\n';
   const profileDigest = nodeCrypto.createHash('sha256').update(profileText).digest('hex');
   const v4Artifact = {
@@ -167,6 +168,8 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
     schema_version: 4,
     tool_profile_sha256: profileDigest,
     capability_registry: { id: 'aeb.core-capabilities', format: 1, revision: 1, sha256: snapshotDigest },
+    reported_claims: ['url_dlp'],
+    exercised: { capability_tags: ['url_dlp'] },
   };
   const v4ArtifactText = JSON.stringify(v4Artifact) + '\n';
   const v4Digest = nodeCrypto.createHash('sha256').update(v4ArtifactText).digest('hex');
@@ -198,6 +201,7 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   };
   const v4Loaded = await window.loadLatestVerifiedResult('./latest-verified.json', v4Fetch, crypto);
   assert.equal(v4Loaded._capabilityRegistry.id, 'aeb.core-capabilities');
+  assert.equal(window.capabilityLabel(v4Loaded, 'url_dlp'), 'URL DLP');
   await assert.rejects(
     window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
       if (url.endsWith('capability-registry.json')) return response('', 404);

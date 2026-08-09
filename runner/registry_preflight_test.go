@@ -145,3 +145,48 @@ func TestRegistryFailurePrecedesAnyScoreOutput(t *testing.T) {
 		t.Fatalf("summary exists after registry failure: stat error = %v", statErr)
 	}
 }
+
+func TestRegistryReferenceFailuresPrecedeAnyScoreOutput(t *testing.T) {
+	for name, mutate := range map[string]func(t *testing.T, profile map[string]any){
+		"missing_snapshot": func(t *testing.T, profile map[string]any) {
+			t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join(t.TempDir(), "missing"))
+		},
+		"digest_mismatch": func(t *testing.T, profile map[string]any) {
+			profile["capability_registry"].(map[string]any)["sha256"] = strings.Repeat("0", 64)
+			t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
+		},
+		"unsupported_format": func(t *testing.T, profile map[string]any) {
+			profile["capability_registry"].(map[string]any)["format"] = 2
+			t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			casesDir := filepath.Join(dir, "cases")
+			if err := os.Mkdir(casesDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			caseJSON := `{"schema_version":4,"id":"registry-test-001","category":"url","title":"T","description":"D","input_type":"url","transport":"fetch_proxy","payload":{"method":"GET","url":"https://example.test/"},"expected_verdict":"block","severity":"high","capability_tags":["url_dlp"],"requires":[],"false_positive_risk":"low","why_expected":"test","notes":"","source":"original"}`
+			if err := os.WriteFile(filepath.Join(casesDir, "registry-test-001.json"), []byte(caseJSON), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			profile := validV4Profile(t)
+			mutate(t, profile)
+			profileBytes, err := json.Marshal(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			profilePath := filepath.Join(dir, "profile.json")
+			if err := os.WriteFile(profilePath, profileBytes, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			outputPath := filepath.Join(dir, "summary.json")
+			if err := run(casesDir, profilePath, outputPath, time.Second, "dryrun", "", "", "", "", false, "", "", "", false); err == nil {
+				t.Fatal("run unexpectedly emitted a score")
+			}
+			if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
+				t.Fatalf("summary exists after %s registry failure: %v", name, err)
+			}
+		})
+	}
+}

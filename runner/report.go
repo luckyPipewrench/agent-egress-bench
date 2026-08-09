@@ -421,12 +421,12 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("## Capability profile and adapter")
 	line("")
 	bullet("tool_profile_sha256", reportString(r.summary, "tool_profile_sha256"))
-	line("- Declared capability claims:")
-	list(reportStringList(r.summary, "tool_support", "claims"))
-	line("- Unsupported transports:")
-	list(reportStringList(r.summary, "tool_support", "unsupported_transports"))
-	line("- Unsupported requirements:")
-	list(reportStringList(r.summary, "tool_support", "unsupported_requires"))
+	bullet("Registry ID", reportString(r.summary, "capability_registry", "id"))
+	bullet("Registry format", reportNumber(r.summary, "capability_registry", "format"))
+	bullet("Registry revision", reportNumber(r.summary, "capability_registry", "revision"))
+	bullet("Registry SHA-256", reportString(r.summary, "capability_registry", "sha256"))
+	line("- Reporting labels:")
+	list(reportStringList(r.summary, "reported_claims"))
 	line("- Exercised transports (this run):")
 	list(reportStringList(r.summary, "exercised", "transports"))
 	line("- Exercised categories (this run):")
@@ -587,6 +587,19 @@ var reportEvidenceFiles = map[string]string{
 	"stats":                   "make-stats.txt",
 }
 
+func (r *buyerReport) evidenceFiles() map[string]string {
+	files := make(map[string]string, len(reportEvidenceFiles)+3)
+	for key, name := range reportEvidenceFiles {
+		files[key] = name
+	}
+	if reportNumber(r.summary, "schema_version") == "4" {
+		files["tool_profile"] = "tool-profile.json"
+		files["capability_registry"] = "capability-registry.json"
+		files["receipt_profile"] = "receipt-profile.json"
+	}
+	return files
+}
+
 func (r *buyerReport) bundleValidation() string {
 	if r.bundle.data == nil {
 		return absentFact
@@ -615,7 +628,7 @@ func (r *buyerReport) bundleValidation() string {
 			failures = append(failures, "run-metadata.json is not readable JSON")
 		}
 		failures = append(failures, r.summaryScopeFailures()...)
-		for key := range reportEvidenceFiles {
+		for key := range r.evidenceFiles() {
 			if _, present := hashes[key]; !present {
 				failures = append(failures, key+" digest is absent from a complete bundle")
 			}
@@ -625,7 +638,11 @@ func (r *buyerReport) bundleValidation() string {
 		} else if candidateMap, object := candidate.(map[string]interface{}); !object {
 			failures = append(failures, "candidate_scope is malformed")
 		} else if r.summary.data != nil && r.metadata.data != nil {
-			for _, key := range []string{"scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "tool_profile_sha256", "case_count", "scores"} {
+			keys := []string{"scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "tool_profile_sha256", "case_count", "scores"}
+			if reportNumber(r.summary, "schema_version") == "4" {
+				keys = append(keys, "capability_registry")
+			}
+			for _, key := range keys {
 				candidateValue, candidatePresent := candidateMap[key]
 				summaryValue, summaryPresent := r.summary.data[key]
 				if !candidatePresent || !summaryPresent || candidateValue == nil || summaryValue == nil || !reportValuesEqual(candidateValue, summaryValue) {
@@ -645,7 +662,7 @@ func (r *buyerReport) bundleValidation() string {
 			failures = append(failures, key+" has an invalid digest")
 			continue
 		}
-		name, known := reportEvidenceFiles[key]
+		name, known := r.evidenceFiles()[key]
 		if !known {
 			failures = append(failures, key+" has no report filename mapping")
 			continue
@@ -842,7 +859,7 @@ func (r *buyerReport) materialList() []string {
 	}
 	var items []string
 	for key, raw := range hashes {
-		name, known := reportEvidenceFiles[key]
+		name, known := r.evidenceFiles()[key]
 		if !known {
 			name = key
 		}

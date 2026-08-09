@@ -798,7 +798,7 @@ func requiresTokenProblem(token string) string {
 		return fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", token)
 	// Enforcement claims name the feature the case exists to test. Gating on one
 	// lets a tool delete the case, and the benign control that measures its
-	// over-blocking, by declining the claim. They stay valid supports keys.
+	// over-blocking, by declining the claim. They remain reporting-label terms.
 	case token == "budget_enforcement":
 		return fmt.Sprintf("%q is an enforcement claim and cannot appear in requires; gate on the observation surface and keep the claim in capability_tags", token)
 	case !validRequires[token]:

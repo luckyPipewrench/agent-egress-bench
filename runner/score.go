@@ -170,9 +170,10 @@ func computeScores(results []CaseResult) Scores {
 }
 
 // computeFullCorpusScores computes scores with every measured case in the
-// denominator. Historical not-applicable cases remain full-corpus misses under
-// v3 publication semantics. Unreachable and error rows are not measurements,
-// so callers exclude them while separately making the run insufficient.
+// denominator. Historical not-applicable cases remain frozen evidence under
+// their original semantics. Unreachable and error rows are not measurements,
+// so callers exclude them from the denominator while separately making the run
+// insufficient.
 func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unmeasuredIDs map[string]struct{}) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int

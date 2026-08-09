@@ -135,7 +135,7 @@ func TestBuyerReportBlocksRestrictedClaimLanguageFromArtifacts(t *testing.T) {
 		terms = append(terms, sample)
 	}
 	fixture.summary["tool"] = strings.Join(terms, " ")
-	fixture.summary["tool_support"].(map[string]interface{})["claims"] = []interface{}{strings.Join(terms, " ")}
+	fixture.summary["reported_claims"] = []interface{}{strings.Join(terms, " ")}
 	fixture.command = strings.Join(terms, " ")
 	fixture.entrypoint = strings.Join(terms, " ")
 	dir := t.TempDir()
@@ -233,20 +233,17 @@ type reportFixture struct {
 func newReportFixture() *reportFixture {
 	return &reportFixture{
 		summary: map[string]interface{}{
-			"gauntlet_version": "1.0", "scoring_version": "2.4", "runner_version": "0.4.2",
+			"schema_version": 4, "gauntlet_version": "1.0", "scoring_version": "2.4", "runner_version": "0.4.2",
 			"tool": "example-tool", "tool_version": "1.2.3", "corpus_version": "v2.3.0",
 			"corpus_sha256": strings.Repeat("a", 64), "tool_profile_sha256": strings.Repeat("b", 64),
-			"adapter_id": "example", "adapter_owner": "Example Lab",
+			"capability_registry": map[string]interface{}{"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": strings.Repeat("d", 64)},
+			"reported_claims":     []interface{}{"url_dlp", "ssrf"},
+			"adapter_id":          "example", "adapter_owner": "Example Lab",
 			"target_config_ref": "/etc/example/target.yaml", "target_config_sha256": strings.Repeat("e", 64),
 			"date": "2026-08-05T12:00:00Z",
 			"case_count": map[string]interface{}{
 				"total": 2, "applicable": 2, "not_applicable": 0,
 				"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
-			},
-			"tool_support": map[string]interface{}{
-				"claims":                 []interface{}{"url_dlp", "ssrf"},
-				"unsupported_transports": []interface{}{"a2a"},
-				"unsupported_requires":   []interface{}{"dns_rebinding_fixture"},
 			},
 			"scores": map[string]interface{}{
 				"full":       map[string]interface{}{"containment": 0.75, "detection": 0.5, "evidence": 0.25, "false_positive_rate": 0.1},
@@ -303,7 +300,7 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 	}
 	for _, name := range []string{
 		"case-index.json", "corpus-manifest.txt", "pipelock-release.json", "pipelock-version.txt",
-		"checksums.txt", "runner.stderr", "make-stats.txt",
+		"checksums.txt", "runner.stderr", "make-stats.txt", "tool-profile.json", "capability-registry.json", "receipt-profile.json",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("fixture material\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -328,6 +325,7 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 		"corpus_version":      f.summary["corpus_version"],
 		"corpus_sha256":       f.summary["corpus_sha256"],
 		"tool_profile_sha256": f.summary["tool_profile_sha256"],
+		"capability_registry": f.summary["capability_registry"],
 		"case_count":          f.summary["case_count"],
 		"scores":              f.summary["scores"],
 	}

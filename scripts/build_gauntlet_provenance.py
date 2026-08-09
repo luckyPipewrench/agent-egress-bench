@@ -278,7 +278,7 @@ def verify_score(summary, scope, metric, numerator, denominator):
 
 def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
-    # Active v3 summaries always serialize the explicit unreachable counter.
+    # Active v4 summaries always serialize the explicit unreachable counter.
     # The retained v2.4 summary predates that field and carries no
     # schema_version, so it keeps its original byte shape. Any scoring version
     # that is not a retained frozen one is active output and cannot borrow that
@@ -289,7 +289,7 @@ def measurements(repo_root, run_dir):
     # bump silently reopened the hole it was written to close, because a summary
     # carrying the new version matched neither branch.
     summary_schema_version = summary.get("schema_version")
-    if summary_schema_version == 3:
+    if summary_schema_version == 4:
         active_case_count = summary.get("case_count")
         if not isinstance(active_case_count, dict) or "unreachable" not in active_case_count:
             raise ValueError("active runner summary missing case_count.unreachable")
@@ -300,7 +300,19 @@ def measurements(repo_root, run_dir):
             or active_unreachable < 0
         ):
             raise ValueError("active runner summary case_count.unreachable must be a non-negative integer")
+    elif summary_schema_version is not None:
+        raise ValueError("runner summary schema_version must be frozen v2 or active v4")
     elif summary.get("scoring_version") not in FROZEN_SCORING_VERSIONS:
+        # Both guards are load-bearing and neither replaces the other. The
+        # first rejects a summary carrying an unrecognised schema_version. This
+        # one rejects a summary carrying no schema_version at all while
+        # claiming a scoring version that is not a retained frozen one, which
+        # is how an active run would otherwise borrow the frozen byte shape.
+        #
+        # It asks whether a version is FROZEN rather than naming an active one.
+        # The literal it replaced named a single active version, so the next
+        # scoring bump silently reopened the hole this closes: a summary
+        # carrying the new version matched neither branch.
         raise ValueError("active runner summary missing schema_version")
     for key in (
         "gauntlet_version",
@@ -665,6 +677,8 @@ def build_complete_bundle(repo_root, run_dir):
     }
     if measured["capability_registry"] is not None:
         candidate_scope["capability_registry"] = measured["capability_registry"]
+        candidate_scope["reported_claims"] = summary["reported_claims"]
+        candidate_scope["exercised"] = summary["exercised"]
     return {
         "schema_version": 1,
         "bundle_status": "complete",

@@ -20,7 +20,11 @@ func v1RegistryState(t *testing.T) *verificationState {
 		req:      &verifiedDSSE[requirement]{Payload: requirement{CapabilityRegistry: ref}},
 		env:      &verifiedDSSE[runEnvelope]{Payload: runEnvelope{CapabilityRegistry: ref}},
 		outcomes: outcomes{CapabilityRegistry: ref},
-		summary:  map[string]any{"capability_registry": map[string]any{"id": ref.ID, "format": ref.Format, "revision": ref.Revision, "sha256": ref.SHA256}},
+		summary: map[string]any{
+			"capability_registry": map[string]any{"id": ref.ID, "format": ref.Format, "revision": ref.Revision, "sha256": ref.SHA256},
+			"reported_claims":     []any{"url_dlp"},
+			"exercised":           map[string]any{"capability_tags": []any{"url_dlp"}},
+		},
 	}
 }
 
@@ -36,5 +40,14 @@ func TestV1RegistryBindingRejectsSummaryTripleMismatchBeforeRows(t *testing.T) {
 	result := state.verifyRegistryBinding()
 	if result == nil || result.Reason != "capability_registry_summary_mismatch" {
 		t.Fatalf("verifyRegistryBinding() = %+v, want summary mismatch", result)
+	}
+}
+
+func TestV1RegistryBindingRejectsUnknownReportedLabel(t *testing.T) {
+	state := v1RegistryState(t)
+	state.summary["reported_claims"] = []any{"invented_label"}
+	result := state.verifyRegistryBinding()
+	if result == nil || result.Reason != "capability_registry_label_mismatch" {
+		t.Fatalf("verifyRegistryBinding() = %+v, want label mismatch", result)
 	}
 }

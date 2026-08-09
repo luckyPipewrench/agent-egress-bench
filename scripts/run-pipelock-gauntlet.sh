@@ -267,8 +267,16 @@ for ((reason_index = 0; reason_index < noncanonical_reason_count; reason_index++
 done
 PYTHONDONTWRITEBYTECODE=1 python3 "$provenance_script" "${start_args[@]}"
 cp "$repo_root/cases/MANIFEST.txt" "$output_dir/corpus-manifest.txt"
-cp "$repo_root/examples/pipelock/tool-profile.json" "$output_dir/tool-profile.json"
-cp "$repo_root/capability-registry/aeb.core-capabilities/format-1/revision-1.json" "$output_dir/capability-registry.json"
+profile_path="$repo_root/examples/pipelock/tool-profile.json"
+cp "$profile_path" "$output_dir/tool-profile.json"
+registry_id="$(jq -r '.capability_registry.id // empty' "$profile_path")"
+registry_format="$(jq -r '.capability_registry.format // empty' "$profile_path")"
+registry_revision="$(jq -r '.capability_registry.revision // empty' "$profile_path")"
+[[ -n "$registry_id" && "$registry_format" =~ ^[1-9][0-9]*$ && "$registry_revision" =~ ^[1-9][0-9]*$ ]] || \
+  die "tool profile has no valid capability registry reference"
+registry_snapshot="$repo_root/capability-registry/$registry_id/format-$registry_format/revision-$registry_revision.json"
+[[ -f "$registry_snapshot" ]] || die "capability registry snapshot is missing: $registry_id format $registry_format revision $registry_revision"
+cp "$registry_snapshot" "$output_dir/capability-registry.json"
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aeb-pipelock-gauntlet.XXXXXX")"
 pipelock_bin=""

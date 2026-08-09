@@ -309,8 +309,8 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 }
 
 // runCases executes the result-state transition for each case. Profile fields
-// remain carried into output for v3 publication, but no claim, support flag,
-// requirement, or capability tag selects a case. Only an exact adapter route,
+// remain carried into output as v4 registry-bound reporting labels, but no
+// claim, requirement, or capability tag selects a case. Only an exact adapter route,
 // proven delivery, and observed verdict can create a scoreable measurement.
 func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time.Duration, debug bool, output io.Writer) ([]CaseResult, []CaseResult, map[string]struct{}, map[NAKind]int, error) {
 	var applicableResults []CaseResult
