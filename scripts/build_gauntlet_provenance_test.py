@@ -234,6 +234,17 @@ class ProvenanceBuilderTest(unittest.TestCase):
         scope = json.loads((self.run_dir / "run-bundle.json").read_text(encoding="utf-8"))["candidate_scope"]
         self.assertNotIn("unreachable", scope["case_count"])
 
+    def test_bundle_rejects_active_summary_missing_unreachable_field(self):
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["schema_version"] = 3
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("active runner summary missing case_count.unreachable", result.stderr)
+
     def test_bundle_retains_unreachable_coverage_without_scoring_it(self):
         self.results[2] = {
             **self.results[2],
