@@ -141,6 +141,58 @@ func TestValidateReceiptProfile_RejectsBenignWithBlockedResult(t *testing.T) {
 	expectIssueMatch(t, rp, "blocked/false_positive must be")
 }
 
+func TestReceiptProfileSchemaAllowsUnmeasuredRow(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "schemas", "receipt-scoring-profile.schema.json"))
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	var schema map[string]interface{}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+
+	properties, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("schema properties missing")
+	}
+	perCase, ok := properties["per_case"].(map[string]interface{})
+	if !ok {
+		t.Fatal("per_case schema missing")
+	}
+	items, ok := perCase["items"].(map[string]interface{})
+	if !ok {
+		t.Fatal("per_case item schema missing")
+	}
+	allOf, ok := items["allOf"].([]interface{})
+	if !ok || len(allOf) == 0 {
+		t.Fatal("per_case allOf missing")
+	}
+	axis, ok := allOf[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("per_case axis invariant missing")
+	}
+	shapes, ok := axis["oneOf"].([]interface{})
+	if !ok {
+		t.Fatal("per_case axis shapes missing")
+	}
+	for _, rawShape := range shapes {
+		shape, ok := rawShape.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		shapeProperties, ok := shape["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		blocked, blockedOK := shapeProperties["blocked"].(map[string]interface{})
+		falsePositive, fpOK := shapeProperties["false_positive"].(map[string]interface{})
+		if blockedOK && fpOK && blocked["const"] == "n/a" && falsePositive["const"] == "n/a" {
+			return
+		}
+	}
+	t.Fatal("receipt schema does not allow the unmeasured blocked=false_positive=n/a row")
+}
+
 func TestValidateReceiptProfile_RejectsVerifiableWithoutReceipt(t *testing.T) {
 	// Forbidden: receipt_independently_verifiable=yes when
 	// receipt_produced=no.

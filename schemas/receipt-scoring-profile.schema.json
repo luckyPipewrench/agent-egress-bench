@@ -149,7 +149,7 @@
           },
           "blocked": {
             "enum": ["yes", "no", "n/a"],
-            "description": "Did the tool prevent the action? n/a when the case expects allow (benign baseline)."
+            "description": "Did the tool prevent the action? n/a for an allow-expected benign baseline or an unmeasured runner-error row."
           },
           "explained": {
             "enum": ["yes", "no"],
@@ -165,7 +165,7 @@
           },
           "false_positive": {
             "enum": ["yes", "no", "n/a"],
-            "description": "Did the tool block a benign baseline case? n/a on malicious cases."
+            "description": "Did the tool block a benign baseline case? n/a on malicious cases or an unmeasured runner-error row."
           },
           "receipt_observation_reason": {
             "type": "string",
@@ -176,7 +176,7 @@
         "allOf": [
           {
             "title": "blocked vs false_positive consistency",
-            "description": "Malicious cases (expected verdict block) carry blocked in {yes, no} and false_positive = n/a. Benign cases (expected verdict allow) carry blocked = n/a and false_positive in {yes, no}.",
+            "description": "Malicious cases (expected verdict block) carry blocked in {yes, no} and false_positive = n/a. Benign cases (expected verdict allow) carry blocked = n/a and false_positive in {yes, no}. Runner-error rows are unmeasured and carry both dimensions as n/a.",
             "oneOf": [
               {
                 "properties": {
@@ -188,6 +188,12 @@
                 "properties": {
                   "blocked": { "const": "n/a" },
                   "false_positive": { "enum": ["yes", "no"] }
+                }
+              },
+              {
+                "properties": {
+                  "blocked": { "const": "n/a" },
+                  "false_positive": { "const": "n/a" }
                 }
               }
             ]
