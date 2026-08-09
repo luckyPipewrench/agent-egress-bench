@@ -78,6 +78,9 @@ func TestLoadCasesDoesNotFilterSupersession(t *testing.T) {
 	if _, ok := loaded["old"]; !ok {
 		t.Fatal("superseded case was filtered from the executable corpus")
 	}
+	if _, ok := loaded["new"]; !ok {
+		t.Fatal("superseding case was not loaded")
+	}
 }
 
 func TestScorerRejectsV2CaseButHistoricalReaderPreservesIt(t *testing.T) {

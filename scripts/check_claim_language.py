@@ -74,7 +74,7 @@ BANNED = (
     # direction. Verb enumeration is inherently incomplete, so a reviewer should
     # still read the section rather than trusting a green check here.
     (
-        r"\b(?:receive|get|obtain|access|see|preview)(?:s|d|ed)?\b[^\n]{0,80}"
+        r"\b(?:receive|get|obtain|access|see|preview)(?:s|d|ed)?\b(?!\s+no\b)[^\n]{0,80}"
         r"\b(?:private|pre[- ]publication)\b[^\n]{0,40}"
         r"\b(?:preview|review|notice)\b",
         "targets get no private or prepublication result review",

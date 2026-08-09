@@ -55,7 +55,10 @@ class BannedTermTest(unittest.TestCase):
         self.assertIn("prepublication result review", findings[0])
 
     def test_public_setup_review_without_private_preview_passes(self):
-        text = "Publish configuration in public. There is no private notice or result preview.\n"
+        text = (
+            "The target receives no private notice period or "
+            "prepublication result preview.\n"
+        )
         self.assertEqual(check.scan_text(Path("docs/x.md"), text), [])
 
 
