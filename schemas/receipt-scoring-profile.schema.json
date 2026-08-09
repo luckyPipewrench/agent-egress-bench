@@ -11,6 +11,7 @@
     "corpus_version",
     "corpus_sha256",
     "tool_profile_sha256",
+    "capability_registry",
     "verifier",
     "summary",
     "per_case"
@@ -19,8 +20,8 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 3,
-      "description": "Schema version. Must be 3 for active scoring."
+      "const": 4,
+      "description": "Schema version. Must be 4 for active scoring."
     },
     "tool": {
       "type": "string",
@@ -46,6 +47,17 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
       "description": "SHA-256 of the tool-profile.json used at run time. Lower-case hex."
+    },
+    "capability_registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "format", "revision", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "format": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
     },
     "verifier": {
       "type": "object",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "mcp-tool-http-homoglyph-name-011",
   "category": "mcp_tool",
   "title": "HTTP tool inventory contains a confusable sibling name",

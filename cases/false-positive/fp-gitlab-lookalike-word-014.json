@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "fp-gitlab-lookalike-word-014",
   "category": "false_positive",
   "title": "English word starting with gl is not a GitLab token",

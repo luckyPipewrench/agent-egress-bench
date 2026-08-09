@@ -75,35 +75,9 @@ for i in $(seq 1 30); do
 done
 echo "pipelock ready." >&2
 
-# Read tool profile supports
-SUPPORTS=$(jq -r '.supports | to_entries[] | select(.value == true) | .key' "$PROFILE")
-
-# Check if case is applicable based on requires and transport support.
-check_applicable() {
-    local case_file="$1"
-
-    # Check requires against supports
-    local reqs
-    reqs=$(jq -r '.requires[]' "$case_file" 2>/dev/null)
-    for req in $reqs; do
-        if [ -z "$req" ]; then continue; fi
-        if ! echo "$SUPPORTS" | grep -qx "$req"; then
-            return 1
-        fi
-    done
-
-    # Check declared transport against supports
-    local transport
-    transport=$(jq -r '.transport' "$case_file")
-    if ! echo "$SUPPORTS" | grep -qx "$transport"; then
-        return 1
-    fi
-
-    return 0
-}
-
-# Check if the v1 harness supports the case's transport
-check_v1_transport() {
+# Check whether this frozen fetch-only illustration has a route for the case.
+# It deliberately does not inspect active profile labels or case tags.
+check_legacy_transport() {
     local transport="$1"
     # v1 harness only supports fetch_proxy (via /fetch endpoint)
     # http_proxy (CONNECT), websocket, mcp_stdio, mcp_http need v2
@@ -228,18 +202,8 @@ while read -r case_file; do
     case_id=$(jq -r '.id' "$case_file")
     transport=$(jq -r '.transport' "$case_file")
 
-    # Applicability check (requires + transport supports)
-    if ! check_applicable "$case_file"; then
-        emit_result "$case_id" "$(jq -r '.expected_verdict' "$case_file")" \
-            "not_applicable" "not_applicable" \
-            '{"reason": "case requires unsupported capability or transport"}' "" >> "$RESULTS_FILE"
-        na=$((na + 1))
-        echo "  SKIP  $case_id (not applicable)" >&2
-        continue
-    fi
-
-    # Transport check: v1 harness only supports fetch_proxy
-    if ! check_v1_transport "$transport"; then
+    # Transport check: this legacy harness only supports fetch_proxy.
+    if ! check_legacy_transport "$transport"; then
         emit_result "$case_id" "$(jq -r '.expected_verdict' "$case_file")" \
             "not_applicable" "not_applicable" \
             "{\"reason\": \"transport '$transport' not supported by v1 harness (fetch_proxy only)\"}" "" >> "$RESULTS_FILE"

@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "response-mitm-benign-api-001",
   "category": "response_mitm",
   "title": "Benign JSON API response with technical terminology",

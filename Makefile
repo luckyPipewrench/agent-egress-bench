@@ -1,4 +1,4 @@
-.PHONY: preflight check-claim-language stats stats-update check-stats cases-manifest check-gauntlet-site test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-claim-language check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -12,7 +12,19 @@ GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.j
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language
+preflight: test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language
+
+test-capability-registry:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@cd capability-registry && go test -race -count=1 ./...
+
+check-capability-registry-history:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_capability_registry_history_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_capability_registry_history.py --base "$$(git merge-base origin/main HEAD)"
+
+test-label-boundary:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@cd runner && go test -count=1 -run '^(TestLabelBoundary|TestClaimsDoNotChangeMeasurement)' .
 
 # Reject documentation that makes a claim the method cannot support, and keep
 # docs/RESULTS-USE.md defining the assurance labels and the adverse-result
@@ -52,6 +64,10 @@ test-control-evidence-vectors:
 test-control-evidence-verifier:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
 	@cd control-evidence/v0/verifier && go test -race -count=1 ./...
+
+test-control-evidence-v1-verifier:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@cd control-evidence/v1/verifier && go test -race -count=1 ./...
 
 test-control-evidence-g2-authentication:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
@@ -122,6 +138,7 @@ check-stats: check-gauntlet-site
 # fixture is the local-test default; callers can and must pass the generated
 # artifact path when validating an actual scoring run.
 check-gauntlet-site:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/capability_registry_publication_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_scope_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/evaluate_gauntlet_candidate_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/build_gauntlet_provenance_test.py

@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "response-mitm-markdown-exfil-003",
   "category": "response_mitm",
   "title": "Prompt injection with markdown image exfiltration",

@@ -24,6 +24,7 @@ REQUIRED_IDENTITIES = (
     "runner_version",
 )
 SCOPE_IDENTITIES = {"corpus_sha256", "corpus_version", "scoring_version", "runner_version"}
+SHA256_HEX = set("0123456789abcdef")
 
 
 def load_object(path):
@@ -62,6 +63,19 @@ def nested_value(document, path):
             raise ValueError("missing field: " + ".".join(path))
         current = current[key]
     return current
+
+
+def require_capability_registry(candidate):
+    reference = candidate.get("capability_registry")
+    if not isinstance(reference, dict) or set(reference) != {"id", "format", "revision", "sha256"}:
+        raise ValueError("candidate capability_registry must be an exact reference")
+    if not isinstance(reference["id"], str) or not reference["id"]:
+        raise ValueError("candidate capability_registry.id must be non-empty")
+    if any(isinstance(reference[key], bool) or not isinstance(reference[key], int) or reference[key] < 1 for key in ("format", "revision")):
+        raise ValueError("candidate capability_registry format and revision must be positive integers")
+    if not isinstance(reference["sha256"], str) or len(reference["sha256"]) != 64 or any(character not in SHA256_HEX for character in reference["sha256"]):
+        raise ValueError("candidate capability_registry.sha256 must be lower-case SHA-256")
+    return reference
 
 
 def atomic_json_write(path, value):
@@ -108,8 +122,10 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         candidate = load_object(candidate_path)
         baseline = load_object(baseline_path)
 
-        if candidate.get("schema_version") != 2:
-            raise ValueError("candidate schema_version must be 2")
+        if candidate.get("schema_version") not in {2, 4}:
+            raise ValueError("candidate schema_version must be 2 or 4")
+        if candidate.get("schema_version") == 4:
+            require_capability_registry(candidate)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))

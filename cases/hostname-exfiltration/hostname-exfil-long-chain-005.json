@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "hostname-exfil-long-chain-005",
   "category": "hostname_exfiltration",
   "title": "10+ subdomain labels encoding a full API key",

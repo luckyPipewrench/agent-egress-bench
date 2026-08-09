@@ -237,7 +237,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
     def test_bundle_rejects_active_summary_missing_unreachable_field(self):
         summary_path = self.run_dir / "raw-summary.json"
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        summary["schema_version"] = 3
+        summary["schema_version"] = 4
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
         result = self.bundle()

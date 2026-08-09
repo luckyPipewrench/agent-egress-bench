@@ -91,7 +91,7 @@ while read -r case_file; do
     # ============================================================
     # TODO 2: Prove an exact delivery route
     # ============================================================
-    # Profile claims and supports are publication metadata, not selection.
+    # Profile claims are registry-backed reporting metadata, not selection.
     # If this runner has no route for this exact transport/input/lifecycle,
     # emit unreachable. A route declaration alone is not proof; TODO 3 must
     # prove delivery and observe a request-correlated verdict before allow/block.

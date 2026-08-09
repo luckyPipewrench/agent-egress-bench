@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "mcp-input-http-benign-013",
   "category": "mcp_input",
   "title": "Benign HTTP tool call with safety instructions",

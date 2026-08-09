@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "body-benign-image-blob-015",
   "category": "request_body",
   "title": "Benign image data blob in request body",

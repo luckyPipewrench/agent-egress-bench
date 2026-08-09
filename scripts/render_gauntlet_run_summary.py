@@ -157,8 +157,14 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
 
     details = {}
     if candidate is not None:
-        if candidate.get("schema_version") != 2:
-            failures.append("candidate schema_version must be 2")
+        if candidate.get("schema_version") not in {2, 4}:
+            failures.append("candidate schema_version must be 2 or 4")
+        elif candidate.get("schema_version") == 4:
+            try:
+                import evaluate_gauntlet_candidate as evaluator
+                evaluator.require_capability_registry(candidate)
+            except ValueError as exc:
+                failures.append(str(exc))
         for key in ("pipelock_version", "generated_at", "corpus_version", "corpus_git_sha"):
             details[key] = required_string(candidate, (key,), failures)
         for key in ("total", "applicable", "not_applicable", "errors"):

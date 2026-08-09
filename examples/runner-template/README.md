@@ -23,8 +23,9 @@ Use this check before writing code:
 | MCP gateway | Not as a generic adapter today | Tool-specific MCP stdio or MCP HTTP commands can be driven now; a protocol-first MCP gateway adapter is planned |
 
 A result is scoreable only when its adapter proves delivery of the exact wire
-input and observes a verdict. `supports` remains v3 publication metadata; it
-does not select cases. No exact route is `unreachable`, not N/A, and makes the
+input and observes a verdict. Claims are registry-backed reporting labels. They
+do not select cases or change a score, denominator, sufficiency decision, or
+publication decision. No exact route is `unreachable`, not N/A, and makes the
 run insufficient.
 
 ## Step 1: Create your tool profile
@@ -41,15 +42,15 @@ Edit the file. Here is what each field means:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Always `3` for active scoring |
+| `schema_version` | integer | Always `4` for active scoring |
 | `tool` | string | Your tool's name (lowercase, no spaces) |
 | `tool_version` | string | The version you are testing against |
 | `runner_version` | string | Version of your runner script (use `v1` to start) |
 
 ### `claims` array
 
-Reporting labels for what your tool detects. Neither `claims` nor `supports`
-controls selection. Pick from:
+Reporting labels for what your tool detects. They do not control selection.
+Pick them from the exact capability-registry snapshot named below:
 
 | Claim | What it means |
 |-------|---------------|
@@ -76,50 +77,13 @@ controls selection. Pick from:
 
 Only claim what your tool actually does; these labels help readers interpret results.
 
-### `supports` object
+### `capability_registry` object
 
-Which transport and scanning modes your tool supports. These are retained v3
-publication facts. They do not select cases or substitute for delivery proof.
-
-| Key | What it means |
-|-----|---------------|
-| `fetch_proxy` | Tool provides a runner-drivable HTTP fetch endpoint such as `/fetch?url=...` |
-| `http_proxy` | Tool works as a CONNECT-capable forward proxy |
-| `mcp_stdio` | Tool can wrap MCP servers via stdio |
-| `mcp_http` | Tool can proxy MCP over HTTP |
-| `websocket` | Tool can proxy WebSocket connections |
-| `a2a` | Tool can inspect A2A protocol traffic |
-| `tls_interception` | Tool can intercept and inspect TLS traffic |
-| `url_dlp_scanning` | Tool detects secrets in URL components |
-| `request_body_dlp_scanning` | Tool detects secrets in HTTP request bodies |
-| `header_dlp_scanning` | Tool detects secrets in HTTP headers |
-| `response_prompt_injection_scanning` | Tool detects prompt injection in response content |
-| `mcp_input_dlp_scanning` | Tool detects secrets in MCP tool arguments |
-| `mcp_input_prompt_injection_scanning` | Tool detects prompt injection in MCP tool arguments |
-| `mcp_tool_policy` | Tool enforces policy on MCP tool names/actions |
-| `mcp_tool_result_prompt_injection_scanning` | Tool detects prompt injection in MCP tool results |
-| `mcp_tool_poison_scanning` | Tool detects poisoned MCP tool definitions |
-| `mcp_tool_baseline` | Tool tracks MCP tool definitions over time (rug-pull detection) |
-| `mcp_chain_memory` | Tool tracks sequences of MCP tool calls |
-| `mcp_cross_server_chain_memory` | Tool correlates MCP chains across server sessions |
-| `mcp_data_class_labels` | Tool tracks sensitivity labels on MCP tool outputs |
-| `a2a_dlp_scanning` | Tool detects secrets in A2A messages |
-| `a2a_prompt_injection_scanning` | Tool detects prompt injection in A2A messages |
-| `a2a_card_prompt_injection_scanning` | Tool detects poisoned A2A Agent Cards |
-| `a2a_card_drift_scanning` | Tool detects A2A Agent Card drift |
-| `a2a_ssrf_scanning` | Tool detects SSRF-capable A2A URLs or file URIs |
-| `websocket_dlp_scanning` | Tool detects secrets in WebSocket frames |
-| `websocket_prompt_injection_scanning` | Tool detects prompt injection in WebSocket frames |
-| `ssrf_scanning` | Tool detects direct SSRF attempts in URL requests |
-| `ssrf_bypass_scanning` | Tool detects SSRF bypass encodings and alternate IP forms |
-| `domain_blocklist` | Tool can block benchmark-configured known-bad domains |
-| `entropy_scanning` | Tool detects high-entropy exfiltration strings |
-| `encoding_evasion_scanning` | Tool decodes or normalizes encoded payloads before detection |
-| `shell_analysis` | Tool detects obfuscated shell commands in tool arguments |
-| `crypto_dlp_scanning` | Tool detects cryptocurrency, wallet, or financial material |
-| `hostname_exfil_scanning` | Tool detects exfiltration encoded into DNS hostnames or labels |
-| `dns_rebinding_fixture` | Runner provides controlled DNS for rebinding tests |
-| `budget_enforcement` | Tool can enforce per-subject MCP tool-call count budgets during a run |
+Copy the exact `id`, `format`, `revision`, and `sha256` from the registry
+snapshot you use. The SHA-256 is over the raw snapshot file, not re-serialized
+JSON. The runner rejects an unknown label, missing snapshot, digest mismatch,
+duplicate label, or unsupported format before it emits any score. Keep that raw
+snapshot with every published profile and result.
 
 ## Step 2: Write the runner
 
@@ -287,8 +251,9 @@ wc -l < results.jsonl
 
 ## Common mistakes
 
-**Treating `supports` as proof.** A declaration never proves a route. Keep it
-honest for publication, then add delivery and verdict observation before scoring.
+**Treating claims as proof.** A reporting label never proves a route. Validate
+it against the profile's retained registry snapshot, then add delivery and
+verdict observation before scoring.
 
 **Hardcoding verdicts.** Every verdict must come from observing your tool's actual behavior. If you return `block` without sending the request through your tool, the result is meaningless.
 
