@@ -245,6 +245,17 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("active runner summary missing case_count.unreachable", result.stderr)
 
+    def test_bundle_rejects_active_scoring_summary_missing_schema_version(self):
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["scoring_version"] = "2.5"
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("active runner summary missing schema_version", result.stderr)
+
     def test_bundle_retains_unreachable_coverage_without_scoring_it(self):
         self.results[2] = {
             **self.results[2],

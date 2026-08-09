@@ -198,10 +198,12 @@ def verify_score(summary, scope, metric, numerator, denominator):
 def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
     # Active v3 summaries always serialize the explicit unreachable counter.
-    # Older retained summaries predate that field and carry no schema_version,
-    # so they keep their original byte shape. Do not let a malformed active
-    # summary borrow the frozen representation and silently lose its state.
-    if summary.get("schema_version") == 3:
+    # The retained v2.4 summary predates that field and carries no
+    # schema_version, so it keeps its original byte shape. A v2.5 summary is
+    # E3-era output and cannot borrow that frozen representation by omitting
+    # its schema marker.
+    summary_schema_version = summary.get("schema_version")
+    if summary_schema_version == 3:
         active_case_count = summary.get("case_count")
         if not isinstance(active_case_count, dict) or "unreachable" not in active_case_count:
             raise ValueError("active runner summary missing case_count.unreachable")
@@ -212,6 +214,8 @@ def measurements(repo_root, run_dir):
             or active_unreachable < 0
         ):
             raise ValueError("active runner summary case_count.unreachable must be a non-negative integer")
+    elif summary.get("scoring_version") == "2.5":
+        raise ValueError("active runner summary missing schema_version")
     for key in (
         "gauntlet_version",
         "scoring_version",
