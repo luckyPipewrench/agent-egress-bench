@@ -817,3 +817,39 @@ func TestBuildReceiptProfile_ErrorRowsAreNotScoredAsOutcomes(t *testing.T) {
 		t.Fatalf("error-row output failed schema validation:\n%s", strings.Join(issues, "\n"))
 	}
 }
+
+func TestBuildReceiptProfile_ErrorRowsRetainFactualReceiptObservations(t *testing.T) {
+	dir := t.TempDir()
+	helper := receiptVerifierHelper(t)
+	decl := baseReceiptEvidenceDeclaration(dir, helper)
+	writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", ReceiptEvidence: &decl}
+	result := receiptObservationCaseResult()
+	result.ActualVerdict = "error"
+	rp := buildReceiptProfile(
+		profile,
+		[]CaseResult{result},
+		map[string]Case{result.CaseID: receiptObservationCase()},
+		ReceiptVerifier{},
+		"v2.0.0",
+		strings.Repeat("0", 64),
+		strings.Repeat("0", 64),
+	)
+
+	row := rp.PerCase[0]
+	if row.Blocked != "n/a" || row.FalsePositive != "n/a" {
+		t.Fatalf("error row outcome axes = blocked:%q false_positive:%q, want both n/a", row.Blocked, row.FalsePositive)
+	}
+	if row.ReceiptProduced != "yes" || row.ReceiptIndependentlyVerifiable != "yes" {
+		t.Fatalf("error row receipt observations = produced:%q verifiable:%q, want both yes", row.ReceiptProduced, row.ReceiptIndependentlyVerifiable)
+	}
+	if rp.Summary.BlockedYesCount != 0 || rp.Summary.BlockedNoCount != 0 || rp.Summary.FalsePositiveYesCount != 0 || rp.Summary.ExplainedYesCount != 0 {
+		t.Fatalf("error row changed outcome summary counts: %+v", rp.Summary)
+	}
+	if rp.Summary.ReceiptProducedYesCount != 1 || rp.Summary.ReceiptIndependentlyVerifiableYesCount != 1 {
+		t.Fatalf("receipt summary counts = %+v, want factual receipt counts", rp.Summary)
+	}
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		t.Fatalf("error-row receipt profile validation failed:\n%s", strings.Join(issues, "\n"))
+	}
+}

@@ -107,9 +107,11 @@ func decodeStrictJSON(data []byte, dst interface{}) error {
 // and unreachable cases are excluded by construction because they never enter
 // that slice. Runner-error rows DO enter it and are represented here, but as
 // the unmeasured shape (blocked and false_positive both n/a) and without
-// touching any summary counter, because an error is a failed measurement
-// rather than an observed outcome. Do not restate the old claim that error
-// cases are excluded, and do not force an error row onto either axis.
+// touching an outcome summary counter, because an error is a failed
+// measurement rather than an observed outcome. Receipt observations remain
+// factual: their counters continue to derive from the emitted per_case rows.
+// Do not restate the old claim that error cases are excluded, and do not force
+// an error row onto either outcome axis.
 // per_case rows are sorted by case_id so repeated runs produce byte-identical
 // output for the same inputs.
 func buildReceiptProfile(
@@ -150,8 +152,10 @@ func buildReceiptProfile(
 		// a malicious case would record blocked=no, reading as an observed
 		// failure to block, and a benign case would record false_positive=no,
 		// silently crediting the tool for a correct allow it was never seen to
-		// make. Record the row so the case remains visible, mark both axes n/a,
-		// and leave every summary counter untouched.
+		// make. Record the row so the case remains visible, mark both outcome
+		// axes n/a, and leave outcome counters untouched. A correlated receipt is
+		// still a factual receipt observation, so its own counters remain derived
+		// from the emitted row below.
 		switch {
 		case r.ActualVerdict == "error":
 			row.Blocked = "n/a"
