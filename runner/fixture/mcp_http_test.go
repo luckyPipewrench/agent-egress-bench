@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,37 @@ func TestMCPHTTPFixtureToolResultLeaseResetsResponse(t *testing.T) {
 	assertToolCallResultContains(t, f.URL(), "leased-request", "leased")
 	release()
 	assertToolCallResultContains(t, f.URL(), "later-request", `"ok":true`)
+}
+
+func TestMCPHTTPFixtureFinalSinkLeaseRequiresExactSingleExecution(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	exact := `{"jsonrpc":"2.0","id":"sink-1","method":"tools/call","params":{"name":"send","arguments":{"value":"final"},"_meta":{"aeb_request_identity":"sink-1"}}}`
+	fingerprint, err := MCPRequestFingerprint([]byte(exact))
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := f.AcquireFinalSinkLease(context.Background(), MCPRequestObservation{
+		Identity: "sink-1", Method: "tools/call", Fingerprint: fingerprint,
+	})
+	if err != nil {
+		t.Fatalf("AcquireFinalSinkLease: %v", err)
+	}
+	defer release()
+
+	postMCPFixture(t, f.URL(), strings.Replace(exact, `"final"`, `"changed"`, 1))
+	if got := f.FinalSinkExecution("sink-1"); len(got) != 0 {
+		t.Fatalf("changed payload recorded final sink execution: %+v", got)
+	}
+	postMCPFixture(t, f.URL(), exact)
+	got := f.FinalSinkExecution("sink-1")
+	if len(got) != 1 || got[0].Fingerprint != fingerprint {
+		t.Fatalf("final sink executions = %+v, want one exact execution", got)
+	}
 }
 
 func TestMCPHTTPFixtureToolsSnapshotIsIndependent(t *testing.T) {

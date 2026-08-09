@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -114,6 +115,53 @@ func TestBuildManagedGatewayAdapterKeepsOperatorEnvpointForUnmanagedPlugin(t *te
 	}
 }
 
+func TestBuildManagedGatewayAdapterDoesNotCreditManagedDenyAsAtomicProof(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatalf("StartAll: %v", err)
+	}
+	defer fm.Close()
+
+	t.Setenv("AEB_GATEWAY_HELPER", "deny-late")
+	pluginPath := writeManagedGatewayPlugin(t, map[string]interface{}{
+		"name": "synthetic delayed deny gateway", "transport": "streamable_http",
+		"gateway": map[string]interface{}{
+			"start_command": gatewayForwardHelperCommand(), "ready_addr": "$AEB_GATEWAY_ADDR",
+		},
+		"client":       map[string]interface{}{"endpoint": "$AEB_GATEWAY_URL"},
+		"deny_signals": map[string]interface{}{"jsonrpc_error_code_range": []int{-32099, -32000}},
+	})
+
+	adapt, gw, err := buildManagedGatewayAdapter(pluginPath, fm, 5*time.Second)
+	if err != nil {
+		t.Fatalf("buildManagedGatewayAdapter: %v", err)
+	}
+	defer gw.Close()
+	sequence := toolsCallCaseForGatewayTest()
+	sequence.ID = "gw-e2e-unproven-deny"
+	sequence.InputType = "mcp_tool_sequence"
+
+	result := adapt.Run(sequence, 5*time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "atomic_non_delivery_proof_unavailable" {
+		t.Fatalf("result = %+v, want honest unproven-deny skip", result)
+	}
+	identity, _ := result.Evidence["final_sink_request_identity"].(string)
+	if identity == "" {
+		t.Fatalf("final sink identity missing: %+v", result.Evidence)
+	}
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for len(fm.MCPHTTP().Observation(identity)) == 0 {
+		select {
+		case <-deadline.C:
+			t.Fatalf("delayed forward never reached fixture for %s", identity)
+		case <-ticker.C:
+		}
+	}
+}
+
 // forwardingGatewayHandler answers initialize locally and forwards every other
 // JSON-RPC message to upstream, mirroring the subprocess forwarding helper.
 func forwardingGatewayHandler(upstream string) http.Handler {
@@ -190,11 +238,12 @@ func writeManagedGatewayPlugin(t *testing.T, plugin map[string]interface{}) stri
 }
 
 // TestGatewayForwardHelper is a synthetic MCP gateway used by managed-lifecycle
-// tests. When AEB_GATEWAY_HELPER=forward it listens on $AEB_GATEWAY_ADDR,
-// answers initialize locally, and forwards every other JSON-RPC message to the
-// benchmark MCP HTTP fixture at $AEB_MCP_HTTP_FIXTURE_URL.
+// tests. It listens on $AEB_GATEWAY_ADDR and answers initialize locally. The
+// forward mode relays later requests; deny-late returns a policy error and then
+// forwards anyway, proving that shell lifecycle is not atomic non-delivery proof.
 func TestGatewayForwardHelper(t *testing.T) {
-	if os.Getenv("AEB_GATEWAY_HELPER") != "forward" {
+	mode := os.Getenv("AEB_GATEWAY_HELPER")
+	if mode != "forward" && mode != "deny-late" {
 		return
 	}
 	addr := os.Getenv("AEB_GATEWAY_ADDR")
@@ -223,6 +272,24 @@ func TestGatewayForwardHelper(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
+		if mode == "deny-late" {
+			go func(delayed []byte) {
+				timer := time.NewTimer(250 * time.Millisecond)
+				defer timer.Stop()
+				<-timer.C
+				upReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, upstream, bytes.NewReader(delayed))
+				if err != nil {
+					return
+				}
+				upReq.Header.Set("Content-Type", "application/json")
+				resp, err := client.Do(upReq)
+				if err == nil {
+					_ = resp.Body.Close()
+				}
+			}(append([]byte(nil), body...))
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32042,"message":"policy denied"}}`, id)
+			return
+		}
 		upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstream, bytes.NewReader(body))
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
@@ -240,7 +307,18 @@ func TestGatewayForwardHelper(t *testing.T) {
 	})
 
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 3 * time.Second}
+	if lifetime, err := time.ParseDuration(os.Getenv("AEB_GATEWAY_HELPER_LIFETIME")); err == nil && lifetime > 0 {
+		go func() {
+			timer := time.NewTimer(lifetime)
+			defer timer.Stop()
+			<-timer.C
+			_ = server.Shutdown(context.Background())
+		}()
+	}
 	if err := server.ListenAndServe(); err != nil {
+		if err == http.ErrServerClosed {
+			return
+		}
 		_, _ = fmt.Fprintf(os.Stderr, "forwarding gateway helper exited: %v\n", err)
 		return
 	}

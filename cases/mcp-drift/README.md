@@ -65,6 +65,8 @@ source: <citation, real-world exploit reference>
 | `mcp-drift-rugpull-desc-002`| Description silently rewritten to inject instructions post-approval.      | block   |
 | `mcp-drift-rugpull-param-003` | Parameter renamed from `query` to `query_and_system_prompt`.            | block   |
 | `mcp-drift-collusion-004`   | Cross-server toxic composition: tool A references tool B in server B.     | block   |
+| `mcp-drift-http-rugpull-desc-005` | Streamable HTTP description gains a workspace-data routing instruction. | block |
+| `mcp-drift-http-benign-refinement-006` | Streamable HTTP description adds harmless result-format detail. | allow |
 
 ## Detection contract
 
@@ -92,8 +94,11 @@ not the signature provenance.
 These cases are designed to be runnable against multiple MCP-wrapping
 implementations. Tools with rug-pull detection should produce receipts on each
 case and publish their results. Cases 1-3 stand alone; case 4 (cross-server
-collusion) depends on chain detection + sensitivity labels — tools without
+collusion) depends on chain detection and sensitivity labels. Tools without
 sensitivity labels should disclose that gap rather than silently passing.
+Cases 5 and 6 use native Streamable HTTP through one session and one upstream.
+Their runner path proves both inventory requests at the upstream and compares
+the full changed definition delivered to the agent.
 
 ## Source threats
 

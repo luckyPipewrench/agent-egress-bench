@@ -116,6 +116,8 @@ mcp-chain-dow-interleaved-budget-exceeded-012
 mcp-chain-dow-under-budget-011
 mcp-chain-env-network-002
 mcp-chain-exfil-001
+mcp-chain-http-benign-summary-014
+mcp-chain-http-read-send-013
 mcp-chain-persist-callback-006
 mcp-chain-read-write-send-005
 mcp-chain-recon-read-004
@@ -123,6 +125,8 @@ mcp-chain-shell-burst-007
 mcp-chain-write-execute-003
 mcp-drift-benign-001
 mcp-drift-collusion-004
+mcp-drift-http-benign-refinement-006
+mcp-drift-http-rugpull-desc-005
 mcp-drift-rugpull-desc-002
 mcp-drift-rugpull-param-003
 mcp-input-base64-secret-004
