@@ -67,6 +67,30 @@ BANNED = (
         r"\b(?:offered|provided|granted|given)\b",
         "targets get no private or prepublication result review",
     ),
+    # The two patterns above only fire when the sentence's subject is the giver.
+    # The prohibition is about a private preview EXISTING, so the same grant
+    # written from the recipient's side slipped through: "A target may receive a
+    # private prepublication result preview" passed clean. These cover that
+    # direction. Verb enumeration is inherently incomplete, so a reviewer should
+    # still read the section rather than trusting a green check here.
+    (
+        r"\b(?:receive|get|obtain|access|see|preview)(?:s|d|ed)?\b[^\n]{0,80}"
+        r"\b(?:private|pre[- ]publication)\b[^\n]{0,40}"
+        r"\b(?:preview|review|notice)\b",
+        "targets get no private or prepublication result review",
+    ),
+    (
+        r"\b(?:entitled\s+to|allowed\s+to|permitted\s+to|able\s+to|may|can)\b[^\n]{0,40}"
+        r"\b(?:review|preview|see|inspect)\b[^\n]{0,60}"
+        r"\bbefore\s+publication\b",
+        "targets get no private or prepublication result review",
+    ),
+    (
+        r"\b(?:private|pre[- ]publication)\b[^\n]{0,40}"
+        r"\b(?:preview|review|notice)\b[^\n]{0,60}"
+        r"\b(?:received|obtained|accessed)\b",
+        "targets get no private or prepublication result review",
+    ),
 )
 
 COMPILED = tuple((re.compile(pattern, re.IGNORECASE), reason) for pattern, reason in BANNED)

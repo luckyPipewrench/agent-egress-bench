@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -259,6 +260,12 @@ func runCases(casesDir string) int {
 		fmt.Fprintf(os.Stderr, "no case files found in %s\n", casesDir)
 		return 1
 	}
+	// Supersession is a relationship between two cases, so it can only be
+	// checked once every case ID is known. JSON Schema cannot express "the
+	// referenced case exists", which left the field accepting an empty string, a
+	// nonexistent target, a self-reference, or a cycle. A relationship that
+	// points nowhere is not relationship metadata.
+	errors = append(errors, validateSupersessionGraph(ids)...)
 	if len(errors) > 0 {
 		fmt.Fprintf(os.Stderr, "validation failed with %d error(s):\n\n", len(errors))
 		for _, e := range errors {
@@ -312,6 +319,95 @@ func registryRootForArtifact(path string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("capability registry not found for %s", path)
+}
+
+// validateSupersessionGraph checks the supersedes relationships across the whole
+// corpus. ids maps every known case ID to the file that declares it, which is
+// what makes an existence check possible; a per-file validator cannot do this
+// because it cannot see the other cases.
+//
+// The corpus currently declares zero supersessions, so this guards the first one
+// rather than an existing defect. That is the point: the field's only stated
+// meaning is a replacement relationship, so the moment someone uses it, a
+// self-reference or a dangling target must be refused instead of recorded.
+func validateSupersessionGraph(ids map[string]string) []string {
+	var errors []string
+	targets := make(map[string]string, len(ids))
+
+	sortedIDs := make([]string, 0, len(ids))
+	for id := range ids {
+		sortedIDs = append(sortedIDs, id)
+	}
+	sort.Strings(sortedIDs)
+
+	for _, id := range sortedIDs {
+		path := ids[id]
+		data, err := os.ReadFile(path)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: reading for supersession check: %v", path, err))
+			continue
+		}
+		var c Case
+		if err := json.Unmarshal(data, &c); err != nil {
+			// The per-file validator already reports a parse failure; do not
+			// duplicate it here.
+			continue
+		}
+		raw, declared := rawSupersedes(data)
+		if !declared {
+			continue
+		}
+		if strings.TrimSpace(raw) == "" {
+			errors = append(errors, fmt.Sprintf("%s: supersedes is present but empty; omit the field instead", path))
+			continue
+		}
+		if raw == id {
+			errors = append(errors, fmt.Sprintf("%s: case %q supersedes itself", path, id))
+			continue
+		}
+		if _, exists := ids[raw]; !exists {
+			errors = append(errors, fmt.Sprintf("%s: case %q supersedes %q, which is not a case in this corpus", path, id, raw))
+			continue
+		}
+		targets[id] = raw
+	}
+
+	// A cycle means no case in the chain is the current one, so the chain cannot
+	// answer which semantics are live.
+	for _, id := range sortedIDs {
+		if _, ok := targets[id]; !ok {
+			continue
+		}
+		seen := map[string]bool{id: true}
+		for cur := targets[id]; cur != ""; cur = targets[cur] {
+			if seen[cur] {
+				errors = append(errors, fmt.Sprintf("%s: supersession chain starting at %q is cyclic", ids[id], id))
+				break
+			}
+			seen[cur] = true
+		}
+	}
+
+	return errors
+}
+
+// rawSupersedes reports the declared supersedes value and whether the key was
+// present at all. An absent field and a field set to an empty string are
+// different mistakes, and the Go zero value cannot tell them apart.
+func rawSupersedes(data []byte) (string, bool) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return "", false
+	}
+	raw, present := probe["supersedes"]
+	if !present {
+		return "", false
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", true
+	}
+	return value, true
 }
 
 func validateFile(path string, ids map[string]string) []string {
