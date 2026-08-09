@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 const absentFact = "Absent from run artifacts"
@@ -394,6 +396,12 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	bullet("run-bundle.json", r.bundle.status)
 	bullet("execution-decision.json", r.decision.status)
 	line("")
+	if problem := r.v4RegistryBindingError(); problem != "" {
+		line("## Result unavailable")
+		line("")
+		line("This v4 result is uninterpretable: %s.", markdownInline(problem))
+		return
+	}
 	line("## Method identity")
 	line("")
 	bullet("Repository", firstReportFact(
@@ -685,6 +693,93 @@ func (r *buyerReport) bundleValidation() string {
 		return fmt.Sprintf("Incomplete: partial bundle with %d retained evidence digests matching", len(hashes))
 	}
 	return fmt.Sprintf("%s %d retained evidence digests match the bundle", reportSelfConsistentPrefix, len(hashes))
+}
+
+func (r *buyerReport) v4RegistryBindingError() string {
+	if reportNumber(r.summary, "schema_version") != "4" {
+		return ""
+	}
+	value, present := nestedValue(r.summary.data, "capability_registry")
+	if !present {
+		return "v4 capability_registry is absent"
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "v4 capability_registry is malformed"
+	}
+	var reference capabilityregistry.Reference
+	if err := json.Unmarshal(encoded, &reference); err != nil {
+		return "v4 capability_registry is malformed"
+	}
+	snapshot, err := os.ReadFile(filepath.Join(r.dir, "capability-registry.json"))
+	if err != nil {
+		return "v4 capability registry snapshot is absent or unreadable"
+	}
+	resolved, err := capabilityregistry.ResolveRaw(reference, snapshot)
+	if err != nil {
+		return "v4 capability registry snapshot does not match the result"
+	}
+	profilePath := filepath.Join(r.dir, "tool-profile.json")
+	profile, err := loadProfile(profilePath)
+	if err != nil {
+		return "v4 tool profile is invalid"
+	}
+	if profile.CapabilityRegistry != reference {
+		return "v4 tool profile registry reference does not match the result"
+	}
+	profileBytes, err := os.ReadFile(profilePath)
+	if err != nil || capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
+		return "v4 tool profile digest does not match the result"
+	}
+	reported, err := reportRegistryLabels(r.summary, "reported_claims")
+	if err != nil || resolved.ValidateActiveIDs("reported_claim", reported) != nil {
+		return "v4 reported_claims are not active IDs in the retained registry"
+	}
+	if !sameStrings(profile.Claims, reported) {
+		return "v4 tool profile claims do not match reported_claims"
+	}
+	tags, err := reportRegistryLabels(r.summary, "exercised", "capability_tags")
+	if err != nil || resolved.ValidateActiveIDs("exercised capability_tag", tags) != nil {
+		return "v4 exercised capability_tags are not active IDs in the retained registry"
+	}
+	return ""
+}
+
+func reportRegistryLabels(doc reportDocument, path ...string) ([]string, error) {
+	value, ok := nestedValue(doc.data, path...)
+	if !ok {
+		return nil, fmt.Errorf("absent labels")
+	}
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("labels are not an array")
+	}
+	seen := make(map[string]struct{}, len(items))
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		label, ok := item.(string)
+		if !ok || label == "" {
+			return nil, fmt.Errorf("label is invalid")
+		}
+		if _, duplicate := seen[label]; duplicate {
+			return nil, fmt.Errorf("duplicate label")
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
+	}
+	return labels, nil
+}
+
+func sameStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *buyerReport) summaryScopeFailures() []string {
