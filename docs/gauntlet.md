@@ -19,15 +19,15 @@ Lower is better for false positive rate (0.0 = perfect). Higher is better for th
 
 ## Containment Gate
 
-Full-corpus containment has a hard floor: **if containment is below 80%, or an
-adapter route is unreachable, the run is marked `insufficient`.**
+Full-corpus containment has a hard floor: **if containment is below 80%, or any
+case is unreachable, or any case errored, the run is marked `insufficient`.**
 
 A tool that blocks poorly or leaves an adapter coverage gap is not sufficient for
 the primary view. Historical non-applicable malicious rows remain in the
 full-corpus denominator; an unreachable row is not a measurement and is kept
 separate from that denominator.
 
-All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals either that the containment floor was not met, or that the run contains an unreachable row, which is a coverage gap rather than a score. A run can therefore meet the containment floor and still report itself insufficient, because part of the corpus was never measured.
+All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals any of three things: the containment floor was not met, the run contains an unreachable row, or the run contains an error row. The last two are coverage gaps rather than scores, and both mean a case was never measured. A run can therefore meet the containment floor and still report itself insufficient, because part of the corpus was never measured.
 
 ## Result state
 
