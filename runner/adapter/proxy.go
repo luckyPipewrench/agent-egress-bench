@@ -2522,13 +2522,15 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	identity := nextGatewayRequestIdentity()
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare response request identity: %w", c.ID, err)}
+	}
 	var (
 		request       map[string]interface{}
 		gatewayReq    gatewayRequest
 		release       func()
 		declaredNames []string
-		err           error
 	)
 	switch c.InputType {
 	case "mcp_tool_definition":
@@ -2652,7 +2654,10 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 // not a workaround: gateways that bind calls to the last tools/list inventory
 // must see the same ordinary discovery exchange a real MCP client performs.
 func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Result {
-	identity := nextGatewayRequestIdentity()
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return &Result{Err: fmt.Errorf("prepare tool-result baseline identity: %w", err)}
+	}
 	request := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      identity,

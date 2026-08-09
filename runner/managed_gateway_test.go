@@ -82,3 +82,41 @@ func TestStartManagedGatewayFailsWhenReadyAddrNeverListens(t *testing.T) {
 		t.Fatal("expected startManagedGateway to fail when ready addr never listens")
 	}
 }
+
+func TestStartManagedGatewayRollsBackPartialRegistrationFailure(t *testing.T) {
+	gatewayAddr, err := freeLoopbackAddr()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	registerMarker := filepath.Join(dir, "partial-registration")
+	deregisterMarker := filepath.Join(dir, "rolled-back")
+	env := []string{
+		"AEB_MANAGED_PROCESS_HELPER=listen-proxy",
+		"AEB_PROXY_ADDR=" + gatewayAddr,
+		"AEB_REGISTER_MARKER=" + registerMarker,
+		"AEB_DEREGISTER_MARKER=" + deregisterMarker,
+	}
+	gateway := adapter.GatewayRuntime{StartCommand: managedProcessHelperCommand(), ReadyAddr: gatewayAddr}
+	registration := adapter.FixtureRegistration{
+		RegisterCommand:   `touch "$AEB_REGISTER_MARKER"; exit 1`,
+		DeregisterCommand: `touch "$AEB_DEREGISTER_MARKER"`,
+	}
+
+	mg, err := startManagedGateway(gateway, registration, env, 3*time.Second)
+	if err == nil || mg != nil {
+		if mg != nil {
+			mg.Close()
+		}
+		t.Fatalf("startManagedGateway = (%v, %v), want registration failure", mg, err)
+	}
+	if _, statErr := os.Stat(registerMarker); statErr != nil {
+		t.Fatalf("partial registration did not occur: %v", statErr)
+	}
+	if _, statErr := os.Stat(deregisterMarker); statErr != nil {
+		t.Fatalf("partial registration was not rolled back: %v", statErr)
+	}
+	if err := probeTCP(gatewayAddr); err == nil {
+		t.Fatal("gateway remained listening after registration rollback")
+	}
+}

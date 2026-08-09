@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "service_health",
+        "description": "Returns service health for a region. Results include status and checked_at fields.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "region": {"type": "string"}
+          },
+          "required": ["region"]
+        }
+      }
+    ]
+  }
+}
