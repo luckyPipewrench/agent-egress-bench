@@ -77,6 +77,17 @@ cannot be quietly withdrawn later.
 The maintainer may respond in public with a factual correction. A correction is an argument, not a
 veto, and the original result stays published.
 
+## Configuration verification
+
+Before a run, a publisher may put the adapter, capability profile, pinned target version, target
+configuration, and exact command in public. The target and anyone else may point out a factual setup
+error in that same public record. Corrections stay visible and the publisher records the final setup
+used for the run.
+
+This review covers setup only. It does not include case outcomes, scores, or result artifacts. The
+target receives no private notice period, embargo, approval right, or prepublication result preview.
+It has no veto over execution or publication.
+
 ## Corrections and disputes
 
 Open a GitHub Discussion for a disputed case verdict, a scoring question, or a result that appears

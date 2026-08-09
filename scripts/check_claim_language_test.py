@@ -42,6 +42,22 @@ class BannedTermTest(unittest.TestCase):
         text = "The runner reports containment, detection, evidence, and false positives.\n"
         self.assertEqual(check.scan_text(Path("docs/x.md"), text), [])
 
+    def test_target_specific_notice_is_reported(self):
+        text = "Give the maintainer notice and a chance to correct the plugin.\n"
+        findings = check.scan_text(Path("docs/x.md"), text)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("target-specific notice", findings[0])
+
+    def test_private_result_preview_is_reported(self):
+        text = "The vendor is offered a private result preview before publication.\n"
+        findings = check.scan_text(Path("docs/x.md"), text)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("prepublication result review", findings[0])
+
+    def test_public_setup_review_without_private_preview_passes(self):
+        text = "Publish configuration in public. There is no private notice or result preview.\n"
+        self.assertEqual(check.scan_text(Path("docs/x.md"), text), [])
+
 
 class DefinitionsDocumentTest(unittest.TestCase):
     def setUp(self):
@@ -83,6 +99,21 @@ class DefinitionsDocumentTest(unittest.TestCase):
         damaged = self.text.replace("## Adverse results", "## Something else")
         findings = check.check_definitions(damaged)
         self.assertTrue(any("missing the 'Adverse results' section" in f for f in findings))
+
+    def test_deleting_configuration_verification_is_reported(self):
+        damaged = self.text.replace("## Configuration verification", "## Something else")
+        findings = check.check_definitions(damaged)
+        self.assertTrue(any("missing the 'Configuration verification' section" in f for f in findings))
+
+    def test_private_configuration_review_is_reported(self):
+        body = check.section_text(self.text, check.CONFIGURATION_SECTION)
+        self.assertIsNotNone(body)
+        damaged = self.text.replace(
+            body,
+            "\nThe target receives a private result preview and may veto publication.\n",
+        )
+        findings = check.check_definitions(damaged)
+        self.assertTrue(any("setup review public" in f for f in findings))
 
 
 class RepositoryTest(unittest.TestCase):
