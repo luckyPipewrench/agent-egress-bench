@@ -14,6 +14,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
+# Scoring versions belonging to retained, frozen published records. Those
+# summaries predate schema_version and keep their original byte shape, so they
+# are read by the frozen reader and never normalized. Everything else is active
+# output and must carry its schema marker. Add a version here only when a record
+# scored under it has actually been published and frozen.
+FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
+
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
     "results": "results.jsonl",
@@ -199,9 +206,14 @@ def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
     # Active v3 summaries always serialize the explicit unreachable counter.
     # The retained v2.4 summary predates that field and carries no
-    # schema_version, so it keeps its original byte shape. A v2.5 summary is
-    # E3-era output and cannot borrow that frozen representation by omitting
-    # its schema marker.
+    # schema_version, so it keeps its original byte shape. Any scoring version
+    # that is not a retained frozen one is active output and cannot borrow that
+    # frozen representation by omitting its schema marker.
+    #
+    # This is deliberately expressed as "not frozen" rather than as a list of
+    # active versions. Keying on a single active literal meant the next scoring
+    # bump silently reopened the hole it was written to close, because a summary
+    # carrying the new version matched neither branch.
     summary_schema_version = summary.get("schema_version")
     if summary_schema_version == 3:
         active_case_count = summary.get("case_count")
@@ -214,7 +226,7 @@ def measurements(repo_root, run_dir):
             or active_unreachable < 0
         ):
             raise ValueError("active runner summary case_count.unreachable must be a non-negative integer")
-    elif summary.get("scoring_version") == "2.5":
+    elif summary.get("scoring_version") not in FROZEN_SCORING_VERSIONS:
         raise ValueError("active runner summary missing schema_version")
     for key in (
         "gauntlet_version",

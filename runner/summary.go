@@ -14,10 +14,17 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	scoringVersion  = "2.5"
-	runnerVersion   = "0.4.2"
-	corpusVersion   = "v2.4.0"
-	summaryDateEnv  = "AEB_GAUNTLET_SUMMARY_DATE"
+	// 2.6 is the result-state boundary. Applicability moved from profile
+	// declarations to adapter-proven delivery and verdict observation, an
+	// unreachable state was added outside every score denominator, and a run
+	// with any unreachable row reports itself insufficient. Results scored
+	// under 2.5 and earlier are therefore not comparable to these, and the
+	// repository's own staleness rule requires the bump rather than allowing
+	// two different rule sets to publish under one label.
+	scoringVersion = "2.6"
+	runnerVersion  = "0.4.2"
+	corpusVersion  = "v2.4.0"
+	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 )
 
 // DualScores holds both full-corpus and applicable-only score views.

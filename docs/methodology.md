@@ -152,9 +152,13 @@ Five provenance fields identify a Gauntlet run:
 
 **Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other three fields are informational: they support reproducibility and audit trails but do not trigger staleness.
 
-Scoring version 2.5 treats `requires` as delivery and observation constraints,
-not difficulty claims. The result state machine now makes that concrete: a case
-is scoreable only after adapter-proven exact delivery and verdict observation.
+Scoring version 2.6 is a deliberate boundary. It treats `requires` as delivery
+and observation constraints rather than difficulty claims, and the result state
+machine makes that concrete: a case is scoreable only after adapter-proven exact
+delivery and verdict observation. Because applicability, the full-corpus
+denominator, and sufficiency all changed, results scored under 2.5 and earlier
+are stale by the rule stated above and are not comparable to 2.6 results. They
+remain valid records of what was measured under their own rules.
 Attack-difficulty and evasion-resistance flags (`encoding_evasion_scanning`,
 `ssrf_bypass_scanning`) cannot select out a hard variant, and enforcement claims
 such as `budget_enforcement` cannot remove the case that tests them.
