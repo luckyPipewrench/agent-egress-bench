@@ -302,8 +302,9 @@ func webSocketResultWithProof(result Result) Result {
 		return result
 	}
 	if result.Verdict == "block" {
-		// A close frame, rejected upgrade, or structured proxy block is direct
-		// WebSocket protocol evidence. Bare local success is not.
+		// A policy close that passed the upstream-delivery check, a rejected
+		// upgrade, or a structured proxy block is WebSocket protocol evidence.
+		// Bare local success is not.
 		// A socket error is neither a WebSocket close frame nor a decision from
 		// the proxy. Keep these result reasons unproven even if a future caller
 		// mistakenly labels them as blocks.
@@ -455,8 +456,9 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		}
 	}
 
-	// Drain frames until we either observe a policy close (definitive block signal)
-	// or the wire goes idle (allow). A single-read classifier races the
+	// Drain frames until we either observe a policy close that did not allow the
+	// complete corpus payload upstream, or the wire goes idle (allow). A
+	// single-read classifier races the
 	// upstream echo against the proxy's close frame: if the proxy blocks on
 	// a later client frame (e.g. cross-message DLP firing on frame N), the
 	// echo of an earlier forwarded frame can arrive before the close,
@@ -527,6 +529,29 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 						"reason":     "ws_close_not_policy_violation",
 						"close_code": closeCode,
 						"detail":     truncate(webSocketCloseReason(payload), 160),
+					},
+				}
+			}
+			upstreamAfter, upstreamProofAvailable := p.webSocketUpstreamMessageCount()
+			if !upstreamProofAvailable {
+				return Result{
+					Verdict: "skip",
+					Evidence: map[string]interface{}{
+						"reason":     "ws_policy_close_upstream_proof_unavailable",
+						"close_code": closeCode,
+						"detail":     truncate(webSocketCloseReason(payload), 160),
+					},
+				}
+			}
+			if upstreamAfter-upstreamBefore >= int64(expectedUpstreamMessages) {
+				return Result{
+					Verdict: "skip",
+					Evidence: map[string]interface{}{
+						"reason":                   "ws_policy_close_after_upstream_delivery",
+						"close_code":               closeCode,
+						"upstream_messages_before": upstreamBefore,
+						"upstream_messages_after":  upstreamAfter,
+						"detail":                   truncate(webSocketCloseReason(payload), 160),
 					},
 				}
 			}

@@ -1896,6 +1896,7 @@ func readClientWebSocketFrame(r *bufio.Reader) (clientWSFrame, error) {
 }
 
 func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
+	var upstreamMessages atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
@@ -1916,6 +1917,7 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 	defer srv.Close()
 
 	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
 	result := a.Run(Case{
 		ID:        "ws-close",
 		Transport: "websocket",
@@ -1974,12 +1976,99 @@ func TestProxyAdapterRunWebSocketNormalCloseIsUnproven(t *testing.T) {
 	}
 }
 
+func TestProxyAdapterRunWebSocketPolicyCloseAfterUpstreamDeliverySkips(t *testing.T) {
+	// An upstream can emit code 1008 after it has received the corpus frame.
+	// The code alone does not identify the proxy as the decision-maker, and the
+	// successful upstream delivery means the protected action already escaped.
+	var upstreamMessages atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		upstreamMessages.Add(1)
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("origin policy")...)); err != nil {
+			t.Fatalf("write policy close: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
+	result := a.Run(Case{
+		ID: "ws-upstream-policy-close", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+		},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("upstream policy close became observed proxy proof: %+v", result)
+	}
+}
+
+func TestProxyAdapterRunWebSocketPolicyCloseWithoutUpstreamProofSkips(t *testing.T) {
+	// A raw 1008 close does not establish a proxy block when the runner cannot
+	// tell whether the complete corpus payload reached its controlled upstream.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj := w.(http.Hijacker)
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			t.Fatalf("write upgrade response: %v", err)
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			t.Fatalf("read websocket frame: %v", err)
+		}
+		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("policy")...)); err != nil {
+			t.Fatalf("write policy close: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(Case{
+		ID: "ws-policy-close-no-proof", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url":    "wss://example.com/ws",
+			"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+		},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want unproven skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("policy close without upstream proof became observed proof: %+v", result)
+	}
+}
+
 // TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock covers the cross-message
 // scenario where the proxy forwards an upstream echo before deciding to close
 // the connection on a later client frame. The single-frame classifier this
 // test guards against would read the echo first and return allow even though
 // the proxy actually wrote a close frame after the echo.
 func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
+	var upstreamMessages atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
@@ -1994,6 +2083,7 @@ func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
 			t.Fatalf("read msg1: %v", err)
 		}
+		upstreamMessages.Add(1)
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
 			t.Fatalf("read msg2: %v", err)
 		}
@@ -2010,6 +2100,7 @@ func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
 	defer srv.Close()
 
 	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+	a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
 	result := a.runWebSocketFrameViaProxy(Case{
 		ID:        "ws-block-after-echo",
 		Transport: "websocket",
