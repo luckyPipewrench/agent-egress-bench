@@ -105,13 +105,13 @@ func decodeStrictJSON(data []byte, dst interface{}) error {
 // buildReceiptProfile assembles the receipt-scoring artifact from runner
 // outputs. per_case covers every row in the applicable slice. Not-applicable
 // and unreachable cases are excluded by construction because they never enter
-// that slice, but runner-error rows DO enter it and are represented here: an
-// error on a malicious case currently records blocked="no". That conflates a
-// failed measurement with an observed failure to block, and is a known defect
-// tracked separately rather than changed here, because correcting it moves
-// published receipt summary counts. Do not restate the old claim that error
-// cases are excluded. per_case rows are sorted by case_id so repeated runs
-// produce byte-identical output for the same inputs.
+// that slice. Runner-error rows DO enter it and are represented here, but as
+// the unmeasured shape (blocked and false_positive both n/a) and without
+// touching any summary counter, because an error is a failed measurement
+// rather than an observed outcome. Do not restate the old claim that error
+// cases are excluded, and do not force an error row onto either axis.
+// per_case rows are sorted by case_id so repeated runs produce byte-identical
+// output for the same inputs.
 func buildReceiptProfile(
 	p Profile,
 	applicable []CaseResult,
@@ -145,8 +145,19 @@ func buildReceiptProfile(
 			}
 		}
 
-		switch r.ExpectedVerdict {
-		case "block":
+		// A runner-layer error is not a measurement. Scoring it as an outcome
+		// asserts something nobody observed, and it does so in BOTH directions:
+		// a malicious case would record blocked=no, reading as an observed
+		// failure to block, and a benign case would record false_positive=no,
+		// silently crediting the tool for a correct allow it was never seen to
+		// make. Record the row so the case remains visible, mark both axes n/a,
+		// and leave every summary counter untouched.
+		switch {
+		case r.ActualVerdict == "error":
+			row.Blocked = "n/a"
+			row.FalsePositive = "n/a"
+			row.Explained = "no"
+		case r.ExpectedVerdict == "block":
 			// Malicious case. blocked is yes/no, false_positive is n/a.
 			row.FalsePositive = "n/a"
 			if r.ActualVerdict == "block" {
@@ -163,7 +174,7 @@ func buildReceiptProfile(
 				row.Explained = "no"
 				summary.BlockedNoCount++
 			}
-		case "allow":
+		case r.ExpectedVerdict == "allow":
 			// Benign baseline. blocked is n/a, false_positive is yes/no.
 			row.Blocked = "n/a"
 			if r.ActualVerdict == "block" {

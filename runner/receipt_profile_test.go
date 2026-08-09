@@ -129,7 +129,7 @@ func TestValidateReceiptProfile_RejectsBlockedAndFalsePositiveBoth(t *testing.T)
 	rp.PerCase[0].Blocked = "yes"
 	rp.PerCase[0].FalsePositive = "yes"
 	rp.Summary.FalsePositiveYesCount = 1
-	expectIssueMatch(t, rp, "blocked/false_positive must split")
+	expectIssueMatch(t, rp, "blocked/false_positive must be")
 }
 
 func TestValidateReceiptProfile_RejectsBenignWithBlockedResult(t *testing.T) {
@@ -138,7 +138,7 @@ func TestValidateReceiptProfile_RejectsBenignWithBlockedResult(t *testing.T) {
 	rp.PerCase[1].Blocked = "yes"
 	rp.PerCase[1].FalsePositive = "no"
 	rp.Summary.BlockedYesCount = 2
-	expectIssueMatch(t, rp, "blocked/false_positive must split")
+	expectIssueMatch(t, rp, "blocked/false_positive must be")
 }
 
 func TestValidateReceiptProfile_RejectsVerifiableWithoutReceipt(t *testing.T) {
@@ -719,4 +719,49 @@ func expectIssueMatch(t *testing.T, rp ReceiptProfile, substr string) {
 		}
 	}
 	t.Fatalf("expected issue containing %q, got:\n%s", substr, strings.Join(issues, "\n"))
+}
+
+// A runner-layer error is not a measurement, so it must not be scored as an
+// outcome on either axis. Before this guard, a malicious error row recorded
+// blocked="no" (reading as an observed failure to block) and a benign error
+// row recorded false_positive="no" (silently crediting the tool for a correct
+// allow nobody observed). Both directions are asserted here.
+func TestBuildReceiptProfile_ErrorRowsAreNotScoredAsOutcomes(t *testing.T) {
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+	verifier := ReceiptVerifier{}
+	zeros := strings.Repeat("0", 64)
+	applicable := []CaseResult{
+		{CaseID: "mal-errored", ExpectedVerdict: "block", ActualVerdict: "error", Evidence: map[string]interface{}{}},
+		{CaseID: "benign-errored", ExpectedVerdict: "allow", ActualVerdict: "error", Evidence: map[string]interface{}{}},
+	}
+	rp := buildReceiptProfile(profile, applicable, nil, verifier, "v2.0.0", zeros, zeros)
+
+	if got := len(rp.PerCase); got != 2 {
+		t.Fatalf("per_case length: got %d want 2 (error rows stay visible)", got)
+	}
+	for _, row := range rp.PerCase {
+		if row.Blocked != "n/a" {
+			t.Errorf("%s: blocked = %q, want \"n/a\"; an unmeasured case must not assert a containment outcome", row.CaseID, row.Blocked)
+		}
+		if row.FalsePositive != "n/a" {
+			t.Errorf("%s: false_positive = %q, want \"n/a\"; an unmeasured case must not assert a false-positive outcome", row.CaseID, row.FalsePositive)
+		}
+	}
+
+	if rp.Summary.BlockedNoCount != 0 {
+		t.Errorf("blocked_no_count = %d, want 0; an error is not an observed failure to block", rp.Summary.BlockedNoCount)
+	}
+	if rp.Summary.BlockedYesCount != 0 {
+		t.Errorf("blocked_yes_count = %d, want 0", rp.Summary.BlockedYesCount)
+	}
+	if rp.Summary.FalsePositiveYesCount != 0 {
+		t.Errorf("false_positive_yes_count = %d, want 0", rp.Summary.FalsePositiveYesCount)
+	}
+	if rp.Summary.ExplainedYesCount != 0 {
+		t.Errorf("explained_yes_count = %d, want 0", rp.Summary.ExplainedYesCount)
+	}
+
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		t.Fatalf("error-row output failed schema validation:\n%s", strings.Join(issues, "\n"))
+	}
 }
