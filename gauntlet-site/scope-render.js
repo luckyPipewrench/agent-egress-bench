@@ -107,6 +107,10 @@
     if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
       throw new Error('artifact must be an object');
     }
+    if (artifact.schema_version === 4 && (!artifact._capabilityRegistry ||
+        artifact._capabilityRegistry.id !== scopeValue(artifact, ['capability_registry', 'id']))) {
+      throw new Error('v4 artifact is uninterpretable without its verified capability registry snapshot');
+    }
 
     nonEmptyString(scopeValue(artifact, ['artifact_id']), 'artifact_id');
     validateManifestDigest(scopeValue(artifact, ['corpus_manifest_sha256']));
