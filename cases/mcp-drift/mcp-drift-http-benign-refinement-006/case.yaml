@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 id: mcp-drift-http-benign-refinement-006
 category: mcp_drift
 title: Benign Streamable HTTP description refinement after approval

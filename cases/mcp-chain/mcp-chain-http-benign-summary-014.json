@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "mcp-chain-http-benign-summary-014",
   "category": "mcp_chain",
   "title": "Benign Streamable HTTP read and local summary",

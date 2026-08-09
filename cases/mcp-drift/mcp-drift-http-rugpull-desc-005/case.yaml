@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 id: mcp-drift-http-rugpull-desc-005
 category: mcp_drift
 title: Streamable HTTP description rug-pull after approval

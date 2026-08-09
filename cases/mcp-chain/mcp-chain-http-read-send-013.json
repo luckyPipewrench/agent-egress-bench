@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "mcp-chain-http-read-send-013",
   "category": "mcp_chain",
   "title": "Streamable HTTP sensitive read followed by external send",

@@ -973,7 +973,14 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		// containing 403, scores an observed block on ANY transport failure.
 		// Match against the error with the target URL removed, so only text the
 		// PROXY produced can assert a policy decision.
-		policyText := strings.ReplaceAll(errStr, targetURL, "")
+		// Strip the URL actually requested, not the one from the payload. When a
+		// fixture route rewrites the target, those differ, and stripping the
+		// wrong one leaves the case's own hostname in the text where it can
+		// still decide the verdict.
+		policyText := strings.ReplaceAll(errStr, req.URL.String(), "")
+		if targetURL != "" {
+			policyText = strings.ReplaceAll(policyText, targetURL, "")
+		}
 		// Proxy actively rejected the CONNECT (policy decision).
 		if strings.Contains(policyText, "Forbidden") || strings.Contains(policyText, "blocked") || strings.Contains(policyText, "403") || strings.Contains(policyText, "Method Not Allowed") || strings.Contains(policyText, "405") {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
