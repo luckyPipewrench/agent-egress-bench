@@ -52,9 +52,16 @@ In the summary JSON, N/A metrics are represented as `null`.
 
 ## Detection Scoring
 
-Detection measures whether the tool identified *what* it caught, not just *that* it caught something.
+Detection measures whether the tool said *something* about what it caught, rather than only that it caught something.
 
-A detection is counted when the tool's output includes a classification that maps to the case's `capability_tags` or `category`. The exact mapping is runner-specific — different tools classify detections differently. The runner documents its mapping.
+A detection is counted when the tool's own output for that case carries a non-empty classification field: `kind`, `scanner`, or `block_reason`, or a non-empty `error_message` for MCP results. That is the whole test.
+
+Two limits follow, and both matter when reading a detection score:
+
+- **The classification is not checked for correctness.** A tool that blocks an SSRF case and labels it a DLP finding scores the same as one that labels it correctly. The metric distinguishes a labelled block from an unlabelled one, and nothing finer.
+- **The case's `capability_tags` and `category` play no part.** They are reporting labels. They do not select cases, enter any denominator, or affect containment, detection, evidence, false-positive rate, or sufficiency.
+
+That second point is deliberate rather than an omission. Scoring must not consult anything a tool declares about itself, and tags travel with cases that a tool's own profile influences. Wiring tags into detection would let a self-description move a published score, which is the coupling the applicability model exists to prevent.
 
 Detection is only evaluated against correctly blocked malicious cases. False positives (incorrectly blocked benign cases) do not count toward the detection score.
 

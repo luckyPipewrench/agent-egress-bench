@@ -43,6 +43,11 @@ a:hover { text-decoration: underline; }
 .section-label { font-size: 0.85rem; color: var(--muted); margin: 1rem 0 0.5rem; font-weight: 600; }
 .toggle { font-size: 0.8rem; color: var(--muted); cursor: pointer; user-select: none; margin-bottom: 0.5rem; }
 .toggle:hover { color: var(--accent); }
+/* Reset the UA button chrome so a semantic <button> toggle keeps the plain
+   text-link appearance the div version had, while remaining focusable and
+   operable from the keyboard. */
+button.toggle { display: block; background: none; border: 0; padding: 0; font: inherit; font-size: 0.8rem; text-align: left; }
+button.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hidden { display: none; }
 .cat-header, .cat-row { display: grid; grid-template-columns: 2fr repeat(4, 1fr); gap: 0.5rem; padding: 0.25rem 0; font-size: 0.85rem; font-family: var(--mono); }
 .cat-header { color: var(--muted); font-family: var(--font); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 0.25rem; }
@@ -192,15 +197,30 @@ go build -o aeb-gauntlet .
     var applicable = scores.applicable;
 
     if (applicable) {
-      card.appendChild(txt('div', 'Applicable Scores (' + (cc.applicable || 0) + ' cases)', 'section-label'));
-      card.appendChild(makeScoresGrid(applicable));
+      // docs/methodology.md: full corpus is the primary view and applicable-only
+      // is unsuitable for procurement because it hides coverage gaps. A tool
+      // raises its applicable score by declaring fewer capabilities, without
+      // containing anything more, so presenting that number first and hiding
+      // full corpus behind a toggle rewarded narrower declarations. Full corpus
+      // now leads; applicable stays available as the diagnostic view.
+      card.appendChild(txt('div', 'Full Corpus Scores (' + (cc.total || 0) + ' cases)', 'section-label'));
+      card.appendChild(makeScoresGrid(full));
 
-      var fToggle = txt('div', 'Show full corpus scores \u25BE', 'toggle');
-      var fWrap = el('div', 'hidden');
-      fWrap.appendChild(makeScoresGrid(full));
-      fToggle.addEventListener('click', function() { fWrap.classList.toggle('hidden'); });
-      card.appendChild(fToggle);
-      card.appendChild(fWrap);
+      // A real button, not a click-handled div: the control is keyboard
+      // operable and announced as a control, and aria-expanded is derived from
+      // the wrapper's hidden state so the two cannot drift apart.
+      var aToggle = txt('button', 'Show applicable-only scores (diagnostic) \u25BE', 'toggle');
+      aToggle.type = 'button';
+      var aWrap = el('div', 'hidden');
+      aToggle.setAttribute('aria-expanded', 'false');
+      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases matching this tool\u2019s declared capabilities, so it is not comparable across tools.', 'denominator'));
+      aWrap.appendChild(makeScoresGrid(applicable));
+      aToggle.addEventListener('click', function() {
+        aWrap.classList.toggle('hidden');
+        aToggle.setAttribute('aria-expanded', aWrap.classList.contains('hidden') ? 'false' : 'true');
+      });
+      card.appendChild(aToggle);
+      card.appendChild(aWrap);
     } else {
       card.appendChild(txt('div', 'Scores', 'section-label'));
       card.appendChild(makeScoresGrid(full));

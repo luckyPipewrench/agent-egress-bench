@@ -38,10 +38,21 @@ function completeArtifact() {
     },
     scores: {
       applicable: { containment: 1, false_positive_rate: 0 },
+      // The card leads with full-corpus containment, so the artifact must carry
+      // it. Containment is scored over MALICIOUS cases only, so its denominator
+      // is 158 rather than the 213 total: the benign controls are counted by the
+      // false-positive rate instead. 157 of 158 contained, the miss being the
+      // case this tool did not declare, which is why the full and applicable
+      // figures differ.
+      full: { containment: 157 / 158, false_positive_rate: 0 },
     },
     metric_counts: {
       applicable: {
         containment: { numerator: 1, denominator: 1 },
+        false_positive_rate: { numerator: 0, denominator: 1 },
+      },
+      full: {
+        containment: { numerator: 157, denominator: 158 },
         false_positive_rate: { numerator: 0, denominator: 1 },
       },
     },
@@ -56,7 +67,15 @@ function expectReject(mutator, message) {
 
 const rendered = window.renderGauntletScope(completeArtifact());
 assert.equal(rendered.className, 'denominator');
-assert.match(rendered.children[0].textContent, /Containment 100\.0% on 212 applicable of 213 total cases/);
+// Full corpus leads; the applicable figure follows, named as diagnostic. The
+// two numbers differ here precisely because a non-applicable case still counts
+// against the full corpus, which is the property that makes it non-gameable.
+// Every denominator is stated. The headline covers 158 malicious cases, not all
+// 213: saying "on all 213 cases" beside a score computed over the malicious
+// subset would be false, which is the same class of error as leading with the
+// applicable score in the first place.
+assert.match(rendered.children[0].textContent,
+  /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic/);
 assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
 
 expectReject((artifact) => { artifact.scores.applicable.containment = '100%'; }, 'non-numeric containment');
@@ -67,6 +86,22 @@ expectReject((artifact) => { artifact.case_count.applicable = 198; }, 'applicabl
 expectReject((artifact) => { artifact.case_count.not_applicable = 0; }, 'counts do not sum to total');
 expectReject((artifact) => { artifact.case_count.not_applicable_reasons = { missing_requires: 0 }; }, 'N/A reasons do not sum');
 expectReject((artifact) => { artifact.canonical_url = 'javascript:alert(1)'; }, 'unsafe canonical URL');
+// The full-corpus denominator is bounded by the corpus, and cannot be narrower
+// than the applicable view it is meant to contain. It is NOT required to equal
+// case_count.total: containment is scored over malicious cases, so a real
+// artifact carries 158 of 213 here and a total-equality rule would reject every
+// genuine record.
+expectReject((artifact) => {
+  artifact.metric_counts.full.containment = { numerator: 214, denominator: 214 };
+  artifact.scores.full.containment = 1;
+}, 'full containment denominator exceeds total');
+expectReject((artifact) => {
+  artifact.metric_counts.applicable.containment = { numerator: 200, denominator: 200 };
+  artifact.metric_counts.full.containment = { numerator: 150, denominator: 150 };
+  artifact.scores.full.containment = 1;
+}, 'full containment denominator narrower than applicable');
+expectReject((artifact) => { delete artifact.metric_counts.full; }, 'missing full-corpus metric counts');
+expectReject((artifact) => { delete artifact.scores.full; }, 'missing full-corpus scores');
 expectReject((artifact) => { delete artifact.corpus_manifest_sha256; }, 'missing corpus digest');
 expectReject((artifact) => { artifact.scores.applicable.containment = 0.5; }, 'score must equal numerator/denominator');
 expectReject((artifact) => { artifact.scores.applicable.false_positive_rate = 0.5; }, 'FP score must equal numerator/denominator');
@@ -84,6 +119,17 @@ allNA.scores.applicable.containment = null;
 allNA.scores.applicable.false_positive_rate = null;
 allNA.metric_counts.applicable.containment = { numerator: 0, denominator: 0 };
 allNA.metric_counts.applicable.false_positive_rate = { numerator: 0, denominator: 0 };
-assert.match(window.renderGauntletScope(allNA).children[0].textContent, /Containment N\/A on 0 applicable/);
+// A tool declaring no capabilities contains nothing, so full-corpus containment
+// is 0 of the 158 malicious cases rather than the 157/158 the base fixture
+// carries. The denominator stays 158 because it counts attacks present in the
+// corpus, which does not change with what a tool declares.
+allNA.scores.full.containment = 0;
+allNA.metric_counts.full.containment = { numerator: 0, denominator: 158 };
+// This is the whole point of leading with full corpus. Declaring nothing makes
+// the applicable score vanish into N/A, which under the old presentation left
+// no headline number at all. Full corpus reports it as 0.0%: the cases were
+// still attacks, and none of them were contained.
+assert.match(window.renderGauntletScope(allNA).children[0].textContent,
+  /Containment 0\.0% of 158 malicious cases in the full 213-case corpus; N\/A of 0 applicable malicious \(diagnostic/);
 
 console.log('scope renderer tests: OK');
