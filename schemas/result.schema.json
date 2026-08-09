@@ -9,6 +9,7 @@
     "case_id",
     "tool",
     "tool_version",
+    "capability_registry",
     "expected_verdict",
     "actual_verdict",
     "score",
@@ -19,8 +20,8 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 3,
-      "description": "Schema version. Must be 3 for active scoring; v2 is frozen for historical reproduction only."
+      "const": 4,
+      "description": "Schema version. Must be 4 for active scoring; prior schemas are frozen historical formats."
     },
     "case_id": {
       "type": "string",
@@ -33,6 +34,17 @@
     "tool_version": {
       "type": "string",
       "description": "Tool version from the tool profile."
+    },
+    "capability_registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "format", "revision", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "format": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
     },
     "expected_verdict": {
       "type": "string",
