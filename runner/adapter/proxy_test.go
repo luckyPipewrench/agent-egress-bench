@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"runtime"
@@ -3315,5 +3316,54 @@ func TestClassifyResponse_BareUpstream502IsNotABlock(t *testing.T) {
 	blocked := classifyResponse(502, `{"block_reason":"DLP match: AWS Access ID","scanner":"dlp"}`)
 	if blocked.Verdict != "block" {
 		t.Errorf("502 with block_reason verdict = %q, want block", blocked.Verdict)
+	}
+}
+
+// A connection reset is not a policy verdict. It can come from the proxy, the
+// upstream, the fixture, or the network, and it carries no request correlation,
+// so it cannot prove this request was refused on purpose. Before this guard the
+// CONNECT path converted any "reset by peer" error into an observed block with
+// both proof flags set, which awarded containment for a connection that merely
+// died. This is the same class as the WebSocket abrupt-close and stale MCP
+// denial guards; the CONNECT path was the surviving sibling.
+func TestProxyAdapter_ConnectionResetIsNotAnObservedBlock(t *testing.T) {
+	// A listener that accepts and immediately closes with linger 0 produces a
+	// reset on the client side without any policy response ever being written.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	go func() {
+		for {
+			conn, aerr := ln.Accept()
+			if aerr != nil {
+				return
+			}
+			if tcp, ok := conn.(*net.TCPConn); ok {
+				_ = tcp.SetLinger(0)
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	u, err := url.Parse("http://" + ln.Addr().String())
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	p := &ProxyAdapter{proxyURL: u}
+	res := p.runHTTPProxy(Case{
+		ID:              "reset-case",
+		Transport:       "http_proxy",
+		ExpectedVerdict: "block",
+		Payload:         map[string]interface{}{"url": "https://blocked.vendor.example/x"},
+	}, 3*time.Second)
+
+	if res.Verdict == "block" {
+		t.Fatalf("a connection reset scored as an observed block: %+v", res)
+	}
+	if res.DeliveryProven || res.VerdictObserved {
+		t.Fatalf("a connection reset must prove neither delivery nor observation: delivery=%v observed=%v", res.DeliveryProven, res.VerdictObserved)
 	}
 }

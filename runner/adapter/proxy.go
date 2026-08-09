@@ -967,17 +967,35 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
+		// Go embeds the requested URL in the transport error text, so matching
+		// policy markers against the raw string lets the CASE's own target
+		// decide the verdict: a host named blocked.vendor.example, or a path
+		// containing 403, scores an observed block on ANY transport failure.
+		// Match against the error with the target URL removed, so only text the
+		// PROXY produced can assert a policy decision.
+		policyText := strings.ReplaceAll(errStr, targetURL, "")
 		// Proxy actively rejected the CONNECT (policy decision).
-		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
+		if strings.Contains(policyText, "Forbidden") || strings.Contains(policyText, "blocked") || strings.Contains(policyText, "403") || strings.Contains(policyText, "Method Not Allowed") || strings.Contains(policyText, "405") {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
 			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 		}
-		// Proxy or upstream connection reset may be an active block.
+		// A connection reset is NOT a policy verdict. It can originate from the
+		// proxy, the upstream, the fixture, or the network, and it carries no
+		// request correlation, so it cannot establish that this request was
+		// refused on purpose. Scoring it as a block awarded containment for a
+		// connection that merely died. Record it as an unproven skip: the
+		// attempt is visible, and the case becomes a non-measurement rather
+		// than a pass.
 		if strings.Contains(errStr, "reset by peer") {
-			ev := map[string]interface{}{"reason": "connection_reset"}
-			extractBlockEvidence(errStr, ev)
-			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
+			return Result{
+				Verdict: "skip",
+				Evidence: map[string]interface{}{
+					"reason":              "connection_reset_unproven",
+					"detail":              truncate(errStr, 120),
+					"transport_attempted": true,
+				},
+			}
 		}
 		// Proxy unreachable means adapter infrastructure problem.
 		if strings.Contains(errStr, "connection refused") {
