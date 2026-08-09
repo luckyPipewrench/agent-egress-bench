@@ -3335,12 +3335,18 @@ func TestProxyAdapter_ConnectionResetIsNotAnObservedBlock(t *testing.T) {
 	}
 	defer func() { _ = ln.Close() }()
 
+	// Count accepted connections. Without this the test passes whenever
+	// runHTTPProxy returns any non-block for any reason, including never
+	// reaching the listener at all, which would make it prove nothing about
+	// the reset path it exists to cover.
+	var accepted atomic.Int64
 	go func() {
 		for {
 			conn, aerr := ln.Accept()
 			if aerr != nil {
 				return
 			}
+			accepted.Add(1)
 			if tcp, ok := conn.(*net.TCPConn); ok {
 				_ = tcp.SetLinger(0)
 			}
@@ -3365,5 +3371,8 @@ func TestProxyAdapter_ConnectionResetIsNotAnObservedBlock(t *testing.T) {
 	}
 	if res.DeliveryProven || res.VerdictObserved {
 		t.Fatalf("a connection reset must prove neither delivery nor observation: delivery=%v observed=%v", res.DeliveryProven, res.VerdictObserved)
+	}
+	if got := accepted.Load(); got == 0 {
+		t.Fatalf("the reset fixture was never contacted, so this test proved nothing about the reset path")
 	}
 }
