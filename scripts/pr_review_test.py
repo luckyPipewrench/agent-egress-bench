@@ -25,6 +25,9 @@ class FakeResponse:
     def json(self) -> dict:
         return self._data
 
+    def raise_for_status(self) -> None:
+        return None
+
 
 class InvalidJSONResponse(FakeResponse):
     def json(self) -> dict:
@@ -181,6 +184,53 @@ class ResponseParsingTest(unittest.TestCase):
         ), mock.patch.object(pr_review.requests, "post", return_value=response):
             with self.assertRaisesRegex(pr_review.LLMReviewError, "invalid JSON"):
                 pr_review.call_llm("diff", "default")
+
+
+class LargeDiffFallbackTest(unittest.TestCase):
+    """A 406 on the diff media type must not lose the review.
+
+    GitHub refuses that media type once a pull request is large enough, which is
+    when a review matters most. PR #147 hit exactly this: 340 files, three
+    consecutive AI Review Error comments, and no review of a schema contract
+    rewrite. The fallback reassembles the same diff from the per-file endpoint.
+    """
+
+    def test_406_falls_back_to_per_file_endpoint(self):
+        calls = []
+
+        def fake_get(url, headers=None, params=None, timeout=None):
+            calls.append(url)
+            if url.endswith("/pulls/147"):
+                return FakeResponse({}, status_code=406)
+            page = (params or {}).get("page", 1)
+            if page == 1:
+                return FakeResponse([
+                    {"filename": "runner/score.go", "patch": "@@ -1 +1 @@\n-a\n+b"},
+                    {"filename": "assets/logo.png", "status": "modified"},
+                ])
+            return FakeResponse([])
+
+        with mock.patch.object(pr_review.requests, "get", side_effect=fake_get):
+            diff = pr_review.get_pr_diff("owner/repo", "147", "token")
+
+        self.assertIn("diff --git a/runner/score.go b/runner/score.go", diff)
+        self.assertIn("+b", diff)
+        # A file GitHub gives no patch for is recorded, never silently dropped:
+        # a reviewer must be able to tell "unchanged" from "not shown".
+        self.assertIn("assets/logo.png", diff)
+        self.assertIn("patch not provided by GitHub", diff)
+        self.assertTrue(any(u.endswith("/files") for u in calls), calls)
+
+    def test_non_406_errors_still_raise(self):
+        class Raiser(FakeResponse):
+            def raise_for_status(self):
+                raise RuntimeError("500 server error")
+
+        with mock.patch.object(
+            pr_review.requests, "get", return_value=Raiser({}, status_code=500)
+        ):
+            with self.assertRaises(RuntimeError):
+                pr_review.get_pr_diff("owner/repo", "147", "token")
 
 
 if __name__ == "__main__":

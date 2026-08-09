@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "a2a-msg-opaque-entropy-013",
   "category": "a2a_message",
   "title": "Opaque high-entropy A2A data part",

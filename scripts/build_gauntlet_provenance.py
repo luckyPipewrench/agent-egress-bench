@@ -35,7 +35,24 @@ RAW_EVIDENCE = {
     "pipelock_version_output": "pipelock-version.txt",
     "corpus_manifest": "corpus-manifest.txt",
 }
+V4_RAW_EVIDENCE = {
+    "tool_profile": "tool-profile.json",
+    "capability_registry": "capability-registry.json",
+    "receipt_profile": "receipt-profile.json",
+}
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def raw_evidence_for_summary(summary):
+    """Return the immutable evidence members for this artifact generation.
+
+    V2 evidence is frozen and did not retain registry bytes. Active v4 is a
+    different contract: its raw profile, snapshot, and receipt profile are
+    first-class evidence rather than a reconstructed view of current files.
+    """
+    if summary.get("schema_version") == 4:
+        return {**RAW_EVIDENCE, **V4_RAW_EVIDENCE}
+    return RAW_EVIDENCE
 
 
 def atomic_json_write(path, value):
@@ -72,9 +89,9 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def evidence_hashes(run_dir, require_all):
+def evidence_hashes(run_dir, require_all, evidence_spec=RAW_EVIDENCE):
     hashes = {}
-    for label, relative_path in RAW_EVIDENCE.items():
+    for label, relative_path in evidence_spec.items():
         path = run_dir / relative_path
         if not path.is_file():
             if require_all:
@@ -83,6 +100,63 @@ def evidence_hashes(run_dir, require_all):
             continue
         hashes[label] = file_sha256(path)
     return hashes
+
+
+def registry_reference(value, label):
+    if not isinstance(value, dict) or set(value) != {"id", "format", "revision", "sha256"}:
+        raise ValueError(f"{label} must be an exact capability registry reference")
+    identifier = value.get("id")
+    if not isinstance(identifier, str) or not identifier or "/" in identifier or ".." in identifier:
+        raise ValueError(f"{label}.id is invalid")
+    for key in ("format", "revision"):
+        if isinstance(value.get(key), bool) or not isinstance(value.get(key), int) or value[key] < 1:
+            raise ValueError(f"{label}.{key} must be a positive integer")
+    if not isinstance(value.get("sha256"), str) or not SHA256_HEX.fullmatch(value["sha256"]):
+        raise ValueError(f"{label}.sha256 must be 64 lower-case hex characters")
+    return value
+
+
+def validate_v4_registry_binding(run_dir, summary, results):
+    """Bind active publication data to one exact raw snapshot, never today's registry."""
+    profile_bytes = (run_dir / V4_RAW_EVIDENCE["tool_profile"]).read_bytes()
+    snapshot_bytes = (run_dir / V4_RAW_EVIDENCE["capability_registry"]).read_bytes()
+    receipt = load_object(run_dir / V4_RAW_EVIDENCE["receipt_profile"])
+    try:
+        profile = json.loads(profile_bytes)
+        snapshot = json.loads(snapshot_bytes)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"v4 registry evidence is not valid JSON: {exc}") from exc
+    if not isinstance(profile, dict) or not isinstance(snapshot, dict):
+        raise ValueError("v4 registry evidence must be JSON objects")
+    reference = registry_reference(summary.get("capability_registry"), "summary capability_registry")
+    if hashlib.sha256(snapshot_bytes).hexdigest() != reference["sha256"]:
+        raise ValueError("capability registry raw snapshot digest does not match summary")
+    for label, value in (("profile", profile), ("receipt profile", receipt)):
+        if registry_reference(value.get("capability_registry"), f"{label} capability_registry") != reference:
+            raise ValueError(f"{label} capability registry does not match summary")
+    if snapshot.get("id") != reference["id"] or snapshot.get("format") != reference["format"] or snapshot.get("revision") != reference["revision"]:
+        raise ValueError("capability registry snapshot identity does not match summary")
+    entries = snapshot.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("capability registry snapshot entries must be an array")
+    active = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or entry.get("status") != "active":
+            raise ValueError("capability registry snapshot has an invalid entry")
+        if entry["id"] in active:
+            raise ValueError("capability registry snapshot has duplicate IDs")
+        active.add(entry["id"])
+    for label, values in (
+        ("profile claims", profile.get("claims")),
+        ("summary reported_claims", summary.get("reported_claims")),
+        ("summary exercised capability_tags", summary.get("exercised", {}).get("capability_tags")),
+    ):
+        if not isinstance(values, list) or any(not isinstance(value, str) or value not in active for value in values):
+            raise ValueError(f"{label} are not active IDs in the pinned capability registry")
+    for row_number, row in enumerate(results, 1):
+        if registry_reference(row.get("capability_registry"), f"runner JSONL row {row_number} capability_registry") != reference:
+            raise ValueError(f"runner JSONL row {row_number} capability registry does not match summary")
+    return reference
 
 
 def require_non_empty_string(document, key, label=None):
@@ -204,7 +278,7 @@ def verify_score(summary, scope, metric, numerator, denominator):
 
 def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
-    # Active v3 summaries always serialize the explicit unreachable counter.
+    # Active v4 summaries always serialize the explicit unreachable counter.
     # The retained v2.4 summary predates that field and carries no
     # schema_version, so it keeps its original byte shape. Any scoring version
     # that is not a retained frozen one is active output and cannot borrow that
@@ -215,7 +289,7 @@ def measurements(repo_root, run_dir):
     # bump silently reopened the hole it was written to close, because a summary
     # carrying the new version matched neither branch.
     summary_schema_version = summary.get("schema_version")
-    if summary_schema_version == 3:
+    if summary_schema_version == 4:
         active_case_count = summary.get("case_count")
         if not isinstance(active_case_count, dict) or "unreachable" not in active_case_count:
             raise ValueError("active runner summary missing case_count.unreachable")
@@ -226,7 +300,19 @@ def measurements(repo_root, run_dir):
             or active_unreachable < 0
         ):
             raise ValueError("active runner summary case_count.unreachable must be a non-negative integer")
+    elif summary_schema_version is not None:
+        raise ValueError("runner summary schema_version must be frozen v2 or active v4")
     elif summary.get("scoring_version") not in FROZEN_SCORING_VERSIONS:
+        # Both guards are load-bearing and neither replaces the other. The
+        # first rejects a summary carrying an unrecognised schema_version. This
+        # one rejects a summary carrying no schema_version at all while
+        # claiming a scoring version that is not a retained frozen one, which
+        # is how an active run would otherwise borrow the frozen byte shape.
+        #
+        # It asks whether a version is FROZEN rather than naming an active one.
+        # The literal it replaced named a single active version, so the next
+        # scoring bump silently reopened the hole this closes: a summary
+        # carrying the new version matched neither branch.
         raise ValueError("active runner summary missing schema_version")
     for key in (
         "gauntlet_version",
@@ -242,6 +328,12 @@ def measurements(repo_root, run_dir):
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
     results = read_results(run_dir / RAW_EVIDENCE["results"])
+    # An active v4 artifact is uninterpretable without the exact raw registry
+    # snapshot it names. Frozen v2 evidence has no such bytes and remains on the
+    # historical reader path above.
+    registry = None
+    if summary_schema_version == 4:
+        registry = validate_v4_registry_binding(run_dir, summary, results)
     manifest, manifest_ids = load_manifest(repo_root, run_dir)
     case_index_bytes, expected_by_id = load_case_index(
         run_dir / RAW_EVIDENCE["case_index"], manifest_ids
@@ -445,6 +537,7 @@ def measurements(repo_root, run_dir):
         "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
         "case_index_sha256": hashlib.sha256(case_index_bytes).hexdigest(),
         "logical_case_count": logical_case_count,
+        "capability_registry": registry,
     }
 
 
@@ -530,7 +623,8 @@ def build_complete_bundle(repo_root, run_dir):
             "runner summary tool_version does not match the executed Pipelock release: "
             f"{summary.get('tool_version')!r} != {release['version']!r}"
         )
-    hashes = evidence_hashes(run_dir, require_all=True)
+    evidence_spec = raw_evidence_for_summary(summary)
+    hashes = evidence_hashes(run_dir, require_all=True, evidence_spec=evidence_spec)
     candidate_case_count = {
         "total": summary["case_count"]["total"],
         "applicable": summary["case_count"]["applicable"],
@@ -545,7 +639,7 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
 
     candidate_scope = {
-        "schema_version": 2,
+        "schema_version": 4 if summary.get("schema_version") == 4 else 2,
         "local_run_id": metadata["local_run_id"],
         "generated_at": metadata["generated_at"],
         "corpus_ref_kind": metadata["corpus_ref_kind"],
@@ -581,6 +675,10 @@ def build_complete_bundle(repo_root, run_dir):
         "make_stats": measured["make_stats"],
         "evidence_sha256": hashes,
     }
+    if measured["capability_registry"] is not None:
+        candidate_scope["capability_registry"] = measured["capability_registry"]
+        candidate_scope["reported_claims"] = summary["reported_claims"]
+        candidate_scope["exercised"] = summary["exercised"]
     return {
         "schema_version": 1,
         "bundle_status": "complete",
@@ -641,8 +739,15 @@ def finalize_command(args):
     bundle_path = args.bundle.resolve()
     run_dir = bundle_path.parent
     output_path = args.output.resolve()
+    bundle = load_object(bundle_path)
+    if bundle.get("schema_version") != 1 or bundle.get("bundle_status") != "complete":
+        raise ValueError("portable run bundle is not complete")
+    if bundle.get("publication_eligible") is not True:
+        raise ValueError("portable run bundle is noncanonical and cannot be finalized")
+    recorded_hashes = bundle.get("evidence_sha256")
+    evidence_spec = {**RAW_EVIDENCE, **V4_RAW_EVIDENCE} if isinstance(recorded_hashes, dict) and set(V4_RAW_EVIDENCE).issubset(recorded_hashes) else RAW_EVIDENCE
     protected_paths = {
-        (run_dir / relative_path).resolve() for relative_path in RAW_EVIDENCE.values()
+        (run_dir / relative_path).resolve() for relative_path in evidence_spec.values()
     }
     protected_paths.update(
         {
@@ -655,16 +760,10 @@ def finalize_command(args):
         raise ValueError("candidate output cannot overwrite retained evidence or a decision")
     if output_path.exists():
         raise ValueError("candidate output must not already exist")
-    bundle = load_object(bundle_path)
-    if bundle.get("schema_version") != 1 or bundle.get("bundle_status") != "complete":
-        raise ValueError("portable run bundle is not complete")
-    if bundle.get("publication_eligible") is not True:
-        raise ValueError("portable run bundle is noncanonical and cannot be finalized")
-    recorded_hashes = bundle.get("evidence_sha256")
-    if not isinstance(recorded_hashes, dict) or set(recorded_hashes) != set(RAW_EVIDENCE):
+    if not isinstance(recorded_hashes, dict) or set(recorded_hashes) != set(evidence_spec):
         raise ValueError("portable run bundle evidence set is incomplete")
-    current_hashes = evidence_hashes(run_dir, require_all=True)
-    for label in sorted(RAW_EVIDENCE):
+    current_hashes = evidence_hashes(run_dir, require_all=True, evidence_spec=evidence_spec)
+    for label in sorted(evidence_spec):
         if recorded_hashes.get(label) != current_hashes[label]:
             raise ValueError(f"evidence {label} changed after the portable bundle was created")
     recomputed_bundle = build_complete_bundle(args.repo_root.resolve(), run_dir)

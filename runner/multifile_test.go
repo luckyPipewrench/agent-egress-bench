@@ -10,7 +10,7 @@ import (
 )
 
 func validMultiFileCaseYAML(id string) string {
-	return fmt.Sprintf(`schema_version: 3
+	return fmt.Sprintf(`schema_version: 4
 id: %s
 category: mcp_drift
 title: Test multi-file case
@@ -467,18 +467,11 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	profilePath := filepath.Join(tmpDir, "profile.json")
 	receiptPath := filepath.Join(tmpDir, "receipt-profile.json")
 
-	profile := validV3Profile(t)
+	profile := validV4Profile(t)
 	profile["tool"] = "test-tool"
 	profile["tool_version"] = "0.0.0"
 	profile["runner_version"] = "test"
 	profile["claims"] = []string{"mcp_tool_poison", "mcp_chain"}
-	supports := profile["supports"].(map[string]any)
-	for _, key := range []string{
-		"mcp_stdio", "mcp_tool_poison_scanning", "mcp_tool_baseline",
-		"mcp_chain_memory", "mcp_cross_server_chain_memory", "mcp_data_class_labels",
-	} {
-		supports[key] = true
-	}
 	profileData, err := json.Marshal(profile)
 	if err != nil {
 		t.Fatalf("marshal profile: %v", err)

@@ -42,9 +42,10 @@ authorizes an attempt; it does not create scope.
 | Delivery happened but verdict is unobservable | `verdict_unobservable` (`error`) |
 | Exact delivery and observed `allow`/`block` | scoreable |
 
-`claims`, `supports`, `requires`, and `capability_tags` do not select cases.
-Frozen v3 N/A rows remain frozen evidence and retain their original reason
-breakdown; active state-machine runs do not create N/A from profile claims.
+`claims`, `requires`, and `capability_tags` do not select cases. Claims and
+tags are registry-backed reporting labels. Frozen v1-v3 rows remain frozen
+evidence and retain their original meaning; active v4 runs do not create N/A
+from profile labels.
 
 ## N/A Handling Per Metric
 
@@ -85,7 +86,7 @@ The Gauntlet produces two outputs:
 
 ### Per-case results (JSONL)
 
-One JSON object per line to stdout, using the existing result format defined in [SCORING.md](SCORING.md) and [`schemas/result.schema.json`](../schemas/result.schema.json). The result format gains the `unreachable` actual verdict in schema v3; see [`schemas/result.schema.json`](../schemas/result.schema.json) for the current vocabulary.
+One JSON object per line to stdout, using the current v4 result format defined in [SCORING.md](SCORING.md) and [`schemas/result.schema.json`](../schemas/result.schema.json). Every active result line carries the exact capability-registry reference from its profile. See [`schemas/result.schema.json`](../schemas/result.schema.json) for the current vocabulary.
 
 ### Gauntlet summary (JSON file)
 
@@ -93,6 +94,7 @@ A single JSON file with the full scoring breakdown:
 
 ```json
 {
+  "schema_version": 4,
   "gauntlet_version": "1.0",
   "runner_version": "0.1.0",
   "tool": "example-tool",
@@ -111,11 +113,13 @@ A single JSON file with the full scoring breakdown:
     },
     "errors": 0
   },
-  "tool_support": {
-    "claims": ["url_dlp", "header_dlp", "..."],
-    "unsupported_transports": ["a2a"],
-    "unsupported_requires": ["dns_rebinding_fixture"]
+  "capability_registry": {
+    "id": "aeb.core-capabilities",
+    "format": 1,
+    "revision": 1,
+    "sha256": "..."
   },
+  "reported_claims": ["url_dlp", "header_dlp"],
   "scores": {
     "full": {
       "containment": 0.81,
@@ -146,14 +150,15 @@ A single JSON file with the full scoring breakdown:
 Key fields:
 
 - `corpus_sha256`: SHA-256 hash of all case file contents sorted by path. Identifies the exact corpus used.
-- `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, fully identifies a reproducible run.
+- `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, identifies a reproducible run.
+- `capability_registry`: exact registry snapshot used to validate reporting labels. The SHA-256 is over the retained raw snapshot bytes.
+- `reported_claims`: profile labels for report interpretation. They do not select rows or change any measurement.
 - `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.
 - `not_applicable_reasons`: breakdown of historical N/A rows, summing to `not_applicable`.
 - `unreachable`: exact-route coverage gaps. They are not scoreable errors or N/A,
   and make a run insufficient.
 - `applicable`: every routed case, including cases that ended in `error`; `errors`
   is a subset of this count, not a third population.
-- `tool_support`: echo of the tool's support vector for auditability.
 - `null` in per-category scores: metric is N/A for that category.
 
 ## What Makes a Valid Run
@@ -163,7 +168,7 @@ A Gauntlet run is valid when all of the following are true:
 1. **Every corpus case has an emitted outcome.** No cherry-picking. The runner processes every case file in the corpus directory; a missing exact route is emitted as `unreachable` and makes the run insufficient.
 2. **No case produced an error.** A single `error` row makes the run unpublishable. An error means this harness failed to measure the case, not that the tool did anything, so it is excluded from every score denominator; tolerating errors would therefore both hide the measurement failure and raise the score. An error and an unreachable row mean the same thing and carry the same consequence: fix the harness or the adapter and run it again.
 3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
-4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, implement the same applicability rules, and use the same scoring formulas.
+4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, bind the same registry snapshot, implement the same applicability rules, and use the same scoring formulas.
 
 ## Relationship to Existing Scoring
 

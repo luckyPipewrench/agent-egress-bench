@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "url-ssrf-metadata-009",
   "category": "url",
   "title": "Cloud metadata endpoint SSRF",

@@ -12,7 +12,7 @@ the same thing.
 
 Agent Egress Bench evaluates products that mediate the outbound traffic this corpus defines and
 expose an observable decision. A result is scoped to the exact product, version, configuration,
-adapter, capability profile, corpus, and scoring version that produced it.
+adapter, capability profile, capability-registry snapshot, corpus, and scoring version that produced it.
 
 The corpus does not evaluate every security product, and a result never generalizes past the
 capability profile that produced it. See [RUNNER.md](RUNNER.md) for the tool shapes the shipped
@@ -44,8 +44,8 @@ Publish these next to any score, or the number is not reproducible.
 |---|---|
 | Method identity: repository and exact commit | The corpus and scoring change over time. |
 | Corpus and scoring version, plus `corpus_sha256` | Pins the case surface that ran. |
-| Capability profile and `tool_profile_sha256` | Declares what the target claims to support. |
-| Exercised profile: the transports, categories, and capability tags the run actually drove | The declared profile is a claim; the exercised profile is what was tested. A result covers only the surface it drove. |
+| Capability profile, `tool_profile_sha256`, and exact registry reference | Preserves the profile's reporting labels and the raw registry snapshot that defined them. |
+| Exercised profile: the transports and categories the run actually drove | The exercised profile is what was tested. Reporting labels do not select rows or limit the result's scope. |
 | Adapter identity and owner | A vendor-authored adapter is normal. Hiding who wrote it is not. |
 | Target product, version, and configuration | A score against an unnamed configuration cannot be repeated. |
 | Applicable, unreachable, historical not-applicable, and error counts, with N/A reasons | An N/A case that silently leaves the denominator inflates the score; an unreachable row exposes an adapter coverage gap without pretending it was a measurement. |

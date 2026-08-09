@@ -67,9 +67,17 @@ def parse_timestamp(value, label):
     return timestamp
 
 
-def evidence_paths(artifact_dir):
+def evidence_files_for(candidate):
+    files = dict(EVIDENCE_FILES)
+    if candidate.get("schema_version") == 4:
+        files.update(provenance.V4_RAW_EVIDENCE)
+    return files
+
+
+def evidence_paths(artifact_dir, candidate=None):
+    candidate = candidate or {}
     paths = {}
-    for label, filename in EVIDENCE_FILES.items():
+    for label, filename in evidence_files_for(candidate).items():
         path = artifact_dir / filename
         if not path.is_file() or path.is_symlink():
             raise ValueError(f"required evidence is missing: {label} ({filename})")
@@ -111,8 +119,10 @@ def validate_candidate_origin(candidate, artifact_prefix, url_prefix, expected_r
 
 
 def validate_reference_candidate(candidate):
-    if candidate.get("schema_version") != 2:
-        raise ValueError("candidate schema_version must be 2")
+    if candidate.get("schema_version") not in {2, 4}:
+        raise ValueError("candidate schema_version must be 2 or 4")
+    if candidate.get("schema_version") == 4:
+        evaluator.require_capability_registry(candidate)
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
     tool_version = require_non_empty_string(candidate, "tool_version")
@@ -464,7 +474,7 @@ def promote(args):
         if current_time <= previous_time:
             raise ValueError("refusing to move latest-verified backward or sideways in time")
 
-    paths = evidence_paths(artifact_dir)
+    paths = evidence_paths(artifact_dir, candidate)
     validate_execution_decision(paths["execution_decision"])
 
     source_decision = require_object(source_decision_path)

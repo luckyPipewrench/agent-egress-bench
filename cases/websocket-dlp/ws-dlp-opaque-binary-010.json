@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "ws-dlp-opaque-binary-010",
   "category": "websocket_dlp",
   "title": "Opaque high-entropy WebSocket frame",

@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "hostname-exfil-base64-subdomain-003",
   "category": "hostname_exfiltration",
   "title": "URL-safe base64 secret in subdomain",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "mcp-tool-http-benign-verbose-002",
   "category": "mcp_tool",
   "title": "Verbose HTTP deployment planner definition",

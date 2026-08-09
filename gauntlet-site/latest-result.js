@@ -40,6 +40,19 @@
     return pointer;
   }
 
+  function registryReference(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) ||
+        Object.keys(value).sort().join(',') !== 'format,id,revision,sha256') {
+      throw new Error('capability_registry must be an exact registry reference');
+    }
+    if (typeof value.id !== 'string' || !value.id || value.format !== 1 ||
+        !Number.isInteger(value.revision) || value.revision < 1 ||
+        !SHA256.test(value.sha256)) {
+        throw new Error('capability_registry is invalid');
+    }
+    return value;
+  }
+
   async function responseBytes(response, label, resource) {
     if (!response.ok) {
       var error = new Error(label + ' returned HTTP ' + response.status);
@@ -64,6 +77,44 @@
     return Array.from(new Uint8Array(digest)).map(function(value) {
       return value.toString(16).padStart(2, '0');
     }).join('');
+  }
+
+  function registryEntries(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.entries)) {
+      throw new Error('capability registry snapshot entries are invalid');
+    }
+    var entries = {};
+    snapshot.entries.forEach(function(entry) {
+      if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' ||
+          !entry.id || (entry.status !== 'active' && entry.status !== 'deprecated') ||
+          Object.prototype.hasOwnProperty.call(entries, entry.id)) {
+        throw new Error('capability registry snapshot has invalid or duplicate IDs');
+      }
+      entries[entry.id] = entry;
+    });
+    return entries;
+  }
+
+  function activeLabels(value, label, entries) {
+    if (!Array.isArray(value)) {
+      throw new Error(label + ' must be an array');
+    }
+    var seen = {};
+    value.forEach(function(id) {
+      if (typeof id !== 'string' || !id || seen[id] || !entries[id] || entries[id].status !== 'active') {
+        throw new Error(label + ' contains an unknown, duplicate, or inactive capability ID');
+      }
+      seen[id] = true;
+    });
+    return value;
+  }
+
+  function capabilityLabel(artifact, id) {
+    if (!artifact || !artifact._capabilityLabels || !artifact._capabilityLabels[id]) {
+      throw new Error('capability label is not present in the verified registry snapshot');
+    }
+    var entry = artifact._capabilityLabels[id];
+    return typeof entry.title === 'string' && entry.title ? entry.title : entry.id;
   }
 
   async function loadLatestVerifiedResult(pointerURL, fetchImpl, cryptoImpl) {
@@ -126,9 +177,61 @@
         throw new Error('record manifest and result record disagree on ' + key);
       }
     });
+    // V2 records predate registry bytes and remain readable as frozen history.
+    // An active v4 result is not rendered until its pinned raw profile and raw
+    // registry snapshot have both been fetched and bound to the candidate.
+    if (artifact.schema_version === 4) {
+      var reference = registryReference(artifact.capability_registry);
+      if (!artifact.tool_profile_sha256 || !SHA256.test(artifact.tool_profile_sha256)) {
+        throw new Error('v4 result has no valid tool_profile_sha256');
+      }
+      var prefix = './results/pipelock/' + pointer.candidate_sha256 + '/';
+      var snapshotName = 'capability-registry.json';
+      var profileName = 'tool-profile.json';
+      if (!manifest.files || manifest.files[snapshotName] !== reference.sha256) {
+        throw new Error('record manifest does not bind the v4 capability registry snapshot');
+      }
+      var snapshotBytes = await responseBytes(await fetchImpl(prefix + snapshotName), 'capability registry snapshot', 'capability registry snapshot');
+      if (await sha256Hex(snapshotBytes, cryptoImpl) !== reference.sha256) {
+        throw new Error('capability registry snapshot digest does not match v4 result');
+      }
+      var profileBytes = await responseBytes(await fetchImpl(prefix + profileName), 'tool profile', 'tool profile');
+      if (await sha256Hex(profileBytes, cryptoImpl) !== artifact.tool_profile_sha256) {
+        throw new Error('tool profile digest does not match v4 result');
+      }
+      var profile;
+      var snapshot;
+      try {
+        profile = JSON.parse(decodeUTF8(profileBytes, 'tool profile'));
+        snapshot = JSON.parse(decodeUTF8(snapshotBytes, 'capability registry snapshot'));
+      } catch (error) {
+        throw new Error('v4 registry evidence is not valid JSON');
+      }
+      if (JSON.stringify(registryReference(profile.capability_registry)) !== JSON.stringify(reference) ||
+          snapshot.id !== reference.id || snapshot.format !== reference.format || snapshot.revision !== reference.revision) {
+        throw new Error('v4 registry evidence does not match result capability_registry');
+      }
+      var entries = registryEntries(snapshot);
+      var profileClaims = activeLabels(profile.claims, 'v4 profile claims', entries);
+      var reportedClaims = activeLabels(artifact.reported_claims, 'v4 reported_claims', entries);
+      var exercisedTags = activeLabels(
+        artifact.exercised && artifact.exercised.capability_tags,
+        'v4 exercised capability_tags',
+        entries
+      );
+      if (JSON.stringify(profileClaims) !== JSON.stringify(reportedClaims)) {
+        throw new Error('v4 profile claims do not match result reported_claims');
+      }
+      Object.defineProperty(artifact, '_capabilityRegistry', { value: snapshot, enumerable: false });
+      Object.defineProperty(artifact, '_capabilityLabels', { value: entries, enumerable: false });
+      Object.defineProperty(artifact, '_exercisedCapabilityTags', { value: exercisedTags, enumerable: false });
+    } else if (artifact.schema_version !== 2) {
+      throw new Error('result record must be frozen schema v2 or active schema v4');
+    }
     return artifact;
   }
 
   root.validateLatestVerifiedPointer = validatePointer;
   root.loadLatestVerifiedResult = loadLatestVerifiedResult;
+  root.capabilityLabel = capabilityLabel;
 })(window);

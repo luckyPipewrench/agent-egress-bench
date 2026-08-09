@@ -20,11 +20,11 @@ The [Pipelock reference runner](../examples/pipelock/) is a working example you 
 
 ### What to claim
 
-Your tool profile declares what your tool detects (`claims`, for reporting) and
-what it says it supports (`supports`, retained v3 metadata). Be honest, but do
-not use either declaration to select cases. A runner needs adapter-proven exact
-delivery and verdict observation to score; no exact route is `unreachable`, and
-a routed case without proof is an `error`.
+Your active v4 tool profile declares reporting labels (`claims`) and the exact
+capability-registry snapshot that defines them. Labels do not select cases or
+alter a denominator, score, sufficiency decision, or publication decision. A
+runner needs adapter-proven exact delivery and verdict observation to score; no
+exact route is `unreachable`, and a routed case without proof is an `error`.
 
 ## Publish results
 
@@ -50,6 +50,7 @@ results/
     results.jsonl       # Raw JSONL output
     summary.txt         # Summary line from stderr
     tool-profile.json   # Copy of your tool profile
+    capability-registry.json # Exact raw registry snapshot named by the profile
     README.md           # Verdict mapping, notes, how to reproduce
 ```
 

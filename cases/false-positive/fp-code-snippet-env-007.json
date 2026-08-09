@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "fp-code-snippet-env-007",
   "category": "false_positive",
   "title": "Code snippet showing environment variable usage",

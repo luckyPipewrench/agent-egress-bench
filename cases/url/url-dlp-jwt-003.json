@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "url-dlp-jwt-003",
   "category": "url",
   "title": "JWT in URL path segment",

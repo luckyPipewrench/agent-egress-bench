@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 const (
@@ -35,22 +37,23 @@ type DualScores struct {
 
 // GauntletSummary is the top-level output written to --output.
 type GauntletSummary struct {
-	SchemaVersion     int                       `json:"schema_version"`
-	GauntletVersion   string                    `json:"gauntlet_version"`
-	ScoringVersion    string                    `json:"scoring_version"`
-	RunnerVersion     string                    `json:"runner_version"`
-	Tool              string                    `json:"tool"`
-	ToolVersion       string                    `json:"tool_version"`
-	CorpusVersion     string                    `json:"corpus_version"`
-	CorpusSHA256      string                    `json:"corpus_sha256"`
-	ToolProfileSHA256 string                    `json:"tool_profile_sha256"`
-	Date              string                    `json:"date,omitempty"`
-	CaseCount         CaseCount                 `json:"case_count"`
-	ToolSupport       ToolSupport               `json:"tool_support"`
-	Exercised         ExercisedCapabilities     `json:"exercised"`
-	Scores            DualScores                `json:"scores"`
-	Sufficient        bool                      `json:"sufficient"`
-	PerCategory       map[string]CategoryScores `json:"per_category"`
+	SchemaVersion      int                          `json:"schema_version"`
+	GauntletVersion    string                       `json:"gauntlet_version"`
+	ScoringVersion     string                       `json:"scoring_version"`
+	RunnerVersion      string                       `json:"runner_version"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	CorpusVersion      string                       `json:"corpus_version"`
+	CorpusSHA256       string                       `json:"corpus_sha256"`
+	ToolProfileSHA256  string                       `json:"tool_profile_sha256"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	ReportedClaims     []string                     `json:"reported_claims"`
+	Date               string                       `json:"date,omitempty"`
+	CaseCount          CaseCount                    `json:"case_count"`
+	Exercised          ExercisedCapabilities        `json:"exercised"`
+	Scores             DualScores                   `json:"scores"`
+	Sufficient         bool                         `json:"sufficient"`
+	PerCategory        map[string]CategoryScores    `json:"per_category"`
 
 	// Identifying facts that docs/RESULTS-USE.md requires beside any public
 	// result and that cannot be derived from the corpus or the profile. They
@@ -86,13 +89,6 @@ type CaseCount struct {
 	NotApplicable        int            `json:"not_applicable"`
 	NotApplicableReasons map[string]int `json:"not_applicable_reasons"`
 	Errors               int            `json:"errors"`
-}
-
-// ToolSupport summarizes what the tool claims and what it doesn't support.
-type ToolSupport struct {
-	Claims                []string `json:"claims"`
-	UnsupportedTransports []string `json:"unsupported_transports"`
-	UnsupportedRequires   []string `json:"unsupported_requires"`
 }
 
 // computeCorpusSHA256 hashes case-file contents across both the single-file
@@ -154,62 +150,6 @@ func computeProfileSHA256(path string) (string, error) {
 	}
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:]), nil
-}
-
-// buildToolSupport extracts unsupported transports and requires from the profile.
-func buildToolSupport(p Profile) ToolSupport {
-	// Known transport keys in supports.
-	transportKeys := []string{"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"}
-	// Known requires keys in supports.
-	requiresKeys := []string{
-		"tls_interception",
-		"url_dlp_scanning", "request_body_dlp_scanning", "header_dlp_scanning",
-		"response_prompt_injection_scanning",
-		"mcp_input_dlp_scanning", "mcp_input_prompt_injection_scanning",
-		"mcp_tool_policy", "mcp_tool_result_prompt_injection_scanning",
-		"mcp_tool_poison_scanning", "mcp_tool_baseline", "mcp_chain_memory",
-		"mcp_cross_server_chain_memory", "mcp_data_class_labels",
-		"a2a_dlp_scanning", "a2a_prompt_injection_scanning",
-		"a2a_card_prompt_injection_scanning", "a2a_card_drift_scanning",
-		"a2a_ssrf_scanning",
-		"websocket_dlp_scanning", "websocket_prompt_injection_scanning",
-		"ssrf_scanning", "ssrf_bypass_scanning",
-		"domain_blocklist", "entropy_scanning", "encoding_evasion_scanning",
-		"shell_analysis", "crypto_dlp_scanning", "hostname_exfil_scanning",
-		"dns_rebinding_fixture", "budget_enforcement",
-	}
-
-	var unsupportedTransports, unsupportedRequires []string
-
-	for _, k := range transportKeys {
-		if v, exists := p.Supports[k]; !exists || !v {
-			unsupportedTransports = append(unsupportedTransports, k)
-		}
-	}
-	for _, k := range requiresKeys {
-		if v, exists := p.Supports[k]; !exists || !v {
-			unsupportedRequires = append(unsupportedRequires, k)
-		}
-	}
-
-	// Ensure non-nil slices for JSON output.
-	if unsupportedTransports == nil {
-		unsupportedTransports = []string{}
-	}
-	if unsupportedRequires == nil {
-		unsupportedRequires = []string{}
-	}
-
-	claims := p.Claims
-	if claims == nil {
-		claims = []string{}
-	}
-
-	return ToolSupport{
-		Claims:                claims,
-		UnsupportedTransports: unsupportedTransports,
-		UnsupportedRequires:   unsupportedRequires,
-	}
 }
 
 func summaryDate() (string, error) {
@@ -280,16 +220,18 @@ func buildSummary(
 	}
 
 	return GauntletSummary{
-		SchemaVersion:     activeSchemaVersion,
-		GauntletVersion:   gauntletVersion,
-		ScoringVersion:    scoringVersion,
-		RunnerVersion:     runnerVersion,
-		Tool:              p.Tool,
-		ToolVersion:       p.ToolVersion,
-		CorpusVersion:     corpusVersion,
-		CorpusSHA256:      corpusSHA,
-		ToolProfileSHA256: profileSHA,
-		Date:              date,
+		SchemaVersion:      activeSchemaVersion,
+		GauntletVersion:    gauntletVersion,
+		ScoringVersion:     scoringVersion,
+		RunnerVersion:      runnerVersion,
+		Tool:               p.Tool,
+		ToolVersion:        p.ToolVersion,
+		CorpusVersion:      corpusVersion,
+		CorpusSHA256:       corpusSHA,
+		ToolProfileSHA256:  profileSHA,
+		CapabilityRegistry: p.CapabilityRegistry,
+		ReportedClaims:     append([]string(nil), p.Claims...),
+		Date:               date,
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),
@@ -298,8 +240,7 @@ func buildSummary(
 			NotApplicableReasons: naReasonsStr,
 			Errors:               errorCount,
 		},
-		ToolSupport: buildToolSupport(p),
-		Exercised:   computeExercised(applicableResults, casesByID),
+		Exercised: computeExercised(applicableResults, casesByID),
 		Scores: DualScores{
 			Full:       fullScores,
 			Applicable: applicableScores,
@@ -357,6 +298,9 @@ func writeSummary(s GauntletSummary, path string) error {
 	}
 	if s.SchemaVersion != activeSchemaVersion {
 		return fmt.Errorf("summary schema_version must be %d, got %d", activeSchemaVersion, s.SchemaVersion)
+	}
+	if err := validateRegistryReference(s.CapabilityRegistry); err != nil {
+		return fmt.Errorf("invalid summary capability_registry: %w", err)
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

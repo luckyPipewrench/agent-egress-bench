@@ -152,6 +152,71 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   assert.equal(recordError.status, 404);
   assert.equal(recordError.resource, 'record');
 
+  const snapshotText = JSON.stringify({
+  id: 'aeb.core-capabilities', format: 1, revision: 1,
+    entries: [{ id: 'url_dlp', status: 'active', title: 'URL DLP' }],
+  }) + '\n';
+  const snapshotDigest = nodeCrypto.createHash('sha256').update(snapshotText).digest('hex');
+  const profileText = JSON.stringify({
+    schema_version: 4,
+    capability_registry: { id: 'aeb.core-capabilities', format: 1, revision: 1, sha256: snapshotDigest },
+    claims: ['url_dlp'],
+  }) + '\n';
+  const profileDigest = nodeCrypto.createHash('sha256').update(profileText).digest('hex');
+  const v4Artifact = {
+    ...artifact,
+    schema_version: 4,
+    tool_profile_sha256: profileDigest,
+    capability_registry: { id: 'aeb.core-capabilities', format: 1, revision: 1, sha256: snapshotDigest },
+    reported_claims: ['url_dlp'],
+    exercised: { capability_tags: ['url_dlp'] },
+  };
+  const v4ArtifactText = JSON.stringify(v4Artifact) + '\n';
+  const v4Digest = nodeCrypto.createHash('sha256').update(v4ArtifactText).digest('hex');
+  const v4Manifest = {
+    ...manifest,
+    candidate_sha256: v4Digest,
+    files: {
+      'continuous-gauntlet-pipelock.json': v4Digest,
+      'capability-registry.json': snapshotDigest,
+      'tool-profile.json': profileDigest,
+    },
+  };
+  const v4ManifestText = JSON.stringify(v4Manifest) + '\n';
+  const v4Pointer = {
+    ...pointer,
+    candidate_sha256: v4Digest,
+    record_manifest_sha256: nodeCrypto.createHash('sha256').update(v4ManifestText).digest('hex'),
+    record_path: './results/pipelock/' + v4Digest + '/continuous-gauntlet-pipelock.json',
+    record_manifest_path: './results/pipelock/' + v4Digest + '/record-manifest.json',
+  };
+  const v4Fetch = async (url) => {
+    const prefix = './results/pipelock/' + v4Digest + '/';
+    if (url === './latest-verified.json') return response(JSON.stringify(v4Pointer));
+    if (url === v4Pointer.record_manifest_path) return response(v4ManifestText);
+    if (url === v4Pointer.record_path) return response(v4ArtifactText);
+    if (url === prefix + 'capability-registry.json') return response(snapshotText);
+    if (url === prefix + 'tool-profile.json') return response(profileText);
+    return response('', 404);
+  };
+  const v4Loaded = await window.loadLatestVerifiedResult('./latest-verified.json', v4Fetch, crypto);
+  assert.equal(v4Loaded._capabilityRegistry.id, 'aeb.core-capabilities');
+  assert.equal(window.capabilityLabel(v4Loaded, 'url_dlp'), 'URL DLP');
+  await assert.rejects(
+    window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
+      if (url.endsWith('capability-registry.json')) return response('', 404);
+      return v4Fetch(url);
+    }, crypto),
+    /capability registry snapshot returned HTTP 404/
+  );
+  await assert.rejects(
+    window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
+      if (url.endsWith('capability-registry.json')) return response(snapshotText + ' ');
+      return v4Fetch(url);
+    }, crypto),
+    /capability registry snapshot digest does not match/
+  );
+
   console.log('latest verified result loader tests: OK');
 })().catch((error) => {
   console.error(error);

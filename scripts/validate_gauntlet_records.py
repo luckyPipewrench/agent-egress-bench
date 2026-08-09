@@ -56,8 +56,10 @@ def reconstruct_candidate(record_dir, candidate, repo_root):
 def validate_decision(record_dir, candidate_path, baseline_filename, decision_filename):
     baseline_path = record_dir / baseline_filename
     decision_path = record_dir / decision_filename
+    candidate = evaluator.load_object(candidate_path)
     paths = {
-        label: record_dir / filename for label, filename in promotion.EVIDENCE_FILES.items()
+        label: record_dir / filename
+        for label, filename in promotion.evidence_files_for(candidate).items()
     }
     expected = evaluator.evaluate(candidate_path, baseline_path, paths)
     actual = evaluator.load_object(decision_path)
