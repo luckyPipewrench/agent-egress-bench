@@ -41,6 +41,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -283,6 +284,25 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 // completed the request/response exchange itself. It deliberately does not
 // infer proof from the verdict string: a local synthetic response, an empty
 // subprocess exit, and a stale protocol response can all look like a verdict.
+// proxyPolicyRejectionRe matches a proxy's own refusal inside a transport error
+// string. Status codes must appear as standalone tokens, never as a digit run
+// inside a larger number.
+//
+// Bare substring matching on "403" read an ephemeral PORT as a policy decision:
+// "read tcp 127.0.0.1:40320->..." contains 403, so any transport failure that
+// happened to draw such a port scored as an observed block and handed out
+// containment credit. It was invisible locally and failed in CI because which
+// port you draw is luck. A benchmark whose verdict depends on a port number is
+// not measuring the tool.
+var proxyPolicyRejectionRe = regexp.MustCompile(`(?i)(?:\bforbidden\b|\bmethod not allowed\b|\bblocked\b|(?:^|[^0-9])(?:403|405)(?:[^0-9]|$))`)
+
+// proxyPolicyRejection reports whether a transport error carries the proxy's
+// own refusal rather than an ambiguous network failure. The caller must strip
+// the requested URL first, so the case's target cannot supply these words.
+func proxyPolicyRejection(policyText string) bool {
+	return proxyPolicyRejectionRe.MatchString(policyText)
+}
+
 func observedProxyVerdict(result Result) Result {
 	if result.Err == nil && (result.Verdict == "allow" || result.Verdict == "block") {
 		result.DeliveryProven = true
@@ -973,9 +993,16 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		// containing 403, scores an observed block on ANY transport failure.
 		// Match against the error with the target URL removed, so only text the
 		// PROXY produced can assert a policy decision.
-		policyText := strings.ReplaceAll(errStr, targetURL, "")
+		// Strip the URL actually requested, not the one from the payload. When a
+		// fixture route rewrites the target, those differ, and stripping the
+		// wrong one leaves the case's own hostname in the text where it can
+		// still decide the verdict.
+		policyText := strings.ReplaceAll(errStr, req.URL.String(), "")
+		if targetURL != "" {
+			policyText = strings.ReplaceAll(policyText, targetURL, "")
+		}
 		// Proxy actively rejected the CONNECT (policy decision).
-		if strings.Contains(policyText, "Forbidden") || strings.Contains(policyText, "blocked") || strings.Contains(policyText, "403") || strings.Contains(policyText, "Method Not Allowed") || strings.Contains(policyText, "405") {
+		if proxyPolicyRejection(policyText) {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
 			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
@@ -2495,13 +2522,15 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	identity := nextGatewayRequestIdentity()
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare response request identity: %w", c.ID, err)}
+	}
 	var (
 		request       map[string]interface{}
 		gatewayReq    gatewayRequest
 		release       func()
 		declaredNames []string
-		err           error
 	)
 	switch c.InputType {
 	case "mcp_tool_definition":
@@ -2625,7 +2654,10 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 // not a workaround: gateways that bind calls to the last tools/list inventory
 // must see the same ordinary discovery exchange a real MCP client performs.
 func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Result {
-	identity := nextGatewayRequestIdentity()
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return &Result{Err: fmt.Errorf("prepare tool-result baseline identity: %w", err)}
+	}
 	request := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      identity,

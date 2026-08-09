@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "service_health",
+        "description": "Returns service health for a region.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "region": {"type": "string"}
+          },
+          "required": ["region"]
+        }
+      }
+    ]
+  }
+}

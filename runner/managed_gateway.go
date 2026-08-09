@@ -95,11 +95,13 @@ func envSlice(env map[string]string) []string {
 // not have to hand-start the gateway and hand-wire it to the runner's
 // dynamically-allocated upstream fixture before a case can be driven.
 type managedGateway struct {
-	procs      *managedProcesses
-	deregister string
-	env        []string
-	timeout    time.Duration
-	closeOnce  sync.Once
+	mu           sync.Mutex
+	procs        *managedProcesses
+	gateway      adapter.GatewayRuntime
+	registration adapter.FixtureRegistration
+	env          []string
+	timeout      time.Duration
+	closed       bool
 }
 
 // startManagedGateway launches the gateway from its declared start command,
@@ -114,21 +116,41 @@ func startManagedGateway(gateway adapter.GatewayRuntime, registration adapter.Fi
 		return nil, fmt.Errorf("gateway ready_addr is required to wait for gateway readiness")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	procs := &managedProcesses{cancel: cancel}
-	if err := procs.startShellCommand(ctx, "managed gateway", gateway.StartCommand, env, timeout, gateway.ReadyAddr); err != nil {
-		procs.Close()
+	mg := &managedGateway{gateway: gateway, registration: registration, env: env, timeout: timeout}
+	if err := mg.startLocked(); err != nil {
 		return nil, err
 	}
+	return mg, nil
+}
 
-	mg := &managedGateway{procs: procs, deregister: registration.DeregisterCommand, env: env, timeout: timeout}
-	if registration.RegisterCommand != "" {
-		if err := runGatewayCommand(ctx, "fixture registration", registration.RegisterCommand, env, timeout); err != nil {
-			mg.Close()
-			return nil, err
+func (m *managedGateway) startLocked() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	procs := &managedProcesses{cancel: cancel}
+	if err := procs.startShellCommand(ctx, "managed gateway", m.gateway.StartCommand, m.env, m.timeout, m.gateway.ReadyAddr); err != nil {
+		procs.Close()
+		return err
+	}
+	m.procs = procs
+	if m.registration.RegisterCommand != "" {
+		if err := runGatewayCommand(ctx, "fixture registration", m.registration.RegisterCommand, m.env, m.timeout); err != nil {
+			m.stopLocked()
+			return err
 		}
 	}
-	return mg, nil
+	return nil
+}
+
+func (m *managedGateway) stopLocked() {
+	if m.procs == nil {
+		return
+	}
+	if m.registration.DeregisterCommand != "" {
+		if err := runGatewayCommand(context.Background(), "fixture deregistration", m.registration.DeregisterCommand, m.env, m.timeout); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "gateway deregistration failed: %v\n", err)
+		}
+	}
+	m.procs.Close()
+	m.procs = nil
 }
 
 // Close deregisters the fixture on a best-effort basis, then stops the gateway
@@ -137,14 +159,13 @@ func (m *managedGateway) Close() {
 	if m == nil {
 		return
 	}
-	m.closeOnce.Do(func() {
-		if m.deregister != "" {
-			if err := runGatewayCommand(context.Background(), "fixture deregistration", m.deregister, m.env, m.timeout); err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "gateway deregistration failed: %v\n", err)
-			}
-		}
-		m.procs.Close()
-	})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
+	m.closed = true
+	m.stopLocked()
 }
 
 // runGatewayCommand runs a one-shot gateway lifecycle command to completion. A

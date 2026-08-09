@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "lookup_invoice",
+        "description": "Returns an invoice summary for an approved invoice number.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "invoice_number": {"type": "string"}
+          },
+          "required": ["invoice_number"]
+        }
+      }
+    ]
+  }
+}

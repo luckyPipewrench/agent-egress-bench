@@ -3,6 +3,7 @@ package adapter
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
@@ -25,23 +25,36 @@ import (
 type MCPGatewayAdapter struct {
 	plugin   GatewayPlugin
 	fixtures *fixture.Manager
+	// denyBarrier is an optional authoritative atomic non-delivery proof. The
+	// generic shell lifecycle does not supply one: process groups and listener
+	// closure cannot contain daemonized workers.
+	denyBarrier func(observe func() bool) (absent bool, err error)
 }
 
-var gatewayRequestSequence atomic.Uint64
-
-const gatewayDenySettlement = 50 * time.Millisecond
-
 // gatewayRequest is the single correlation primitive for a case request. The
-// adapter mints it before configuring the fixture; the fixture then routes the
-// leased response and records the same identity, method, and fingerprint.
+// adapter mints an opaque identity immediately before configuring the fixture;
+// the fixture then routes the leased response and records the same identity,
+// method, and fingerprint.
 type gatewayRequest struct {
 	identity    string
 	method      string
 	fingerprint string
 }
 
-func nextGatewayRequestIdentity() string {
-	return fmt.Sprintf("aeb-request-%d", gatewayRequestSequence.Add(1))
+func nextGatewayRequestIdentity() (string, error) {
+	var nonce [32]byte
+	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
+		return "", fmt.Errorf("generate request identity: %w", err)
+	}
+	return fmt.Sprintf("aeb-request-%x", nonce), nil
+}
+
+func prepareGatewayRequest(message map[string]interface{}) (map[string]interface{}, gatewayRequest, error) {
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return nil, gatewayRequest{}, err
+	}
+	return withGatewayRequestIdentity(message, identity)
 }
 
 func withGatewayRequestIdentity(message map[string]interface{}, identity string) (map[string]interface{}, gatewayRequest, error) {
@@ -88,6 +101,8 @@ func withGatewayRequestIdentity(message map[string]interface{}, identity string)
 func (a *MCPGatewayAdapter) DeliveryTuples() []DeliveryTuple {
 	return []DeliveryTuple{
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_sequence", Lifecycle: "mcp_session"},
+		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_sequence_temporal", Lifecycle: "mcp_session"},
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_result", Lifecycle: "mcp_session"},
 	}
@@ -112,7 +127,20 @@ func NewMCPGatewayAdapter(plugin GatewayPlugin, fixtures *fixture.Manager) (*MCP
 	if codeRange != [2]int{} && codeRange[0] > codeRange[1] {
 		return nil, fmt.Errorf("gateway plugin JSON-RPC deny range start exceeds end")
 	}
+	for key := range plugin.Client.Headers {
+		if strings.EqualFold(key, "Mcp-Session-Id") {
+			return nil, fmt.Errorf("gateway plugin client.headers must not set Mcp-Session-Id; the adapter binds only the live initialize response")
+		}
+	}
 	return &MCPGatewayAdapter{plugin: plugin, fixtures: fixtures}, nil
+}
+
+// SetDenyBarrier supplies an authoritative proof that a denied request cannot
+// be forwarded after the adapter scores it. Generic managed and operator-run
+// gateways have no such proof, so their denies remain unscoreable instead of
+// relying on a finite silence window or process-lifecycle inference.
+func (a *MCPGatewayAdapter) SetDenyBarrier(barrier func(observe func() bool) (bool, error)) {
+	a.denyBarrier = barrier
 }
 
 // Run drives a supported corpus case through the gateway's Streamable HTTP
@@ -125,7 +153,19 @@ func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 			result = gatewaySkip(c, "gateway tools/call supports corpus transport mcp_http only")
 			break
 		}
-		result = a.runToolsCall(c, timeout)
+		result = a.runToolsCall(c, timeout, false)
+	case "mcp_tool_sequence":
+		if c.Transport != "mcp_http" {
+			result = gatewaySkip(c, "gateway dependent tools/call sequence supports corpus transport mcp_http only")
+			break
+		}
+		result = a.runToolsCall(c, timeout, true)
+	case "mcp_tool_sequence_temporal":
+		if c.Transport != "mcp_http" {
+			result = gatewaySkip(c, "gateway temporal inventory supports native mcp_http cases only")
+			break
+		}
+		result = a.runTemporalInventory(c, timeout)
 	case "mcp_tool_definition":
 		if c.Transport != "mcp_http" {
 			result = gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http only")
@@ -156,6 +196,210 @@ func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
 	return result
 }
 
+type temporalInventoryStep struct {
+	request   map[string]interface{}
+	tools     []json.RawMessage
+	canonical []byte
+}
+
+func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) Result {
+	steps, err := temporalInventorySteps(c)
+	if err != nil {
+		return gatewaySkip(c, "gateway temporal inventory requires one before/after tools/list pair: "+err.Error())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	upstream := a.mcpHTTPFixture()
+	if upstream == nil {
+		return gatewaySkip(c, "gateway temporal inventory requires the MCP HTTP fixture")
+	}
+
+	client := &http.Client{}
+	sess := &gatewaySession{}
+	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
+		return *result
+	}
+	if sess.id == "" {
+		return Result{Verdict: "skip", Evidence: map[string]interface{}{
+			"product_surface": "mcp_gateway_streamable_http",
+			"reason":          "temporal_session_unbound",
+			"session_bound":   false,
+		}}
+	}
+	evidence := map[string]interface{}{
+		"product_surface": "mcp_gateway_streamable_http",
+		"session_bound":   true,
+	}
+	requests := make([]gatewayRequest, 0, len(steps))
+
+	baselineMessage, baselineRequest, err := prepareGatewayRequest(steps[0].request)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare baseline tools/list request: %w", c.ID, err)}
+	}
+	baselineRelease, err := upstream.AcquireToolDefinitionLease(ctx, baselineRequest.identity, steps[0].tools)
+	if err != nil {
+		return gatewaySkip(c, "gateway baseline inventory lease failed: "+err.Error())
+	}
+	requests = append(requests, baselineRequest)
+
+	baselineBody, baselineResult := a.sendResponse(ctx, client, c.ID, baselineMessage, true, "empty_baseline_tools_list_response", sess, &requests[0], deliveryRequired)
+	baselineRelease()
+	evidence["inventory_request_identities"] = []string{requests[0].identity}
+	if baselineResult != nil {
+		baselineResult.Verdict = "skip"
+		if baselineResult.Evidence == nil {
+			baselineResult.Evidence = evidence
+		} else {
+			for key, value := range evidence {
+				baselineResult.Evidence[key] = value
+			}
+		}
+		baselineResult.Evidence["reason"] = "baseline_inventory_not_established"
+		baselineResult.Evidence["original_inventory_delivered_to_agent"] = false
+		baselineResult.Evidence["changed_inventory_delivered_to_agent"] = false
+		return *baselineResult
+	}
+	baselineDelivered, baselineProof := a.requestDelivered(requests[0])
+	baselineCanonical, baselineValid := toolsListCanonical(baselineBody)
+	if !baselineProof || !baselineDelivered || !baselineValid || !bytes.Equal(baselineCanonical, steps[0].canonical) {
+		evidence["reason"] = "baseline_inventory_not_established"
+		evidence["original_inventory_reached_upstream"] = baselineDelivered
+		evidence["original_inventory_delivered_to_agent"] = false
+		evidence["changed_inventory_delivered_to_agent"] = false
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	evidence["original_inventory_reached_upstream"] = true
+	evidence["original_inventory_delivered_to_agent"] = true
+
+	changedMessage, changedRequest, err := prepareGatewayRequest(steps[1].request)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare changed tools/list request: %w", c.ID, err)}
+	}
+	changedRelease, err := upstream.AcquireToolDefinitionLease(ctx, changedRequest.identity, steps[1].tools)
+	if err != nil {
+		return gatewaySkip(c, "gateway changed inventory lease failed: "+err.Error())
+	}
+	requests = append(requests, changedRequest)
+	evidence["inventory_request_identities"] = []string{requests[0].identity, requests[1].identity}
+	changedBody, changedResult := a.sendResponse(ctx, client, c.ID, changedMessage, true, "empty_changed_tools_list_response", sess, &requests[1], deliveryRequired)
+	changedRelease()
+	changedDelivered, changedProof := a.requestDelivered(requests[1])
+	evidence["changed_inventory_reached_upstream"] = changedProof && changedDelivered
+	if changedResult != nil {
+		if changedResult.Evidence == nil {
+			changedResult.Evidence = map[string]interface{}{}
+		}
+		for key, value := range evidence {
+			changedResult.Evidence[key] = value
+		}
+		changedResult.Evidence["changed_inventory_delivered_to_agent"] = false
+		return *changedResult
+	}
+	if !changedProof || !changedDelivered {
+		evidence["reason"] = "changed_inventory_upstream_unproven"
+		evidence["changed_inventory_delivered_to_agent"] = false
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	// Past this guard the changed inventory is proven to have reached the
+	// runner-owned upstream, which is what delivery means for this path. Run
+	// derives DeliveryProven and VerdictObserved from upstream_reached alone,
+	// so recording delivery only under temporal-specific keys left every
+	// temporal allow and block unproven, scored as an error, and made the
+	// drift cases this path exists for unscoreable. It is set here rather than
+	// on each return so a later branch cannot forget it, and only after the
+	// proof is established so it can never assert delivery that did not happen.
+	evidence["upstream_reached"] = true
+	changedCanonical, changedValid := toolsListCanonical(changedBody)
+	if !changedValid {
+		evidence["reason"] = "malformed_changed_inventory"
+		evidence["changed_inventory_delivered_to_agent"] = false
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	if !bytes.Equal(changedCanonical, steps[1].canonical) {
+		evidence["reason"] = "changed_inventory_withheld_or_modified"
+		evidence["changed_inventory_delivered_to_agent"] = false
+		return Result{Verdict: "block", Evidence: evidence}
+	}
+	evidence["changed_inventory_delivered_to_agent"] = true
+	return Result{Verdict: "allow", Evidence: evidence}
+}
+
+func temporalInventorySteps(c Case) ([]temporalInventoryStep, error) {
+	rawMessages, ok := c.Payload["jsonrpc_messages"].([]interface{})
+	if !ok || len(rawMessages) != 4 {
+		return nil, fmt.Errorf("requires exactly four request/response messages; multi-server topology is unsupported")
+	}
+	steps := make([]temporalInventoryStep, 0, 2)
+	for i := 0; i < len(rawMessages); i += 2 {
+		request, ok := rawMessages[i].(map[string]interface{})
+		if !ok || request["method"] != "tools/list" {
+			return nil, fmt.Errorf("message %d must be a tools/list request", i)
+		}
+		requestID, hasRequestID := request["id"]
+		response, ok := rawMessages[i+1].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("message %d must be a tools/list response", i+1)
+		}
+		responseID, hasResponseID := response["id"]
+		if !hasRequestID || !hasResponseID || !reflect.DeepEqual(requestID, responseID) {
+			return nil, fmt.Errorf("messages %d and %d must carry matching IDs", i, i+1)
+		}
+		result, ok := response["result"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("message %d must contain a result object", i+1)
+		}
+		rawTools, ok := result["tools"].([]interface{})
+		if !ok || len(rawTools) == 0 {
+			return nil, fmt.Errorf("message %d result must contain at least one tool", i+1)
+		}
+		tools := make([]json.RawMessage, 0, len(rawTools))
+		for j, rawTool := range rawTools {
+			encoded, marshalErr := json.Marshal(rawTool)
+			if marshalErr != nil {
+				return nil, fmt.Errorf("message %d tool %d: %w", i+1, j, marshalErr)
+			}
+			tools = append(tools, encoded)
+		}
+		canonical, canonicalErr := canonicalJSON(tools)
+		if canonicalErr != nil {
+			return nil, canonicalErr
+		}
+		steps = append(steps, temporalInventoryStep{request: request, tools: tools, canonical: canonical})
+	}
+	return steps, nil
+}
+
+func toolsListCanonical(body []byte) ([]byte, bool) {
+	var response struct {
+		Result struct {
+			Tools json.RawMessage `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil || len(response.Result.Tools) == 0 {
+		return nil, false
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(response.Result.Tools, &tools); err != nil || len(tools) == 0 {
+		return nil, false
+	}
+	canonical, err := canonicalJSON(tools)
+	return canonical, err == nil
+}
+
+func canonicalJSON(value interface{}) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var normalized interface{}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&normalized); err != nil {
+		return nil, err
+	}
+	return json.Marshal(normalized)
+}
+
 func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result {
 	resultPayload, err := declaredToolResult(c)
 	if err != nil {
@@ -168,7 +412,6 @@ func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result 
 	if upstream == nil {
 		return gatewaySkip(c, "gateway tool-result response requires the MCP HTTP fixture")
 	}
-	identity := nextGatewayRequestIdentity()
 	call := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      "aeb-tool-result",
@@ -178,7 +421,7 @@ func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result 
 			"arguments": map[string]interface{}{},
 		},
 	}
-	call, request, err := withGatewayRequestIdentity(call, identity)
+	call, request, err := prepareGatewayRequest(call)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare tool-result request: %w", c.ID, err)}
 	}
@@ -214,32 +457,71 @@ func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result 
 	}}
 }
 
-func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
+func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration, requireFinalSink bool) Result {
 	toolsCalls, err := toolsCallMessages(c)
 	if err != nil {
 		return Result{Err: err}
 	}
+	// The documented split is that mcp_tool_call is exactly one call and
+	// mcp_tool_sequence carries dependent multi-call flows with prefix and
+	// final-sink proof. Nothing enforced it, so a case labeled mcp_tool_call
+	// carrying several calls took the weaker path: it could be credited as
+	// allow without final-sink proof, or have a denial evaluated without
+	// prefix-delivery checks. No corpus case does this today, which is why it
+	// was invisible, but a documented contract that only holds by convention
+	// is not a contract.
+	if !requireFinalSink && len(toolsCalls) > 1 {
+		return gatewaySkip(c, fmt.Sprintf(
+			"gateway mcp_tool_call is exactly one call, got %d; a dependent sequence must be labeled mcp_tool_sequence so it is scored with final-sink proof",
+			len(toolsCalls)))
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	requests := make([]gatewayRequest, 0, len(toolsCalls))
+	if requireFinalSink {
+		if a.mcpHTTPFixture() == nil {
+			return gatewaySkip(c, "gateway dependent tools/call sequence requires the MCP HTTP fixture")
+		}
+	}
+
 	client := &http.Client{}
 	sess := &gatewaySession{}
 	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
 		return *result
 	}
 
-	// Drive the tools/call sequence in order over the one session. A deny on any
-	// call blocks the whole sequence and names which message the gateway stopped.
-	requests := make([]gatewayRequest, 0, len(toolsCalls))
+	// Drive the tools/call sequence in order over the one session. A deny stops
+	// the sequence and names the message; block still requires atomic proof.
 	for i, toolsCall := range toolsCalls {
-		message, request, err := withGatewayRequestIdentity(toolsCall, nextGatewayRequestIdentity())
-		if err != nil {
-			return Result{Err: fmt.Errorf("case %s: prepare tools/call request %d: %w", c.ID, i, err)}
+		// Freshness is part of the proof: do not expose or lease a future request
+		// before every predecessor has completed.
+		message, request, prepErr := prepareGatewayRequest(toolsCall)
+		if prepErr != nil {
+			return Result{Err: fmt.Errorf("case %s: prepare tools/call request %d: %w", c.ID, i, prepErr)}
 		}
 		requests = append(requests, request)
+		var releaseFinalSink func()
+		if requireFinalSink && i == len(toolsCalls)-1 {
+			releaseFinalSink, err = a.mcpHTTPFixture().AcquireFinalSinkLease(ctx, fixture.MCPRequestObservation{
+				Identity: request.identity, Method: request.method, Fingerprint: request.fingerprint,
+			})
+			if err != nil {
+				return gatewaySkip(c, "gateway final-sink lease failed: "+err.Error())
+			}
+		}
 		result := a.send(ctx, client, c.ID, message, true, sess, &request, deliveryAbsent)
+		if releaseFinalSink != nil {
+			releaseFinalSink()
+		}
 		if result != nil {
-			if len(toolsCalls) > 1 && result.Verdict == "block" && result.Evidence != nil {
+			if requireFinalSink {
+				a.attachSequenceEvidence(result, requests, len(toolsCalls), i)
+				if result.Verdict == "block" && !a.sequencePrefixDelivered(requests[:i]) {
+					result.Verdict = "skip"
+					result.Evidence["reason"] = "sequence_prefix_unproven"
+				}
+			} else if len(toolsCalls) > 1 && result.Verdict == "block" && result.Evidence != nil {
 				result.Evidence["blocked_message_index"] = i
 			}
 			return *result
@@ -262,12 +544,67 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration) Result {
 			if !proofAvailable {
 				evidence["upstream_proof"] = "unavailable"
 			}
+			if requireFinalSink {
+				final := requests[len(requests)-1]
+				evidence["final_sink_request_identity"] = final.identity
+				evidence["final_sink_reached"] = a.finalSinkExecuted(final)
+			}
 			return Result{Verdict: "skip", Evidence: evidence}
 		}
 	}
 	evidence["request_identities"] = requestIdentities
 	evidence["upstream_reached"] = true
+	if requireFinalSink {
+		final := requests[len(requests)-1]
+		evidence["final_sink_request_identity"] = final.identity
+		evidence["final_sink_reached"] = a.finalSinkExecuted(final)
+		if evidence["final_sink_reached"] != true {
+			evidence["upstream_reached"] = false
+			evidence["reason"] = "final_sink_unproven"
+			return Result{Verdict: "skip", Evidence: evidence}
+		}
+	}
 	return Result{Verdict: "allow", Evidence: evidence}
+}
+
+func (a *MCPGatewayAdapter) sequencePrefixDelivered(requests []gatewayRequest) bool {
+	for _, request := range requests {
+		if delivered, proofAvailable := a.requestDelivered(request); !proofAvailable || !delivered {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *MCPGatewayAdapter) attachSequenceEvidence(result *Result, requests []gatewayRequest, total, current int) {
+	if result.Evidence == nil {
+		result.Evidence = map[string]interface{}{}
+	}
+	identities := make([]string, 0, current+1)
+	for _, request := range requests[:current+1] {
+		identities = append(identities, request.identity)
+	}
+	result.Evidence["tools_call_count"] = total
+	result.Evidence["request_identities"] = identities
+	if current == total-1 {
+		final := requests[len(requests)-1]
+		result.Evidence["final_sink_request_identity"] = final.identity
+		result.Evidence["final_sink_reached"] = a.finalSinkExecuted(final)
+	}
+	if result.Verdict == "block" {
+		result.Evidence["blocked_message_index"] = current
+	}
+}
+
+func (a *MCPGatewayAdapter) finalSinkExecuted(request gatewayRequest) bool {
+	upstream := a.mcpHTTPFixture()
+	if upstream == nil {
+		return false
+	}
+	executions := upstream.FinalSinkExecution(request.identity)
+	return len(executions) == 1 && executions[0] == (fixture.MCPRequestObservation{
+		Identity: request.identity, Method: request.method, Fingerprint: request.fingerprint,
+	})
 }
 
 func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Result {
@@ -284,7 +621,7 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 		"method":  "tools/list",
 		"params":  map[string]interface{}{},
 	}
-	toolsList, request, err := withGatewayRequestIdentity(toolsList, nextGatewayRequestIdentity())
+	toolsList, request, err := prepareGatewayRequest(toolsList)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare tools/list request: %w", c.ID, err)}
 	}
@@ -355,7 +692,10 @@ func (a *MCPGatewayAdapter) requestDelivered(request gatewayRequest) (bool, bool
 }
 
 func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client, caseID string, sess *gatewaySession) *Result {
-	identity := nextGatewayRequestIdentity()
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return &Result{Err: fmt.Errorf("case %s: prepare initialize request: %w", caseID, err)}
+	}
 	initialize := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      identity,
@@ -701,10 +1041,25 @@ func messageID(request *gatewayRequest) interface{} {
 
 func (a *MCPGatewayAdapter) gatewayDeny(signal string, request *gatewayRequest, expectation deliveryExpectation, status int, marker string) *Result {
 	delivered, proofAvailable := false, false
+	atomicAbsence := false
 	if request != nil {
 		delivered, proofAvailable = a.requestDelivered(*request)
 		if expectation == deliveryAbsent && proofAvailable && !delivered {
-			delivered = a.awaitLateDelivery(*request, gatewayDenySettlement)
+			if a.denyBarrier != nil {
+				var barrierErr error
+				atomicAbsence, barrierErr = a.denyBarrier(func() bool {
+					observed, available := a.requestDelivered(*request)
+					return available && observed
+				})
+				if barrierErr != nil {
+					return &Result{Verdict: "skip", Evidence: map[string]interface{}{
+						"product_surface": "mcp_gateway_streamable_http",
+						"deny_signal":     signal,
+						"reason":          "deny_barrier_failed",
+					}}
+				}
+				delivered, proofAvailable = a.requestDelivered(*request)
+			}
 		}
 	}
 	evidence := map[string]interface{}{"product_surface": "mcp_gateway_streamable_http", "deny_signal": signal}
@@ -715,29 +1070,18 @@ func (a *MCPGatewayAdapter) gatewayDeny(signal string, request *gatewayRequest, 
 		evidence["body_marker"] = marker
 	}
 	a.attachObservationEvidence(evidence, request, delivered, proofAvailable)
+	if expectation == deliveryAbsent {
+		evidence["atomic_non_delivery_proof"] = atomicAbsence
+		if !atomicAbsence {
+			evidence["reason"] = "atomic_non_delivery_proof_unavailable"
+			return &Result{Verdict: "skip", Evidence: evidence}
+		}
+	}
 	if !proofAvailable || delivered != bool(expectation) {
 		evidence["reason"] = "deny_delivery_unproven"
 		return &Result{Verdict: "skip", Evidence: evidence}
 	}
 	return &Result{Verdict: "block", Evidence: evidence, DeliveryProven: true, VerdictObserved: true}
-}
-
-func (a *MCPGatewayAdapter) awaitLateDelivery(request gatewayRequest, settlement time.Duration) bool {
-	deadline := time.NewTimer(settlement)
-	defer deadline.Stop()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			if delivered, _ := a.requestDelivered(request); delivered {
-				return true
-			}
-		case <-deadline.C:
-			delivered, _ := a.requestDelivered(request)
-			return delivered
-		}
-	}
 }
 
 func (a *MCPGatewayAdapter) gatewaySkipWithObservation(reason string, request *gatewayRequest, status int, marker string) *Result {

@@ -4,28 +4,39 @@ The `mcp-gateway` runner adapter drives a gateway through a generic MCP client
 endpoint. A plugin describes the gateway's protocol surface and deny signals;
 it must not identify or depend on a particular gateway product.
 
-The adapter supports three narrow paths, all sent to a plugin with
+The adapter supports five narrow paths, all sent to a plugin with
 `"transport": "streamable_http"`:
 
-- A corpus `mcp_http` case containing one or more `mcp_tool_call` messages: the
-  adapter sends `initialize`, `notifications/initialized`, and each case
-  `tools/call` in order over the one session.
+- A corpus `mcp_http` case containing one `mcp_tool_call` message.
+- A corpus `mcp_http` case containing a dependent `mcp_tool_sequence`. The
+  adapter sends each `tools/call` in order over one session, proves every
+  dependency at the runner-owned upstream, and records a separate execution
+  proof for the final sink.
 - A corpus `mcp_http` case containing exactly one `mcp_tool_definition`: the
   case models the upstream inventory while the adapter drives the gateway over
   Streamable HTTP. It installs the inventory under one request identity in the
   runner-managed fixture, then sends `initialize`, `notifications/initialized`,
   and `tools/list`. An `mcp_stdio` case is a different wire input and is not
-  declared as this HTTP adapter's route.
+  declared as this HTTP adapter's route, because applicability comes from
+  delivering the case's exact wire input rather than from sending comparable
+  semantics over whichever transport the adapter happens to speak.
 - A corpus `mcp_http` case containing exactly one `mcp_tool_result`: the adapter
   installs that result under one request identity, then drives a correlated call
   through the gateway.
+- A single-server `mcp_http` case containing one
+  `mcp_tool_sequence_temporal`: the adapter establishes the original inventory,
+  proves the agent received it, then delivers the changed inventory through the
+  same negotiated `Mcp-Session-Id`. A stateless initialize response is
+  unscoreable for this path. The adapter compares the full canonical tool
+  definitions. Name-only matches do not prove delivery.
 
 Other corpus transport and input-type tuples are not selected for this adapter;
 the runner emits an explicit `unreachable` coverage row when no declared delivery tuple exists. If a
 declared route cannot establish its delivery proof, the adapter returns `skip`
 and the runner promotes that out-of-contract verdict to an error rather than
-inventing a product verdict. An ordered `tools/call` sequence is modelled;
-temporal tool drift is not.
+inventing a product verdict. Native `mcp_http` temporal drift is modelled only
+for one upstream server. The adapter does not relabel stdio drift as HTTP and
+does not flatten a multi-server case into one session.
 
 For every request the adapter needs to prove, it mints one request identity and
 adds it in `params._meta.aeb_request_identity`. It also uses that identity as
@@ -34,9 +45,12 @@ method, and canonical JSON fingerprint it received. The adapter accepts exactly
 one matching observation, so an unrelated request, a copied identity on changed
 content, or a replay cannot prove delivery for this case. A sequence in which
 the gateway answers a call without forwarding it is therefore `skip`, with
-`upstream_reached: false`. A `tools/call` deny is a `block` only when the fixture
-proves that exact request did not arrive; the result names its
-`blocked_message_index`.
+`upstream_reached: false`. A `tools/call` deny is a `block` only when an adapter
+supplies authoritative atomic non-delivery proof for that exact request; the
+generic shell plugin does not. A proven result names its
+`blocked_message_index`. A dependent sequence also proves every successful
+prefix call before crediting a deny. An allow requires one exact execution at
+the runner-owned final sink.
 
 For a `tools/list` path, an allow is credited only when the fixture records the
 case's matching observation and every declared tool name is present in the
@@ -63,9 +77,12 @@ is already correlated to that request, so configured HTTP status and body-marker
 denies may score `block` without a JSON-RPC body, but only when the fixture
 observation satisfies that surface's delivery direction. A stale JSON-RPC deny,
 malformed response, or unproven fixture observation never scores `block`.
-For an outbound `tools/call` deny, the adapter keeps observing the request
-identity for a 50 ms settlement window before it credits absence. A matching
-late arrival during that window changes the result to `skip`.
+For an outbound `tools/call` deny, silence for a fixed time is not proof. A
+generic shell-managed gateway has no authoritative ownership boundary: a
+daemonized worker can outlive its launcher and forward later. The runner therefore
+does not manufacture non-delivery proof from process-group teardown or a closed
+listener. Unless an adapter supplies a stronger atomic proof, an apparent deny on
+this delivery direction is `skip` rather than a false containment result.
 
 ## Plugin fields
 
@@ -75,9 +92,10 @@ protocol transport; PR1 accepts only `streamable_http`.
 `gateway` describes how the runner starts and waits for the gateway:
 
 - `start_command`: command that starts the gateway. When set, the runner
-  executes it, waits for `ready_addr`, and stops it when the run ends. When
-  empty, the runner does not manage a lifecycle: start the gateway externally
-  and point `client` at its Streamable HTTP endpoint.
+  executes it, waits for `ready_addr`, and stops its launch process group when
+  the run ends. That lifecycle is not treated as atomic non-delivery proof.
+  When empty, the runner does not manage a lifecycle: start the gateway
+  externally and point `client` at its Streamable HTTP endpoint.
 - `ready_addr`: host:port readiness target the runner polls before driving any
   case. Required when `start_command` is set.
 - `env_passthrough`: environment names or values required by the gateway.
@@ -103,13 +121,16 @@ The adapter binds a session: when the gateway returns an `Mcp-Session-Id` header
 on initialize, the adapter replays it on the case's later requests, so a
 session-enforcing gateway is driven correctly. An `mcp_http` case may carry an
 ordered sequence of `tools/call` messages; the adapter drives them over the one
-session, blocks the sequence at the first denied call and reports its index, and
-allows only when every call reaches upstream. Resources, prompts, and
+session, stops at the first denied call and reports its index, and allows only
+when every call reaches upstream. A deny scores `block` only with the atomic
+proof contract described above; generic plugins return `skip`. Resources, prompts, and
 multi-server topologies remain out of scope, and a maintainer-opt-in run against
 an unrelated third-party gateway is still pending.
 
 `client.endpoint` is the absolute HTTP(S) MCP endpoint and `client.headers`
-are literal HTTP headers sent with every MCP request.
+are literal HTTP headers sent with every MCP request. Static
+`Mcp-Session-Id` headers are rejected. Session identity comes only from the
+validated `initialize` response.
 
 `deny_signals` normalizes a gateway's documented deny behavior:
 

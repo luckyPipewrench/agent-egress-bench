@@ -26,6 +26,8 @@ type MCPHTTPFixture struct {
 	toolDefinitions map[string][]json.RawMessage
 	toolResults     map[string]json.RawMessage
 	observations    map[string][]MCPRequestObservation
+	finalSinkLeases map[string]MCPRequestObservation
+	finalSinks      map[string][]MCPRequestObservation
 }
 
 // MCPRequestObservation is the runner-owned evidence recorded for an upstream
@@ -81,7 +83,25 @@ func (f *MCPHTTPFixture) Observation(identity string) []MCPRequestObservation {
 	return append([]MCPRequestObservation(nil), f.observations[identity]...)
 }
 
-func (f *MCPHTTPFixture) recordObservation(body []byte) string {
+// FinalSinkExecution returns exact executions at the runner-owned terminal
+// tools/call sink. Ordinary upstream arrival is not enough: the request must
+// match a lease minted for the sequence's final call.
+func (f *MCPHTTPFixture) FinalSinkExecution(identity string) []MCPRequestObservation {
+	f.requestMu.RLock()
+	defer f.requestMu.RUnlock()
+	return append([]MCPRequestObservation(nil), f.finalSinks[identity]...)
+}
+
+// ActiveFinalSinkLeases reports the number of terminal effects currently
+// armed. A dependent-sequence driver uses at most one, and only while its
+// terminal request is being dispatched.
+func (f *MCPHTTPFixture) ActiveFinalSinkLeases() int {
+	f.requestMu.RLock()
+	defer f.requestMu.RUnlock()
+	return len(f.finalSinkLeases)
+}
+
+func (f *MCPHTTPFixture) recordObservation(body []byte) (MCPRequestObservation, bool) {
 	var request struct {
 		Method string `json:"method"`
 		Params struct {
@@ -91,18 +111,57 @@ func (f *MCPHTTPFixture) recordObservation(body []byte) string {
 		} `json:"params"`
 	}
 	if json.Unmarshal(body, &request) != nil || request.Params.Meta.Identity == "" {
-		return ""
+		return MCPRequestObservation{}, false
 	}
 	fingerprint, err := MCPRequestFingerprint(body)
 	if err != nil {
-		return ""
+		return MCPRequestObservation{}, false
+	}
+	observation := MCPRequestObservation{
+		Identity: request.Params.Meta.Identity, Method: request.Method, Fingerprint: fingerprint,
 	}
 	f.requestMu.Lock()
-	f.observations[request.Params.Meta.Identity] = append(f.observations[request.Params.Meta.Identity], MCPRequestObservation{
-		Identity: request.Params.Meta.Identity, Method: request.Method, Fingerprint: fingerprint,
-	})
+	f.observations[request.Params.Meta.Identity] = append(f.observations[request.Params.Meta.Identity], observation)
 	f.requestMu.Unlock()
-	return request.Params.Meta.Identity
+	return observation, true
+}
+
+// AcquireFinalSinkLease binds the terminal effect of one dependent sequence to
+// the exact runner-owned identity, method, and canonical payload fingerprint.
+// A copied identity, changed payload, replay, or an earlier call cannot satisfy
+// the lease.
+func (f *MCPHTTPFixture) AcquireFinalSinkLease(ctx context.Context, expected MCPRequestObservation) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if expected.Identity == "" || expected.Method != "tools/call" || expected.Fingerprint == "" {
+		return nil, fmt.Errorf("final-sink lease requires an exact tools/call observation")
+	}
+	f.requestMu.Lock()
+	if _, exists := f.finalSinkLeases[expected.Identity]; exists {
+		f.requestMu.Unlock()
+		return nil, fmt.Errorf("final-sink lease %q already exists", expected.Identity)
+	}
+	f.finalSinkLeases[expected.Identity] = expected
+	f.requestMu.Unlock()
+	var released sync.Once
+	return func() {
+		released.Do(func() {
+			f.requestMu.Lock()
+			delete(f.finalSinkLeases, expected.Identity)
+			f.requestMu.Unlock()
+		})
+	}, nil
+}
+
+func (f *MCPHTTPFixture) recordFinalSinkExecution(observation MCPRequestObservation) {
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	expected, leased := f.finalSinkLeases[observation.Identity]
+	if !leased || expected != observation {
+		return
+	}
+	f.finalSinks[observation.Identity] = append(f.finalSinks[observation.Identity], observation)
 }
 
 // SetTools configures the tools returned by a later tools/list request.
@@ -184,6 +243,8 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		toolDefinitions: make(map[string][]json.RawMessage),
 		toolResults:     make(map[string]json.RawMessage),
 		observations:    make(map[string][]MCPRequestObservation),
+		finalSinkLeases: make(map[string]MCPRequestObservation),
+		finalSinks:      make(map[string][]MCPRequestObservation),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +255,8 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		f.calls.Add(1)
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		_ = r.Body.Close()
-		identity := f.recordObservation(body)
+		observation, observed := f.recordObservation(body)
+		identity := observation.Identity
 		var req struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      json.RawMessage `json:"id"`
@@ -228,6 +290,9 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":%s}}`, id, tools)
 		case "tools/call":
 			f.toolCalls.Add(1)
+			if observed {
+				f.recordFinalSinkExecution(observation)
+			}
 			f.requestMu.RLock()
 			result := append(json.RawMessage(nil), f.toolResults[identity]...)
 			f.requestMu.RUnlock()
