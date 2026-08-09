@@ -48,6 +48,38 @@ func TestLoadCases(t *testing.T) {
 	}
 }
 
+func TestLoadCasesDoesNotFilterSupersession(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		// Must track activeSchemaVersion: loadCases returns an error rather than
+		// skipping on a version mismatch, so a stale version here makes this test
+		// fail on its own loadCases call before it tests supersession at all.
+		"old.json": `{"schema_version":4,"id":"old"}`,
+		"new.json": `{"schema_version":4,"id":"new","supersedes":"old"}`,
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cases, err := loadCases(dir)
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+	if len(cases) != 2 {
+		t.Fatalf("expected both sides of supersession to load, got %d cases", len(cases))
+	}
+
+	loaded := make(map[string]Case, len(cases))
+	for _, c := range cases {
+		loaded[c.ID] = c
+	}
+	if _, ok := loaded["old"]; !ok {
+		t.Fatal("superseded case was filtered from the executable corpus")
+	}
+}
+
 func TestScorerRejectsV2CaseButHistoricalReaderPreservesIt(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "historical-v2.json")

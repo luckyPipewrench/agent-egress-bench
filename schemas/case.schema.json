@@ -189,7 +189,7 @@
     },
     "supersedes": {
       "type": "string",
-      "description": "ID of the case this supersedes. Used for verdict corrections."
+      "description": "ID of the case whose semantics this case replaces. Relationship metadata only; it does not deactivate either case."
     }
   },
   "if": {

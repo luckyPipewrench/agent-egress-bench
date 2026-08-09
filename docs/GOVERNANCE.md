@@ -17,6 +17,16 @@ Once a case ID is merged to `main`, it never changes. No renaming. No reassignme
 
 Existing case semantics do not change silently. This includes the expected verdict, capability tags, payload content, and the meaning of a case. If the attack surface evolves in a way that changes what the correct verdict should be, create a new case. If a verdict was wrong from the start, open an issue and discuss before changing it. Unannounced semantic changes break reproducibility for every tool that has already run against the corpus.
 
+## Supersession
+
+The optional `supersedes` field records that one case replaces another case's semantics. It is
+relationship metadata, not a loader instruction. The original case remains in the corpus and the
+runner executes both cases.
+
+Removing a superseded case from an active score would change the denominator. No mutable skip list
+may do that. A future active-set mechanism must be immutable, versioned, and bound to the release it
+changes before a runner may exclude any case.
+
 ## Versioning
 
 The spec uses `schema_version`. v4 is the active coordinated schema for cases, tool profiles, results, summaries, and receipt profiles. Earlier schemas are frozen readers only; active scoring rejects them and never normalizes them into v4 semantics. Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not a schema bump. A structural, scoring, delivery-protocol, provenance, or security-validation change increments the schema version and publishes the affected artifacts together. The validator enforces the active schema version.
