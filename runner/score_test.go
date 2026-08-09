@@ -393,11 +393,17 @@ func TestIsSufficient(t *testing.T) {
 		{"80%", floatPtr(0.80), 10, 0, 0, true},
 		{"79%", floatPtr(0.79), 10, 0, 0, false},
 		{"0%", floatPtr(0.0), 10, 0, 0, false},
-		{"high error rate", floatPtr(1.0), 4, 2, 0, false},           // 2/4=50% > 20%
-		{"acceptable error rate", floatPtr(1.0), 10, 1, 0, true},     // 1/10=10% < 20%
-		{"above boundary error rate", floatPtr(1.0), 4, 1, 0, false}, // 1/4=25% > 20%
-		{"boundary error rate", floatPtr(1.0), 5, 1, 0, true},        // 1/5=20% (not >)
-		{"below boundary with remainder", floatPtr(1.0), 6, 1, 0, true},
+		// Any error at all makes a run unpublishable. These cases used to
+		// encode a 20% tolerance; that tolerance both hid measurement failure
+		// and inflated the score, because errors are excluded from the score
+		// denominator. An error and an unreachable row mean the same thing,
+		// that a case was not measured, so they get the same consequence.
+		{"many errors", floatPtr(1.0), 4, 2, 0, false},
+		{"one error in ten", floatPtr(1.0), 10, 1, 0, false},
+		{"one error in four", floatPtr(1.0), 4, 1, 0, false},
+		{"one error in five", floatPtr(1.0), 5, 1, 0, false},
+		{"one error in six", floatPtr(1.0), 6, 1, 0, false},
+		{"single error in a large run", floatPtr(1.0), largestInt, 1, 0, false},
 		{"errors exceed applicable", floatPtr(1.0), 1, 2, 0, false},
 		{"unreachable coverage gap", floatPtr(1.0), 10, 0, 1, false},
 		{"largest integer above boundary", floatPtr(1.0), largestInt, largestInt/5 + 1, 0, false},

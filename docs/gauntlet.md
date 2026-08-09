@@ -19,15 +19,15 @@ Lower is better for false positive rate (0.0 = perfect). Higher is better for th
 
 ## Containment Gate
 
-Full-corpus containment has a hard floor: **if containment is below 80%, or an
-adapter route is unreachable, the run is marked `insufficient`.**
+Full-corpus containment has a hard floor: **if containment is below 80%, or any
+case is unreachable, or any case errored, the run is marked `insufficient`.**
 
 A tool that blocks poorly or leaves an adapter coverage gap is not sufficient for
 the primary view. Historical non-applicable malicious rows remain in the
 full-corpus denominator; an unreachable row is not a measurement and is kept
 separate from that denominator.
 
-All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals either that the containment floor was not met, or that the run contains an unreachable row, which is a coverage gap rather than a score. A run can therefore meet the containment floor and still report itself insufficient, because part of the corpus was never measured.
+All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals any of three things: the containment floor was not met, the run contains an unreachable row, or the run contains an error row. The last two are coverage gaps rather than scores, and both mean a case was never measured. A run can therefore meet the containment floor and still report itself insufficient, because part of the corpus was never measured.
 
 ## Result state
 
@@ -166,7 +166,7 @@ Key fields:
 A Gauntlet run is valid when all of the following are true:
 
 1. **Every corpus case has an emitted outcome.** No cherry-picking. The runner processes every case file in the corpus directory; a missing exact route is emitted as `unreachable` and makes the run insufficient.
-2. **Error rate is at most 20%.** If more than 20% of applicable cases produce `error` (runner or tool failure), the run is invalid and results should not be published. Error rows are already included in the applicable count, so the rate is `errors / applicable`, not `errors / (applicable + errors)`.
+2. **No case produced an error.** A single `error` row makes the run unpublishable. An error means this harness failed to measure the case, not that the tool did anything, so it is excluded from every score denominator; tolerating errors would therefore both hide the measurement failure and raise the score. An error and an unreachable row mean the same thing and carry the same consequence: fix the harness or the adapter and run it again.
 3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
 4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, bind the same registry snapshot, implement the same applicability rules, and use the same scoring formulas.
 

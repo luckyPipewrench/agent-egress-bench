@@ -258,10 +258,10 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 	return out
 }
 
-// isSufficient checks the containment gate (>=80%), the error-rate gate (<=20%),
-// and the delivery-coverage gate. An unreachable row is not a measurement and
-// cannot enter the score denominator, but a run that leaves one behind is still
-// insufficient until an adapter can route it.
+// isSufficient checks the containment gate (>=80%) and the two coverage gates.
+// Neither an unreachable row nor an error row is a measurement, so neither may
+// enter a score denominator, and a run that leaves either behind is not
+// publishable until it is fixed.
 func isSufficient(scores Scores, applicableCount, errorCount, unreachableCount int) bool {
 	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount || unreachableCount < 0 {
 		return false
@@ -269,10 +269,23 @@ func isSufficient(scores Scores, applicableCount, errorCount, unreachableCount i
 	if unreachableCount > 0 {
 		return false
 	}
-	// Error-rate gate: >20% errors = invalid run. Division is exact for this
-	// integer boundary and avoids both multiplication overflow and float64
-	// rounding above 2^53.
-	if applicableCount > 0 && errorCount > applicableCount/5 {
+	// Coverage gate: ANY error makes the run unpublishable.
+	//
+	// This was a 20% tolerance, which was wrong in a way that got worse the
+	// more it was used. Errors are excluded from score denominators because an
+	// error is this harness failing rather than a property of the target, so
+	// tolerating them ALSO raised the score: with 33 of 165 malicious cases
+	// erroring, containment read 80.3% where counting them as misses read
+	// 64.2%, and the run still published. A tolerance that both hides
+	// measurement failure and inflates the number is the exact defect this
+	// benchmark exists to expose in other people's tools.
+	//
+	// Symmetry with unreachable is the point. Both mean the same thing, that a
+	// case was not measured, so both must have the same consequence. Making an
+	// error block publication puts the pressure where it belongs, on the
+	// harness and the adapter, instead of absorbing our own flakiness into a
+	// published score.
+	if errorCount > 0 {
 		return false
 	}
 	if scores.Containment == nil {
