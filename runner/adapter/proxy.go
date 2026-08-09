@@ -455,7 +455,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		}
 	}
 
-	// Drain frames until we either observe a close (definitive block signal)
+	// Drain frames until we either observe a policy close (definitive block signal)
 	// or the wire goes idle (allow). A single-read classifier races the
 	// upstream echo against the proxy's close frame: if the proxy blocks on
 	// a later client frame (e.g. cross-message DLP firing on frame N), the
@@ -519,10 +519,22 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 			}
 		}
 		if opcode == wsOpcodeClose {
+			closeCode, policyClose := webSocketCloseCode(payload)
+			if !policyClose {
+				return Result{
+					Verdict: "skip",
+					Evidence: map[string]interface{}{
+						"reason":     "ws_close_not_policy_violation",
+						"close_code": closeCode,
+						"detail":     truncate(webSocketCloseReason(payload), 160),
+					},
+				}
+			}
 			return Result{
 				Verdict: "block",
 				Evidence: map[string]interface{}{
 					"scanner":      "websocket_proxy",
+					"close_code":   closeCode,
 					"block_reason": truncate(webSocketCloseReason(payload), 160),
 				},
 			}
@@ -1238,10 +1250,11 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 }
 
 const (
-	wsOpcodeContinuation = 0
-	wsOpcodeText         = 1
-	wsOpcodeBinary       = 2
-	wsOpcodeClose        = 8
+	wsOpcodeContinuation   = 0
+	wsOpcodeText           = 1
+	wsOpcodeBinary         = 2
+	wsOpcodeClose          = 8
+	wsClosePolicyViolation = 1008
 )
 
 func (p *ProxyAdapter) writeWebSocketUpgrade(conn net.Conn, targetURL string) error {
@@ -1380,6 +1393,14 @@ func webSocketCloseReason(payload []byte) string {
 		return "websocket closed"
 	}
 	return string(payload[2:])
+}
+
+func webSocketCloseCode(payload []byte) (int, bool) {
+	if len(payload) < 2 {
+		return 0, false
+	}
+	code := int(payload[0])<<8 | int(payload[1])
+	return code, code == wsClosePolicyViolation
 }
 
 func shellQuote(s string) string {
