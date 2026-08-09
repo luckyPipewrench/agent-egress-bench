@@ -354,11 +354,51 @@ func TestValidateProfileForRunAcceptsKnownAndEmptyClaims(t *testing.T) {
 
 // The claim vocabulary is duplicated because runner/ and validate/ are separate
 // Go modules and cannot share a package. Duplication without a binding check is
-// how the supports contract drifted into three disagreeing copies, so this test
-// binds the two the same way TestToolProfileSupportsVocabularyParity does.
+// how the supports contract drifted into three disagreeing copies.
+//
+// There are FOUR copies, not two: the runner's preflight, the Go validator, the
+// tool-profile schema's claims enum, and the embedded verifier's mirror of that
+// schema. Binding only the first two would let a schema change accept or reject
+// a different set of published claims while both Go test suites stayed green.
 func TestToolProfileClaimVocabularyParity(t *testing.T) {
+	rootPath := filepath.Join("..", "schemas", "tool-profile.schema.json")
+	embeddedPath := filepath.Join("..", "control-evidence", "v0", "verifier", "schemas", "tool-profile.schema.json")
+
 	assertSameVocabulary(t, "runner claim vocabulary", knownClaims,
 		"validator vocabulary", vocabularyFromValidator(t, "validCapabilityTags"))
+	assertSameVocabulary(t, "runner claim vocabulary", knownClaims,
+		"schema claims enum", claimsVocabularyFromSchema(t, rootPath))
+	assertSameVocabulary(t, "runner claim vocabulary", knownClaims,
+		"embedded schema claims enum", claimsVocabularyFromSchema(t, embeddedPath))
+}
+
+// claimsVocabularyFromSchema reads the claims enum out of a tool-profile schema.
+// An absent or empty enum is a failure rather than an empty vocabulary: a claims
+// array with no enum accepts anything, which is the permissive state this
+// contract exists to forbid.
+func claimsVocabularyFromSchema(t *testing.T, path string) map[string]struct{} {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Properties struct {
+			Claims struct {
+				Items struct {
+					Enum []string `json:"enum"`
+				} `json:"items"`
+			} `json:"claims"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	enum := schema.Properties.Claims.Items.Enum
+	if len(enum) == 0 {
+		t.Fatalf("%s declares no claims enum, so it accepts any claim string", path)
+	}
+	return stringsToSet(enum)
 }
 
 // TestToolProfileSupportsVocabularyParity keeps all five v3 contract copies in
