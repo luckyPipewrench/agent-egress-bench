@@ -41,6 +41,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -283,6 +284,25 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 // completed the request/response exchange itself. It deliberately does not
 // infer proof from the verdict string: a local synthetic response, an empty
 // subprocess exit, and a stale protocol response can all look like a verdict.
+// proxyPolicyRejectionRe matches a proxy's own refusal inside a transport error
+// string. Status codes must appear as standalone tokens, never as a digit run
+// inside a larger number.
+//
+// Bare substring matching on "403" read an ephemeral PORT as a policy decision:
+// "read tcp 127.0.0.1:40320->..." contains 403, so any transport failure that
+// happened to draw such a port scored as an observed block and handed out
+// containment credit. It was invisible locally and failed in CI because which
+// port you draw is luck. A benchmark whose verdict depends on a port number is
+// not measuring the tool.
+var proxyPolicyRejectionRe = regexp.MustCompile(`(?i)(?:\bforbidden\b|\bmethod not allowed\b|\bblocked\b|(?:^|[^0-9])(?:403|405)(?:[^0-9]|$))`)
+
+// proxyPolicyRejection reports whether a transport error carries the proxy's
+// own refusal rather than an ambiguous network failure. The caller must strip
+// the requested URL first, so the case's target cannot supply these words.
+func proxyPolicyRejection(policyText string) bool {
+	return proxyPolicyRejectionRe.MatchString(policyText)
+}
+
 func observedProxyVerdict(result Result) Result {
 	if result.Err == nil && (result.Verdict == "allow" || result.Verdict == "block") {
 		result.DeliveryProven = true
@@ -982,7 +1002,7 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 			policyText = strings.ReplaceAll(policyText, targetURL, "")
 		}
 		// Proxy actively rejected the CONNECT (policy decision).
-		if strings.Contains(policyText, "Forbidden") || strings.Contains(policyText, "blocked") || strings.Contains(policyText, "403") || strings.Contains(policyText, "Method Not Allowed") || strings.Contains(policyText, "405") {
+		if proxyPolicyRejection(policyText) {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
 			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
