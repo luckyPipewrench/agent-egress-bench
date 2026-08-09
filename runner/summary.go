@@ -256,7 +256,7 @@ func buildSummary(
 		},
 		// Calibration adapters assert proof flags rather than observing them, so
 		// they do not produce a complete measurement and cannot publish.
-		MeasurementStatus: measurementStatus(len(applicableResults), errorCount, len(unreachableIDs), hasSyntheticEvidence(applicableResults)),
+		MeasurementStatus: measurementStatus(len(allCases), len(applicableResults), errorCount, len(unreachableIDs), totalNA, hasSyntheticEvidence(applicableResults)),
 		PerCategory:       perCategory,
 
 		MethodRepository:   prov.MethodRepository,

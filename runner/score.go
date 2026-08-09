@@ -261,8 +261,19 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 // measurementStatus reports whether every applicable case produced an observed
 // outcome. Neither an unreachable row nor an error row is a measurement, so
 // neither may enter a score denominator or a publishable run.
-func measurementStatus(applicableCount, errorCount, unreachableCount int, synthetic bool) string {
+func measurementStatus(totalCount, applicableCount, errorCount, unreachableCount, notApplicableCount int, synthetic bool) string {
 	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount || unreachableCount < 0 {
+		return measurementStatusIncomplete
+	}
+	if totalCount < 0 || notApplicableCount < 0 {
+		return measurementStatusIncomplete
+	}
+	// Every case in the corpus must land in exactly one of the three buckets.
+	// A case that reaches none of them has silently disappeared, and without
+	// this check the run would report a complete measurement of a corpus it
+	// never finished. Errors are a subset of the applicable count, not a fourth
+	// population, so they are deliberately not added here.
+	if applicableCount+unreachableCount+notApplicableCount != totalCount {
 		return measurementStatusIncomplete
 	}
 	// ANY error, unreachable case, or synthetic calibration row makes the

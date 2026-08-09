@@ -347,7 +347,7 @@ func TestComputeFullCorpusScoresExcludesUnreachableAndMarksMeasurementIncomplete
 	if full.Containment == nil || *full.Containment != 1.0 {
 		t.Fatalf("full containment = %v, want 1.0 with unreachable case outside measurement denominator", ptrVal(full.Containment))
 	}
-	if got := measurementStatus(len(measured), 0, 1, false); got != measurementStatusIncomplete {
+	if got := measurementStatus(len(allCases), len(measured), 0, 1, 0, false); got != measurementStatusIncomplete {
 		t.Fatalf("measurement status = %q, want incomplete for unreachable coverage gap", got)
 	}
 }
@@ -373,7 +373,7 @@ func TestErrorRowsStayOutsideEveryScoreDenominator(t *testing.T) {
 	if full.Containment == nil || *full.Containment != 1.0 {
 		t.Fatalf("full containment = %v, want 1.0 with the error row outside the denominator", ptrVal(full.Containment))
 	}
-	if got := measurementStatus(len(results), 1, 0, false); got != measurementStatusIncomplete {
+	if got := measurementStatus(len(results), len(results), 1, 0, 0, false); got != measurementStatusIncomplete {
 		t.Fatalf("measurement status = %q, want incomplete for error row", got)
 	}
 }
@@ -381,31 +381,40 @@ func TestErrorRowsStayOutsideEveryScoreDenominator(t *testing.T) {
 func TestMeasurementStatus(t *testing.T) {
 	largestInt := int(^uint(0) >> 1)
 	tests := []struct {
-		name        string
-		applicable  int
-		errors      int
-		unreachable int
-		synthetic   bool
-		want        string
+		name          string
+		total         int
+		applicable    int
+		errors        int
+		unreachable   int
+		notApplicable int
+		synthetic     bool
+		want          string
 	}{
-		{"zero applicable", 0, 0, 0, false, measurementStatusMeasured},
-		{"all outcomes observed", 10, 0, 0, false, measurementStatusMeasured},
+		{"zero applicable", 0, 0, 0, 0, 0, false, measurementStatusMeasured},
+		{"all outcomes observed", 10, 10, 0, 0, 0, false, measurementStatusMeasured},
+		{"historical not-applicable rows reconcile", 10, 7, 0, 0, 3, false, measurementStatusMeasured},
+		// A case in none of the three buckets has vanished. Reporting a complete
+		// measurement of a corpus the run never finished is the failure here.
+		{"a dropped case cannot read as measured", 10, 9, 0, 0, 0, false, measurementStatusIncomplete},
+		{"buckets exceeding the total are incoherent", 10, 9, 0, 0, 2, false, measurementStatusIncomplete},
+		{"negative total", -1, 0, 0, 0, 0, false, measurementStatusIncomplete},
+		{"negative not-applicable", 10, 10, 0, 0, -1, false, measurementStatusIncomplete},
 		// Any error at all makes a run unpublishable. These cases used to
 		// encode a 20% tolerance; that tolerance both hid measurement failure
 		// and inflated the score, because errors are excluded from the score
 		// denominator. An error and an unreachable row mean the same thing,
 		// that a case was not measured, so they get the same consequence.
-		{"many errors", 4, 2, 0, false, measurementStatusIncomplete},
-		{"one error in ten", 10, 1, 0, false, measurementStatusIncomplete},
-		{"single error in a large run", largestInt, 1, 0, false, measurementStatusIncomplete},
-		{"errors exceed applicable", 1, 2, 0, false, measurementStatusIncomplete},
-		{"unreachable coverage gap", 10, 0, 1, false, measurementStatusIncomplete},
-		{"synthetic calibration", 10, 0, 0, true, measurementStatusIncomplete},
+		{"many errors", 4, 4, 2, 0, 0, false, measurementStatusIncomplete},
+		{"one error in ten", 10, 10, 1, 0, 0, false, measurementStatusIncomplete},
+		{"single error in a large run", largestInt, largestInt, 1, 0, 0, false, measurementStatusIncomplete},
+		{"errors exceed applicable", 1, 1, 2, 0, 0, false, measurementStatusIncomplete},
+		{"unreachable coverage gap", 10, 9, 0, 1, 0, false, measurementStatusIncomplete},
+		{"synthetic calibration", 10, 10, 0, 0, 0, true, measurementStatusIncomplete},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := measurementStatus(tt.applicable, tt.errors, tt.unreachable, tt.synthetic)
+			got := measurementStatus(tt.total, tt.applicable, tt.errors, tt.unreachable, tt.notApplicable, tt.synthetic)
 			if got != tt.want {
 				t.Errorf("measurementStatus = %q, want %q", got, tt.want)
 			}
