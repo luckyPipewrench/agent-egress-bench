@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case.schema.json",
   "title": "agent-egress-bench Case",
-  "description": "A single test case for evaluating AI agent egress security tools. Each case specifies an input, the expected verdict (block or allow), and the capabilities required to evaluate it.",
+  "description": "A single test case for evaluating AI agent egress security tools. Each case specifies an input, the expected verdict (block or allow), and its delivery and observation prerequisites.",
   "type": "object",
   "required": [
     "schema_version",
@@ -182,7 +182,7 @@
           "dns_rebinding_fixture"
         ]
       },
-      "description": "Runtime capability prerequisites. If a tool profile does not satisfy all entries, the case is not_applicable."
+      "description": "Runtime delivery and observation prerequisites. Active scoring selects cases from adapter-proven delivery and verdict observation, not tool-profile supports."
     },
     "false_positive_risk": {
       "type": "string",

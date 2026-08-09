@@ -28,6 +28,13 @@ class GauntletSiteIndexTest(unittest.TestCase):
         self.assertIn('<script src="./scope-render.js"></script>', self.html)
         self.assertIn('<script src="./latest-result.js"></script>', self.html)
 
+    def test_diagnostic_scope_describes_observed_delivery_not_profile_claims(self):
+        self.assertIn(
+            "cases this adapter delivered and observed, not the complete corpus.",
+            self.html,
+        )
+        self.assertNotIn("matching this tool\\u2019s declared capabilities", self.html)
+
     def test_current_scope_identity_matches_repository_versions(self):
         self.assertIn('data-corpus-version="v2.3.0"', self.html)
         self.assertIn('data-scoring-version="2.4"', self.html)

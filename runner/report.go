@@ -463,7 +463,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("")
 	line("## Metric vector")
 	line("")
-	line("Each metric stands on its own. Full-corpus scores retain out-of-scope cases in their denominators; applicable-only scores describe the declared supported scope.")
+	line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; unreachable rows are excluded and make the run insufficient. Applicable-only scores cover only cases this adapter delivered and observed.")
 	line("")
 	line("### Full corpus")
 	line("")

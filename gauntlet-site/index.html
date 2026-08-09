@@ -198,12 +198,8 @@ go build -o aeb-gauntlet .
     var applicable = scores.applicable;
 
     if (applicable) {
-      // docs/methodology.md: full corpus is the primary view and applicable-only
-      // is unsuitable for procurement because it hides coverage gaps. A tool
-      // raises its applicable score by declaring fewer capabilities, without
-      // containing anything more, so presenting that number first and hiding
-      // full corpus behind a toggle rewarded narrower declarations. Full corpus
-      // now leads; applicable stays available as the diagnostic view.
+      // Full corpus is the primary view. Applicable-only is a diagnostic of the
+      // cases this adapter delivered and observed, rather than the whole corpus.
       card.appendChild(txt('div', 'Full Corpus Scores (' + (cc.total || 0) + ' cases)', 'section-label'));
       card.appendChild(makeScoresGrid(full));
 
@@ -214,7 +210,7 @@ go build -o aeb-gauntlet .
       aToggle.type = 'button';
       var aWrap = el('div', 'hidden');
       aToggle.setAttribute('aria-expanded', 'false');
-      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases matching this tool\u2019s declared capabilities, so it is not comparable across tools.', 'denominator'));
+      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases this adapter delivered and observed, not the complete corpus.', 'denominator'));
       aWrap.appendChild(makeScoresGrid(applicable));
       aToggle.addEventListener('click', function() {
         aWrap.classList.toggle('hidden');

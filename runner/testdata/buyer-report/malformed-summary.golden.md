@@ -57,7 +57,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 
 ## Metric vector
 
-Each metric stands on its own. Full-corpus scores retain out-of-scope cases in their denominators; applicable-only scores describe the declared supported scope.
+Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; unreachable rows are excluded and make the run insufficient. Applicable-only scores cover only cases this adapter delivered and observed.
 
 ### Full corpus
 

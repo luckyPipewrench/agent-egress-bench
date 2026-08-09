@@ -130,6 +130,16 @@
     if (applicable + unreachable + notApplicable !== total) {
       throw new Error('case_count.applicable, unreachable, and not_applicable must equal case_count.total');
     }
+    var sufficient = scopeValue(artifact, ['sufficient']);
+    if (typeof sufficient !== 'boolean') {
+      throw new Error('sufficient must be a boolean');
+    }
+    if (unreachable !== 0 && sufficient) {
+      throw new Error('an unreachable case requires sufficient=false');
+    }
+    if (!sufficient) {
+      throw new Error('insufficient runs cannot render as verified');
+    }
 
     var reasons = scopeValue(artifact, ['case_count', 'not_applicable_reasons']);
     if (!reasons || typeof reasons !== 'object' || Array.isArray(reasons)) {
@@ -211,8 +221,8 @@
     block.className = 'denominator';
     // Lead with full-corpus containment, the primary published view, and name
     // the applicable figure as diagnostic behind it. Both denominators stay
-    // visible: the previous line quoted only the applicable score, which a tool
-    // improves by declaring fewer capabilities.
+    // visible: applicable-only results are a delivery-and-observation diagnostic,
+    // not a substitute for coverage of the complete corpus.
     block.appendChild(document.createTextNode(
       'Containment ' + formatPercent(scope.fullContainment) + ' of ' + scope.fullContainmentDenominator +
       ' malicious cases in the full ' + total + '-case corpus; ' +
