@@ -173,7 +173,7 @@ func computeScores(results []CaseResult) Scores {
 // denominator. Historical not-applicable cases remain frozen evidence under
 // their original semantics. Unreachable and error rows are not measurements,
 // so callers exclude them from the denominator while separately making the run
-// insufficient.
+// incomplete.
 func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unmeasuredIDs map[string]struct{}) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
@@ -258,18 +258,15 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 	return out
 }
 
-// isSufficient checks the containment gate (>=80%) and the two coverage gates.
-// Neither an unreachable row nor an error row is a measurement, so neither may
-// enter a score denominator, and a run that leaves either behind is not
-// publishable until it is fixed.
-func isSufficient(scores Scores, applicableCount, errorCount, unreachableCount int) bool {
+// measurementStatus reports whether every applicable case produced an observed
+// outcome. Neither an unreachable row nor an error row is a measurement, so
+// neither may enter a score denominator or a publishable run.
+func measurementStatus(applicableCount, errorCount, unreachableCount int, synthetic bool) string {
 	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount || unreachableCount < 0 {
-		return false
+		return measurementStatusIncomplete
 	}
-	if unreachableCount > 0 {
-		return false
-	}
-	// Coverage gate: ANY error makes the run unpublishable.
+	// ANY error, unreachable case, or synthetic calibration row makes the
+	// measurement incomplete.
 	//
 	// This was a 20% tolerance, which was wrong in a way that got worse the
 	// more it was used. Errors are excluded from score denominators because an
@@ -285,12 +282,8 @@ func isSufficient(scores Scores, applicableCount, errorCount, unreachableCount i
 	// error block publication puts the pressure where it belongs, on the
 	// harness and the adapter, instead of absorbing our own flakiness into a
 	// published score.
-	if errorCount > 0 {
-		return false
+	if errorCount > 0 || unreachableCount > 0 || synthetic {
+		return measurementStatusIncomplete
 	}
-	if scores.Containment == nil {
-		// No malicious cases at all -- vacuously sufficient.
-		return true
-	}
-	return *scores.Containment >= 0.80
+	return measurementStatusMeasured
 }

@@ -16,18 +16,9 @@ The table lists result outcomes, not the `score` field alone. `pass`, `fail`, an
 
 ## Applicability
 
-A case is scoreable only when its adapter proves delivery of the exact declared
-wire input and observes a request-correlated `allow` or `block` verdict.
-`claims`, `requires`, and `capability_tags` do not select cases. Claims and
-tags are registry-backed reporting labels. They never alter a score,
-denominator, sufficiency decision, or publication decision.
+A case is scoreable only when its adapter proves delivery of the exact declared wire input and observes a request-correlated `allow` or `block` verdict. `claims`, `requires`, and `capability_tags` do not select cases. Claims and tags are registry-backed reporting labels. They never alter a score, denominator, measurement-status decision, or publication decision.
 
-An adapter that declares no exact route emits `actual_verdict: "unreachable"`
-with `score: "error"`. It is neither a scored runner error nor N/A: it is
-excluded from score denominators and makes the run insufficient. A routed case
-without delivery proof or a trustworthy verdict is an `error`, which is treated
-the same way for the same reason: it was not measured, so it is excluded from
-the denominators and it also makes the run insufficient.
+An adapter that declares no exact route emits `actual_verdict: "unreachable"` with `score: "error"`. It is neither a scored runner error nor N/A: it is excluded from score denominators and makes the measurement incomplete. A routed case without delivery proof or a trustworthy verdict is an `error`, which is treated the same way for the same reason: it was not measured, so it is excluded from the denominators and it also makes the measurement incomplete.
 
 `requires` lists only what the runner needs to deliver the input to the tool and observe a trustworthy verdict: the transport, genuine runtime fixtures (e.g. `tls_interception`, `dns_rebinding_fixture`), and the base surface or detector family the tool must inspect. It must never contain an attack-difficulty or evasion-technique flag (e.g. `encoding_evasion_scanning`, `ssrf_bypass_scanning`); those are `capability_tags` for reporting. This holds for malicious `block` cases and benign `allow` cases alike: a tool must not dodge a hard variant of a surface it already inspects by declining a difficulty claim. The runner resolves every tag from the exact registry snapshot bound to the profile before it emits a score.
 
@@ -55,17 +46,9 @@ unreachable coverage stays separate from both scores and historical N/A rows.
 
 A runner error (tool crash, timeout, transport failure) is scored as `error`, not `fail`. This prevents infrastructure problems from being counted as detection failures.
 
-If any case produces `error`, or any case is unreachable, the run is
-insufficient and the results should not be published. Both mean a case was not
-measured, and neither describes the target's behaviour, so both are excluded
-from every score denominator and both block publication. That symmetry is
-deliberate: because errors are excluded from the denominator, tolerating them
-would raise the reported score while hiding the fact that part of the corpus
-was never measured. An error is this harness or the adapter failing, so the fix
-belongs there rather than in a scoring allowance.
+If any case produces `error`, or any case is unreachable, `measurement_status` is `incomplete` and the results should not be published. Both mean a case was not measured, and neither describes the target's behaviour, so both are excluded from every score denominator and both block publication. That symmetry is deliberate: because errors are excluded from the denominator, tolerating them would raise the reported score while hiding the fact that part of the corpus was never measured. An error is this harness or the adapter failing, so the fix belongs there rather than in a scoring allowance.
 
-The runner enforces this in `summary.sufficient`; the separate case/result
-validator does not decide whether a complete run is publishable.
+The runner records this in `summary.measurement_status`; the separate case/result validator does not decide whether a complete run is publishable.
 
 ## Authoritative Validation
 

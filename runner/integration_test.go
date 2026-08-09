@@ -125,9 +125,10 @@ func TestIntegrationNullAdapter(t *testing.T) {
 		t.Errorf("null adapter full containment = %f, want 0.0", *summary.Scores.Full.Containment)
 	}
 
-	// Should NOT be sufficient (0% containment < 80% gate).
-	if summary.Sufficient {
-		t.Error("expected sufficient=false for null adapter")
+	// The null adapter is a synthetic calibration path, so it cannot claim a
+	// complete measurement even though its score vector is still emitted.
+	if summary.MeasurementStatus != measurementStatusIncomplete {
+		t.Errorf("measurement status = %q, want incomplete for synthetic null-adapter run", summary.MeasurementStatus)
 	}
 }
 
@@ -222,9 +223,9 @@ func TestIntegrationRealCases(t *testing.T) {
 	}
 
 	// Dry-run keeps scoreable calibration rows but cannot become publication
-	// sufficient because it asserted, rather than observed, delivery and verdicts.
-	if summary.Sufficient {
-		t.Error("expected sufficient=false in dry-run mode")
+	// complete because it asserted, rather than observed, delivery and verdicts.
+	if summary.MeasurementStatus != measurementStatusIncomplete {
+		t.Errorf("measurement status = %q, want incomplete in dry-run mode", summary.MeasurementStatus)
 	}
 
 	// Per-category should have entries.
@@ -244,9 +245,9 @@ func TestIntegrationRealCases(t *testing.T) {
 		}
 	}
 
-	t.Logf("Summary: %d total, %d applicable, %d unreachable, %d N/A, sufficient=%v",
+	t.Logf("Summary: %d total, %d applicable, %d unreachable, %d N/A, measurement_status=%s",
 		summary.CaseCount.Total, summary.CaseCount.Applicable,
-		summary.CaseCount.Unreachable, summary.CaseCount.NotApplicable, summary.Sufficient)
+		summary.CaseCount.Unreachable, summary.CaseCount.NotApplicable, summary.MeasurementStatus)
 }
 
 func TestToolVersionOverrideFlag(t *testing.T) {

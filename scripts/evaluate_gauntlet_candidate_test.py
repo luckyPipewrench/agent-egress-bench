@@ -60,6 +60,20 @@ def candidate():
     }
 
 
+def active_candidate():
+    value = candidate()
+    value["schema_version"] = 4
+    value.pop("sufficient")
+    value["measurement_status"] = "measured"
+    value["capability_registry"] = {
+        "id": "aeb.core-capabilities",
+        "format": 1,
+        "revision": 1,
+        "sha256": "d" * 64,
+    }
+    return value
+
+
 def baseline():
     return {
         "schema_version": 1,
@@ -187,6 +201,51 @@ class CandidateEvaluationTest(unittest.TestCase):
             self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode,
             0,
         )
+
+    def test_measured_candidate_below_historical_floor_reaches_publication_gate(self):
+        value = active_candidate()
+        value["scores"]["full"]["containment"] = 0.5
+        value["scores"]["applicable"]["containment"] = 0.5
+        policy = baseline()
+        policy["score_floors"]["full"]["containment"] = 0.0
+        policy["score_floors"]["applicable"]["containment"] = 0.0
+
+        decision, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate(
+            value, policy
+        )
+
+        self.assertFalse(decision["blocked"], decision["failures"])
+        self.assertEqual(
+            self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode,
+            0,
+        )
+
+    def test_active_measurement_status_fails_closed(self):
+        for name, status in (("missing", None), ("unknown", "complete"), ("incomplete", "incomplete")):
+            with self.subTest(name=name):
+                value = active_candidate()
+                if status is None:
+                    value.pop("measurement_status")
+                else:
+                    value["measurement_status"] = status
+                decision, _, _, _, _ = self.run_evaluate(value)
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any("measurement_status" in item for item in decision["failures"]))
+
+    def test_active_error_and_unreachable_each_block_publication(self):
+        for name, mutate in (
+            ("error", lambda value: value["case_count"].__setitem__("errors", 1)),
+            ("unreachable", lambda value: (
+                value["case_count"].__setitem__("applicable", 211),
+                value["case_count"].__setitem__("unreachable", 1),
+            )),
+        ):
+            with self.subTest(name=name):
+                value = active_candidate()
+                mutate(value)
+                decision, _, _, _, _ = self.run_evaluate(value)
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any(f"case_count.{name}" in item for item in decision["failures"]))
 
     def test_each_regression_direction_blocks_after_decision_is_written(self):
         mutations = {

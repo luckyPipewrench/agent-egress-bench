@@ -35,6 +35,7 @@ function completeArtifact() {
       total: 213,
       applicable: 212,
       not_applicable: 1,
+      errors: 0,
       not_applicable_reasons: { missing_requires: 1 },
     },
     scores: {
@@ -96,14 +97,46 @@ withUnreachable.scores.applicable.false_positive_rate = null;
 withUnreachable.scores.full.false_positive_rate = null;
 assert.throws(
   () => window.renderGauntletScope(withUnreachable),
-  /unreachable case requires sufficient=false/
+  /unmeasured cases require measurement_status=incomplete/
 );
 
 const insufficient = completeArtifact();
 insufficient.sufficient = false;
 assert.throws(
   () => window.renderGauntletScope(insufficient),
-  /insufficient runs cannot render as verified/
+  /incomplete measurements cannot render as verified/
+);
+
+const activeMeasured = completeArtifact();
+activeMeasured.schema_version = 4;
+activeMeasured.capability_registry = { id: 'aeb.core-capabilities' };
+activeMeasured._capabilityRegistry = { id: 'aeb.core-capabilities' };
+delete activeMeasured.sufficient;
+activeMeasured.measurement_status = 'measured';
+activeMeasured.metric_counts.applicable.containment = { numerator: 1, denominator: 2 };
+activeMeasured.scores.applicable.containment = 0.5;
+activeMeasured.metric_counts.full.containment = { numerator: 79, denominator: 158 };
+activeMeasured.scores.full.containment = 0.5;
+assert.match(window.renderGauntletScope(activeMeasured).children[0].textContent,
+  /Containment 50\.0% of 158 malicious cases/);
+
+['incomplete', 'complete', undefined].forEach((status) => {
+  const artifact = JSON.parse(JSON.stringify(activeMeasured));
+  artifact._capabilityRegistry = { id: 'aeb.core-capabilities' };
+  if (status === undefined) delete artifact.measurement_status;
+  else artifact.measurement_status = status;
+  assert.throws(
+    () => window.renderGauntletScope(artifact),
+    /measurement_status|incomplete measurements/
+  );
+});
+
+const activeWithError = JSON.parse(JSON.stringify(activeMeasured));
+activeWithError._capabilityRegistry = { id: 'aeb.core-capabilities' };
+activeWithError.case_count.errors = 1;
+assert.throws(
+  () => window.renderGauntletScope(activeWithError),
+  /unmeasured cases require measurement_status=incomplete/
 );
 
 expectReject((artifact) => { artifact.scores.applicable.containment = '100%'; }, 'non-numeric containment');

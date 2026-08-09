@@ -299,7 +299,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	printScores(os.Stderr, "Full Corpus Scores (primary)", summary.Scores.Full)
 	printScores(os.Stderr, "Applicable Scores (diagnostic)", summary.Scores.Applicable)
 
-	_, _ = fmt.Fprintf(os.Stderr, "Sufficient:       %v\n", summary.Sufficient)
+	_, _ = fmt.Fprintf(os.Stderr, "Measurement:      %s\n", summary.MeasurementStatus)
 	_, _ = fmt.Fprintf(os.Stderr, "Summary written:  %s\n", outputPath)
 	if emitReceiptProfile != "" {
 		_, _ = fmt.Fprintf(os.Stderr, "Receipt profile:  %s\n", emitReceiptProfile)

@@ -194,16 +194,9 @@ Before scoring a case, the runner must establish all of the following:
 2. The adapter proves it delivered that exact input.
 3. The adapter observes a request-correlated `allow` or `block` verdict.
 
-A missing exact route emits `actual_verdict: "unreachable"` and `score: "error"`.
-It is visible in `case_count.unreachable`, excluded from measurement denominators,
-and makes the run insufficient. A routed case lacking delivery proof or verdict
-observation emits `actual_verdict: "error"`. A tuple declaration alone never
-creates N/A.
+A missing exact route emits `actual_verdict: "unreachable"` and `score: "error"`. It is visible in `case_count.unreachable`, excluded from measurement denominators, and makes the measurement incomplete. A routed case lacking delivery proof or verdict observation emits `actual_verdict: "error"`. A tuple declaration alone never creates N/A.
 
-`claims`, `requires`, and `capability_tags` do not select cases. In v4, claims
-and tags are validated against the profile's exact registry snapshot and remain
-reporting metadata. They cannot affect scope, denominators, scores, sufficiency,
-or publication. This applies to hard variants and benign controls alike.
+`claims`, `requires`, and `capability_tags` do not select cases. In v4, claims and tags are validated against the profile's exact registry snapshot and remain reporting metadata. They cannot affect scope, denominators, scores, measurement status, or publication. This applies to hard variants and benign controls alike.
 
 ## Observable Verdict Rules
 

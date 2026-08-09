@@ -126,6 +126,7 @@
       ? nonNegativeInteger(scopeValue(artifact, ['case_count', 'unreachable']), 'case_count.unreachable')
       : 0;
     var notApplicable = nonNegativeInteger(scopeValue(artifact, ['case_count', 'not_applicable']), 'case_count.not_applicable');
+    var errors = nonNegativeInteger(scopeValue(artifact, ['case_count', 'errors']), 'case_count.errors');
     if (total === 0) throw new Error('case_count.total must be greater than zero');
     if (total !== logicalCaseCount) {
       throw new Error('case_count.total must equal logical_case_count');
@@ -134,15 +135,24 @@
     if (applicable + unreachable + notApplicable !== total) {
       throw new Error('case_count.applicable, unreachable, and not_applicable must equal case_count.total');
     }
-    var sufficient = scopeValue(artifact, ['sufficient']);
-    if (typeof sufficient !== 'boolean') {
-      throw new Error('sufficient must be a boolean');
+    var measurementStatus;
+    if (artifact.schema_version === 4) {
+      measurementStatus = scopeValue(artifact, ['measurement_status']);
+      if (measurementStatus !== 'measured' && measurementStatus !== 'incomplete') {
+        throw new Error('measurement_status must be measured or incomplete');
+      }
+    } else {
+      var sufficient = scopeValue(artifact, ['sufficient']);
+      if (typeof sufficient !== 'boolean') {
+        throw new Error('legacy sufficient must be a boolean');
+      }
+      measurementStatus = sufficient ? 'measured' : 'incomplete';
     }
-    if (unreachable !== 0 && sufficient) {
-      throw new Error('an unreachable case requires sufficient=false');
+    if ((unreachable !== 0 || errors !== 0) && measurementStatus === 'measured') {
+      throw new Error('unmeasured cases require measurement_status=incomplete');
     }
-    if (!sufficient) {
-      throw new Error('insufficient runs cannot render as verified');
+    if (measurementStatus !== 'measured') {
+      throw new Error('incomplete measurements cannot render as verified');
     }
 
     var reasons = scopeValue(artifact, ['case_count', 'not_applicable_reasons']);
@@ -198,6 +208,8 @@
       unreachable: unreachable,
       hasUnreachable: hasUnreachable,
       notApplicable: notApplicable,
+      errors: errors,
+      measurementStatus: measurementStatus,
       reasons: reasons,
       containment: containment,
       containmentDenominator: containmentCounts.denominator,

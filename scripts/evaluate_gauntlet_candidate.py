@@ -150,11 +150,24 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                     f"candidate {candidate_key} does not match {evidence_label} evidence"
                 )
 
-        if candidate.get("sufficient") is not True:
-            decision["failures"].append(f"sufficient={candidate.get('sufficient')!r}, want true")
+        if candidate.get("schema_version") == 4:
+            if candidate.get("measurement_status") != "measured":
+                decision["failures"].append(
+                    "measurement_status="
+                    f"{candidate.get('measurement_status')!r}, want 'measured'"
+                )
+        elif candidate.get("sufficient") is not True:
+            decision["failures"].append(
+                f"legacy sufficient={candidate.get('sufficient')!r}, want true"
+            )
         errors = nested_value(candidate, ("case_count", "errors"))
         if errors != 0:
             decision["failures"].append(f"case_count.errors={errors!r}, want 0")
+        unreachable = candidate.get("case_count", {}).get("unreachable", 0)
+        if unreachable != 0:
+            decision["failures"].append(
+                f"case_count.unreachable={unreachable!r}, want 0"
+            )
 
         expected_version = baseline.get("pipelock_version")
         actual_version = candidate.get("pipelock_version")

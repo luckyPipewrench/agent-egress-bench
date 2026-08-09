@@ -180,6 +180,49 @@ class ProvenanceBuilderTest(unittest.TestCase):
         )
         (self.run_dir / "corpus-manifest.txt").write_text("a\nb\nc\n", encoding="utf-8")
 
+    def make_active_fixture(self, measurement_status="measured"):
+        snapshot_bytes = json.dumps(
+            {
+                "id": "aeb.test-capabilities",
+                "format": 1,
+                "revision": 1,
+                "entries": [{"id": "test", "status": "active"}],
+            },
+            sort_keys=True,
+        ).encode()
+        reference = {
+            "id": "aeb.test-capabilities",
+            "format": 1,
+            "revision": 1,
+            "sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+        }
+        profile_bytes = json.dumps(
+            {"capability_registry": reference, "claims": ["test"]}, sort_keys=True
+        ).encode()
+        (self.run_dir / "capability-registry.json").write_bytes(snapshot_bytes)
+        (self.run_dir / "tool-profile.json").write_bytes(profile_bytes)
+        (self.run_dir / "receipt-profile.json").write_text(
+            json.dumps({"capability_registry": reference}), encoding="utf-8"
+        )
+
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["schema_version"] = 4
+        summary["case_count"]["unreachable"] = 0
+        summary["capability_registry"] = reference
+        summary["reported_claims"] = ["test"]
+        summary["exercised"] = {"capability_tags": ["test"]}
+        summary["tool_profile_sha256"] = hashlib.sha256(profile_bytes).hexdigest()
+        summary["measurement_status"] = measurement_status
+        summary.pop("sufficient")
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        for row in self.results:
+            row["capability_registry"] = reference
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in self.results), encoding="utf-8"
+        )
+
     def run_builder(self, *arguments):
         return subprocess.run(
             [sys.executable, str(BUILDER), *map(str, arguments)],
@@ -227,6 +270,64 @@ class ProvenanceBuilderTest(unittest.TestCase):
             scope["metric_counts"]["full"]["containment"],
             {"numerator": 1, "denominator": 2},
         )
+
+    def test_active_complete_measurement_below_80_percent_is_retained(self):
+        self.make_active_fixture()
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads(
+            (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+        )["candidate_scope"]
+        self.assertEqual(scope["scores"]["full"]["containment"], 0.5)
+        self.assertEqual(scope["measurement_status"], "measured")
+        self.assertNotIn("sufficient", scope)
+
+    def test_active_measurement_status_must_match_result_coverage(self):
+        self.make_active_fixture("incomplete")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("measurement_status", result.stderr)
+
+    def test_active_synthetic_row_blocks_publication(self):
+        self.make_active_fixture()
+        rows = [dict(row) for row in self.results]
+        rows[0]["evidence"] = dict(rows[0].get("evidence") or {})
+        rows[0]["evidence"]["synthetic"] = True
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("synthetic result", result.stderr)
+
+    def test_active_synthetic_not_applicable_row_blocks_publication(self):
+        # The Go runner derives measurement_status from the applicable rows it is
+        # handed and never sees a not_applicable row, so a synthetic marker here
+        # is invisible to it. This must still refuse to publish, which is why the
+        # rejection is standalone rather than folded into the status comparison.
+        self.make_active_fixture()
+        rows = [dict(row) for row in self.results]
+        # Case "c" is already not_applicable in the fixture, so marking it keeps
+        # every count reconciliation intact and isolates the guard under test.
+        # Note the case id does not contain the word this test asserts on: an
+        # earlier rejection echoes the case id, which would make the assertion
+        # pass without the guard ever firing.
+        self.assertEqual(rows[2]["actual_verdict"], "not_applicable")
+        rows[2]["evidence"] = {"synthetic": True}
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("synthetic result", result.stderr)
 
     def test_bundle_preserves_legacy_missing_unreachable_field(self):
         result = self.bundle()

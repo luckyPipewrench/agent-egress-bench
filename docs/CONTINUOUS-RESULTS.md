@@ -33,13 +33,13 @@ Each record manifest hash-links its predecessor, and the selected pointer binds 
 - a noncanonical pointer path;
 - overwrite of an existing record;
 - movement of `latest-verified` to an equal or older run;
-- structural failures such as errors, insufficient scope, or malformed provenance.
+- structural failures such as errors, incomplete measurement, or malformed provenance.
 
 ## Reviewable policy changes
 
 A normal successful run can prepare a promotion pull request directly. A run that changed a score floor, false-positive ceiling, pinned Pipelock version, corpus identity, runner identity, or applicable/N/A scope remains blocked until the maintainer explicitly selects `accept_policy_change` in the manual promotion workflow.
 
-That option does not turn a failed execution into a pass. It only permits the workflow to propose the exact score, version, identity, or scope change in a pull request. The candidate must still be complete, sufficient, error-free, origin-bound, and hash-consistent. The pull request body lists the old-policy failures and the full new scope. Reviewers can merge or reject the proposal without changing the selected repository record.
+That option does not change an incomplete execution into a measured one. It only permits the workflow to propose the exact score, version, identity, or scope change in a pull request. The candidate must still be fully measured, error-free, origin-bound, and hash-consistent. The pull request body lists the old-policy failures and the full new scope. Reviewers can merge or reject the proposal without changing the selected repository record.
 
 Promotion branches are created with GitHub's workflow token, so the promotion workflow explicitly dispatches the repository's required validation workflows against the branch. Re-running a candidate that is already selected on `main` exits successfully without creating another branch or dispatching unnecessary checks. A second unmerged promotion may conflict with the first at the baseline and pointer. It must be regenerated from the newly merged baseline rather than bypassing the up-to-date branch requirement.
 
