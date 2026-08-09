@@ -444,6 +444,48 @@ func TestRunMCPStdio_ExpectedBlockForwardedAllowIsMiss(t *testing.T) {
 	}
 }
 
+func TestProxyAdapterDeclaresExactDeliveryTuples(t *testing.T) {
+	p := &ProxyAdapter{}
+	for _, c := range []Case{
+		{Transport: "fetch_proxy", InputType: "url"},
+		{Transport: "http_proxy", InputType: "response_content"},
+		{Transport: "websocket", InputType: "websocket_frame"},
+		{Transport: "mcp_stdio", InputType: "mcp_tool_sequence"},
+		{Transport: "mcp_http", InputType: "mcp_tool_result"},
+		{Transport: "a2a", InputType: "a2a_agent_card"},
+	} {
+		if _, ok := SupportsTuple(p, c); !ok {
+			t.Fatalf("proxy did not declare %s/%s", c.Transport, c.InputType)
+		}
+	}
+	if _, ok := SupportsTuple(p, Case{Transport: "mcp_stdio", InputType: "a2a_message"}); ok {
+		t.Fatal("proxy declared an unsupported mixed wire tuple")
+	}
+}
+
+func TestProxyResultProofDoesNotTrustBareVerdict(t *testing.T) {
+	bareAllow := Result{Verdict: "allow", Evidence: map[string]interface{}{}}
+	for name, proof := range map[string]func(Result) Result{
+		"websocket": webSocketResultWithProof,
+		"mcp":       mcpResultWithProof,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := proof(bareAllow)
+			if got.DeliveryProven || got.VerdictObserved {
+				t.Fatalf("bare %s allow became proof: %+v", name, got)
+			}
+		})
+	}
+
+	confirmed := webSocketResultWithProof(Result{
+		Verdict:  "allow",
+		Evidence: map[string]interface{}{"upstream_reached": true},
+	})
+	if !confirmed.DeliveryProven || !confirmed.VerdictObserved {
+		t.Fatalf("fixture-confirmed WebSocket allow did not become proof: %+v", confirmed)
+	}
+}
+
 func TestMCPStdioUpstreamCommandEnvStripsAmbientAddress(t *testing.T) {
 	t.Setenv(mcpStdioUpstreamAddrEnv, "127.0.0.1:12345")
 	prefix := mcpStdioUpstreamAddrEnv + "="

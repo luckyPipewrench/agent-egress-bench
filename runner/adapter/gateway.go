@@ -82,16 +82,13 @@ func withGatewayRequestIdentity(message map[string]interface{}, identity string)
 	return copyMessage, gatewayRequest{identity: identity, method: method, fingerprint: fingerprint}, nil
 }
 
-// DeliveryTuples declares the exact wire paths this adapter can drive. The
-// runner does not use this declaration for scoring until the result-state
-// implementation supplies unreachable and evidence semantics.
+// DeliveryTuples declares the exact wire paths this adapter can attempt. The
+// result-state machine still needs per-case delivery proof and a correlated
+// verdict before it can score any declared tuple.
 func (a *MCPGatewayAdapter) DeliveryTuples() []DeliveryTuple {
 	return []DeliveryTuple{
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_call", Lifecycle: "mcp_session"},
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
-		// The corpus historically models tool definitions as mcp_stdio input
-		// while this adapter drives their semantic inventory over Streamable HTTP.
-		{WireTransport: "mcp_stdio", SemanticSurface: "mcp_tool_definition", Lifecycle: "mcp_session"},
 		{WireTransport: "mcp_http", SemanticSurface: "mcp_tool_result", Lifecycle: "mcp_session"},
 	}
 }
@@ -121,25 +118,42 @@ func NewMCPGatewayAdapter(plugin GatewayPlugin, fixtures *fixture.Manager) (*MCP
 // Run drives a supported corpus case through the gateway's Streamable HTTP
 // endpoint.
 func (a *MCPGatewayAdapter) Run(c Case, timeout time.Duration) Result {
+	var result Result
 	switch c.InputType {
 	case "mcp_tool_call":
 		if c.Transport != "mcp_http" {
-			return gatewaySkip(c, "gateway tools/call supports corpus transport mcp_http only")
+			result = gatewaySkip(c, "gateway tools/call supports corpus transport mcp_http only")
+			break
 		}
-		return a.runToolsCall(c, timeout)
+		result = a.runToolsCall(c, timeout)
 	case "mcp_tool_definition":
-		if c.Transport != "mcp_http" && c.Transport != "mcp_stdio" {
-			return gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http or mcp_stdio")
+		if c.Transport != "mcp_http" {
+			result = gatewaySkip(c, "gateway tools/list supports corpus transport mcp_http only")
+			break
 		}
-		return a.runToolDefinition(c, timeout)
+		result = a.runToolDefinition(c, timeout)
 	case "mcp_tool_result":
 		if c.Transport != "mcp_http" {
-			return gatewaySkip(c, "gateway tool-result response supports corpus transport mcp_http only")
+			result = gatewaySkip(c, "gateway tool-result response supports corpus transport mcp_http only")
+			break
 		}
-		return a.runToolResult(c, timeout)
+		result = a.runToolResult(c, timeout)
 	default:
-		return gatewaySkip(c, "gateway adapter does not support input type "+c.InputType)
+		result = gatewaySkip(c, "gateway adapter does not support input type "+c.InputType)
 	}
+	// An allow can only come from a fixture-correlated forward path. A block may
+	// come from that same path or from gatewayDeny, which records its own
+	// direction-sensitive proof below. Do not turn a syntactically normal verdict
+	// into proof here: malformed, stale, and lifecycle responses stay unobserved.
+	if result.Err == nil && (result.Verdict == "allow" || result.Verdict == "block") && result.Evidence != nil {
+		if delivered, _ := result.Evidence["upstream_reached"].(bool); delivered {
+			result.DeliveryProven = true
+			result.VerdictObserved = true
+		}
+	} else if result.Err == nil && result.Evidence != nil {
+		result.DeliveryProven, _ = result.Evidence["upstream_reached"].(bool)
+	}
+	return result
 }
 
 func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result {
@@ -705,7 +719,7 @@ func (a *MCPGatewayAdapter) gatewayDeny(signal string, request *gatewayRequest, 
 		evidence["reason"] = "deny_delivery_unproven"
 		return &Result{Verdict: "skip", Evidence: evidence}
 	}
-	return &Result{Verdict: "block", Evidence: evidence}
+	return &Result{Verdict: "block", Evidence: evidence, DeliveryProven: true, VerdictObserved: true}
 }
 
 func (a *MCPGatewayAdapter) awaitLateDelivery(request gatewayRequest, settlement time.Duration) bool {

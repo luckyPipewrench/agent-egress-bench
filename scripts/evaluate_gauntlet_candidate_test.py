@@ -232,6 +232,18 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertEqual(result["verdict"], "review_required")
         self.assertEqual(result["promotion_status"], "scope_changed_requires_review")
 
+    def test_unreachable_coverage_gap_is_preserved_and_blocks_promotion(self):
+        value = candidate()
+        value["case_count"]["applicable"] -= 1
+        value["case_count"]["unreachable"] = 1
+        value["sufficient"] = False
+
+        decision, _, _, _, _ = self.run_evaluate(value)
+
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(any("case_count.unreachable moved" in note for note in decision["review_notes"]))
+        self.assertTrue(any("sufficient=False" in failure for failure in decision["failures"]))
+
     def test_malformed_candidate_still_produces_a_blocked_decision(self):
         decision, decision_path, candidate_path, baseline_path, evidence_path = self.run_evaluate(raw_candidate="{")
         self.assertTrue(decision["blocked"])

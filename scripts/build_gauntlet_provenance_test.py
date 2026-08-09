@@ -228,6 +228,36 @@ class ProvenanceBuilderTest(unittest.TestCase):
             {"numerator": 1, "denominator": 2},
         )
 
+    def test_bundle_retains_unreachable_coverage_without_scoring_it(self):
+        self.results[2] = {
+            **self.results[2],
+            "actual_verdict": "unreachable",
+            "score": "error",
+            "evidence": {"result_state": "unreachable"},
+            "notes": "unreachable: adapter has no exact delivery route for this case",
+        }
+        self.write_fixture()
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["case_count"] = {
+            "total": 3,
+            "applicable": 2,
+            "unreachable": 1,
+            "not_applicable": 0,
+            "not_applicable_reasons": {},
+            "errors": 0,
+        }
+        summary["scores"]["full"]["containment"] = 1.0
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads((self.run_dir / "run-bundle.json").read_text(encoding="utf-8"))["candidate_scope"]
+        self.assertEqual(scope["case_count"]["unreachable"], 1)
+        self.assertEqual(scope["metric_counts"]["full"]["containment"], {"numerator": 1, "denominator": 1})
+        self.assertFalse(scope["sufficient"])
+
     def test_bundle_rejects_duplicate_unknown_and_swapped_case_labels(self):
         mutations = {
             "duplicate": (

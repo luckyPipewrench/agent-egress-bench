@@ -119,7 +119,7 @@ func TestWriteSummaryRejectsPreV3Artifact(t *testing.T) {
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json", RunProvenance{})
+	_, err := buildSummary(p, nil, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json", RunProvenance{})
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -164,6 +164,7 @@ func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		nil,
 		nil,
+		nil,
 		dir,
 		"",
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
@@ -195,6 +196,7 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		nil,
 		nil,
+		nil,
 		dir,
 		"",
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
@@ -203,6 +205,38 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "must be empty or RFC3339") {
 		t.Fatalf("buildSummary error = %v, want invalid fixed-date rejection", err)
+	}
+}
+
+func TestBuildSummaryKeepsUnreachableOutsideScoreableErrors(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		nil,
+		map[string]struct{}{"a": {}},
+		nil,
+		dir,
+		"",
+		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		profilePath,
+		RunProvenance{},
+	)
+	if err != nil {
+		t.Fatalf("buildSummary: %v", err)
+	}
+	if summary.CaseCount.Applicable != 0 || summary.CaseCount.Unreachable != 1 || summary.CaseCount.Errors != 0 {
+		t.Fatalf("case count = %+v, want unreachable distinct from scoreable errors", summary.CaseCount)
+	}
+	if summary.Sufficient {
+		t.Fatal("summary with an unreachable case must be insufficient")
 	}
 }
 

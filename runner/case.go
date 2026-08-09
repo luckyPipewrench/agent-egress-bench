@@ -79,8 +79,8 @@ type Profile struct {
 	Tool          string `json:"tool"`
 	ToolVersion   string `json:"tool_version"`
 	RunnerVersion string `json:"runner_version"`
-	// Claims are reporting labels retained for backward compatibility.
-	// Deprecated for applicability: use Supports plus case Requires instead.
+	// Claims and Supports are retained as v3 reporting metadata. They do not
+	// select cases: active scoring uses adapter delivery and observation proof.
 	Claims          []string                    `json:"claims"`
 	Supports        map[string]bool             `json:"supports"`
 	ReceiptEvidence *ReceiptEvidenceDeclaration `json:"receipt_evidence,omitempty"`
@@ -252,10 +252,9 @@ func validateProfileForRun(p Profile) error {
 	return nil
 }
 
-// checkApplicability determines if a case is applicable given a profile.
-// Returns ("", true) if applicable, or (reason, false) if not.
-// Checks are ordered: requires first, then transport. capability_tags are
-// reporting labels only; applicability is driven by requires ⊆ supports.
+// checkApplicability preserves the legacy profile interpretation for tests and
+// historical analysis. Active runner execution does not call it: profile claims,
+// supports, requires, and capability tags never choose a case for scoring.
 func checkApplicability(c Case, p Profile) (NAKind, bool) {
 	// 1. Any requires value where supports.<value> is false
 	for _, req := range c.Requires {

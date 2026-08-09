@@ -211,14 +211,16 @@ WebSocket cases that must exercise destination-sensitive detectors such as opaqu
 entropy scanning. Runners may route it to a local reachable fixture, but must not
 rewrite it to a trusted fixture hostname or add it to a trusted-destination list.
 
-## Applicability
+## Result state
 
-A case is `not_applicable` for a tool if either:
+`requires` and `capability_tags` describe the case; they do not select it. A
+case is scoreable only when an adapter proves exact delivery of its declared
+wire input and observes a request-correlated verdict. Profile `supports` is
+retained v3 publication metadata, not selection authority.
 
-1. Any entry in `requires` is not supported by the tool's profile, or
-2. The case `transport` is not supported by the tool's profile
-
-This is deterministic. No judgment calls.
+No exact adapter route is `unreachable`. A routed case without delivery proof
+or verdict observation is `error`. Historical N/A records retain their frozen
+meaning and are not rewritten.
 
 ## Machine-Readable Schemas
 

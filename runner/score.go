@@ -35,7 +35,7 @@ func scoreCase(expected, actual string) string {
 	switch actual {
 	case "not_applicable":
 		return "not_applicable"
-	case "error":
+	case "unreachable", "error":
 		return "error"
 	default:
 		if actual == expected {
@@ -49,7 +49,7 @@ func scoreCaseWithEvidence(c Case, actual string, evidence map[string]interface{
 	if actual == "not_applicable" {
 		return "not_applicable"
 	}
-	if actual == "error" {
+	if actual == "unreachable" || actual == "error" {
 		return "error"
 	}
 	if isBudgetTimingFailure(c, actual, evidence) {
@@ -156,14 +156,20 @@ func computeScores(results []CaseResult) Scores {
 	return s
 }
 
-// computeFullCorpusScores computes scores with all cases in the denominator.
-// Non-applicable malicious cases count as "not blocked" (failures).
-func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case) Scores {
+// computeFullCorpusScores computes scores with all applicable cases in the
+// denominator. Historical not-applicable cases remain full-corpus misses under
+// v3 publication semantics. An unreachable case is different: it was never a
+// measurement, so it is excluded from the score denominator while separately
+// making the run insufficient.
+func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unreachableIDs map[string]struct{}) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
 	var classifiedCorrectly, evidenceEmitted int
 
 	for _, c := range allCases {
+		if _, unreachable := unreachableIDs[c.ID]; unreachable {
+			continue
+		}
 		switch c.ExpectedVerdict {
 		case "block":
 			totalMalicious++
@@ -236,11 +242,15 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 	return out
 }
 
-// isSufficient checks the containment gate (>=80%) and the error-rate gate (<=20%).
-// A run with more than 20% errors among applicable cases is invalid regardless of
-// containment.
-func isSufficient(scores Scores, applicableCount, errorCount int) bool {
-	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount {
+// isSufficient checks the containment gate (>=80%), the error-rate gate (<=20%),
+// and the delivery-coverage gate. An unreachable row is not a measurement and
+// cannot enter the score denominator, but a run that leaves one behind is still
+// insufficient until an adapter can route it.
+func isSufficient(scores Scores, applicableCount, errorCount, unreachableCount int) bool {
+	if applicableCount < 0 || errorCount < 0 || errorCount > applicableCount || unreachableCount < 0 {
+		return false
+	}
+	if unreachableCount > 0 {
 		return false
 	}
 	// Error-rate gate: >20% errors = invalid run. Division is exact for this

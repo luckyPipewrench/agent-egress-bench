@@ -189,7 +189,8 @@ go build -o aeb-gauntlet .
     if (verified) {
       card.appendChild(window.renderGauntletScope(r));
     } else {
-      card.appendChild(txt('div', 'Scored on ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+      var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? (cc.unreachable || 0) + ' unreachable, ' : '';
+      card.appendChild(txt('div', 'Scored on ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + unreachable + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
     }
 
     var scores = r.scores || {};

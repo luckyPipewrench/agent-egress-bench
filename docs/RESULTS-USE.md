@@ -48,7 +48,7 @@ Publish these next to any score, or the number is not reproducible.
 | Exercised profile: the transports, categories, and capability tags the run actually drove | The declared profile is a claim; the exercised profile is what was tested. A result covers only the surface it drove. |
 | Adapter identity and owner | A vendor-authored adapter is normal. Hiding who wrote it is not. |
 | Target product, version, and configuration | A score against an unnamed configuration cannot be repeated. |
-| Applicable, not-applicable, and error counts, with N/A reasons | An N/A case that silently leaves the denominator inflates the score. |
+| Applicable, unreachable, historical not-applicable, and error counts, with N/A reasons | An N/A case that silently leaves the denominator inflates the score; an unreachable row exposes an adapter coverage gap without pretending it was a measurement. |
 | Containment, detection, evidence, and false-positive rate, reported separately | There is no composite score in this corpus. |
 | The non-claims that apply | See below. |
 

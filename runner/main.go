@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -240,124 +241,13 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, blockall, proxy, mcp-gateway)", adapterName)
 	}
 
-	var applicableResults []CaseResult
-	naReasons := make(map[NAKind]int)
-	enc := json.NewEncoder(os.Stdout)
-
-	for _, c := range cases {
-		// Check applicability.
-		reason, applicable := checkApplicability(c, profile)
-		if !applicable {
-			debugf(debug, "case %s: not_applicable (%s)", c.ID, reason)
-			naReasons[reason]++
-			result := CaseResult{
-				SchemaVersion:   activeSchemaVersion,
-				CaseID:          c.ID,
-				Tool:            profile.Tool,
-				ToolVersion:     profile.ToolVersion,
-				ExpectedVerdict: c.ExpectedVerdict,
-				ActualVerdict:   "not_applicable",
-				Score:           "not_applicable",
-				Evidence:        map[string]interface{}{},
-				Notes:           fmt.Sprintf("not applicable: %s", string(reason)),
-			}
-			if encErr := enc.Encode(result); encErr != nil {
-				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
-			}
-			continue
-		}
-
-		// Run the case through the adapter.
-		adapterCase := adapter.Case{
-			ID:              c.ID,
-			ExpectedVerdict: c.ExpectedVerdict,
-			Transport:       c.Transport,
-			InputType:       c.InputType,
-			Requires:        c.Requires,
-			Payload:         c.Payload,
-		}
-		adapterResult := adapt.Run(adapterCase, timeout)
-
-		if adapterResult.Err != nil {
-			debugf(debug, "case %s: ERROR expected=%s err=%v evidence=%v",
-				c.ID, c.ExpectedVerdict, adapterResult.Err, adapterResult.Evidence)
-			result := CaseResult{
-				SchemaVersion:   activeSchemaVersion,
-				CaseID:          c.ID,
-				Tool:            profile.Tool,
-				ToolVersion:     profile.ToolVersion,
-				ExpectedVerdict: c.ExpectedVerdict,
-				ActualVerdict:   "error",
-				Score:           "error",
-				Evidence:        map[string]interface{}{},
-				Notes:           fmt.Sprintf("adapter error: %v", adapterResult.Err),
-			}
-			applicableResults = append(applicableResults, result)
-			if encErr := enc.Encode(result); encErr != nil {
-				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
-			}
-			continue
-		}
-
-		// Applicability was already established from the tool profile. A skip or
-		// an out-of-contract verdict at this point is a runner/adapter failure,
-		// not a tool capability exception. Count it as an error so an incomplete
-		// or malformed adapter cannot launder an unexecuted case into a normal
-		// pass/fail result.
-		if verdictError, invalid := adapterVerdictError(adapterResult); invalid {
-			debugf(debug, "case %s: ERROR %s (%v)", c.ID, verdictError, adapterResult.Evidence)
-			result := CaseResult{
-				SchemaVersion:   activeSchemaVersion,
-				CaseID:          c.ID,
-				Tool:            profile.Tool,
-				ToolVersion:     profile.ToolVersion,
-				ExpectedVerdict: c.ExpectedVerdict,
-				ActualVerdict:   "error",
-				Score:           "error",
-				Evidence:        adapterResult.Evidence,
-				Notes:           verdictError,
-			}
-			applicableResults = append(applicableResults, result)
-			if encErr := enc.Encode(result); encErr != nil {
-				return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
-			}
-			continue
-		}
-
-		evidence := adapterResult.Evidence
-		if evidence == nil {
-			evidence = map[string]interface{}{}
-		}
-		score := scoreCaseWithEvidence(c, adapterResult.Verdict, evidence)
-
-		if score == "pass" {
-			debugf(debug, "case %s: PASS expected=%s actual=%s", c.ID, c.ExpectedVerdict, adapterResult.Verdict)
-		} else {
-			debugf(debug, "case %s: FAIL expected=%s actual=%s evidence=%v",
-				c.ID, c.ExpectedVerdict, adapterResult.Verdict, evidence)
-		}
-
-		result := CaseResult{
-			SchemaVersion:   activeSchemaVersion,
-			CaseID:          c.ID,
-			Tool:            profile.Tool,
-			ToolVersion:     profile.ToolVersion,
-			ExpectedVerdict: c.ExpectedVerdict,
-			ActualVerdict:   adapterResult.Verdict,
-			Score:           score,
-			Evidence:        evidence,
-			Notes:           "",
-		}
-
-		applicableResults = append(applicableResults, result)
-
-		if encErr := enc.Encode(result); encErr != nil {
-			return fmt.Errorf("writing result for %s: %w", c.ID, encErr)
-		}
+	applicableResults, unreachableIDs, naReasons, runErr := runCases(cases, profile, adapt, timeout, debug, os.Stdout)
+	if runErr != nil {
+		return runErr
 	}
 
 	// Build and write summary.
-	summary, err := buildSummary(profile, cases, applicableResults, naReasons, casesDir, multiFileCases, casesByID, profilePath, prov)
+	summary, err := buildSummary(profile, cases, applicableResults, unreachableIDs, naReasons, casesDir, multiFileCases, casesByID, profilePath, prov)
 	if err != nil {
 		return err
 	}
@@ -395,8 +285,8 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	_, _ = fmt.Fprintf(os.Stderr, "\n--- Gauntlet Summary ---\n")
 	_, _ = fmt.Fprintf(os.Stderr, "Tool:       %s %s\n", profile.Tool, profile.ToolVersion)
 	_, _ = fmt.Fprintf(os.Stderr, "Adapter:    %s\n", adapterName)
-	_, _ = fmt.Fprintf(os.Stderr, "Cases:      %d total, %d applicable, %d N/A, %d errors\n",
-		len(cases), len(applicableResults), summary.CaseCount.NotApplicable, summary.CaseCount.Errors)
+	_, _ = fmt.Fprintf(os.Stderr, "Cases:      %d total, %d applicable, %d unreachable, %d N/A, %d errors\n",
+		len(cases), len(applicableResults), summary.CaseCount.Unreachable, summary.CaseCount.NotApplicable, summary.CaseCount.Errors)
 
 	printScores(os.Stderr, "Full Corpus Scores (primary)", summary.Scores.Full)
 	printScores(os.Stderr, "Applicable Scores (diagnostic)", summary.Scores.Applicable)
@@ -410,19 +300,77 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	return nil
 }
 
-func adapterVerdictError(result adapter.Result) (string, bool) {
-	switch result.Verdict {
-	case "allow", "block":
-		return "", false
-	case "skip":
-		reason := "adapter skip"
-		if value, ok := result.Evidence["reason"].(string); ok && value != "" {
-			reason += ": " + value
+// runCases executes the result-state transition for each case. Profile fields
+// remain carried into output for v3 publication, but no claim, support flag,
+// requirement, or capability tag selects a case. Only an exact adapter route,
+// proven delivery, and observed verdict can create a scoreable measurement.
+func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time.Duration, debug bool, output io.Writer) ([]CaseResult, map[string]struct{}, map[NAKind]int, error) {
+	var applicableResults []CaseResult
+	unreachableIDs := make(map[string]struct{})
+	naReasons := make(map[NAKind]int)
+	enc := json.NewEncoder(output)
+
+	for _, c := range cases {
+		adapterCase := adapter.Case{
+			ID:              c.ID,
+			ExpectedVerdict: c.ExpectedVerdict,
+			Transport:       c.Transport,
+			InputType:       c.InputType,
+			Requires:        c.Requires,
+			Payload:         c.Payload,
 		}
-		return reason, true
-	default:
-		return fmt.Sprintf("invalid adapter verdict: %q", result.Verdict), true
+
+		tuple, routed := adapter.SupportsTuple(adapt, adapterCase)
+		if !routed {
+			tuple = adapter.TupleForCase(adapterCase)
+			result := caseResultForState(
+				profile, c, ResultStateUnreachable, tupleEvidence(tuple),
+				"unreachable: adapter has no exact delivery route for this case",
+			)
+			unreachableIDs[c.ID] = struct{}{}
+			debugf(debug, "case %s: UNREACHABLE %s/%s/%s", c.ID, tuple.WireTransport, tuple.SemanticSurface, tuple.Lifecycle)
+			if err := enc.Encode(result); err != nil {
+				return nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
+			}
+			continue
+		}
+
+		adapterResult := adapt.Run(adapterCase, timeout)
+		state, notes := resultStateFor(adapterResult)
+		if state != ResultStateObserved {
+			result := caseResultForState(profile, c, state, adapterResult.Evidence, notes)
+			applicableResults = append(applicableResults, result)
+			debugf(debug, "case %s: ERROR state=%s expected=%s evidence=%v", c.ID, state, c.ExpectedVerdict, result.Evidence)
+			if err := enc.Encode(result); err != nil {
+				return nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
+			}
+			continue
+		}
+
+		evidence := evidenceWithResultState(adapterResult.Evidence, state)
+		score := scoreCaseWithEvidence(c, adapterResult.Verdict, evidence)
+		if score == "pass" {
+			debugf(debug, "case %s: PASS expected=%s actual=%s", c.ID, c.ExpectedVerdict, adapterResult.Verdict)
+		} else {
+			debugf(debug, "case %s: FAIL expected=%s actual=%s evidence=%v", c.ID, c.ExpectedVerdict, adapterResult.Verdict, evidence)
+		}
+		result := CaseResult{
+			SchemaVersion:   activeSchemaVersion,
+			CaseID:          c.ID,
+			Tool:            profile.Tool,
+			ToolVersion:     profile.ToolVersion,
+			ExpectedVerdict: c.ExpectedVerdict,
+			ActualVerdict:   adapterResult.Verdict,
+			Score:           score,
+			Evidence:        evidence,
+			Notes:           "",
+		}
+		applicableResults = append(applicableResults, result)
+		if err := enc.Encode(result); err != nil {
+			return nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
+		}
 	}
+	return applicableResults, unreachableIDs, naReasons, nil
 }
 
 // debugPrefix is the marker written at the start of every debug line.

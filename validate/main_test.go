@@ -1465,6 +1465,8 @@ func TestResultValidation_InconsistentScore(t *testing.T) {
 		{"match but bare timing no budget id", "block", "block", "fail", true},
 		{"na verdict na score", "not_applicable", "block", "not_applicable", false},
 		{"na verdict wrong score", "not_applicable", "block", "pass", true},
+		{"unreachable verdict error score", "unreachable", "block", "error", false},
+		{"unreachable verdict wrong score", "unreachable", "block", "pass", true},
 		{"error verdict error score", "error", "block", "error", false},
 		{"error verdict wrong score", "error", "block", "pass", true},
 	}

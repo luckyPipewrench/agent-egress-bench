@@ -92,6 +92,39 @@ type ProxyAdapter struct {
 	mcpHTTPFixture       *fixture.MCPHTTPFixture
 }
 
+// DeliveryTuples declares the exact corpus inputs the proxy adapter can drive.
+// The declaration only determines whether a run can be attempted. Result state
+// still requires the per-case execution path to prove delivery and observe a
+// verdict before the runner can score it.
+func (p *ProxyAdapter) DeliveryTuples() []DeliveryTuple {
+	tuple := func(transport, surface string) DeliveryTuple {
+		lifecycle := "single_request"
+		if transport == "mcp_stdio" || transport == "mcp_http" {
+			lifecycle = "mcp_session"
+		}
+		return DeliveryTuple{WireTransport: transport, SemanticSurface: surface, Lifecycle: lifecycle}
+	}
+
+	var routes []DeliveryTuple
+	for _, transport := range []string{"fetch_proxy", "http_proxy"} {
+		for _, surface := range []string{"url", "request_body", "header", "response_content"} {
+			routes = append(routes, tuple(transport, surface))
+		}
+	}
+	for _, surface := range []string{"websocket_frame", "url", "header"} {
+		routes = append(routes, tuple("websocket", surface))
+	}
+	for _, transport := range []string{"mcp_stdio", "mcp_http"} {
+		for _, surface := range []string{"mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence", "mcp_tool_sequence_temporal"} {
+			routes = append(routes, tuple(transport, surface))
+		}
+	}
+	for _, surface := range []string{"a2a_message", "a2a_agent_card"} {
+		routes = append(routes, tuple("a2a", surface))
+	}
+	return routes
+}
+
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
 // scanAddr is for the scan API, mcpCmd is for MCP/A2A/shell cases.
 func NewProxyAdapter(proxyAddr, scanAddr, scanToken, mcpCmd string) (*ProxyAdapter, error) {
@@ -214,16 +247,16 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 	case "websocket":
 		switch c.InputType {
 		case "websocket_frame":
-			result = p.runWebSocketFrameViaProxy(c, timeout)
+			result = webSocketResultWithProof(p.runWebSocketFrameViaProxy(c, timeout))
 		case "url", "header":
-			result = p.runWebSocket(c, timeout)
+			result = webSocketResultWithProof(p.runWebSocket(c, timeout))
 		default:
 			result = unsupportedTransport(c, "websocket payload execution is not implemented for this input type")
 		}
 	case "mcp_stdio":
-		result = p.runMCPStdio(c, timeout)
+		result = mcpResultWithProof(p.runMCPStdio(c, timeout))
 	case "mcp_http":
-		result = p.runMCPHTTP(c, timeout)
+		result = mcpResultWithProof(p.runMCPHTTP(c, timeout))
 	case "a2a":
 		result = p.runA2A(c, timeout)
 	default:
@@ -243,6 +276,63 @@ func (p *ProxyAdapter) Run(c Case, timeout time.Duration) Result {
 		result.Evidence["observed_transport"] = c.Transport
 	}
 	delete(result.Evidence, "transport_attempted")
+	return result
+}
+
+// observedProxyVerdict records a proof only where a transport method has
+// completed the request/response exchange itself. It deliberately does not
+// infer proof from the verdict string: a local synthetic response, an empty
+// subprocess exit, and a stale protocol response can all look like a verdict.
+func observedProxyVerdict(result Result) Result {
+	if result.Err == nil && (result.Verdict == "allow" || result.Verdict == "block") {
+		result.DeliveryProven = true
+		result.VerdictObserved = true
+	}
+	return result
+}
+
+func webSocketResultWithProof(result Result) Result {
+	if result.Err != nil || result.Evidence == nil {
+		return result
+	}
+	if result.Verdict == "allow" {
+		if delivered, _ := result.Evidence["upstream_reached"].(bool); delivered {
+			return observedProxyVerdict(result)
+		}
+		return result
+	}
+	if result.Verdict == "block" {
+		// A close frame, rejected upgrade, or structured proxy block is direct
+		// WebSocket protocol evidence. Bare local success is not.
+		if _, hasScanner := result.Evidence["scanner"]; hasScanner {
+			return observedProxyVerdict(result)
+		}
+		if _, hasReason := result.Evidence["reason"]; hasReason {
+			return observedProxyVerdict(result)
+		}
+	}
+	return result
+}
+
+func mcpResultWithProof(result Result) Result {
+	if result.Err != nil || result.Evidence == nil {
+		return result
+	}
+	if result.Verdict == "allow" {
+		if delivered, _ := result.Evidence["upstream_reached"].(bool); delivered {
+			return observedProxyVerdict(result)
+		}
+		return result
+	}
+	if result.Verdict == "block" {
+		// MCP block paths validate their protocol response before returning a
+		// block and attach at least one structured decision field.
+		for _, key := range []string{"error_code", "filtered_tool_name", "block_reason", "scanner", "kind", "decision", "blocked_call_id"} {
+			if _, present := result.Evidence[key]; present {
+				return observedProxyVerdict(result)
+			}
+		}
+	}
 	return result
 }
 
@@ -625,10 +715,10 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 		if fetchResp.Scanner != "" {
 			ev["scanner"] = fetchResp.Scanner
 		}
-		return Result{Verdict: "block", Evidence: ev}
+		return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 	}
 
-	return classifyResponse(resp.StatusCode, string(body))
+	return observedProxyVerdict(classifyResponse(resp.StatusCode, string(body)))
 }
 
 // isBenchmarkFixtureHost reports whether a case's declared host is one of the
@@ -841,13 +931,13 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
-			return Result{Verdict: "block", Evidence: ev}
+			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 		}
 		// Proxy or upstream connection reset may be an active block.
 		if strings.Contains(errStr, "reset by peer") {
 			ev := map[string]interface{}{"reason": "connection_reset"}
 			extractBlockEvidence(errStr, ev)
-			return Result{Verdict: "block", Evidence: ev}
+			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 		}
 		// Proxy unreachable means adapter infrastructure problem.
 		if strings.Contains(errStr, "connection refused") {
@@ -863,7 +953,7 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return classifyResponse(resp.StatusCode, string(body))
+	return observedProxyVerdict(classifyResponse(resp.StatusCode, string(body)))
 }
 
 func (p *ProxyAdapter) runResponseContentViaTLSIntercept(c Case, timeout time.Duration, responseBody string) Result {
@@ -1021,7 +1111,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
-			return Result{Verdict: "block", Evidence: ev}
+			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
 		}
 		if strings.Contains(errStr, "connection refused") {
 			return Result{Err: fmt.Errorf("case %s: proxy unreachable: %w", caseID, err)}
@@ -1038,9 +1128,22 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 	// can synthesize a response after CONNECT without ever forwarding. Credit a
 	// passthrough allow only when the runner-managed fixture counter advanced.
 	if caFile != "" && p.tlsFixtureServed(fixtureBaseline) {
-		return classifyUpstreamResponse(resp.StatusCode, string(respBody))
+		return observedProxyVerdict(classifyUpstreamResponse(resp.StatusCode, string(respBody)))
 	}
-	return classifyResponse(resp.StatusCode, string(respBody))
+	result := classifyResponse(resp.StatusCode, string(respBody))
+	if caFile != "" && result.Verdict == "allow" {
+		result.Verdict = "skip"
+		if result.Evidence == nil {
+			result.Evidence = map[string]interface{}{}
+		}
+		result.Evidence["reason"] = "tls_fixture_unproven"
+		result.Evidence["upstream_reached"] = false
+		// The proxy endpoint answered our exact CONNECT request, but without the
+		// fixture observation it is not a verdict about the case payload.
+		result.DeliveryProven = true
+		return result
+	}
+	return observedProxyVerdict(result)
 }
 
 func certPoolFromFile(path string) (*x509.CertPool, error) {

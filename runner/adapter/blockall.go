@@ -8,10 +8,16 @@ import "time"
 // so a tool cannot look good simply by denying everything.
 type BlockAllAdapter struct{}
 
+func (b BlockAllAdapter) DeliveryTuples() []DeliveryTuple {
+	return syntheticTuples()
+}
+
 // Run always returns "block" with empty evidence.
 func (b BlockAllAdapter) Run(_ Case, _ time.Duration) Result {
 	return Result{
-		Verdict:  "block",
-		Evidence: map[string]interface{}{},
+		Verdict:         "block",
+		Evidence:        map[string]interface{}{},
+		DeliveryProven:  true,
+		VerdictObserved: true,
 	}
 }

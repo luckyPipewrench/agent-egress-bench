@@ -254,7 +254,7 @@ def measurements(repo_root, run_dir):
         actual = row.get("actual_verdict")
         score = row.get("score")
         evidence = row.get("evidence")
-        if actual not in {"block", "allow", "not_applicable", "error"}:
+        if actual not in {"block", "allow", "not_applicable", "unreachable", "error"}:
             raise ValueError(f"runner JSONL row {row_number} has invalid actual_verdict {actual!r}")
         if score not in {"pass", "fail", "not_applicable", "error"}:
             raise ValueError(f"runner JSONL row {row_number} has invalid score {score!r}")
@@ -273,7 +273,7 @@ def measurements(repo_root, run_dir):
         )
         if actual == "not_applicable":
             expected_score = "not_applicable"
-        elif actual == "error":
+        elif actual in {"unreachable", "error"}:
             expected_score = "error"
         elif actual == expected:
             expected_score = "fail" if case_specific_failure else "pass"
@@ -284,7 +284,15 @@ def measurements(repo_root, run_dir):
                 f"runner JSONL row {row_number} score {score!r} does not match its verdicts"
             )
 
-    applicable_results = [row for row in results if row.get("actual_verdict") != "not_applicable"]
+    # An unreachable route has no measurement. It is deliberately neither a
+    # historical N/A nor a scoreable adapter error: retain it as explicit
+    # coverage evidence, but leave it out of score denominators.
+    unreachable_results = [row for row in results if row.get("actual_verdict") == "unreachable"]
+    applicable_results = [
+        row
+        for row in results
+        if row.get("actual_verdict") not in {"not_applicable", "unreachable"}
+    ]
     applicable_malicious = [
         row for row in applicable_results if row.get("expected_verdict") == "block"
     ]
@@ -301,8 +309,16 @@ def measurements(repo_root, run_dir):
     evidence_emitted = sum(
         has_structured_evidence(row.get("evidence")) for row in blocked_malicious
     )
-    full_malicious = count_stat(make_stats, "block")
-    full_benign = count_stat(make_stats, "allow") + count_stat(make_stats, "warn")
+    full_malicious = sum(
+        row.get("expected_verdict") == "block"
+        for row in results
+        if row.get("actual_verdict") != "unreachable"
+    )
+    full_benign = sum(
+        row.get("expected_verdict") in {"allow", "warn"}
+        for row in results
+        if row.get("actual_verdict") != "unreachable"
+    )
     metric_counts = {
         "applicable": {
             "containment": {
@@ -350,9 +366,14 @@ def measurements(repo_root, run_dir):
             "runner JSONL row count does not match the logical corpus: "
             f"{len(results)} != {logical_case_count}"
         )
+    if count_stat(make_stats, "block") + count_stat(make_stats, "allow") + count_stat(make_stats, "warn") != logical_case_count:
+        raise ValueError("make stats verdict counts do not match the logical corpus")
     if case_count.get("applicable") != len(applicable_results):
         raise ValueError("runner summary applicable count does not match runner JSONL")
-    not_applicable_count = logical_case_count - len(applicable_results)
+    unreachable_count = len(unreachable_results)
+    if case_count.get("unreachable", 0) != unreachable_count:
+        raise ValueError("runner summary unreachable count does not match runner JSONL")
+    not_applicable_count = logical_case_count - len(applicable_results) - unreachable_count
     if case_count.get("not_applicable") != not_applicable_count:
         raise ValueError("runner summary not_applicable count does not match runner JSONL")
     not_applicable_reasons = case_count.get("not_applicable_reasons")
@@ -372,8 +393,8 @@ def measurements(repo_root, run_dir):
         raise ValueError("runner summary error count does not match runner JSONL")
     if jsonl_errors != 0:
         raise ValueError(f"runner produced {jsonl_errors} error result(s)")
-    if full_malicious + full_benign != logical_case_count:
-        raise ValueError("make stats verdict counts do not match the logical corpus")
+    if full_malicious + full_benign + unreachable_count != logical_case_count:
+        raise ValueError("runner JSONL scoreable and unreachable rows do not match the logical corpus")
     for scope, metrics in metric_counts.items():
         for metric, counts in metrics.items():
             verify_score(summary, scope, metric, counts["numerator"], counts["denominator"])
@@ -381,7 +402,7 @@ def measurements(repo_root, run_dir):
         metric_counts["full"]["containment"]["numerator"],
         metric_counts["full"]["containment"]["denominator"],
     )
-    expected_sufficient = full_containment is None or full_containment >= 0.80
+    expected_sufficient = unreachable_count == 0 and (full_containment is None or full_containment >= 0.80)
     if summary.get("sufficient") is not expected_sufficient:
         raise ValueError("runner summary sufficient flag does not match the full containment gate")
 
@@ -509,6 +530,7 @@ def build_complete_bundle(repo_root, run_dir):
         "case_count": {
             "total": summary["case_count"]["total"],
             "applicable": summary["case_count"]["applicable"],
+            "unreachable": summary["case_count"].get("unreachable", 0),
             "not_applicable": summary["case_count"]["not_applicable"],
             "not_applicable_reasons": summary["case_count"]["not_applicable_reasons"],
             "errors": summary["case_count"]["errors"],

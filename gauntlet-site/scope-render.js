@@ -117,14 +117,18 @@
 
     var applicable = nonNegativeInteger(scopeValue(artifact, ['case_count', 'applicable']), 'case_count.applicable');
     var total = nonNegativeInteger(scopeValue(artifact, ['case_count', 'total']), 'case_count.total');
+    var hasUnreachable = Object.prototype.hasOwnProperty.call(artifact.case_count || {}, 'unreachable');
+    var unreachable = hasUnreachable
+      ? nonNegativeInteger(scopeValue(artifact, ['case_count', 'unreachable']), 'case_count.unreachable')
+      : 0;
     var notApplicable = nonNegativeInteger(scopeValue(artifact, ['case_count', 'not_applicable']), 'case_count.not_applicable');
     if (total === 0) throw new Error('case_count.total must be greater than zero');
     if (total !== logicalCaseCount) {
       throw new Error('case_count.total must equal logical_case_count');
     }
     if (applicable > total) throw new Error('case_count.applicable cannot exceed case_count.total');
-    if (applicable + notApplicable !== total) {
-      throw new Error('case_count.applicable plus not_applicable must equal case_count.total');
+    if (applicable + unreachable + notApplicable !== total) {
+      throw new Error('case_count.applicable, unreachable, and not_applicable must equal case_count.total');
     }
 
     var reasons = scopeValue(artifact, ['case_count', 'not_applicable_reasons']);
@@ -152,8 +156,8 @@
     // covers all cases.
     var fullContainment = scopeValue(artifact, ['scores', 'full', 'containment']);
     var fullContainmentCounts = validateMetricFraction(artifact, 'containment', 'full');
-    if (fullContainmentCounts.denominator > total) {
-      throw new Error('metric denominator cannot exceed case_count.total: metric_counts.full.containment');
+    if (fullContainmentCounts.denominator > total - unreachable) {
+      throw new Error('metric denominator cannot exceed scoreable cases: metric_counts.full.containment');
     }
     if (fullContainmentCounts.denominator < containmentCounts.denominator) {
       throw new Error('full containment denominator cannot be smaller than the applicable denominator');
@@ -177,6 +181,8 @@
     return {
       applicable: applicable,
       total: total,
+      unreachable: unreachable,
+      hasUnreachable: hasUnreachable,
       notApplicable: notApplicable,
       reasons: reasons,
       containment: containment,
@@ -194,6 +200,7 @@
     var scope = validateScope(artifact);
     var applicable = scope.applicable;
     var total = scope.total;
+    var unreachable = scope.unreachable;
     var notApplicable = scope.notApplicable;
     var reasons = scope.reasons;
     var containment = scope.containment;
@@ -210,7 +217,7 @@
       'Containment ' + formatPercent(scope.fullContainment) + ' of ' + scope.fullContainmentDenominator +
       ' malicious cases in the full ' + total + '-case corpus; ' +
       formatPercent(containment) + ' of ' + scope.containmentDenominator +
-      ' applicable malicious (diagnostic, ' + notApplicable + ' N/A: ' + formatReasons(reasons) +
+      ' applicable malicious (diagnostic, ' + (scope.hasUnreachable ? unreachable + ' unreachable, ' : '') + notApplicable + ' N/A: ' + formatReasons(reasons) +
       '), false positives ' + formatPercent(falsePositiveRate) + ', '
     ));
 

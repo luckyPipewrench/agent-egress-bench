@@ -78,6 +78,16 @@ assert.match(rendered.children[0].textContent,
   /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic/);
 assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
 
+const withUnreachable = completeArtifact();
+withUnreachable.case_count.applicable = 211;
+withUnreachable.case_count.unreachable = 1;
+withUnreachable.metric_counts.applicable.false_positive_rate.denominator = 0;
+withUnreachable.metric_counts.full.false_positive_rate.denominator = 0;
+withUnreachable.scores.applicable.false_positive_rate = null;
+withUnreachable.scores.full.false_positive_rate = null;
+const unreachableRendered = window.renderGauntletScope(withUnreachable);
+assert.match(unreachableRendered.children[0].textContent, /1 unreachable, 1 N\/A/);
+
 expectReject((artifact) => { artifact.scores.applicable.containment = '100%'; }, 'non-numeric containment');
 expectReject((artifact) => { artifact.scores.applicable.false_positive_rate = 1.1; }, 'out-of-range FP rate');
 expectReject((artifact) => { artifact.case_count.total = 0; }, 'zero total');

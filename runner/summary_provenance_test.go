@@ -28,6 +28,7 @@ func buildProvenanceSummary(t *testing.T, dir, profilePath string, prov RunProve
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		nil,
 		nil,
+		nil,
 		dir,
 		"",
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},

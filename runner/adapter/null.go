@@ -7,10 +7,16 @@ import "time"
 // connecting a real tool.
 type NullAdapter struct{}
 
+func (n NullAdapter) DeliveryTuples() []DeliveryTuple {
+	return syntheticTuples()
+}
+
 // Run always returns "allow" with empty evidence.
 func (n NullAdapter) Run(_ Case, _ time.Duration) Result {
 	return Result{
-		Verdict:  "allow",
-		Evidence: map[string]interface{}{},
+		Verdict:         "allow",
+		Evidence:        map[string]interface{}{},
+		DeliveryProven:  true,
+		VerdictObserved: true,
 	}
 }

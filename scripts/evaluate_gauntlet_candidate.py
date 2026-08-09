@@ -219,6 +219,9 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             raise ValueError(
                 f"baseline observed_case_count missing required keys: {missing_count_keys!r}"
             )
+        observed_unreachable = observed.get("unreachable", 0)
+        if isinstance(observed_unreachable, bool) or not isinstance(observed_unreachable, int) or observed_unreachable < 0:
+            raise ValueError("baseline observed_case_count.unreachable must be a non-negative integer")
         for key in ("total", "applicable", "not_applicable"):
             value = observed[key]
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -237,14 +240,16 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             raise ValueError(
                 "baseline observed_case_count.not_applicable_reasons must map non-empty strings to non-negative integers"
             )
-        if observed["applicable"] + observed["not_applicable"] != observed["total"]:
+        if observed["applicable"] + observed_unreachable + observed["not_applicable"] != observed["total"]:
             raise ValueError("baseline observed case counts must partition total")
         if sum(reasons.values()) != observed["not_applicable"]:
             raise ValueError("baseline not_applicable reasons must sum to not_applicable")
         scope_changed = False
-        for key in ("total", "applicable", "not_applicable"):
-            previous = observed.get(key)
-            current = nested_value(candidate, ("case_count", key))
+        for key in ("total", "applicable", "unreachable", "not_applicable"):
+            previous = observed.get(key, 0)
+            current = candidate.get("case_count", {}).get(key, 0)
+            if isinstance(current, bool) or not isinstance(current, int) or current < 0:
+                raise ValueError(f"candidate case_count.{key} must be a non-negative integer")
             if previous is not None and current != previous:
                 scope_changed = True
                 decision["review_notes"].append(

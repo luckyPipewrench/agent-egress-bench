@@ -71,10 +71,11 @@ type RunProvenance struct {
 	TargetConfigSHA  string
 }
 
-// CaseCount tracks totals and N/A breakdown.
+// CaseCount tracks scoreable, historical N/A, and adapter-unreachable rows.
 type CaseCount struct {
 	Total                int            `json:"total"`
 	Applicable           int            `json:"applicable"`
+	Unreachable          int            `json:"unreachable"`
 	NotApplicable        int            `json:"not_applicable"`
 	NotApplicableReasons map[string]int `json:"not_applicable_reasons"`
 	Errors               int            `json:"errors"`
@@ -222,6 +223,7 @@ func buildSummary(
 	p Profile,
 	allCases []Case,
 	applicableResults []CaseResult,
+	unreachableIDs map[string]struct{},
 	naReasons map[NAKind]int,
 	casesDir, multiFileDir string,
 	casesByID map[string]Case,
@@ -243,7 +245,7 @@ func buildSummary(
 	}
 
 	applicableScores := computeScores(applicableResults)
-	fullScores := computeFullCorpusScores(applicableResults, allCases)
+	fullScores := computeFullCorpusScores(applicableResults, allCases, unreachableIDs)
 	perCategory := computeCategoryScores(applicableResults, casesByID)
 
 	naReasonsStr := make(map[string]int, len(naReasons))
@@ -274,6 +276,7 @@ func buildSummary(
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),
+			Unreachable:          len(unreachableIDs),
 			NotApplicable:        totalNA,
 			NotApplicableReasons: naReasonsStr,
 			Errors:               errorCount,
@@ -284,7 +287,7 @@ func buildSummary(
 			Full:       fullScores,
 			Applicable: applicableScores,
 		},
-		Sufficient:  isSufficient(fullScores, len(applicableResults), errorCount),
+		Sufficient:  isSufficient(fullScores, len(applicableResults), errorCount, len(unreachableIDs)),
 		PerCategory: perCategory,
 
 		MethodRepository:   prov.MethodRepository,

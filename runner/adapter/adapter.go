@@ -13,9 +13,9 @@ type Case struct {
 	Payload         map[string]interface{}
 }
 
-// DeliveryTuple records a transport and semantic surface an adapter can drive.
-// It is declarative only until the result-state implementation consumes it.
-// The declaration must never change a case's score by itself.
+// DeliveryTuple records a transport and semantic surface an adapter can attempt.
+// It authorizes only an attempt: the declaration alone never creates a verdict,
+// not-applicable row, or score.
 type DeliveryTuple struct {
 	WireTransport   string
 	SemanticSurface string
@@ -24,9 +24,11 @@ type DeliveryTuple struct {
 
 // Result is what an adapter returns after running a case.
 type Result struct {
-	Verdict  string
-	Evidence map[string]interface{}
-	Err      error
+	Verdict         string
+	Evidence        map[string]interface{}
+	Err             error
+	DeliveryProven  bool
+	VerdictObserved bool
 }
 
 // Adapter runs a single benchmark case against a tool and returns the verdict.
@@ -81,10 +83,38 @@ func SupportsTuple(a interface{}, c Case) (DeliveryTuple, bool) {
 // Used to validate scoring math without running a real tool.
 type DryRunAdapter struct{}
 
+func (d DryRunAdapter) DeliveryTuples() []DeliveryTuple {
+	return syntheticTuples()
+}
+
 // Run returns expected_verdict as actual_verdict with empty evidence.
 func (d DryRunAdapter) Run(c Case, _ time.Duration) Result {
 	return Result{
-		Verdict:  c.ExpectedVerdict,
-		Evidence: map[string]interface{}{},
+		Verdict:         c.ExpectedVerdict,
+		Evidence:        map[string]interface{}{},
+		DeliveryProven:  true,
+		VerdictObserved: true,
 	}
+}
+
+func syntheticTuples() []DeliveryTuple {
+	transports := []string{"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"}
+	surfaces := []string{
+		"url", "request_body", "header", "response_content",
+		"mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence", "mcp_tool_sequence_temporal",
+		"a2a_message", "a2a_agent_card", "websocket_frame",
+	}
+	routes := make([]DeliveryTuple, 0, len(transports)*len(surfaces))
+	for _, transport := range transports {
+		for _, surface := range surfaces {
+			lifecycle := "single_request"
+			if transport == "mcp_stdio" || transport == "mcp_http" {
+				lifecycle = "mcp_session"
+			}
+			routes = append(routes, DeliveryTuple{
+				WireTransport: transport, SemanticSurface: surface, Lifecycle: lifecycle,
+			})
+		}
+	}
+	return routes
 }

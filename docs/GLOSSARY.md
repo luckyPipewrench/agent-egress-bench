@@ -22,7 +22,9 @@ A script or program that connects a specific security tool to the benchmark corp
 
 ### Tool profile
 
-A JSON declaration of a security tool's fine-grained supported capabilities and transports. Used to determine which benchmark cases apply to a given tool.
+A JSON declaration of a security tool's fine-grained supported capabilities and
+transports. Retained as v3 publication metadata; it does not determine which
+benchmark cases are scoreable.
 
 ### Case
 
@@ -34,13 +36,16 @@ The outcome of a security tool evaluating a case: `block` (traffic denied) or `a
 
 ### Applicability
 
-Whether a case is relevant to a given tool. Determined mechanically from the tool profile's `supports` field against the case's `requires` and `transport` fields. Non-applicable cases are skipped, not scored as failures. There are no judgment calls. The check is deterministic.
+Whether a case became a scoreable measurement. It requires an adapter to prove
+exact wire delivery and observe a request-correlated verdict. Profile `supports`,
+case `requires`, and capability tags do not select it. No exact route is explicit
+`unreachable` coverage, not N/A.
 
 ## Secondary Terms
 
 ### Capability tag
 
-A label describing what a case exercises. Examples: `url_dlp`, `mcp_input_scan`, `ssrf`, `response_injection`. Tags are reporting labels; applicability is controlled by `requires`.
+A label describing what a case exercises. Examples: `url_dlp`, `mcp_input_scan`, `ssrf`, `response_injection`. Tags are reporting labels, not selection authority.
 
 ### Transport
 

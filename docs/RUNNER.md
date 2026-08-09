@@ -19,11 +19,12 @@ not substitute one transport for another.
 | CONNECT-capable forward proxy | Supported by the proxy adapter as `http_proxy` | HTTP CONNECT and TLS-interception cases when the tool can be configured as an HTTPS forward proxy |
 | Reverse proxy or API gateway with `listen` and `upstream` routing semantics | Not supported by the proxy adapter today | A custom runner is required; the current adapter cannot route arbitrary case URLs through this shape |
 | In-process SDK or library | Not supported by the proxy adapter today | A custom runner or wrapper service is required, and the result should declare only the transports it can actually exercise |
-| MCP gateway | Narrow generic support today via `--adapter mcp-gateway` with a gateway plugin | Streamable HTTP only. An `mcp_http` case drives an ordered `tools/call` sequence (one or more messages, blocked at the first denied call) and the `tools/list` tool-definition path handles `mcp_stdio` cases. When the plugin declares a `start_command`, the runner starts the gateway, waits for its ready address, and runs the fixture-registration command to wire it to the runner-owned upstream; the managed path is proven end-to-end only against an in-repo synthetic gateway. The adapter binds an `Mcp-Session-Id` when the gateway assigns one on initialize and replays it on the case's later requests. Resources, prompts, multi-server topologies, and a run against an unrelated third-party gateway are still out of scope. Tool-specific MCP stdio or MCP HTTP commands remain the fuller path. See [GATEWAY-ADAPTER.md](GATEWAY-ADAPTER.md) |
+| MCP gateway | Narrow generic support today via `--adapter mcp-gateway` with a gateway plugin | Streamable HTTP only. An `mcp_http` case drives an ordered `tools/call` sequence (one or more messages, blocked at the first denied call) or the `tools/list` tool-definition path. The adapter does not claim an `mcp_stdio` case merely because it can send similar semantics over HTTP. When the plugin declares a `start_command`, the runner starts the gateway, waits for its ready address, and runs the fixture-registration command to wire it to the runner-owned upstream; the managed path is proven end-to-end only against an in-repo synthetic gateway. The adapter binds an `Mcp-Session-Id` when the gateway assigns one on initialize and replays it on the case's later requests. Resources, prompts, multi-server topologies, and a run against an unrelated third-party gateway are still out of scope. Tool-specific MCP stdio or MCP HTTP commands remain the fuller path. See [GATEWAY-ADAPTER.md](GATEWAY-ADAPTER.md) |
 
-If none of the supported shapes match your architecture, mark the unmatched
-transports as unsupported in `supports` or write a tool-specific runner. Do not
-force a tool through the wrong shape just to get a numeric result.
+If none of the supported shapes match your architecture, retain an honest
+`supports` declaration for v3 publication and write a tool-specific runner.
+The declaration does not select cases. Do not force a tool through the wrong
+shape just to get a numeric result.
 
 ## Input
 
@@ -60,7 +61,7 @@ One JSON object per case, written to stdout (one per line, JSONL):
 | `tool` | string | Tool name from profile |
 | `tool_version` | string | Tool version from profile |
 | `expected_verdict` | string | From the case file |
-| `actual_verdict` | string | `block`, `allow`, `not_applicable`, or `error` |
+| `actual_verdict` | string | `block`, `allow`, `not_applicable`, `unreachable`, or `error` |
 | `score` | string | `pass`, `fail`, `not_applicable`, or `error` |
 | `evidence` | object | Tool-specific evidence (freeform) |
 | `notes` | string | Optional context |
@@ -144,7 +145,9 @@ Cases with `capability_tags: ["domain_blocklist"]` require the runner to configu
 
 - `exfil-collector.example.net` (IANA-reserved, no real DNS resolution)
 
-If your tool does not support domain blocklisting, set `supports.domain_blocklist` to `false` and these cases will be scored `not_applicable`.
+If your tool does not support domain blocklisting, retain that fact in
+`supports.domain_blocklist` and implement an adapter route that proves the
+input and verdict. The declaration alone never skips these cases.
 
 ### Budget enforcement
 
@@ -175,26 +178,23 @@ equivalent local fixture route rather than adding the sink hostname to trusted
 domains. This keeps benign trusted-fixture controls allowed while still scoring
 whether opaque high-entropy content is blocked when sent to an untrusted sink.
 
-## Applicability Check
+## Result State Check
 
-Before running a case, the runner must check applicability:
+Before scoring a case, the runner must establish all of the following:
 
-1. Every `requires` value must be satisfied by the tool profile's `supports`
-2. The case `transport` must be satisfied by the tool profile's `supports`
+1. The adapter has an exact route for the declared wire transport, semantic surface, and lifecycle.
+2. The adapter proves it delivered that exact input.
+3. The adapter observes a request-correlated `allow` or `block` verdict.
 
-If either check fails, emit `score: "not_applicable"` and `actual_verdict: "not_applicable"` without running the case.
+A missing exact route emits `actual_verdict: "unreachable"` and `score: "error"`.
+It is visible in `case_count.unreachable`, excluded from measurement denominators,
+and makes the run insufficient. A routed case lacking delivery proof or verdict
+observation emits `actual_verdict: "error"`. A tuple declaration alone never
+creates N/A.
 
-Do not use difficulty-specific `requires` to skip cases. A case runs whenever the transport, any true runtime prerequisites, and the base observation surface are available, and the tool is scored on it, including hard variants of a surface it already inspects. This applies to malicious `block` cases and benign `allow` controls alike.
-
-A tool is scored only on the observation surfaces and transports it declares
-through `supports`. "Surface" means the field or layer the tool inspects (a URL,
-a request body, tool-call arguments, a destination IP), not the difficulty of an
-individual input on that surface. A tool cannot render a hard variant
-`not_applicable` by declining an evasion-difficulty claim for a surface it
-already inspects. Cases outside its declared observation surface are
-`not_applicable`, not failures. A mostly
-`not_applicable` result is a statement about the integration and tool scope that
-was measured, not a statement about the tool's overall quality.
+`claims`, `supports`, `requires`, and `capability_tags` do not select cases.
+The v3 profile remains in output as publication metadata. This applies to hard
+variants and benign controls alike.
 
 ## Observable Verdict Rules
 
@@ -242,7 +242,7 @@ Not all tools will use the same signals. The runner is responsible for normalizi
 After all cases, the runner should print a summary line to stderr:
 
 ```
-results: 22 passed, 3 failed, 10 not_applicable, 0 errors (35 total)
+results: 22 passed, 3 failed, 0 unreachable, 10 not_applicable, 0 errors (35 total)
 ```
 
 ## Buyer-readable report
@@ -264,7 +264,7 @@ The renderer reads these artifacts when present:
 | Artifact | Report content |
 |---|---|
 | `raw-summary.json` | Method versions, target product and version, profile digest, declared capabilities, scope counts, and the four metric vectors |
-| `results.jsonl` | Every not-applicable case ID and its recorded reason |
+| `results.jsonl` | Every historical not-applicable or unreachable case ID and its recorded reason |
 | `run-metadata.json` | Repository and exact method commit |
 | `run-bundle.json` | Bundle status, publication eligibility, retained material digests, and candidate bindings |
 | `execution-decision.json` | Execution status, failures, review notes, and publication eligibility |

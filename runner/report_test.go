@@ -172,6 +172,34 @@ func TestBuyerReportMarksNotApplicableRowCountMismatchInvalid(t *testing.T) {
 	}
 }
 
+func TestBuyerReportTracksUnreachableRowsWithoutReclassifyingThem(t *testing.T) {
+	fixture := newReportFixture()
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 3, "applicable": 2, "unreachable": 1, "not_applicable": 0,
+		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
+	}
+	fixture.results = append(fixture.results, map[string]interface{}{
+		"case_id": "mcp-stdio-definition-001", "tool": "example-tool", "tool_version": "1.2.3",
+		"expected_verdict": "block", "actual_verdict": "unreachable", "score": "error",
+		"evidence": map[string]interface{}{"result_state": "unreachable"},
+		"notes":    "unreachable: adapter has no exact delivery route for this case",
+	})
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failures := report.summaryScopeFailures(); len(failures) != 0 {
+		t.Fatalf("summary scope failures = %v", failures)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	if !strings.Contains(output.String(), "- Unreachable cases: 1") {
+		t.Fatalf("report did not surface unreachable count:\n%s", output.String())
+	}
+}
+
 func sampleForRestrictedPattern(pattern string) string {
 	samples := map[string]string{
 		`(?i)leaderboards?`:                        "leaderboard",

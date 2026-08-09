@@ -160,6 +160,7 @@ def proposed_baseline(candidate, candidate_sha256):
         "observed_case_count": {
             "total": counts.get("total"),
             "applicable": counts.get("applicable"),
+            "unreachable": counts.get("unreachable", 0),
             "not_applicable": counts.get("not_applicable"),
             "not_applicable_reasons": counts.get("not_applicable_reasons"),
         },
@@ -374,6 +375,7 @@ def write_summary(
         ),
         (
             f"- Scope: `{counts['applicable']} / {counts['total']}` applicable, "
+            f"`{counts.get('unreachable', 0)}` unreachable, "
             f"`{counts['not_applicable']}` N/A, `{counts['errors']}` errors"
         ),
         f"- Applicable containment: `{applicable_scores['containment']}`",

@@ -108,7 +108,7 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
         output = self.render()
         self.assertIn("PASS — NO ACTION REQUIRED", output)
         self.assertIn("No PR was created; permanent publication was not requested.", output)
-        self.assertIn("214 total; 210 applicable; 4 N/A; 0 errors", output)
+        self.assertIn("214 total; 210 applicable; 0 unreachable; 4 N/A; 0 errors", output)
         self.assertIn("Applicable containment: 100.0%", output)
         self.assertIn("Full containment: 98.1%", output)
         self.assertIn("Applicable false-positive rate: 0.0%", output)
@@ -121,6 +121,16 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
         self.assertIn("REVIEW REQUIRED — PUBLIC RECORD UNCHANGED", output)
         self.assertIn("case_count.total moved 213 -&gt; 214", output)
         self.assertIn("Prepare a promotion", output)
+
+    def test_unreachable_count_is_rendered_as_a_coverage_gap(self):
+        value = candidate()
+        value["case_count"]["applicable"] -= 1
+        value["case_count"]["unreachable"] = 1
+        value["sufficient"] = False
+
+        output = self.render(candidate_value=value, decision_value=decision("blocked", True, ["sufficient=False, want true"]), enforcement_exit=1)
+
+        self.assertIn("209 applicable; 1 unreachable; 4 N/A", output)
 
     def test_blocked_decision_is_action_required(self):
         output = self.render(decision_value=decision("blocked", True, ["case_count.errors=1, want 0"]), enforcement_exit=1)
