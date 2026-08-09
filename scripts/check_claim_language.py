@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail the build when documentation makes a claim the method cannot support.
 
-Two checks run together:
+Three checks run together:
 
 1. Banned claim terms. Certification, ranking, and absolute-security language
    must not appear in contributor-facing documentation. A line that needs the
@@ -10,6 +10,8 @@ Two checks run together:
 2. The definitions document. ``docs/RESULTS-USE.md`` must keep defining every
    assurance label and must keep granting permission to publish adverse
    results. Deleting either is the failure mode this check exists to catch.
+3. Target review stays public and limited to setup. Documentation must not
+   promise private notice or a prepublication result preview to a target.
 """
 
 import re
@@ -49,11 +51,52 @@ BANNED = (
     (r"insurance discount", "no insurer has priced this evidence"),
     (r"\bFIPS\b", "no module here is FIPS validated"),
     (r"all prox(?:y|ies)[- ]based", "proxy shapes differ; scope the claim to the profile"),
+    (
+        r"\bgive\s+(?:the\s+)?(?:maintainer|target|vendor)\s+notice\b",
+        "publish setup for public correction; do not promise target-specific notice",
+    ),
+    (
+        r"\b(?:offer|provide|grant|give)(?:ed|s)?\b[^\n]{0,80}"
+        r"\b(?:private|pre[- ]publication)\b[^\n]{0,40}"
+        r"\b(?:preview|review|notice)\b",
+        "targets get no private or prepublication result review",
+    ),
+    (
+        r"\b(?:private|pre[- ]publication)\b[^\n]{0,40}"
+        r"\b(?:preview|review|notice)\b[^\n]{0,60}"
+        r"\b(?:offered|provided|granted|given)\b",
+        "targets get no private or prepublication result review",
+    ),
+    # The two patterns above only fire when the sentence's subject is the giver.
+    # The prohibition is about a private preview EXISTING, so the same grant
+    # written from the recipient's side slipped through: "A target may receive a
+    # private prepublication result preview" passed clean. These cover that
+    # direction. Verb enumeration is inherently incomplete, so a reviewer should
+    # still read the section rather than trusting a green check here.
+    (
+        r"\b(?:receive|get|obtain|access|see|preview)(?:s|d|ed)?\b(?!\s+no\b)[^\n]{0,80}"
+        r"\b(?:private|pre[- ]publication)\b[^\n]{0,40}"
+        r"\b(?:preview|review|notice)\b",
+        "targets get no private or prepublication result review",
+    ),
+    (
+        r"\b(?:entitled\s+to|allowed\s+to|permitted\s+to|able\s+to|may|can)\b[^\n]{0,40}"
+        r"\b(?:review|preview|see|inspect)\b[^\n]{0,60}"
+        r"\bbefore\s+publication\b",
+        "targets get no private or prepublication result review",
+    ),
+    (
+        r"\b(?:private|pre[- ]publication)\b[^\n]{0,40}"
+        r"\b(?:preview|review|notice)\b[^\n]{0,60}"
+        r"\b(?:received|obtained|accessed)\b",
+        "targets get no private or prepublication result review",
+    ),
 )
 
 COMPILED = tuple((re.compile(pattern, re.IGNORECASE), reason) for pattern, reason in BANNED)
 
 ADVERSE_SECTION = "Adverse results"
+CONFIGURATION_SECTION = "Configuration verification"
 
 REQUIRED_DEFINITIONS = (
     "Self-run",
@@ -130,6 +173,23 @@ def check_definitions(text: str):
             findings.append(
                 f"{DEFINITIONS_DOC}: the '{ADVERSE_SECTION}' section no longer grants "
                 "permission to publish an adverse result without notice or approval"
+            )
+
+    configuration = section_text(text, CONFIGURATION_SECTION)
+    if configuration is None:
+        findings.append(f"{DEFINITIONS_DOC}: missing the '{CONFIGURATION_SECTION}' section")
+    else:
+        collapsed = " ".join(configuration.split()).lower()
+        required = (
+            "in public",
+            "does not include case outcomes",
+            "no private notice period",
+            "no veto",
+        )
+        if any(phrase not in collapsed for phrase in required):
+            findings.append(
+                f"{DEFINITIONS_DOC}: the '{CONFIGURATION_SECTION}' section must keep "
+                "setup review public, exclude outcomes, and deny private notice and veto rights"
             )
     return findings
 

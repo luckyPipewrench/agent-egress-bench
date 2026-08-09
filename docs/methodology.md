@@ -196,13 +196,19 @@ To dispute a case verdict, open a **GitHub Discussion** with:
 
 ### If accepted
 
-A new case is created with a `supersedes` field pointing to the original case ID. The original case remains byte-immutable (its ID, payload, and expected verdict never change). The supersession is tracked in [`data/supersessions.json`](../data/supersessions.json).
+A new case is created with a `supersedes` field pointing to the original case ID. The original case
+remains byte-immutable: its ID, payload, and expected verdict never change. The field records the
+relationship between the cases. It does not deactivate the original case or change which cases a
+runner executes.
 
 ### If rejected
 
 The maintainer posts an explanation in the discussion thread with reasoning.
 
-Case IDs are permanent. Even superseded cases stay in the corpus as historical records. Runners skip superseded cases automatically when the supersessions manifest is loaded.
+Case IDs are permanent. Even superseded cases stay in the corpus as historical records. The current
+runner executes every case its loader discovers, including both sides of a supersession. Changing
+the active case set would change the score denominator, so it requires an immutable, versioned
+release contract before any runner may apply it.
 
 ## Neutrality
 
