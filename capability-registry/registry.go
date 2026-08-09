@@ -70,6 +70,16 @@ func (r Resolver) Resolve(ref Reference) (ResolvedSnapshot, error) {
 	if err != nil {
 		return ResolvedSnapshot{}, fmt.Errorf("reading capability registry snapshot: %w", err)
 	}
+	return ResolveRaw(ref, raw)
+}
+
+// ResolveRaw validates a snapshot retained as evidence inside a package. It
+// hashes precisely the supplied bytes; callers must not decode and re-marshal
+// a snapshot before this check.
+func ResolveRaw(ref Reference, raw []byte) (ResolvedSnapshot, error) {
+	if err := validateReference(ref); err != nil {
+		return ResolvedSnapshot{}, err
+	}
 	if digest := SHA256(raw); digest != ref.SHA256 {
 		return ResolvedSnapshot{}, fmt.Errorf("capability registry sha256 mismatch: got %s, want %s", digest, ref.SHA256)
 	}
