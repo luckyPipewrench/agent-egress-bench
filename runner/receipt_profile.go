@@ -7,6 +7,9 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 // ReceiptProfile is the on-disk receipt-scoring artifact described by
@@ -15,15 +18,16 @@ import (
 // (blocked, explained, receipt_produced, receipt_independently_verifiable,
 // false_positive) plus declarative verifier metadata and provenance hashes.
 type ReceiptProfile struct {
-	SchemaVersion     int              `json:"schema_version"`
-	Tool              string           `json:"tool"`
-	ToolVersion       string           `json:"tool_version"`
-	CorpusVersion     string           `json:"corpus_version"`
-	CorpusSHA256      string           `json:"corpus_sha256"`
-	ToolProfileSHA256 string           `json:"tool_profile_sha256"`
-	Verifier          ReceiptVerifier  `json:"verifier"`
-	Summary           ReceiptSummary   `json:"summary"`
-	PerCase           []ReceiptPerCase `json:"per_case"`
+	SchemaVersion      int                          `json:"schema_version"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	CorpusVersion      string                       `json:"corpus_version"`
+	CorpusSHA256       string                       `json:"corpus_sha256"`
+	ToolProfileSHA256  string                       `json:"tool_profile_sha256"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	Verifier           ReceiptVerifier              `json:"verifier"`
+	Summary            ReceiptSummary               `json:"summary"`
+	PerCase            []ReceiptPerCase             `json:"per_case"`
 }
 
 // ReceiptVerifier records declarative metadata about the tool's receipt
@@ -221,15 +225,16 @@ func buildReceiptProfile(
 	}
 
 	return ReceiptProfile{
-		SchemaVersion:     activeSchemaVersion,
-		Tool:              p.Tool,
-		ToolVersion:       p.ToolVersion,
-		CorpusVersion:     corpusVersion,
-		CorpusSHA256:      corpusSHA,
-		ToolProfileSHA256: profileSHA,
-		Verifier:          verifier,
-		Summary:           summary,
-		PerCase:           rows,
+		SchemaVersion:      activeSchemaVersion,
+		Tool:               p.Tool,
+		ToolVersion:        p.ToolVersion,
+		CorpusVersion:      corpusVersion,
+		CorpusSHA256:       corpusSHA,
+		ToolProfileSHA256:  profileSHA,
+		CapabilityRegistry: p.CapabilityRegistry,
+		Verifier:           verifier,
+		Summary:            summary,
+		PerCase:            rows,
 	}
 }
 
@@ -252,6 +257,9 @@ func hasExplanation(ev map[string]interface{}) bool {
 // output writers. The output is deterministic for byte-for-byte
 // reproducibility across runs against the same corpus and tool profile.
 func writeReceiptProfile(rp ReceiptProfile, path string) error {
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		return fmt.Errorf("invalid receipt profile: %s", strings.Join(issues, "; "))
+	}
 	data, err := json.MarshalIndent(rp, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling receipt profile: %w", err)

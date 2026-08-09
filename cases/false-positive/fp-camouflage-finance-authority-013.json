@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "fp-camouflage-finance-authority-013",
   "category": "false_positive",
   "title": "Authoritative finance research note resembling camouflaged injection",

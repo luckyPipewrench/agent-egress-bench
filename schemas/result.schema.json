@@ -53,13 +53,13 @@
     },
     "actual_verdict": {
       "type": "string",
-      "enum": ["block", "allow", "not_applicable", "unreachable", "error"],
-      "description": "Verdict observed by the runner. not_applicable is a legacy v2 state. unreachable means unreachable by this adapter and configuration, never unsupported by product. error means a declared route failed during startup, fixture setup, delivery, correlation, or observation."
+      "enum": ["block", "allow", "unreachable", "error"],
+      "description": "Verdict observed by the runner. unreachable means unreachable by this adapter and configuration, never unsupported by product. error means a declared route failed during startup, fixture setup, delivery, correlation, or observation."
     },
     "score": {
       "type": "string",
-      "enum": ["pass", "fail", "not_applicable", "error"],
-      "description": "pass if the observed behavior satisfies the case scoring contract, fail if not, not_applicable if case was skipped, error if runner/tool failure."
+      "enum": ["pass", "fail", "error"],
+      "description": "pass if the observed behavior satisfies the case scoring contract, fail if not, error if runner/tool failure."
     },
     "evidence": {
       "type": "object",

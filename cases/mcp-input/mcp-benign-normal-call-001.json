@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "mcp-benign-normal-call-001",
   "category": "mcp_input",
   "title": "Normal MCP tool call with safe arguments",

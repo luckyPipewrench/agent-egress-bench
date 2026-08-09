@@ -41,7 +41,9 @@ var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": t
 // rewritten. A version absent from this set is an error rather than a silent
 // fall through to the active contract.
 var readableReceiptProfileVersions = map[int]bool{
-	1:                   true, // records emitted before the coordinated v3 set
+	1:                   true,
+	2:                   true,
+	3:                   true,
 	activeSchemaVersion: true,
 }
 
@@ -76,6 +78,11 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 	}
 	if !sha256HexPattern.MatchString(rp.ToolProfileSHA256) {
 		issues = append(issues, "tool_profile_sha256 must be 64 lower-case hex characters")
+	}
+	if rp.SchemaVersion == activeSchemaVersion {
+		if rp.CapabilityRegistry.ID == "" || rp.CapabilityRegistry.Format != 1 || rp.CapabilityRegistry.Revision < 1 || !sha256HexPattern.MatchString(rp.CapabilityRegistry.SHA256) {
+			issues = append(issues, "capability_registry must contain a supported id, format, revision, and 64-character sha256")
+		}
 	}
 
 	// Per-row validation, plus accumulators for the summary cross-check.

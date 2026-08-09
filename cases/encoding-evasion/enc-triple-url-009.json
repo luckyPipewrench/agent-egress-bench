@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "enc-triple-url-009",
   "category": "encoding_evasion",
   "title": "Triple URL-encoded secret",

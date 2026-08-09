@@ -221,7 +221,6 @@ func TestResultStateSelectionIgnoresProfileAndCapabilityMetadata(t *testing.T) {
 	c.Requires = []string{"mcp_chain_memory"}
 	profile := stateTestProfile()
 	profile.Claims = []string{"url_dlp"}
-	profile.Supports = map[string]bool{"fetch_proxy": false, "mcp_chain_memory": false}
 	adapt := &stateTestAdapter{
 		routes: []adapter.DeliveryTuple{adapter.TupleForCase(adapter.Case{Transport: c.Transport, InputType: c.InputType})},
 		result: adapter.Result{Verdict: "block", DeliveryProven: true, VerdictObserved: true},

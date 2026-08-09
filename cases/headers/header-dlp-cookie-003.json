@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "header-dlp-cookie-003",
   "category": "headers",
   "title": "GitHub token in Cookie header",

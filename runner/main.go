@@ -160,6 +160,14 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		}
 	}
 
+	// Fail before fixture startup, adapter invocation, JSONL emission, summary,
+	// or receipt output when the immutable reporting vocabulary cannot be
+	// resolved exactly. Labels are validated here and never used below to pick
+	// rows or calculate a score.
+	if _, err := preflightRegistry(profile, cases, casesDir); err != nil {
+		return fmt.Errorf("capability registry preflight: %w", err)
+	}
+
 	// Build case lookup by ID for category scoring.
 	casesByID := make(map[string]Case, len(cases))
 	for _, c := range cases {
@@ -360,15 +368,16 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 			debugf(debug, "case %s: FAIL expected=%s actual=%s evidence=%v", c.ID, c.ExpectedVerdict, adapterResult.Verdict, evidence)
 		}
 		result := CaseResult{
-			SchemaVersion:   activeSchemaVersion,
-			CaseID:          c.ID,
-			Tool:            profile.Tool,
-			ToolVersion:     profile.ToolVersion,
-			ExpectedVerdict: c.ExpectedVerdict,
-			ActualVerdict:   adapterResult.Verdict,
-			Score:           score,
-			Evidence:        evidence,
-			Notes:           "",
+			SchemaVersion:      activeSchemaVersion,
+			CaseID:             c.ID,
+			Tool:               profile.Tool,
+			ToolVersion:        profile.ToolVersion,
+			CapabilityRegistry: profile.CapabilityRegistry,
+			ExpectedVerdict:    c.ExpectedVerdict,
+			ActualVerdict:      adapterResult.Verdict,
+			Score:              score,
+			Evidence:           evidence,
+			Notes:              "",
 		}
 		applicableResults = append(applicableResults, result)
 		if err := enc.Encode(result); err != nil {

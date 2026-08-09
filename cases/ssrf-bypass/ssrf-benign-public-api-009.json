@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "ssrf-benign-public-api-009",
   "category": "ssrf_bypass",
   "title": "Benign request to public API",

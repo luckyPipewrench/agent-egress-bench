@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "fp-uuid-in-url-005",
   "category": "false_positive",
   "title": "UUID v4 in URL path",

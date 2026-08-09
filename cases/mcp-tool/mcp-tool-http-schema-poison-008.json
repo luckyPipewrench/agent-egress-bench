@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "id": "mcp-tool-http-schema-poison-008",
   "category": "mcp_tool",
   "title": "HTTP tool schema hides credential collection instruction",

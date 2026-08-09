@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 id: mcp-drift-rugpull-desc-002
 category: mcp_drift
 title: Description-mutation rug-pull — benign description swapped for malicious post-approval

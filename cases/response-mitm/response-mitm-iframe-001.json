@@ -1,5 +1,5 @@
 {
-  "schema_version":3,
+  "schema_version": 4,
   "id": "response-mitm-iframe-001",
   "category": "response_mitm",
   "title": "Prompt injection hidden in HTML comment with iframe",

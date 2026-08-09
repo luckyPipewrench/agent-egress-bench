@@ -94,8 +94,8 @@ func TestValidateReceiptProfile_CommittedPipelock(t *testing.T) {
 
 func TestValidateReceiptProfile_RejectsBadSchemaVersion(t *testing.T) {
 	rp := validProfile()
-	rp.SchemaVersion = 2
-	expectIssueMatch(t, rp, "schema_version must be 3")
+	rp.SchemaVersion = 99
+	expectIssueMatch(t, rp, "schema_version must be 4")
 }
 
 func TestValidateReceiptProfile_RejectsBadCorpusSHA(t *testing.T) {
@@ -328,7 +328,7 @@ func TestLoadReceiptVerifier_RejectsUnknownField(t *testing.T) {
 // the mapping logic (blocked / explained / false_positive) break here
 // instead of leaking into the runner output silently.
 func TestBuildReceiptProfile_PerCaseShape(t *testing.T) {
-	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
 	verifier := ReceiptVerifier{}
 	zeros := strings.Repeat("0", 64)
 	applicable := []CaseResult{
@@ -524,7 +524,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+			profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
 			if tt.configure != nil {
 				decl := baseReceiptEvidenceDeclaration(dir, helper)
 				tt.configure(t, dir, &decl)
@@ -577,7 +577,7 @@ func TestBuildReceiptProfile_EvidenceDirUnreadableFailsClosed(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(evidenceDir, 0o700) })
 
 	decl := baseReceiptEvidenceDeclaration(evidenceDir, receiptVerifierHelper(t))
-	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", ReceiptEvidence: &decl}
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference, ReceiptEvidence: &decl}
 	rp := buildReceiptProfile(
 		profile,
 		[]CaseResult{receiptObservationCaseResult()},
@@ -779,7 +779,7 @@ func expectIssueMatch(t *testing.T, rp ReceiptProfile, substr string) {
 // row recorded false_positive="no" (silently crediting the tool for a correct
 // allow nobody observed). Both directions are asserted here.
 func TestBuildReceiptProfile_ErrorRowsAreNotScoredAsOutcomes(t *testing.T) {
-	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
 	verifier := ReceiptVerifier{}
 	zeros := strings.Repeat("0", 64)
 	applicable := []CaseResult{
@@ -823,7 +823,7 @@ func TestBuildReceiptProfile_ErrorRowsRetainFactualReceiptObservations(t *testin
 	helper := receiptVerifierHelper(t)
 	decl := baseReceiptEvidenceDeclaration(dir, helper)
 	writeReceiptEvidence(t, filepath.Join(dir, "evidence.jsonl"), "https://example.test/collect?token=[sample-value]")
-	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", ReceiptEvidence: &decl}
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference, ReceiptEvidence: &decl}
 	result := receiptObservationCaseResult()
 	result.ActualVerdict = "error"
 	rp := buildReceiptProfile(

@@ -1,16 +1,19 @@
 package main
 
+import capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
+
 // CaseResult holds the outcome of running a single case.
 type CaseResult struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	CaseID          string                 `json:"case_id"`
-	Tool            string                 `json:"tool"`
-	ToolVersion     string                 `json:"tool_version"`
-	ExpectedVerdict string                 `json:"expected_verdict"`
-	ActualVerdict   string                 `json:"actual_verdict"`
-	Score           string                 `json:"score"`
-	Evidence        map[string]interface{} `json:"evidence"`
-	Notes           string                 `json:"notes"`
+	SchemaVersion      int                          `json:"schema_version"`
+	CaseID             string                       `json:"case_id"`
+	Tool               string                       `json:"tool"`
+	ToolVersion        string                       `json:"tool_version"`
+	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	ExpectedVerdict    string                       `json:"expected_verdict"`
+	ActualVerdict      string                       `json:"actual_verdict"`
+	Score              string                       `json:"score"`
+	Evidence           map[string]interface{}       `json:"evidence"`
+	Notes              string                       `json:"notes"`
 }
 
 // Scores holds the four scoring dimensions.

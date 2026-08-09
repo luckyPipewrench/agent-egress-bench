@@ -362,10 +362,9 @@ func captureStderr(t *testing.T, fn func() error) string {
 	return string(data)
 }
 
-// Profiles retain their v3 claims and supports fields as published metadata,
-// but they no longer select cases. Changing a declaration must leave the
-// adapter-proven run unchanged rather than shrinking the denominator.
-func TestRunIgnoresProfileDeclaredUnsupportedForSelection(t *testing.T) {
+// Claims are registry-backed reporting labels. Changing valid labels must not
+// shrink the adapter-proven measured denominator.
+func TestRunIgnoresProfileClaimsForSelection(t *testing.T) {
 	type caseCount struct {
 		Applicable    int `json:"applicable"`
 		Unreachable   int `json:"unreachable"`
@@ -400,15 +399,20 @@ func TestRunIgnoresProfileDeclaredUnsupportedForSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	declined := strings.Replace(string(baseline), `"crypto_dlp_scanning": true`, `"crypto_dlp_scanning": false`, 1)
-	if declined == string(baseline) {
-		t.Fatal("fixture profile no longer declares crypto_dlp_scanning true; update this test")
+	var changed map[string]interface{}
+	if err := json.Unmarshal(baseline, &changed); err != nil {
+		t.Fatal(err)
+	}
+	changed["claims"] = []string{"url_dlp"}
+	declinedBytes, err := json.Marshal(changed)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	before := countFor(t, string(baseline))
-	after := countFor(t, declined)
+	after := countFor(t, string(declinedBytes))
 	if before != after {
-		t.Fatalf("case counts changed after a profile declaration changed: before=%+v after=%+v", before, after)
+		t.Fatalf("case counts changed after valid reporting claims changed: before=%+v after=%+v", before, after)
 	}
 	if after.NotApplicable != 0 || after.Unreachable != 0 {
 		t.Fatalf("dryrun profile declaration produced N/A/unreachable rows: %+v", after)
