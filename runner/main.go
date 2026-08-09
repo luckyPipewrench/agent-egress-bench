@@ -216,6 +216,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			pa.SetWSFixtures(fm.WS().Addr(), fm.WS().UntrustedAddr())
 			pa.SetWSUpstreamMessageCounter(fm.WS().Messages)
 			pa.SetMCPHTTPUpstreamCallCounter(fm.MCPHTTP().Calls)
+			pa.SetMCPHTTPFixture(fm.MCPHTTP())
 			_, _ = fmt.Fprintf(os.Stderr, "Fixtures: HTTP=%s TLS=%s WS=%s DNS=%s MCP_HTTP=%s\n",
 				fm.HTTP().Addr(), fm.TLS().Addr(), fm.WS().Addr(), fm.DNS().Addr(), fm.MCPHTTP().Addr())
 		}
