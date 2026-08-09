@@ -63,6 +63,9 @@ func TestSyntheticAdaptersDeclareAndProveAllCorpusTuples(t *testing.T) {
 			if !result.DeliveryProven || !result.VerdictObserved {
 				t.Fatalf("result = %+v, want explicit synthetic delivery and observation proof", result)
 			}
+			if result.Evidence["synthetic"] != true || result.Evidence["synthetic_adapter"] != tt.name {
+				t.Fatalf("result evidence = %+v, want synthetic marker for %q", result.Evidence, tt.name)
+			}
 		})
 	}
 }

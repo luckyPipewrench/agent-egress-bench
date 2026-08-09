@@ -128,7 +128,7 @@
     },
     "per_case": {
       "type": "array",
-      "description": "One row per applicable corpus case the runner exercised against the tool. Cases that were not applicable to the tool, and cases the adapter could not reach, are not represented here; see the runner gauntlet summary for those counts. Cases that errored at the runner layer ARE represented here, as the unmeasured shape with blocked and false_positive both n/a, and they are excluded from outcome summary counts because a failed measurement is not an observed outcome in either direction. Factual receipt observations, if any, remain represented and counted by their corresponding receipt dimensions.",
+      "description": "One row per corpus case the runner routed to the tool, plus every runner-produced unreachable row. An unreachable row records that this adapter had no exact delivery route; it remains visible as the unmeasured shape with blocked and false_positive both n/a and is excluded from outcome summary counts. Runner-error rows use the same unmeasured shape because a failed measurement is not an observed outcome in either direction. Historical not-applicable rows are not represented. Factual receipt observations, if any, remain represented and counted by their corresponding receipt dimensions.",
       "minItems": 0,
       "items": {
         "type": "object",

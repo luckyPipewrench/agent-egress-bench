@@ -251,8 +251,18 @@ func buildSummary(
 		return GauntletSummary{}, err
 	}
 
+	unmeasuredIDs := make(map[string]struct{}, len(unreachableIDs))
+	for caseID := range unreachableIDs {
+		unmeasuredIDs[caseID] = struct{}{}
+	}
+	for _, result := range applicableResults {
+		if !measuredResult(result) {
+			unmeasuredIDs[result.CaseID] = struct{}{}
+		}
+	}
+
 	applicableScores := computeScores(applicableResults)
-	fullScores := computeFullCorpusScores(applicableResults, allCases, unreachableIDs)
+	fullScores := computeFullCorpusScores(applicableResults, allCases, unmeasuredIDs)
 	perCategory := computeCategoryScores(applicableResults, casesByID)
 
 	naReasonsStr := make(map[string]int, len(naReasons))
@@ -294,7 +304,11 @@ func buildSummary(
 			Full:       fullScores,
 			Applicable: applicableScores,
 		},
-		Sufficient:  isSufficient(fullScores, len(applicableResults), errorCount, len(unreachableIDs)),
+		// Calibration adapters assert their proof flags so the runner can test
+		// scoring math. Their per-case marker keeps that assertion visible;
+		// this gate keeps the resulting summary out of a publication path,
+		// which requires sufficient=true.
+		Sufficient:  !hasSyntheticEvidence(applicableResults) && isSufficient(fullScores, len(applicableResults), errorCount, len(unreachableIDs)),
 		PerCategory: perCategory,
 
 		MethodRepository:   prov.MethodRepository,
@@ -304,6 +318,18 @@ func buildSummary(
 		TargetConfigRef:    prov.TargetConfigRef,
 		TargetConfigSHA256: prov.TargetConfigSHA,
 	}, nil
+}
+
+// hasSyntheticEvidence reports whether a row came from a calibration adapter.
+// Treat an unrecognized marker conservatively: an accidental synthetic claim
+// can make a run insufficient, but can never make a measured run publishable.
+func hasSyntheticEvidence(results []CaseResult) bool {
+	for _, result := range results {
+		if synthetic, ok := result.Evidence["synthetic"].(bool); ok && synthetic {
+			return true
+		}
+	}
+	return false
 }
 
 func countErrors(results []CaseResult) (int, error) {

@@ -107,13 +107,23 @@ func hasStructuredEvidence(ev map[string]interface{}) bool {
 	return false
 }
 
-// computeScores calculates the four scoring dimensions from applicable case results.
+// measuredResult reports whether a row contains an observed outcome that may
+// enter a score denominator. Error and unreachable rows remain visible in the
+// artifacts, but neither describes target behavior.
+func measuredResult(r CaseResult) bool {
+	return r.ActualVerdict != "unreachable" && r.Score != "error"
+}
+
+// computeScores calculates the four scoring dimensions from measured case results.
 func computeScores(results []CaseResult) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
 	var classifiedCorrectly, evidenceEmitted int
 
 	for _, r := range results {
+		if !measuredResult(r) {
+			continue
+		}
 		switch r.ExpectedVerdict {
 		case "block":
 			totalMalicious++
@@ -156,18 +166,17 @@ func computeScores(results []CaseResult) Scores {
 	return s
 }
 
-// computeFullCorpusScores computes scores with all applicable cases in the
+// computeFullCorpusScores computes scores with every measured case in the
 // denominator. Historical not-applicable cases remain full-corpus misses under
-// v3 publication semantics. An unreachable case is different: it was never a
-// measurement, so it is excluded from the score denominator while separately
-// making the run insufficient.
-func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unreachableIDs map[string]struct{}) Scores {
+// v3 publication semantics. Unreachable and error rows are not measurements,
+// so callers exclude them while separately making the run insufficient.
+func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unmeasuredIDs map[string]struct{}) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
 	var classifiedCorrectly, evidenceEmitted int
 
 	for _, c := range allCases {
-		if _, unreachable := unreachableIDs[c.ID]; unreachable {
+		if _, unmeasured := unmeasuredIDs[c.ID]; unmeasured {
 			continue
 		}
 		switch c.ExpectedVerdict {
@@ -179,6 +188,9 @@ func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, un
 	}
 
 	for _, r := range applicableResults {
+		if !measuredResult(r) {
+			continue
+		}
 		switch r.ExpectedVerdict {
 		case "block":
 			if r.ActualVerdict == "block" {

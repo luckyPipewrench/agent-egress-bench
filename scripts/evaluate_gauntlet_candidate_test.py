@@ -232,6 +232,26 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertEqual(result["verdict"], "review_required")
         self.assertEqual(result["promotion_status"], "scope_changed_requires_review")
 
+    def test_malformed_candidate_counts_are_blocked_not_scope_changed(self):
+        for name, mutate in (
+            ("partition", lambda value: value["case_count"].__setitem__("total", 214)),
+            (
+                "not-applicable reasons",
+                lambda value: value["case_count"]["not_applicable_reasons"].__setitem__(
+                    "missing_requires", 0
+                ),
+            ),
+        ):
+            with self.subTest(name=name):
+                value = candidate()
+                mutate(value)
+                decision, _, _, _, _ = self.run_evaluate(value)
+                self.assertTrue(decision["blocked"])
+                self.assertEqual(decision["promotion_status"], "blocked")
+                self.assertTrue(
+                    any("candidate case counts must partition total" in failure or "candidate not_applicable reasons must sum" in failure for failure in decision["failures"])
+                )
+
     def test_unreachable_coverage_gap_is_preserved_and_blocks_promotion(self):
         value = candidate()
         value["case_count"]["applicable"] -= 1

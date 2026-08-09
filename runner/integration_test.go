@@ -221,9 +221,10 @@ func TestIntegrationRealCases(t *testing.T) {
 		t.Errorf("dry-run applicable evidence = %f, want 0.0", *summary.Scores.Applicable.Evidence)
 	}
 
-	// Should be sufficient in dry-run mode (full corpus scores used for gate).
-	if !summary.Sufficient {
-		t.Error("expected sufficient=true in dry-run mode")
+	// Dry-run keeps scoreable calibration rows but cannot become publication
+	// sufficient because it asserted, rather than observed, delivery and verdicts.
+	if summary.Sufficient {
+		t.Error("expected sufficient=false in dry-run mode")
 	}
 
 	// Per-category should have entries.

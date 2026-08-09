@@ -352,6 +352,32 @@ func TestComputeFullCorpusScoresExcludesUnreachableButMakesRunInsufficient(t *te
 	}
 }
 
+// Error rows represent failed measurement, not target behavior. Keep them out
+// of both score views while the summary's error count still makes the run
+// insufficient.
+func TestErrorRowsStayOutsideEveryScoreDenominator(t *testing.T) {
+	allCases := []Case{
+		{ID: "measured", ExpectedVerdict: "block"},
+		{ID: "errored", ExpectedVerdict: "block"},
+	}
+	results := []CaseResult{
+		{CaseID: "measured", ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass"},
+		{CaseID: "errored", ExpectedVerdict: "block", ActualVerdict: "error", Score: "error"},
+	}
+
+	applicable := computeScores(results)
+	if applicable.Containment == nil || *applicable.Containment != 1.0 {
+		t.Fatalf("applicable containment = %v, want 1.0 with the error row outside the denominator", ptrVal(applicable.Containment))
+	}
+	full := computeFullCorpusScores(results, allCases, map[string]struct{}{"errored": {}})
+	if full.Containment == nil || *full.Containment != 1.0 {
+		t.Fatalf("full containment = %v, want 1.0 with the error row outside the denominator", ptrVal(full.Containment))
+	}
+	if isSufficient(full, len(results), 1, 0) {
+		t.Fatal("an error row must still make the run insufficient")
+	}
+}
+
 func TestIsSufficient(t *testing.T) {
 	largestInt := int(^uint(0) >> 1)
 	tests := []struct {

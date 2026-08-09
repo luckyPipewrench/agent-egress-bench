@@ -244,19 +244,51 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             raise ValueError("baseline observed case counts must partition total")
         if sum(reasons.values()) != observed["not_applicable"]:
             raise ValueError("baseline not_applicable reasons must sum to not_applicable")
+
+        candidate_counts = candidate.get("case_count")
+        if not isinstance(candidate_counts, dict):
+            raise ValueError("candidate case_count must be an object")
+        for key in ("total", "applicable", "not_applicable"):
+            value = candidate_counts.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"candidate case_count.{key} must be a non-negative integer")
+        candidate_unreachable = candidate_counts.get("unreachable", 0)
+        if (
+            isinstance(candidate_unreachable, bool)
+            or not isinstance(candidate_unreachable, int)
+            or candidate_unreachable < 0
+        ):
+            raise ValueError("candidate case_count.unreachable must be a non-negative integer")
+        candidate_reasons = candidate_counts.get("not_applicable_reasons")
+        if not isinstance(candidate_reasons, dict):
+            raise ValueError("candidate case_count.not_applicable_reasons must be an object")
+        if any(
+            not isinstance(reason, str)
+            or not reason
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            for reason, count in candidate_reasons.items()
+        ):
+            raise ValueError(
+                "candidate case_count.not_applicable_reasons must map non-empty strings to non-negative integers"
+            )
+        if candidate_counts["applicable"] + candidate_unreachable + candidate_counts["not_applicable"] != candidate_counts["total"]:
+            raise ValueError("candidate case counts must partition total")
+        if sum(candidate_reasons.values()) != candidate_counts["not_applicable"]:
+            raise ValueError("candidate not_applicable reasons must sum to not_applicable")
+
         scope_changed = False
         for key in ("total", "applicable", "unreachable", "not_applicable"):
             previous = observed.get(key, 0)
-            current = candidate.get("case_count", {}).get(key, 0)
-            if isinstance(current, bool) or not isinstance(current, int) or current < 0:
-                raise ValueError(f"candidate case_count.{key} must be a non-negative integer")
+            current = candidate_counts.get(key, 0)
             if previous is not None and current != previous:
                 scope_changed = True
                 decision["review_notes"].append(
                     f"case_count.{key} moved {previous!r} -> {current!r}"
                 )
         previous_reasons = observed.get("not_applicable_reasons")
-        current_reasons = nested_value(candidate, ("case_count", "not_applicable_reasons"))
+        current_reasons = candidate_reasons
         if previous_reasons is not None and current_reasons != previous_reasons:
             scope_changed = True
             decision["review_notes"].append(

@@ -103,15 +103,15 @@ func decodeStrictJSON(data []byte, dst interface{}) error {
 }
 
 // buildReceiptProfile assembles the receipt-scoring artifact from runner
-// outputs. per_case covers every row in the applicable slice. Not-applicable
-// and unreachable cases are excluded by construction because they never enter
-// that slice. Runner-error rows DO enter it and are represented here, but as
-// the unmeasured shape (blocked and false_positive both n/a) and without
-// touching an outcome summary counter, because an error is a failed
-// measurement rather than an observed outcome. Receipt observations remain
-// factual: their counters continue to derive from the emitted per_case rows.
-// Do not restate the old claim that error cases are excluded, and do not force
-// an error row onto either outcome axis.
+// outputs. Its caller passes routed rows plus runner-produced unreachable
+// rows, so per_case makes both measured scope and coverage gaps visible.
+// Historical not-applicable rows are excluded because the runner did not
+// exercise them. Unreachable and runner-error rows are represented as the
+// unmeasured shape (blocked and false_positive both n/a) without touching an
+// outcome summary counter: neither is an observed outcome. Receipt
+// observations remain factual: their counters continue to derive from the
+// emitted per_case rows. Do not force an unmeasured row onto either outcome
+// axis.
 // per_case rows are sorted by case_id so repeated runs produce byte-identical
 // output for the same inputs.
 func buildReceiptProfile(
@@ -158,13 +158,8 @@ func buildReceiptProfile(
 		// from the emitted row below.
 		switch {
 		case r.ActualVerdict == "unreachable":
-			// Defence in depth. An unreachable row is not a measurement at all,
-			// and today it cannot arrive here because runCases emits it and
-			// continues before appending to the applicable slice. That is an
-			// invariant held by one caller's control flow, not by this
-			// function, so a future caller assembling a profile from a
-			// different slice would otherwise score it as an outcome. Treat it
-			// exactly like an error row: visible, unmeasured, uncounted.
+			// An unreachable row records a coverage gap, never a measurement.
+			// Keep it visible but unmeasured and uncounted on both outcome axes.
 			row.Blocked = "n/a"
 			row.FalsePositive = "n/a"
 			row.Explained = "no"

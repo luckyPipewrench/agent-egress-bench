@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,7 +44,7 @@ func stateTestProfile() Profile {
 func runStateTestCase(t *testing.T, adapt adapter.Adapter) ([]CaseResult, int, string) {
 	t.Helper()
 	var output bytes.Buffer
-	results, unreachable, _, err := runCases([]Case{stateTestCase()}, stateTestProfile(), adapt, time.Second, false, &output)
+	results, _, unreachable, _, err := runCases([]Case{stateTestCase()}, stateTestProfile(), adapt, time.Second, false, &output)
 	if err != nil {
 		t.Fatalf("runCases: %v", err)
 	}
@@ -68,6 +69,44 @@ func TestResultState_NoRouteIsUnreachableNotErrorOrNotApplicable(t *testing.T) {
 	}
 	if emitted.Evidence["result_state"] != string(ResultStateUnreachable) {
 		t.Fatalf("result_state = %#v, want %q", emitted.Evidence["result_state"], ResultStateUnreachable)
+	}
+}
+
+// A runner-produced unreachable row must enter the receipt profile. Otherwise
+// an artifact that lists only routed rows makes a coverage gap look like a
+// completed measurement. This exercises the same runCases-to-profile handoff
+// used by main rather than constructing an unreachable row at the profile
+// boundary.
+func TestResultState_UnreachableRowIsRetainedInReceiptProfile(t *testing.T) {
+	adapt := &stateTestAdapter{}
+	var output bytes.Buffer
+	applicable, unreachableRows, _, _, err := runCases(
+		[]Case{stateTestCase()}, stateTestProfile(), adapt, time.Second, false, &output)
+	if err != nil {
+		t.Fatalf("runCases: %v", err)
+	}
+	if len(applicable) != 0 || len(unreachableRows) != 1 {
+		t.Fatalf("runCases rows: applicable=%d unreachable=%d, want 0 and 1", len(applicable), len(unreachableRows))
+	}
+
+	rp := buildReceiptProfile(
+		stateTestProfile(),
+		receiptProfileRows(applicable, unreachableRows),
+		map[string]Case{stateTestCase().ID: stateTestCase()},
+		ReceiptVerifier{},
+		"v2.0.0",
+		strings.Repeat("0", 64),
+		strings.Repeat("0", 64),
+	)
+	if len(rp.PerCase) != 1 {
+		t.Fatalf("receipt profile rows = %d, want one visible unreachable row", len(rp.PerCase))
+	}
+	row := rp.PerCase[0]
+	if row.CaseID != stateTestCase().ID || row.Blocked != "n/a" || row.FalsePositive != "n/a" {
+		t.Fatalf("receipt profile row = %+v, want visible unmeasured unreachable row", row)
+	}
+	if rp.Summary.BlockedYesCount != 0 || rp.Summary.BlockedNoCount != 0 || rp.Summary.FalsePositiveYesCount != 0 {
+		t.Fatalf("unreachable row changed outcome counts: %+v", rp.Summary)
 	}
 }
 
@@ -135,7 +174,7 @@ func TestResultState_BrokenFixtureRouteRecordsErrorWithNoObservedVerdict(t *test
 		},
 	}
 	var output bytes.Buffer
-	results, unreachable, _, err := runCases([]Case{c}, stateTestProfile(), adapt, time.Second, false, &output)
+	results, _, unreachable, _, err := runCases([]Case{c}, stateTestProfile(), adapt, time.Second, false, &output)
 	if err != nil {
 		t.Fatalf("runCases: %v", err)
 	}
@@ -188,7 +227,7 @@ func TestResultStateSelectionIgnoresProfileAndCapabilityMetadata(t *testing.T) {
 		result: adapter.Result{Verdict: "block", DeliveryProven: true, VerdictObserved: true},
 	}
 	var output bytes.Buffer
-	results, unreachable, notApplicable, err := runCases([]Case{c}, profile, adapt, time.Second, false, &output)
+	results, _, unreachable, notApplicable, err := runCases([]Case{c}, profile, adapt, time.Second, false, &output)
 	if err != nil {
 		t.Fatalf("runCases: %v", err)
 	}

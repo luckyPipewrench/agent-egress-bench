@@ -241,7 +241,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, blockall, proxy, mcp-gateway)", adapterName)
 	}
 
-	applicableResults, unreachableIDs, naReasons, runErr := runCases(cases, profile, adapt, timeout, debug, os.Stdout)
+	applicableResults, unreachableResults, unreachableIDs, naReasons, runErr := runCases(cases, profile, adapt, timeout, debug, os.Stdout)
 	if runErr != nil {
 		return runErr
 	}
@@ -269,7 +269,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		}
 		rp := buildReceiptProfile(
 			profile,
-			applicableResults,
+			receiptProfileRows(applicableResults, unreachableResults),
 			casesByID,
 			receiptVerifier,
 			summary.CorpusVersion,
@@ -304,8 +304,9 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 // remain carried into output for v3 publication, but no claim, support flag,
 // requirement, or capability tag selects a case. Only an exact adapter route,
 // proven delivery, and observed verdict can create a scoreable measurement.
-func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time.Duration, debug bool, output io.Writer) ([]CaseResult, map[string]struct{}, map[NAKind]int, error) {
+func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time.Duration, debug bool, output io.Writer) ([]CaseResult, []CaseResult, map[string]struct{}, map[NAKind]int, error) {
 	var applicableResults []CaseResult
+	var unreachableResults []CaseResult
 	unreachableIDs := make(map[string]struct{})
 	naReasons := make(map[NAKind]int)
 	enc := json.NewEncoder(output)
@@ -330,10 +331,11 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 				profile, c, ResultStateUnreachable, tupleEvidence(tuple),
 				"unreachable: adapter has no exact delivery route for this case",
 			)
+			unreachableResults = append(unreachableResults, result)
 			unreachableIDs[c.ID] = struct{}{}
 			debugf(debug, "case %s: UNREACHABLE %s/%s/%s", c.ID, tuple.WireTransport, tuple.SemanticSurface, tuple.Lifecycle)
 			if err := enc.Encode(result); err != nil {
-				return nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
+				return nil, nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
 			}
 			continue
 		}
@@ -345,7 +347,7 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 			applicableResults = append(applicableResults, result)
 			debugf(debug, "case %s: ERROR state=%s expected=%s evidence=%v", c.ID, state, c.ExpectedVerdict, result.Evidence)
 			if err := enc.Encode(result); err != nil {
-				return nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
+				return nil, nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
 			}
 			continue
 		}
@@ -370,10 +372,21 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 		}
 		applicableResults = append(applicableResults, result)
 		if err := enc.Encode(result); err != nil {
-			return nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
+			return nil, nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
 		}
 	}
-	return applicableResults, unreachableIDs, naReasons, nil
+	return applicableResults, unreachableResults, unreachableIDs, naReasons, nil
+}
+
+// receiptProfileRows retains every runner-emitted row that can describe a
+// measurement gap. An unreachable row never enters scoring, but omitting it
+// from a receipt profile would make absence read as coverage. Historical N/A
+// rows remain outside this artifact because the runner did not exercise them.
+func receiptProfileRows(applicableResults, unreachableResults []CaseResult) []CaseResult {
+	rows := make([]CaseResult, 0, len(applicableResults)+len(unreachableResults))
+	rows = append(rows, applicableResults...)
+	rows = append(rows, unreachableResults...)
+	return rows
 }
 
 // debugPrefix is the marker written at the start of every debug line.

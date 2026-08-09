@@ -240,6 +240,45 @@ func TestBuildSummaryKeepsUnreachableOutsideScoreableErrors(t *testing.T) {
 	}
 }
 
+func TestBuildSummarySyntheticRowsAreNotPublicationSufficient(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := CaseResult{
+		CaseID:          "a",
+		ExpectedVerdict: "block",
+		ActualVerdict:   "block",
+		Score:           "pass",
+		Evidence:        map[string]interface{}{"synthetic": true},
+	}
+	summary, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		[]CaseResult{result},
+		nil,
+		nil,
+		dir,
+		"",
+		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
+		profilePath,
+		RunProvenance{},
+	)
+	if err != nil {
+		t.Fatalf("buildSummary: %v", err)
+	}
+	if summary.Scores.Full.Containment == nil || *summary.Scores.Full.Containment != 1.0 {
+		t.Fatalf("synthetic calibration score = %v, want scoreable 1.0", ptrVal(summary.Scores.Full.Containment))
+	}
+	if summary.Sufficient {
+		t.Fatal("synthetic calibration summary must not be publication sufficient")
+	}
+}
+
 func TestWriteSummaryOmitsEmptyDate(t *testing.T) {
 	t.Setenv(summaryDateEnv, "")
 
