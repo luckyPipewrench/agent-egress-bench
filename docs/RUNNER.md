@@ -21,10 +21,10 @@ not substitute one transport for another.
 | In-process SDK or library | Not supported by the proxy adapter today | A custom runner or wrapper service is required, and the result should declare only the transports it can actually exercise |
 | MCP gateway | Narrow generic support today via `--adapter mcp-gateway` with a gateway plugin | Streamable HTTP only. An `mcp_http` case drives an ordered `tools/call` sequence (one or more messages, blocked at the first denied call), the `tools/list` tool-definition path, or the `mcp_tool_result` path that scans what a tool returns. The adapter does not claim an `mcp_stdio` case merely because it can send similar semantics over HTTP. When the plugin declares a `start_command`, the runner starts the gateway, waits for its ready address, and runs the fixture-registration command to wire it to the runner-owned upstream; the managed path is proven end-to-end only against an in-repo synthetic gateway. The adapter binds an `Mcp-Session-Id` when the gateway assigns one on initialize and replays it on the case's later requests. Resources, prompts, multi-server topologies, and a run against an unrelated third-party gateway are still out of scope. Tool-specific MCP stdio or MCP HTTP commands remain the fuller path. See [GATEWAY-ADAPTER.md](GATEWAY-ADAPTER.md) |
 
-If none of the supported shapes match your architecture, retain an honest
-`supports` declaration for v3 publication and write a tool-specific runner.
-The declaration does not select cases. Do not force a tool through the wrong
-shape just to get a numeric result.
+If none of the supported shapes match your architecture, write a tool-specific
+runner. Active v4 profiles use registry-bound reporting labels, not a `supports`
+map. Labels do not select cases. Do not force a tool through the wrong shape
+just to get a numeric result.
 
 ## Input
 
@@ -39,9 +39,16 @@ One JSON object per case, written to stdout (one per line, JSONL):
 
 ```json
 {
+  "schema_version": 4,
   "case_id": "url-dlp-aws-key-001",
   "tool": "pipelock",
   "tool_version": "0.3.6",
+  "capability_registry": {
+    "id": "aeb.core-capabilities",
+    "format": 1,
+    "revision": 1,
+    "sha256": "..."
+  },
   "expected_verdict": "block",
   "actual_verdict": "block",
   "score": "pass",
@@ -60,9 +67,10 @@ One JSON object per case, written to stdout (one per line, JSONL):
 | `case_id` | string | The case ID |
 | `tool` | string | Tool name from profile |
 | `tool_version` | string | Tool version from profile |
+| `capability_registry` | object | Exact registry reference from the profile |
 | `expected_verdict` | string | From the case file |
-| `actual_verdict` | string | `block`, `allow`, `not_applicable`, `unreachable`, or `error` |
-| `score` | string | `pass`, `fail`, `not_applicable`, or `error` |
+| `actual_verdict` | string | `block`, `allow`, `unreachable`, or `error` |
+| `score` | string | `pass`, `fail`, or `error` |
 | `evidence` | object | Tool-specific evidence (freeform) |
 | `notes` | string | Optional context |
 
@@ -145,9 +153,9 @@ Cases with `capability_tags: ["domain_blocklist"]` require the runner to configu
 
 - `exfil-collector.example.net` (IANA-reserved, no real DNS resolution)
 
-If your tool does not support domain blocklisting, retain that fact in
-`supports.domain_blocklist` and implement an adapter route that proves the
-input and verdict. The declaration alone never skips these cases.
+If your tool does not support domain blocklisting, implement an adapter route
+that proves the input and verdict. A reporting label alone never skips these
+cases.
 
 ### Budget enforcement
 
@@ -192,9 +200,10 @@ and makes the run insufficient. A routed case lacking delivery proof or verdict
 observation emits `actual_verdict: "error"`. A tuple declaration alone never
 creates N/A.
 
-`claims`, `supports`, `requires`, and `capability_tags` do not select cases.
-The v3 profile remains in output as publication metadata. This applies to hard
-variants and benign controls alike.
+`claims`, `requires`, and `capability_tags` do not select cases. In v4, claims
+and tags are validated against the profile's exact registry snapshot and remain
+reporting metadata. They cannot affect scope, denominators, scores, sufficiency,
+or publication. This applies to hard variants and benign controls alike.
 
 ## Observable Verdict Rules
 
@@ -242,7 +251,7 @@ Not all tools will use the same signals. The runner is responsible for normalizi
 After all cases, the runner should print a summary line to stderr:
 
 ```
-results: 22 passed, 3 failed, 0 unreachable, 10 not_applicable, 0 errors (35 total)
+results: 22 passed, 3 failed, 0 unreachable, 0 errors (25 total)
 ```
 
 ## Buyer-readable report
@@ -263,7 +272,7 @@ The renderer reads these artifacts when present:
 
 | Artifact | Report content |
 |---|---|
-| `raw-summary.json` | Method versions, target product and version, profile digest, declared capabilities, scope counts, and the four metric vectors |
+| `raw-summary.json` | Method versions, target product and version, profile digest, exact registry reference, reporting labels, scope counts, and the four metric vectors |
 | `results.jsonl` | Every historical not-applicable or unreachable case ID and its recorded reason |
 | `run-metadata.json` | Repository and exact method commit |
 | `run-bundle.json` | Bundle status, publication eligibility, retained material digests, and candidate bindings |
