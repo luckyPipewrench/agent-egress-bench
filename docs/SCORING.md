@@ -52,8 +52,15 @@ unreachable coverage stays separate from both scores and historical N/A rows.
 
 A runner error (tool crash, timeout, transport failure) is scored as `error`, not `fail`. This prevents infrastructure problems from being counted as detection failures.
 
-If a tool produces `error` on more than 20% of routed cases, or any case is
-unreachable, the run is insufficient and the results should not be published.
+If any case produces `error`, or any case is unreachable, the run is
+insufficient and the results should not be published. Both mean a case was not
+measured, and neither describes the target's behaviour, so both are excluded
+from every score denominator and both block publication. That symmetry is
+deliberate: because errors are excluded from the denominator, tolerating them
+would raise the reported score while hiding the fact that part of the corpus
+was never measured. An error is this harness or the adapter failing, so the fix
+belongs there rather than in a scoring allowance.
+
 The runner enforces this in `summary.sufficient`; the separate case/result
 validator does not decide whether a complete run is publishable.
 
