@@ -229,6 +229,15 @@ func supportsVocabularyFromSchema(t *testing.T, path string) (map[string]struct{
 
 func supportsVocabularyFromValidator(t *testing.T) map[string]struct{} {
 	t.Helper()
+	return vocabularyFromValidator(t, "validSupportsKeys")
+}
+
+// vocabularyFromValidator reads a map[string]bool vocabulary out of the
+// validator's source by name. The runner and the validator are separate Go
+// modules, so a vocabulary they both enforce has to be duplicated; reading the
+// declaration directly is what keeps the duplicate honest.
+func vocabularyFromValidator(t *testing.T, declName string) map[string]struct{} {
+	t.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filepath.Join("..", "validate", "main.go"), nil, 0)
 	if err != nil {
@@ -241,22 +250,22 @@ func supportsVocabularyFromValidator(t *testing.T) map[string]struct{} {
 		}
 		for _, spec := range gen.Specs {
 			value, ok := spec.(*ast.ValueSpec)
-			if !ok || len(value.Names) != 1 || value.Names[0].Name != "validSupportsKeys" || len(value.Values) != 1 {
+			if !ok || len(value.Names) != 1 || value.Names[0].Name != declName || len(value.Values) != 1 {
 				continue
 			}
 			literal, ok := value.Values[0].(*ast.CompositeLit)
 			if !ok {
-				t.Fatal("validate validSupportsKeys is not a composite literal")
+				t.Fatalf("validate %s is not a composite literal", declName)
 			}
 			vocabulary := make(map[string]struct{}, len(literal.Elts))
 			for _, element := range literal.Elts {
 				pair, ok := element.(*ast.KeyValueExpr)
 				if !ok {
-					t.Fatal("validate validSupportsKeys contains a non-keyed entry")
+					t.Fatalf("validate %s contains a non-keyed entry", declName)
 				}
 				key, ok := pair.Key.(*ast.BasicLit)
 				if !ok || key.Kind != token.STRING {
-					t.Fatal("validate validSupportsKeys contains a non-string key")
+					t.Fatalf("validate %s contains a non-string key", declName)
 				}
 				name, err := strconv.Unquote(key.Value)
 				if err != nil {
@@ -267,8 +276,19 @@ func supportsVocabularyFromValidator(t *testing.T) map[string]struct{} {
 			return vocabulary
 		}
 	}
-	t.Fatal("validate validSupportsKeys declaration not found")
+	t.Fatalf("validate %s declaration not found", declName)
 	return nil
+}
+
+// allRunnerSupportsKeys builds a profile's supports map with every required key
+// present and true, so a test can vary claims without tripping the separate
+// supports completeness check.
+func allRunnerSupportsKeys() map[string]bool {
+	supports := make(map[string]bool, len(requiredSupportsKeys))
+	for key := range requiredSupportsKeys {
+		supports[key] = true
+	}
+	return supports
 }
 
 func stringsToSet(values []string) map[string]struct{} {
@@ -289,6 +309,96 @@ func assertSameVocabulary(t *testing.T, leftName string, left map[string]struct{
 			t.Fatalf("%s contains %q but %s does not", leftName, key, rightName)
 		}
 	}
+}
+
+// A claim is a published assertion: it reaches summary.json's tool_support and
+// from there the buyer-facing report. The Go validator has always rejected an
+// unrecognised claim, but the runner never calls that validator, so a profile
+// could invent one and the run would publish it verbatim as though the corpus
+// had accepted it. The runner's own preflight is the only gate on the path that
+// actually produces published output.
+func TestValidateProfileForRunRejectsUnknownClaim(t *testing.T) {
+	p := Profile{
+		Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+		Claims:   []string{"url_dlp", "blocks_every_known_attack"},
+		Supports: allRunnerSupportsKeys(),
+	}
+	err := validateProfileForRun(p)
+	if err == nil {
+		t.Fatal("validateProfileForRun accepted an unrecognised claim, so it would be published as a claim the corpus never checked")
+	}
+	if !strings.Contains(err.Error(), "blocks_every_known_attack") {
+		t.Fatalf("error = %v, want it to name the offending claim", err)
+	}
+}
+
+// An empty claims list is a tool declaring nothing, which is legitimate and must
+// keep working. Rejecting unknown values must not become rejecting absence.
+func TestValidateProfileForRunAcceptsKnownAndEmptyClaims(t *testing.T) {
+	for name, claims := range map[string][]string{
+		"empty": {},
+		"known": {"url_dlp", "ssrf", "denial_of_wallet"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := Profile{
+				Tool: "test", ToolVersion: "1.0", RunnerVersion: "v1",
+				Claims:   claims,
+				Supports: allRunnerSupportsKeys(),
+			}
+			if err := validateProfileForRun(p); err != nil {
+				t.Fatalf("validateProfileForRun(%v) = %v, want accepted", claims, err)
+			}
+		})
+	}
+}
+
+// The claim vocabulary is duplicated because runner/ and validate/ are separate
+// Go modules and cannot share a package. Duplication without a binding check is
+// how the supports contract drifted into three disagreeing copies.
+//
+// There are FOUR copies, not two: the runner's preflight, the Go validator, the
+// tool-profile schema's claims enum, and the embedded verifier's mirror of that
+// schema. Binding only the first two would let a schema change accept or reject
+// a different set of published claims while both Go test suites stayed green.
+func TestToolProfileClaimVocabularyParity(t *testing.T) {
+	rootPath := filepath.Join("..", "schemas", "tool-profile.schema.json")
+	embeddedPath := filepath.Join("..", "control-evidence", "v0", "verifier", "schemas", "tool-profile.schema.json")
+
+	assertSameVocabulary(t, "runner claim vocabulary", knownClaims,
+		"validator vocabulary", vocabularyFromValidator(t, "validCapabilityTags"))
+	assertSameVocabulary(t, "runner claim vocabulary", knownClaims,
+		"schema claims enum", claimsVocabularyFromSchema(t, rootPath))
+	assertSameVocabulary(t, "runner claim vocabulary", knownClaims,
+		"embedded schema claims enum", claimsVocabularyFromSchema(t, embeddedPath))
+}
+
+// claimsVocabularyFromSchema reads the claims enum out of a tool-profile schema.
+// An absent or empty enum is a failure rather than an empty vocabulary: a claims
+// array with no enum accepts anything, which is the permissive state this
+// contract exists to forbid.
+func claimsVocabularyFromSchema(t *testing.T, path string) map[string]struct{} {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Properties struct {
+			Claims struct {
+				Items struct {
+					Enum []string `json:"enum"`
+				} `json:"items"`
+			} `json:"claims"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	enum := schema.Properties.Claims.Items.Enum
+	if len(enum) == 0 {
+		t.Fatalf("%s declares no claims enum, so it accepts any claim string", path)
+	}
+	return stringsToSet(enum)
 }
 
 // TestToolProfileSupportsVocabularyParity keeps all five v3 contract copies in

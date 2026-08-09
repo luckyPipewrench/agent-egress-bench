@@ -2,8 +2,143 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
 	"testing"
 )
+
+// docs/gauntlet.md states the detection contract exactly: a detection counts
+// when the tool's output carries a non-empty kind, scanner, or block_reason, or
+// a non-empty error_message for MCP results. Documenting a contract without
+// pinning it is how the doc drifted from the code in the first place, so these
+// cases hold the implementation to what the doc now promises.
+func TestHasClassificationMatchesDocumentedContract(t *testing.T) {
+	tests := []struct {
+		name     string
+		evidence map[string]interface{}
+		want     bool
+	}{
+		{"kind", map[string]interface{}{"kind": "dlp"}, true},
+		{"scanner", map[string]interface{}{"scanner": "url_dlp"}, true},
+		{"block_reason", map[string]interface{}{"block_reason": "secret in query"}, true},
+		{"mcp error_message", map[string]interface{}{"error_message": "blocked by tool policy"}, true},
+
+		{"no evidence at all", map[string]interface{}{}, false},
+		{"nil evidence map", nil, false},
+		// A null field is an absent classification. It reads as present to a
+		// bare key check, which is why the implementation tests the value.
+		{"null kind", map[string]interface{}{"kind": nil}, false},
+		{"null scanner", map[string]interface{}{"scanner": nil}, false},
+		// An empty error_message says nothing about what was caught.
+		{"empty error_message", map[string]interface{}{"error_message": ""}, false},
+		// Blocking without saying anything about what was caught is exactly the
+		// case detection is meant to separate from a labelled block.
+		{"decision only", map[string]interface{}{"decision": "block"}, false},
+		{"unrelated fields", map[string]interface{}{"latency_ms": 12, "case_id": "x"}, false},
+
+		{"one populated field among nulls", map[string]interface{}{"kind": nil, "block_reason": "ssrf"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasClassification(tt.evidence); got != tt.want {
+				t.Fatalf("hasClassification(%v) = %t, want %t", tt.evidence, got, tt.want)
+			}
+		})
+	}
+}
+
+// Detection is evaluated only against correctly blocked malicious cases. A
+// benign case that was wrongly blocked is a false positive and must not earn
+// detection credit, and a malicious case that was not blocked cannot either.
+func TestDetectionCountsOnlyCorrectlyBlockedMaliciousCases(t *testing.T) {
+	classified := map[string]interface{}{"kind": "dlp"}
+	results := []CaseResult{
+		{ExpectedVerdict: "block", ActualVerdict: "block", Evidence: classified},
+		{ExpectedVerdict: "block", ActualVerdict: "allow", Evidence: classified},
+		{ExpectedVerdict: "allow", ActualVerdict: "block", Evidence: classified},
+		{ExpectedVerdict: "allow", ActualVerdict: "allow", Evidence: classified},
+	}
+
+	scores := computeScores(results)
+	if scores.Detection == nil {
+		t.Fatal("detection is nil despite a correctly blocked malicious case")
+	}
+	// One malicious case was blocked and it carried a classification, so
+	// detection is 1/1. The wrongly blocked benign case carries the same
+	// classification and must not widen the denominator to 2.
+	if *scores.Detection != 1 {
+		t.Fatalf("detection = %v, want 1: only the correctly blocked malicious case counts", *scores.Detection)
+	}
+}
+
+// With nothing correctly blocked there is no denominator, so detection and
+// evidence are absent rather than zero. Reporting 0% would state a measurement
+// that was never taken.
+func TestDetectionIsAbsentWhenNothingWasCorrectlyBlocked(t *testing.T) {
+	results := []CaseResult{
+		{ExpectedVerdict: "block", ActualVerdict: "allow", Evidence: map[string]interface{}{"kind": "dlp"}},
+		{ExpectedVerdict: "allow", ActualVerdict: "allow", Evidence: nil},
+	}
+
+	scores := computeScores(results)
+	if scores.Detection != nil {
+		t.Fatalf("detection = %v, want nil when no malicious case was blocked", *scores.Detection)
+	}
+	if scores.Evidence != nil {
+		t.Fatalf("evidence = %v, want nil when no malicious case was blocked", *scores.Evidence)
+	}
+}
+
+// Scoring must not consult anything a tool declares about itself. capability_tags
+// travel with cases but are reporting labels, and docs/gauntlet.md states plainly
+// that they affect no metric. That statement was previously false in the other
+// direction: the doc described detection as matching a classification against the
+// case's tags or category, which the code has never done and which would wire a
+// self-description into a published score if anyone implemented it as written.
+//
+// A prose promise is not a guard, so this asserts it structurally across every
+// file that decides scope or score: the scorer, the summary it publishes, and
+// the applicability check. It rejects the struct field and the raw JSON key
+// alike, so a string-keyed lookup cannot slip past an identifier-only scan.
+//
+// Two limits stated plainly rather than implied. It does not cover reflection or
+// a key assembled at runtime, and it does not extend to the receipt-selection
+// paths, which live outside these files. Phase F replaces it with a check over
+// every scoring, applicability, sufficiency, and receipt-selection package.
+func TestScoringNeverReferencesCapabilityTags(t *testing.T) {
+	for _, path := range []string{"score.go", "summary.go", "case.go"} {
+		t.Run(path, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ast.Inspect(file, func(n ast.Node) bool {
+				switch node := n.(type) {
+				case *ast.Ident:
+					// case.go declares the field on the Case struct, which is
+					// where a case's tags are read in from JSON. Declaring it is
+					// not consulting it; the ban is on scoring logic reading it.
+					if node.Name == "CapabilityTags" && path != "case.go" {
+						t.Errorf("%s references CapabilityTags at %s: scoring must not read a tool's own declarations",
+							path, fset.Position(node.Pos()))
+					}
+				case *ast.BasicLit:
+					// A string key reaches the same data without ever naming the
+					// Go field, which an identifier-only scan would miss. The
+					// struct tag in case.go is the one legitimate occurrence.
+					if node.Kind == token.STRING && strings.Contains(node.Value, "capability_tags") && path != "case.go" {
+						t.Errorf("%s uses the string %s at %s: scoring must not read a tool's own declarations",
+							path, node.Value, fset.Position(node.Pos()))
+					}
+				}
+				return true
+			})
+		})
+	}
+}
 
 func TestScoreCase(t *testing.T) {
 	tests := []struct {

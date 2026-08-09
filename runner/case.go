@@ -32,6 +32,26 @@ var requiredSupportsKeys = map[string]struct{}{
 	"dns_rebinding_fixture": {}, "budget_enforcement": {},
 }
 
+// knownClaims is the closed vocabulary of capability claims. Claims never affect
+// applicability, scoring, or sufficiency: they are reporting labels. They are
+// still published, reaching summary.json's tool_support and the buyer-facing
+// report, so an unrecognised claim would be republished as though the corpus had
+// accepted it. Validated here because the runner is the code path that produces
+// published output, and it does not call the standalone validator.
+//
+// Duplicated from validate/main.go's validCapabilityTags because runner/ and
+// validate/ are separate Go modules and cannot share a package.
+// TestToolProfileClaimVocabularyParity binds the two copies.
+var knownClaims = map[string]struct{}{
+	"url_dlp": {}, "request_body_dlp": {}, "header_dlp": {},
+	"response_injection": {}, "mcp_input_scan": {}, "mcp_tool_poison": {},
+	"mcp_chain": {}, "ssrf": {}, "domain_blocklist": {},
+	"entropy": {}, "encoding_evasion": {}, "benign": {},
+	"a2a_scan": {}, "a2a_card_poison": {}, "websocket_dlp": {},
+	"ssrf_bypass": {}, "shell_obfuscation": {}, "crypto_dlp": {},
+	"hostname_exfil": {}, "denial_of_wallet": {},
+}
+
 // Case represents a single benchmark case loaded from JSON.
 type Case struct {
 	SchemaVersion   int                    `json:"schema_version"`
@@ -206,6 +226,15 @@ func validateProfileForRun(p Profile) error {
 	}
 	if p.Claims == nil {
 		return fmt.Errorf("missing required field claims")
+	}
+	// An unrecognised claim fails the run rather than being dropped from the
+	// output. Dropping it would let a profile assert something the report never
+	// shows and nobody ever sees rejected; refusing makes the disagreement
+	// visible at the point the operator can fix it.
+	for _, claim := range p.Claims {
+		if _, known := knownClaims[claim]; !known {
+			return fmt.Errorf("unknown claim: %q", claim)
+		}
 	}
 	if p.Supports == nil {
 		return fmt.Errorf("missing required field supports")
