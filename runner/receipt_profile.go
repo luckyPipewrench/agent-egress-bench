@@ -157,6 +157,17 @@ func buildReceiptProfile(
 		// still a factual receipt observation, so its own counters remain derived
 		// from the emitted row below.
 		switch {
+		case r.ActualVerdict == "unreachable":
+			// Defence in depth. An unreachable row is not a measurement at all,
+			// and today it cannot arrive here because runCases emits it and
+			// continues before appending to the applicable slice. That is an
+			// invariant held by one caller's control flow, not by this
+			// function, so a future caller assembling a profile from a
+			// different slice would otherwise score it as an outcome. Treat it
+			// exactly like an error row: visible, unmeasured, uncounted.
+			row.Blocked = "n/a"
+			row.FalsePositive = "n/a"
+			row.Explained = "no"
 		case r.ActualVerdict == "error":
 			row.Blocked = "n/a"
 			row.FalsePositive = "n/a"

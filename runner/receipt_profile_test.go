@@ -853,3 +853,34 @@ func TestBuildReceiptProfile_ErrorRowsRetainFactualReceiptObservations(t *testin
 		t.Fatalf("error-row receipt profile validation failed:\n%s", strings.Join(issues, "\n"))
 	}
 }
+
+// An unreachable row is not a measurement. It cannot reach buildReceiptProfile
+// today only because runCases emits it and continues before appending to the
+// applicable slice, which is an invariant held by one caller's control flow
+// rather than by this function. Assert the function defends itself, so a future
+// caller assembling a profile from a different slice cannot score a case the
+// adapter never routed.
+func TestBuildReceiptProfile_UnreachableRowsAreNotScoredAsOutcomes(t *testing.T) {
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+	zeros := strings.Repeat("0", 64)
+	applicable := []CaseResult{
+		{CaseID: "mal-unreachable", ExpectedVerdict: "block", ActualVerdict: "unreachable", Evidence: map[string]interface{}{}},
+		{CaseID: "benign-unreachable", ExpectedVerdict: "allow", ActualVerdict: "unreachable", Evidence: map[string]interface{}{}},
+	}
+	rp := buildReceiptProfile(profile, applicable, nil, ReceiptVerifier{}, "v2.0.0", zeros, zeros)
+
+	for _, row := range rp.PerCase {
+		if row.Blocked != "n/a" || row.FalsePositive != "n/a" {
+			t.Errorf("%s: blocked=%q false_positive=%q, want both n/a; an unrouted case must not assert an outcome", row.CaseID, row.Blocked, row.FalsePositive)
+		}
+	}
+	if rp.Summary.BlockedNoCount != 0 {
+		t.Errorf("blocked_no_count = %d, want 0; an unreachable case is not an observed failure to block", rp.Summary.BlockedNoCount)
+	}
+	if rp.Summary.FalsePositiveYesCount != 0 || rp.Summary.BlockedYesCount != 0 {
+		t.Errorf("unreachable rows must not increment outcome counters: %+v", rp.Summary)
+	}
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		t.Fatalf("unreachable-row output failed validation:\n%s", strings.Join(issues, "\n"))
+	}
+}
