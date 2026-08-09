@@ -228,6 +228,12 @@ class ProvenanceBuilderTest(unittest.TestCase):
             {"numerator": 1, "denominator": 2},
         )
 
+    def test_bundle_preserves_legacy_missing_unreachable_field(self):
+        result = self.bundle()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads((self.run_dir / "run-bundle.json").read_text(encoding="utf-8"))["candidate_scope"]
+        self.assertNotIn("unreachable", scope["case_count"])
+
     def test_bundle_retains_unreachable_coverage_without_scoring_it(self):
         self.results[2] = {
             **self.results[2],

@@ -500,6 +500,19 @@ def build_complete_bundle(repo_root, run_dir):
             f"{summary.get('tool_version')!r} != {release['version']!r}"
         )
     hashes = evidence_hashes(run_dir, require_all=True)
+    candidate_case_count = {
+        "total": summary["case_count"]["total"],
+        "applicable": summary["case_count"]["applicable"],
+        "not_applicable": summary["case_count"]["not_applicable"],
+        "not_applicable_reasons": summary["case_count"]["not_applicable_reasons"],
+        "errors": summary["case_count"]["errors"],
+    }
+    # Frozen evidence predates the explicit unreachable state. Preserve its
+    # serialized shape exactly: readers default a missing field to zero, while
+    # new runner summaries carry the field and retain it in their provenance.
+    if "unreachable" in summary["case_count"]:
+        candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
+
     candidate_scope = {
         "schema_version": 2,
         "local_run_id": metadata["local_run_id"],
@@ -527,14 +540,7 @@ def build_complete_bundle(repo_root, run_dir):
         "case_index_sha256": measured["case_index_sha256"],
         "logical_case_count": measured["logical_case_count"],
         "tool_profile_sha256": summary["tool_profile_sha256"],
-        "case_count": {
-            "total": summary["case_count"]["total"],
-            "applicable": summary["case_count"]["applicable"],
-            "unreachable": summary["case_count"].get("unreachable", 0),
-            "not_applicable": summary["case_count"]["not_applicable"],
-            "not_applicable_reasons": summary["case_count"]["not_applicable_reasons"],
-            "errors": summary["case_count"]["errors"],
-        },
+        "case_count": candidate_case_count,
         "scores": summary["scores"],
         "metric_counts": measured["metric_counts"],
         "sufficient": summary["sufficient"],
