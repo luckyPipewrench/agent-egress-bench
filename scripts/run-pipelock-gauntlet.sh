@@ -267,6 +267,8 @@ for ((reason_index = 0; reason_index < noncanonical_reason_count; reason_index++
 done
 PYTHONDONTWRITEBYTECODE=1 python3 "$provenance_script" "${start_args[@]}"
 cp "$repo_root/cases/MANIFEST.txt" "$output_dir/corpus-manifest.txt"
+cp "$repo_root/examples/pipelock/tool-profile.json" "$output_dir/tool-profile.json"
+cp "$repo_root/capability-registry/aeb.core-capabilities/format-1/revision-1.json" "$output_dir/capability-registry.json"
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aeb-pipelock-gauntlet.XXXXXX")"
 pipelock_bin=""
@@ -370,6 +372,7 @@ stderr_path="$output_dir/runner.stderr"
 command_path="$output_dir/command.txt"
 stats_path="$output_dir/make-stats.txt"
 case_index_path="$output_dir/case-index.json"
+receipt_profile_path="$output_dir/receipt-profile.json"
 
 mcp_cmd="\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh"
 managed_proxy_cmd='./examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"'
@@ -386,6 +389,7 @@ cmd=(
   --profile examples/pipelock/tool-profile.json
   --fixtures
   --output "$summary_path"
+  --emit-receipt-profile "$receipt_profile_path"
 )
 
 benchmark_cap_seconds="$benchmark_timeout_seconds"
