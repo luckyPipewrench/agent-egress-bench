@@ -36,6 +36,15 @@ reviews:
     - "!control-evidence/v0/conformance/edge/**"
     # Published result records, append-only by policy.
     - "!gauntlet-site/results/**"
+    # Buyer-report golden files. Regenerated output compared byte-for-byte by
+    # the report tests, so reading them reviews the renderer's output rather
+    # than the renderer. The renderer itself stays in review.
+    - "!runner/testdata/buyer-report/*.golden.md"
+    # Embedded schema copies inside a versioned control-evidence verifier. Each
+    # is proven byte-identical to its canonical original under schemas/ by
+    # TestEmbeddedSchemasMatchCanonicalCopies, and the canonical original IS
+    # reviewed. Reviewing both copies spends the budget twice on one decision.
+    - "!control-evidence/*/verifier/schemas/*.json"
 
   # The corpus is the product here, so a walkthrough that lists two hundred
   # fixture paths buries the summary of what actually changed.
