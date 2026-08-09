@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
 
 func TestRunWebSocketFrameViaProxy_Non101UpgradeSkipsNotAllows(t *testing.T) {
@@ -1950,6 +1952,143 @@ func TestRunMCPHTTP_ForwardedListenerAllowsWithUpstreamProof(t *testing.T) {
 	}, 5*time.Second)
 	if result.Verdict != "allow" {
 		t.Fatalf("verdict = %q, want allow with upstream proof; evidence = %+v", result.Verdict, result.Evidence)
+	}
+}
+
+func TestRunMCPHTTP_ResponseCasesUseFixtureRequestResponseDirection(t *testing.T) {
+	upstream, err := fixture.StartMCPHTTP()
+	if err != nil {
+		t.Fatalf("StartMCPHTTP: %v", err)
+	}
+	defer upstream.Close()
+
+	var methods []string
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Fatalf("read gateway request: %v", readErr)
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatalf("decode gateway request: %v", err)
+		}
+		methods = append(methods, request.Method)
+		upstreamResp, postErr := http.Post(upstream.URL(), "application/json", bytes.NewReader(body)) //nolint:gosec,noctx // runner-owned fixture
+		if postErr != nil {
+			t.Fatalf("forward to fixture: %v", postErr)
+		}
+		defer func() { _ = upstreamResp.Body.Close() }()
+		response, readErr := io.ReadAll(upstreamResp.Body)
+		if readErr != nil {
+			t.Fatalf("read fixture response: %v", readErr)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(response)
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPFixture(upstream)
+
+	for _, tc := range []Case{
+		{
+			ID: "http-tool-definition-response", Transport: "mcp_http", InputType: "mcp_tool_definition",
+			Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+				"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"tools": []interface{}{map[string]interface{}{"name": "fixture_tool", "description": "safe", "inputSchema": map[string]interface{}{"type": "object"}}}},
+			}}},
+		},
+		{
+			ID: "http-tool-result-response", Transport: "mcp_http", InputType: "mcp_tool_result",
+			Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+				"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"content": []interface{}{map[string]interface{}{"type": "text", "text": "safe fixture result"}}},
+			}}},
+		},
+	} {
+		result := a.runMCPHTTP(tc, time.Second)
+		if result.Err != nil || result.Verdict != "allow" || result.Evidence["upstream_reached"] != true {
+			t.Fatalf("%s result = %+v, want fixture-proven allow", tc.ID, result)
+		}
+	}
+	if len(methods) != 3 || methods[0] != "tools/list" || methods[1] != "tools/list" || methods[2] != "tools/call" {
+		t.Fatalf("gateway methods = %v, want tools/list definition, tools/list bootstrap, tools/call result", methods)
+	}
+}
+
+func TestRunMCPHTTP_ResponseCaseDoesNotScoreLocalBlockWithoutFixtureDelivery(t *testing.T) {
+	upstream, err := fixture.StartMCPHTTP()
+	if err != nil {
+		t.Fatalf("StartMCPHTTP: %v", err)
+	}
+	defer upstream.Close()
+
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode local block request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32000,"message":"blocked locally"}}`, request.ID)
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPFixture(upstream)
+	result := a.runMCPHTTP(Case{
+		ID: "unproven-response-block", Transport: "mcp_http", InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"tools": []interface{}{map[string]interface{}{"name": "fixture_tool"}}},
+		}}},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want unproven local block to skip", result)
+	}
+}
+
+func TestRunMCPHTTP_FilteredToolDefinitionScoresBlock(t *testing.T) {
+	upstream, err := fixture.StartMCPHTTP()
+	if err != nil {
+		t.Fatalf("StartMCPHTTP: %v", err)
+	}
+	defer upstream.Close()
+
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Fatalf("read gateway request: %v", readErr)
+		}
+		upstreamResp, postErr := http.Post(upstream.URL(), "application/json", bytes.NewReader(body)) //nolint:gosec,noctx // runner-owned fixture
+		if postErr != nil {
+			t.Fatalf("forward to fixture: %v", postErr)
+		}
+		_ = upstreamResp.Body.Close()
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatalf("decode gateway request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[]}}`, request.ID)
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPFixture(upstream)
+	result := a.runMCPHTTP(Case{
+		ID: "filtered-tool-definition", Transport: "mcp_http", InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"tools": []interface{}{map[string]interface{}{"name": "filtered_tool"}}},
+		}}},
+	}, time.Second)
+	if result.Err != nil || result.Verdict != "block" || result.Evidence["filtered_tool_name"] != "filtered_tool" {
+		t.Fatalf("result = %+v, want fixture-proven filtered-tool block", result)
 	}
 }
 

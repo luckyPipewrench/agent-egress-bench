@@ -45,6 +45,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
 
 // fixtureHostname is the canonical name the runner uses when routing fixture
@@ -87,6 +89,7 @@ type ProxyAdapter struct {
 
 	wsUpstreamMessages   func() int64 // runner-managed WS fixture message counter
 	mcpHTTPUpstreamCalls func() int64 // runner-managed MCP HTTP fixture request counter
+	mcpHTTPFixture       *fixture.MCPHTTPFixture
 }
 
 // NewProxyAdapter creates a proxy adapter. proxyAddr is for HTTP traffic,
@@ -186,6 +189,14 @@ func (p *ProxyAdapter) SetMCPHTTPURL(rawURL string) { p.mcpHTTPURL = rawURL }
 // backend handled the request before scoring an allow.
 func (p *ProxyAdapter) SetMCPHTTPUpstreamCallCounter(counter func() int64) {
 	p.mcpHTTPUpstreamCalls = counter
+}
+
+// SetMCPHTTPFixture enables response-shaped MCP HTTP cases to be delivered by
+// the runner-owned upstream. A Streamable HTTP client never POSTs a JSON-RPC
+// response to the gateway: it sends a request and receives that response from
+// its upstream. Keeping the fixture here makes that wire direction explicit.
+func (p *ProxyAdapter) SetMCPHTTPFixture(upstream *fixture.MCPHTTPFixture) {
+	p.mcpHTTPFixture = upstream
 }
 
 // Run sends the case payload through the proxy and returns the verdict.
@@ -2159,6 +2170,9 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 	if !ok || len(msgList) == 0 {
 		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in payload", c.ID)}
 	}
+	if c.InputType == "mcp_tool_definition" || c.InputType == "mcp_tool_result" {
+		return p.runMCPHTTPResponseCase(c, timeout)
+	}
 
 	client := &http.Client{Timeout: timeout}
 	var responses int
@@ -2209,6 +2223,208 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		Verdict:  "allow",
 		Evidence: evidence,
 	}
+}
+
+// runMCPHTTPResponseCase drives a response-shaped corpus case in its actual
+// Streamable HTTP direction. The corpus fixture is installed at the upstream,
+// then the adapter sends the corresponding client request through the product.
+// Posting a JSON-RPC response to the product's listener would test only that a
+// listener rejects an invalid client request, not response scanning.
+func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Result {
+	if p.mcpHTTPFixture == nil {
+		return Result{Verdict: "skip", Evidence: map[string]interface{}{
+			"reason": "no MCP HTTP upstream fixture configured for response case",
+		}}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	identity := nextGatewayRequestIdentity()
+	var (
+		request       map[string]interface{}
+		gatewayReq    gatewayRequest
+		release       func()
+		declaredNames []string
+		err           error
+	)
+	switch c.InputType {
+	case "mcp_tool_definition":
+		tools, names, parseErr := declaredTools(c)
+		if parseErr != nil {
+			return Result{Err: fmt.Errorf("case %s: prepare tools/list response: %w", c.ID, parseErr)}
+		}
+		declaredNames = names
+		request = map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      identity,
+			"method":  "tools/list",
+			"params":  map[string]interface{}{},
+		}
+		request, gatewayReq, err = withGatewayRequestIdentity(request, identity)
+		if err != nil {
+			return Result{Err: fmt.Errorf("case %s: prepare tools/list request: %w", c.ID, err)}
+		}
+		release, err = p.mcpHTTPFixture.AcquireToolDefinitionLease(ctx, gatewayReq.identity, tools)
+		if err != nil {
+			return Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tool_definition_lease_timeout", "upstream_reached": false}}
+		}
+	case "mcp_tool_result":
+		result, parseErr := declaredToolResult(c)
+		if parseErr != nil {
+			return Result{Err: fmt.Errorf("case %s: prepare tools/call response: %w", c.ID, parseErr)}
+		}
+		request = map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      identity,
+			"method":  "tools/call",
+			"params": map[string]interface{}{
+				"name":      "aeb_tool_result_fixture",
+				"arguments": map[string]interface{}{},
+			},
+		}
+		request, gatewayReq, err = withGatewayRequestIdentity(request, identity)
+		if err != nil {
+			return Result{Err: fmt.Errorf("case %s: prepare tools/call request: %w", c.ID, err)}
+		}
+		release, err = p.mcpHTTPFixture.AcquireToolResultLease(ctx, gatewayReq.identity, result)
+		if err != nil {
+			return Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tool_result_lease_timeout", "upstream_reached": false}}
+		}
+	}
+	defer release()
+	if c.InputType == "mcp_tool_result" {
+		if result := p.primeMCPHTTPToolResultBaseline(ctx); result != nil {
+			return *result
+		}
+	}
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: marshal response-trigger request: %w", c.ID, err)}
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(body))
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: build MCP HTTP request: %w", c.ID, err)}
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := (&http.Client{}).Do(httpReq)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: read MCP HTTP response: %w", c.ID, err)}
+	}
+
+	delivered := proxyMCPHTTPDelivered(p.mcpHTTPFixture, gatewayReq)
+	evidence := map[string]interface{}{
+		"product_surface":  "mcp_http_listener",
+		"request_identity": gatewayReq.identity,
+		"upstream_reached": delivered,
+	}
+	if !delivered {
+		evidence["reason"] = "response_upstream_unproven"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if verdict := classifyMCPHTTPBlock(responseBody); verdict != nil {
+			for key, value := range evidence {
+				verdict.Evidence[key] = value
+			}
+			return *verdict
+		}
+		return classifyResponse(resp.StatusCode, string(responseBody))
+	}
+	decoded, err := decodeGatewayResponse(resp.Header.Get("Content-Type"), responseBody, gatewayReq.identity)
+	if err != nil {
+		evidence["reason"] = "malformed_or_uncorrelated_response"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	if verdict := classifyMCPHTTPBlock(decoded); verdict != nil {
+		for key, value := range evidence {
+			verdict.Evidence[key] = value
+		}
+		return *verdict
+	}
+	if c.InputType == "mcp_tool_definition" {
+		returnedNames, validInventory := toolsListNames(decoded)
+		if !validInventory {
+			evidence["reason"] = "malformed_tools_list"
+			return Result{Verdict: "skip", Evidence: evidence}
+		}
+		for _, declaredName := range declaredNames {
+			if !containsNormalizedToolName(returnedNames, declaredName) {
+				evidence["filtered_tool_name"] = declaredName
+				return Result{Verdict: "block", Evidence: evidence}
+			}
+		}
+	}
+	return Result{Verdict: "allow", Evidence: evidence}
+}
+
+// primeMCPHTTPToolResultBaseline establishes the declared tool before asking
+// it to return the fixture-owned result. This is part of the protocol path,
+// not a workaround: gateways that bind calls to the last tools/list inventory
+// must see the same ordinary discovery exchange a real MCP client performs.
+func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Result {
+	identity := nextGatewayRequestIdentity()
+	request := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      identity,
+		"method":  "tools/list",
+		"params":  map[string]interface{}{},
+	}
+	request, gatewayReq, err := withGatewayRequestIdentity(request, identity)
+	if err != nil {
+		return &Result{Err: fmt.Errorf("prepare tool-result baseline request: %w", err)}
+	}
+	tools := []json.RawMessage{json.RawMessage(`{"name":"aeb_tool_result_fixture","description":"Runner-owned benchmark fixture tool.","inputSchema":{"type":"object"}}`)}
+	release, err := p.mcpHTTPFixture.AcquireToolDefinitionLease(ctx, gatewayReq.identity, tools)
+	if err != nil {
+		return &Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tool_result_baseline_lease_timeout", "upstream_reached": false}}
+	}
+	defer release()
+	body, err := json.Marshal(request)
+	if err != nil {
+		return &Result{Err: fmt.Errorf("marshal tool-result baseline request: %w", err)}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(body))
+	if err != nil {
+		return &Result{Err: fmt.Errorf("build tool-result baseline request: %w", err)}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return &Result{Err: fmt.Errorf("send tool-result baseline request: %w", err)}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return &Result{Err: fmt.Errorf("read tool-result baseline response: %w", err)}
+	}
+	if !proxyMCPHTTPDelivered(p.mcpHTTPFixture, gatewayReq) {
+		return &Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tool_result_baseline_unproven", "upstream_reached": false}}
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return &Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tool_result_baseline_rejected", "upstream_reached": true}}
+	}
+	if _, err := decodeGatewayResponse(resp.Header.Get("Content-Type"), responseBody, gatewayReq.identity); err != nil {
+		return &Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tool_result_baseline_invalid_response", "upstream_reached": true}}
+	}
+	return nil
+}
+
+func proxyMCPHTTPDelivered(upstream *fixture.MCPHTTPFixture, request gatewayRequest) bool {
+	observations := upstream.Observation(request.identity)
+	if len(observations) != 1 {
+		return false
+	}
+	observation := observations[0]
+	return observation.Identity == request.identity && observation.Method == request.method && observation.Fingerprint == request.fingerprint
 }
 
 func (p *ProxyAdapter) mcpHTTPUpstreamCallCount() (int64, bool) {
