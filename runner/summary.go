@@ -16,14 +16,20 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	// 2.6 is the result-state boundary. Applicability moved from profile
+	// 2.7 is the pass-mark boundary. A hidden 80 percent containment threshold
+	// decided whether a run could publish; it is gone, and publication now turns
+	// only on whether the run measured what it claims to have measured. Which
+	// runs are publishable therefore changed, so results are not comparable
+	// across this line and the label must move with the rules.
+	//
+	// 2.6 was the result-state boundary. Applicability moved from profile
 	// declarations to adapter-proven delivery and verdict observation, an
 	// unreachable state was added outside every score denominator, and a run
 	// with any unreachable row reports an incomplete measurement. Results scored
-	// under 2.5 and earlier are therefore not comparable to these, and the
+	// under 2.5 and earlier are therefore not comparable to those, and the
 	// repository's own staleness rule requires the bump rather than allowing
 	// two different rule sets to publish under one label.
-	scoringVersion = "2.6"
+	scoringVersion = "2.7"
 	runnerVersion  = "0.4.2"
 	corpusVersion  = "v2.4.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
