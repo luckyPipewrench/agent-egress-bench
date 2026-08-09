@@ -31,6 +31,9 @@ import requests
 # --- Constants ---
 
 MAX_DIFF_CHARS = 100_000  # ~25k tokens, keeps costs reasonable
+# Page cap for the per-file diff fallback. 100 files per page, so this bounds a
+# pathological pull request without truncating any realistic one.
+MAX_DIFF_FILE_PAGES = 30
 DEFAULT_MODEL_FAST = "gpt-5.6-luna"
 DEFAULT_MODEL_DEEP = "gpt-5.6-terra"
 DEFAULT_TEMPERATURE = 0.2
@@ -73,15 +76,67 @@ If there are no material issues, say exactly: No material issues found in this d
 
 
 def get_pr_diff(repo: str, pr_number: str, token: str) -> str:
-    """Fetch the PR diff from GitHub."""
+    """Fetch the PR diff from GitHub.
+
+    GitHub refuses the diff media type with 406 Not Acceptable once a pull
+    request is large enough, which is exactly when a review is most valuable and
+    least likely to happen by hand. A corpus repository reaches that size
+    routinely: one mechanical edit across every case file, carrying a handful of
+    files that hold every real decision.
+
+    A 406 is therefore not a failure to report, it is a signal to fetch the same
+    content a different way. The per-file endpoint paginates and returns each
+    file's patch, so the diff is reassembled from those. Any other HTTP error
+    still raises, because those mean something genuinely went wrong.
+    """
     url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3.diff",
     }
     resp = requests.get(url, headers=headers, timeout=30)
+    if resp.status_code == 406:
+        return get_pr_diff_from_files(repo, pr_number, token)
     resp.raise_for_status()
     return resp.text
+
+
+def get_pr_diff_from_files(repo: str, pr_number: str, token: str) -> str:
+    """Reassemble a unified diff from the paginated per-file endpoint.
+
+    Used when the diff media type is refused for size. Files GitHub omits a
+    patch for, binaries and files past its own per-file limits, are recorded as
+    an explicit note rather than dropped silently, so a reviewer can tell the
+    difference between a file that did not change and one that could not be
+    shown.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    parts: list[str] = []
+    page = 1
+    while page <= MAX_DIFF_FILE_PAGES:
+        resp = requests.get(
+            f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files",
+            headers=headers,
+            params={"per_page": 100, "page": page},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        files = resp.json()
+        if not files:
+            break
+        for entry in files:
+            path = entry.get("filename", "")
+            patch = entry.get("patch")
+            if patch:
+                parts.append(f"diff --git a/{path} b/{path}\n{patch}")
+            else:
+                status = entry.get("status", "changed")
+                parts.append(f"diff --git a/{path} b/{path}\n# {status}, patch not provided by GitHub")
+        page += 1
+    return "\n".join(parts)
 
 
 def truncate_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
