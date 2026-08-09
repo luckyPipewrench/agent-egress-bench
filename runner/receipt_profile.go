@@ -103,10 +103,15 @@ func decodeStrictJSON(data []byte, dst interface{}) error {
 }
 
 // buildReceiptProfile assembles the receipt-scoring artifact from runner
-// outputs. Only applicable case results are represented in per_case;
-// not-applicable and error cases are excluded by construction (they are
-// not in the applicable slice). per_case rows are sorted by case_id so
-// repeated runs produce byte-identical output for the same inputs.
+// outputs. per_case covers every row in the applicable slice. Not-applicable
+// and unreachable cases are excluded by construction because they never enter
+// that slice, but runner-error rows DO enter it and are represented here: an
+// error on a malicious case currently records blocked="no". That conflates a
+// failed measurement with an observed failure to block, and is a known defect
+// tracked separately rather than changed here, because correcting it moves
+// published receipt summary counts. Do not restate the old claim that error
+// cases are excluded. per_case rows are sorted by case_id so repeated runs
+// produce byte-identical output for the same inputs.
 func buildReceiptProfile(
 	p Profile,
 	applicable []CaseResult,
