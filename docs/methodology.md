@@ -139,7 +139,8 @@ Six provenance fields identify an active Gauntlet run:
 |-------|---------------|--------|
 | `corpus_version` | Tag or commit of the case corpus | Repository tag |
 | `scoring_version` | Version of the Gauntlet scoring and applicability rules | Runner constant emitted in summary JSON |
-| `corpus_sha256` | Hash of all case file contents (sorted by path) | Computed at runtime |
+| `corpus_sha256` | Unframed hash of concatenated case file contents. Detects content changes; cannot prove corpus identity | Computed at runtime |
+| `benchmark_manifest_sha256` | Framed hash binding every case file's path, byte length, and bytes. Proves corpus identity | Computed at runtime |
 | `runner_version` | Version of the runner binary | Hardcoded in runner |
 | `tool_profile_sha256` | Hash of the tool profile used | Computed at runtime |
 | `capability_registry` | Immutable snapshot defining reporting labels | Profile and every active result |
@@ -162,7 +163,7 @@ diagnostic, unchanged from 2.1. An
 adapter with no exact route is an explicit unreachable coverage gap; a routed
 case with missing delivery or observation proof is an error.
 
-`corpus_sha256` proves which exact file contents were present at runtime. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which reporting claims were present. `capability_registry.sha256` proves the exact raw snapshot that defined them. Together, these fields make an active run reproducible without letting labels affect measurement.
+`benchmark_manifest_sha256` proves which exact files were present at runtime, binding each path, byte length, and bytes. `corpus_sha256` detects a content change but cannot prove corpus identity, since it concatenates contents without framing and therefore cannot distinguish the same bytes regrouped across different files; it is retained so already published records still verify. `runner_version` identifies the binary that produced the results. `tool_profile_sha256` proves which reporting claims were present. `capability_registry.sha256` proves the exact raw snapshot that defined them. Together, these fields make an active run reproducible without letting labels affect measurement.
 
 ## Running the Gauntlet
 

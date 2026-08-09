@@ -214,6 +214,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         summary["exercised"] = {"capability_tags": ["test"]}
         summary["tool_profile_sha256"] = hashlib.sha256(profile_bytes).hexdigest()
         summary["measurement_status"] = measurement_status
+        summary["benchmark_manifest_sha256"] = "c" * 64
         summary.pop("sufficient", None)
         if summary_schema_version == 5:
             summary["scoring_version"] = "2.8"
@@ -462,6 +463,30 @@ class ProvenanceBuilderTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("measurement_status", result.stderr)
+
+    def test_active_summary_without_framed_corpus_digest_blocks_publication(self):
+        self.make_active_fixture()
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        del summary["benchmark_manifest_sha256"]
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("benchmark_manifest_sha256", result.stderr)
+
+    def test_frozen_record_without_framed_corpus_digest_still_validates(self):
+        # The framed digest postdates the frozen evidence, so requiring it there
+        # would retroactively invalidate an already published record.
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertNotIn("schema_version", summary)
+        self.assertNotIn("benchmark_manifest_sha256", summary)
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_active_synthetic_row_blocks_publication(self):
         self.make_active_fixture()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -64,24 +65,28 @@ type DualDiagnostics struct {
 
 // GauntletSummary is the top-level output written to --output.
 type GauntletSummary struct {
-	SchemaVersion      int                          `json:"schema_version"`
-	GauntletVersion    string                       `json:"gauntlet_version"`
-	ScoringVersion     string                       `json:"scoring_version"`
-	RunnerVersion      string                       `json:"runner_version"`
-	Tool               string                       `json:"tool"`
-	ToolVersion        string                       `json:"tool_version"`
-	CorpusVersion      string                       `json:"corpus_version"`
-	CorpusSHA256       string                       `json:"corpus_sha256"`
-	ToolProfileSHA256  string                       `json:"tool_profile_sha256"`
-	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
-	ReportedClaims     []string                     `json:"reported_claims"`
-	Date               string                       `json:"date,omitempty"`
-	CaseCount          CaseCount                    `json:"case_count"`
-	Exercised          ExercisedCapabilities        `json:"exercised"`
-	Scores             DualScores                   `json:"scores"`
-	Diagnostics        DualDiagnostics              `json:"diagnostics"`
-	MeasurementStatus  string                       `json:"measurement_status"`
-	PerCategory        map[string]CategoryScores    `json:"per_category"`
+	SchemaVersion   int    `json:"schema_version"`
+	GauntletVersion string `json:"gauntlet_version"`
+	ScoringVersion  string `json:"scoring_version"`
+	RunnerVersion   string `json:"runner_version"`
+	Tool            string `json:"tool"`
+	ToolVersion     string `json:"tool_version"`
+	CorpusVersion   string `json:"corpus_version"`
+	CorpusSHA256    string `json:"corpus_sha256"`
+	// BenchmarkManifestSHA256 binds exact corpus contents: paths, byte
+	// lengths, and bytes. CorpusSHA256 above cannot, and is kept only so
+	// published records still verify against their original definition.
+	BenchmarkManifestSHA256 string                       `json:"benchmark_manifest_sha256"`
+	ToolProfileSHA256       string                       `json:"tool_profile_sha256"`
+	CapabilityRegistry      capabilityregistry.Reference `json:"capability_registry"`
+	ReportedClaims          []string                     `json:"reported_claims"`
+	Date                    string                       `json:"date,omitempty"`
+	CaseCount               CaseCount                    `json:"case_count"`
+	Exercised               ExercisedCapabilities        `json:"exercised"`
+	Scores                  DualScores                   `json:"scores"`
+	Diagnostics             DualDiagnostics              `json:"diagnostics"`
+	MeasurementStatus       string                       `json:"measurement_status"`
+	PerCategory             map[string]CategoryScores    `json:"per_category"`
 
 	// Identifying facts that docs/RESULTS-USE.md requires beside any public
 	// result and that cannot be derived from the corpus or the profile. They
@@ -119,14 +124,13 @@ type CaseCount struct {
 	Errors               int            `json:"errors"`
 }
 
-// computeCorpusSHA256 hashes case-file contents across both the single-file
-// corpus rooted at casesDir and (optionally) the multi-file case directory
-// at multiFileDir. Files are sorted by absolute path before hashing so the
-// output is deterministic regardless of filesystem ordering. multiFileDir
-// may be empty: the single-file walker skips directories listed in
-// multiFileCaseCategories on its own, so the hash covers exactly the case
-// surface the runner loaded.
-func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
+// corpusFilePaths collects every file both corpus digests cover: the
+// single-file corpus rooted at casesDir plus, when multiFileDir is set, the
+// multi-file case directory. Paths are absolute and sorted so the result is
+// deterministic regardless of filesystem ordering. Both digests below share
+// this one collector so they can never disagree about which files the corpus
+// contains.
+func corpusFilePaths(casesDir, multiFileDir string) ([]string, error) {
 	var paths []string
 
 	err := filepath.Walk(casesDir, func(path string, info os.FileInfo, err error) error {
@@ -145,18 +149,34 @@ func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("walking cases for hash: %w", err)
+		return nil, fmt.Errorf("walking cases for hash: %w", err)
 	}
 
 	if multiFileDir != "" {
 		mfPaths, mfErr := computeMultiFileSHA256Paths(multiFileDir)
 		if mfErr != nil {
-			return "", mfErr
+			return nil, mfErr
 		}
 		paths = append(paths, mfPaths...)
 	}
 
 	sort.Strings(paths)
+	return paths, nil
+}
+
+// computeCorpusSHA256 concatenates case-file contents in sorted-path order.
+//
+// This digest CANNOT prove which files a corpus contains. It frames nothing, so
+// any regrouping of the same total bytes produces the same value: one file
+// holding {"a":1}{"b":2} and two files splitting it collide exactly. It is
+// retained unchanged because published records carry it and must keep verifying
+// against the definition they were produced under. For a digest that actually
+// binds paths and boundaries, see computeBenchmarkManifestSHA256.
+func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
+	paths, err := corpusFilePaths(casesDir, multiFileDir)
+	if err != nil {
+		return "", err
+	}
 
 	h := sha256.New()
 	for _, p := range paths {
@@ -168,6 +188,78 @@ func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// computeBenchmarkManifestSHA256 binds the exact corpus contents: every file's
+// location, its byte length, and its bytes.
+//
+// Each entry is length-prefixed, so no regrouping, rename, split, or merge of
+// the same bytes can produce the same digest. Keys are relative to the root the
+// file was found under, and each root carries a distinct prefix, so the value is
+// identical on any machine and unambiguous between the two trees.
+func computeBenchmarkManifestSHA256(casesDir, multiFileDir string) (string, error) {
+	paths, err := corpusFilePaths(casesDir, multiFileDir)
+	if err != nil {
+		return "", err
+	}
+
+	type entry struct {
+		key  string
+		path string
+	}
+	entries := make([]entry, 0, len(paths))
+	for _, p := range paths {
+		key, keyErr := corpusManifestKey(p, casesDir, multiFileDir)
+		if keyErr != nil {
+			return "", keyErr
+		}
+		entries = append(entries, entry{key: key, path: p})
+	}
+	// Sort by the framed key rather than the absolute path, so the digest does
+	// not depend on where the trees happen to live on disk.
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+
+	h := sha256.New()
+	var size [binary.MaxVarintLen64]byte
+	writeField := func(b []byte) {
+		n := binary.PutUvarint(size[:], uint64(len(b)))
+		_, _ = h.Write(size[:n])
+		_, _ = h.Write(b)
+	}
+	for _, e := range entries {
+		data, readErr := os.ReadFile(e.path)
+		if readErr != nil {
+			return "", fmt.Errorf("reading %s for manifest hash: %w", e.path, readErr)
+		}
+		writeField([]byte(e.key))
+		writeField(data)
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// corpusManifestKey renders a machine-independent key for a corpus file. The
+// root prefix keeps the two trees distinct even when a relative path could
+// appear under either.
+func corpusManifestKey(path, casesDir, multiFileDir string) (string, error) {
+	roots := []struct {
+		prefix string
+		dir    string
+	}{
+		{prefix: "multifile", dir: multiFileDir},
+		{prefix: "cases", dir: casesDir},
+	}
+	for _, root := range roots {
+		if root.dir == "" {
+			continue
+		}
+		rel, err := filepath.Rel(root.dir, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return root.prefix + "/" + filepath.ToSlash(rel), nil
+	}
+	return "", fmt.Errorf("corpus file %s is outside every corpus root", path)
 }
 
 // computeProfileSHA256 hashes the tool profile file contents.
@@ -206,6 +298,11 @@ func buildSummary(
 	prov RunProvenance,
 ) (GauntletSummary, error) {
 	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDir)
+	if err != nil {
+		return GauntletSummary{}, err
+	}
+
+	manifestSHA, err := computeBenchmarkManifestSHA256(casesDir, multiFileDir)
 	if err != nil {
 		return GauntletSummary{}, err
 	}
@@ -250,18 +347,19 @@ func buildSummary(
 	}
 
 	return GauntletSummary{
-		SchemaVersion:      activeSummarySchemaVersion,
-		GauntletVersion:    gauntletVersion,
-		ScoringVersion:     scoringVersion,
-		RunnerVersion:      runnerVersion,
-		Tool:               p.Tool,
-		ToolVersion:        p.ToolVersion,
-		CorpusVersion:      corpusVersion,
-		CorpusSHA256:       corpusSHA,
-		ToolProfileSHA256:  profileSHA,
-		CapabilityRegistry: p.CapabilityRegistry,
-		ReportedClaims:     append([]string(nil), p.Claims...),
-		Date:               date,
+		SchemaVersion:           activeSummarySchemaVersion,
+		GauntletVersion:         gauntletVersion,
+		ScoringVersion:          scoringVersion,
+		RunnerVersion:           runnerVersion,
+		Tool:                    p.Tool,
+		ToolVersion:             p.ToolVersion,
+		CorpusVersion:           corpusVersion,
+		CorpusSHA256:            corpusSHA,
+		BenchmarkManifestSHA256: manifestSHA,
+		ToolProfileSHA256:       profileSHA,
+		CapabilityRegistry:      p.CapabilityRegistry,
+		ReportedClaims:          append([]string(nil), p.Claims...),
+		Date:                    date,
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),

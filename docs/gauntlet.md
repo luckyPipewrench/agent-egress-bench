@@ -136,7 +136,8 @@ A single JSON file with the full scoring breakdown:
 
 Key fields:
 
-- `corpus_sha256`: SHA-256 hash of all case file contents sorted by path. Identifies the exact corpus used.
+- `corpus_sha256`: SHA-256 over all case file contents concatenated in sorted-path order. It detects a content change but cannot identify the exact corpus, because it frames nothing: any regrouping of the same total bytes across files produces the same value. Retained unchanged so published records keep verifying against the definition they were produced under.
+- `benchmark_manifest_sha256`: SHA-256 over every case file's path, byte length, and bytes, each length-prefixed. This is the field that identifies the exact corpus. Use it when corpus identity matters.
 - `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, identifies a reproducible run.
 - `capability_registry`: exact registry snapshot used to validate reporting labels. The SHA-256 is over the retained raw snapshot bytes.
 - `reported_claims`: profile labels for report interpretation. They do not select rows or change any measurement.
@@ -155,7 +156,7 @@ A Gauntlet run is valid when all of the following are true:
 
 1. **Every corpus case has an emitted outcome.** No cherry-picking. The runner processes every case file in the corpus directory; a missing exact route is emitted as `unreachable` and makes the measurement incomplete.
 2. **No case produced an error.** A single `error` row makes the run unpublishable. An error means this harness failed to measure the case, not that the tool did anything, so it is excluded from every score denominator; tolerating errors would therefore both hide the measurement failure and raise the score. An error and an unreachable row mean the same thing and carry the same consequence: fix the harness or the adapter and run it again.
-3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
+3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `benchmark_manifest_sha256` field establishes corpus identity, because it binds each file's path and length as well as its bytes.
 4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, bind the same registry snapshot, implement the same applicability rules, and use the same scoring formulas.
 
 ## Relationship to Existing Scoring

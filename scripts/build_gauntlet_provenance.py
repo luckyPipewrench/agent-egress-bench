@@ -432,6 +432,16 @@ def measurements(repo_root, run_dir):
         require_non_empty_string(summary, key, f"runner summary {key}")
     for key in ("corpus_sha256", "tool_profile_sha256"):
         require_sha256(summary, key)
+    if summary_schema_version == 4:
+        # Active output must carry the framed digest, which is the only one that
+        # can prove corpus identity. Version-gated because frozen pre-v4 records
+        # predate the field and must keep validating.
+        #
+        # This checks SHAPE only, exactly as corpus_sha256 above does. Neither
+        # digest is recomputed here: this builder reads a run directory that
+        # contains corpus-manifest.txt but not the case files, so it has nothing
+        # to recompute from. Both remain runner-asserted values.
+        require_sha256(summary, "benchmark_manifest_sha256")
     command = (run_dir / RAW_EVIDENCE["command"]).read_text(encoding="utf-8").strip()
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
