@@ -273,9 +273,19 @@ func buildSummary(
 // measurement incomplete, but can never make an incomplete run publishable.
 func hasSyntheticEvidence(results []CaseResult) bool {
 	for _, result := range results {
-		if synthetic, ok := result.Evidence["synthetic"].(bool); ok && synthetic {
-			return true
+		raw, present := result.Evidence["synthetic"]
+		if !present {
+			continue
 		}
+		// An explicit boolean false is an honest negative and is honored. Every
+		// other present value counts as a synthetic claim, including a
+		// non-boolean such as "synthetic": "calibration". Requiring the boolean
+		// true here would let a malformed marker be the reason a run reads as
+		// measured, which is the opposite of what the comment above promises.
+		if asBool, isBool := raw.(bool); isBool && !asBool {
+			continue
+		}
+		return true
 	}
 	return false
 }

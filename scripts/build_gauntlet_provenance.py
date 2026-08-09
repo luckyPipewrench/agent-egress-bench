@@ -166,6 +166,22 @@ def require_non_empty_string(document, key, label=None):
     return value
 
 
+def claims_synthetic(row):
+    """Report whether a result row claims synthetic calibration evidence.
+
+    An explicit boolean false is an honest negative and is honored. Every other
+    present value counts as a claim, including a non-boolean such as
+    "synthetic": "calibration". Requiring the boolean true would let a malformed
+    marker be the reason a run reads as measured and publishes, which inverts the
+    gate. Mirrors hasSyntheticEvidence in runner/summary.go; the two must agree
+    because each cross-checks the other's measurement_status.
+    """
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict) or "synthetic" not in evidence:
+        return False
+    return evidence["synthetic"] is not False
+
+
 def require_sha256(document, key, allow_null=False):
     value = document.get(key)
     if value is None and allow_null:
@@ -523,9 +539,7 @@ def measurements(repo_root, run_dir):
     # the applicable rows it is given and never sees a not_applicable row, so
     # folding a broader scan into the comparison would make the two sides
     # disagree on a run neither considers publishable.
-    synthetic_rows = sum(
-        row.get("evidence", {}).get("synthetic") is True for row in results
-    )
+    synthetic_rows = sum(claims_synthetic(row) for row in results)
     if synthetic_rows != 0:
         raise ValueError(f"runner produced {synthetic_rows} synthetic result(s)")
     if full_malicious + full_benign + unreachable_count != logical_case_count:
@@ -537,10 +551,7 @@ def measurements(repo_root, run_dir):
         # Scoped to the applicable rows so this mirrors exactly what the Go
         # runner can observe when it derives the same field. Synthetic rows
         # outside that scope are rejected outright above.
-        has_synthetic = any(
-            row.get("evidence", {}).get("synthetic") is True
-            for row in applicable_results
-        )
+        has_synthetic = any(claims_synthetic(row) for row in applicable_results)
         expected_measurement_status = (
             "measured"
             if unreachable_count == 0 and jsonl_errors == 0 and not has_synthetic

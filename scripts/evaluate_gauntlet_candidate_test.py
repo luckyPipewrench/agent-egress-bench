@@ -510,6 +510,45 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertFalse(decision["blocked"])
         self.assertEqual(decision["promotion_status"], "scope_changed_requires_review")
 
+    def test_malformed_case_count_is_refused_rather_than_crashing(self):
+        # Reading a field off a non-object raised inside the comparison, and the
+        # exception escaped the handler, so the evaluator exited WITHOUT writing
+        # a blocked decision. run_evaluate asserts a zero exit and a decision
+        # file, so a crash fails there rather than here.
+        for malformed in (None, [], ["errors"], "case_count", 7):
+            with self.subTest(case_count=malformed):
+                value = candidate()
+                value["case_count"] = malformed
+
+                decision, _, _, _, _ = self.run_evaluate(value)
+
+                self.assertTrue(decision["blocked"])
+                # Assert the shape guard's OWN wording. Matching only
+                # "case_count" passes without the guard, because a pre-existing
+                # "case_count.errors=None" failure contains that substring.
+                self.assertTrue(
+                    any("want an object" in failure for failure in decision["failures"]),
+                    decision["failures"],
+                )
+
+    def test_boolean_case_count_fields_are_refused(self):
+        # Python compares False == 0, so a boolean would otherwise satisfy a
+        # want-zero check while describing no measurement at all.
+        for field in ("errors", "unreachable"):
+            for boolean in (False, True):
+                with self.subTest(field=field, value=boolean):
+                    value = candidate()
+                    value["case_count"] = dict(value["case_count"])
+                    value["case_count"][field] = boolean
+
+                    decision, _, _, _, _ = self.run_evaluate(value)
+
+                    self.assertTrue(decision["blocked"])
+                    self.assertTrue(
+                        any(f"case_count.{field}" in f for f in decision["failures"]),
+                        decision["failures"],
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -104,7 +104,7 @@ The full corpus view is primary. Published results should use full corpus scorin
 
 ### Measurement status
 
-`measurement_status` reports whether the runner observed an outcome for every applicable case. `measured` means it did. `incomplete` means at least one case errored or was unreachable. All four metrics are still computed, and the status does not assign a pass mark or interpret their values.
+`measurement_status` reports whether the runner observed an outcome for every applicable case. `measured` means it did. `incomplete` means at least one case errored, was unreachable, or carried synthetic calibration evidence. A synthetic row is asserted by a calibration adapter rather than observed from a target, so it may still sit in a denominator while publication stays blocked. All four metrics are still computed, and the status does not assign a pass mark or interpret their values.
 
 ## Capability Profiles
 
@@ -146,7 +146,9 @@ Six provenance fields identify an active Gauntlet run:
 
 **Staleness** is determined by `corpus_version` and `scoring_version` only. If either changes, previous results are stale and should be re-run. The other fields support reproducibility and audit trails but do not trigger staleness.
 
-Scoring version 2.7 is a deliberate boundary. It removes a hidden containment threshold that decided whether a run could publish. Publication now turns only on whether the run measured what it claims to have measured, so which runs are publishable changed and results are not comparable across that line.
+Scoring version 2.7 is a deliberate boundary. It removes a hidden containment threshold that decided whether a run could publish, so which runs are publishable changed and results are not comparable across that line.
+
+Removing the threshold does not make a measured run publishable on its own. A recognized `measurement_status` is now necessary rather than sufficient: every existing publication requirement still applies, including complete measurement, error-free execution, origin binding, and hash consistency as stated in [Continuous Gauntlet Results](CONTINUOUS-RESULTS.md). What 2.7 removes is a score threshold, not a provenance check.
 
 Scoring version 2.6 was the previous boundary. It treats `requires` as delivery and observation constraints rather than difficulty claims, and the result state machine makes that concrete: a case is scoreable only after adapter-proven exact delivery and verdict observation. Because applicability, the full-corpus denominator, and measurement-validity rules all changed, results scored under 2.5 and earlier are stale by the rule stated above and are not comparable to 2.6 results. They remain valid records of what was measured under their own rules.
 Attack-difficulty and evasion-resistance flags (`encoding_evasion_scanning`,

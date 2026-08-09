@@ -19,7 +19,7 @@ Lower is better for false positive rate (0.0 = perfect). Higher is better for th
 
 ## Measurement Status
 
-The summary reports `measurement_status: measured` when every applicable case produced an observed outcome. It reports `measurement_status: incomplete` when any case errored or was unreachable.
+The summary reports `measurement_status: measured` when every applicable case produced an observed outcome. It reports `measurement_status: incomplete` when any case errored, was unreachable, or carried synthetic calibration evidence.
 
 Measurement status says whether the runner measured the declared scope. It does not judge containment or any other metric. Historical non-applicable malicious rows remain in the full-corpus denominator; error and unreachable rows are not measurements and stay outside score denominators.
 
@@ -152,7 +152,7 @@ Key fields:
 - `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.
 - `not_applicable_reasons`: breakdown of historical N/A rows, summing to `not_applicable`.
 - `unreachable`: exact-route coverage gaps. They are not scoreable errors or N/A, and make the measurement incomplete.
-- `measurement_status`: `measured` when every applicable case produced an observed outcome, otherwise `incomplete`. It does not encode a score threshold.
+- `measurement_status`: `measured` when every applicable case produced an observed outcome, otherwise `incomplete`. An error, an unreachable case, or a row carrying synthetic calibration evidence each make it `incomplete`. It does not encode a score threshold.
 - `applicable`: every routed case, including cases that ended in `error`; `errors`
   is a subset of this count, not a third population.
 - `null` in per-category scores: metric is N/A for that category.
