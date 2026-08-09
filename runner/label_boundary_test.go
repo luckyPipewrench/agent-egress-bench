@@ -28,12 +28,12 @@ func measureLabelsOnly(t *testing.T, profile Profile) labelMeasurement {
 		{ID: "labels-allow-001", Category: "url", InputType: "url", Transport: "fetch_proxy", ExpectedVerdict: "allow", CapabilityTags: []string{"benign"}, Payload: map[string]interface{}{"method": "GET", "url": "https://example.test/allow"}},
 	}
 	var output bytes.Buffer
-	rows, unreachable, reasons, err := runCases(cases, profile, adapter.DryRunAdapter{}, time.Second, false, &output)
+	rows, unreachableRows, unreachableIDs, reasons, err := runCases(cases, profile, adapter.DryRunAdapter{}, time.Second, false, &output)
 	if err != nil {
 		t.Fatalf("runCases: %v", err)
 	}
-	if len(unreachable) != 0 || len(reasons) != 0 {
-		t.Fatalf("unexpected coverage state: unreachable=%v reasons=%v", unreachable, reasons)
+	if len(unreachableRows) != 0 || len(unreachableIDs) != 0 || len(reasons) != 0 {
+		t.Fatalf("unexpected coverage state: unreachableRows=%v unreachableIDs=%v reasons=%v", unreachableRows, unreachableIDs, reasons)
 	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "cases.json"), []byte(`{"fixture":"labels-only"}`), 0o600); err != nil {
@@ -48,7 +48,7 @@ func measureLabelsOnly(t *testing.T, profile Profile) labelMeasurement {
 		t.Fatal(err)
 	}
 	byID := map[string]Case{cases[0].ID: cases[0], cases[1].ID: cases[1]}
-	summary, err := buildSummary(profile, cases, rows, unreachable, reasons, dir, "", byID, profilePath, RunProvenance{})
+	summary, err := buildSummary(profile, cases, rows, unreachableIDs, reasons, dir, "", byID, profilePath, RunProvenance{})
 	if err != nil {
 		t.Fatalf("buildSummary: %v", err)
 	}

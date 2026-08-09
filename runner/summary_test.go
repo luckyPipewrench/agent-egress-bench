@@ -170,7 +170,7 @@ func TestBuildSummarySyntheticRowsAreNotPublicationSufficient(t *testing.T) {
 		Evidence:        map[string]interface{}{"synthetic": true},
 	}
 	summary, err := buildSummary(
-		Profile{Tool: "test", ToolVersion: "1.0", Supports: summaryTestSupports(true)},
+		Profile{Tool: "test", ToolVersion: "1.0", CapabilityRegistry: testRegistryReference},
 		[]Case{{ID: "a", Category: "url", ExpectedVerdict: "block"}},
 		[]CaseResult{result},
 		nil,

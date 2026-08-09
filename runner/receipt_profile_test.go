@@ -861,7 +861,7 @@ func TestBuildReceiptProfile_ErrorRowsRetainFactualReceiptObservations(t *testin
 // caller assembling a profile from a different slice cannot score a case the
 // adapter never routed.
 func TestBuildReceiptProfile_UnreachableRowsAreNotScoredAsOutcomes(t *testing.T) {
-	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0"}
+	profile := Profile{Tool: "example-tool", ToolVersion: "0.0.0", CapabilityRegistry: testRegistryReference}
 	zeros := strings.Repeat("0", 64)
 	applicable := []CaseResult{
 		{CaseID: "mal-unreachable", ExpectedVerdict: "block", ActualVerdict: "unreachable", Evidence: map[string]interface{}{}},
