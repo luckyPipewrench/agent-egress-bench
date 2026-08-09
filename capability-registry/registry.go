@@ -49,19 +49,38 @@ type Entry struct {
 }
 
 // ResolvedSnapshot retains the exact bytes that the reference hashes.
+//
+// The bytes are private and handed out only as copies. An exported slice would
+// let a caller mutate the evidence after it was verified, or mutate the buffer
+// it passed in, so the "exact bytes this reference hashes" claim could stop
+// being true while the resolved snapshot still looked valid. Sharing the
+// backing array with a caller also races the hashing and decoding done here.
 type ResolvedSnapshot struct {
 	Reference Reference
 	Snapshot  Snapshot
-	Raw       []byte
+	raw       []byte
 	entries   map[string]Entry
 }
+
+// RawBytes returns a copy of the exact bytes the reference hashes. It is a copy
+// on every call so a consumer cannot alter retained evidence.
+func (s ResolvedSnapshot) RawBytes() []byte { return bytes.Clone(s.raw) }
 
 // Resolver resolves snapshots below Root. Root is normally
 // capability-registry, never a mutable “current registry” alias.
 type Resolver struct{ Root string }
 
 // Resolve reads the permanent revision path, verifies its raw-byte digest,
-// and validates the snapshot before a producer emits any result.
+// validates the snapshot, and proves the revision belongs to the canonical
+// append-only history before a producer emits any result.
+//
+// The history check is not optional here. A digest proves a snapshot is intact;
+// it says nothing about whether that snapshot is the real revision 2 or a fork
+// with a plausible previous_sha256. Without the lineage check, a substituted
+// registry directory resolves cleanly and every downstream artifact then binds
+// a non-canonical vocabulary while looking fully verified. Requiring each
+// caller to remember a second call is the kind of guard that silently stops
+// being applied, so it is done here.
 func (r Resolver) Resolve(ref Reference) (ResolvedSnapshot, error) {
 	if err := validateReference(ref); err != nil {
 		return ResolvedSnapshot{}, err
@@ -70,16 +89,33 @@ func (r Resolver) Resolve(ref Reference) (ResolvedSnapshot, error) {
 	if err != nil {
 		return ResolvedSnapshot{}, fmt.Errorf("reading capability registry snapshot: %w", err)
 	}
-	return ResolveRaw(ref, raw)
+	resolved, err := ResolveRaw(ref, raw)
+	if err != nil {
+		return ResolvedSnapshot{}, err
+	}
+	if err := ValidateHistory(r.Root); err != nil {
+		return ResolvedSnapshot{}, fmt.Errorf("capability registry history is not canonical: %w", err)
+	}
+	return resolved, nil
 }
 
 // ResolveRaw validates a snapshot retained as evidence inside a package. It
 // hashes precisely the supplied bytes; callers must not decode and re-marshal
 // a snapshot before this check.
+//
+// One blob cannot prove its own lineage, so this function establishes integrity
+// and identity only. It does NOT establish that the snapshot belongs to the
+// canonical append-only history: a forged revision whose self-reference digest
+// matches will pass here. A consumer accepting a registry from an untrusted
+// source must additionally run ValidateHistory over the registry root, which is
+// what Resolver.Resolve does.
 func ResolveRaw(ref Reference, raw []byte) (ResolvedSnapshot, error) {
 	if err := validateReference(ref); err != nil {
 		return ResolvedSnapshot{}, err
 	}
+	// Copy before hashing so the bytes that were verified are the bytes that
+	// are retained, whatever the caller does with its buffer afterwards.
+	raw = bytes.Clone(raw)
 	if digest := SHA256(raw); digest != ref.SHA256 {
 		return ResolvedSnapshot{}, fmt.Errorf("capability registry sha256 mismatch: got %s, want %s", digest, ref.SHA256)
 	}
@@ -90,7 +126,7 @@ func ResolveRaw(ref Reference, raw []byte) (ResolvedSnapshot, error) {
 	if snapshot.ID != ref.ID || snapshot.Format != ref.Format || snapshot.Revision != ref.Revision {
 		return ResolvedSnapshot{}, fmt.Errorf("capability registry reference does not match snapshot identity")
 	}
-	return ResolvedSnapshot{Reference: ref, Snapshot: snapshot, Raw: raw, entries: entries}, nil
+	return ResolvedSnapshot{Reference: ref, Snapshot: snapshot, raw: raw, entries: entries}, nil
 }
 
 // ValidateActiveIDs confirms every reporting label is known by this exact
@@ -236,13 +272,25 @@ func ValidateHistory(root string) error {
 	if len(registryDirs) == 0 {
 		return fmt.Errorf("capability registry root has no registries")
 	}
+	// Non-directory entries are skipped rather than rejected. The registry root
+	// is also a Go package, so it legitimately holds go.mod and source files,
+	// and rejecting them made this function unusable against the real registry:
+	// it had no production caller and was only ever exercised against synthetic
+	// temp directories, so nothing noticed. Skipping costs no security, since a
+	// stray file is not a forged revision and every registry directory found is
+	// still validated in full.
+	registries := 0
 	for _, registryDir := range registryDirs {
 		if !registryDir.IsDir() {
-			return fmt.Errorf("capability registry root contains non-directory %q", registryDir.Name())
+			continue
 		}
+		registries++
 		if err := validateRegistryHistory(filepath.Join(root, registryDir.Name()), registryDir.Name()); err != nil {
 			return err
 		}
+	}
+	if registries == 0 {
+		return fmt.Errorf("capability registry root has no registries")
 	}
 	return nil
 }
@@ -306,7 +354,13 @@ func validateFormatHistory(dir, id string, format int) error {
 			if snapshot.PreviousSHA256 != SHA256(previous.raw) {
 				return fmt.Errorf("%s: previous_sha256 does not match raw prior snapshot", path)
 			}
-			if err := validateAppendOnly(previous.entries, current.entries); err != nil {
+			if err := validateAppendOnly(previous.entries, current.entries, revision); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+		} else {
+			// Revision 1 has no predecessor, so every entry is new here and the
+			// same truthfulness rule applies against an empty prior set.
+			if err := validateAppendOnly(nil, current.entries, revision); err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}
 		}
@@ -320,7 +374,35 @@ func revisionFromPath(path string) int {
 	return revision
 }
 
-func validateAppendOnly(previous, current map[string]Entry) error {
+func validateAppendOnly(previous, current map[string]Entry, currentRevision int) error {
+	// An entry absent from the previous snapshot is new in THIS revision and
+	// must say so. Without this, revision 2 could introduce a label claiming
+	// introduced_revision 1, which backdates it into a snapshot that never
+	// contained it. That is not a cosmetic lie: a consumer resolving an
+	// earlier pinned revision would find the label absent while a report
+	// generated against this one presents it as having existed then, and the
+	// immutable timeline the registry exists to provide would be false.
+	//
+	// After revision 1 a new entry also cannot arrive already deprecated:
+	// deprecation is a transition from active, so recording one that never had
+	// an active life invents history in the other direction. Revision 1 is
+	// exempt because there is no prior state to contradict. A genesis snapshot
+	// seeded from an existing vocabulary may legitimately record a label that
+	// was already retired before this registry existed.
+	isGenesis := currentRevision == 1
+	for id, entry := range current {
+		if _, existed := previous[id]; existed {
+			continue
+		}
+		if entry.IntroducedRevision != currentRevision {
+			return fmt.Errorf(
+				"new capability registry entry %q claims introduced_revision %d but first appears in revision %d",
+				id, entry.IntroducedRevision, currentRevision)
+		}
+		if !isGenesis && entry.Status != "active" {
+			return fmt.Errorf("new capability registry entry %q must be introduced as active, got %q", id, entry.Status)
+		}
+	}
 	for id, before := range previous {
 		after, ok := current[id]
 		if !ok {
