@@ -209,6 +209,13 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
     }, crypto),
     /capability registry snapshot returned HTTP 404/
   );
+  await assert.rejects(
+    window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
+      if (url.endsWith('capability-registry.json')) return response(snapshotText + ' ');
+      return v4Fetch(url);
+    }, crypto),
+    /capability registry snapshot digest does not match/
+  );
 
   console.log('latest verified result loader tests: OK');
 })().catch((error) => {
