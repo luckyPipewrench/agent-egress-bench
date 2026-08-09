@@ -337,7 +337,7 @@ func TestComputeFullCorpusScores(t *testing.T) {
 	}
 }
 
-func TestComputeFullCorpusScoresExcludesUnreachableButMakesRunInsufficient(t *testing.T) {
+func TestComputeFullCorpusScoresExcludesUnreachableAndMarksMeasurementIncomplete(t *testing.T) {
 	allCases := []Case{
 		{ID: "measured", ExpectedVerdict: "block"},
 		{ID: "unreachable", ExpectedVerdict: "block"},
@@ -347,14 +347,14 @@ func TestComputeFullCorpusScoresExcludesUnreachableButMakesRunInsufficient(t *te
 	if full.Containment == nil || *full.Containment != 1.0 {
 		t.Fatalf("full containment = %v, want 1.0 with unreachable case outside measurement denominator", ptrVal(full.Containment))
 	}
-	if isSufficient(full, len(measured), 0, 1) {
-		t.Fatal("unreachable coverage gap must make the run insufficient")
+	if got := measurementStatus(len(allCases), len(measured), 0, 1, 0, false); got != measurementStatusIncomplete {
+		t.Fatalf("measurement status = %q, want incomplete for unreachable coverage gap", got)
 	}
 }
 
 // Error rows represent failed measurement, not target behavior. Keep them out
 // of both score views while the summary's error count still makes the run
-// insufficient.
+// incomplete.
 func TestErrorRowsStayOutsideEveryScoreDenominator(t *testing.T) {
 	allCases := []Case{
 		{ID: "measured", ExpectedVerdict: "block"},
@@ -373,47 +373,50 @@ func TestErrorRowsStayOutsideEveryScoreDenominator(t *testing.T) {
 	if full.Containment == nil || *full.Containment != 1.0 {
 		t.Fatalf("full containment = %v, want 1.0 with the error row outside the denominator", ptrVal(full.Containment))
 	}
-	if isSufficient(full, len(results), 1, 0) {
-		t.Fatal("an error row must still make the run insufficient")
+	if got := measurementStatus(len(results), len(results), 1, 0, 0, false); got != measurementStatusIncomplete {
+		t.Fatalf("measurement status = %q, want incomplete for error row", got)
 	}
 }
 
-func TestIsSufficient(t *testing.T) {
+func TestMeasurementStatus(t *testing.T) {
 	largestInt := int(^uint(0) >> 1)
 	tests := []struct {
-		name        string
-		containment *float64
-		applicable  int
-		errors      int
-		unreachable int
-		want        bool
+		name          string
+		total         int
+		applicable    int
+		errors        int
+		unreachable   int
+		notApplicable int
+		synthetic     bool
+		want          string
 	}{
-		{"nil containment", nil, 0, 0, 0, true},
-		{"100%", floatPtr(1.0), 10, 0, 0, true},
-		{"80%", floatPtr(0.80), 10, 0, 0, true},
-		{"79%", floatPtr(0.79), 10, 0, 0, false},
-		{"0%", floatPtr(0.0), 10, 0, 0, false},
+		{"zero applicable", 0, 0, 0, 0, 0, false, measurementStatusMeasured},
+		{"all outcomes observed", 10, 10, 0, 0, 0, false, measurementStatusMeasured},
+		{"historical not-applicable rows reconcile", 10, 7, 0, 0, 3, false, measurementStatusMeasured},
+		// A case in none of the three buckets has vanished. Reporting a complete
+		// measurement of a corpus the run never finished is the failure here.
+		{"a dropped case cannot read as measured", 10, 9, 0, 0, 0, false, measurementStatusIncomplete},
+		{"buckets exceeding the total are incoherent", 10, 9, 0, 0, 2, false, measurementStatusIncomplete},
+		{"negative total", -1, 0, 0, 0, 0, false, measurementStatusIncomplete},
+		{"negative not-applicable", 10, 10, 0, 0, -1, false, measurementStatusIncomplete},
 		// Any error at all makes a run unpublishable. These cases used to
 		// encode a 20% tolerance; that tolerance both hid measurement failure
 		// and inflated the score, because errors are excluded from the score
 		// denominator. An error and an unreachable row mean the same thing,
 		// that a case was not measured, so they get the same consequence.
-		{"many errors", floatPtr(1.0), 4, 2, 0, false},
-		{"one error in ten", floatPtr(1.0), 10, 1, 0, false},
-		{"one error in four", floatPtr(1.0), 4, 1, 0, false},
-		{"one error in five", floatPtr(1.0), 5, 1, 0, false},
-		{"one error in six", floatPtr(1.0), 6, 1, 0, false},
-		{"single error in a large run", floatPtr(1.0), largestInt, 1, 0, false},
-		{"errors exceed applicable", floatPtr(1.0), 1, 2, 0, false},
-		{"unreachable coverage gap", floatPtr(1.0), 10, 0, 1, false},
-		{"largest integer above boundary", floatPtr(1.0), largestInt, largestInt/5 + 1, 0, false},
+		{"many errors", 4, 4, 2, 0, 0, false, measurementStatusIncomplete},
+		{"one error in ten", 10, 10, 1, 0, 0, false, measurementStatusIncomplete},
+		{"single error in a large run", largestInt, largestInt, 1, 0, 0, false, measurementStatusIncomplete},
+		{"errors exceed applicable", 1, 1, 2, 0, 0, false, measurementStatusIncomplete},
+		{"unreachable coverage gap", 10, 9, 0, 1, 0, false, measurementStatusIncomplete},
+		{"synthetic calibration", 10, 10, 0, 0, 0, true, measurementStatusIncomplete},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isSufficient(Scores{Containment: tt.containment}, tt.applicable, tt.errors, tt.unreachable)
+			got := measurementStatus(tt.total, tt.applicable, tt.errors, tt.unreachable, tt.notApplicable, tt.synthetic)
 			if got != tt.want {
-				t.Errorf("isSufficient = %v, want %v", got, tt.want)
+				t.Errorf("measurementStatus = %q, want %q", got, tt.want)
 			}
 		})
 	}

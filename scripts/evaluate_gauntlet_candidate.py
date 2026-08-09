@@ -150,11 +150,37 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                     f"candidate {candidate_key} does not match {evidence_label} evidence"
                 )
 
-        if candidate.get("sufficient") is not True:
-            decision["failures"].append(f"sufficient={candidate.get('sufficient')!r}, want true")
-        errors = nested_value(candidate, ("case_count", "errors"))
-        if errors != 0:
+        if candidate.get("schema_version") == 4:
+            if candidate.get("measurement_status") != "measured":
+                decision["failures"].append(
+                    "measurement_status="
+                    f"{candidate.get('measurement_status')!r}, want 'measured'"
+                )
+        elif candidate.get("sufficient") is not True:
+            decision["failures"].append(
+                f"legacy sufficient={candidate.get('sufficient')!r}, want true"
+            )
+        # case_count must be an object before any field is read. A null or a
+        # list raises inside the comparison below, and that exception escapes
+        # this handler, so the evaluator exits WITHOUT writing a blocked
+        # decision. A malformed candidate must be refused, not crash the gate.
+        case_count = candidate.get("case_count")
+        if not isinstance(case_count, dict):
+            decision["failures"].append(
+                f"case_count={case_count!r}, want an object"
+            )
+            case_count = {}
+        # A boolean is rejected explicitly: Python compares False == 0, so
+        # "errors": false would otherwise satisfy a want-zero check while
+        # describing nothing.
+        errors = case_count.get("errors")
+        if isinstance(errors, bool) or not isinstance(errors, int) or errors != 0:
             decision["failures"].append(f"case_count.errors={errors!r}, want 0")
+        unreachable = case_count.get("unreachable", 0)
+        if isinstance(unreachable, bool) or not isinstance(unreachable, int) or unreachable != 0:
+            decision["failures"].append(
+                f"case_count.unreachable={unreachable!r}, want 0"
+            )
 
         expected_version = baseline.get("pipelock_version")
         actual_version = candidate.get("pipelock_version")

@@ -51,12 +51,12 @@ func labelSelectorError(filename, source string, selectors map[string]bool) erro
 
 func TestLabelBoundaryStaticGate(t *testing.T) {
 	// Reporting readers are intentionally omitted. Every selected function makes
-	// scope, state, score, sufficiency, or receipt membership decisions.
+	// scope, state, score, measurement-validity, or receipt membership decisions.
 	files := map[string]map[string]bool{
 		"main.go":                {"runCases": true},
 		"result_state.go":        {"resultStateFor": true, "caseResultForState": true},
-		"score.go":               {"scoreCase": true, "scoreCaseWithEvidence": true, "computeScores": true, "computeFullCorpusScores": true, "computeCategoryScores": true},
-		"summary.go":             {"countErrors": true, "isSufficient": true},
+		"score.go":               {"scoreCase": true, "scoreCaseWithEvidence": true, "computeScores": true, "computeFullCorpusScores": true, "computeCategoryScores": true, "measurementStatus": true},
+		"summary.go":             {"countErrors": true},
 		"receipt_profile.go":     {"buildReceiptProfile": true, "observeReceipts": true},
 		"receipt_observation.go": {"observeReceipts": true},
 	}

@@ -4,6 +4,7 @@
 import importlib.util
 import hashlib
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "render_gauntlet_run_summary.py"
+evaluator_spec = importlib.util.spec_from_file_location(
+    "evaluate_gauntlet_candidate",
+    REPO_ROOT / "scripts" / "evaluate_gauntlet_candidate.py",
+)
+evaluator = importlib.util.module_from_spec(evaluator_spec)
+sys.modules[evaluator_spec.name] = evaluator
+evaluator_spec.loader.exec_module(evaluator)
 spec = importlib.util.spec_from_file_location("render_gauntlet_run_summary", SCRIPT)
 renderer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(renderer)
@@ -33,6 +41,20 @@ def candidate():
         },
         "sufficient": True,
     }
+
+
+def active_candidate():
+    value = candidate()
+    value["schema_version"] = 4
+    value.pop("sufficient")
+    value["measurement_status"] = "measured"
+    value["capability_registry"] = {
+        "id": "aeb.core-capabilities",
+        "format": 1,
+        "revision": 1,
+        "sha256": "d" * 64,
+    }
+    return value
 
 
 def baseline():
@@ -112,6 +134,16 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
         self.assertIn("Applicable containment: 100.0%", output)
         self.assertIn("Full containment: 98.1%", output)
         self.assertIn("Applicable false-positive rate: 0.0%", output)
+
+    def test_active_measured_candidate_below_80_percent_renders_pass(self):
+        value = active_candidate()
+        value["scores"]["full"]["containment"] = 0.5
+        value["scores"]["applicable"]["containment"] = 0.5
+
+        output = self.render(candidate_value=value)
+
+        self.assertIn("PASS — NO ACTION REQUIRED", output)
+        self.assertIn("Full containment: 50.0%", output)
 
     def test_scope_change_requires_review_without_publication(self):
         output = self.render(
@@ -265,6 +297,14 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
         insufficient = candidate()
         insufficient["sufficient"] = False
         cases.append(("insufficient", {"candidate_value": insufficient}, "candidate sufficient"))
+
+        incomplete = active_candidate()
+        incomplete["measurement_status"] = "incomplete"
+        cases.append(("incomplete", {"candidate_value": incomplete}, "measurement_status"))
+
+        unknown_status = active_candidate()
+        unknown_status["measurement_status"] = "complete"
+        cases.append(("unknown measurement status", {"candidate_value": unknown_status}, "measurement_status"))
 
         runner_error = candidate()
         runner_error["case_count"]["errors"] = 1

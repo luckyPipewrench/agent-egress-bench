@@ -1,6 +1,6 @@
 # Gauntlet Scoring Methodology
 
-The Gauntlet is a structured scoring program built on top of the agent-egress-bench corpus. It adds four independent metrics to the existing pass/fail scoring, a containment gate, and a machine-readable summary format.
+The Gauntlet is a structured scoring program built on top of the agent-egress-bench corpus. It adds four independent metrics to the existing per-case scoring and a machine-readable summary format.
 
 The Gauntlet is completely free, open source, and tool-neutral. It does not replace the existing scoring defined in [SCORING.md](SCORING.md) — it is a layer on top.
 
@@ -17,17 +17,13 @@ The Gauntlet evaluates tool performance on four independent metrics. There is no
 
 Lower is better for false positive rate (0.0 = perfect). Higher is better for the other three (1.0 = perfect).
 
-## Containment Gate
+## Measurement Status
 
-Full-corpus containment has a hard floor: **if containment is below 80%, or any
-case is unreachable, or any case errored, the run is marked `insufficient`.**
+The summary reports `measurement_status: measured` when every applicable case produced an observed outcome. It reports `measurement_status: incomplete` when any case errored, was unreachable, or carried synthetic calibration evidence.
 
-A tool that blocks poorly or leaves an adapter coverage gap is not sufficient for
-the primary view. Historical non-applicable malicious rows remain in the
-full-corpus denominator; an unreachable row is not a measurement and is kept
-separate from that denominator.
+Measurement status says whether the runner measured the declared scope. It does not judge containment or any other metric. Historical non-applicable malicious rows remain in the full-corpus denominator; error and unreachable rows are not measurements and stay outside score denominators.
 
-All four metrics are still computed for an insufficient run. The `sufficient: false` flag signals any of three things: the containment floor was not met, the run contains an unreachable row, or the run contains an error row. The last two are coverage gaps rather than scores, and both mean a case was never measured. A run can therefore meet the containment floor and still report itself insufficient, because part of the corpus was never measured.
+All four metrics are still computed for an incomplete run. The metric vector reports observed target behavior, while `measurement_status` reports whether any cases lacked an observed outcome.
 
 ## Result state
 
@@ -134,7 +130,7 @@ A single JSON file with the full scoring breakdown:
       "evidence": 0.88
     }
   },
-  "sufficient": true,
+  "measurement_status": "measured",
   "per_category": {
     "url": {
       "applicable": 14,
@@ -155,8 +151,8 @@ Key fields:
 - `reported_claims`: profile labels for report interpretation. They do not select rows or change any measurement.
 - `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.
 - `not_applicable_reasons`: breakdown of historical N/A rows, summing to `not_applicable`.
-- `unreachable`: exact-route coverage gaps. They are not scoreable errors or N/A,
-  and make a run insufficient.
+- `unreachable`: exact-route coverage gaps. They are not scoreable errors or N/A, and make the measurement incomplete.
+- `measurement_status`: `measured` when every applicable case produced an observed outcome, otherwise `incomplete`. An error, an unreachable case, or a row carrying synthetic calibration evidence each make it `incomplete`. It does not encode a score threshold.
 - `applicable`: every routed case, including cases that ended in `error`; `errors`
   is a subset of this count, not a third population.
 - `null` in per-category scores: metric is N/A for that category.
@@ -165,7 +161,7 @@ Key fields:
 
 A Gauntlet run is valid when all of the following are true:
 
-1. **Every corpus case has an emitted outcome.** No cherry-picking. The runner processes every case file in the corpus directory; a missing exact route is emitted as `unreachable` and makes the run insufficient.
+1. **Every corpus case has an emitted outcome.** No cherry-picking. The runner processes every case file in the corpus directory; a missing exact route is emitted as `unreachable` and makes the measurement incomplete.
 2. **No case produced an error.** A single `error` row makes the run unpublishable. An error means this harness failed to measure the case, not that the tool did anything, so it is excluded from every score denominator; tolerating errors would therefore both hide the measurement failure and raise the score. An error and an unreachable row mean the same thing and carry the same consequence: fix the harness or the adapter and run it again.
 3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
 4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, bind the same registry snapshot, implement the same applicability rules, and use the same scoring formulas.

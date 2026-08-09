@@ -13,12 +13,12 @@ import (
 )
 
 type labelMeasurement struct {
-	rows       []CaseResult
-	caseCount  CaseCount
-	exercised  ExercisedCapabilities
-	scores     DualScores
-	sufficient bool
-	receipt    []byte
+	rows              []CaseResult
+	caseCount         CaseCount
+	exercised         ExercisedCapabilities
+	scores            DualScores
+	measurementStatus string
+	receipt           []byte
 }
 
 func measureLabelsOnly(t *testing.T, profile Profile) labelMeasurement {
@@ -57,7 +57,7 @@ func measureLabelsOnly(t *testing.T, profile Profile) labelMeasurement {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return labelMeasurement{rows: rows, caseCount: summary.CaseCount, exercised: summary.Exercised, scores: summary.Scores, sufficient: summary.Sufficient, receipt: receiptRows}
+	return labelMeasurement{rows: rows, caseCount: summary.CaseCount, exercised: summary.Exercised, scores: summary.Scores, measurementStatus: summary.MeasurementStatus, receipt: receiptRows}
 }
 
 func TestClaimsDoNotChangeMeasurement(t *testing.T) {
@@ -77,8 +77,8 @@ func TestClaimsDoNotChangeMeasurement(t *testing.T) {
 	if !reflect.DeepEqual(baseline.exercised, changed.exercised) {
 		t.Fatalf("claims changed exercised coverage: base=%#v changed=%#v", baseline.exercised, changed.exercised)
 	}
-	if !reflect.DeepEqual(baseline.scores, changed.scores) || baseline.sufficient != changed.sufficient {
-		t.Fatalf("claims changed scores or sufficiency: base=%#v/%t changed=%#v/%t", baseline.scores, baseline.sufficient, changed.scores, changed.sufficient)
+	if !reflect.DeepEqual(baseline.scores, changed.scores) || baseline.measurementStatus != changed.measurementStatus {
+		t.Fatalf("claims changed scores or measurement status: base=%#v/%s changed=%#v/%s", baseline.scores, baseline.measurementStatus, changed.scores, changed.measurementStatus)
 	}
 	if !bytes.Equal(baseline.receipt, changed.receipt) {
 		t.Fatalf("claims changed receipt per_case rows: base=%s changed=%s", baseline.receipt, changed.receipt)

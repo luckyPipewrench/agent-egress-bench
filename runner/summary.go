@@ -16,17 +16,26 @@ import (
 
 const (
 	gauntletVersion = "1.0"
-	// 2.6 is the result-state boundary. Applicability moved from profile
+	// 2.7 is the pass-mark boundary. A hidden 80 percent containment threshold
+	// decided whether a run could publish; it is gone, and publication now turns
+	// only on whether the run measured what it claims to have measured. Which
+	// runs are publishable therefore changed, so results are not comparable
+	// across this line and the label must move with the rules.
+	//
+	// 2.6 was the result-state boundary. Applicability moved from profile
 	// declarations to adapter-proven delivery and verdict observation, an
 	// unreachable state was added outside every score denominator, and a run
-	// with any unreachable row reports itself insufficient. Results scored
-	// under 2.5 and earlier are therefore not comparable to these, and the
+	// with any unreachable row reports an incomplete measurement. Results scored
+	// under 2.5 and earlier are therefore not comparable to those, and the
 	// repository's own staleness rule requires the bump rather than allowing
 	// two different rule sets to publish under one label.
-	scoringVersion = "2.6"
+	scoringVersion = "2.7"
 	runnerVersion  = "0.4.2"
 	corpusVersion  = "v2.4.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
+
+	measurementStatusMeasured   = "measured"
+	measurementStatusIncomplete = "incomplete"
 )
 
 // DualScores holds both full-corpus and applicable-only score views.
@@ -52,7 +61,7 @@ type GauntletSummary struct {
 	CaseCount          CaseCount                    `json:"case_count"`
 	Exercised          ExercisedCapabilities        `json:"exercised"`
 	Scores             DualScores                   `json:"scores"`
-	Sufficient         bool                         `json:"sufficient"`
+	MeasurementStatus  string                       `json:"measurement_status"`
 	PerCategory        map[string]CategoryScores    `json:"per_category"`
 
 	// Identifying facts that docs/RESULTS-USE.md requires beside any public
@@ -245,12 +254,10 @@ func buildSummary(
 			Full:       fullScores,
 			Applicable: applicableScores,
 		},
-		// Calibration adapters assert their proof flags so the runner can test
-		// scoring math. Their per-case marker keeps that assertion visible;
-		// this gate keeps the resulting summary out of a publication path,
-		// which requires sufficient=true.
-		Sufficient:  !hasSyntheticEvidence(applicableResults) && isSufficient(fullScores, len(applicableResults), errorCount, len(unreachableIDs)),
-		PerCategory: perCategory,
+		// Calibration adapters assert proof flags rather than observing them, so
+		// they do not produce a complete measurement and cannot publish.
+		MeasurementStatus: measurementStatus(len(allCases), len(applicableResults), errorCount, len(unreachableIDs), totalNA, hasSyntheticEvidence(applicableResults)),
+		PerCategory:       perCategory,
 
 		MethodRepository:   prov.MethodRepository,
 		MethodCommit:       prov.MethodCommit,
@@ -262,13 +269,23 @@ func buildSummary(
 }
 
 // hasSyntheticEvidence reports whether a row came from a calibration adapter.
-// Treat an unrecognized marker conservatively: an accidental synthetic claim
-// can make a run insufficient, but can never make a measured run publishable.
+// Treat an unrecognized marker conservatively: a synthetic claim can make the
+// measurement incomplete, but can never make an incomplete run publishable.
 func hasSyntheticEvidence(results []CaseResult) bool {
 	for _, result := range results {
-		if synthetic, ok := result.Evidence["synthetic"].(bool); ok && synthetic {
-			return true
+		raw, present := result.Evidence["synthetic"]
+		if !present {
+			continue
 		}
+		// An explicit boolean false is an honest negative and is honored. Every
+		// other present value counts as a synthetic claim, including a
+		// non-boolean such as "synthetic": "calibration". Requiring the boolean
+		// true here would let a malformed marker be the reason a run reads as
+		// measured, which is the opposite of what the comment above promises.
+		if asBool, isBool := raw.(bool); isBool && !asBool {
+			continue
+		}
+		return true
 	}
 	return false
 }

@@ -117,7 +117,7 @@ The Gauntlet evaluates tools on four independent metrics beyond pass/fail:
 | **Detection** | Whether the tool identified what it caught |
 | **Evidence** | Whether the tool emitted structured proof |
 
-Containment has a hard floor: below 80%, the run is marked insufficient. There is no composite score. Each metric is reported independently. The maintainer's own Pipelock run history is published at [pipelab.org/gauntlet](https://pipelab.org/gauntlet/) as disclosed first-party evidence. Every other tool publishes and owns its own results; see [Results Use and Attribution](docs/RESULTS-USE.md) for the facts that travel with a public result.
+The summary reports `measurement_status: measured` when every applicable case produced an observed outcome, or `measurement_status: incomplete` when any case errored, was unreachable, or carried synthetic calibration evidence. This status does not judge the metric values. There is no composite score or pass mark. Each metric is reported independently. The maintainer's own Pipelock run history is published at [pipelab.org/gauntlet](https://pipelab.org/gauntlet/) as disclosed first-party evidence. Every other tool publishes and owns its own results; see [Results Use and Attribution](docs/RESULTS-USE.md) for the facts that travel with a public result.
 
 Full methodology: [docs/gauntlet.md](docs/gauntlet.md)
 
@@ -167,13 +167,7 @@ A runner feeds each case to the security tool and records whether it blocked or 
 {"schema_version":4,"case_id":"mcp-drift-collusion-004","tool":"pipelock","tool_version":"3.1.0","capability_registry":{"id":"aeb.core-capabilities","format":1,"revision":1,"sha256":"f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"},"expected_verdict":"block","actual_verdict":"unreachable","score":"error","evidence":{"result_state":"unreachable"},"notes":"unreachable: adapter has no exact delivery route for this case"}
 ```
 
-A case is scoreable only when its adapter proves exact delivery and observes a
-verdict. Profile claims and case capability tags are registry-backed reporting
-labels. They do not select cases or affect scores, denominators, sufficiency, or
-publication. No exact adapter route is explicit
-`unreachable` coverage: separate from N/A and runner errors, outside score
-denominators, and sufficient to make the run insufficient. Historical N/A rows
-remain frozen. See [docs/SCORING.md](docs/SCORING.md).
+A case is scoreable only when its adapter proves exact delivery and observes a verdict. Profile claims and case capability tags are registry-backed reporting labels. They do not select cases or affect scores, denominators, measurement status, or publication. When no exact adapter route exists, the case is recorded as explicit `unreachable` coverage. That is separate from N/A and from runner errors, sits outside every score denominator, and is enough on its own to make the measurement incomplete. Historical N/A rows remain frozen. See [docs/SCORING.md](docs/SCORING.md).
 
 ## Writing a runner for your tool
 

@@ -12,6 +12,7 @@ CLAUDE.local.md
 # Build artifacts
 /tmp/
 /validate/aeb-validate
+/validate/validate
 /runner/runner
 
 # Editor files

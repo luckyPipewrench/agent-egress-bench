@@ -148,12 +148,12 @@ func TestBuildSummaryKeepsUnreachableOutsideScoreableErrors(t *testing.T) {
 	if summary.CaseCount.Applicable != 0 || summary.CaseCount.Unreachable != 1 || summary.CaseCount.Errors != 0 {
 		t.Fatalf("case count = %+v, want unreachable distinct from scoreable errors", summary.CaseCount)
 	}
-	if summary.Sufficient {
-		t.Fatal("summary with an unreachable case must be insufficient")
+	if summary.MeasurementStatus != measurementStatusIncomplete {
+		t.Fatalf("measurement status = %q, want incomplete for unreachable case", summary.MeasurementStatus)
 	}
 }
 
-func TestBuildSummarySyntheticRowsAreNotPublicationSufficient(t *testing.T) {
+func TestBuildSummarySyntheticRowsHaveIncompleteMeasurement(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -187,8 +187,48 @@ func TestBuildSummarySyntheticRowsAreNotPublicationSufficient(t *testing.T) {
 	if summary.Scores.Full.Containment == nil || *summary.Scores.Full.Containment != 1.0 {
 		t.Fatalf("synthetic calibration score = %v, want scoreable 1.0", ptrVal(summary.Scores.Full.Containment))
 	}
-	if summary.Sufficient {
-		t.Fatal("synthetic calibration summary must not be publication sufficient")
+	if summary.MeasurementStatus != measurementStatusIncomplete {
+		t.Fatalf("synthetic calibration measurement status = %q, want incomplete", summary.MeasurementStatus)
+	}
+}
+
+func TestBuildSummaryBelow80PercentCanBeMeasured(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"tool":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	allCases := []Case{
+		{ID: "a", Category: "url", ExpectedVerdict: "block"},
+		{ID: "b", Category: "url", ExpectedVerdict: "block"},
+	}
+	results := []CaseResult{
+		{CaseID: "a", ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass", Evidence: map[string]interface{}{}},
+		{CaseID: "b", ExpectedVerdict: "block", ActualVerdict: "allow", Score: "fail", Evidence: map[string]interface{}{}},
+	}
+	summary, err := buildSummary(
+		Profile{Tool: "test", ToolVersion: "1.0", CapabilityRegistry: testRegistryReference},
+		allCases,
+		results,
+		nil,
+		nil,
+		dir,
+		"",
+		map[string]Case{"a": allCases[0], "b": allCases[1]},
+		profilePath,
+		RunProvenance{},
+	)
+	if err != nil {
+		t.Fatalf("buildSummary: %v", err)
+	}
+	if summary.Scores.Full.Containment == nil || *summary.Scores.Full.Containment != 0.5 {
+		t.Fatalf("full containment = %v, want 0.5", ptrVal(summary.Scores.Full.Containment))
+	}
+	if summary.MeasurementStatus != measurementStatusMeasured {
+		t.Fatalf("measurement status = %q, want measured", summary.MeasurementStatus)
 	}
 }
 
@@ -327,8 +367,8 @@ func TestWriteSummary(t *testing.T) {
 				Evidence:          &evidence,
 			},
 		},
-		Sufficient:  true,
-		PerCategory: map[string]CategoryScores{},
+		MeasurementStatus: measurementStatusMeasured,
+		PerCategory:       map[string]CategoryScores{},
 	}
 
 	if err := writeSummary(s, path); err != nil {
@@ -351,8 +391,8 @@ func TestWriteSummary(t *testing.T) {
 	if parsed.SchemaVersion != activeSchemaVersion {
 		t.Errorf("summary schema_version = %d, want %d", parsed.SchemaVersion, activeSchemaVersion)
 	}
-	if parsed.Sufficient != true {
-		t.Error("sufficient should be true")
+	if parsed.MeasurementStatus != measurementStatusMeasured {
+		t.Errorf("measurement status = %q, want measured", parsed.MeasurementStatus)
 	}
 	if parsed.ScoringVersion != scoringVersion {
 		t.Errorf("scoring_version = %q, want %q", parsed.ScoringVersion, scoringVersion)

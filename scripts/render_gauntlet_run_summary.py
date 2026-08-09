@@ -170,10 +170,15 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
         for key in ("total", "applicable", "not_applicable", "errors"):
             details[key] = count(candidate, key, failures)
         details["unreachable"] = optional_count(candidate, "unreachable", failures)
-        if candidate.get("sufficient") is not True:
-            failures.append("candidate sufficient must be true")
+        if candidate.get("schema_version") == 4:
+            if candidate.get("measurement_status") != "measured":
+                failures.append("candidate measurement_status must be 'measured'")
+        elif candidate.get("sufficient") is not True:
+            failures.append("legacy candidate sufficient must be true")
         if details["errors"] not in (None, 0):
             failures.append("candidate case_count.errors must be 0")
+        if details["unreachable"] not in (None, 0):
+            failures.append("candidate case_count.unreachable must be 0")
         reasons = candidate.get("case_count", {}).get("not_applicable_reasons") if isinstance(candidate.get("case_count"), dict) else None
         if not isinstance(reasons, dict) or any(not isinstance(reason, str) or not reason or isinstance(value, bool) or not isinstance(value, int) or value < 0 for reason, value in reasons.items()):
             failures.append("invalid field: case_count.not_applicable_reasons")

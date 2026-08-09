@@ -166,6 +166,22 @@ def require_non_empty_string(document, key, label=None):
     return value
 
 
+def claims_synthetic(row):
+    """Report whether a result row claims synthetic calibration evidence.
+
+    An explicit boolean false is an honest negative and is honored. Every other
+    present value counts as a claim, including a non-boolean such as
+    "synthetic": "calibration". Requiring the boolean true would let a malformed
+    marker be the reason a run reads as measured and publishes, which inverts the
+    gate. Mirrors hasSyntheticEvidence in runner/summary.go; the two must agree
+    because each cross-checks the other's measurement_status.
+    """
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict) or "synthetic" not in evidence:
+        return False
+    return evidence["synthetic"] is not False
+
+
 def require_sha256(document, key, allow_null=False):
     value = document.get(key)
     if value is None and allow_null:
@@ -516,18 +532,49 @@ def measurements(repo_root, run_dir):
         raise ValueError("runner summary error count does not match runner JSONL")
     if jsonl_errors != 0:
         raise ValueError(f"runner produced {jsonl_errors} error result(s)")
+    # A synthetic row is asserted rather than observed, so a run carrying one
+    # anywhere is not a measurement and cannot publish. This is deliberately a
+    # standalone rejection over EVERY row rather than an input to the
+    # measurement_status comparison below: the Go runner builds that status from
+    # the applicable rows it is given and never sees a not_applicable row, so
+    # folding a broader scan into the comparison would make the two sides
+    # disagree on a run neither considers publishable.
+    synthetic_rows = sum(claims_synthetic(row) for row in results)
+    if synthetic_rows != 0:
+        raise ValueError(f"runner produced {synthetic_rows} synthetic result(s)")
     if full_malicious + full_benign + unreachable_count != logical_case_count:
         raise ValueError("runner JSONL scoreable and unreachable rows do not match the logical corpus")
     for scope, metrics in metric_counts.items():
         for metric, counts in metrics.items():
             verify_score(summary, scope, metric, counts["numerator"], counts["denominator"])
-    full_containment = expected_fraction(
-        metric_counts["full"]["containment"]["numerator"],
-        metric_counts["full"]["containment"]["denominator"],
-    )
-    expected_sufficient = unreachable_count == 0 and (full_containment is None or full_containment >= 0.80)
-    if summary.get("sufficient") is not expected_sufficient:
-        raise ValueError("runner summary sufficient flag does not match the full containment gate")
+    if summary_schema_version == 4:
+        # Scoped to the applicable rows so this mirrors exactly what the Go
+        # runner can observe when it derives the same field. Synthetic rows
+        # outside that scope are rejected outright above.
+        has_synthetic = any(claims_synthetic(row) for row in applicable_results)
+        expected_measurement_status = (
+            "measured"
+            if unreachable_count == 0 and jsonl_errors == 0 and not has_synthetic
+            else "incomplete"
+        )
+        if summary.get("measurement_status") != expected_measurement_status:
+            raise ValueError(
+                "runner summary measurement_status does not match observed result coverage"
+            )
+    else:
+        # Frozen v2.4 evidence retains the historical field and containment
+        # threshold. This compatibility branch cannot be used by active output.
+        full_containment = expected_fraction(
+            metric_counts["full"]["containment"]["numerator"],
+            metric_counts["full"]["containment"]["denominator"],
+        )
+        expected_sufficient = unreachable_count == 0 and (
+            full_containment is None or full_containment >= 0.80
+        )
+        if summary.get("sufficient") is not expected_sufficient:
+            raise ValueError(
+                "frozen runner summary sufficient flag does not match its historical containment gate"
+            )
 
     return {
         "summary": summary,
@@ -668,13 +715,16 @@ def build_complete_bundle(repo_root, run_dir):
         "case_count": candidate_case_count,
         "scores": summary["scores"],
         "metric_counts": measured["metric_counts"],
-        "sufficient": summary["sufficient"],
         "fixtures": True,
         "multifile_cases": True,
         "command": measured["command"],
         "make_stats": measured["make_stats"],
         "evidence_sha256": hashes,
     }
+    if summary.get("schema_version") == 4:
+        candidate_scope["measurement_status"] = summary["measurement_status"]
+    else:
+        candidate_scope["sufficient"] = summary["sufficient"]
     if measured["capability_registry"] is not None:
         candidate_scope["capability_registry"] = measured["capability_registry"]
         candidate_scope["reported_claims"] = summary["reported_claims"]
