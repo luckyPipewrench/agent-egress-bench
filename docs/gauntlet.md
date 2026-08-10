@@ -55,6 +55,8 @@ In the summary JSON, N/A metrics are represented as `null`.
 
 V5 reports two diagnostics outside `scores`: `classification_present_rate` and `structured_evidence_present_rate`. Each uses correctly blocked malicious cases as its denominator. The first observes whether `kind`, `scanner`, `block_reason`, or an MCP `error_message` is present. The second also recognizes `decision` and `findings`.
 
+V5 summaries validate against [`schemas/summary-v5.schema.json`](../schemas/summary-v5.schema.json). The unversioned [`schemas/summary.schema.json`](../schemas/summary.schema.json) remains the frozen v4 schema so historical artifacts keep their original validation contract.
+
 These values are not detection or proof scores. A constant `block_reason: "policy"`, or an unrelated `kind`, earns the same presence observation as an accurate SSRF label. `capability_tags` and `category` do not enter either rate. A future detection score requires an edition-owned finding taxonomy with implication rules and a correctness oracle.
 
 ## Results Format

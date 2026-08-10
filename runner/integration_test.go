@@ -215,10 +215,14 @@ func TestIntegrationRealCases(t *testing.T) {
 	}
 
 	// Dry-run emits synthetic adapter markers, which are not explanatory fields.
-	if summary.Diagnostics.Applicable.ClassificationPresentRate != nil && *summary.Diagnostics.Applicable.ClassificationPresentRate != 0.0 {
+	if summary.Diagnostics.Applicable.ClassificationPresentRate == nil {
+		t.Error("dry-run classification_present_rate should not be nil")
+	} else if *summary.Diagnostics.Applicable.ClassificationPresentRate != 0.0 {
 		t.Errorf("dry-run classification_present_rate = %f, want 0.0", *summary.Diagnostics.Applicable.ClassificationPresentRate)
 	}
-	if summary.Diagnostics.Applicable.StructuredEvidencePresentRate != nil && *summary.Diagnostics.Applicable.StructuredEvidencePresentRate != 0.0 {
+	if summary.Diagnostics.Applicable.StructuredEvidencePresentRate == nil {
+		t.Error("dry-run structured_evidence_present_rate should not be nil")
+	} else if *summary.Diagnostics.Applicable.StructuredEvidencePresentRate != 0.0 {
 		t.Errorf("dry-run structured_evidence_present_rate = %f, want 0.0", *summary.Diagnostics.Applicable.StructuredEvidencePresentRate)
 	}
 

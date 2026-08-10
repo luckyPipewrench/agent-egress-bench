@@ -93,6 +93,16 @@ def v5_candidate():
             "structured_evidence_present_rate": 1.0,
         },
     }
+    value["metric_counts"] = {
+        "full": {
+            "containment": {"numerator": 157, "denominator": 158},
+            "false_positive_rate": {"numerator": 0, "denominator": 55},
+        },
+        "applicable": {
+            "containment": {"numerator": 157, "denominator": 157},
+            "false_positive_rate": {"numerator": 0, "denominator": 55},
+        },
+    }
     return value
 
 
@@ -244,6 +254,25 @@ class CandidateEvaluationTest(unittest.TestCase):
         decision, *_ = self.run_evaluate(v5_candidate(), v5_baseline())
 
         self.assertFalse(decision["blocked"], decision["failures"])
+
+    def test_v5_null_ceiling_rate_requires_zero_denominator(self):
+        value = v5_candidate()
+        value["scores"]["applicable"]["false_positive_rate"] = None
+        value["metric_counts"]["applicable"]["false_positive_rate"] = {
+            "numerator": 0,
+            "denominator": 0,
+        }
+
+        decision, *_ = self.run_evaluate(value, v5_baseline())
+
+        self.assertFalse(decision["blocked"], decision["failures"])
+
+        value["metric_counts"]["applicable"]["false_positive_rate"]["denominator"] = 1
+        decision, *_ = self.run_evaluate(value, v5_baseline())
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(
+            any("requires a zero metric denominator" in failure for failure in decision["failures"])
+        )
 
     def test_v5_candidate_rejects_retired_or_malformed_metric_fields(self):
         mutations = (

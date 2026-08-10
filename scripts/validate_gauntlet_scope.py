@@ -397,6 +397,10 @@ def validate_scope_v5(document):
     projected["schema_version"] = 2
     projected["scores"] = {}
     projected["metric_counts"] = {}
+    require_exact_keys(document, ("scores",), SCOPES)
+    require_exact_keys(document, ("diagnostics",), SCOPES)
+    require_exact_keys(document, ("metric_counts",), SCOPES)
+    require_exact_keys(document, ("diagnostic_counts",), SCOPES)
     for scope in SCOPES:
         scores = require_exact_keys(document, ("scores", scope), OUTCOME_METRICS)
         diagnostics = require_exact_keys(

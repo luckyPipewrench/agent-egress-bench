@@ -197,7 +197,7 @@
       }
       var profileBytes = await responseBytes(await fetchImpl(prefix + profileName), 'tool profile', 'tool profile');
       if (await sha256Hex(profileBytes, cryptoImpl) !== artifact.tool_profile_sha256) {
-        throw new Error('tool profile digest does not match v4 result');
+        throw new Error('tool profile digest does not match active result');
       }
       var profile;
       var snapshot;

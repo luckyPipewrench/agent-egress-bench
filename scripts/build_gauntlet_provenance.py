@@ -229,7 +229,7 @@ def load_manifest(repo_root, run_dir):
     return manifest, ids
 
 
-def load_case_index(path, manifest_ids):
+def load_case_index(path, manifest_ids, require_categories=False):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
     if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
@@ -238,11 +238,13 @@ def load_case_index(path, manifest_ids):
     if not isinstance(rows, list):
         raise ValueError("loader case index cases must be an array")
     expected_by_id = {}
+    category_by_id = {}
     for row_number, row in enumerate(rows, 1):
         if not isinstance(row, dict):
             raise ValueError(f"loader case index row {row_number} is not an object")
         case_id = row.get("case_id")
         expected = row.get("expected_verdict")
+        category = row.get("category")
         if not isinstance(case_id, str) or not case_id:
             raise ValueError(f"loader case index row {row_number} has no case_id")
         if case_id in expected_by_id:
@@ -251,10 +253,14 @@ def load_case_index(path, manifest_ids):
             raise ValueError(
                 f"loader case index row {row_number} has invalid normalized expected_verdict {expected!r}"
             )
+        if require_categories and (not isinstance(category, str) or not category):
+            raise ValueError(f"loader case index row {row_number} has no category")
         expected_by_id[case_id] = expected
+        if isinstance(category, str) and category:
+            category_by_id[case_id] = category
     if set(expected_by_id) != manifest_ids:
         raise ValueError("loader case index IDs do not match cases/MANIFEST.txt")
-    return case_index_bytes, expected_by_id
+    return case_index_bytes, expected_by_id, category_by_id
 
 
 def count_stat(make_stats, name):
@@ -329,6 +335,25 @@ def validate_v5_summary_metric_contract(summary):
             require_rate_or_null(value, f"runner summary scores.{scope}.{metric}")
         for diagnostic, value in scope_diagnostics.items():
             require_rate_or_null(value, f"runner summary diagnostics.{scope}.{diagnostic}")
+    per_category = summary.get("per_category")
+    if not isinstance(per_category, dict):
+        raise ValueError("runner summary per_category must be an object")
+    category_fields = frozenset({"applicable", "containment", "false_positive_rate", "diagnostics"})
+    for category, category_summary in per_category.items():
+        if not isinstance(category, str) or not category:
+            raise ValueError("runner summary per_category has an invalid category")
+        values = require_exact_keys(
+            category_summary, f"runner summary per_category.{category}", category_fields
+        )
+        if isinstance(values["applicable"], bool) or not isinstance(values["applicable"], int) or values["applicable"] < 0:
+            raise ValueError(f"runner summary per_category.{category}.applicable must be a non-negative integer")
+        require_rate_or_null(values["containment"], f"runner summary per_category.{category}.containment")
+        require_rate_or_null(values["false_positive_rate"], f"runner summary per_category.{category}.false_positive_rate")
+        category_diagnostics = require_exact_keys(
+            values["diagnostics"], f"runner summary per_category.{category}.diagnostics", V5_DIAGNOSTIC_FIELDS
+        )
+        for diagnostic, value in category_diagnostics.items():
+            require_rate_or_null(value, f"runner summary per_category.{category}.diagnostics.{diagnostic}")
 
 
 def verify_score(summary, scope, metric, numerator, denominator):
@@ -418,8 +443,10 @@ def measurements(repo_root, run_dir):
     if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         registry = validate_v4_registry_binding(run_dir, summary, results)
     manifest, manifest_ids = load_manifest(repo_root, run_dir)
-    case_index_bytes, expected_by_id = load_case_index(
-        run_dir / RAW_EVIDENCE["case_index"], manifest_ids
+    case_index_bytes, expected_by_id, category_by_id = load_case_index(
+        run_dir / RAW_EVIDENCE["case_index"],
+        manifest_ids,
+        require_categories=summary_schema_version == 5,
     )
 
     try:
@@ -508,12 +535,13 @@ def measurements(repo_root, run_dir):
     blocked_malicious = [
         row for row in applicable_malicious if row.get("actual_verdict") == "block"
     ]
+    correctly_blocked_malicious = [row for row in blocked_malicious if row.get("score") == "pass"]
     blocked_benign = [
         row for row in applicable_benign if row.get("actual_verdict") == "block"
     ]
-    classified = sum(has_classification(row.get("evidence")) for row in blocked_malicious)
+    classified = sum(has_classification(row.get("evidence")) for row in correctly_blocked_malicious)
     evidence_emitted = sum(
-        has_structured_evidence(row.get("evidence")) for row in blocked_malicious
+        has_structured_evidence(row.get("evidence")) for row in correctly_blocked_malicious
     )
     full_malicious = sum(
         row.get("expected_verdict") == "block"
@@ -551,11 +579,11 @@ def measurements(repo_root, run_dir):
         scope: {
             "classification_present_rate": {
                 "numerator": classified,
-                "denominator": len(blocked_malicious),
+                "denominator": len(correctly_blocked_malicious),
             },
             "structured_evidence_present_rate": {
                 "numerator": evidence_emitted,
-                "denominator": len(blocked_malicious),
+                "denominator": len(correctly_blocked_malicious),
             },
         }
         for scope in ("applicable", "full")
@@ -635,6 +663,34 @@ def measurements(repo_root, run_dir):
                 verify_diagnostic(
                     summary, scope, diagnostic, counts["numerator"], counts["denominator"]
                 )
+        rows_by_category = {}
+        for row in applicable_results:
+            rows_by_category.setdefault(category_by_id[row["case_id"]], []).append(row)
+        if set(summary["per_category"]) != set(rows_by_category):
+            raise ValueError("runner summary per_category keys do not match bound result categories")
+        for category, category_rows in rows_by_category.items():
+            category_summary = summary["per_category"][category]
+            malicious = [row for row in category_rows if row["expected_verdict"] == "block"]
+            benign = [row for row in category_rows if row["expected_verdict"] == "allow"]
+            blocked = [row for row in malicious if row["actual_verdict"] == "block"]
+            correct_blocks = [row for row in blocked if row["score"] == "pass"]
+            expected_category = {
+                "applicable": len(category_rows),
+                "containment": expected_fraction(len(blocked), len(malicious)),
+                "false_positive_rate": expected_fraction(
+                    sum(row["actual_verdict"] == "block" for row in benign), len(benign)
+                ),
+                "diagnostics": {
+                    "classification_present_rate": expected_fraction(
+                        sum(has_classification(row["evidence"]) for row in correct_blocks), len(correct_blocks)
+                    ),
+                    "structured_evidence_present_rate": expected_fraction(
+                        sum(has_structured_evidence(row["evidence"]) for row in correct_blocks), len(correct_blocks)
+                    ),
+                },
+            }
+            if category_summary != expected_category:
+                raise ValueError(f"runner summary per_category.{category} does not match bound result rows")
     if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         # Scoped to the applicable rows so this mirrors exactly what the Go
         # runner can observe when it derives the same field. Synthetic rows

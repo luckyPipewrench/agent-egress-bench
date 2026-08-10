@@ -315,10 +315,17 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 )
             for metric, raw_ceiling in metrics.items():
                 ceiling = fraction(raw_ceiling, f"baseline score_ceilings.{scope}.{metric}")
-                actual = fraction(
-                    nested_value(candidate, ("scores", scope, metric)),
-                    f"candidate scores.{scope}.{metric}",
-                )
+                raw_actual = nested_value(candidate, ("scores", scope, metric))
+                if raw_actual is None:
+                    denominator = nested_value(
+                        candidate, ("metric_counts", scope, metric, "denominator")
+                    )
+                    if isinstance(denominator, bool) or not isinstance(denominator, int) or denominator != 0:
+                        decision["failures"].append(
+                            f"scores.{scope}.{metric}=null requires a zero metric denominator"
+                        )
+                    continue
+                actual = fraction(raw_actual, f"candidate scores.{scope}.{metric}")
                 if actual > ceiling + 1e-12:
                     decision["failures"].append(
                         f"scores.{scope}.{metric}={actual}, above baseline ceiling {ceiling}"

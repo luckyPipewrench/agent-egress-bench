@@ -123,6 +123,10 @@ func measuredResult(r CaseResult) bool {
 	return r.ActualVerdict != "unreachable" && r.Score != "error"
 }
 
+func correctlyBlockedMalicious(r CaseResult) bool {
+	return measuredResult(r) && r.ExpectedVerdict == "block" && r.ActualVerdict == "block" && r.Score == "pass"
+}
+
 // computeScores calculates the outcome metrics from measured case results.
 func computeScores(results []CaseResult) Scores {
 	var totalMalicious, blockedMalicious int
@@ -167,7 +171,7 @@ func computeScores(results []CaseResult) Scores {
 func computePresenceDiagnostics(results []CaseResult) PresenceDiagnostics {
 	var blockedMalicious, classificationPresent, structuredEvidencePresent int
 	for _, r := range results {
-		if !measuredResult(r) || r.ExpectedVerdict != "block" || r.ActualVerdict != "block" {
+		if !correctlyBlockedMalicious(r) {
 			continue
 		}
 		blockedMalicious++

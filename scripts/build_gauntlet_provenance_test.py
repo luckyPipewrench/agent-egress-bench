@@ -128,9 +128,9 @@ class ProvenanceBuilderTest(unittest.TestCase):
                 {
                     "schema_version": 1,
                     "cases": [
-                        {"case_id": "a", "expected_verdict": "block"},
-                        {"case_id": "b", "expected_verdict": "allow"},
-                        {"case_id": "c", "expected_verdict": "block"},
+                        {"case_id": "a", "category": "test", "expected_verdict": "block"},
+                        {"case_id": "b", "category": "test", "expected_verdict": "allow"},
+                        {"case_id": "c", "category": "test", "expected_verdict": "block"},
                     ],
                 }
             ),
@@ -224,6 +224,17 @@ class ProvenanceBuilderTest(unittest.TestCase):
                     "structured_evidence_present_rate": values.pop("evidence"),
                 }
                 for scope, values in summary["scores"].items()
+            }
+            summary["per_category"] = {
+                "test": {
+                    "applicable": 2,
+                    "containment": 1.0,
+                    "false_positive_rate": 0.0,
+                    "diagnostics": {
+                        "classification_present_rate": 1.0,
+                        "structured_evidence_present_rate": 1.0,
+                    },
+                }
             }
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
@@ -328,6 +339,37 @@ class ProvenanceBuilderTest(unittest.TestCase):
                     result.stderr,
                 )
 
+    def test_v5_rejects_retired_or_forged_per_category_fields(self):
+        mutations = (
+            (
+                lambda summary: summary["per_category"]["test"].__setitem__("detection", 1.0),
+                "per_category.test has unexpected fields",
+            ),
+            (
+                lambda summary: summary["per_category"]["test"].__setitem__("containment", 0.0),
+                "per_category.test does not match bound result rows",
+            ),
+            (
+                lambda summary: summary["per_category"]["test"]["diagnostics"].__setitem__(
+                    "classification_present_rate", 0.0
+                ),
+                "per_category.test does not match bound result rows",
+            ),
+        )
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                self.write_fixture()
+                self.make_active_fixture(summary_schema_version=5)
+                summary_path = self.run_dir / "raw-summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                mutate(summary)
+                summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+                result = self.bundle()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+
     def test_v5_rejects_unknown_metric_scopes_and_non_rate_values(self):
         mutations = (
             (
@@ -390,6 +432,8 @@ class ProvenanceBuilderTest(unittest.TestCase):
             summary["scores"][scope]["false_positive_rate"] = None
         summary["scores"]["full"]["containment"] = 1 / 3
         summary["scores"]["applicable"]["containment"] = 1 / 2
+        summary["per_category"]["test"]["containment"] = 1 / 2
+        summary["per_category"]["test"]["false_positive_rate"] = None
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
         rows = [

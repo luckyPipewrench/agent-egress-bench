@@ -62,6 +62,7 @@ func TestPublishedDetectionCreditsVagueAndWrongLabels(t *testing.T) {
 			diagnostics := computePresenceDiagnostics([]CaseResult{{
 				ExpectedVerdict: "block",
 				ActualVerdict:   "block",
+				Score:           "pass",
 				Evidence:        tt.evidence,
 			}})
 			if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 1.0 {
@@ -83,6 +84,7 @@ func TestPresenceDiagnosticsReportFieldPresenceWithoutScoringIt(t *testing.T) {
 		diagnostics := computePresenceDiagnostics([]CaseResult{{
 			ExpectedVerdict: "block",
 			ActualVerdict:   "block",
+			Score:           "pass",
 			Evidence:        evidence,
 		}})
 		if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 1.0 {
@@ -99,7 +101,7 @@ func TestPresenceDiagnosticsReportFieldPresenceWithoutScoringIt(t *testing.T) {
 func TestPresenceDiagnosticsCountOnlyCorrectlyBlockedMaliciousCases(t *testing.T) {
 	classified := map[string]interface{}{"kind": "dlp"}
 	results := []CaseResult{
-		{ExpectedVerdict: "block", ActualVerdict: "block", Evidence: classified},
+		{ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass", Evidence: classified},
 		{ExpectedVerdict: "block", ActualVerdict: "allow", Evidence: classified},
 		{ExpectedVerdict: "allow", ActualVerdict: "block", Evidence: classified},
 		{ExpectedVerdict: "allow", ActualVerdict: "allow", Evidence: classified},
@@ -111,6 +113,18 @@ func TestPresenceDiagnosticsCountOnlyCorrectlyBlockedMaliciousCases(t *testing.T
 	}
 	if *diagnostics.ClassificationPresentRate != 1 {
 		t.Fatalf("classification_present_rate = %v, want 1: only the correctly blocked malicious case counts", *diagnostics.ClassificationPresentRate)
+	}
+}
+
+func TestPresenceDiagnosticsExcludeFailedLateBlocks(t *testing.T) {
+	results := []CaseResult{
+		{ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass", Evidence: map[string]interface{}{"kind": "dlp"}},
+		{ExpectedVerdict: "block", ActualVerdict: "block", Score: "fail", Evidence: map[string]interface{}{"kind": "late_budget_block"}},
+	}
+
+	diagnostics := computePresenceDiagnostics(results)
+	if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 1 {
+		t.Fatalf("classification_present_rate = %v, want 1 from the passing block only", ptrVal(diagnostics.ClassificationPresentRate))
 	}
 }
 
@@ -257,6 +271,7 @@ func TestComputeScores(t *testing.T) {
 					CaseID:          "malicious",
 					ExpectedVerdict: "block",
 					ActualVerdict:   "block",
+					Score:           "pass",
 					Evidence:        map[string]interface{}{key: nil},
 				}})
 				if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 0 {
@@ -271,8 +286,8 @@ func TestComputeScores(t *testing.T) {
 
 	t.Run("all malicious blocked", func(t *testing.T) {
 		results := []CaseResult{
-			{CaseID: "a", ExpectedVerdict: "block", ActualVerdict: "block"},
-			{CaseID: "b", ExpectedVerdict: "block", ActualVerdict: "block"},
+			{CaseID: "a", ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass"},
+			{CaseID: "b", ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass"},
 		}
 		scores := computeScores(results)
 		if scores.Containment == nil || *scores.Containment != 1.0 {

@@ -164,6 +164,18 @@ class ValidateGauntletScopeTest(unittest.TestCase):
         self.assertIn("scores.applicable", result.stderr)
         self.assertIn("unexpected keys", result.stderr)
 
+    def test_v5_rejects_unexpected_outer_metric_scopes(self):
+        for field in ("scores", "diagnostics", "metric_counts", "diagnostic_counts"):
+            with self.subTest(field=field):
+                artifact = complete_v5_artifact()
+                artifact[field]["legacy"] = {}
+
+                result = self.run_validator(artifact)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(field, result.stderr)
+                self.assertIn("unexpected keys", result.stderr)
+
     def test_unreachable_coverage_is_visible_but_outside_full_denominator(self):
         artifact = complete_artifact()
         total = artifact["case_count"]["total"]
