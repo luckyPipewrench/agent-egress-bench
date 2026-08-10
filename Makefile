@@ -1,4 +1,4 @@
-.PHONY: preflight check-docs check-contracts check-claim-language check-readme-categories check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-schema-copies check-docs check-contracts check-claim-language check-readme-categories check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -12,7 +12,7 @@ GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.j
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-contracts check-docs test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-schema-copies check-docs test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
 # Keep the machine-readable compatibility inventory tied to the schemas,
 # source constants, and frozen public records it describes. The checker
 # rejects missing and empty inputs before it compares any values, so a failed
@@ -24,6 +24,11 @@ check-contracts:
 # becoming shadow authorities again. Missing and empty inputs fail the scan.
 check-docs:
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_docs.py
+
+# The G2 authentication verifier carries six CEE v0 schema copies. Missing,
+# empty, extra, symlinked, or byte-different copies fail before verifier tests.
+check-schema-copies:
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_schema_copies.py
 
 test-capability-registry:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
