@@ -13,7 +13,7 @@ No case is written to favor or penalize a specific tool. Cases test observable b
 
 Once a case ID is merged to `main`, it never changes. No renaming. No reassignment. A case ID is a permanent identifier. If a case needs to be superseded, create a new case with a new ID.
 
-CI compares every file belonging to an existing case ID with the pull request merge base. It rejects changed, removed, or added files inside an existing MCP-drift case. New case IDs remain allowed, along with the generated manifest and stats changes that follow from adding them.
+CI compares every file belonging to an existing case ID with the pull request merge base. It rejects changed, removed, or added files belonging to every existing case ID, including multi-file cases. New case IDs remain allowed, along with the generated manifest and stats changes that follow from adding them.
 
 Only a genuine repository repair may bypass this check. A maintainer must run the exact command below, with a visible reason that names the repair record:
 
