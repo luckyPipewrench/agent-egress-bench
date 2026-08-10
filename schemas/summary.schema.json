@@ -11,7 +11,11 @@
     "reported_claims": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "scores": {"$ref": "#/$defs/dual_outcome_scores"},
     "diagnostics": {"$ref": "#/$defs/dual_presence_diagnostics"},
-    "measurement_status": {"type": "string", "enum": ["measured", "incomplete"]}
+    "measurement_status": {"type": "string", "enum": ["measured", "incomplete"]},
+    "per_category": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/category_scores"}
+    }
   },
   "additionalProperties": true,
   "$defs": {
@@ -65,6 +69,17 @@
       "properties": {
         "full": {"$ref": "#/$defs/presence_diagnostics"},
         "applicable": {"$ref": "#/$defs/presence_diagnostics"}
+      }
+    },
+    "category_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicable", "containment", "false_positive_rate", "diagnostics"],
+      "properties": {
+        "applicable": {"type": "integer", "minimum": 0},
+        "containment": {"$ref": "#/$defs/rate_or_null"},
+        "false_positive_rate": {"$ref": "#/$defs/rate_or_null"},
+        "diagnostics": {"$ref": "#/$defs/presence_diagnostics"}
       }
     }
   }

@@ -82,6 +82,7 @@ def v5_candidate():
     for scope in ("full", "applicable"):
         value["scores"][scope].pop("detection", None)
         value["scores"][scope].pop("evidence", None)
+    value["scores"]["full"]["false_positive_rate"] = 0.0
     value["diagnostics"] = {
         "full": {
             "classification_present_rate": 1.0,
@@ -243,6 +244,43 @@ class CandidateEvaluationTest(unittest.TestCase):
         decision, *_ = self.run_evaluate(v5_candidate(), v5_baseline())
 
         self.assertFalse(decision["blocked"], decision["failures"])
+
+    def test_v5_candidate_rejects_retired_or_malformed_metric_fields(self):
+        mutations = (
+            (
+                "retired score",
+                lambda value: value["scores"]["applicable"].__setitem__("detection", 1.0),
+                "candidate scores.applicable has unexpected fields: ['detection']",
+            ),
+            (
+                "unknown score scope",
+                lambda value: value["scores"].__setitem__(
+                    "legacy", {"containment": 1.0, "false_positive_rate": 0.0}
+                ),
+                "candidate scores has unexpected fields: ['legacy']",
+            ),
+            (
+                "retired diagnostic",
+                lambda value: value["diagnostics"]["full"].__setitem__("evidence", 1.0),
+                "candidate diagnostics.full has unexpected fields: ['evidence']",
+            ),
+            (
+                "boolean rate",
+                lambda value: value["scores"]["applicable"].__setitem__(
+                    "containment", True
+                ),
+                "candidate scores.applicable.containment must be a finite number",
+            ),
+        )
+        for name, mutate, message in mutations:
+            with self.subTest(name=name):
+                value = v5_candidate()
+                mutate(value)
+
+                decision, *_ = self.run_evaluate(value, v5_baseline())
+
+                self.assertTrue(decision["blocked"])
+                self.assertIn(message, decision["failures"])
 
     def test_measured_candidate_below_historical_floor_reaches_publication_gate(self):
         value = active_candidate()

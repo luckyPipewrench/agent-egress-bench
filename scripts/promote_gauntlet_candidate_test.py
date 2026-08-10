@@ -218,6 +218,23 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             )
         )
 
+    def test_legacy_candidate_baseline_round_trips_through_evaluation(self):
+        fixture = self.fixture()
+        generated = promotion.proposed_baseline(
+            fixture.candidate_value, evaluator.file_sha256(fixture.candidate_path)
+        )
+        generated_path = fixture.root / "generated-legacy-baseline.json"
+        write_json(generated_path, generated)
+
+        decision = evaluator.evaluate(fixture.candidate_path, generated_path, fixture.evidence)
+
+        self.assertNotIn("summary_schema_version", generated)
+        self.assertEqual(
+            set(generated["score_floors"]["applicable"]),
+            {"containment", "detection", "evidence"},
+        )
+        self.assertFalse(decision["blocked"], decision["failures"])
+
     def test_clean_candidate_creates_append_only_record_pointer_and_baseline(self):
         fixture = self.fixture()
         original_candidate = fixture.candidate_path.read_bytes()

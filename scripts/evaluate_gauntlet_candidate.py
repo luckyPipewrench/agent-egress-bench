@@ -30,6 +30,11 @@ REQUIRED_IDENTITIES = (
 )
 SCOPE_IDENTITIES = {"corpus_sha256", "corpus_version", "scoring_version", "runner_version"}
 SHA256_HEX = set("0123456789abcdef")
+V5_SCOPES = frozenset({"full", "applicable"})
+V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
+V5_DIAGNOSTIC_FIELDS = frozenset(
+    {"classification_present_rate", "structured_evidence_present_rate"}
+)
 
 
 def load_object(path):
@@ -61,6 +66,12 @@ def fraction(value, label):
     return number
 
 
+def rate_or_null(value, label):
+    if value is None:
+        return None
+    return fraction(value, label)
+
+
 def nested_value(document, path):
     current = document
     for key in path:
@@ -87,6 +98,38 @@ def metric_contract_for(schema_version):
     if schema_version == 5:
         return ACTIVE_V5_REQUIRED_FLOORS, ACTIVE_V5_REQUIRED_CEILINGS
     return LEGACY_REQUIRED_FLOORS, LEGACY_REQUIRED_CEILINGS
+
+
+def require_exact_keys(value, label, expected):
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    actual = set(value)
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    if missing:
+        raise ValueError(f"{label} is missing fields: {missing!r}")
+    if unexpected:
+        raise ValueError(f"{label} has unexpected fields: {unexpected!r}")
+    return value
+
+
+def validate_v5_candidate_metric_contract(candidate):
+    """Require the same v5 score surface used when a bundle was built."""
+    scores = require_exact_keys(candidate.get("scores"), "candidate scores", V5_SCOPES)
+    diagnostics = require_exact_keys(
+        candidate.get("diagnostics"), "candidate diagnostics", V5_SCOPES
+    )
+    for scope in V5_SCOPES:
+        scope_scores = require_exact_keys(
+            scores[scope], f"candidate scores.{scope}", V5_OUTCOME_SCORE_FIELDS
+        )
+        scope_diagnostics = require_exact_keys(
+            diagnostics[scope], f"candidate diagnostics.{scope}", V5_DIAGNOSTIC_FIELDS
+        )
+        for metric, value in scope_scores.items():
+            rate_or_null(value, f"candidate scores.{scope}.{metric}")
+        for diagnostic, value in scope_diagnostics.items():
+            rate_or_null(value, f"candidate diagnostics.{scope}.{diagnostic}")
 
 
 def atomic_json_write(path, value):
@@ -138,6 +181,8 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             raise ValueError("candidate schema_version must be 2, 4, or 5")
         if candidate_schema_version in {4, 5}:
             require_capability_registry(candidate)
+        if candidate_schema_version == 5:
+            validate_v5_candidate_metric_contract(candidate)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))

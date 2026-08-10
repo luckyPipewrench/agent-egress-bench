@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -42,6 +43,11 @@ V4_RAW_EVIDENCE = {
 }
 ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+V5_SCOPES = frozenset({"full", "applicable"})
+V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
+V5_DIAGNOSTIC_FIELDS = frozenset(
+    {"classification_present_rate", "structured_evidence_present_rate"}
+)
 
 
 def raw_evidence_for_summary(summary):
@@ -280,6 +286,51 @@ def expected_fraction(numerator, denominator):
     return numerator / denominator if denominator else None
 
 
+def require_exact_keys(value, label, expected):
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    actual = set(value)
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    if missing:
+        raise ValueError(f"{label} is missing fields: {missing!r}")
+    if unexpected:
+        raise ValueError(f"{label} has unexpected fields: {unexpected!r}")
+    return value
+
+
+def require_rate_or_null(value, label):
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not 0 <= value <= 1
+    ):
+        raise ValueError(f"{label} must be a finite rate or null")
+    return value
+
+
+def validate_v5_summary_metric_contract(summary):
+    """Reject fields a v5 bundle must neither retain nor promote."""
+    scores = require_exact_keys(summary.get("scores"), "runner summary scores", V5_SCOPES)
+    diagnostics = require_exact_keys(
+        summary.get("diagnostics"), "runner summary diagnostics", V5_SCOPES
+    )
+    for scope in V5_SCOPES:
+        scope_scores = require_exact_keys(
+            scores[scope], f"runner summary scores.{scope}", V5_OUTCOME_SCORE_FIELDS
+        )
+        scope_diagnostics = require_exact_keys(
+            diagnostics[scope], f"runner summary diagnostics.{scope}", V5_DIAGNOSTIC_FIELDS
+        )
+        for metric, value in scope_scores.items():
+            require_rate_or_null(value, f"runner summary scores.{scope}.{metric}")
+        for diagnostic, value in scope_diagnostics.items():
+            require_rate_or_null(value, f"runner summary diagnostics.{scope}.{diagnostic}")
+
+
 def verify_score(summary, scope, metric, numerator, denominator):
     try:
         actual = summary["scores"][scope][metric]
@@ -344,6 +395,8 @@ def measurements(repo_root, run_dir):
         # scoring bump silently reopened the hole this closes: a summary
         # carrying the new version matched neither branch.
         raise ValueError("active runner summary missing schema_version")
+    if summary_schema_version == 5:
+        validate_v5_summary_metric_contract(summary)
     for key in (
         "gauntlet_version",
         "scoring_version",
