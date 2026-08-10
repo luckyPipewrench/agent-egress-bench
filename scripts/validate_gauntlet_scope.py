@@ -298,7 +298,7 @@ def validate_scope(document, manifest_identity, manifest_label):
         validate_scope_v4(document, manifest_identity, manifest_label)
         return
     if version == 5:
-        validate_scope_v5(document)
+        validate_scope_v5(document, manifest_identity, manifest_label)
         return
     raise ValueError(f"unsupported schema_version: {version!r}")
 
@@ -478,7 +478,7 @@ def validate_scope_v4(document, manifest_identity, manifest_label):
         raise ValueError("capability_registry.sha256 must be 64 lower-case hex characters")
 
 
-def validate_scope_v5(document):
+def validate_scope_v5(document, manifest_identity, manifest_label):
     """Validate the active outcome-score plus presence-diagnostics contract."""
     if document.get("schema_version") != 5:
         raise ValueError("schema_version must be 5 for a v5 artifact")
@@ -516,8 +516,12 @@ def validate_scope_v5(document):
             "evidence": diagnostic_counts["structured_evidence_present_rate"],
         }
 
-    validate_scope_v2(projected)
-    validate_scope_v4({**projected, "capability_registry": document.get("capability_registry")})
+    validate_scope_v2(projected, manifest_identity, manifest_label)
+    validate_scope_v4(
+        {**projected, "capability_registry": document.get("capability_registry")},
+        manifest_identity,
+        manifest_label,
+    )
 
     counts = {
         scope: {
