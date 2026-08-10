@@ -7,10 +7,17 @@ Contributions welcome: new test cases, runners for your security tool, documenta
 1. Pick the right category directory under `cases/` (see [docs/SPEC.md](docs/SPEC.md) for the full list)
 2. Follow the naming, field, and payload rules in [docs/SPEC.md](docs/SPEC.md)
 3. Check immutability, provenance, and synthetic-fixture requirements in [docs/GOVERNANCE.md](docs/GOVERNANCE.md)
-4. Run the validator:
+4. Run the required checks:
 
 ```bash
-cd validate && go build -o aeb-validate . && ./aeb-validate ../cases
+export TMPDIR="$HOME/.cache/pipelock-tmp"
+export GOCACHE="$HOME/.cache/go-build"
+mkdir -p "$TMPDIR" "$GOCACHE"
+(cd validate && go build -o "$TMPDIR/aeb-validate" .)
+"$TMPDIR/aeb-validate" cases cases
+make cases-manifest
+make stats-update
+make preflight
 ```
 
 ### Do NOT change existing cases
@@ -37,7 +44,11 @@ Start from the [runner template](examples/runner-template/) and follow [docs/ADO
 All case files must pass validation before merge:
 
 ```bash
-cd validate && go build -o aeb-validate . && ./aeb-validate ../cases
+export TMPDIR="$HOME/.cache/pipelock-tmp"
+export GOCACHE="$HOME/.cache/go-build"
+mkdir -p "$TMPDIR" "$GOCACHE"
+(cd validate && go build -o "$TMPDIR/aeb-validate" .)
+"$TMPDIR/aeb-validate" cases cases
 ```
 
 CI runs this automatically on every pull request along with CodeQL security analysis and dependency review.
