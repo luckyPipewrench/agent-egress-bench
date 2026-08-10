@@ -35,8 +35,8 @@ source: "synthetic: test fixture"
 `, id)
 }
 
-// TestLoadMultiFileCases_ValidFixtures loads the four real mcp-drift cases
-// from cases/mcp-drift/ and verifies that the loader returns all four with
+// TestLoadMultiFileCases_ValidFixtures loads the real mcp-drift cases
+// from cases/mcp-drift/ and verifies that the loader returns all of them with
 // non-empty before/after JSON snapshots. This is the happy-path coverage:
 // the existing fixtures in the corpus must continue to load without error.
 func TestLoadMultiFileCases_ValidFixtures(t *testing.T) {
@@ -47,7 +47,7 @@ func TestLoadMultiFileCases_ValidFixtures(t *testing.T) {
 	// Corpus is additive: existing case IDs must continue to load with
 	// non-empty snapshots, but new mcp-drift cases may be added over time.
 	// Assert the floor (>= 4) and check each known ID by map lookup rather
-	// than by positional iteration so a fifth case in the future does not
+	// than by positional iteration so a new case in the future does not
 	// fail this test.
 	if len(cases) < 4 {
 		t.Fatalf("expected at least 4 mcp-drift cases, got %d", len(cases))
@@ -459,7 +459,7 @@ func TestMultiFileCase_ToCase_WarnNormalizedToAllow(t *testing.T) {
 // scores pass. The test verifies that:
 //  1. The runner discovers multi-file cases without a caller-supplied flag.
 //  2. The receipt profile emitted at the end contains rows for the
-//     four mcp-drift case IDs.
+//     mcp-drift case IDs.
 //  3. The block-expected rugpull rows record blocked=yes and the
 //     warn-expected benign row records blocked=n/a, false_positive=no.
 func TestRunIntegratesMultiFileCases(t *testing.T) {
@@ -558,6 +558,36 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	}
 }
 
+func copyMultiFileCases(t *testing.T, source, destination string, ids ...string) {
+	t.Helper()
+	if len(ids) == 0 {
+		entries, err := os.ReadDir(source)
+		if err != nil {
+			t.Fatalf("read multi-file fixture directory: %v", err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				ids = append(ids, entry.Name())
+			}
+		}
+	}
+	for _, id := range ids {
+		caseDir := filepath.Join(destination, id)
+		if err := os.MkdirAll(caseDir, 0o750); err != nil {
+			t.Fatalf("mkdir override case %s: %v", id, err)
+		}
+		for _, name := range []string{"case.yaml", "before.json", "after.json", "expected.json"} {
+			data, err := os.ReadFile(filepath.Join(source, id, name))
+			if err != nil {
+				t.Fatalf("read source %s/%s: %v", id, name, err)
+			}
+			if err := os.WriteFile(filepath.Join(caseDir, name), data, 0o600); err != nil {
+				t.Fatalf("write override %s/%s: %v", id, name, err)
+			}
+		}
+	}
+}
+
 func TestRunRejectsPartialMultiFileOverrideBeforeOutput(t *testing.T) {
 	tmpDir := t.TempDir()
 	profilePath := filepath.Join(tmpDir, "profile.json")
@@ -571,19 +601,7 @@ func TestRunRejectsPartialMultiFileOverrideBeforeOutput(t *testing.T) {
 	}
 
 	override := filepath.Join(tmpDir, "mcp-drift")
-	caseDir := filepath.Join(override, "mcp-drift-benign-001")
-	if err := os.MkdirAll(caseDir, 0o750); err != nil {
-		t.Fatalf("mkdir override: %v", err)
-	}
-	for _, name := range []string{"case.yaml", "before.json", "after.json", "expected.json"} {
-		data, err := os.ReadFile(filepath.Join("..", "cases", "mcp-drift", "mcp-drift-benign-001", name))
-		if err != nil {
-			t.Fatalf("read source %s: %v", name, err)
-		}
-		if err := os.WriteFile(filepath.Join(caseDir, name), data, 0o600); err != nil {
-			t.Fatalf("write override %s: %v", name, err)
-		}
-	}
+	copyMultiFileCases(t, filepath.Join("..", "cases", "mcp-drift"), override, "mcp-drift-benign-001")
 
 	err = run(filepath.Join("..", "cases"), profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", override, false)
 	if err == nil {
@@ -594,5 +612,54 @@ func TestRunRejectsPartialMultiFileOverrideBeforeOutput(t *testing.T) {
 	}
 	if _, statErr := os.Stat(outputPath); !os.IsNotExist(statErr) {
 		t.Fatalf("partial override wrote summary before failing: %v", statErr)
+	}
+}
+
+func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
+	casesDir := filepath.Join("..", "cases")
+	override := filepath.Join(t.TempDir(), "mcp-drift")
+	copyMultiFileCases(t, filepath.Join(casesDir, "mcp-drift"), override)
+
+	cases, effectiveDirs, err := loadRunCorpus(casesDir, override)
+	if err != nil {
+		t.Fatalf("loadRunCorpus with complete relocated override: %v", err)
+	}
+	canonical, err := loadCorpus(casesDir)
+	if err != nil {
+		t.Fatalf("load canonical corpus: %v", err)
+	}
+	if err := ensureExactRunCorpus(cases, canonical); err != nil {
+		t.Fatalf("relocated override changed corpus identity: %v", err)
+	}
+	if len(effectiveDirs) != 1 || effectiveDirs[0] != override {
+		t.Fatalf("effective override dirs = %v, want [%s]", effectiveDirs, override)
+	}
+
+	defaultDirs, err := registeredMultiFileCaseDirs(casesDir)
+	if err != nil {
+		t.Fatalf("registered multi-file directories: %v", err)
+	}
+	defaultHash, err := computeCorpusSHA256(casesDir, defaultDirs...)
+	if err != nil {
+		t.Fatalf("hash default corpus: %v", err)
+	}
+	overrideHash, err := computeCorpusSHA256(casesDir, override)
+	if err != nil {
+		t.Fatalf("hash relocated corpus: %v", err)
+	}
+	if overrideHash != defaultHash {
+		t.Fatalf("relocated override hash = %s, want canonical %s", overrideHash, defaultHash)
+	}
+
+	afterPath := filepath.Join(override, "mcp-drift-benign-001", "after.json")
+	if err := os.WriteFile(afterPath, []byte(`{"jsonrpc":"2.0","id":99,"result":{}}`), 0o600); err != nil {
+		t.Fatalf("mutate multi-file artifact: %v", err)
+	}
+	mutatedHash, err := computeCorpusSHA256(casesDir, override)
+	if err != nil {
+		t.Fatalf("hash mutated relocated corpus: %v", err)
+	}
+	if mutatedHash == overrideHash {
+		t.Fatal("changing a multi-file artifact left the corpus digest unchanged")
 	}
 }

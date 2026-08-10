@@ -122,12 +122,17 @@ type CaseCount struct {
 }
 
 // computeCorpusSHA256 hashes case-file contents across the single-file corpus
-// and the effective multi-file directories. Files are sorted by absolute path
-// before hashing so the output is deterministic regardless of filesystem
-// ordering. The caller supplies the effective directories so the digest covers
-// exactly the case surface execution loaded.
+// and the effective multi-file directories. Files are sorted by their logical
+// corpus-relative paths before hashing, so relocating a complete multi-file
+// override does not rewrite the corpus identity. The caller supplies the
+// effective directories so the digest covers exactly the case surface
+// execution loaded.
 func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, error) {
-	var paths []string
+	type hashPath struct {
+		logical string
+		path    string
+	}
+	var paths []hashPath
 
 	err := filepath.Walk(casesDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -141,7 +146,11 @@ func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, erro
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
 			return nil
 		}
-		paths = append(paths, path)
+		relative, relErr := filepath.Rel(casesDir, path)
+		if relErr != nil {
+			return fmt.Errorf("finding logical case path for hash: %w", relErr)
+		}
+		paths = append(paths, hashPath{logical: "single/" + filepath.ToSlash(relative), path: path})
 		return nil
 	})
 	if err != nil {
@@ -153,16 +162,22 @@ func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, erro
 		if mfErr != nil {
 			return "", mfErr
 		}
-		paths = append(paths, mfPaths...)
+		for _, path := range mfPaths {
+			relative, relErr := filepath.Rel(multiFileDir, path)
+			if relErr != nil {
+				return "", fmt.Errorf("finding logical multi-file case path for hash: %w", relErr)
+			}
+			paths = append(paths, hashPath{logical: "multi/" + filepath.ToSlash(relative), path: path})
+		}
 	}
 
-	sort.Strings(paths)
+	sort.Slice(paths, func(i, j int) bool { return paths[i].logical < paths[j].logical })
 
 	h := sha256.New()
-	for _, p := range paths {
-		data, readErr := os.ReadFile(p)
+	for _, candidate := range paths {
+		data, readErr := os.ReadFile(candidate.path)
 		if readErr != nil {
-			return "", fmt.Errorf("reading %s for hash: %w", p, readErr)
+			return "", fmt.Errorf("reading %s for hash: %w", candidate.path, readErr)
 		}
 		_, _ = h.Write(data)
 	}

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,6 +96,17 @@ func TestLoadCorpusIncludesMultiFileCases(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("loader-backed corpus omitted expected multi-file drift case; IDs: %s", strings.Join(caseIDs(cases), ", "))
+	}
+}
+
+func TestRegisteredMultiFileCaseDirsRejectsFileAtFamilyPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "mcp-drift"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write multi-file family path: %v", err)
+	}
+	_, err := registeredMultiFileCaseDirs(root)
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("registeredMultiFileCaseDirs error = %v, want non-directory rejection", err)
 	}
 }
 

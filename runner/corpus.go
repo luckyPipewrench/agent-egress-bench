@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -30,7 +31,11 @@ type corpusStatCase struct {
 // shared source for the manifest and for human-readable corpus statistics, so
 // both surfaces reflect precisely the cases the runner can execute.
 func loadCorpus(root string) ([]Case, error) {
-	return loadCorpusWithMultiFileDirs(root, registeredMultiFileCaseDirs(root))
+	multiFileDirs, err := registeredMultiFileCaseDirs(root)
+	if err != nil {
+		return nil, err
+	}
+	return loadCorpusWithMultiFileDirs(root, multiFileDirs)
 }
 
 // loadCorpusWithMultiFileDirs loads the single-file corpus plus exactly the
@@ -55,7 +60,7 @@ func loadCorpusWithMultiFileDirs(root string, multiFileDirs []string) ([]Case, e
 // registeredMultiFileCaseDirs returns the multi-file families that belong to a
 // corpus root. A missing family directory is valid for a small local corpus;
 // a directory that exists is always loaded rather than silently skipped.
-func registeredMultiFileCaseDirs(root string) []string {
+func registeredMultiFileCaseDirs(root string) ([]string, error) {
 	categories := make([]string, 0, len(multiFileCaseCategories))
 	for category := range multiFileCaseCategories {
 		categories = append(categories, category)
@@ -64,11 +69,19 @@ func registeredMultiFileCaseDirs(root string) []string {
 	dirs := make([]string, 0, len(categories))
 	for _, category := range categories {
 		directory := filepath.Join(root, category)
-		if _, err := os.Stat(directory); err == nil {
-			dirs = append(dirs, directory)
+		info, err := os.Stat(directory)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
 		}
+		if err != nil {
+			return nil, fmt.Errorf("stat multi-file case directory %s: %w", directory, err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("multi-file case path is not a directory: %s", directory)
+		}
+		dirs = append(dirs, directory)
 	}
-	return dirs
+	return dirs, nil
 }
 
 // loadCorpusStats preserves each fixture's declared expected verdict. The
@@ -91,7 +104,11 @@ func loadCorpusStats(root string) ([]corpusStatCase, error) {
 }
 
 func loadCorpusParts(root string) ([]Case, []MultiFileCase, error) {
-	return loadCorpusPartsFromMultiFileDirs(root, registeredMultiFileCaseDirs(root))
+	multiFileDirs, err := registeredMultiFileCaseDirs(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	return loadCorpusPartsFromMultiFileDirs(root, multiFileDirs)
 }
 
 func loadCorpusPartsFromMultiFileDirs(root string, multiFileDirs []string) ([]Case, []MultiFileCase, error) {
@@ -116,7 +133,10 @@ func loadCorpusPartsFromMultiFileDirs(root string, multiFileDirs []string) ([]Ca
 // loader-backed corpus before a run can start, so a denominator cannot shrink
 // into a quieter summary.
 func loadRunCorpus(root, multiFileOverride string) ([]Case, []string, error) {
-	effectiveDirs := registeredMultiFileCaseDirs(root)
+	effectiveDirs, err := registeredMultiFileCaseDirs(root)
+	if err != nil {
+		return nil, nil, err
+	}
 	if multiFileOverride != "" {
 		effectiveDirs = []string{multiFileOverride}
 	}
