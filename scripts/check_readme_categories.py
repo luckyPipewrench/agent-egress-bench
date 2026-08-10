@@ -24,20 +24,47 @@ import subprocess
 import sys
 from pathlib import Path
 
-# `| `category` | ASI02 ... |` -- the first cell of an OWASP mapping row.
-TABLE_ROW = re.compile(r"^\|\s*`([a-z0-9_]+)`\s*\|")
+# `| `category` | ASI02 Tool Misuse | ... |` -- category cell plus its mapping cell.
+TABLE_ROW = re.compile(r"^\|\s*`([a-z0-9_]+)`\s*\|([^|]*)\|")
 STATS_ENTRY = re.compile(r"^\s+([a-z0-9_]+):\s*\d+\s*$")
+# The mapping must name at least one OWASP item, or say N/A for a benign
+# category. An empty cell is a row that documents nothing.
+OWASP_ITEM = re.compile(r"\bASI(?:0[1-9]|10)\b|\bN/A\b")
+# The header that identifies the mapping table, so an unrelated table whose
+# first cell happens to be a lowercase code span cannot satisfy this gate.
+TABLE_HEADER = re.compile(r"^\|\s*Case category\s*\|")
+
+STATS_TIMEOUT_SECONDS = 300
 
 
 def live_categories(repo_root: Path) -> set[str]:
-    """Categories the runner loads, from its own stats output."""
-    proc = subprocess.run(
-        ["go", "run", ".", "--stats", "--cases", "../cases"],
-        cwd=repo_root / "runner",
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    """Categories the runner loads, from its own stats output.
+
+    The runner is the authority precisely because it loads both the single-file
+    corpus and the multi-file cases under `cases/mcp-drift/`, so a category that
+    only a special loader accepts still appears here. A test asserts that, since
+    a runner that stopped reporting multi-file categories would make this gate
+    quietly stop covering them.
+    """
+    try:
+        proc = subprocess.run(
+            ["go", "run", ".", "--stats", "--cases", "../cases"],
+            cwd=repo_root / "runner",
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=STATS_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit(
+            "check-readme-categories: FAIL - the runner did not finish within "
+            f"{STATS_TIMEOUT_SECONDS}s; refusing to treat a hung run as a result"
+        ) from None
+    except OSError as err:
+        raise SystemExit(
+            f"check-readme-categories: FAIL - could not execute the runner: {err}"
+        ) from None
+
     if proc.returncode != 0:
         raise SystemExit(
             "check-readme-categories: FAIL - the runner could not load the corpus\n"
@@ -45,17 +72,30 @@ def live_categories(repo_root: Path) -> set[str]:
         )
 
     categories: set[str] = set()
+    found_section = False
     in_block = False
     for line in proc.stdout.splitlines():
         if line.startswith("by_category:"):
+            found_section = True
             in_block = True
             continue
         if in_block:
+            if not line.strip():
+                # A blank separator inside the block is formatting, not the end
+                # of it. Treating it as the end silently truncated the set.
+                continue
             match = STATS_ENTRY.match(line)
             if not match:
                 break
             categories.add(match.group(1))
 
+    # A missing section and an empty one are different failures, and neither may
+    # be compared against: an empty set makes every "missing" check trivially true.
+    if not found_section:
+        raise SystemExit(
+            "check-readme-categories: FAIL - the runner output had no 'by_category:' "
+            "section; the stats format may have changed"
+        )
     if not categories:
         raise SystemExit(
             "check-readme-categories: FAIL - the runner reported no categories; "
@@ -65,11 +105,45 @@ def live_categories(repo_root: Path) -> set[str]:
 
 
 def documented_categories(readme: Path) -> set[str]:
-    return {
-        match.group(1)
-        for line in readme.read_text(encoding="utf-8").splitlines()
-        if (match := TABLE_ROW.match(line))
-    }
+    """Categories mapped by the README's OWASP table, with the mapping checked.
+
+    Scoped to the table under the `Case category` header. Set equality alone was
+    too weak: an unrelated table whose first cell is a lowercase code span would
+    satisfy it, and a row with an empty mapping cell counted as mapped while
+    documenting nothing.
+    """
+    categories: set[str] = set()
+    unmapped: list[str] = []
+    in_table = False
+
+    for line in readme.read_text(encoding="utf-8").splitlines():
+        if TABLE_HEADER.match(line):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not line.startswith("|"):
+            in_table = False
+            continue
+        match = TABLE_ROW.match(line)
+        if not match:
+            continue
+        name, mapping = match.group(1), match.group(2)
+        categories.add(name)
+        if not OWASP_ITEM.search(mapping):
+            unmapped.append(name)
+
+    if not in_table and not categories:
+        raise SystemExit(
+            "check-readme-categories: FAIL - could not find the mapping table under a "
+            "'| Case category |' header in README.md"
+        )
+    if unmapped:
+        raise SystemExit(
+            "check-readme-categories: FAIL - README rows carry no OWASP item: "
+            + ", ".join(sorted(unmapped))
+        )
+    return categories
 
 
 def spec_categories(spec: Path) -> set[str]:
