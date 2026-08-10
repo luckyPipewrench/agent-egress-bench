@@ -178,26 +178,26 @@
       }
     });
     // V2 records predate registry bytes and remain readable as frozen history.
-    // An active v4 result is not rendered until its pinned raw profile and raw
+    // An active v4/v5 result is not rendered until its pinned raw profile and raw
     // registry snapshot have both been fetched and bound to the candidate.
-    if (artifact.schema_version === 4) {
+    if (artifact.schema_version === 4 || artifact.schema_version === 5) {
       var reference = registryReference(artifact.capability_registry);
       if (!artifact.tool_profile_sha256 || !SHA256.test(artifact.tool_profile_sha256)) {
-        throw new Error('v4 result has no valid tool_profile_sha256');
+        throw new Error('active result has no valid tool_profile_sha256');
       }
       var prefix = './results/pipelock/' + pointer.candidate_sha256 + '/';
       var snapshotName = 'capability-registry.json';
       var profileName = 'tool-profile.json';
       if (!manifest.files || manifest.files[snapshotName] !== reference.sha256) {
-        throw new Error('record manifest does not bind the v4 capability registry snapshot');
+        throw new Error('record manifest does not bind the active capability registry snapshot');
       }
       var snapshotBytes = await responseBytes(await fetchImpl(prefix + snapshotName), 'capability registry snapshot', 'capability registry snapshot');
       if (await sha256Hex(snapshotBytes, cryptoImpl) !== reference.sha256) {
-        throw new Error('capability registry snapshot digest does not match v4 result');
+        throw new Error('capability registry snapshot digest does not match active result');
       }
       var profileBytes = await responseBytes(await fetchImpl(prefix + profileName), 'tool profile', 'tool profile');
       if (await sha256Hex(profileBytes, cryptoImpl) !== artifact.tool_profile_sha256) {
-        throw new Error('tool profile digest does not match v4 result');
+        throw new Error('tool profile digest does not match active result');
       }
       var profile;
       var snapshot;
@@ -205,28 +205,28 @@
         profile = JSON.parse(decodeUTF8(profileBytes, 'tool profile'));
         snapshot = JSON.parse(decodeUTF8(snapshotBytes, 'capability registry snapshot'));
       } catch (error) {
-        throw new Error('v4 registry evidence is not valid JSON');
+        throw new Error('active registry evidence is not valid JSON');
       }
       if (JSON.stringify(registryReference(profile.capability_registry)) !== JSON.stringify(reference) ||
           snapshot.id !== reference.id || snapshot.format !== reference.format || snapshot.revision !== reference.revision) {
-        throw new Error('v4 registry evidence does not match result capability_registry');
+        throw new Error('active registry evidence does not match result capability_registry');
       }
       var entries = registryEntries(snapshot);
-      var profileClaims = activeLabels(profile.claims, 'v4 profile claims', entries);
-      var reportedClaims = activeLabels(artifact.reported_claims, 'v4 reported_claims', entries);
+      var profileClaims = activeLabels(profile.claims, 'active profile claims', entries);
+      var reportedClaims = activeLabels(artifact.reported_claims, 'active reported_claims', entries);
       var exercisedTags = activeLabels(
         artifact.exercised && artifact.exercised.capability_tags,
-        'v4 exercised capability_tags',
+        'active exercised capability_tags',
         entries
       );
       if (JSON.stringify(profileClaims) !== JSON.stringify(reportedClaims)) {
-        throw new Error('v4 profile claims do not match result reported_claims');
+        throw new Error('active profile claims do not match result reported_claims');
       }
       Object.defineProperty(artifact, '_capabilityRegistry', { value: snapshot, enumerable: false });
       Object.defineProperty(artifact, '_capabilityLabels', { value: entries, enumerable: false });
       Object.defineProperty(artifact, '_exercisedCapabilityTags', { value: exercisedTags, enumerable: false });
     } else if (artifact.schema_version !== 2) {
-      throw new Error('result record must be frozen schema v2 or active schema v4');
+      throw new Error('result record must be frozen schema v2 or active schema v4/v5');
     }
     return artifact;
   }

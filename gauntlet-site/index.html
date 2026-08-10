@@ -62,7 +62,7 @@ pre { background: var(--bg); border: 1px solid var(--border); border-radius: 0.3
 }
 </style>
 </head>
-<body data-latest-url="./latest-verified.json" data-results-url="./gauntlet-results.json" data-corpus-version="v2.3.0" data-scoring-version="2.4">
+<body data-latest-url="./latest-verified.json" data-results-url="./gauntlet-results.json" data-corpus-version="v2.4.0" data-scoring-version="2.8">
 
 <h1>Pipelock Gauntlet</h1>
 <p class="subtitle">Agent egress security benchmark. Tests the security tool, not the agent.</p>
@@ -123,17 +123,24 @@ go build -o aeb-gauntlet .
     return txt('span', text, 'badge badge-' + cls);
   }
 
-  function makeScoresGrid(scores) {
+  function makeScoresGrid(scores, diagnostics, schemaVersion) {
     var grid = el('div', 'scores-grid');
     grid.appendChild(makeScoreBox('Containment', scores.containment));
     grid.appendChild(makeScoreBox('False Positive', scores.false_positive_rate));
-    grid.appendChild(makeScoreBox('Detection', scores.detection));
-    grid.appendChild(makeScoreBox('Evidence', scores.evidence));
+    if (schemaVersion === 5) {
+      diagnostics = diagnostics || {};
+      grid.appendChild(makeScoreBox('Label present (diagnostic)', diagnostics.classification_present_rate));
+      grid.appendChild(makeScoreBox('Structured field present (diagnostic)', diagnostics.structured_evidence_present_rate));
+    } else {
+      // Frozen v2 records retain their original published field names.
+      grid.appendChild(makeScoreBox('Detection', scores.detection));
+      grid.appendChild(makeScoreBox('Evidence', scores.evidence));
+    }
     return grid;
   }
 
   function measurementStatus(result) {
-    if (result.schema_version === 4) {
+    if (result.schema_version === 4 || result.schema_version === 5) {
       if (result.measurement_status === 'measured' || result.measurement_status === 'incomplete') {
         return result.measurement_status;
       }
@@ -145,7 +152,7 @@ go build -o aeb-gauntlet .
     return 'incomplete';
   }
 
-  function makeCategories(perCat) {
+  function makeCategories(perCat, schemaVersion) {
     if (!perCat || Object.keys(perCat).length === 0) return null;
     var wrap = el('div');
     var toggle = txt('div', 'Per-category breakdown \u25BE', 'toggle');
@@ -155,8 +162,8 @@ go build -o aeb-gauntlet .
     header.appendChild(txt('span', 'Category'));
     header.appendChild(txt('span', 'Contain.'));
     header.appendChild(txt('span', 'FP Rate'));
-    var dh = txt('span', 'Detect.'); dh.className = 'col-det'; header.appendChild(dh);
-    var eh = txt('span', 'Evidence'); eh.className = 'col-evi'; header.appendChild(eh);
+    var dh = txt('span', schemaVersion === 5 ? 'Label present*' : 'Detect.'); dh.className = 'col-det'; header.appendChild(dh);
+    var eh = txt('span', schemaVersion === 5 ? 'Structured field*' : 'Evidence'); eh.className = 'col-evi'; header.appendChild(eh);
     detail.appendChild(header);
 
     Object.keys(perCat).sort().forEach(function(cat) {
@@ -165,14 +172,20 @@ go build -o aeb-gauntlet .
       row.appendChild(txt('span', cat));
       row.appendChild(txt('span', fmtPct(c.containment)));
       row.appendChild(txt('span', fmtPct(c.false_positive_rate)));
-      var dr = txt('span', fmtPct(c.detection)); dr.className = 'col-det'; row.appendChild(dr);
-      var er = txt('span', fmtPct(c.evidence)); er.className = 'col-evi'; row.appendChild(er);
+      var diagnostics = c.diagnostics || {};
+      var classification = schemaVersion === 5 ? diagnostics.classification_present_rate : c.detection;
+      var structured = schemaVersion === 5 ? diagnostics.structured_evidence_present_rate : c.evidence;
+      var dr = txt('span', fmtPct(classification)); dr.className = 'col-det'; row.appendChild(dr);
+      var er = txt('span', fmtPct(structured)); er.className = 'col-evi'; row.appendChild(er);
       detail.appendChild(row);
     });
 
     toggle.addEventListener('click', function() { detail.classList.toggle('hidden'); });
     wrap.appendChild(toggle);
     wrap.appendChild(detail);
+    if (schemaVersion === 5) {
+      wrap.appendChild(txt('div', '* Non-scoring field-presence diagnostics. They do not validate a finding or prove detection.', 'denominator'));
+    }
     return wrap;
   }
 
@@ -203,15 +216,18 @@ go build -o aeb-gauntlet .
     }
 
     var scores = r.scores || {};
+    var diagnostics = r.diagnostics || {};
     var full = scores.full || scores;
     var applicable = scores.applicable;
+    var fullDiagnostics = diagnostics.full;
+    var applicableDiagnostics = diagnostics.applicable;
 
     if (applicable) {
       // Full corpus is the primary view. Applicable-only is a diagnostic of the
       // cases this adapter routed, rather than the whole corpus. Routed is not
       // the same as observed: the count includes rows that ended in error.
       card.appendChild(txt('div', 'Full Corpus Scores (' + (cc.total || 0) + ' cases)', 'section-label'));
-      card.appendChild(makeScoresGrid(full));
+      card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version));
 
       // A real button, not a click-handled div: the control is keyboard
       // operable and announced as a control, and aria-expanded is derived from
@@ -221,7 +237,7 @@ go build -o aeb-gauntlet .
       var aWrap = el('div', 'hidden');
       aToggle.setAttribute('aria-expanded', 'false');
       aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
-      aWrap.appendChild(makeScoresGrid(applicable));
+      aWrap.appendChild(makeScoresGrid(applicable, applicableDiagnostics, r.schema_version));
       aToggle.addEventListener('click', function() {
         aWrap.classList.toggle('hidden');
         aToggle.setAttribute('aria-expanded', aWrap.classList.contains('hidden') ? 'false' : 'true');
@@ -230,10 +246,10 @@ go build -o aeb-gauntlet .
       card.appendChild(aWrap);
     } else {
       card.appendChild(txt('div', 'Scores', 'section-label'));
-      card.appendChild(makeScoresGrid(full));
+      card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version));
     }
 
-    var cats = makeCategories(r.per_category);
+    var cats = makeCategories(r.per_category, r.schema_version);
     if (cats) card.appendChild(cats);
 
     var prov = el('div', 'provenance');

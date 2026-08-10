@@ -120,6 +120,12 @@ activeMeasured.scores.full.containment = 0.5;
 assert.match(window.renderGauntletScope(activeMeasured).children[0].textContent,
   /Containment 50\.0% of 158 malicious cases/);
 
+const activeV5 = JSON.parse(JSON.stringify(activeMeasured));
+activeV5.schema_version = 5;
+activeV5._capabilityRegistry = { id: 'aeb.core-capabilities' };
+assert.match(window.renderGauntletScope(activeV5).children[0].textContent,
+  /Containment 50\.0% of 158 malicious cases/);
+
 ['incomplete', 'complete', undefined].forEach((status) => {
   const artifact = JSON.parse(JSON.stringify(activeMeasured));
   artifact._capabilityRegistry = { id: 'aeb.core-capabilities' };

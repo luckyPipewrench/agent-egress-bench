@@ -386,7 +386,11 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 
 	line("# Agent Egress Bench Run Report")
 	line("")
-	line("This report renders facts retained by one Gauntlet run. It does not combine the four metrics or assign a grade, rank, or pass mark.")
+	if reportNumber(r.summary, "schema_version") == "5" {
+		line("This report renders facts retained by one Gauntlet run. It does not combine outcome scores or assign a grade, rank, or pass mark.")
+	} else {
+		line("This report renders facts retained by one Gauntlet run. It does not combine the four metrics or assign a grade, rank, or pass mark.")
+	}
 	line("")
 	line("## Artifact input status")
 	line("")
@@ -399,7 +403,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	if problem := r.v4RegistryBindingError(); problem != "" {
 		line("## Result unavailable")
 		line("")
-		line("This v4 result is uninterpretable: %s.", markdownInline(problem))
+		line("This active result is uninterpretable: %s.", markdownInline(problem))
 		return
 	}
 	line("## Method identity")
@@ -471,21 +475,44 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("")
 	line("## Metric vector")
 	line("")
-	line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.")
-	line("")
-	line("### Full corpus")
-	line("")
-	bullet("Containment", reportPercent(r.summary, "scores", "full", "containment"))
-	bullet("Detection", reportPercent(r.summary, "scores", "full", "detection"))
-	bullet("Evidence", reportPercent(r.summary, "scores", "full", "evidence"))
-	bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
-	line("")
-	line("### Applicable cases")
-	line("")
-	bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
-	bullet("Detection", reportPercent(r.summary, "scores", "applicable", "detection"))
-	bullet("Evidence", reportPercent(r.summary, "scores", "applicable", "evidence"))
-	bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
+	if reportNumber(r.summary, "schema_version") == "5" {
+		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.")
+		line("")
+		line("### Full corpus")
+		line("")
+		bullet("Containment", reportPercent(r.summary, "scores", "full", "containment"))
+		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
+		line("")
+		line("### Applicable cases")
+		line("")
+		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
+		bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
+		line("")
+		line("### Non-scoring field-presence diagnostics")
+		line("")
+		line("These observations report only whether a blocked malicious result carried a named field. They do not establish correct detection or proof.")
+		line("")
+		bullet("Full corpus label present", reportPercent(r.summary, "diagnostics", "full", "classification_present_rate"))
+		bullet("Full corpus structured field present", reportPercent(r.summary, "diagnostics", "full", "structured_evidence_present_rate"))
+		bullet("Applicable label present", reportPercent(r.summary, "diagnostics", "applicable", "classification_present_rate"))
+		bullet("Applicable structured field present", reportPercent(r.summary, "diagnostics", "applicable", "structured_evidence_present_rate"))
+	} else {
+		line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.")
+		line("")
+		line("### Full corpus")
+		line("")
+		bullet("Containment", reportPercent(r.summary, "scores", "full", "containment"))
+		bullet("Detection", reportPercent(r.summary, "scores", "full", "detection"))
+		bullet("Evidence", reportPercent(r.summary, "scores", "full", "evidence"))
+		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
+		line("")
+		line("### Applicable cases")
+		line("")
+		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
+		bullet("Detection", reportPercent(r.summary, "scores", "applicable", "detection"))
+		bullet("Evidence", reportPercent(r.summary, "scores", "applicable", "evidence"))
+		bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
+	}
 	line("")
 	line("## Execution and bundle status")
 	line("")
@@ -600,7 +627,7 @@ func (r *buyerReport) evidenceFiles() map[string]string {
 	for key, name := range reportEvidenceFiles {
 		files[key] = name
 	}
-	if reportNumber(r.summary, "schema_version") == "4" {
+	if schema := reportNumber(r.summary, "schema_version"); schema == "4" || schema == "5" {
 		files["tool_profile"] = "tool-profile.json"
 		files["capability_registry"] = "capability-registry.json"
 		files["receipt_profile"] = "receipt-profile.json"
@@ -647,8 +674,11 @@ func (r *buyerReport) bundleValidation() string {
 			failures = append(failures, "candidate_scope is malformed")
 		} else if r.summary.data != nil && r.metadata.data != nil {
 			keys := []string{"scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "tool_profile_sha256", "case_count", "scores"}
-			if reportNumber(r.summary, "schema_version") == "4" {
+			if schema := reportNumber(r.summary, "schema_version"); schema == "4" || schema == "5" {
 				keys = append(keys, "capability_registry")
+			}
+			if reportNumber(r.summary, "schema_version") == "5" {
+				keys = append(keys, "diagnostics")
 			}
 			for _, key := range keys {
 				candidateValue, candidatePresent := candidateMap[key]
@@ -696,51 +726,51 @@ func (r *buyerReport) bundleValidation() string {
 }
 
 func (r *buyerReport) v4RegistryBindingError() string {
-	if reportNumber(r.summary, "schema_version") != "4" {
+	if schema := reportNumber(r.summary, "schema_version"); schema != "4" && schema != "5" {
 		return ""
 	}
 	value, present := nestedValue(r.summary.data, "capability_registry")
 	if !present {
-		return "v4 capability_registry is absent"
+		return "active capability_registry is absent"
 	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		return "v4 capability_registry is malformed"
+		return "active capability_registry is malformed"
 	}
 	var reference capabilityregistry.Reference
 	if err := json.Unmarshal(encoded, &reference); err != nil {
-		return "v4 capability_registry is malformed"
+		return "active capability_registry is malformed"
 	}
 	snapshot, err := os.ReadFile(filepath.Join(r.dir, "capability-registry.json"))
 	if err != nil {
-		return "v4 capability registry snapshot is absent or unreadable"
+		return "active capability registry snapshot is absent or unreadable"
 	}
 	resolved, err := capabilityregistry.ResolveRaw(reference, snapshot)
 	if err != nil {
-		return "v4 capability registry snapshot does not match the result"
+		return "active capability registry snapshot does not match the result"
 	}
 	profilePath := filepath.Join(r.dir, "tool-profile.json")
 	profile, err := loadProfile(profilePath)
 	if err != nil {
-		return "v4 tool profile is invalid"
+		return "active tool profile is invalid"
 	}
 	if profile.CapabilityRegistry != reference {
-		return "v4 tool profile registry reference does not match the result"
+		return "active tool profile registry reference does not match the result"
 	}
 	profileBytes, err := os.ReadFile(profilePath)
 	if err != nil || capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
-		return "v4 tool profile digest does not match the result"
+		return "active tool profile digest does not match the result"
 	}
 	reported, err := reportRegistryLabels(r.summary, "reported_claims")
 	if err != nil || resolved.ValidateActiveIDs("reported_claim", reported) != nil {
-		return "v4 reported_claims are not active IDs in the retained registry"
+		return "active reported_claims are not active IDs in the retained registry"
 	}
 	if !sameStrings(profile.Claims, reported) {
-		return "v4 tool profile claims do not match reported_claims"
+		return "active tool profile claims do not match reported_claims"
 	}
 	tags, err := reportRegistryLabels(r.summary, "exercised", "capability_tags")
 	if err != nil || resolved.ValidateActiveIDs("exercised capability_tag", tags) != nil {
-		return "v4 exercised capability_tags are not active IDs in the retained registry"
+		return "active exercised capability_tags are not active IDs in the retained registry"
 	}
 	return ""
 }

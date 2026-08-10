@@ -43,8 +43,8 @@ class GauntletSiteIndexTest(unittest.TestCase):
         self.assertNotIn("matching this tool\\u2019s declared capabilities", self.html)
 
     def test_current_scope_identity_matches_repository_versions(self):
-        self.assertIn('data-corpus-version="v2.3.0"', self.html)
-        self.assertIn('data-scoring-version="2.4"', self.html)
+        self.assertIn('data-corpus-version="v2.4.0"', self.html)
+        self.assertIn('data-scoring-version="2.8"', self.html)
 
 
 if __name__ == "__main__":

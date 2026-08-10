@@ -328,8 +328,8 @@ func TestWriteSummary(t *testing.T) {
 
 	containment := 0.95
 	fpRate := 0.02
-	detection := 0.0
-	evidence := 0.0
+	classificationPresent := 0.0
+	structuredEvidencePresent := 0.0
 
 	s := GauntletSummary{
 		GauntletVersion:    gauntletVersion,
@@ -357,14 +357,20 @@ func TestWriteSummary(t *testing.T) {
 			Full: Scores{
 				Containment:       &containment,
 				FalsePositiveRate: &fpRate,
-				Detection:         &detection,
-				Evidence:          &evidence,
 			},
 			Applicable: Scores{
 				Containment:       &containment,
 				FalsePositiveRate: &fpRate,
-				Detection:         &detection,
-				Evidence:          &evidence,
+			},
+		},
+		Diagnostics: DualDiagnostics{
+			Full: PresenceDiagnostics{
+				ClassificationPresentRate:     &classificationPresent,
+				StructuredEvidencePresentRate: &structuredEvidencePresent,
+			},
+			Applicable: PresenceDiagnostics{
+				ClassificationPresentRate:     &classificationPresent,
+				StructuredEvidencePresentRate: &structuredEvidencePresent,
 			},
 		},
 		MeasurementStatus: measurementStatusMeasured,
@@ -388,8 +394,8 @@ func TestWriteSummary(t *testing.T) {
 	if parsed.Tool != "test-tool" {
 		t.Errorf("tool = %q, want test-tool", parsed.Tool)
 	}
-	if parsed.SchemaVersion != activeSchemaVersion {
-		t.Errorf("summary schema_version = %d, want %d", parsed.SchemaVersion, activeSchemaVersion)
+	if parsed.SchemaVersion != activeSummarySchemaVersion {
+		t.Errorf("summary schema_version = %d, want %d", parsed.SchemaVersion, activeSummarySchemaVersion)
 	}
 	if parsed.MeasurementStatus != measurementStatusMeasured {
 		t.Errorf("measurement status = %q, want measured", parsed.MeasurementStatus)

@@ -49,7 +49,7 @@ Publish these next to any score, or the number is not reproducible.
 | Adapter identity and owner | A vendor-authored adapter is normal. Hiding who wrote it is not. |
 | Target product, version, and configuration | A score against an unnamed configuration cannot be repeated. |
 | Applicable, unreachable, historical not-applicable, and error counts, with N/A reasons | An N/A case that silently leaves the denominator inflates the score; an unreachable row exposes an adapter coverage gap without pretending it was a measurement. |
-| Containment, detection, evidence, and false-positive rate, reported separately | There is no composite score in this corpus. |
+| Containment and false-positive rate, reported separately | There is no composite score in this corpus. V5 field-presence diagnostics are non-scoring observations, not detection or proof claims. |
 | The non-claims that apply | See below. |
 
 The runner writes these into the summary JSON. The corpus-derived facts come from the run itself; repository and commit, adapter owner, and the target configuration are operator declarations, supplied with `--method-repository`, `--method-commit`, `--adapter-owner`, and `--target-config`. A fact you do not declare is omitted rather than guessed, and the buyer report names it as absent. Reproduction instructions belong

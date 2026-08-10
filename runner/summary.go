@@ -16,6 +16,11 @@ import (
 
 const (
 	gauntletVersion = "1.0"
+	// 2.8 retires detection and evidence as scores. The runner only knew that a
+	// result carried a named field, not that the name correctly classified the
+	// case or that its contents proved the finding. V5 retains those facts as
+	// plainly named diagnostics and leaves outcome metrics in scores.
+	//
 	// 2.7 is the pass-mark boundary. A hidden 80 percent containment threshold
 	// decided whether a run could publish; it is gone, and publication now turns
 	// only on whether the run measured what it claims to have measured. Which
@@ -29,8 +34,8 @@ const (
 	// under 2.5 and earlier are therefore not comparable to those, and the
 	// repository's own staleness rule requires the bump rather than allowing
 	// two different rule sets to publish under one label.
-	scoringVersion = "2.7"
-	runnerVersion  = "0.4.2"
+	scoringVersion = "2.8"
+	runnerVersion  = "0.4.3"
 	corpusVersion  = "v2.4.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
@@ -38,10 +43,23 @@ const (
 	measurementStatusIncomplete = "incomplete"
 )
 
+// activeSummarySchemaVersion is intentionally separate from the v4 case,
+// profile, result-row, and receipt-profile contract. This change only affects
+// the published summary and its provenance readers; changing immutable cases
+// or runner input declarations would add compatibility churn without changing
+// the corrected metric.
+const activeSummarySchemaVersion = 5
+
 // DualScores holds both full-corpus and applicable-only score views.
 type DualScores struct {
 	Full       Scores `json:"full"`
 	Applicable Scores `json:"applicable"`
+}
+
+// DualDiagnostics holds non-scoring observations for both score views.
+type DualDiagnostics struct {
+	Full       PresenceDiagnostics `json:"full"`
+	Applicable PresenceDiagnostics `json:"applicable"`
 }
 
 // GauntletSummary is the top-level output written to --output.
@@ -61,6 +79,7 @@ type GauntletSummary struct {
 	CaseCount          CaseCount                    `json:"case_count"`
 	Exercised          ExercisedCapabilities        `json:"exercised"`
 	Scores             DualScores                   `json:"scores"`
+	Diagnostics        DualDiagnostics              `json:"diagnostics"`
 	MeasurementStatus  string                       `json:"measurement_status"`
 	PerCategory        map[string]CategoryScores    `json:"per_category"`
 
@@ -212,6 +231,8 @@ func buildSummary(
 
 	applicableScores := computeScores(applicableResults)
 	fullScores := computeFullCorpusScores(applicableResults, allCases, unmeasuredIDs)
+	applicableDiagnostics := computePresenceDiagnostics(applicableResults)
+	fullDiagnostics := computePresenceDiagnostics(applicableResults)
 	perCategory := computeCategoryScores(applicableResults, casesByID)
 
 	naReasonsStr := make(map[string]int, len(naReasons))
@@ -229,7 +250,7 @@ func buildSummary(
 	}
 
 	return GauntletSummary{
-		SchemaVersion:      activeSchemaVersion,
+		SchemaVersion:      activeSummarySchemaVersion,
 		GauntletVersion:    gauntletVersion,
 		ScoringVersion:     scoringVersion,
 		RunnerVersion:      runnerVersion,
@@ -253,6 +274,10 @@ func buildSummary(
 		Scores: DualScores{
 			Full:       fullScores,
 			Applicable: applicableScores,
+		},
+		Diagnostics: DualDiagnostics{
+			Full:       fullDiagnostics,
+			Applicable: applicableDiagnostics,
 		},
 		// Calibration adapters assert proof flags rather than observing them, so
 		// they do not produce a complete measurement and cannot publish.
@@ -307,14 +332,14 @@ func countErrors(results []CaseResult) (int, error) {
 
 // writeSummary writes the GauntletSummary as indented JSON to a file.
 func writeSummary(s GauntletSummary, path string) error {
-	// Every newly emitted summary belongs to the active coordinated artifact
-	// set. Tests and library callers may construct a summary directly, so make
-	// the writer enforce the same boundary as buildSummary.
+	// Every newly emitted summary belongs to the active summary contract. Tests
+	// and library callers may construct a summary directly, so make the writer
+	// enforce the same boundary as buildSummary.
 	if s.SchemaVersion == 0 {
-		s.SchemaVersion = activeSchemaVersion
+		s.SchemaVersion = activeSummarySchemaVersion
 	}
-	if s.SchemaVersion != activeSchemaVersion {
-		return fmt.Errorf("summary schema_version must be %d, got %d", activeSchemaVersion, s.SchemaVersion)
+	if s.SchemaVersion != activeSummarySchemaVersion {
+		return fmt.Errorf("summary schema_version must be %d, got %d", activeSummarySchemaVersion, s.SchemaVersion)
 	}
 	if err := validateRegistryReference(s.CapabilityRegistry); err != nil {
 		return fmt.Errorf("invalid summary capability_registry: %w", err)

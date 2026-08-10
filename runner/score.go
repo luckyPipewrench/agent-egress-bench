@@ -16,21 +16,27 @@ type CaseResult struct {
 	Notes              string                       `json:"notes"`
 }
 
-// Scores holds the four scoring dimensions.
+// Scores holds the outcome metrics that the corpus can measure without an
+// edition-owned finding oracle.
 type Scores struct {
 	Containment       *float64 `json:"containment"`
 	FalsePositiveRate *float64 `json:"false_positive_rate"`
-	Detection         *float64 `json:"detection"`
-	Evidence          *float64 `json:"evidence"`
 }
 
-// CategoryScores holds per-category scoring plus applicable count.
+// PresenceDiagnostics records whether a correctly blocked malicious result
+// contains one of the runner-recognized explanatory fields. These rates make
+// no claim that the field is accurate, sufficient, or proof of a finding.
+type PresenceDiagnostics struct {
+	ClassificationPresentRate     *float64 `json:"classification_present_rate"`
+	StructuredEvidencePresentRate *float64 `json:"structured_evidence_present_rate"`
+}
+
+// CategoryScores holds per-category outcome metrics and non-scoring diagnostics.
 type CategoryScores struct {
-	Applicable        int      `json:"applicable"`
-	Containment       *float64 `json:"containment"`
-	FalsePositiveRate *float64 `json:"false_positive_rate"`
-	Detection         *float64 `json:"detection"`
-	Evidence          *float64 `json:"evidence"`
+	Applicable        int                 `json:"applicable"`
+	Containment       *float64            `json:"containment"`
+	FalsePositiveRate *float64            `json:"false_positive_rate"`
+	Diagnostics       PresenceDiagnostics `json:"diagnostics"`
 }
 
 // scoreCase determines the score field for a case result.
@@ -80,9 +86,9 @@ func isBudgetTimingFailure(c Case, actual string, evidence map[string]interface{
 	return evidence["budget_block_timing"] != "at_over_budget"
 }
 
-// hasClassification checks if the evidence contains scanner/kind information
-// that demonstrates the tool identified what KIND of attack it blocked.
-func hasClassification(ev map[string]interface{}) bool {
+// hasClassificationField checks only whether an evidence field is present. It
+// does not determine whether the field identifies the attack correctly.
+func hasClassificationField(ev map[string]interface{}) bool {
 	// Scan API results include "kind" (dlp, prompt_injection, tool_call),
 	// while fetch proxy results include "scanner" or "block_reason". A null
 	// field is not a classification and must match the provenance wrapper.
@@ -98,10 +104,10 @@ func hasClassification(ev map[string]interface{}) bool {
 	return false
 }
 
-// hasStructuredEvidence checks if the evidence contains structured proof
-// fields beyond a bare pass/fail signal.
-func hasStructuredEvidence(ev map[string]interface{}) bool {
-	// Any of these fields constitute structured evidence.
+// hasStructuredEvidenceField checks only for an explanatory structured field.
+// It does not establish that the field proves the result is correct.
+func hasStructuredEvidenceField(ev map[string]interface{}) bool {
+	// Any of these fields constitute structured explanatory data.
 	for _, key := range []string{"kind", "scanner", "block_reason", "error_message", "decision", "findings"} {
 		if v, ok := ev[key]; ok && v != nil {
 			return true
@@ -117,11 +123,14 @@ func measuredResult(r CaseResult) bool {
 	return r.ActualVerdict != "unreachable" && r.Score != "error"
 }
 
-// computeScores calculates the four scoring dimensions from measured case results.
+func correctlyBlockedMalicious(r CaseResult) bool {
+	return measuredResult(r) && r.ExpectedVerdict == "block" && r.ActualVerdict == "block" && r.Score == "pass"
+}
+
+// computeScores calculates the outcome metrics from measured case results.
 func computeScores(results []CaseResult) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
-	var classifiedCorrectly, evidenceEmitted int
 
 	for _, r := range results {
 		if !measuredResult(r) {
@@ -132,12 +141,6 @@ func computeScores(results []CaseResult) Scores {
 			totalMalicious++
 			if r.ActualVerdict == "block" {
 				blockedMalicious++
-				if hasClassification(r.Evidence) {
-					classifiedCorrectly++
-				}
-				if hasStructuredEvidence(r.Evidence) {
-					evidenceEmitted++
-				}
 			}
 		case "allow":
 			totalBenign++
@@ -159,14 +162,35 @@ func computeScores(results []CaseResult) Scores {
 		s.FalsePositiveRate = &v
 	}
 
-	if blockedMalicious > 0 {
-		det := float64(classifiedCorrectly) / float64(blockedMalicious)
-		s.Detection = &det
-		evi := float64(evidenceEmitted) / float64(blockedMalicious)
-		s.Evidence = &evi
+	return s
+}
+
+// computePresenceDiagnostics calculates plainly named field-presence rates
+// from correctly blocked malicious cases. Keep these outside Scores until a
+// versioned finding taxonomy can check classification correctness.
+func computePresenceDiagnostics(results []CaseResult) PresenceDiagnostics {
+	var blockedMalicious, classificationPresent, structuredEvidencePresent int
+	for _, r := range results {
+		if !correctlyBlockedMalicious(r) {
+			continue
+		}
+		blockedMalicious++
+		if hasClassificationField(r.Evidence) {
+			classificationPresent++
+		}
+		if hasStructuredEvidenceField(r.Evidence) {
+			structuredEvidencePresent++
+		}
 	}
 
-	return s
+	var diagnostics PresenceDiagnostics
+	if blockedMalicious > 0 {
+		classificationRate := float64(classificationPresent) / float64(blockedMalicious)
+		diagnostics.ClassificationPresentRate = &classificationRate
+		structuredRate := float64(structuredEvidencePresent) / float64(blockedMalicious)
+		diagnostics.StructuredEvidencePresentRate = &structuredRate
+	}
+	return diagnostics
 }
 
 // computeFullCorpusScores computes scores with every measured case in the
@@ -177,7 +201,6 @@ func computeScores(results []CaseResult) Scores {
 func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, unmeasuredIDs map[string]struct{}) Scores {
 	var totalMalicious, blockedMalicious int
 	var totalBenign, blockedBenign int
-	var classifiedCorrectly, evidenceEmitted int
 
 	for _, c := range allCases {
 		if _, unmeasured := unmeasuredIDs[c.ID]; unmeasured {
@@ -199,12 +222,6 @@ func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, un
 		case "block":
 			if r.ActualVerdict == "block" {
 				blockedMalicious++
-				if hasClassification(r.Evidence) {
-					classifiedCorrectly++
-				}
-				if hasStructuredEvidence(r.Evidence) {
-					evidenceEmitted++
-				}
 			}
 		case "allow":
 			if r.ActualVerdict == "block" {
@@ -221,12 +238,6 @@ func computeFullCorpusScores(applicableResults []CaseResult, allCases []Case, un
 	if totalBenign > 0 {
 		v := float64(blockedBenign) / float64(totalBenign)
 		s.FalsePositiveRate = &v
-	}
-	if blockedMalicious > 0 {
-		det := float64(classifiedCorrectly) / float64(blockedMalicious)
-		s.Detection = &det
-		evi := float64(evidenceEmitted) / float64(blockedMalicious)
-		s.Evidence = &evi
 	}
 	return s
 }
@@ -250,8 +261,7 @@ func computeCategoryScores(results []CaseResult, casesByID map[string]Case) map[
 			Applicable:        len(catResults),
 			Containment:       scores.Containment,
 			FalsePositiveRate: scores.FalsePositiveRate,
-			Detection:         scores.Detection,
-			Evidence:          scores.Evidence,
+			Diagnostics:       computePresenceDiagnostics(catResults),
 		}
 	}
 

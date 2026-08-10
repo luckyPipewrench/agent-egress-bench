@@ -15,6 +15,7 @@ type caseIndexDocument struct {
 
 type caseIndexEntry struct {
 	CaseID          string `json:"case_id"`
+	Category        string `json:"category"`
 	ExpectedVerdict string `json:"expected_verdict"`
 }
 
@@ -129,7 +130,7 @@ func writeCorpusStats(w io.Writer, cases []corpusStatCase) error {
 func writeCaseIndex(w io.Writer, cases []Case) error {
 	entries := make([]caseIndexEntry, 0, len(cases))
 	for _, c := range cases {
-		entries = append(entries, caseIndexEntry{CaseID: c.ID, ExpectedVerdict: c.ExpectedVerdict})
+		entries = append(entries, caseIndexEntry{CaseID: c.ID, Category: c.Category, ExpectedVerdict: c.ExpectedVerdict})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].CaseID < entries[j].CaseID })
 	return json.NewEncoder(w).Encode(caseIndexDocument{SchemaVersion: 1, Cases: entries})

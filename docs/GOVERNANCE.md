@@ -29,7 +29,7 @@ changes before a runner may exclude any case.
 
 ## Versioning
 
-The spec uses `schema_version`. v4 is the active coordinated schema for cases, tool profiles, results, summaries, and receipt profiles. Earlier schemas are frozen readers only; active scoring rejects them and never normalizes them into v4 semantics. Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not a schema bump. A structural, scoring, delivery-protocol, provenance, or security-validation change increments the schema version and publishes the affected artifacts together. The validator enforces the active schema version.
+The spec uses `schema_version`. V4 is the active coordinated schema for cases, tool profiles, result rows, and receipt profiles. V5 is the active summary and candidate-provenance schema: it removes two overclaimed fields from `scores` and retains them only as non-scoring diagnostics. Earlier schemas are frozen readers only; active scoring rejects mixed input schemas and never normalizes a historical record into an active definition. Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not a schema bump. A structural, scoring, delivery-protocol, provenance, or security-validation change increments the affected schema and publishes the affected artifacts together. The validator enforces the active schema version.
 
 ## Contribution acceptance
 

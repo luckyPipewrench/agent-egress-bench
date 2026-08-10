@@ -134,9 +134,9 @@ class ValidRecordFixture:
             {
                 "schema_version": 1,
                 "cases": [
-                    {"case_id": "attack-a", "expected_verdict": "block"},
-                    {"case_id": "attack-b", "expected_verdict": "block"},
-                    {"case_id": "benign-a", "expected_verdict": "allow"},
+                    {"case_id": "attack-a", "category": "test", "expected_verdict": "block"},
+                    {"case_id": "attack-b", "category": "test", "expected_verdict": "block"},
+                    {"case_id": "benign-a", "category": "test", "expected_verdict": "allow"},
                 ],
             },
         )
