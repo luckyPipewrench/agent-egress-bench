@@ -772,6 +772,40 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	if err != nil || resolved.ValidateActiveIDs("exercised capability_tag", tags) != nil {
 		return "active exercised capability_tags are not active IDs in the retained registry"
 	}
+	return r.v4ReceiptProfileBindingError(reference)
+}
+
+// v4ReceiptProfileBindingError confirms that the retained receipt profile is
+// attached to this exact v4 run. A matching bundle digest only says the profile
+// was retained intact; it cannot establish that the retained profile describes
+// the summary, tool profile, and registry snapshot beside it.
+func (r *buyerReport) v4ReceiptProfileBindingError(reference capabilityregistry.Reference) string {
+	data, err := os.ReadFile(filepath.Join(r.dir, "receipt-profile.json"))
+	if err != nil {
+		return "v4 receipt profile is absent or unreadable"
+	}
+	var receipt ReceiptProfile
+	if err := decodeStrictJSON(data, &receipt); err != nil {
+		return "v4 receipt profile is malformed"
+	}
+	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
+		return "v4 receipt profile is invalid"
+	}
+	if receipt.SchemaVersion != activeSchemaVersion {
+		return "v4 receipt profile schema version does not match the result"
+	}
+	if receipt.Tool != reportString(r.summary, "tool") || receipt.ToolVersion != reportString(r.summary, "tool_version") {
+		return "v4 receipt profile tool identity does not match the result"
+	}
+	if receipt.CorpusVersion != reportString(r.summary, "corpus_version") || receipt.CorpusSHA256 != reportString(r.summary, "corpus_sha256") {
+		return "v4 receipt profile corpus identity does not match the result"
+	}
+	if receipt.ToolProfileSHA256 != reportString(r.summary, "tool_profile_sha256") {
+		return "v4 receipt profile tool profile digest does not match the result"
+	}
+	if receipt.CapabilityRegistry != reference {
+		return "v4 receipt profile registry reference does not match the result"
+	}
 	return ""
 }
 
