@@ -125,17 +125,23 @@ func TestV1SummaryIgnoresAVolunteeredSufficiencyClaim(t *testing.T) {
 func TestV1SummaryStillRejectsCountProjectionLies(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		mutate func(counts map[string]any)
+		mutate func(state *verificationState)
 		reason string
 	}{
-		{"inflated total", func(c map[string]any) { c["total"] = json.Number("3") }, "summary_score_projection_mismatch"},
-		{"understated applicable", func(c map[string]any) { c["applicable"] = json.Number("1") }, "summary_score_projection_mismatch"},
-		{"hidden errors", func(c map[string]any) { c["errors"] = json.Number("1") }, "summary_error_count_mismatch"},
-		{"invented not_applicable", func(c map[string]any) { c["not_applicable"] = json.Number("1") }, "summary_not_applicable_count_mismatch"},
+		{"inflated total", func(s *verificationState) { mapField(s.summary, "case_count")["total"] = json.Number("3") }, "summary_score_projection_mismatch"},
+		{"understated applicable", func(s *verificationState) { mapField(s.summary, "case_count")["applicable"] = json.Number("1") }, "summary_score_projection_mismatch"},
+		{"hidden errors", func(s *verificationState) { mapField(s.summary, "case_count")["errors"] = json.Number("1") }, "summary_error_count_mismatch"},
+		{"invented not_applicable", func(s *verificationState) { mapField(s.summary, "case_count")["not_applicable"] = json.Number("1") }, "summary_not_applicable_count_mismatch"},
+		{"invented not_applicable reason", func(s *verificationState) {
+			mapField(s.summary, "case_count")["not_applicable_reasons"] = map[string]any{"unsupported": json.Number("1")}
+		}, "summary_not_applicable_count_mismatch"},
+		{"incorrect category applicable", func(s *verificationState) {
+			mapField(mapField(s.summary, "per_category"), "mcp_input")["applicable"] = json.Number("1")
+		}, "summary_score_projection_mismatch"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state := v1SummaryState(t)
-			tc.mutate(state.summary["case_count"].(map[string]any))
+			tc.mutate(state)
 			result := state.verifySummary()
 			if result == nil || result.Reason != tc.reason {
 				t.Fatalf("verifySummary() = %+v, want reason %q", result, tc.reason)
