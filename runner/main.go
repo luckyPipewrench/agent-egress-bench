@@ -413,7 +413,7 @@ func debugf(debug bool, format string, args ...interface{}) {
 	_, _ = fmt.Fprintf(os.Stderr, debugPrefix+format+"\n", args...)
 }
 
-// printScores writes a score block with a label to the given writer.
+// printScores writes outcome metrics with a label to the given writer.
 func printScores(w *os.File, label string, scores Scores) {
 	_, _ = fmt.Fprintf(w, "\n  %s:\n", label)
 	if scores.Containment != nil {
@@ -425,15 +425,5 @@ func printScores(w *os.File, label string, scores Scores) {
 		_, _ = fmt.Fprintf(w, "    False Positive:   %.1f%%\n", *scores.FalsePositiveRate*100)
 	} else {
 		_, _ = fmt.Fprintf(w, "    False Positive:   N/A\n")
-	}
-	if scores.Detection != nil {
-		_, _ = fmt.Fprintf(w, "    Detection:        %.1f%%\n", *scores.Detection*100)
-	} else {
-		_, _ = fmt.Fprintf(w, "    Detection:        N/A\n")
-	}
-	if scores.Evidence != nil {
-		_, _ = fmt.Fprintf(w, "    Evidence:         %.1f%%\n", *scores.Evidence*100)
-	} else {
-		_, _ = fmt.Fprintf(w, "    Evidence:         N/A\n")
 	}
 }

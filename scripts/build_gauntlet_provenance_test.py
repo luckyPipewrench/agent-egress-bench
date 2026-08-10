@@ -128,9 +128,9 @@ class ProvenanceBuilderTest(unittest.TestCase):
                 {
                     "schema_version": 1,
                     "cases": [
-                        {"case_id": "a", "expected_verdict": "block"},
-                        {"case_id": "b", "expected_verdict": "allow"},
-                        {"case_id": "c", "expected_verdict": "block"},
+                        {"case_id": "a", "category": "test", "expected_verdict": "block"},
+                        {"case_id": "b", "category": "test", "expected_verdict": "allow"},
+                        {"case_id": "c", "category": "test", "expected_verdict": "block"},
                     ],
                 }
             ),
@@ -180,7 +180,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         )
         (self.run_dir / "corpus-manifest.txt").write_text("a\nb\nc\n", encoding="utf-8")
 
-    def make_active_fixture(self, measurement_status="measured"):
+    def make_active_fixture(self, measurement_status="measured", summary_schema_version=4):
         snapshot_bytes = json.dumps(
             {
                 "id": "aeb.test-capabilities",
@@ -207,14 +207,35 @@ class ProvenanceBuilderTest(unittest.TestCase):
 
         summary_path = self.run_dir / "raw-summary.json"
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        summary["schema_version"] = 4
+        summary["schema_version"] = summary_schema_version
         summary["case_count"]["unreachable"] = 0
         summary["capability_registry"] = reference
         summary["reported_claims"] = ["test"]
         summary["exercised"] = {"capability_tags": ["test"]}
         summary["tool_profile_sha256"] = hashlib.sha256(profile_bytes).hexdigest()
         summary["measurement_status"] = measurement_status
-        summary.pop("sufficient")
+        summary.pop("sufficient", None)
+        if summary_schema_version == 5:
+            summary["scoring_version"] = "2.8"
+            summary["runner_version"] = "0.4.3"
+            summary["diagnostics"] = {
+                scope: {
+                    "classification_present_rate": values.pop("detection"),
+                    "structured_evidence_present_rate": values.pop("evidence"),
+                }
+                for scope, values in summary["scores"].items()
+            }
+            summary["per_category"] = {
+                "test": {
+                    "applicable": 2,
+                    "containment": 1.0,
+                    "false_positive_rate": 0.0,
+                    "diagnostics": {
+                        "classification_present_rate": 1.0,
+                        "structured_evidence_present_rate": 1.0,
+                    },
+                }
+            }
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
         for row in self.results:
@@ -283,6 +304,156 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertEqual(scope["scores"]["full"]["containment"], 0.5)
         self.assertEqual(scope["measurement_status"], "measured")
         self.assertNotIn("sufficient", scope)
+
+    def test_v5_moves_field_presence_out_of_scores_and_binds_it_as_diagnostics(self):
+        self.make_active_fixture(summary_schema_version=5)
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads(
+            (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+        )["candidate_scope"]
+        self.assertEqual(scope["schema_version"], 5)
+        self.assertEqual(set(scope["scores"]["applicable"]), {"containment", "false_positive_rate"})
+        self.assertEqual(
+            scope["diagnostic_counts"]["applicable"]["classification_present_rate"],
+            {"numerator": 1, "denominator": 1},
+        )
+
+    def test_v5_rejects_retired_score_fields_before_they_enter_a_bundle(self):
+        for retired_field in ("detection", "evidence"):
+            with self.subTest(retired_field=retired_field):
+                self.write_fixture()
+                self.make_active_fixture(summary_schema_version=5)
+                summary_path = self.run_dir / "raw-summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                summary["scores"]["applicable"][retired_field] = 1.0
+                summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+                result = self.bundle()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    f"runner summary scores.applicable has unexpected fields: ['{retired_field}']",
+                    result.stderr,
+                )
+
+    def test_v5_rejects_retired_or_forged_per_category_fields(self):
+        mutations = (
+            (
+                lambda summary: summary["per_category"]["test"].__setitem__("detection", 1.0),
+                "per_category.test has unexpected fields",
+            ),
+            (
+                lambda summary: summary["per_category"]["test"].__setitem__("containment", 0.0),
+                "per_category.test does not match bound result rows",
+            ),
+            (
+                lambda summary: summary["per_category"]["test"]["diagnostics"].__setitem__(
+                    "classification_present_rate", 0.0
+                ),
+                "per_category.test does not match bound result rows",
+            ),
+        )
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                self.write_fixture()
+                self.make_active_fixture(summary_schema_version=5)
+                summary_path = self.run_dir / "raw-summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                mutate(summary)
+                summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+                result = self.bundle()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+
+    def test_v5_rejects_unknown_metric_scopes_and_non_rate_values(self):
+        mutations = (
+            (
+                "unknown score scope",
+                lambda summary: summary["scores"].__setitem__(
+                    "legacy", {"containment": 1.0, "false_positive_rate": 0.0}
+                ),
+                "runner summary scores has unexpected fields: ['legacy']",
+            ),
+            (
+                "unknown diagnostic scope",
+                lambda summary: summary["diagnostics"].__setitem__(
+                    "legacy",
+                    {
+                        "classification_present_rate": 1.0,
+                        "structured_evidence_present_rate": 1.0,
+                    },
+                ),
+                "runner summary diagnostics has unexpected fields: ['legacy']",
+            ),
+            (
+                "unknown diagnostic field",
+                lambda summary: summary["diagnostics"]["full"].__setitem__("detection", 1.0),
+                "runner summary diagnostics.full has unexpected fields: ['detection']",
+            ),
+            (
+                "boolean outcome rate",
+                lambda summary: summary["scores"]["applicable"].__setitem__(
+                    "containment", True
+                ),
+                "runner summary scores.applicable.containment must be a finite rate or null",
+            ),
+            (
+                "boolean diagnostic rate",
+                lambda summary: summary["diagnostics"]["full"].__setitem__(
+                    "classification_present_rate", True
+                ),
+                "runner summary diagnostics.full.classification_present_rate must be a finite rate or null",
+            ),
+        )
+        for name, mutate, message in mutations:
+            with self.subTest(name=name):
+                self.write_fixture()
+                self.make_active_fixture(summary_schema_version=5)
+                summary_path = self.run_dir / "raw-summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                mutate(summary)
+                summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+                result = self.bundle()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+
+    def test_v5_accepts_null_rates_when_the_observed_denominator_is_zero(self):
+        self.make_active_fixture(summary_schema_version=5)
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        for scope in ("full", "applicable"):
+            summary["scores"][scope]["false_positive_rate"] = None
+        summary["scores"]["full"]["containment"] = 1 / 3
+        summary["scores"]["applicable"]["containment"] = 1 / 2
+        summary["per_category"]["test"]["containment"] = 1 / 2
+        summary["per_category"]["test"]["false_positive_rate"] = None
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        rows = [
+            json.loads(line)
+            for line in (self.run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        rows[1]["expected_verdict"] = "block"
+        rows[1]["score"] = "fail"
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+        case_index_path = self.run_dir / "case-index.json"
+        case_index = json.loads(case_index_path.read_text(encoding="utf-8"))
+        case_index["cases"][1]["expected_verdict"] = "block"
+        case_index_path.write_text(json.dumps(case_index), encoding="utf-8")
+        (self.run_dir / "make-stats.txt").write_text("block: 3\nallow: 0\nwarn: 0\n", encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_active_measurement_status_must_match_result_coverage(self):
         self.make_active_fixture("incomplete")

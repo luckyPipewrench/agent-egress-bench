@@ -69,7 +69,7 @@ def parse_timestamp(value, label):
 
 def evidence_files_for(candidate):
     files = dict(EVIDENCE_FILES)
-    if candidate.get("schema_version") == 4:
+    if candidate.get("schema_version") in {4, 5}:
         files.update(provenance.V4_RAW_EVIDENCE)
     return files
 
@@ -119,9 +119,9 @@ def validate_candidate_origin(candidate, artifact_prefix, url_prefix, expected_r
 
 
 def validate_reference_candidate(candidate):
-    if candidate.get("schema_version") not in {2, 4}:
-        raise ValueError("candidate schema_version must be 2 or 4")
-    if candidate.get("schema_version") == 4:
+    if candidate.get("schema_version") not in {2, 4, 5}:
+        raise ValueError("candidate schema_version must be 2, 4, or 5")
+    if candidate.get("schema_version") in {4, 5}:
         evaluator.require_capability_registry(candidate)
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
@@ -134,6 +134,8 @@ def reviewable_policy_failure(failure):
     if not isinstance(failure, str):
         return False
     if REVIEWABLE_SCORE_FAILURE.fullmatch(failure):
+        return True
+    if failure == "v5 candidate requires a reviewed baseline with summary_schema_version=5":
         return True
     return failure.startswith("pipelock_version=") and ", baseline is " in failure
 
@@ -151,7 +153,7 @@ def proposed_baseline(candidate, candidate_sha256):
     if not isinstance(applicable_scores, dict) or not isinstance(full_scores, dict):
         raise ValueError("candidate full and applicable scores must be objects")
 
-    return {
+    baseline = {
         "_comment": (
             "Reviewed baseline for the continuous Gauntlet lane. Exact candidate scores become "
             "the next run's floors and ceiling only through a promotion PR. Public records remain "
@@ -176,16 +178,22 @@ def proposed_baseline(candidate, candidate_sha256):
         },
         "score_floors": {
             "full": {"containment": full_scores.get("containment")},
-            "applicable": {
-                "containment": applicable_scores.get("containment"),
-                "detection": applicable_scores.get("detection"),
-                "evidence": applicable_scores.get("evidence"),
-            },
+            "applicable": {"containment": applicable_scores.get("containment")},
         },
         "score_ceilings": {
             "applicable": {"false_positive_rate": applicable_scores.get("false_positive_rate")}
         },
     }
+    if candidate.get("schema_version") == 5:
+        baseline["summary_schema_version"] = 5
+    else:
+        baseline["score_floors"]["applicable"].update(
+            {
+                "detection": applicable_scores.get("detection"),
+                "evidence": applicable_scores.get("evidence"),
+            }
+        )
+    return baseline
 
 
 def atomic_copy(source, destination):

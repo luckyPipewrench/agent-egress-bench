@@ -74,6 +74,38 @@ def active_candidate():
     return value
 
 
+def v5_candidate():
+    value = active_candidate()
+    value["schema_version"] = 5
+    value["scoring_version"] = "2.8"
+    value["runner_version"] = "0.4.3"
+    for scope in ("full", "applicable"):
+        value["scores"][scope].pop("detection", None)
+        value["scores"][scope].pop("evidence", None)
+    value["scores"]["full"]["false_positive_rate"] = 0.0
+    value["diagnostics"] = {
+        "full": {
+            "classification_present_rate": 1.0,
+            "structured_evidence_present_rate": 1.0,
+        },
+        "applicable": {
+            "classification_present_rate": 1.0,
+            "structured_evidence_present_rate": 1.0,
+        },
+    }
+    value["metric_counts"] = {
+        "full": {
+            "containment": {"numerator": 157, "denominator": 158},
+            "false_positive_rate": {"numerator": 0, "denominator": 55},
+        },
+        "applicable": {
+            "containment": {"numerator": 157, "denominator": 157},
+            "false_positive_rate": {"numerator": 0, "denominator": 55},
+        },
+    }
+    return value
+
+
 def baseline():
     return {
         "schema_version": 1,
@@ -95,6 +127,16 @@ def baseline():
         },
         "score_ceilings": {"applicable": {"false_positive_rate": 0.0}},
     }
+
+
+def v5_baseline():
+    value = baseline()
+    value["summary_schema_version"] = 5
+    value["scoring_version"] = "2.8"
+    value["runner_version"] = "0.4.3"
+    del value["score_floors"]["applicable"]["detection"]
+    del value["score_floors"]["applicable"]["evidence"]
+    return value
 
 
 class CandidateEvaluationTest(unittest.TestCase):
@@ -201,6 +243,73 @@ class CandidateEvaluationTest(unittest.TestCase):
             self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode,
             0,
         )
+
+    def test_v5_candidate_cannot_silently_use_a_legacy_detection_baseline(self):
+        decision, *_ = self.run_evaluate(v5_candidate(), baseline())
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn("summary_schema_version=5", decision["failures"][-1])
+
+    def test_v5_candidate_uses_only_reviewed_outcome_metric_contract(self):
+        decision, *_ = self.run_evaluate(v5_candidate(), v5_baseline())
+
+        self.assertFalse(decision["blocked"], decision["failures"])
+
+    def test_v5_null_ceiling_rate_requires_zero_denominator(self):
+        value = v5_candidate()
+        value["scores"]["applicable"]["false_positive_rate"] = None
+        value["metric_counts"]["applicable"]["false_positive_rate"] = {
+            "numerator": 0,
+            "denominator": 0,
+        }
+
+        decision, *_ = self.run_evaluate(value, v5_baseline())
+
+        self.assertFalse(decision["blocked"], decision["failures"])
+
+        value["metric_counts"]["applicable"]["false_positive_rate"]["denominator"] = 1
+        decision, *_ = self.run_evaluate(value, v5_baseline())
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(
+            any("requires a zero metric denominator" in failure for failure in decision["failures"])
+        )
+
+    def test_v5_candidate_rejects_retired_or_malformed_metric_fields(self):
+        mutations = (
+            (
+                "retired score",
+                lambda value: value["scores"]["applicable"].__setitem__("detection", 1.0),
+                "candidate scores.applicable has unexpected fields: ['detection']",
+            ),
+            (
+                "unknown score scope",
+                lambda value: value["scores"].__setitem__(
+                    "legacy", {"containment": 1.0, "false_positive_rate": 0.0}
+                ),
+                "candidate scores has unexpected fields: ['legacy']",
+            ),
+            (
+                "retired diagnostic",
+                lambda value: value["diagnostics"]["full"].__setitem__("evidence", 1.0),
+                "candidate diagnostics.full has unexpected fields: ['evidence']",
+            ),
+            (
+                "boolean rate",
+                lambda value: value["scores"]["applicable"].__setitem__(
+                    "containment", True
+                ),
+                "candidate scores.applicable.containment must be a finite number",
+            ),
+        )
+        for name, mutate, message in mutations:
+            with self.subTest(name=name):
+                value = v5_candidate()
+                mutate(value)
+
+                decision, *_ = self.run_evaluate(value, v5_baseline())
+
+                self.assertTrue(decision["blocked"])
+                self.assertIn(message, decision["failures"])
 
     def test_measured_candidate_below_historical_floor_reaches_publication_gate(self):
         value = active_candidate()

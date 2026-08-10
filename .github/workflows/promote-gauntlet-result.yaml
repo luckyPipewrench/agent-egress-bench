@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       accept_policy_change:
-        description: "Prepare a review PR for an explicit score or pinned-version change"
+        description: "Prepare a review PR for an explicit score, summary-contract, or pinned-version change"
         required: true
         default: false
         type: boolean

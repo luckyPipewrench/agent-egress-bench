@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -40,17 +41,23 @@ V4_RAW_EVIDENCE = {
     "capability_registry": "capability-registry.json",
     "receipt_profile": "receipt-profile.json",
 }
+ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+V5_SCOPES = frozenset({"full", "applicable"})
+V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
+V5_DIAGNOSTIC_FIELDS = frozenset(
+    {"classification_present_rate", "structured_evidence_present_rate"}
+)
 
 
 def raw_evidence_for_summary(summary):
     """Return the immutable evidence members for this artifact generation.
 
-    V2 evidence is frozen and did not retain registry bytes. Active v4 is a
+    V2 evidence is frozen and did not retain registry bytes. Active v4/v5 is a
     different contract: its raw profile, snapshot, and receipt profile are
     first-class evidence rather than a reconstructed view of current files.
     """
-    if summary.get("schema_version") == 4:
+    if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         return {**RAW_EVIDENCE, **V4_RAW_EVIDENCE}
     return RAW_EVIDENCE
 
@@ -125,9 +132,9 @@ def validate_v4_registry_binding(run_dir, summary, results):
         profile = json.loads(profile_bytes)
         snapshot = json.loads(snapshot_bytes)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"v4 registry evidence is not valid JSON: {exc}") from exc
+        raise ValueError(f"active registry evidence is not valid JSON: {exc}") from exc
     if not isinstance(profile, dict) or not isinstance(snapshot, dict):
-        raise ValueError("v4 registry evidence must be JSON objects")
+        raise ValueError("active registry evidence must be JSON objects")
     reference = registry_reference(summary.get("capability_registry"), "summary capability_registry")
     if hashlib.sha256(snapshot_bytes).hexdigest() != reference["sha256"]:
         raise ValueError("capability registry raw snapshot digest does not match summary")
@@ -222,7 +229,7 @@ def load_manifest(repo_root, run_dir):
     return manifest, ids
 
 
-def load_case_index(path, manifest_ids):
+def load_case_index(path, manifest_ids, require_categories=False):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
     if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
@@ -231,11 +238,13 @@ def load_case_index(path, manifest_ids):
     if not isinstance(rows, list):
         raise ValueError("loader case index cases must be an array")
     expected_by_id = {}
+    category_by_id = {}
     for row_number, row in enumerate(rows, 1):
         if not isinstance(row, dict):
             raise ValueError(f"loader case index row {row_number} is not an object")
         case_id = row.get("case_id")
         expected = row.get("expected_verdict")
+        category = row.get("category")
         if not isinstance(case_id, str) or not case_id:
             raise ValueError(f"loader case index row {row_number} has no case_id")
         if case_id in expected_by_id:
@@ -244,10 +253,14 @@ def load_case_index(path, manifest_ids):
             raise ValueError(
                 f"loader case index row {row_number} has invalid normalized expected_verdict {expected!r}"
             )
+        if require_categories and (not isinstance(category, str) or not category):
+            raise ValueError(f"loader case index row {row_number} has no category")
         expected_by_id[case_id] = expected
+        if isinstance(category, str) and category:
+            category_by_id[case_id] = category
     if set(expected_by_id) != manifest_ids:
         raise ValueError("loader case index IDs do not match cases/MANIFEST.txt")
-    return case_index_bytes, expected_by_id
+    return case_index_bytes, expected_by_id, category_by_id
 
 
 def count_stat(make_stats, name):
@@ -279,6 +292,70 @@ def expected_fraction(numerator, denominator):
     return numerator / denominator if denominator else None
 
 
+def require_exact_keys(value, label, expected):
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    actual = set(value)
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    if missing:
+        raise ValueError(f"{label} is missing fields: {missing!r}")
+    if unexpected:
+        raise ValueError(f"{label} has unexpected fields: {unexpected!r}")
+    return value
+
+
+def require_rate_or_null(value, label):
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not 0 <= value <= 1
+    ):
+        raise ValueError(f"{label} must be a finite rate or null")
+    return value
+
+
+def validate_v5_summary_metric_contract(summary):
+    """Reject fields a v5 bundle must neither retain nor promote."""
+    scores = require_exact_keys(summary.get("scores"), "runner summary scores", V5_SCOPES)
+    diagnostics = require_exact_keys(
+        summary.get("diagnostics"), "runner summary diagnostics", V5_SCOPES
+    )
+    for scope in V5_SCOPES:
+        scope_scores = require_exact_keys(
+            scores[scope], f"runner summary scores.{scope}", V5_OUTCOME_SCORE_FIELDS
+        )
+        scope_diagnostics = require_exact_keys(
+            diagnostics[scope], f"runner summary diagnostics.{scope}", V5_DIAGNOSTIC_FIELDS
+        )
+        for metric, value in scope_scores.items():
+            require_rate_or_null(value, f"runner summary scores.{scope}.{metric}")
+        for diagnostic, value in scope_diagnostics.items():
+            require_rate_or_null(value, f"runner summary diagnostics.{scope}.{diagnostic}")
+    per_category = summary.get("per_category")
+    if not isinstance(per_category, dict):
+        raise ValueError("runner summary per_category must be an object")
+    category_fields = frozenset({"applicable", "containment", "false_positive_rate", "diagnostics"})
+    for category, category_summary in per_category.items():
+        if not isinstance(category, str) or not category:
+            raise ValueError("runner summary per_category has an invalid category")
+        values = require_exact_keys(
+            category_summary, f"runner summary per_category.{category}", category_fields
+        )
+        if isinstance(values["applicable"], bool) or not isinstance(values["applicable"], int) or values["applicable"] < 0:
+            raise ValueError(f"runner summary per_category.{category}.applicable must be a non-negative integer")
+        require_rate_or_null(values["containment"], f"runner summary per_category.{category}.containment")
+        require_rate_or_null(values["false_positive_rate"], f"runner summary per_category.{category}.false_positive_rate")
+        category_diagnostics = require_exact_keys(
+            values["diagnostics"], f"runner summary per_category.{category}.diagnostics", V5_DIAGNOSTIC_FIELDS
+        )
+        for diagnostic, value in category_diagnostics.items():
+            require_rate_or_null(value, f"runner summary per_category.{category}.diagnostics.{diagnostic}")
+
+
 def verify_score(summary, scope, metric, numerator, denominator):
     try:
         actual = summary["scores"][scope][metric]
@@ -292,9 +369,22 @@ def verify_score(summary, scope, metric, numerator, denominator):
         )
 
 
+def verify_diagnostic(summary, scope, diagnostic, numerator, denominator):
+    try:
+        actual = summary["diagnostics"][scope][diagnostic]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"runner summary is missing diagnostics.{scope}.{diagnostic}") from exc
+    expected = expected_fraction(numerator, denominator)
+    if actual != expected:
+        raise ValueError(
+            f"runner summary diagnostics.{scope}.{diagnostic} does not match bound diagnostic counts: "
+            f"{actual!r} != {expected!r}"
+        )
+
+
 def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
-    # Active v4 summaries always serialize the explicit unreachable counter.
+    # Active summaries always serialize the explicit unreachable counter.
     # The retained v2.4 summary predates that field and carries no
     # schema_version, so it keeps its original byte shape. Any scoring version
     # that is not a retained frozen one is active output and cannot borrow that
@@ -305,7 +395,7 @@ def measurements(repo_root, run_dir):
     # bump silently reopened the hole it was written to close, because a summary
     # carrying the new version matched neither branch.
     summary_schema_version = summary.get("schema_version")
-    if summary_schema_version == 4:
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         active_case_count = summary.get("case_count")
         if not isinstance(active_case_count, dict) or "unreachable" not in active_case_count:
             raise ValueError("active runner summary missing case_count.unreachable")
@@ -317,7 +407,7 @@ def measurements(repo_root, run_dir):
         ):
             raise ValueError("active runner summary case_count.unreachable must be a non-negative integer")
     elif summary_schema_version is not None:
-        raise ValueError("runner summary schema_version must be frozen v2 or active v4")
+        raise ValueError("runner summary schema_version must be frozen v2 or active v4/v5")
     elif summary.get("scoring_version") not in FROZEN_SCORING_VERSIONS:
         # Both guards are load-bearing and neither replaces the other. The
         # first rejects a summary carrying an unrecognised schema_version. This
@@ -330,6 +420,8 @@ def measurements(repo_root, run_dir):
         # scoring bump silently reopened the hole this closes: a summary
         # carrying the new version matched neither branch.
         raise ValueError("active runner summary missing schema_version")
+    if summary_schema_version == 5:
+        validate_v5_summary_metric_contract(summary)
     for key in (
         "gauntlet_version",
         "scoring_version",
@@ -344,15 +436,17 @@ def measurements(repo_root, run_dir):
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
     results = read_results(run_dir / RAW_EVIDENCE["results"])
-    # An active v4 artifact is uninterpretable without the exact raw registry
+    # An active artifact is uninterpretable without the exact raw registry
     # snapshot it names. Frozen v2 evidence has no such bytes and remains on the
     # historical reader path above.
     registry = None
-    if summary_schema_version == 4:
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         registry = validate_v4_registry_binding(run_dir, summary, results)
     manifest, manifest_ids = load_manifest(repo_root, run_dir)
-    case_index_bytes, expected_by_id = load_case_index(
-        run_dir / RAW_EVIDENCE["case_index"], manifest_ids
+    case_index_bytes, expected_by_id, category_by_id = load_case_index(
+        run_dir / RAW_EVIDENCE["case_index"],
+        manifest_ids,
+        require_categories=summary_schema_version == 5,
     )
 
     try:
@@ -441,12 +535,13 @@ def measurements(repo_root, run_dir):
     blocked_malicious = [
         row for row in applicable_malicious if row.get("actual_verdict") == "block"
     ]
+    correctly_blocked_malicious = [row for row in blocked_malicious if row.get("score") == "pass"]
     blocked_benign = [
         row for row in applicable_benign if row.get("actual_verdict") == "block"
     ]
-    classified = sum(has_classification(row.get("evidence")) for row in blocked_malicious)
+    classified = sum(has_classification(row.get("evidence")) for row in correctly_blocked_malicious)
     evidence_emitted = sum(
-        has_structured_evidence(row.get("evidence")) for row in blocked_malicious
+        has_structured_evidence(row.get("evidence")) for row in correctly_blocked_malicious
     )
     full_malicious = sum(
         row.get("expected_verdict") == "block"
@@ -458,7 +553,7 @@ def measurements(repo_root, run_dir):
         for row in results
         if row.get("actual_verdict") != "unreachable"
     )
-    metric_counts = {
+    outcome_metric_counts = {
         "applicable": {
             "containment": {
                 "numerator": len(blocked_malicious),
@@ -467,11 +562,6 @@ def measurements(repo_root, run_dir):
             "false_positive_rate": {
                 "numerator": len(blocked_benign),
                 "denominator": len(applicable_benign),
-            },
-            "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
-            "evidence": {
-                "numerator": evidence_emitted,
-                "denominator": len(blocked_malicious),
             },
         },
         "full": {
@@ -483,13 +573,33 @@ def measurements(repo_root, run_dir):
                 "numerator": len(blocked_benign),
                 "denominator": full_benign,
             },
-            "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
-            "evidence": {
-                "numerator": evidence_emitted,
-                "denominator": len(blocked_malicious),
-            },
         },
     }
+    diagnostic_counts = {
+        scope: {
+            "classification_present_rate": {
+                "numerator": classified,
+                "denominator": len(correctly_blocked_malicious),
+            },
+            "structured_evidence_present_rate": {
+                "numerator": evidence_emitted,
+                "denominator": len(correctly_blocked_malicious),
+            },
+        }
+        for scope in ("applicable", "full")
+    }
+    if summary_schema_version != 5:
+        # Frozen and active-v4 records keep the former score names and definition.
+        metric_counts = {
+            scope: {
+                **outcome_metric_counts[scope],
+                "detection": diagnostic_counts[scope]["classification_present_rate"],
+                "evidence": diagnostic_counts[scope]["structured_evidence_present_rate"],
+            }
+            for scope in ("applicable", "full")
+        }
+    else:
+        metric_counts = outcome_metric_counts
 
     logical_case_count = len(manifest_ids)
     case_count = summary.get("case_count")
@@ -547,7 +657,41 @@ def measurements(repo_root, run_dir):
     for scope, metrics in metric_counts.items():
         for metric, counts in metrics.items():
             verify_score(summary, scope, metric, counts["numerator"], counts["denominator"])
-    if summary_schema_version == 4:
+    if summary_schema_version == 5:
+        for scope, diagnostics in diagnostic_counts.items():
+            for diagnostic, counts in diagnostics.items():
+                verify_diagnostic(
+                    summary, scope, diagnostic, counts["numerator"], counts["denominator"]
+                )
+        rows_by_category = {}
+        for row in applicable_results:
+            rows_by_category.setdefault(category_by_id[row["case_id"]], []).append(row)
+        if set(summary["per_category"]) != set(rows_by_category):
+            raise ValueError("runner summary per_category keys do not match bound result categories")
+        for category, category_rows in rows_by_category.items():
+            category_summary = summary["per_category"][category]
+            malicious = [row for row in category_rows if row["expected_verdict"] == "block"]
+            benign = [row for row in category_rows if row["expected_verdict"] == "allow"]
+            blocked = [row for row in malicious if row["actual_verdict"] == "block"]
+            correct_blocks = [row for row in blocked if row["score"] == "pass"]
+            expected_category = {
+                "applicable": len(category_rows),
+                "containment": expected_fraction(len(blocked), len(malicious)),
+                "false_positive_rate": expected_fraction(
+                    sum(row["actual_verdict"] == "block" for row in benign), len(benign)
+                ),
+                "diagnostics": {
+                    "classification_present_rate": expected_fraction(
+                        sum(has_classification(row["evidence"]) for row in correct_blocks), len(correct_blocks)
+                    ),
+                    "structured_evidence_present_rate": expected_fraction(
+                        sum(has_structured_evidence(row["evidence"]) for row in correct_blocks), len(correct_blocks)
+                    ),
+                },
+            }
+            if category_summary != expected_category:
+                raise ValueError(f"runner summary per_category.{category} does not match bound result rows")
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         # Scoped to the applicable rows so this mirrors exactly what the Go
         # runner can observe when it derives the same field. Synthetic rows
         # outside that scope are rejected outright above.
@@ -581,6 +725,7 @@ def measurements(repo_root, run_dir):
         "command": command,
         "make_stats": make_stats,
         "metric_counts": metric_counts,
+        "diagnostic_counts": diagnostic_counts if summary_schema_version == 5 else None,
         "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
         "case_index_sha256": hashlib.sha256(case_index_bytes).hexdigest(),
         "logical_case_count": logical_case_count,
@@ -686,7 +831,11 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
 
     candidate_scope = {
-        "schema_version": 4 if summary.get("schema_version") == 4 else 2,
+        "schema_version": (
+            summary.get("schema_version")
+            if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS
+            else 2
+        ),
         "local_run_id": metadata["local_run_id"],
         "generated_at": metadata["generated_at"],
         "corpus_ref_kind": metadata["corpus_ref_kind"],
@@ -723,6 +872,10 @@ def build_complete_bundle(repo_root, run_dir):
     }
     if summary.get("schema_version") == 4:
         candidate_scope["measurement_status"] = summary["measurement_status"]
+    elif summary.get("schema_version") == 5:
+        candidate_scope["measurement_status"] = summary["measurement_status"]
+        candidate_scope["diagnostics"] = summary["diagnostics"]
+        candidate_scope["diagnostic_counts"] = measured["diagnostic_counts"]
     else:
         candidate_scope["sufficient"] = summary["sufficient"]
     if measured["capability_registry"] is not None:

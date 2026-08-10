@@ -240,13 +240,13 @@ func buildReceiptProfile(
 
 // hasExplanation returns true when the adapter evidence carries a
 // machine- or human-readable signal tied to the action. The rubric
-// "explained" dimension is boolean; this helper mirrors how scoring.go
-// already classifies evidence for the gauntlet detection score.
+// "explained" dimension is boolean; this helper reuses the runner's field
+// presence checks without treating them as a Gauntlet detection score.
 func hasExplanation(ev map[string]interface{}) bool {
-	if hasClassification(ev) {
+	if hasClassificationField(ev) {
 		return true
 	}
-	if hasStructuredEvidence(ev) {
+	if hasStructuredEvidenceField(ev) {
 		return true
 	}
 	return false

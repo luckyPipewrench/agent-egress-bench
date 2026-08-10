@@ -107,9 +107,9 @@
     if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
       throw new Error('artifact must be an object');
     }
-    if (artifact.schema_version === 4 && (!artifact._capabilityRegistry ||
+    if ((artifact.schema_version === 4 || artifact.schema_version === 5) && (!artifact._capabilityRegistry ||
         artifact._capabilityRegistry.id !== scopeValue(artifact, ['capability_registry', 'id']))) {
-      throw new Error('v4 artifact is uninterpretable without its verified capability registry snapshot');
+      throw new Error('active artifact is uninterpretable without its verified capability registry snapshot');
     }
 
     nonEmptyString(scopeValue(artifact, ['artifact_id']), 'artifact_id');
@@ -136,7 +136,7 @@
       throw new Error('case_count.applicable, unreachable, and not_applicable must equal case_count.total');
     }
     var measurementStatus;
-    if (artifact.schema_version === 4) {
+    if (artifact.schema_version === 4 || artifact.schema_version === 5) {
       measurementStatus = scopeValue(artifact, ['measurement_status']);
       if (measurementStatus !== 'measured' && measurementStatus !== 'incomplete') {
         throw new Error('measurement_status must be measured or incomplete');

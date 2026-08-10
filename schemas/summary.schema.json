@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary.schema.json",
   "title": "agent-egress-bench Gauntlet Summary",
-  "description": "Active v4 summary. Reporting labels are registry-bound metadata and cannot affect measured scope or score.",
+  "description": "Frozen v4 summary. Reporting labels are registry-bound metadata and cannot affect measured scope or score.",
   "type": "object",
   "required": ["schema_version", "gauntlet_version", "scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "tool_profile_sha256", "capability_registry", "reported_claims", "case_count", "exercised", "scores", "measurement_status", "per_category"],
   "properties": {
