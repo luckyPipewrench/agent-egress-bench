@@ -254,3 +254,17 @@ func TestWriteSummaryRejectsMalformedDigests(t *testing.T) {
 		})
 	}
 }
+
+// Hashing nothing yields the SHA-256 of the empty string, which is well-formed
+// 64-hex and passes every shape check we have, so an empty corpus would publish
+// a valid-looking identity for a run that measured no cases. Found by an
+// adversarial pass over this digest design.
+func TestEmptyCorpusIsRefusedRatherThanHashed(t *testing.T) {
+	_, err := readCorpusSnapshot(t.TempDir(), "")
+	if err == nil {
+		t.Fatal("an empty corpus produced a digest instead of an error")
+	}
+	if !strings.Contains(err.Error(), "empty corpus") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -333,6 +333,15 @@ func readCorpusSnapshot(casesDir, multiFileDir string) ([]corpusFile, error) {
 		}
 		files = append(files, corpusFile{key: key, path: p, data: data})
 	}
+
+	// Hashing nothing yields the SHA-256 of the empty string, which is a
+	// well-formed 64-hex value and passes every shape check downstream. An empty
+	// corpus would therefore publish a valid-looking corpus identity for a run
+	// that measured no cases. A corpus with no files is not a corpus, so this is
+	// an error rather than a digest.
+	if len(files) == 0 {
+		return nil, fmt.Errorf("corpus at %s contains no case files; refusing to hash an empty corpus", casesDir)
+	}
 	return files, nil
 }
 
