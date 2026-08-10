@@ -265,14 +265,14 @@ The renderer reads these artifacts when present:
 
 | Artifact | Report content |
 |---|---|
-| `raw-summary.json` | Method versions, target product and version, profile digest, exact registry reference, reporting labels, scope counts, and the four metric vectors |
+| `raw-summary.json` | Method versions, target product and version, profile digest, exact registry reference, reporting labels, scope counts, two outcome metrics, and two diagnostic rates |
 | `results.jsonl` | Every historical not-applicable or unreachable case ID and its recorded reason |
 | `run-metadata.json` | Repository and exact method commit |
 | `run-bundle.json` | Bundle status, publication eligibility, retained material digests, and candidate bindings |
 | `execution-decision.json` | Execution status, failures, review notes, and publication eligibility |
 | `entrypoint-command.txt` and `command.txt` | The retained reproduction commands |
 
-The report checks every digest declared by the run bundle, checks the candidate bindings against the summary and run metadata, and checks the execution decision against the bundle. It reports these checks separately from the four metrics.
+The report checks every digest declared by the run bundle, checks the candidate bindings against the summary and run metadata, and checks the execution decision against the bundle. It reports these checks separately from the outcome metrics and non-scoring diagnostics.
 
 Missing facts render as `Absent from run artifacts`. Wrong types and contradictory bindings render as invalid. A malformed JSON or JSONL input leaves the rest of the report readable and marks the affected section. A partial, blocked, errored, or publication-ineligible run still produces a report with that state visible.
 

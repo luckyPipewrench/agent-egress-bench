@@ -132,4 +132,4 @@ first-party regression evidence under `gauntlet-site/results/pipelock/`. That la
 self-run and artifact-validated evidence. It carries no independence claim.
 
 See [GOVERNANCE.md](GOVERNANCE.md) for neutrality and contribution rules, and
-[methodology.md](methodology.md) for how results are produced and published.
+[gauntlet.md](gauntlet.md) for how results are produced and published.

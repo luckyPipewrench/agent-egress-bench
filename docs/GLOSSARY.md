@@ -32,7 +32,7 @@ A single test scenario in the corpus. Contains an attack payload (or benign traf
 
 ### Verdict
 
-The outcome of a security tool evaluating a case: `block` (traffic denied) or `allow` (traffic permitted). The benchmark compares the tool's actual verdict against the expected verdict to produce a score. See [SCORING.md](SCORING.md).
+The outcome of a security tool evaluating a case: `block` (traffic denied) or `allow` (traffic permitted). The benchmark compares the tool's actual verdict against the expected verdict to produce a score. See [gauntlet.md](gauntlet.md).
 
 ### Applicability
 

@@ -1,6 +1,6 @@
 # Receipt-Scoring Axis (v1)
 
-> **Status:** v1 design. Complementary to `docs/SCORING.md`. Where SCORING.md
+> **Status:** v1 design. Complementary to [`docs/gauntlet.md`](gauntlet.md). Where the Gauntlet method
 > tracks whether a tool produced the expected verdict on a benchmark case, this
 > file tracks whether the tool produced **signed, independently-verifiable
 > evidence** of that verdict. Both axes are per-tool profiles. Neither
@@ -15,7 +15,7 @@ reviewer or auditor, the question that matters is:
 > Did the tool both stop the attack and emit a signed artifact a third
 > party can verify offline without trusting the vendor?
 
-The verdict axis in SCORING.md answers half. This axis answers the other.
+The verdict axis in [`gauntlet.md`](gauntlet.md) answers half. This axis answers the other.
 
 ## The five dimensions
 
@@ -201,7 +201,7 @@ Pointer.
 
 ## What this corpus does not provide
 
-- A cross-tool ranking, percentage, or letter grade. Per `docs/SCORING.md`:
+- A cross-tool ranking, percentage, or letter grade. Per [`docs/gauntlet.md`](gauntlet.md):
   "Each tool can publish its own results. Cross-tool comparison tables
   are not part of this repo."
 - A certification mark. A profile is published evidence, not a seal. <!-- claim-ok: states the non-claim -->

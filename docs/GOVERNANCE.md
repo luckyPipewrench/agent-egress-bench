@@ -72,6 +72,7 @@ Cases from any vendor, researcher, or individual are welcome. Every submitted ca
 - **Expected verdict:** `block` or `allow`, with a `why_expected` explanation
 - **Source:** where the attack pattern comes from (real-world incident, research paper, original creation)
 - **False positive assessment:** likelihood of benign traffic matching this pattern
+- **Synthetic fixtures:** credentials and secrets must be fake and unmistakably test-only
 
 The [validator](../validate/) enforces structural correctness (valid JSON, required fields, correct enums, ID matching filename). Semantic review (is the expected verdict correct? is the attack realistic?) is manual and happens during PR review.
 
@@ -95,4 +96,4 @@ Verdict changes require community discussion. They are not made unilaterally.
 
 ## Spec changes
 
-Changes to [SPEC.md](SPEC.md), [SCORING.md](SCORING.md), or [RUNNER.md](RUNNER.md) require a PR with rationale explaining the change. The validator must be updated to match any spec changes. Discussion happens in the PR before merge. These documents define the contract between the corpus and every runner, so changes affect all downstream tools.
+Changes to [SPEC.md](SPEC.md), [gauntlet.md](gauntlet.md), or [RUNNER.md](RUNNER.md) require a PR with rationale explaining the change. The validator must be updated to match any spec changes. Discussion happens in the PR before merge. These documents define the contract between the corpus and every runner, so changes affect all downstream tools.

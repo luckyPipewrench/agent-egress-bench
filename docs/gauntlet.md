@@ -1,8 +1,70 @@
-# Gauntlet Scoring Methodology
+# Gauntlet Methodology
 
-The Gauntlet is a structured scoring program built on top of the agent-egress-bench corpus. It adds two independent outcome metrics, non-scoring output-field diagnostics, and a machine-readable summary format.
+The Gauntlet tests the security tool between an AI agent and the network. It does not test whether the model refuses harmful instructions. A runner sends each case through a proxy, firewall, MCP wrapper, or similar control and records the observed result.
 
-The Gauntlet is completely free, open source, and tool-neutral. It does not replace the existing scoring defined in [SCORING.md](SCORING.md) — it is a layer on top.
+```text
+Agent (secrets, tools) --> Security tool (proxy/firewall) --> Internet
+                                    ^
+                           Gauntlet tests this
+```
+
+The Gauntlet is free, open source, and tool-neutral. It defines per-case result states, two independent outcome metrics, non-scoring output-field diagnostics, and a machine-readable summary format.
+
+## Scope
+
+### In scope
+
+- Secret exfiltration through URL query strings, request bodies, HTTP headers, WebSocket frames, MCP arguments, A2A messages, and hostname labels
+- Prompt injection in HTTP responses, MCP tool results, and A2A messages
+- SSRF through private addresses, cloud metadata endpoints, encoded addresses, and DNS rebinding
+- MCP tool poisoning, schema injection, drift, and multi-step exfiltration chains
+- A2A Agent Card poisoning and drift
+- Encoding evasion, shell obfuscation, crypto and financial data, and false-positive controls
+
+### Out of scope
+
+- Timing, header-ordering, HTTP/2, steganographic, and other covert channels
+- Model alignment, refusal behavior, semantic manipulation, and multi-turn context poisoning
+- Inbound traffic filtering
+- Authentication and authorization
+
+## Case design
+
+Cases depend on observable wire behavior, produce deterministic expected verdicts, and remain tool-neutral. Severity and false-positive risk are informational metadata and do not affect scoring.
+
+A logical case is either one JSON file or one MCP drift directory containing `case.yaml` plus its named snapshots. Both shapes count as one case. [`cases/MANIFEST.txt`](../cases/MANIFEST.txt) pins the loaded IDs, and [`cases/STATS.md`](../cases/STATS.md) reports loader-backed counts. [`SPEC.md`](SPEC.md) owns both case formats.
+
+## Categories
+
+| Category | Directory | What it tests |
+| --- | --- | --- |
+| URL DLP | `cases/url/` | Secrets in query strings, encoded paths, high-entropy subdomains |
+| Request body DLP | `cases/request-body/` | Secrets in POST bodies |
+| Header DLP | `cases/headers/` | API keys and tokens in HTTP headers |
+| Response injection | `cases/response-fetch/`, `cases/response-mitm/` | Prompt injection in fetched or intercepted content |
+| MCP input and tools | `cases/mcp-input/`, `cases/mcp-tool/` | Tool-call DLP, poisoned definitions, and schema injection |
+| MCP chains and drift | `cases/mcp-chain/`, `cases/mcp-drift/` | Multi-step sequences and tool-definition changes |
+| A2A | `cases/a2a-message/`, `cases/a2a-agent-card/` | Message scanning, Agent Card poisoning, and drift |
+| WebSocket DLP | `cases/websocket-dlp/` | Frame scanning and fragment evasion |
+| SSRF bypass | `cases/ssrf-bypass/` | Private addresses, cloud metadata, and encoded forms |
+| Encoding and shell evasion | `cases/encoding-evasion/`, `cases/shell-obfuscation/` | Multi-layer encodings and obfuscated commands |
+| Crypto and financial DLP | `cases/crypto-financial/` | Wallets, keys, seed phrases, cards, and IBANs |
+| Hostname exfiltration | `cases/hostname-exfiltration/` | Data encoded in DNS hostname labels |
+| False-positive suite | `cases/false-positive/` | Benign traffic that must remain allowed |
+
+Current counts belong in [`cases/STATS.md`](../cases/STATS.md), not in this document.
+
+## Per-case results
+
+An active result row separates the observed verdict from the score. `actual_verdict` is `block`, `allow`, `unreachable`, or `error`. `score` is `pass`, `fail`, or `error`. Frozen historical rows can also carry `not_applicable` under their original reader.
+
+| Result outcome | Meaning |
+| --- | --- |
+| `pass` | An observed `block` or `allow` satisfied the case contract |
+| `fail` | An observed `block` or `allow` violated the case contract |
+| `not_applicable` | Frozen historical N/A evidence, retained without reinterpretation |
+| `unreachable` | The adapter has no exact route, so no measurement occurred |
+| `error` | The runner, tool, delivery proof, or verdict observation failed |
 
 ## How Scoring Works
 
@@ -15,6 +77,12 @@ The Gauntlet evaluates tool performance on two independent outcome metrics. Ther
 
 Lower is better for false positive rate (0.0 = perfect). Higher is better for containment (1.0 = perfect).
 
+### Score views
+
+The full-corpus view is primary. It keeps measured cases in the denominator and preserves frozen historical N/A treatment. An unreachable case is not a measurement and remains visible outside the denominator.
+
+The applicable view is diagnostic. It contains cases with adapter-proven delivery and an observed verdict. A tool's declarations cannot select this view or remove a case from it.
+
 ## Measurement Status
 
 The summary reports `measurement_status: measured` when every applicable case produced an observed outcome. It reports `measurement_status: incomplete` when any case errored, was unreachable, or carried synthetic calibration evidence.
@@ -24,6 +92,8 @@ Measurement status says whether the runner measured the declared scope. It does 
 Both scores are still computed for an incomplete run. The score vector reports observed target behavior, while `measurement_status` reports whether any cases lacked an observed outcome.
 
 ## Result state
+
+An active tool profile declares registry-backed reporting claims and binds the exact capability-registry snapshot that defines them. [`RUNNER.md`](RUNNER.md) owns the profile shape. Claims report the surface a tool names; they do not decide which cases count.
 
 A case is scoreable only after the adapter proves delivery of its exact wire
 input and observes a request-correlated verdict. A declared delivery tuple
@@ -41,13 +111,23 @@ tags are registry-backed reporting labels. Frozen v1-v3 rows remain frozen
 evidence and retain their original meaning; active v4 runs do not create N/A
 from profile labels.
 
+`requires` names only what the runner needs to deliver the input and observe a trustworthy verdict: transport, runtime fixtures, and the base surface the tool must inspect. It must not carry attack-difficulty, evasion-technique, or enforcement-claim flags. Those belong in registry-backed reporting labels. This applies to malicious and benign cases alike.
+
+### Adapter transport integrity
+
+An adapter must execute the case's declared transport. A scan API response does not prove that a fetch proxy, forward proxy, WebSocket, MCP, or A2A transport enforced the same payload. An adapter declaration authorizes an attempt; delivery proof and a request-correlated verdict authorize scoring.
+
+`mcp_http` cases target the tool's MCP HTTP listener. They do not prove HTTP forward-proxy enforcement. A local WebSocket fixture can also trigger SSRF protection before frame scanning, so evidence should name the enforcement layer the runner observed.
+
 ## N/A Handling Per Metric
 
 Not every metric applies to every category:
 
-- **Categories with only benign cases** (e.g., `false_positive`): containment is N/A. Only false positive rate is reported.
-- **Categories with only malicious cases**: false positive rate is N/A. Only containment is reported.
-- **Categories with zero applicable cases**: the entire category is omitted from per-category results.
+| Category contents | Result |
+| --- | --- |
+| Only benign cases | Containment is N/A; only false positive rate is reported |
+| Only malicious cases | False positive rate is N/A; only containment is reported |
+| Zero applicable cases | The category is omitted from per-category results |
 
 In the summary JSON, N/A metrics are represented as `null`.
 
@@ -65,7 +145,7 @@ The Gauntlet produces two outputs:
 
 ### Per-case results (JSONL)
 
-One JSON object per line to stdout, using the current v4 result format defined in [SCORING.md](SCORING.md) and [`schemas/result.schema.json`](../schemas/result.schema.json). Every active result line carries the exact capability-registry reference from its profile. See [`schemas/result.schema.json`](../schemas/result.schema.json) for the current vocabulary.
+One JSON object per line goes to stdout, using the current v4 result format in [`schemas/result.schema.json`](../schemas/result.schema.json). Every active result line carries the exact capability-registry reference from its profile. [`RUNNER.md`](RUNNER.md) owns the delivery and output protocol.
 
 ### Gauntlet summary (JSON file)
 
@@ -75,11 +155,13 @@ A single JSON file with the full scoring breakdown:
 {
   "schema_version": 5,
   "gauntlet_version": "1.0",
-  "runner_version": "0.1.0",
+  "scoring_version": "2.8",
+  "runner_version": "0.4.3",
   "tool": "example-tool",
   "tool_version": "1.0.0",
   "corpus_version": "v1.0.0",
-  "corpus_sha256": "af7f95d7...",
+  "corpus_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "tool_profile_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "date": "2026-04-15T14:30:00Z",
   "case_count": {
     "total": 142,
@@ -96,9 +178,14 @@ A single JSON file with the full scoring breakdown:
     "id": "aeb.core-capabilities",
     "format": 1,
     "revision": 1,
-    "sha256": "..."
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "reported_claims": ["url_dlp", "header_dlp"],
+  "exercised": {
+    "transports": ["fetch_proxy"],
+    "categories": ["url"],
+    "capability_tags": ["url_dlp"]
+  },
   "scores": {
     "full": {
       "containment": 0.81,
@@ -149,6 +236,14 @@ Key fields:
   is a subset of this count, not a third population.
 - `null` in per-category scores: metric is N/A for that category.
 
+The runner also prints result counters to stderr:
+
+```text
+results: 22 passed, 3 failed, 0 unreachable, 10 not_applicable, 0 errors (35 total)
+```
+
+Pass, fail, unreachable, not-applicable, and error counters must sum to the number of processed cases. In summary JSON, `case_count.applicable` is the retained name for the routed-case partition: it includes routed cases that ended in `error`, and `case_count.errors` reports that unobserved subset explicitly. It is not an observed-measurement count.
+
 ## What Makes a Valid Run
 
 A Gauntlet run is valid when all of the following are true:
@@ -158,9 +253,9 @@ A Gauntlet run is valid when all of the following are true:
 3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
 4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, bind the same registry snapshot, implement the same applicability rules, and use the same scoring formulas.
 
-## Relationship to Existing Scoring
+## Interpreting outputs
 
-The existing pass/fail scoring in [SCORING.md](SCORING.md) remains the foundation of this corpus. The Gauntlet adds dimensionality:
+Per-case results and aggregate metrics answer different questions:
 
 - **Pass/fail** answers: "did the tool get the right verdict?"
 - **Containment** answers: "what fraction of attacks were stopped?"
@@ -169,11 +264,57 @@ The existing pass/fail scoring in [SCORING.md](SCORING.md) remains the foundatio
 
 Tools can still publish simple pass/fail results without the Gauntlet. The Gauntlet is a program, not a requirement.
 
-## Governance
+## Error handling and validation
 
-The Gauntlet inherits all governance rules from [GOVERNANCE.md](GOVERNANCE.md):
+A tool crash, timeout, transport failure, missing delivery proof, or unobservable verdict produces `error`, not `fail`. These states describe a failure to measure, so they stay outside score denominators and make `measurement_status` incomplete. Counting them as detection failures would misstate the target's behavior. Tolerating them would also raise a reported score by shrinking its denominator.
 
-- Tool-neutral. This repository publishes no ranking, leaderboard, or cross-tool comparison table, and no maintainer-awarded mark on anyone else's result. See [RESULTS-USE.md](RESULTS-USE.md). <!-- claim-ok: states the non-claim -->
-- Case IDs are immutable. Scoring changes do not affect case identity.
-- Conflict of interest is disclosed. Contributions from any vendor are welcome.
-- Spec changes require a PR with rationale.
+Synthetic calibration evidence also blocks publication. A synthetic row can remain in a denominator because the adapter asserted an outcome, but it is not an observation from the target.
+
+The Go validator in `validate/` is the authoritative checker for active case files, result rows, and tool profiles. It enforces structural and cross-field rules. The JSON Schemas declare public interchange shapes, while [`contracts/artifacts.json`](../contracts/artifacts.json) and `make check-contracts` bind their versions and identities to source. The active Go paths do not compile those schemas yet, so a schema file alone is not proof that the runner enforces its full shape.
+
+## Versions and reproducibility
+
+[`GOVERNANCE.md`](GOVERNANCE.md) owns artifact versioning and compatibility. Six fields identify an active run:
+
+| Field | What it tracks | Source |
+| --- | --- | --- |
+| `corpus_version` | Tag or commit of the case corpus | Repository tag or commit |
+| `scoring_version` | Scoring, applicability, and publication rules | Runner constant |
+| `corpus_sha256` | Exact loaded case bytes | Computed at runtime |
+| `runner_version` | Runner binary generation | Runner constant |
+| `tool_profile_sha256` | Exact tool profile | Computed at runtime |
+| `capability_registry` | Exact reporting-label registry snapshot | Profile and active results |
+
+`corpus_version` and `scoring_version` decide whether a result is stale. The remaining fields make a run reproducible and auditable.
+
+Scoring version 2.8 moves classification and evidence field-presence rates out of `scores` and into non-scoring diagnostics. Scoring version 2.7 removed the hidden containment threshold from publication decisions. Scoring version 2.6 moved applicability from profile claims to adapter-proven delivery and verdict observation. Results on opposite sides of those boundaries remain records of their own rules, but they are not interchangeable.
+
+Historical N/A rows keep their frozen meaning. Active execution represents a missing route as `unreachable`, leaves it outside score denominators, and marks the measurement incomplete.
+
+## Running the Gauntlet
+
+For the reviewed Pipelock release, use the portable entry point from a clean Linux clone:
+
+```bash
+./scripts/run-pipelock-gauntlet.sh
+```
+
+The entry point pins the released binary, supplies managed commands, enables local fixtures, includes the multi-file corpus, validates result rows, and retains hash-bound evidence. A plain proxy run without the required fixtures can score fixture failures as security outcomes, so it is not a substitute.
+
+For another tool or adapter development, use the Go runner. It writes JSONL results to stdout and a summary to the path passed through `--output`. [`RUNNER.md`](RUNNER.md) defines the commands, adapters, delivery proof, and output protocol.
+
+## Publishing a result
+
+Each vendor, lab, or customer runs the Gauntlet against its own target and owns the result it publishes. This repository stores no third-party result and awards no verification mark. [`RESULTS-USE.md`](RESULTS-USE.md) defines the permitted assurance labels and the identifying facts that must travel with a public result.
+
+The maintainer-operated Pipelock records under `gauntlet-site/results/pipelock/` are disclosed first-party regression evidence. The append-only record chain and `latest-verified` pointer do not create an independence claim.
+
+## Disputes and supersession
+
+Open a GitHub Discussion to dispute a case verdict. Name the case ID, proposed change, and supporting evidence. If the proposal is accepted, add a new case with `supersedes` pointing to the original. The original stays in the corpus and the runner executes both. [`GOVERNANCE.md`](GOVERNANCE.md) owns case immutability and supersession.
+
+## Neutrality
+
+The Pipelock author created this corpus and maintains its first-party reference lane. Cases test observable behavior rather than implementation choices. Third parties own their results, and anyone may publish an adverse Pipelock result without notice or approval. This repository publishes no ranking, leaderboard, or cross-tool comparison table. <!-- claim-ok: states the non-claim -->
+
+[`GOVERNANCE.md`](GOVERNANCE.md) owns neutrality and contribution policy. [`ADOPTION.md`](ADOPTION.md) explains how to build a runner and publish results.

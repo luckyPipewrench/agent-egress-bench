@@ -16,15 +16,11 @@ The skeleton gives you JSONL emission and the main loop. You fill in three
 things: starting your tool, proving an exact delivery route, and feeding cases
 to your tool while observing a verdict.
 
-The [Pipelock reference runner](../examples/pipelock/) is a working example you can study. It handles HTTP fetch cases through a proxy endpoint. MCP and response cases are marked `not_applicable` in its v1 harness.
+The [Pipelock reference runner](../examples/pipelock/) is a complete example. The fetch-only `harness.sh` beside it is a legacy illustration and is not a Gauntlet runner.
 
 ### What to claim
 
-Your active v4 tool profile declares reporting labels (`claims`) and the exact
-capability-registry snapshot that defines them. Labels do not select cases or
-alter a denominator, score, sufficiency decision, or publication decision. A
-runner needs adapter-proven exact delivery and verdict observation to score; no
-exact route is `unreachable`, and a routed case without proof is an `error`.
+[`RUNNER.md`](RUNNER.md) owns the active tool-profile and delivery contracts. [`CAPABILITY-VOCABULARY.md`](CAPABILITY-VOCABULARY.md) owns reporting-label semantics, and [`gauntlet.md`](gauntlet.md) owns result states and scoreability.
 
 ## Publish results
 
@@ -36,11 +32,7 @@ Run your runner and save the JSONL output. How you share results is up to you. S
 
 **Do not submit Gauntlet results to this repo.** This repo contains attack cases, scoring methodology, and optional receipt profiles under `profiles/`. There is no in-repo results table and no maintainer-awarded mark. Each vendor publishes and owns its own results.
 
-Label the run and publish the identifying facts described in [RESULTS-USE.md](RESULTS-USE.md). At minimum, include:
-- Your tool name and version
-- The corpus version (commit hash or tag of agent-egress-bench)
-- The raw JSONL file so others can verify
-- Any verdict mappings your runner uses (e.g., "HTTP 403 = block")
+Label the run and publish every identifying fact required by [RESULTS-USE.md](RESULTS-USE.md).
 
 ### Suggested format
 
@@ -64,7 +56,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full guide. The short version:
 
 1. Create a JSON file in the right `cases/` subdirectory
 2. Follow the [case schema](SPEC.md) (all required fields, fake secrets only)
-3. Run the validator: `cd validate && go build -o /tmp/aeb-validate . && /tmp/aeb-validate ../cases`
+3. Run `make validate` from the repository root
 4. Open a PR
 
 ### What makes a good case

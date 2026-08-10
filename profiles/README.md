@@ -37,7 +37,7 @@ runner or adapter; the schema is tool-neutral.
 
 ## What a profile does not prove
 
-- **It is not a ranking.** Per [`docs/SCORING.md`](../docs/SCORING.md):
+- **It is not a ranking.** Per [`docs/gauntlet.md`](../docs/gauntlet.md):
   "Each tool can publish its own results. Cross-tool comparison tables
   are not part of this repo." Aggregate scores across profiles are out
   of scope for this directory.

@@ -889,7 +889,7 @@ func requiresTokenProblem(token string) string {
 	switch {
 	// Attack-difficulty and evasion-technique flags describe how hard an input
 	// is on a surface the tool already inspects. Gating on one lets a tool dodge
-	// the hard variant by declining the claim. See docs/SCORING.md.
+	// the hard variant by declining the claim. See docs/gauntlet.md.
 	case token == "encoding_evasion_scanning", token == "ssrf_bypass_scanning":
 		return fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", token)
 	// Enforcement claims name the feature the case exists to test. Gating on one

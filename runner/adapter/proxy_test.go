@@ -1277,7 +1277,7 @@ func TestRunTLSInterceptRequestRequiresFixture(t *testing.T) {
 }
 
 // A 405 is not an observed verdict: the endpoint refused the method, so the
-// payload was never scanned. README:177 and docs/methodology.md require an
+// payload was never scanned. README and docs/gauntlet.md require an
 // adapter that cannot execute a declared-applicable case to score error, which
 // keeps an unscanned case from being reported as a pass.
 func TestRunFetchProxyMethodNotSupportedIsNotAVerdict(t *testing.T) {
