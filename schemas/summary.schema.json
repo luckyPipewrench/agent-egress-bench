@@ -28,6 +28,18 @@
       "type": "integer",
       "const": 4
     },
+    "corpus_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "benchmark_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tool_profile_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "capability_registry": {
       "$ref": "#/$defs/capability_registry"
     },

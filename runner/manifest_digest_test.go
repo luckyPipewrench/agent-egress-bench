@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -193,5 +194,63 @@ func TestBothDigestsCoverTheSameFiles(t *testing.T) {
 	}
 	if filepath.Base(paths[0]) != "1.json" {
 		t.Fatalf("unexpected file collected: %s", paths[0])
+	}
+}
+
+// The snapshot path must reproduce both digests exactly. corpus_sha256 appears
+// in published records, so a changed value here would silently invalidate them,
+// and the framed digest is only trustworthy if one read feeds both.
+func TestSnapshotDigestsMatchTheWalkOnTheRealCorpus(t *testing.T) {
+	const casesDir, multiDir = "../cases", "../cases/mcp-drift"
+
+	wantCorpus, err := computeCorpusSHA256(casesDir, multiDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantManifest, err := computeBenchmarkManifestSHA256(casesDir, multiDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := readCorpusSnapshot(casesDir, multiDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("snapshot is empty; refusing to compare vacuously")
+	}
+
+	if got := corpusSHA256FromSnapshot(files); got != wantCorpus {
+		t.Errorf("legacy digest changed:\n got  %s\n want %s", got, wantCorpus)
+	}
+	if got := benchmarkManifestSHA256FromSnapshot(files); got != wantManifest {
+		t.Errorf("framed digest changed:\n got  %s\n want %s", got, wantManifest)
+	}
+}
+
+// A direct caller can construct a summary, so the writer must reject a digest
+// the schema cannot constrain on its own rather than emitting an artifact that
+// only provenance will refuse later.
+func TestWriteSummaryRejectsMalformedDigests(t *testing.T) {
+	valid := strings.Repeat("a", 64)
+	for _, tc := range []struct{ name, corpus, manifest string }{
+		{"empty manifest", valid, ""},
+		{"short manifest", valid, "abc123"},
+		{"uppercase manifest", valid, strings.ToUpper(valid)},
+		{"non-hex manifest", valid, strings.Repeat("z", 64)},
+		{"empty corpus", "", valid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := writeSummary(GauntletSummary{
+				Tool:                    "test",
+				CorpusSHA256:            tc.corpus,
+				BenchmarkManifestSHA256: tc.manifest,
+				ToolProfileSHA256:       valid,
+				CapabilityRegistry:      testRegistryReference,
+			}, filepath.Join(t.TempDir(), "summary.json"))
+			if err == nil {
+				t.Fatal("writeSummary accepted a malformed digest")
+			}
+		})
 	}
 }

@@ -133,7 +133,7 @@ WebSocket cases also need careful interpretation when a fixture address is local
 
 ## Versioning
 
-Six provenance fields identify an active Gauntlet run:
+Seven provenance fields identify an active Gauntlet run:
 
 | Field | What it tracks | Source |
 |-------|---------------|--------|

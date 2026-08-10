@@ -43,7 +43,7 @@ Publish these next to any score, or the number is not reproducible.
 | Fact | Why |
 |---|---|
 | Method identity: repository and exact commit | The corpus and scoring change over time. |
-| Corpus and scoring version, plus `benchmark_manifest_sha256` | Pins the case surface that ran. The older `corpus_sha256` travels alongside it for records that predate the framed digest, but only the framed one proves corpus identity. |
+| Corpus and scoring version, plus `benchmark_manifest_sha256` | Pins the case surface that ran. An active record carries both digests; a frozen record produced before the framed digest existed carries only `corpus_sha256` and cannot be made to carry the newer one. Only the framed digest proves corpus identity, so a legacy record pins its contents no more tightly than that older field allowed. |
 | Capability profile, `tool_profile_sha256`, and exact registry reference | Preserves the profile's reporting labels and the raw registry snapshot that defined them. |
 | Exercised profile: the transports and categories the run actually drove | The exercised profile is what was tested. Reporting labels do not select rows or limit the result's scope. |
 | Adapter identity and owner | A vendor-authored adapter is normal. Hiding who wrote it is not. |

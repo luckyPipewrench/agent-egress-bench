@@ -190,6 +190,42 @@ func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// corpusSHA256FromSnapshot reproduces computeCorpusSHA256 exactly: contents
+// concatenated in sorted-path order with no framing. That value appears in
+// published records, so it is preserved byte for byte rather than improved here.
+func corpusSHA256FromSnapshot(files []corpusFile) string {
+	ordered := make([]corpusFile, len(files))
+	copy(ordered, files)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].path < ordered[j].path })
+
+	h := sha256.New()
+	for _, f := range ordered {
+		_, _ = h.Write(f.data)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// benchmarkManifestSHA256FromSnapshot reproduces computeBenchmarkManifestSHA256:
+// entries ordered by canonical key, with each key and body length-prefixed.
+func benchmarkManifestSHA256FromSnapshot(files []corpusFile) string {
+	ordered := make([]corpusFile, len(files))
+	copy(ordered, files)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].key < ordered[j].key })
+
+	h := sha256.New()
+	var size [binary.MaxVarintLen64]byte
+	writeField := func(b []byte) {
+		n := binary.PutUvarint(size[:], uint64(len(b)))
+		_, _ = h.Write(size[:n])
+		_, _ = h.Write(b)
+	}
+	for _, f := range ordered {
+		writeField([]byte(f.key))
+		writeField(f.data)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // computeBenchmarkManifestSHA256 binds the exact corpus contents: every file's
 // location, its byte length, and its bytes.
 //
@@ -241,6 +277,65 @@ func computeBenchmarkManifestSHA256(casesDir, multiFileDir string) (string, erro
 // corpusManifestKey renders a machine-independent key for a corpus file. The
 // root prefix keeps the two trees distinct even when a relative path could
 // appear under either.
+// isSHA256Hex reports whether s is exactly 64 lowercase hexadecimal characters.
+// Case is not normalized: a digest is compared as a string across consumers in
+// several languages, so accepting both cases would let two spellings of one
+// value fail an equality check that should have passed.
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// corpusFile is one corpus file read exactly once: its absolute path, its
+// canonical manifest key, and the bytes both digests are derived from.
+type corpusFile struct {
+	key  string
+	path string
+	data []byte
+}
+
+// readCorpusSnapshot reads every corpus file once so both digests describe the
+// same bytes.
+//
+// Each digest previously walked the tree and read every file for itself. Sharing
+// only the path collector is not enough: two independent reads of the same path
+// can return different contents, so a corpus edited between them produced a
+// legacy digest over one set of bytes and a framed digest over another, and the
+// framed digest's claim to identify the corpus does not survive that. One read
+// removes the window between them.
+//
+// It does not close the window between execution and hashing. Both digests are
+// still computed after the run, so they identify the corpus present at summary
+// time rather than proving the bytes that were measured. Closing that requires
+// snapshotting at case-load time and is separate work.
+func readCorpusSnapshot(casesDir, multiFileDir string) ([]corpusFile, error) {
+	paths, err := corpusFilePaths(casesDir, multiFileDir)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make([]corpusFile, 0, len(paths))
+	for _, p := range paths {
+		key, keyErr := corpusManifestKey(p, casesDir, multiFileDir)
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		data, readErr := os.ReadFile(p)
+		if readErr != nil {
+			return nil, fmt.Errorf("reading %s for hash: %w", p, readErr)
+		}
+		files = append(files, corpusFile{key: key, path: p, data: data})
+	}
+	return files, nil
+}
+
 func corpusManifestKey(path, casesDir, multiFileDir string) (string, error) {
 	roots := []struct {
 		prefix string
@@ -297,15 +392,14 @@ func buildSummary(
 	profilePath string,
 	prov RunProvenance,
 ) (GauntletSummary, error) {
-	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDir)
+	// One read for both digests. Reading the corpus twice let them describe
+	// different bytes, which is exactly what the framed digest exists to rule out.
+	corpusFiles, err := readCorpusSnapshot(casesDir, multiFileDir)
 	if err != nil {
 		return GauntletSummary{}, err
 	}
-
-	manifestSHA, err := computeBenchmarkManifestSHA256(casesDir, multiFileDir)
-	if err != nil {
-		return GauntletSummary{}, err
-	}
+	corpusSHA := corpusSHA256FromSnapshot(corpusFiles)
+	manifestSHA := benchmarkManifestSHA256FromSnapshot(corpusFiles)
 
 	profileSHA, err := computeProfileSHA256(profilePath)
 	if err != nil {
@@ -441,6 +535,20 @@ func writeSummary(s GauntletSummary, path string) error {
 	}
 	if err := validateRegistryReference(s.CapabilityRegistry); err != nil {
 		return fmt.Errorf("invalid summary capability_registry: %w", err)
+	}
+	// The schema requires these keys but cannot constrain their values on its
+	// own, so a direct caller could emit an empty or malformed digest and have
+	// it rejected only later, by provenance, after the artifact already exists.
+	for _, digest := range []struct {
+		field string
+		value string
+	}{
+		{"corpus_sha256", s.CorpusSHA256},
+		{"benchmark_manifest_sha256", s.BenchmarkManifestSHA256},
+	} {
+		if !isSHA256Hex(digest.value) {
+			return fmt.Errorf("summary %s must be 64 lowercase hex characters, got %q", digest.field, digest.value)
+		}
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

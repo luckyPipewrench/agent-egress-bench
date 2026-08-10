@@ -80,6 +80,7 @@ A single JSON file with the full scoring breakdown:
   "tool_version": "1.0.0",
   "corpus_version": "v1.0.0",
   "corpus_sha256": "af7f95d7...",
+  "benchmark_manifest_sha256": "135c979e...",
   "date": "2026-04-15T14:30:00Z",
   "case_count": {
     "total": 142,
@@ -138,7 +139,7 @@ Key fields:
 
 - `corpus_sha256`: SHA-256 over all case file contents concatenated in sorted-path order. It detects a content change but cannot identify the exact corpus, because it frames nothing: any regrouping of the same total bytes across files produces the same value. Retained unchanged so published records keep verifying against the definition they were produced under.
 - `benchmark_manifest_sha256`: SHA-256 over every case file's path, byte length, and bytes, each length-prefixed. This is the field that identifies the exact corpus. Use it when corpus identity matters.
-- `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, identifies a reproducible run.
+- `runner_version`: version of the runner binary. Together with `benchmark_manifest_sha256` and `tool_version`, identifies a reproducible run. `corpus_sha256` is retained as a legacy content-change indicator and does not establish corpus identity.
 - `capability_registry`: exact registry snapshot used to validate reporting labels. The SHA-256 is over the retained raw snapshot bytes.
 - `reported_claims`: profile labels for report interpretation. They do not select rows or change any measurement.
 - `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.

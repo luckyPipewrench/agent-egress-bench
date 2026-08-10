@@ -237,7 +237,14 @@ func TestWriteSummaryOmitsEmptyDate(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "summary.json")
-	if err := writeSummary(GauntletSummary{Tool: "test", Date: "", CapabilityRegistry: testRegistryReference}, path); err != nil {
+	if err := writeSummary(GauntletSummary{
+		Tool:                    "test",
+		Date:                    "",
+		CorpusSHA256:            strings.Repeat("a", 64),
+		BenchmarkManifestSHA256: strings.Repeat("b", 64),
+		ToolProfileSHA256:       strings.Repeat("c", 64),
+		CapabilityRegistry:      testRegistryReference,
+	}, path); err != nil {
 		t.Fatalf("writeSummary: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -338,8 +345,9 @@ func TestWriteSummary(t *testing.T) {
 		Tool:               "test-tool",
 		ToolVersion:        "1.0.0",
 		CorpusVersion:      corpusVersion,
-		CorpusSHA256:       "abc123",
-		ToolProfileSHA256:  "def456",
+		CorpusSHA256:            strings.Repeat("a", 64),
+		BenchmarkManifestSHA256: strings.Repeat("b", 64),
+		ToolProfileSHA256:       strings.Repeat("c", 64),
 		CapabilityRegistry: testRegistryReference,
 		ReportedClaims:     []string{"url_dlp"},
 		Date:               "2026-03-28T00:00:00Z",
@@ -403,8 +411,9 @@ func TestWriteSummary(t *testing.T) {
 	if parsed.ScoringVersion != scoringVersion {
 		t.Errorf("scoring_version = %q, want %q", parsed.ScoringVersion, scoringVersion)
 	}
-	if parsed.ToolProfileSHA256 != "def456" {
-		t.Errorf("tool_profile_sha256 = %q, want def456", parsed.ToolProfileSHA256)
+	wantProfileSHA := strings.Repeat("c", 64)
+	if parsed.ToolProfileSHA256 != wantProfileSHA {
+		t.Errorf("tool_profile_sha256 = %q, want %q", parsed.ToolProfileSHA256, wantProfileSHA)
 	}
 	if parsed.Scores.Full.Containment == nil || *parsed.Scores.Full.Containment != 0.95 {
 		t.Errorf("full containment = %v, want 0.95", ptrVal(parsed.Scores.Full.Containment))
