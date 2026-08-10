@@ -46,7 +46,7 @@ An active schema may change in place only when every existing artifact that decl
 A version bump is required if a change does any of the following:
 
 - rejects a previously valid artifact or accepts it with a different meaning
-- changes a result, denominator, security interpretation, provenance interpretation, required field, enum meaning, delivery rule, observation rule, or published-record verification rule
+- changes a result, denominator, security interpretation, provenance interpretation, required field after an artifact declares that version, enum meaning, delivery rule, observation rule, or published-record verification rule
 
 Internal code changes still require a bump when they produce one of those effects.
 

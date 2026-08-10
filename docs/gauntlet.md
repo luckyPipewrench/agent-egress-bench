@@ -161,6 +161,7 @@ A single JSON file with the full scoring breakdown:
   "tool_version": "1.0.0",
   "corpus_version": "v1.0.0",
   "corpus_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "benchmark_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "tool_profile_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "date": "2026-04-15T14:30:00Z",
   "case_count": {
@@ -223,8 +224,9 @@ A single JSON file with the full scoring breakdown:
 
 Key fields:
 
-- `corpus_sha256`: SHA-256 hash of all case file contents sorted by path. Identifies the exact corpus used.
-- `runner_version`: version of the runner binary. Together with `corpus_sha256` and `tool_version`, identifies a reproducible run.
+- `corpus_sha256`: retained SHA-256 hash of case-file contents sorted by path. It detects content changes but cannot identify file boundaries or membership.
+- `benchmark_manifest_sha256`: SHA-256 over lexicographically ordered manifest entries. For each entry, write the unsigned LEB128 varint byte length of its UTF-8 key, the key bytes, the unsigned LEB128 varint byte length of its raw file bytes, then those file bytes. Keys are `cases/<relative-path>` for single-file cases and `multifile/<registered-family>/<relative-path>` for multi-file cases, with `/` separators. It identifies the exact corpus that ran.
+- `runner_version`: version of the runner binary. Together with `benchmark_manifest_sha256` and `tool_version`, identifies a reproducible run.
 - `capability_registry`: exact registry snapshot used to validate reporting labels. The SHA-256 is over the retained raw snapshot bytes.
 - `reported_claims`: profile labels for report interpretation. They do not select rows or change any measurement.
 - `date`: UTC generation time by default. Set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value for byte-stable summaries, or set it to an empty string to omit the field.
@@ -251,7 +253,7 @@ A Gauntlet run is valid when all of the following are true:
 
 1. **Every corpus case has an emitted outcome.** No cherry-picking. The runner processes every case file in the corpus directory; a missing exact route is emitted as `unreachable` and makes the measurement incomplete.
 2. **No case produced an error.** A single `error` row makes the run unpublishable. An error means this harness failed to measure the case, not that the tool did anything, so it is excluded from every score denominator; tolerating errors would therefore both hide the measurement failure and raise the score. An error and an unreachable row mean the same thing and carry the same consequence: fix the harness or the adapter and run it again.
-3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `corpus_sha256` field ensures corpus identity.
+3. **Results are reproducible.** The same corpus version + tool version + runner version must produce the same scores. The `benchmark_manifest_sha256` field ensures corpus identity.
 4. **The official runner or a compatible runner was used.** Compatible runners must produce the same JSONL and summary format, bind the same registry snapshot, implement the same applicability rules, and use the same scoring formulas.
 
 ## Interpreting outputs
@@ -275,13 +277,14 @@ The Go validator in `validate/` is the authoritative checker for active case fil
 
 ## Versions and reproducibility
 
-[`GOVERNANCE.md`](GOVERNANCE.md) owns artifact versioning and compatibility. Six fields identify an active run:
+[`GOVERNANCE.md`](GOVERNANCE.md) owns artifact versioning and compatibility. Seven fields identify an active run:
 
 | Field | What it tracks | Source |
 | --- | --- | --- |
 | `corpus_version` | Tag or commit of the case corpus | Repository tag or commit |
 | `scoring_version` | Scoring, applicability, and publication rules | Runner constant |
-| `corpus_sha256` | Exact loaded case bytes | Computed at runtime |
+| `corpus_sha256` | Retained legacy content digest; not exact corpus identity | Computed at runtime |
+| `benchmark_manifest_sha256` | Exact loaded case paths, boundaries, and bytes | Computed at runtime |
 | `runner_version` | Runner binary generation | Runner constant |
 | `tool_profile_sha256` | Exact tool profile | Computed at runtime |
 | `capability_registry` | Exact reporting-label registry snapshot | Profile and active results |
