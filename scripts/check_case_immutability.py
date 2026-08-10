@@ -46,14 +46,70 @@ def resolve_base(root, base):
     return resolved
 
 
+def base_tree_files(root, base):
+    raw = git(root, "ls-tree", "-r", "-z", "--long", base, "--", "cases")
+    entries = []
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, relative = record.split(b"\t", 1)
+            _mode, kind, object_id, _size = metadata.split()
+        except ValueError as exc:
+            fail(f"cannot parse base tree record: {record!r}: {exc}")
+        if kind != b"blob":
+            continue
+        entries.append((relative.decode("utf-8", errors="surrogateescape"), object_id))
+    return entries
+
+
+def read_base_blobs(root, entries):
+    if not entries:
+        return {}
+    requested = b"".join(object_id + b"\n" for _relative, object_id in entries)
+    result = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "--batch"],
+        check=False,
+        capture_output=True,
+        input=requested,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        fail(f"git cat-file --batch failed: {detail or 'no diagnostic'}")
+
+    blobs = {}
+    offset = 0
+    for relative, object_id in entries:
+        line_end = result.stdout.find(b"\n", offset)
+        if line_end < 0:
+            fail(f"git cat-file --batch returned no header for {relative}")
+        header = result.stdout[offset:line_end].split()
+        offset = line_end + 1
+        if len(header) != 3 or header[0] != object_id or header[1] != b"blob":
+            fail(f"git cat-file --batch returned an invalid blob header for {relative}")
+        try:
+            size = int(header[2])
+        except ValueError as exc:
+            fail(f"git cat-file --batch returned an invalid blob size for {relative}: {exc}")
+        end = offset + size
+        if len(result.stdout) < end + 1 or result.stdout[end:end + 1] != b"\n":
+            fail(f"git cat-file --batch returned truncated blob data for {relative}")
+        blobs[relative] = result.stdout[offset:end]
+        offset = end + 1
+    if offset != len(result.stdout):
+        fail("git cat-file --batch returned unexpected trailing data")
+    return blobs
+
+
 def base_case_inventory(root, base):
-    paths = git(root, "ls-tree", "-r", "--name-only", base, "--", "cases").decode("utf-8").splitlines()
-    if not paths:
+    entries = base_tree_files(root, base)
+    if not entries:
         fail(f"base revision {base} contains no files under cases/")
+    raw_by_path = read_base_blobs(root, entries)
 
     cases = {}
     drift_dirs = {}
-    for relative in paths:
+    for relative, _object_id in entries:
         parts = Path(relative).parts
         if len(parts) >= 4 and parts[:2] == ("cases", "mcp-drift"):
             case_id = parts[2]
@@ -61,7 +117,7 @@ def base_case_inventory(root, base):
             continue
         if len(parts) != 3 or parts[0] != "cases" or not relative.endswith(".json"):
             continue
-        raw = git(root, "show", f"{base}:{relative}")
+        raw = raw_by_path[relative]
         try:
             document = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -80,7 +136,7 @@ def base_case_inventory(root, base):
             fail(f"duplicate base case id: {case_id}")
         if not any(path.endswith("/case.yaml") for path in drift_paths):
             fail(f"base MCP-drift case {case_id} has no case.yaml")
-        cases[case_id] = {path: git(root, "show", f"{base}:{path}") for path in drift_paths}
+        cases[case_id] = {path: raw_by_path[path] for path in drift_paths}
 
     if not cases:
         fail(f"base revision {base} contains no discoverable cases")

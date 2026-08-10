@@ -32,7 +32,15 @@ class CaseImmutabilityTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def git(self, *args):
-        return subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True).stdout
+        environment = {
+            **os.environ,
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+        }
+        return subprocess.run(
+            ["git", "-C", str(self.repo), *args], check=True, capture_output=True, env=environment
+        ).stdout
 
     def write_json(self, path, value):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +110,20 @@ class CaseImmutabilityTest(unittest.TestCase):
     def test_rejects_missing_base_instead_of_passing(self):
         with self.assertRaisesRegex(ValueError, "base revision is required"):
             case_immutability.check(self.repo, "")
+
+    def test_accepts_non_ascii_base_path(self):
+        self.write_json(
+            self.repo / "cases" / "url" / "caf\u00e9-case.json",
+            {"id": "unicode-case", "payload": {"url": "https://unicode.example.invalid"}},
+        )
+        self.git("add", "cases")
+        self.git("commit", "-qm", "add unicode fixture")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+
+        resolved, count, changed = case_immutability.check(self.repo, base)
+        self.assertEqual(base, resolved)
+        self.assertEqual(3, count)
+        self.assertEqual([], changed)
 
 
 if __name__ == "__main__":
