@@ -84,8 +84,9 @@ def read_go_constant(root, source):
     # grouped block. Matching only the first form made this gate reject a legal
     # refactor into a group, which is the failure direction that gets a gate
     # switched off rather than fixed.
-    single = rf"\bconst\s+{re.escape(symbol)}\s*=\s*([0-9]+)\b"
-    grouped = rf"(?m)^\s*{re.escape(symbol)}\s*=\s*([0-9]+)\s*(?://.*)?$"
+    optional_type = r"(?:\s+[A-Za-z_][A-Za-z0-9_.]*)?"
+    single = rf"\bconst\s+{re.escape(symbol)}{optional_type}\s*=\s*([0-9]+)\b"
+    grouped = rf"(?m)^\s*{re.escape(symbol)}{optional_type}\s*=\s*([0-9]+)\s*(?://.*)?$"
     matches = [m.group(1) for pattern in (single, grouped) for m in re.finditer(pattern, text)]
     if not matches:
         fail(f"cannot find integer constant {symbol} in {relative}")
@@ -248,10 +249,14 @@ def check(root, manifest_path):
         if not isinstance(schemas, list):
             fail(f"{name}.schemas must be an array")
         active_schema_paths = []
+        schema_versions = set()
         for schema in schemas:
             if not isinstance(schema, dict):
                 fail(f"{name}: schema entries must be objects")
             version = require_int(schema.get("version"), f"{name} schema version")
+            if version in schema_versions:
+                fail(f"{name}: schema version {version} is listed more than once")
+            schema_versions.add(version)
             status = schema.get("status")
             expected_status = "frozen" if version in frozen else "active" if version == active else None
             if expected_status is None or status != expected_status:
@@ -271,6 +276,11 @@ def check(root, manifest_path):
                 fail(f"{relative}: declares schema_version {declared!r}, manifest says {version}")
             if status == "active":
                 active_schema_paths.append(relative)
+
+        if schemas and schema_versions != set(accepted):
+            missing = sorted(set(accepted) - schema_versions)
+            extra = sorted(schema_versions - set(accepted))
+            fail(f"{name}: schemas do not cover accepted reader versions; missing={missing}, extra={extra}")
 
         canonical = family.get("canonical_schema_path")
         if canonical is None:
@@ -334,7 +344,7 @@ def main():
     manifest_path = args.manifest.resolve() if args.manifest else root / "contracts" / "artifacts.json"
     try:
         families, schemas, records, versions, assets = check(root, manifest_path)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         print(f"check-contracts: FAIL - {exc}", file=sys.stderr)
         return 1
     print(

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -94,8 +95,13 @@ func TestValidateReceiptProfile_CommittedPipelock(t *testing.T) {
 
 func TestValidateReceiptProfile_RejectsBadSchemaVersion(t *testing.T) {
 	rp := validProfile()
-	rp.SchemaVersion = 99
-	expectIssueMatch(t, rp, "schema_version must be 4")
+	for _, version := range []int{2, 99} {
+		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+			invalid := rp
+			invalid.SchemaVersion = version
+			expectIssueMatch(t, invalid, "schema_version must be 4")
+		})
+	}
 }
 
 func TestValidateReceiptProfile_RejectsBadCorpusSHA(t *testing.T) {

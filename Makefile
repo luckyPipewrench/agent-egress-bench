@@ -19,6 +19,7 @@ preflight: check-contracts check-case-immutability check-schema-copies check-doc
 # rejects missing and empty inputs before it compares any values, so a failed
 # producer or an empty record tree cannot turn this into a false green.
 check-contracts:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
 
 # Case bytes are immutable once their ID reaches the merge base. New IDs and

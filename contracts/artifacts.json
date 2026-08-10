@@ -97,10 +97,22 @@
     {
       "family": "receipt_scoring_profile",
       "active_writer_version": 4,
-      "accepted_reader_versions": [1, 4],
-      "frozen_versions": [1],
+      "accepted_reader_versions": [1, 3, 4],
+      "frozen_versions": [1, 3],
       "canonical_schema_path": "schemas/receipt-scoring-profile-v4.schema.json",
       "schemas": [
+        {
+          "version": 1,
+          "status": "frozen",
+          "path": "schemas/receipt-scoring-profile-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v1.schema.json"
+        },
+        {
+          "version": 3,
+          "status": "frozen",
+          "path": "schemas/receipt-scoring-profile-v3.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v3.schema.json"
+        },
         {
           "version": 4,
           "status": "active",

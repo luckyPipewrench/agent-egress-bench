@@ -43,7 +43,6 @@ var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": t
 var readableReceiptProfileVersions = func() map[int]bool {
 	versions := map[int]bool{
 		1:               true,
-		2:               true,
 		3:               true,
 		v4SchemaVersion: true,
 	}
