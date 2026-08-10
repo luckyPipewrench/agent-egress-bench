@@ -218,6 +218,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         if summary_schema_version == 5:
             summary["scoring_version"] = "2.8"
             summary["runner_version"] = "0.4.3"
+            summary["benchmark_manifest_sha256"] = "c" * 64
             summary["diagnostics"] = {
                 scope: {
                     "classification_present_rate": values.pop("detection"),
@@ -320,6 +321,18 @@ class ProvenanceBuilderTest(unittest.TestCase):
             scope["diagnostic_counts"]["applicable"]["classification_present_rate"],
             {"numerator": 1, "denominator": 1},
         )
+
+    def test_active_summary_without_manifest_digest_is_rejected(self):
+        self.make_active_fixture(summary_schema_version=5)
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        del summary["benchmark_manifest_sha256"]
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("benchmark_manifest_sha256 must be 64 lower-case hex characters", result.stderr)
 
     def test_v5_rejects_retired_score_fields_before_they_enter_a_bundle(self):
         for retired_field in ("detection", "evidence"):
