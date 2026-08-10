@@ -451,7 +451,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("## Scope")
 	line("")
 	bullet("Total cases", reportCount(r.summary, "case_count", "total"))
-	bullet("Applicable cases", reportCount(r.summary, "case_count", "applicable"))
+	bullet("Routed cases", reportCount(r.summary, "case_count", "applicable"))
 	if _, present := reportIntegerValue(r.summary, "case_count", "unreachable"); present {
 		bullet("Unreachable cases", reportCount(r.summary, "case_count", "unreachable"))
 	}
@@ -476,14 +476,14 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("## Metric vector")
 	line("")
 	if reportNumber(r.summary, "schema_version") == "5" {
-		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.")
+		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only the routed cases this adapter delivered AND observed, so error rows are counted as routed but are excluded from every score denominator.")
 		line("")
 		line("### Full corpus")
 		line("")
 		bullet("Containment", reportPercent(r.summary, "scores", "full", "containment"))
 		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
 		line("")
-		line("### Applicable cases")
+		line("### Applicable-only observed cases")
 		line("")
 		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
 		bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
@@ -497,7 +497,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		bullet("Applicable label present", reportPercent(r.summary, "diagnostics", "applicable", "classification_present_rate"))
 		bullet("Applicable structured field present", reportPercent(r.summary, "diagnostics", "applicable", "structured_evidence_present_rate"))
 	} else {
-		line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.")
+		line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only the routed cases this adapter delivered AND observed, so error rows are counted as routed but are excluded from every score denominator.")
 		line("")
 		line("### Full corpus")
 		line("")
@@ -506,7 +506,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		bullet("Evidence", reportPercent(r.summary, "scores", "full", "evidence"))
 		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
 		line("")
-		line("### Applicable cases")
+		line("### Applicable-only observed cases")
 		line("")
 		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
 		bullet("Detection", reportPercent(r.summary, "scores", "applicable", "detection"))
@@ -771,6 +771,40 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	tags, err := reportRegistryLabels(r.summary, "exercised", "capability_tags")
 	if err != nil || resolved.ValidateActiveIDs("exercised capability_tag", tags) != nil {
 		return "active exercised capability_tags are not active IDs in the retained registry"
+	}
+	return r.v4ReceiptProfileBindingError(reference)
+}
+
+// v4ReceiptProfileBindingError confirms that the retained receipt profile is
+// attached to this exact v4 run. A matching bundle digest only says the profile
+// was retained intact; it cannot establish that the retained profile describes
+// the summary, tool profile, and registry snapshot beside it.
+func (r *buyerReport) v4ReceiptProfileBindingError(reference capabilityregistry.Reference) string {
+	data, err := os.ReadFile(filepath.Join(r.dir, "receipt-profile.json"))
+	if err != nil {
+		return "v4 receipt profile is absent or unreadable"
+	}
+	var receipt ReceiptProfile
+	if err := decodeStrictJSON(data, &receipt); err != nil {
+		return "v4 receipt profile is malformed"
+	}
+	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
+		return "v4 receipt profile is invalid"
+	}
+	if receipt.SchemaVersion != v4SchemaVersion {
+		return "v4 receipt profile schema version does not match the result"
+	}
+	if receipt.Tool != reportString(r.summary, "tool") || receipt.ToolVersion != reportString(r.summary, "tool_version") {
+		return "v4 receipt profile tool identity does not match the result"
+	}
+	if receipt.CorpusVersion != reportString(r.summary, "corpus_version") || receipt.CorpusSHA256 != reportString(r.summary, "corpus_sha256") {
+		return "v4 receipt profile corpus identity does not match the result"
+	}
+	if receipt.ToolProfileSHA256 != reportString(r.summary, "tool_profile_sha256") {
+		return "v4 receipt profile tool profile digest does not match the result"
+	}
+	if receipt.CapabilityRegistry != reference {
+		return "v4 receipt profile registry reference does not match the result"
 	}
 	return ""
 }

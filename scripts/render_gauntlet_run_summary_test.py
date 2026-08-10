@@ -130,7 +130,7 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
         output = self.render()
         self.assertIn("PASS — NO ACTION REQUIRED", output)
         self.assertIn("No PR was created; permanent publication was not requested.", output)
-        self.assertIn("214 total; 210 applicable; 0 unreachable; 4 N/A; 0 errors", output)
+        self.assertIn("214 total; 210 routed; 0 unreachable; 4 N/A; 0 errors", output)
         self.assertIn("Applicable containment: 100.0%", output)
         self.assertIn("Full containment: 98.1%", output)
         self.assertIn("Applicable false-positive rate: 0.0%", output)
@@ -162,7 +162,7 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
 
         output = self.render(candidate_value=value, decision_value=decision("blocked", True, ["sufficient=False, want true"]), enforcement_exit=1)
 
-        self.assertIn("209 applicable; 1 unreachable; 4 N/A", output)
+        self.assertIn("209 routed; 1 unreachable; 4 N/A", output)
 
     def test_blocked_decision_is_action_required(self):
         output = self.render(decision_value=decision("blocked", True, ["case_count.errors=1, want 0"]), enforcement_exit=1)

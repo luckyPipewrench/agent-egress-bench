@@ -50,7 +50,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Scope
 
 - Total cases: 99
-- Applicable cases: 97
+- Routed cases: 97
 - Not-applicable cases: 2
 - Error cases: 5
 - Not-applicable case IDs and reasons:
@@ -58,7 +58,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 
 ## Metric vector
 
-Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.
+Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only the routed cases this adapter delivered AND observed, so error rows are counted as routed but are excluded from every score denominator.
 
 ### Full corpus
 
@@ -67,7 +67,7 @@ Each metric stands on its own. Full-corpus scores retain historical N/A rows as 
 - Evidence: 25.00%
 - False-positive rate: 10.00%
 
-### Applicable cases
+### Applicable-only observed cases
 
 - Containment: 80.00%
 - Detection: 60.00%
@@ -129,7 +129,7 @@ Credential-shaped values in the commands below are replaced with REDACTED. Read 
 - pipelock-release.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - pipelock-version.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - raw-summary.json (sha256 c0f796a4872284da8b2446f0ab59ae141c46e7cda05dfc8bb398c88276ef7da6)
-- receipt-profile.json (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
+- receipt-profile.json (sha256 e6dd449c31e34ec84ded60b75b507e5acb1fe2a1c7493afad341362ddfe75cb9)
 - results.jsonl (sha256 d1413b853523d00171fb500f4c0bb02973cd4aa2276c1eed650295f9eace651f)
 - run-metadata.json (sha256 2ec73028d323d3cf0d2bd7b3e8eb598f515aa3e0f0053e46ef03a53916ac1bc4)
 - runner.stderr (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
