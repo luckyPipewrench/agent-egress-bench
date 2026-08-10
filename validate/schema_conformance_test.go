@@ -57,8 +57,13 @@ func TestCaseSchemaConformance(t *testing.T) {
 	t.Run("go_only_supersession_graph", func(t *testing.T) {
 		mutated := cloneConformanceObject(t, baseline)
 		mutated["supersedes"] = mutated["id"]
-		schemaAcceptsConformance(t, schema, marshalConformanceJSON(t, mutated))
-		if issues := validateSupersessionGraph(map[string]string{mutated["id"].(string): mutated["id"].(string)}); len(issues) == 0 {
+		data := marshalConformanceJSON(t, mutated)
+		schemaAcceptsConformance(t, schema, data)
+		path := filepath.Join(t.TempDir(), "case.json")
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if issues := validateSupersessionGraph(map[string]string{mutated["id"].(string): path}); len(issues) == 0 {
 			t.Fatal("Go-only supersession graph check accepted a self-cycle")
 		}
 	})
