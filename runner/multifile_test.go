@@ -648,10 +648,11 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	override := filepath.Join(t.TempDir(), "mcp-drift")
 	copyMultiFileCases(t, filepath.Join(casesDir, "mcp-drift"), override)
 
-	cases, effectiveDirs, err := loadRunCorpus(casesDir, override)
+	runCorpus, err := loadRunCorpus(casesDir, override)
 	if err != nil {
 		t.Fatalf("loadRunCorpus with complete relocated override: %v", err)
 	}
+	cases := runCorpus.cases
 	canonical, err := loadCorpus(casesDir)
 	if err != nil {
 		t.Fatalf("load canonical corpus: %v", err)
@@ -659,15 +660,19 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	if err := ensureExactRunCorpus(cases, canonical); err != nil {
 		t.Fatalf("relocated override changed corpus identity: %v", err)
 	}
-	if len(effectiveDirs) != 1 || effectiveDirs[0] != override {
-		t.Fatalf("effective override dirs = %v, want [%s]", effectiveDirs, override)
+	if len(runCorpus.snapshot.files) == 0 {
+		t.Fatal("complete relocated override produced an empty corpus snapshot")
 	}
 
 	defaultDirs, err := registeredMultiFileCaseDirs(casesDir)
 	if err != nil {
 		t.Fatalf("registered multi-file directories: %v", err)
 	}
-	defaultHash, err := computeCorpusSHA256(casesDir, defaultDirs...)
+	defaultDirPaths := make([]string, 0, len(defaultDirs))
+	for _, directory := range defaultDirs {
+		defaultDirPaths = append(defaultDirPaths, directory.path)
+	}
+	defaultHash, err := computeCorpusSHA256(casesDir, defaultDirPaths...)
 	if err != nil {
 		t.Fatalf("hash default corpus: %v", err)
 	}

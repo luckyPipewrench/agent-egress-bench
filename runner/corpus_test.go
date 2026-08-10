@@ -25,7 +25,7 @@ func TestLoadRunCorpusRefusesOverrideWithMultipleFamilies(t *testing.T) {
 	multiFileCaseCategories[second] = true
 	t.Cleanup(func() { delete(multiFileCaseCategories, second) })
 
-	_, _, err := loadRunCorpus(root, filepath.Join(root, "mcp-drift"))
+	_, err := loadRunCorpus(root, filepath.Join(root, "mcp-drift"))
 	if err == nil {
 		t.Fatal("override accepted while two multi-file families were registered")
 	}

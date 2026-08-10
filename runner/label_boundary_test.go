@@ -48,7 +48,7 @@ func measureLabelsOnly(t *testing.T, profile Profile) labelMeasurement {
 		t.Fatal(err)
 	}
 	byID := map[string]Case{cases[0].ID: cases[0], cases[1].ID: cases[1]}
-	summary, err := buildSummary(profile, cases, rows, unreachableIDs, reasons, dir, nil, byID, profilePath, RunProvenance{})
+	summary, err := buildSummary(profile, cases, rows, unreachableIDs, reasons, summarySnapshot(t, dir), byID, profilePath, RunProvenance{})
 	if err != nil {
 		t.Fatalf("buildSummary: %v", err)
 	}

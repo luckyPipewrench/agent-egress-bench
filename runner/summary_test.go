@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func summarySnapshot(t *testing.T, dir string) corpusSnapshot {
+	t.Helper()
+	snapshot, err := readCorpusSnapshot(dir)
+	if err != nil {
+		t.Fatalf("read corpus snapshot: %v", err)
+	}
+	files, err := selectedCorpusFiles(snapshot, nil)
+	if err != nil {
+		t.Fatalf("select corpus snapshot: %v", err)
+	}
+	return corpusSnapshot{files: files}
+}
+
 func TestComputeCorpusSHA256NonexistentDir(t *testing.T) {
 	_, err := computeCorpusSHA256("/nonexistent/dir")
 	if err == nil {
@@ -32,7 +45,7 @@ func TestWriteSummaryRejectsPreV3Artifact(t *testing.T) {
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, nil, "/nonexistent/dir", nil, nil, "/nonexistent/profile.json", RunProvenance{})
+	_, err := buildSummary(p, nil, nil, nil, nil, corpusSnapshot{}, nil, "/nonexistent/profile.json", RunProvenance{})
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -78,8 +91,7 @@ func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		dir,
-		nil,
+		summarySnapshot(t, dir),
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		profilePath,
 		RunProvenance{},
@@ -110,8 +122,7 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		dir,
-		nil,
+		summarySnapshot(t, dir),
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		profilePath,
 		RunProvenance{},
@@ -136,8 +147,7 @@ func TestBuildSummaryKeepsUnreachableOutsideScoreableErrors(t *testing.T) {
 		nil,
 		map[string]struct{}{"a": {}},
 		nil,
-		dir,
-		nil,
+		summarySnapshot(t, dir),
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
 		profilePath,
 		RunProvenance{},
@@ -175,8 +185,7 @@ func TestBuildSummarySyntheticRowsHaveIncompleteMeasurement(t *testing.T) {
 		[]CaseResult{result},
 		nil,
 		nil,
-		dir,
-		nil,
+		summarySnapshot(t, dir),
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
 		profilePath,
 		RunProvenance{},
@@ -215,8 +224,7 @@ func TestBuildSummaryBelow80PercentCanBeMeasured(t *testing.T) {
 		results,
 		nil,
 		nil,
-		dir,
-		nil,
+		summarySnapshot(t, dir),
 		map[string]Case{"a": allCases[0], "b": allCases[1]},
 		profilePath,
 		RunProvenance{},
@@ -237,7 +245,14 @@ func TestWriteSummaryOmitsEmptyDate(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "summary.json")
-	if err := writeSummary(GauntletSummary{Tool: "test", Date: "", CapabilityRegistry: testRegistryReference}, path); err != nil {
+	if err := writeSummary(GauntletSummary{
+		Tool:                    "test",
+		Date:                    "",
+		CorpusSHA256:            strings.Repeat("a", 64),
+		BenchmarkManifestSHA256: strings.Repeat("b", 64),
+		ToolProfileSHA256:       strings.Repeat("c", 64),
+		CapabilityRegistry:      testRegistryReference,
+	}, path); err != nil {
 		t.Fatalf("writeSummary: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -332,17 +347,18 @@ func TestWriteSummary(t *testing.T) {
 	structuredEvidencePresent := 0.0
 
 	s := GauntletSummary{
-		GauntletVersion:    gauntletVersion,
-		ScoringVersion:     scoringVersion,
-		RunnerVersion:      runnerVersion,
-		Tool:               "test-tool",
-		ToolVersion:        "1.0.0",
-		CorpusVersion:      corpusVersion,
-		CorpusSHA256:       "abc123",
-		ToolProfileSHA256:  "def456",
-		CapabilityRegistry: testRegistryReference,
-		ReportedClaims:     []string{"url_dlp"},
-		Date:               "2026-03-28T00:00:00Z",
+		GauntletVersion:         gauntletVersion,
+		ScoringVersion:          scoringVersion,
+		RunnerVersion:           runnerVersion,
+		Tool:                    "test-tool",
+		ToolVersion:             "1.0.0",
+		CorpusVersion:           corpusVersion,
+		CorpusSHA256:            strings.Repeat("a", 64),
+		BenchmarkManifestSHA256: strings.Repeat("b", 64),
+		ToolProfileSHA256:       strings.Repeat("c", 64),
+		CapabilityRegistry:      testRegistryReference,
+		ReportedClaims:          []string{"url_dlp"},
+		Date:                    "2026-03-28T00:00:00Z",
 		CaseCount: CaseCount{
 			Total:         100,
 			Applicable:    90,
@@ -403,8 +419,8 @@ func TestWriteSummary(t *testing.T) {
 	if parsed.ScoringVersion != scoringVersion {
 		t.Errorf("scoring_version = %q, want %q", parsed.ScoringVersion, scoringVersion)
 	}
-	if parsed.ToolProfileSHA256 != "def456" {
-		t.Errorf("tool_profile_sha256 = %q, want def456", parsed.ToolProfileSHA256)
+	if parsed.ToolProfileSHA256 != strings.Repeat("c", 64) {
+		t.Errorf("tool_profile_sha256 = %q, want valid digest", parsed.ToolProfileSHA256)
 	}
 	if parsed.Scores.Full.Containment == nil || *parsed.Scores.Full.Containment != 0.95 {
 		t.Errorf("full containment = %v, want 0.95", ptrVal(parsed.Scores.Full.Containment))

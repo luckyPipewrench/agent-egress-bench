@@ -27,6 +27,21 @@ type corpusStatCase struct {
 	ExpectedVerdict string
 }
 
+// multiFileCaseDir retains the registered family name beside its source
+// directory. The name belongs in the framed manifest key; a directory basename
+// is not enough because a complete override may be relocated anywhere.
+type multiFileCaseDir struct {
+	family string
+	path   string
+}
+
+// runCorpus is the immutable input used for one run. Cases and both digests
+// come from snapshot, captured before parsing or adapter execution.
+type runCorpus struct {
+	cases    []Case
+	snapshot corpusSnapshot
+}
+
 // loadCorpus loads every logical case from the supplied corpus root. It is the
 // shared source for the manifest and for human-readable corpus statistics, so
 // both surfaces reflect precisely the cases the runner can execute.
@@ -42,7 +57,7 @@ func loadCorpus(root string) ([]Case, error) {
 // multi-file directories supplied by the caller. Keeping this one conversion
 // path prevents execution, statistics, and manifest generation from assigning
 // different meanings to a multi-file case.
-func loadCorpusWithMultiFileDirs(root string, multiFileDirs []string) ([]Case, error) {
+func loadCorpusWithMultiFileDirs(root string, multiFileDirs []multiFileCaseDir) ([]Case, error) {
 	cases, multiFileCases, err := loadCorpusPartsFromMultiFileDirs(root, multiFileDirs)
 	if err != nil {
 		return nil, err
@@ -60,13 +75,13 @@ func loadCorpusWithMultiFileDirs(root string, multiFileDirs []string) ([]Case, e
 // registeredMultiFileCaseDirs returns the multi-file families that belong to a
 // corpus root. A missing family directory is valid for a small local corpus;
 // a directory that exists is always loaded rather than silently skipped.
-func registeredMultiFileCaseDirs(root string) ([]string, error) {
+func registeredMultiFileCaseDirs(root string) ([]multiFileCaseDir, error) {
 	categories := make([]string, 0, len(multiFileCaseCategories))
 	for category := range multiFileCaseCategories {
 		categories = append(categories, category)
 	}
 	sort.Strings(categories)
-	dirs := make([]string, 0, len(categories))
+	dirs := make([]multiFileCaseDir, 0, len(categories))
 	for _, category := range categories {
 		directory := filepath.Join(root, category)
 		info, err := os.Stat(directory)
@@ -79,7 +94,7 @@ func registeredMultiFileCaseDirs(root string) ([]string, error) {
 		if !info.IsDir() {
 			return nil, fmt.Errorf("multi-file case path is not a directory: %s", directory)
 		}
-		dirs = append(dirs, directory)
+		dirs = append(dirs, multiFileCaseDir{family: category, path: directory})
 	}
 	return dirs, nil
 }
@@ -111,7 +126,7 @@ func loadCorpusParts(root string) ([]Case, []MultiFileCase, error) {
 	return loadCorpusPartsFromMultiFileDirs(root, multiFileDirs)
 }
 
-func loadCorpusPartsFromMultiFileDirs(root string, multiFileDirs []string) ([]Case, []MultiFileCase, error) {
+func loadCorpusPartsFromMultiFileDirs(root string, multiFileDirs []multiFileCaseDir) ([]Case, []MultiFileCase, error) {
 	cases, err := loadCases(root)
 	if err != nil {
 		return nil, nil, err
@@ -119,7 +134,7 @@ func loadCorpusPartsFromMultiFileDirs(root string, multiFileDirs []string) ([]Ca
 
 	var multiFileCases []MultiFileCase
 	for _, directory := range multiFileDirs {
-		mfCases, mfErr := loadMultiFileCases(directory)
+		mfCases, mfErr := loadMultiFileCases(directory.path)
 		if mfErr != nil {
 			return nil, nil, mfErr
 		}
@@ -132,11 +147,12 @@ func loadCorpusPartsFromMultiFileDirs(root string, multiFileDirs []string) ([]Ca
 // as permission to omit a registered family. The selected IDs must equal the
 // loader-backed corpus before a run can start, so a denominator cannot shrink
 // into a quieter summary.
-func loadRunCorpus(root, multiFileOverride string) ([]Case, []string, error) {
-	effectiveDirs, err := registeredMultiFileCaseDirs(root)
+func loadRunCorpus(root, multiFileOverride string) (runCorpus, error) {
+	registeredDirs, err := registeredMultiFileCaseDirs(root)
 	if err != nil {
-		return nil, nil, err
+		return runCorpus{}, err
 	}
+	effectiveDirs := append([]multiFileCaseDir(nil), registeredDirs...)
 	if multiFileOverride != "" {
 		// The override names one directory, so it can only stand in for the whole
 		// registered set while that set holds exactly one family. A second family
@@ -147,26 +163,124 @@ func loadRunCorpus(root, multiFileOverride string) ([]Case, []string, error) {
 		// multi-file family produces a message that says what has to change rather
 		// than a confusing corpus mismatch.
 		if len(effectiveDirs) > 1 {
-			return nil, nil, fmt.Errorf(
+			directories := make([]string, 0, len(effectiveDirs))
+			for _, directory := range effectiveDirs {
+				directories = append(directories, directory.path)
+			}
+			return runCorpus{}, fmt.Errorf(
 				"--multifile-cases overrides a single directory but %d multi-file families are registered (%s); "+
 					"the flag needs to become a per-family override before it can be used here",
-				len(effectiveDirs), strings.Join(effectiveDirs, ", "),
+				len(effectiveDirs), strings.Join(directories, ", "),
 			)
 		}
-		effectiveDirs = []string{multiFileOverride}
+		if len(effectiveDirs) == 0 {
+			return runCorpus{}, fmt.Errorf("--multifile-cases was supplied but no multi-file family is registered")
+		}
+		effectiveDirs[0].path = multiFileOverride
 	}
-	cases, err := loadCorpusWithMultiFileDirs(root, effectiveDirs)
-	if err != nil {
-		return nil, nil, err
+
+	// Capture every candidate byte once before parsing either the executable
+	// corpus or its canonical comparator. An override needs both source trees,
+	// but the returned snapshot is narrowed to only the chosen run corpus.
+	captureDirs := append([]multiFileCaseDir(nil), registeredDirs...)
+	seen := make(map[string]struct{}, len(captureDirs))
+	for _, directory := range captureDirs {
+		seen[directory.path] = struct{}{}
 	}
-	canonical, err := loadCorpus(root)
+	for _, directory := range effectiveDirs {
+		if _, ok := seen[directory.path]; ok {
+			continue
+		}
+		captureDirs = append(captureDirs, directory)
+		seen[directory.path] = struct{}{}
+	}
+	snapshot, err := readCorpusSnapshot(root, captureDirs...)
 	if err != nil {
-		return nil, nil, err
+		return runCorpus{}, err
+	}
+	effectiveFiles, err := selectedCorpusFiles(snapshot, effectiveDirs)
+	if err != nil {
+		return runCorpus{}, err
+	}
+	cases, err := loadCasesFromSnapshot(effectiveFiles, effectiveDirs)
+	if err != nil {
+		return runCorpus{}, err
+	}
+	canonicalFiles, err := selectedCorpusFiles(snapshot, registeredDirs)
+	if err != nil {
+		return runCorpus{}, err
+	}
+	canonical, err := loadCasesFromSnapshot(canonicalFiles, registeredDirs)
+	if err != nil {
+		return runCorpus{}, err
 	}
 	if err := ensureExactRunCorpus(cases, canonical); err != nil {
-		return nil, nil, err
+		return runCorpus{}, err
 	}
-	return cases, effectiveDirs, nil
+	return runCorpus{cases: cases, snapshot: corpusSnapshot{files: effectiveFiles}}, nil
+}
+
+// selectedCorpusFiles removes documentation and unreferenced files from a
+// captured snapshot. Multi-file selection follows case.yaml exactly, matching
+// the loader's contract while reading no byte a second time.
+func selectedCorpusFiles(snapshot corpusSnapshot, multiFileDirs []multiFileCaseDir) ([]corpusFile, error) {
+	selected := make(map[string]struct{}, len(snapshot.files))
+	for _, file := range snapshot.files {
+		if file.family == "" && !file.isDir {
+			selected[file.path] = struct{}{}
+		}
+	}
+	for _, directory := range multiFileDirs {
+		paths, err := selectedMultiFileSnapshotPaths(snapshot.files, directory)
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range paths {
+			selected[path] = struct{}{}
+		}
+	}
+	files := make([]corpusFile, 0, len(selected))
+	for _, file := range snapshot.files {
+		if _, ok := selected[file.path]; ok {
+			files = append(files, file)
+		}
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("corpus contains no case files; refusing to hash an empty corpus")
+	}
+	return files, nil
+}
+
+func loadCasesFromSnapshot(files []corpusFile, multiFileDirs []multiFileCaseDir) ([]Case, error) {
+	cases := make([]Case, 0, len(files))
+	for _, file := range files {
+		if file.family != "" || file.isDir {
+			continue
+		}
+		var c Case
+		if err := json.Unmarshal(file.data, &c); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", file.path, err)
+		}
+		if c.SchemaVersion != activeSchemaVersion {
+			return nil, fmt.Errorf("%s: schema_version must be %d for scoring, got %d", file.path, activeSchemaVersion, c.SchemaVersion)
+		}
+		cases = append(cases, c)
+	}
+	multiCases, err := loadMultiFileCasesFromSnapshot(files, multiFileDirs)
+	if err != nil {
+		return nil, err
+	}
+	for _, multiCase := range multiCases {
+		converted, err := multiCase.toCase()
+		if err != nil {
+			return nil, fmt.Errorf("convert multi-file case %s: %w", multiCase.ID, err)
+		}
+		cases = append(cases, converted)
+	}
+	if len(cases) == 0 {
+		return nil, fmt.Errorf("no case files found in corpus snapshot")
+	}
+	return cases, nil
 }
 
 func ensureExactRunCorpus(runCases, canonicalCases []Case) error {

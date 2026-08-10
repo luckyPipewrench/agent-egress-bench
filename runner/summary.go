@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -64,24 +65,25 @@ type DualDiagnostics struct {
 
 // GauntletSummary is the top-level output written to --output.
 type GauntletSummary struct {
-	SchemaVersion      int                          `json:"schema_version"`
-	GauntletVersion    string                       `json:"gauntlet_version"`
-	ScoringVersion     string                       `json:"scoring_version"`
-	RunnerVersion      string                       `json:"runner_version"`
-	Tool               string                       `json:"tool"`
-	ToolVersion        string                       `json:"tool_version"`
-	CorpusVersion      string                       `json:"corpus_version"`
-	CorpusSHA256       string                       `json:"corpus_sha256"`
-	ToolProfileSHA256  string                       `json:"tool_profile_sha256"`
-	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
-	ReportedClaims     []string                     `json:"reported_claims"`
-	Date               string                       `json:"date,omitempty"`
-	CaseCount          CaseCount                    `json:"case_count"`
-	Exercised          ExercisedCapabilities        `json:"exercised"`
-	Scores             DualScores                   `json:"scores"`
-	Diagnostics        DualDiagnostics              `json:"diagnostics"`
-	MeasurementStatus  string                       `json:"measurement_status"`
-	PerCategory        map[string]CategoryScores    `json:"per_category"`
+	SchemaVersion           int                          `json:"schema_version"`
+	GauntletVersion         string                       `json:"gauntlet_version"`
+	ScoringVersion          string                       `json:"scoring_version"`
+	RunnerVersion           string                       `json:"runner_version"`
+	Tool                    string                       `json:"tool"`
+	ToolVersion             string                       `json:"tool_version"`
+	CorpusVersion           string                       `json:"corpus_version"`
+	CorpusSHA256            string                       `json:"corpus_sha256"`
+	BenchmarkManifestSHA256 string                       `json:"benchmark_manifest_sha256"`
+	ToolProfileSHA256       string                       `json:"tool_profile_sha256"`
+	CapabilityRegistry      capabilityregistry.Reference `json:"capability_registry"`
+	ReportedClaims          []string                     `json:"reported_claims"`
+	Date                    string                       `json:"date,omitempty"`
+	CaseCount               CaseCount                    `json:"case_count"`
+	Exercised               ExercisedCapabilities        `json:"exercised"`
+	Scores                  DualScores                   `json:"scores"`
+	Diagnostics             DualDiagnostics              `json:"diagnostics"`
+	MeasurementStatus       string                       `json:"measurement_status"`
+	PerCategory             map[string]CategoryScores    `json:"per_category"`
 
 	// Identifying facts that docs/RESULTS-USE.md requires beside any public
 	// result and that cannot be derived from the corpus or the profile. They
@@ -121,25 +123,41 @@ type CaseCount struct {
 	Errors               int            `json:"errors"`
 }
 
-// computeCorpusSHA256 hashes case-file contents across the single-file corpus
-// and the effective multi-file directories. Files are sorted by their logical
-// corpus-relative paths before hashing, so relocating a complete multi-file
-// override does not rewrite the corpus identity. The caller supplies the
-// effective directories so the digest covers exactly the case surface
-// execution loaded.
-func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, error) {
-	type hashPath struct {
-		logical string
-		path    string
-	}
-	var paths []hashPath
+// hashPath is one candidate file in the run corpus. logical is deliberately
+// retained for corpus_sha256: it preserves that published digest's ordering.
+// manifestKey is unique across registered multi-file families and is used only
+// by the framed digest.
+type hashPath struct {
+	logical     string
+	manifestKey string
+	path        string
+	family      string
+	sourceRoot  string
+	isDir       bool
+}
 
+// corpusFile is one corpus file captured before parsing or execution.
+type corpusFile struct {
+	hashPath
+	data []byte
+}
+
+// corpusSnapshot is immutable input to both case loading and digesting.
+// Its files are intentionally private to prevent later code from replacing a
+// captured byte slice with a second filesystem read.
+type corpusSnapshot struct {
+	files []corpusFile
+}
+
+// corpusFilePaths collects the complete candidate set once. It keeps the
+// variadic multi-file directories, logical-key structure, and stable ordering
+// used by corpus_sha256. Both digests consume the same post-load snapshot.
+func corpusFilePaths(casesDir string, multiFileDirs ...multiFileCaseDir) ([]hashPath, error) {
+	var paths []hashPath
 	err := filepath.Walk(casesDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		// Skip multi-file case directories on the single-file walk. The
-		// multiFileDir branch below picks them up under its own schema.
 		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
 			return filepath.SkipDir
 		}
@@ -150,49 +168,152 @@ func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, erro
 		if relErr != nil {
 			return fmt.Errorf("finding logical case path for hash: %w", relErr)
 		}
-		paths = append(paths, hashPath{logical: "single/" + filepath.ToSlash(relative), path: path})
+		relative = filepath.ToSlash(relative)
+		paths = append(paths, hashPath{logical: "single/" + relative, manifestKey: "cases/" + relative, path: path, sourceRoot: casesDir})
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("walking cases for hash: %w", err)
+		return nil, fmt.Errorf("walking cases for hash: %w", err)
 	}
 
 	for _, multiFileDir := range multiFileDirs {
-		mfPaths, mfErr := computeMultiFileSHA256Paths(multiFileDir)
-		if mfErr != nil {
-			return "", mfErr
-		}
-		for _, path := range mfPaths {
-			relative, relErr := filepath.Rel(multiFileDir, path)
-			if relErr != nil {
-				return "", fmt.Errorf("finding logical multi-file case path for hash: %w", relErr)
+		err := filepath.Walk(multiFileDir.path, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
 			}
-			paths = append(paths, hashPath{logical: "multi/" + filepath.ToSlash(relative), path: path})
+			if info.IsDir() {
+				if path != multiFileDir.path {
+					relative, relErr := filepath.Rel(multiFileDir.path, path)
+					if relErr != nil {
+						return fmt.Errorf("finding logical multi-file case directory for hash: %w", relErr)
+					}
+					relative = filepath.ToSlash(relative)
+					paths = append(paths, hashPath{
+						logical:     "multi/" + relative,
+						manifestKey: "multifile/" + multiFileDir.family + "/" + relative,
+						path:        path,
+						family:      multiFileDir.family,
+						sourceRoot:  multiFileDir.path,
+						isDir:       true,
+					})
+				}
+				return nil
+			}
+			relative, relErr := filepath.Rel(multiFileDir.path, path)
+			if relErr != nil {
+				return fmt.Errorf("finding logical multi-file case path for hash: %w", relErr)
+			}
+			relative = filepath.ToSlash(relative)
+			paths = append(paths, hashPath{
+				logical:     "multi/" + relative,
+				manifestKey: "multifile/" + multiFileDir.family + "/" + relative,
+				path:        path,
+				family:      multiFileDir.family,
+				sourceRoot:  multiFileDir.path,
+			})
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("walking multi-file cases for hash: %w", err)
 		}
 	}
 
-	// Stable, because the logical key is not guaranteed unique. Two multi-file
-	// directories can each hold a case subdirectory of the same name, and the key
-	// is deliberately relative to its own directory so relocating an override does
-	// not rewrite the corpus identity. Under an unstable sort, equal keys order
-	// arbitrarily and the digest stops being reproducible for the same bytes. The
-	// input order is fully determined -- a lexical walk, then directories in sorted
-	// category order, each already sorted -- so stability makes the result
-	// deterministic even where keys collide. Making the key itself unique per
-	// registered family is corpus-identity work and belongs with the framed
-	// manifest digest, not here.
+	// Stable because corpus_sha256's legacy logical key is intentionally not
+	// unique across relocated multi-file families. Input order is deterministic:
+	// lexical walks, then registered-family order. Do not replace this with an
+	// unstable sort or change the published legacy digest definition.
 	sort.SliceStable(paths, func(i, j int) bool { return paths[i].logical < paths[j].logical })
+	return paths, nil
+}
 
-	h := sha256.New()
+func readCorpusSnapshot(casesDir string, multiFileDirs ...multiFileCaseDir) (corpusSnapshot, error) {
+	paths, err := corpusFilePaths(casesDir, multiFileDirs...)
+	if err != nil {
+		return corpusSnapshot{}, err
+	}
+	files := make([]corpusFile, 0, len(paths))
 	for _, candidate := range paths {
+		if candidate.isDir {
+			files = append(files, corpusFile{hashPath: candidate})
+			continue
+		}
 		data, readErr := os.ReadFile(candidate.path)
 		if readErr != nil {
-			return "", fmt.Errorf("reading %s for hash: %w", candidate.path, readErr)
+			return corpusSnapshot{}, fmt.Errorf("reading %s for corpus snapshot: %w", candidate.path, readErr)
 		}
-		_, _ = h.Write(data)
+		files = append(files, corpusFile{hashPath: candidate, data: data})
 	}
+	return corpusSnapshot{files: files}, nil
+}
 
-	return hex.EncodeToString(h.Sum(nil)), nil
+func directMultiFileCaseDirs(dirs []string) []multiFileCaseDir {
+	resolved := make([]multiFileCaseDir, 0, len(dirs))
+	for _, dir := range dirs {
+		resolved = append(resolved, multiFileCaseDir{family: filepath.Base(dir), path: dir})
+	}
+	return resolved
+}
+
+// corpusSHA256FromSnapshot preserves corpus_sha256 exactly: selected case-file
+// bytes concatenate in stable legacy logical-key order with no framing.
+func corpusSHA256FromSnapshot(files []corpusFile) string {
+	ordered := append([]corpusFile(nil), files...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].logical < ordered[j].logical })
+	h := sha256.New()
+	for _, file := range ordered {
+		_, _ = h.Write(file.data)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// benchmarkManifestSHA256FromSnapshot frames every canonical key and byte
+// sequence with unsigned varint lengths. Framing binds file boundaries, while
+// family-qualified keys bind a file to its registered multi-file family.
+func benchmarkManifestSHA256FromSnapshot(files []corpusFile) string {
+	ordered := append([]corpusFile(nil), files...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].manifestKey < ordered[j].manifestKey })
+	h := sha256.New()
+	var size [binary.MaxVarintLen64]byte
+	writeField := func(value []byte) {
+		n := binary.PutUvarint(size[:], uint64(len(value)))
+		_, _ = h.Write(size[:n])
+		_, _ = h.Write(value)
+	}
+	for _, file := range ordered {
+		writeField([]byte(file.manifestKey))
+		writeField(file.data)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// computeCorpusSHA256 is retained for compatibility tests and standalone
+// callers. Runs use the snapshot created by loadRunCorpus instead.
+func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, error) {
+	dirs := directMultiFileCaseDirs(multiFileDirs)
+	snapshot, err := readCorpusSnapshot(casesDir, dirs...)
+	if err != nil {
+		return "", err
+	}
+	files, err := selectedCorpusFiles(snapshot, dirs)
+	if err != nil {
+		return "", err
+	}
+	return corpusSHA256FromSnapshot(files), nil
+}
+
+// computeBenchmarkManifestSHA256 is retained for compatibility tests and
+// independent implementations. Runs use the load-time snapshot instead.
+func computeBenchmarkManifestSHA256(casesDir string, multiFileDirs ...string) (string, error) {
+	dirs := directMultiFileCaseDirs(multiFileDirs)
+	snapshot, err := readCorpusSnapshot(casesDir, dirs...)
+	if err != nil {
+		return "", err
+	}
+	files, err := selectedCorpusFiles(snapshot, dirs)
+	if err != nil {
+		return "", err
+	}
+	return benchmarkManifestSHA256FromSnapshot(files), nil
 }
 
 // computeProfileSHA256 hashes the tool profile file contents.
@@ -225,16 +346,16 @@ func buildSummary(
 	applicableResults []CaseResult,
 	unreachableIDs map[string]struct{},
 	naReasons map[NAKind]int,
-	casesDir string,
-	multiFileDirs []string,
+	corpus corpusSnapshot,
 	casesByID map[string]Case,
 	profilePath string,
 	prov RunProvenance,
 ) (GauntletSummary, error) {
-	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDirs...)
-	if err != nil {
-		return GauntletSummary{}, err
+	if len(corpus.files) == 0 {
+		return GauntletSummary{}, fmt.Errorf("refusing to summarize an empty corpus snapshot")
 	}
+	corpusSHA := corpusSHA256FromSnapshot(corpus.files)
+	manifestSHA := benchmarkManifestSHA256FromSnapshot(corpus.files)
 
 	profileSHA, err := computeProfileSHA256(profilePath)
 	if err != nil {
@@ -276,18 +397,19 @@ func buildSummary(
 	}
 
 	return GauntletSummary{
-		SchemaVersion:      activeSummarySchemaVersion,
-		GauntletVersion:    gauntletVersion,
-		ScoringVersion:     scoringVersion,
-		RunnerVersion:      runnerVersion,
-		Tool:               p.Tool,
-		ToolVersion:        p.ToolVersion,
-		CorpusVersion:      corpusVersion,
-		CorpusSHA256:       corpusSHA,
-		ToolProfileSHA256:  profileSHA,
-		CapabilityRegistry: p.CapabilityRegistry,
-		ReportedClaims:     append([]string(nil), p.Claims...),
-		Date:               date,
+		SchemaVersion:           activeSummarySchemaVersion,
+		GauntletVersion:         gauntletVersion,
+		ScoringVersion:          scoringVersion,
+		RunnerVersion:           runnerVersion,
+		Tool:                    p.Tool,
+		ToolVersion:             p.ToolVersion,
+		CorpusVersion:           corpusVersion,
+		CorpusSHA256:            corpusSHA,
+		BenchmarkManifestSHA256: manifestSHA,
+		ToolProfileSHA256:       profileSHA,
+		CapabilityRegistry:      p.CapabilityRegistry,
+		ReportedClaims:          append([]string(nil), p.Claims...),
+		Date:                    date,
 		CaseCount: CaseCount{
 			Total:                len(allCases),
 			Applicable:           len(applicableResults),
@@ -370,6 +492,18 @@ func writeSummary(s GauntletSummary, path string) error {
 	if err := validateRegistryReference(s.CapabilityRegistry); err != nil {
 		return fmt.Errorf("invalid summary capability_registry: %w", err)
 	}
+	for _, digest := range []struct {
+		field string
+		value string
+	}{
+		{"corpus_sha256", s.CorpusSHA256},
+		{"benchmark_manifest_sha256", s.BenchmarkManifestSHA256},
+		{"tool_profile_sha256", s.ToolProfileSHA256},
+	} {
+		if !isSHA256Hex(digest.value) {
+			return fmt.Errorf("summary %s must be 64 lowercase hex characters, got %q", digest.field, digest.value)
+		}
+	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling summary: %w", err)
@@ -381,4 +515,16 @@ func writeSummary(s GauntletSummary, path string) error {
 	}
 
 	return nil
+}
+
+func isSHA256Hex(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }

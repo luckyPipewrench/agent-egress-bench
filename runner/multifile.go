@@ -92,6 +92,137 @@ func loadMultiFileCases(dir string) ([]MultiFileCase, error) {
 	return cases, nil
 }
 
+// selectedMultiFileSnapshotPaths returns the machine-readable files selected by
+// the multi-file loader without touching disk. It is shared by the load-time
+// snapshot parser and both digest functions, so notes.md and stray files cannot
+// accidentally enter one surface but not the other.
+func selectedMultiFileSnapshotPaths(files []corpusFile, directory multiFileCaseDir) ([]string, error) {
+	_, paths, err := multiFileCasesFromSnapshot(files, directory)
+	return paths, err
+}
+
+// loadMultiFileCasesFromSnapshot parses only bytes captured before execution.
+func loadMultiFileCasesFromSnapshot(files []corpusFile, directories []multiFileCaseDir) ([]MultiFileCase, error) {
+	var cases []MultiFileCase
+	for _, directory := range directories {
+		loaded, _, err := multiFileCasesFromSnapshot(files, directory)
+		if err != nil {
+			return nil, err
+		}
+		cases = append(cases, loaded...)
+	}
+	return cases, nil
+}
+
+func multiFileCasesFromSnapshot(files []corpusFile, directory multiFileCaseDir) ([]MultiFileCase, []string, error) {
+	byPath := make(map[string]corpusFile)
+	caseDirs := make(map[string]struct{})
+	for _, file := range files {
+		if file.sourceRoot != directory.path {
+			continue
+		}
+		if file.isDir {
+			if filepath.Dir(file.path) == directory.path {
+				caseDirs[file.path] = struct{}{}
+			}
+			continue
+		}
+		byPath[file.path] = file
+		relative, err := filepath.Rel(directory.path, file.path)
+		if err != nil {
+			return nil, nil, fmt.Errorf("finding multi-file case path %s: %w", file.path, err)
+		}
+		parts := strings.Split(filepath.ToSlash(relative), "/")
+		if len(parts) >= 2 {
+			caseDirs[filepath.Join(directory.path, parts[0])] = struct{}{}
+		}
+	}
+
+	directories := make([]string, 0, len(caseDirs))
+	for caseDir := range caseDirs {
+		directories = append(directories, caseDir)
+	}
+	sort.Strings(directories)
+
+	cases := make([]MultiFileCase, 0, len(directories))
+	paths := make([]string, 0, len(directories)*4)
+	for _, caseDir := range directories {
+		caseYAMLPath := filepath.Join(caseDir, "case.yaml")
+		caseYAML, ok := byPath[caseYAMLPath]
+		if !ok {
+			return nil, nil, fmt.Errorf("multi-file case directory %s is missing required case.yaml; restore case.yaml or remove the directory, then run 'make cases-manifest'", caseDir)
+		}
+		loaded, used, err := loadMultiFileCaseFromSnapshot(caseDir, caseYAML.data, byPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		cases = append(cases, loaded)
+		paths = append(paths, caseYAMLPath)
+		paths = append(paths, used...)
+	}
+	sort.Slice(cases, func(i, j int) bool { return cases[i].ID < cases[j].ID })
+	return cases, paths, nil
+}
+
+func loadMultiFileCaseFromSnapshot(caseDir string, yamlData []byte, files map[string]corpusFile) (MultiFileCase, []string, error) {
+	caseYAMLPath := filepath.Join(caseDir, "case.yaml")
+	var c MultiFileCase
+	dec := yaml.NewDecoder(bytes.NewReader(yamlData))
+	dec.KnownFields(true)
+	if err := dec.Decode(&c); err != nil {
+		return MultiFileCase{}, nil, fmt.Errorf("parsing %s: %w", caseYAMLPath, err)
+	}
+	var extra interface{}
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return MultiFileCase{}, nil, fmt.Errorf("parsing %s: multiple YAML documents", caseYAMLPath)
+		}
+		return MultiFileCase{}, nil, fmt.Errorf("parsing %s: %w", caseYAMLPath, err)
+	}
+	c.Dir = caseDir
+	if err := validateMultiFileCaseMetadata(c, caseYAMLPath); err != nil {
+		return MultiFileCase{}, nil, err
+	}
+
+	resolve := func(name, label string) (string, corpusFile, error) {
+		path, err := resolveMultiFileCasePath(caseDir, name, label)
+		if err != nil {
+			return "", corpusFile{}, fmt.Errorf("%s: %w", caseYAMLPath, err)
+		}
+		file, ok := files[path]
+		if !ok {
+			return "", corpusFile{}, fmt.Errorf("reading %s: captured corpus snapshot has no such file", path)
+		}
+		return path, file, nil
+	}
+	beforePath, beforeFile, err := resolve(c.Files.Before, "before")
+	if err != nil {
+		return MultiFileCase{}, nil, err
+	}
+	afterPath, afterFile, err := resolve(c.Files.After, "after")
+	if err != nil {
+		return MultiFileCase{}, nil, err
+	}
+	expectedPath, expectedFile, err := resolve(c.Files.Expected, "expected")
+	if err != nil {
+		return MultiFileCase{}, nil, err
+	}
+	before, err := readJSONObjectBytes(beforeFile.data, beforePath)
+	if err != nil {
+		return MultiFileCase{}, nil, err
+	}
+	after, err := readJSONObjectBytes(afterFile.data, afterPath)
+	if err != nil {
+		return MultiFileCase{}, nil, err
+	}
+	if _, err := readJSONObjectBytes(expectedFile.data, expectedPath); err != nil {
+		return MultiFileCase{}, nil, err
+	}
+	c.BeforeJSON = before
+	c.AfterJSON = after
+	return c, []string{beforePath, afterPath, expectedPath}, nil
+}
+
 // loadMultiFileCase reads case.yaml from the given directory and then loads
 // before.json + after.json + expected.json by the relative names declared in
 // the case.yaml files block. Missing any of the three is a hard error.
@@ -234,6 +365,10 @@ func readJSONObject(path string) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
+	return readJSONObjectBytes(data, path)
+}
+
+func readJSONObjectBytes(data []byte, path string) (map[string]interface{}, error) {
 	var obj map[string]interface{}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()

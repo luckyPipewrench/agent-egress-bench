@@ -190,6 +190,9 @@ func TestIntegrationRealCases(t *testing.T) {
 	if summary.CorpusSHA256 == "" {
 		t.Error("corpus_sha256 should not be empty")
 	}
+	if summary.BenchmarkManifestSHA256 == "" {
+		t.Error("benchmark_manifest_sha256 should not be empty")
+	}
 	if summary.ToolProfileSHA256 == "" {
 		t.Error("tool_profile_sha256 should not be empty")
 	}
