@@ -13,6 +13,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = REPO_ROOT / "scripts" / "validate_gauntlet_scope.py"
 MANIFEST = REPO_ROOT / "cases" / "MANIFEST.txt"
+FROZEN_RECORD = (
+    REPO_ROOT
+    / "gauntlet-site"
+    / "results"
+    / "pipelock"
+    / "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"
+)
 
 
 def corpus_manifest_sha256():
@@ -133,12 +140,15 @@ def all_na_artifact():
 
 
 class ValidateGauntletScopeTest(unittest.TestCase):
-    def run_validator(self, artifact):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8") as fh:
-            json.dump(artifact, fh)
-            fh.flush()
+    def run_validator(self, artifact, manifest=None):
+        if manifest is None:
+            manifest = MANIFEST.read_bytes()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            artifact_path = Path(temp_dir) / "artifact.json"
+            artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+            (artifact_path.parent / "corpus-manifest.txt").write_bytes(manifest)
             return subprocess.run(
-                [sys.executable, str(VALIDATOR), fh.name],
+                [sys.executable, str(VALIDATOR), str(artifact_path)],
                 cwd=REPO_ROOT,
                 text=True,
                 capture_output=True,
@@ -175,6 +185,43 @@ class ValidateGauntletScopeTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(field, result.stderr)
                 self.assertIn("unexpected keys", result.stderr)
+    def test_frozen_record_uses_its_retained_manifest_after_corpus_growth(self):
+        # This record ran against 214 cases. The checked-out corpus has since
+        # grown, so verification must use the manifest retained with the
+        # immutable record rather than the newer checkout-wide manifest.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            record_dir = Path(temp_dir)
+            artifact_path = record_dir / "continuous-gauntlet-pipelock.json"
+            artifact_path.write_bytes(
+                (FROZEN_RECORD / "continuous-gauntlet-pipelock.json").read_bytes()
+            )
+            (record_dir / "corpus-manifest.txt").write_bytes(
+                (FROZEN_RECORD / "corpus-manifest.txt").read_bytes()
+            )
+            result = subprocess.run(
+                [sys.executable, str(VALIDATOR), str(artifact_path)],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_retained_manifest_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            artifact_path = Path(temp_dir) / "artifact.json"
+            artifact_path.write_text(json.dumps(complete_artifact()), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(VALIDATOR), str(artifact_path)],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("retained corpus manifest", result.stderr)
 
     def test_unreachable_coverage_is_visible_but_outside_full_denominator(self):
         artifact = complete_artifact()
