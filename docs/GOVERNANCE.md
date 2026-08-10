@@ -27,9 +27,42 @@ Removing a superseded case from an active score would change the denominator. No
 may do that. A future active-set mechanism must be immutable, versioned, and bound to the release it
 changes before a runner may exclude any case.
 
-## Versioning
+## Versioning and compatibility
 
-The spec uses `schema_version`. V4 is the active coordinated schema for cases, tool profiles, result rows, and receipt profiles. V5 is the active summary and candidate-provenance schema: it removes two overclaimed fields from `scores` and retains them only as non-scoring diagnostics. Earlier schemas are frozen readers only; active scoring rejects mixed input schemas and never normalizes a historical record into an active definition. Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not a schema bump. A structural, scoring, delivery-protocol, provenance, or security-validation change increments the affected schema and publishes the affected artifacts together. The validator enforces the active schema version.
+Each artifact family has its own version. Cases, result rows, tool profiles, receipt profiles, summaries, provenance candidates, case indexes, promotion records, baselines, and Control Evidence documents do not become compatible because two version numbers happen to match. The machine-readable [`contracts/artifacts.json`](../contracts/artifacts.json) manifest names each active writer, accepted reader, frozen version, schema, and gate.
+
+An active schema may change in place only when every existing artifact that declares that version remains valid with the same meaning and score. Clarifications, schema corrections that change no accepted instance, and optional fields with a documented behavior-preserving default can qualify. This rule never permits a change to an existing case ID, payload, expected verdict, capability tags, or semantics.
+
+A version bump is required if a change does any of the following:
+
+- rejects a previously valid artifact or accepts it with a different meaning
+- changes a result, denominator, security interpretation, provenance interpretation, required field, enum meaning, delivery rule, observation rule, or published-record verification rule
+
+Internal code changes still require a bump when they produce one of those effects.
+
+A version freezes when the repository commits an immutable public record that declares it. Frozen readers keep that version's exact behavior. A new reader may support a new version, but it must not normalize old bytes into the new definition. Case semantics freeze per case when the case reaches `main`, independent of the artifact-family version.
+
+Retained v1 and v2 evidence records are frozen. The v4 case, profile, result-row, and receipt-profile formats and the v5 summary and provenance formats are active. No promoted record uses the v4 or v5 formats yet. The first promoted record in either active generation freezes the contracts it carries.
+
+Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not an artifact schema bump.
+
+### Compatibility matrix
+
+The table summarizes the manifest. `make check-contracts` checks the full machine-readable inventory against schema files, `$id` values, Go constants, and retained public records.
+
+| Family | Active writer | Accepted readers | Frozen | Canonical schema |
+| --- | ---: | --- | --- | --- |
+| Case and multi-file case | 4 | 4 | none | [`case.schema.json`](../schemas/case.schema.json), with the multi-file shape enforced in Go |
+| Result row | 4 | 4 | none | [`result.schema.json`](../schemas/result.schema.json) |
+| Tool profile | 4 | 1, 3, 4 | 1, 3 | [`tool-profile.schema.json`](../schemas/tool-profile.schema.json) |
+| Receipt-scoring profile | 4 | 1, 4 | 1 | [`receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json) |
+| Summary | 5 | 4, 5 | 4 | [`summary-v5.schema.json`](../schemas/summary-v5.schema.json) |
+| Provenance candidate | 5 | 1, 2, 4, 5 | 1, 2 | Python reader, no JSON Schema |
+| Case index, promoted record, baseline | 1 | 1 | 1 | Go or Python reader, no JSON Schema |
+
+The current schema filenames are transitional. The summary family uses an unsuffixed frozen v4 file while the tool-profile family uses an unsuffixed active v4 file. The manifest records those paths so edits cannot land on the wrong generation without failing the gate. Schema renames and `$id` changes remain deferred until the owner decides whether unsuffixed public URLs become compatibility aliases.
+
+A proposed change to the active v5 summary, including the work tracked in pull request 153, may amend v5 only if every existing v5 artifact keeps the same accepted meaning, score, and verification result. Any change to those outcomes requires a new version. The owner must classify that change before publication; this policy does not decide the facts of that pull request.
 
 ## Contribution acceptance
 

@@ -1,0 +1,209 @@
+{
+  "manifest_version": 1,
+  "artifact_families": [
+    {
+      "family": "case",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [4],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/case.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/case.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case.schema.json"
+        }
+      ],
+      "writer": ["cases/", "runner/case.go"],
+      "reader": ["validate/main.go", "runner/case.go"],
+      "source_versions": [
+        {"path": "runner/case.go", "symbol": "activeSchemaVersion"},
+        {"path": "validate/main.go", "symbol": "activeCaseSchemaVersion"}
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "multi_file_case",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [4],
+      "frozen_versions": [],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": ["cases/mcp-drift/"],
+      "reader": ["validate/main.go", "runner/multifile.go"],
+      "source_versions": [
+        {"path": "runner/case.go", "symbol": "activeSchemaVersion"},
+        {"path": "validate/main.go", "symbol": "activeCaseSchemaVersion"}
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "result_row",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [4],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/result.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/result.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result.schema.json"
+        }
+      ],
+      "writer": ["runner/result_state.go", "runner/score.go"],
+      "reader": ["validate/main.go", "scripts/build_gauntlet_provenance.py"],
+      "source_versions": [
+        {"path": "runner/case.go", "symbol": "activeSchemaVersion"},
+        {"path": "validate/main.go", "symbol": "activeCaseSchemaVersion"}
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "tool_profile",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [1, 3, 4],
+      "frozen_versions": [1, 3],
+      "canonical_schema_path": "schemas/tool-profile.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "frozen",
+          "path": "schemas/tool-profile-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json"
+        },
+        {
+          "version": 3,
+          "status": "frozen",
+          "path": "schemas/tool-profile-v3.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json"
+        },
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/tool-profile.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json"
+        }
+      ],
+      "writer": ["examples/*/tool-profile.json"],
+      "reader": ["validate/main.go", "runner/case.go", "control-evidence/v1/verifier"],
+      "source_versions": [
+        {"path": "runner/case.go", "symbol": "activeSchemaVersion"},
+        {"path": "validate/main.go", "symbol": "activeCaseSchemaVersion"}
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "receipt_scoring_profile",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [1, 4],
+      "frozen_versions": [1],
+      "canonical_schema_path": "schemas/receipt-scoring-profile.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/receipt-scoring-profile.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile.schema.json"
+        }
+      ],
+      "writer": ["runner/receipt_profile.go"],
+      "reader": ["runner/receipt_profile_validate.go", "profiles/README.md"],
+      "source_versions": [
+        {"path": "runner/case.go", "symbol": "activeSchemaVersion"}
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "summary",
+      "active_writer_version": 5,
+      "accepted_reader_versions": [4, 5],
+      "frozen_versions": [4],
+      "canonical_schema_path": "schemas/summary-v5.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "frozen",
+          "path": "schemas/summary.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary.schema.json"
+        },
+        {
+          "version": 5,
+          "status": "active",
+          "path": "schemas/summary-v5.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v5.schema.json"
+        }
+      ],
+      "writer": ["runner/summary.go"],
+      "reader": ["scripts/build_gauntlet_provenance.py", "scripts/validate_gauntlet_scope.py"],
+      "source_versions": [
+        {"path": "runner/summary.go", "symbol": "activeSummarySchemaVersion"}
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "provenance_candidate",
+      "active_writer_version": 5,
+      "accepted_reader_versions": [1, 2, 4, 5],
+      "frozen_versions": [1, 2],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": ["scripts/build_gauntlet_provenance.py"],
+      "reader": ["scripts/validate_gauntlet_scope.py", "scripts/evaluate_gauntlet_candidate.py"],
+      "source_versions": [
+        {"path": "runner/summary.go", "symbol": "activeSummarySchemaVersion"}
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "case_index",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [1],
+      "frozen_versions": [1],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": ["runner/corpus.go"],
+      "reader": ["scripts/build_gauntlet_provenance.py"],
+      "source_versions": [],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "promoted_record",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [1],
+      "frozen_versions": [1],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": ["scripts/promote_gauntlet_candidate.py"],
+      "reader": ["scripts/validate_gauntlet_records.py"],
+      "source_versions": [],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "promotion_baseline",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [1],
+      "frozen_versions": [1],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": ["scripts/promote_gauntlet_candidate.py"],
+      "reader": ["scripts/evaluate_gauntlet_candidate.py", "scripts/validate_gauntlet_records.py"],
+      "source_versions": [],
+      "gate": "make check-contracts"
+    }
+  ],
+  "retained_public_records": {
+    "paths": ["ci/gauntlet-baseline.json", "gauntlet-site"],
+    "frozen_readers": [
+      {
+        "version": 1,
+        "reader": ["scripts/validate_gauntlet_records.py", "scripts/validate_gauntlet_scope.py"]
+      },
+      {
+        "version": 2,
+        "reader": ["scripts/validate_gauntlet_records.py", "scripts/validate_gauntlet_scope.py"]
+      }
+    ]
+  }
+}
