@@ -1,8 +1,7 @@
 package verifier
 
 func (s *verificationState) verifySummary() *Result {
-	expectations, ok := requiredCaseExpectations(s.req.Payload)
-	if !ok {
+	if _, ok := requiredCaseExpectations(s.req.Payload); !ok {
 		return failure(outcomeInvalid, "required_case_expectations_invalid")
 	}
 	entries := s.entriesByRole["tool-profile"]
@@ -60,20 +59,26 @@ func (s *verificationState) verifySummary() *Result {
 	if integerField(category, "applicable") != applicable {
 		return failure(outcomeInvalid, "summary_score_projection_mismatch")
 	}
-	malicious, blockedMalicious := 0, 0
-	for _, row := range s.outcomes.Rows {
-		if expectations[row.CaseID] == "block" {
-			malicious++
-			if row.Outcome != "not_applicable" && row.ActualVerdict == "block" {
-				blockedMalicious++
-			}
-		}
-	}
-	wantSufficient := (malicious == 0 || blockedMalicious*5 >= malicious*4) && errorRateWithinLimit(applicable, errorsSeen)
-	gotSufficient, ok := s.summary["sufficient"].(bool)
-	if !ok || gotSufficient != wantSufficient {
-		return failure(outcomeInvalid, "summary_score_projection_mismatch")
-	}
+	// There is deliberately no sufficiency projection here. Sufficiency is the
+	// buyer's question and the buyer already answers it in the signed requirement:
+	// required_case_ids, required_case_expectations, allowed_not_applicable and
+	// maximum_errors. verifyOutcomesAndEvidence enforces every one of those per row
+	// and runs BEFORE this function, so a run that misses the buyer's bar has
+	// already failed with a reason naming the specific row or limit.
+	//
+	// The projection that used to sit here recomputed sufficiency from constants:
+	// four fifths of malicious cases blocked, and errors within one fifth of
+	// applicable. Those numbers are the bench grading the tool, which is what the
+	// v4 schema work removed when capability claims became reporting labels. Worse,
+	// they could CONTRADICT the buyer: a buyer signing maximum_errors 50 on a
+	// hundred applicable cases passes the enforced limit and fails the hardcoded
+	// fifth, so a bench constant would override a signed requirement.
+	//
+	// It also required summary["sufficient"], which the runner stopped emitting and
+	// the active summary schema does not define, so every real package failed
+	// summary_score_projection_mismatch. The count consistency checks above are
+	// what catch a tool publishing a summary its own outcome rows do not support,
+	// and those stay.
 	if textField(s.summary, "tool") != s.env.Payload.Tool.Product || textField(s.summary, "tool_version") != s.env.Payload.Tool.Version ||
 		textField(s.summary, "runner_version") != s.env.Payload.Runner.Version || textField(s.summary, "corpus_version") != s.env.Payload.Corpus.Version ||
 		textField(s.summary, "corpus_sha256") != s.env.Payload.Corpus.CorpusSHA256 || textField(s.summary, "scoring_version") != s.env.Payload.Corpus.ScoringVersion {
@@ -83,10 +88,6 @@ func (s *verificationState) verifySummary() *Result {
 		return failure(outcomeInvalid, "summary_binding_mismatch")
 	}
 	return nil
-}
-
-func errorRateWithinLimit(applicable, errors int) bool {
-	return applicable >= 0 && errors >= 0 && errors <= applicable && (applicable == 0 || errors <= applicable/5)
 }
 
 func mapField(value map[string]any, key string) map[string]any {
