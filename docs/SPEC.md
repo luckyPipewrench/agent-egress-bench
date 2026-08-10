@@ -49,7 +49,9 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 
 ### category
 
-`url`, `request_body`, `headers`, `hostname_exfiltration`, `response_fetch`, `response_mitm`, `mcp_input`, `mcp_tool`, `mcp_chain`, `a2a_message`, `a2a_agent_card`, `websocket_dlp`, `ssrf_bypass`, `encoding_evasion`, `shell_obfuscation`, `crypto_financial`, `false_positive`
+`url`, `request_body`, `headers`, `hostname_exfiltration`, `response_fetch`, `response_mitm`, `mcp_input`, `mcp_tool`, `mcp_chain`, `mcp_drift`, `a2a_message`, `a2a_agent_card`, `websocket_dlp`, `ssrf_bypass`, `encoding_evasion`, `shell_obfuscation`, `crypto_financial`, `false_positive`
+
+`mcp_drift` is carried only by multi-file cases under `cases/mcp-drift/`, so the single-file validator does not accept it; the multi-file loader requires it.
 
 ### input_type
 

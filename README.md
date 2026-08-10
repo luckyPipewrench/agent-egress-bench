@@ -181,7 +181,7 @@ Start from the [runner template](examples/runner-template/) for a working skelet
 
 ## OWASP Agentic Top 10 mapping
 
-The 8 case categories map to the [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/):
+Every case category maps to the [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/). `make check-readme-categories` fails when this table and the corpus disagree, so the mapping stays complete as categories are added:
 
 | Case category | OWASP item | What the cases cover |
 |---------------|------------|---------------------|
@@ -194,6 +194,7 @@ The 8 case categories map to the [OWASP Top 10 for Agentic Applications (2026)](
 | `mcp_input` | ASI02 Tool Misuse | DLP and injection in tool arguments |
 | `mcp_tool` | ASI04 Supply Chain | Poisoned tool descriptions, rug-pull changes |
 | `mcp_chain` | ASI02 Tool Misuse + ASI08 Cascading Failures | Multi-step exfiltration sequences |
+| `mcp_drift` | ASI04 Supply Chain | Tool inventory changes after approval |
 | `a2a_message` | ASI07 Inter-Agent Communication | Secrets and injection in A2A messages |
 | `a2a_agent_card` | ASI04 Supply Chain + ASI07 Inter-Agent | Poisoned Agent Card skill descriptions |
 | `websocket_dlp` | ASI02 Tool Misuse | Secrets in WebSocket frames, fragment evasion |
