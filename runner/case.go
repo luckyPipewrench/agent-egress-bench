@@ -11,7 +11,10 @@ import (
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
-const activeSchemaVersion = 4
+const (
+	activeSchemaVersion = 4
+	v4SchemaVersion     = 4
+)
 
 // Case represents a single active benchmark case. CapabilityTags are
 // registry-backed reporting labels. They are not scope declarations.

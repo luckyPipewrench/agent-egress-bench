@@ -3,6 +3,7 @@
 
 import json
 import hashlib
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,17 @@ FROZEN_RECORD = (
     / "pipelock"
     / "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"
 )
+
+
+def load_scope_validator_module():
+    spec = importlib.util.spec_from_file_location("validate_gauntlet_scope", VALIDATOR)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+scope_validator = load_scope_validator_module()
 
 
 def corpus_manifest_sha256():
@@ -139,16 +151,49 @@ def all_na_artifact():
     return artifact
 
 
+def minimal_v1_artifact(manifest):
+    ids = [line.strip() for line in manifest.decode("utf-8").splitlines() if line.strip()]
+    total = len(ids)
+    return {
+        "schema_version": 1,
+        "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123",
+        "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123",
+        "corpus_manifest_sha256": hashlib.sha256(manifest).hexdigest(),
+        "logical_case_count": total,
+        "runner_version": "0.4.0",
+        "scoring_version": "2.2",
+        "case_count": {
+            "total": total,
+            "applicable": total,
+            "not_applicable": 0,
+            "not_applicable_reasons": {},
+        },
+        "scores": {
+            "applicable": {
+                "containment": 1.0,
+                "false_positive_rate": None,
+            },
+        },
+        "metric_counts": {
+            "applicable": {
+                "containment": {"numerator": total, "denominator": total},
+                "false_positive_rate": {"numerator": 0, "denominator": 0},
+            },
+        },
+    }
+
+
 class ValidateGauntletScopeTest(unittest.TestCase):
-    def run_validator(self, artifact, manifest=None):
+    def run_validator(self, artifact, manifest=None, args=(), write_sidecar=True):
         if manifest is None:
             manifest = MANIFEST.read_bytes()
         with tempfile.TemporaryDirectory() as temp_dir:
             artifact_path = Path(temp_dir) / "artifact.json"
             artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
-            (artifact_path.parent / "corpus-manifest.txt").write_bytes(manifest)
+            if write_sidecar:
+                (artifact_path.parent / "corpus-manifest.txt").write_bytes(manifest)
             return subprocess.run(
-                [sys.executable, str(VALIDATOR), str(artifact_path)],
+                [sys.executable, str(VALIDATOR), *args, str(artifact_path)],
                 cwd=REPO_ROOT,
                 text=True,
                 capture_output=True,
@@ -185,43 +230,85 @@ class ValidateGauntletScopeTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(field, result.stderr)
                 self.assertIn("unexpected keys", result.stderr)
-    def test_frozen_record_uses_its_retained_manifest_after_corpus_growth(self):
-        # This record ran against 214 cases. The checked-out corpus has since
-        # grown, so verification must use the manifest retained with the
-        # immutable record rather than the newer checkout-wide manifest.
-        with tempfile.TemporaryDirectory() as temp_dir:
-            record_dir = Path(temp_dir)
-            artifact_path = record_dir / "continuous-gauntlet-pipelock.json"
-            artifact_path.write_bytes(
-                (FROZEN_RECORD / "continuous-gauntlet-pipelock.json").read_bytes()
-            )
-            (record_dir / "corpus-manifest.txt").write_bytes(
-                (FROZEN_RECORD / "corpus-manifest.txt").read_bytes()
-            )
-            result = subprocess.run(
-                [sys.executable, str(VALIDATOR), str(artifact_path)],
-                cwd=REPO_ROOT,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+
+    def test_candidate_rejects_reduced_sidecar_that_self_asserts_match(self):
+        # An attacker can make a reduced corpus self-consistent by controlling
+        # both the sibling manifest and every denominator in the candidate.
+        # Candidate validation must anchor to the checked-out manifest instead.
+        reduced_manifest = b"url-attack-001\nurl-benign-002\n"
+        result = self.run_validator(minimal_v1_artifact(reduced_manifest), reduced_manifest)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("checked-out cases/MANIFEST.txt", result.stderr)
+
+    def test_existing_schema_versions_remain_standalone_in_candidate_mode(self):
+        v1 = minimal_v1_artifact(MANIFEST.read_bytes())
+        v2 = complete_artifact()
+        v4 = complete_artifact()
+        v4["schema_version"] = 4
+        v4["capability_registry"] = {
+            "id": "aeb.core-capabilities",
+            "format": 1,
+            "revision": 1,
+            "sha256": "d" * 64,
+        }
+
+        for name, artifact in (("v1", v1), ("v2", v2), ("v4", v4)):
+            with self.subTest(schema=name):
+                result = self.run_validator(artifact, write_sidecar=False)
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_frozen_record_requires_explicit_authenticated_archive_mode(self):
+        record_manifest = FROZEN_RECORD / "record-manifest.json"
+        expected_manifest_digest = hashlib.sha256(record_manifest.read_bytes()).hexdigest()
+        artifact_path = FROZEN_RECORD / "continuous-gauntlet-pipelock.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(VALIDATOR),
+                "--archive-record",
+                str(FROZEN_RECORD),
+                "--expected-record-manifest-sha256",
+                expected_manifest_digest,
+                str(artifact_path),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_missing_retained_manifest_fails_closed(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            artifact_path = Path(temp_dir) / "artifact.json"
-            artifact_path.write_text(json.dumps(complete_artifact()), encoding="utf-8")
-            result = subprocess.run(
-                [sys.executable, str(VALIDATOR), str(artifact_path)],
-                cwd=REPO_ROOT,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+    def test_archive_record_rejects_an_untrusted_record_manifest_digest(self):
+        artifact_path = FROZEN_RECORD / "continuous-gauntlet-pipelock.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(VALIDATOR),
+                "--archive-record",
+                str(FROZEN_RECORD),
+                "--expected-record-manifest-sha256",
+                "0" * 64,
+                str(artifact_path),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("retained corpus manifest", result.stderr)
+        self.assertIn("trusted expected digest", result.stderr)
+
+    def test_duplicate_retained_manifest_ids_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest = Path(temp_dir) / "corpus-manifest.txt"
+            manifest.write_text("url-attack-001\nurl-attack-001\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                scope_validator.corpus_manifest_identity(manifest)
 
     def test_unreachable_coverage_is_visible_but_outside_full_denominator(self):
         artifact = complete_artifact()

@@ -40,12 +40,16 @@ var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": t
 // superseded entries exist so historical records stay verifiable without being
 // rewritten. A version absent from this set is an error rather than a silent
 // fall through to the active contract.
-var readableReceiptProfileVersions = map[int]bool{
-	1:                   true,
-	2:                   true,
-	3:                   true,
-	activeSchemaVersion: true,
-}
+var readableReceiptProfileVersions = func() map[int]bool {
+	versions := map[int]bool{
+		1:               true,
+		2:               true,
+		3:               true,
+		v4SchemaVersion: true,
+	}
+	versions[activeSchemaVersion] = true
+	return versions
+}()
 
 func isReadableReceiptProfileVersion(version int) bool {
 	return readableReceiptProfileVersions[version]

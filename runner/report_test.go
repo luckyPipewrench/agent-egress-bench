@@ -217,6 +217,39 @@ func TestBuyerReportRefusesReceiptProfileWithMismatchedRegistryReference(t *test
 	}
 }
 
+func TestV4ReceiptProfileBindingStaysReadableAfterActiveSchemaAdvances(t *testing.T) {
+	fixture := newReportFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+
+	// This is intentionally a literal v4 receipt beside a literal v4 result.
+	// When activeSchemaVersion advances, this historical pair must remain
+	// readable rather than being compared to the schema used for new output.
+	receipt := validProfile()
+	receipt.SchemaVersion = 4
+	receipt.Tool = fixture.summary["tool"].(string)
+	receipt.ToolVersion = fixture.summary["tool_version"].(string)
+	receipt.CorpusVersion = fixture.summary["corpus_version"].(string)
+	receipt.CorpusSHA256 = fixture.summary["corpus_sha256"].(string)
+	receipt.ToolProfileSHA256 = fixture.summary["tool_profile_sha256"].(string)
+	receipt.CapabilityRegistry.ID = fixture.summary["capability_registry"].(map[string]interface{})["id"].(string)
+	receipt.CapabilityRegistry.Format = fixture.summary["capability_registry"].(map[string]interface{})["format"].(int)
+	receipt.CapabilityRegistry.Revision = fixture.summary["capability_registry"].(map[string]interface{})["revision"].(int)
+	receipt.CapabilityRegistry.SHA256 = fixture.summary["capability_registry"].(map[string]interface{})["sha256"].(string)
+	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
+		t.Fatalf("test receipt profile is invalid: %v", issues)
+	}
+	writeFixtureJSON(t, filepath.Join(dir, "receipt-profile.json"), receipt)
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problem := report.v4ReceiptProfileBindingError(receipt.CapabilityRegistry); problem != "" {
+		t.Fatalf("v4 receipt profile was rejected after an active-schema advance: %s", problem)
+	}
+}
+
 func TestBuyerReportMarksNotApplicableRowCountMismatchInvalid(t *testing.T) {
 	fixture := newReportFixture()
 	fixture.summary["case_count"].(map[string]interface{})["not_applicable"] = 1

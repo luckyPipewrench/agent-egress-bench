@@ -290,6 +290,27 @@ cd validate && go build -o aeb-validate .
 
 This checks field presence, enum validity, and score consistency. Most cases pass when `actual_verdict == expected_verdict`; sequence-boundary cases such as budget enforcement may still fail when evidence shows the tool blocked at the wrong step.
 
+### Scope-artifact verification
+
+Validate a candidate with the checked-out corpus manifest. This is the publish-path command. `cases/MANIFEST.txt` supplies the corpus authority. A sibling `corpus-manifest.txt` remains bundle evidence.
+
+```bash
+python3 scripts/validate_gauntlet_scope.py gauntlet-site/testdata/complete-provenance-artifact.json
+```
+
+An external verifier that already trusts a different manifest may pass it explicitly with `--expected-manifest`. Do not source that file from the candidate directory.
+
+Historical records use archive mode. It requires the immutable record directory and an independently trusted SHA-256 for that directory's `record-manifest.json`. Archive mode verifies the record's file bindings and checks that its retained manifest matches the corpus commit recorded by the artifact before using it for scope checks.
+
+```bash
+python3 scripts/validate_gauntlet_scope.py \
+  --archive-record gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886 \
+  --expected-record-manifest-sha256 17d069ecebe70f52413cd2509aa80c551d0a0e3703385471cc406088625fabb6 \
+  gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json
+```
+
+The expected record-manifest digest must come from an authenticated immutable source, such as a verified append-only record chain. Reading it from the archive being checked would make the archive self-authenticating.
+
 ## Receipt-Scoring Profile (optional)
 
 The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Output validates against [`schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).

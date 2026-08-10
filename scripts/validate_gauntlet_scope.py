@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Validate scope-artifact fields against their retained corpus manifest."""
+"""Validate Gauntlet scope artifacts against an explicit corpus authority."""
 
+import argparse
 import hashlib
 import json
 import math
 import re
+import subprocess
 import sys
 import urllib.parse
 from copy import deepcopy
@@ -54,6 +56,13 @@ PRESENCE_DIAGNOSTICS = (
 SCOPES = ("applicable", "full")
 
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+GIT_SHA1_HEX = re.compile(r"^[0-9a-f]{40}$")
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = REPO_ROOT / "cases" / "MANIFEST.txt"
+ARCHIVE_RECORD_MANIFEST = "record-manifest.json"
+ARCHIVE_CANDIDATE = "continuous-gauntlet-pipelock.json"
+ARCHIVE_CORPUS_MANIFEST = "corpus-manifest.txt"
 
 
 def path_value(document, path):
@@ -105,20 +114,106 @@ def non_empty_string(document, path):
     return value
 
 
-def corpus_manifest_identity(manifest_path):
-    """Return the logical identity of one retained corpus manifest."""
+def corpus_manifest_identity(manifest_path, label="corpus manifest"):
+    """Return one manifest identity using the runner's non-empty/unique ID rules."""
     try:
         raw = manifest_path.read_bytes()
     except OSError as exc:
-        raise ValueError(f"read retained corpus manifest {manifest_path}: {exc}") from exc
+        raise ValueError(f"read {label} {manifest_path}: {exc}") from exc
 
-    # The runner test treats non-empty IDs as a set when comparing the manifest
-    # to loadable cases. It separately rejects duplicate IDs, so this is the
-    # same logical count once the runner's corpus pin is green.
-    logical_ids = {line.strip() for line in raw.decode("utf-8").splitlines() if line.strip()}
+    try:
+        logical_ids = [line.strip() for line in raw.decode("utf-8").splitlines() if line.strip()]
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{label} is not valid UTF-8") from exc
     if not logical_ids:
-        raise ValueError("retained corpus manifest has no logical case IDs")
+        raise ValueError(f"{label} has no logical case IDs")
+    if len(logical_ids) != len(set(logical_ids)):
+        raise ValueError(f"{label} contains duplicate logical case IDs")
     return hashlib.sha256(raw).hexdigest(), len(logical_ids)
+
+
+def checked_out_corpus_identity(expected_manifest=MANIFEST_PATH):
+    """Return the independently supplied corpus identity for a candidate."""
+    if expected_manifest == MANIFEST_PATH:
+        label = "checked-out cases/MANIFEST.txt"
+    else:
+        label = "explicit expected corpus manifest"
+    return corpus_manifest_identity(expected_manifest, label), label
+
+
+def require_sha256(value, label):
+    if not isinstance(value, str) or not SHA256_HEX.fullmatch(value):
+        raise ValueError(f"{label} must be 64 lower-case hex characters")
+    return value
+
+
+def archive_manifest_identity(artifact_path, record_dir, expected_record_manifest_sha256):
+    """Verify a retained manifest against a caller-authenticated immutable record."""
+    record_dir = record_dir.resolve()
+    artifact_path = artifact_path.resolve()
+    expected_record_manifest_sha256 = require_sha256(
+        expected_record_manifest_sha256, "expected record manifest SHA-256"
+    )
+    if artifact_path != record_dir / ARCHIVE_CANDIDATE:
+        raise ValueError(
+            "archive artifact must be the record's " + ARCHIVE_CANDIDATE
+        )
+    if not record_dir.is_dir() or record_dir.is_symlink():
+        raise ValueError("archive record must be a real directory")
+
+    manifest_path = record_dir / ARCHIVE_RECORD_MANIFEST
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise ValueError("archive record manifest is absent or unreadable")
+    manifest_bytes = manifest_path.read_bytes()
+    if hashlib.sha256(manifest_bytes).hexdigest() != expected_record_manifest_sha256:
+        raise ValueError("archive record manifest does not match the trusted expected digest")
+    try:
+        record_manifest = json.loads(manifest_bytes)
+    except json.JSONDecodeError as exc:
+        raise ValueError("archive record manifest is malformed") from exc
+    if not isinstance(record_manifest, dict) or record_manifest.get("schema_version") != 1:
+        raise ValueError("archive record manifest schema_version must be 1")
+    files = record_manifest.get("files")
+    if not isinstance(files, dict) or not files:
+        raise ValueError("archive record manifest files must be a non-empty object")
+
+    expected_names = set(files) | {ARCHIVE_RECORD_MANIFEST}
+    actual_entries = list(record_dir.iterdir())
+    if any(path.is_symlink() or not path.is_file() for path in actual_entries):
+        raise ValueError("archive record contains a non-regular entry")
+    if {path.name for path in actual_entries} != expected_names:
+        raise ValueError("archive record file set does not match its manifest")
+    for name, expected_digest in files.items():
+        if not isinstance(name, str) or Path(name).name != name:
+            raise ValueError("archive record manifest has an unsafe file name")
+        require_sha256(expected_digest, f"archive record files.{name}")
+        if hashlib.sha256((record_dir / name).read_bytes()).hexdigest() != expected_digest:
+            raise ValueError(f"archive record file changed: {name}")
+
+    if ARCHIVE_CANDIDATE not in files or ARCHIVE_CORPUS_MANIFEST not in files:
+        raise ValueError("archive record does not bind its candidate and corpus manifest")
+    candidate_digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    if record_dir.name != candidate_digest:
+        raise ValueError("archive record directory name does not bind its candidate")
+    if record_manifest.get("candidate_sha256") != candidate_digest:
+        raise ValueError("archive record manifest does not bind its candidate")
+
+    with artifact_path.open(encoding="utf-8") as artifact_file:
+        artifact = json.load(artifact_file)
+    corpus_git_sha = artifact.get("corpus_git_sha") if isinstance(artifact, dict) else None
+    if not isinstance(corpus_git_sha, str) or not GIT_SHA1_HEX.fullmatch(corpus_git_sha):
+        raise ValueError("archive artifact corpus_git_sha must be 40 lower-case hex characters")
+    retained_manifest_path = record_dir / ARCHIVE_CORPUS_MANIFEST
+    manifest_at_revision = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "show", f"{corpus_git_sha}:cases/MANIFEST.txt"],
+        check=False,
+        capture_output=True,
+    )
+    if manifest_at_revision.returncode != 0:
+        raise ValueError("archive artifact corpus_git_sha is not a retained repository commit")
+    if manifest_at_revision.stdout != retained_manifest_path.read_bytes():
+        raise ValueError("archive retained corpus manifest differs from corpus_git_sha")
+    return corpus_manifest_identity(retained_manifest_path, "authenticated archive corpus manifest")
 
 
 def validate_metric_fraction(document, scope, metric):
@@ -188,19 +283,19 @@ def validate_canonical_url(document):
         raise ValueError("canonical_url must be an absolute https URL")
 
 
-def validate_scope(document, retained_manifest):
+def validate_scope(document, manifest_identity, manifest_label):
     """Dispatch provenance validation by the explicit artifact schema version."""
     if not isinstance(document, dict):
         raise ValueError("artifact must be a JSON object")
     version = path_value(document, ("schema_version",))
     if version == 1:
-        validate_scope_v1(document, retained_manifest)
+        validate_scope_v1(document, manifest_identity, manifest_label)
         return
     if version == 2:
-        validate_scope_v2(document, retained_manifest)
+        validate_scope_v2(document, manifest_identity, manifest_label)
         return
     if version == 4:
-        validate_scope_v4(document, retained_manifest)
+        validate_scope_v4(document, manifest_identity, manifest_label)
         return
     if version == 5:
         validate_scope_v5(document)
@@ -208,7 +303,7 @@ def validate_scope(document, retained_manifest):
     raise ValueError(f"unsupported schema_version: {version!r}")
 
 
-def validate_scope_v1(document, retained_manifest):
+def validate_scope_v1(document, manifest_identity, manifest_label):
     """Validate the original applicable-only provenance contract."""
     for path in V1_REQUIRED_SCOPE_PATHS:
         path_value(document, path)
@@ -222,11 +317,11 @@ def validate_scope_v1(document, retained_manifest):
     if not SHA256_HEX.fullmatch(manifest_digest):
         raise ValueError("corpus_manifest_sha256 must be 64 lower-case hex characters")
     manifest_count = non_negative_integer(document, ("logical_case_count",))
-    retained_digest, retained_count = retained_manifest
-    if manifest_digest != retained_digest:
-        raise ValueError("corpus_manifest_sha256 does not match retained corpus-manifest.txt")
-    if manifest_count != retained_count:
-        raise ValueError("logical_case_count does not match retained corpus-manifest.txt")
+    expected_digest, expected_count = manifest_identity
+    if manifest_digest != expected_digest:
+        raise ValueError(f"corpus_manifest_sha256 does not match {manifest_label}")
+    if manifest_count != expected_count:
+        raise ValueError(f"logical_case_count does not match {manifest_label}")
 
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
@@ -235,8 +330,8 @@ def validate_scope_v1(document, retained_manifest):
     # is outside score denominators but still part of the logical corpus.
     unreachable = optional_non_negative_integer(document, ("case_count", "unreachable"))
     not_applicable = non_negative_integer(document, ("case_count", "not_applicable"))
-    if total == 0 or total != retained_count:
-        raise ValueError("case_count.total does not match retained logical corpus count")
+    if total == 0 or total != expected_count:
+        raise ValueError(f"case_count.total does not match {manifest_label} logical corpus count")
     if applicable + unreachable + not_applicable != total:
         raise ValueError("case_count.applicable, unreachable, and not_applicable must equal case_count.total")
     reasons = path_value(document, ("case_count", "not_applicable_reasons"))
@@ -268,7 +363,7 @@ def validate_scope_v1(document, retained_manifest):
     validate_canonical_url(document)
 
 
-def validate_scope_v2(document, retained_manifest):
+def validate_scope_v2(document, manifest_identity, manifest_label):
     """Validate the full/applicable, case-index-bound provenance contract."""
     if document.get("schema_version") != 2:
         raise ValueError("schema_version must be 2 for a v2 artifact")
@@ -287,11 +382,11 @@ def validate_scope_v2(document, retained_manifest):
     if not SHA256_HEX.fullmatch(case_index_digest):
         raise ValueError("case_index_sha256 must be 64 lower-case hex characters")
     manifest_count = non_negative_integer(document, ("logical_case_count",))
-    retained_digest, retained_count = retained_manifest
-    if manifest_digest != retained_digest:
-        raise ValueError("corpus_manifest_sha256 does not match retained corpus-manifest.txt")
-    if manifest_count != retained_count:
-        raise ValueError("logical_case_count does not match retained corpus-manifest.txt")
+    expected_digest, expected_count = manifest_identity
+    if manifest_digest != expected_digest:
+        raise ValueError(f"corpus_manifest_sha256 does not match {manifest_label}")
+    if manifest_count != expected_count:
+        raise ValueError(f"logical_case_count does not match {manifest_label}")
 
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
@@ -300,8 +395,8 @@ def validate_scope_v2(document, retained_manifest):
     errors = non_negative_integer(document, ("case_count", "errors"))
     if total == 0:
         raise ValueError("case_count.total must be greater than zero")
-    if total != retained_count:
-        raise ValueError("case_count.total does not match retained logical corpus count")
+    if total != expected_count:
+        raise ValueError(f"case_count.total does not match {manifest_label} logical corpus count")
     if applicable > total:
         raise ValueError("case_count.applicable cannot exceed case_count.total")
     if applicable + unreachable + not_applicable != total:
@@ -366,11 +461,11 @@ def validate_scope_v2(document, retained_manifest):
     validate_canonical_url(document)
 
 
-def validate_scope_v4(document, retained_manifest):
+def validate_scope_v4(document, manifest_identity, manifest_label):
     """Validate an active registry-bound artifact without reusing a v2 claim."""
     copied = dict(document)
     copied["schema_version"] = 2
-    validate_scope_v2(copied, retained_manifest)
+    validate_scope_v2(copied, manifest_identity, manifest_label)
     reference = document.get("capability_registry")
     if not isinstance(reference, dict) or set(reference) != {"id", "format", "revision", "sha256"}:
         raise ValueError("capability_registry must be an exact registry reference")
@@ -446,17 +541,53 @@ def validate_scope_v5(document):
                 )
 
 
+def parse_args(argv):
+    parser = argparse.ArgumentParser(
+        description="Validate a Gauntlet scope artifact against a trusted corpus authority."
+    )
+    parser.add_argument(
+        "--expected-manifest",
+        type=Path,
+        help="trusted expected corpus manifest for candidate validation (default: checked-out cases/MANIFEST.txt)",
+    )
+    parser.add_argument(
+        "--archive-record",
+        type=Path,
+        help="immutable record directory for historical archive validation",
+    )
+    parser.add_argument(
+        "--expected-record-manifest-sha256",
+        help="trusted SHA-256 of --archive-record/record-manifest.json",
+    )
+    parser.add_argument("artifact", type=Path, metavar="ARTIFACT.json")
+    args = parser.parse_args(argv[1:])
+    if args.archive_record is None:
+        if args.expected_record_manifest_sha256 is not None:
+            parser.error("--expected-record-manifest-sha256 requires --archive-record")
+    else:
+        if args.expected_manifest is not None:
+            parser.error("--expected-manifest cannot be combined with --archive-record")
+        if args.expected_record_manifest_sha256 is None:
+            parser.error("--archive-record requires --expected-record-manifest-sha256")
+    return args
+
+
 def main(argv):
-    if len(argv) != 2:
-        print(f"usage: {Path(argv[0]).name} ARTIFACT.json", file=sys.stderr)
-        return 2
+    args = parse_args(argv)
     try:
-        artifact_path = Path(argv[1])
-        with artifact_path.open(encoding="utf-8") as artifact_file:
+        with args.artifact.open(encoding="utf-8") as artifact_file:
             artifact = json.load(artifact_file)
-        retained_manifest = corpus_manifest_identity(artifact_path.parent / "corpus-manifest.txt")
-        validate_scope(artifact, retained_manifest)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        if args.archive_record is not None:
+            manifest_identity = archive_manifest_identity(
+                args.artifact,
+                args.archive_record,
+                args.expected_record_manifest_sha256,
+            )
+            manifest_label = "authenticated archive corpus manifest"
+        else:
+            manifest_identity, manifest_label = checked_out_corpus_identity(args.expected_manifest or MANIFEST_PATH)
+        validate_scope(artifact, manifest_identity, manifest_label)
+    except (OSError, json.JSONDecodeError, ValueError, subprocess.SubprocessError) as exc:
         print(f"scope validation: FAIL: {exc}", file=sys.stderr)
         return 1
     print("scope validation: OK")

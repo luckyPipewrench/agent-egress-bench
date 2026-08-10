@@ -791,7 +791,7 @@ func (r *buyerReport) v4ReceiptProfileBindingError(reference capabilityregistry.
 	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
 		return "v4 receipt profile is invalid"
 	}
-	if receipt.SchemaVersion != activeSchemaVersion {
+	if receipt.SchemaVersion != v4SchemaVersion {
 		return "v4 receipt profile schema version does not match the result"
 	}
 	if receipt.Tool != reportString(r.summary, "tool") || receipt.ToolVersion != reportString(r.summary, "tool_version") {
