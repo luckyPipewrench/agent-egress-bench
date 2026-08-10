@@ -1,4 +1,4 @@
-.PHONY: preflight check-claim-language check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-claim-language check-readme-categories check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -12,7 +12,7 @@ GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.j
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language
+preflight: test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
 
 test-capability-registry:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
@@ -32,6 +32,10 @@ test-label-boundary:
 check-claim-language:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_claim_language_test.py
 	@python3 scripts/check_claim_language.py
+
+check-readme-categories:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_readme_categories_test.py
+	@python3 scripts/check_readme_categories.py --repo-root .
 
 test-validate:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
