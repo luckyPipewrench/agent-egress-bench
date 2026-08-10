@@ -214,12 +214,12 @@ func TestIntegrationRealCases(t *testing.T) {
 		t.Errorf("dry-run applicable false_positive_rate = %f, want 0.0", *summary.Scores.Applicable.FalsePositiveRate)
 	}
 
-	// Dry-run: detection and evidence are 0.0.
-	if summary.Scores.Applicable.Detection != nil && *summary.Scores.Applicable.Detection != 0.0 {
-		t.Errorf("dry-run applicable detection = %f, want 0.0", *summary.Scores.Applicable.Detection)
+	// Dry-run emits synthetic adapter markers, which are not explanatory fields.
+	if summary.Diagnostics.Applicable.ClassificationPresentRate != nil && *summary.Diagnostics.Applicable.ClassificationPresentRate != 0.0 {
+		t.Errorf("dry-run classification_present_rate = %f, want 0.0", *summary.Diagnostics.Applicable.ClassificationPresentRate)
 	}
-	if summary.Scores.Applicable.Evidence != nil && *summary.Scores.Applicable.Evidence != 0.0 {
-		t.Errorf("dry-run applicable evidence = %f, want 0.0", *summary.Scores.Applicable.Evidence)
+	if summary.Diagnostics.Applicable.StructuredEvidencePresentRate != nil && *summary.Diagnostics.Applicable.StructuredEvidencePresentRate != 0.0 {
+		t.Errorf("dry-run structured_evidence_present_rate = %f, want 0.0", *summary.Diagnostics.Applicable.StructuredEvidencePresentRate)
 	}
 
 	// Dry-run keeps scoreable calibration rows but cannot become publication

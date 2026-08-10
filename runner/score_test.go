@@ -9,12 +9,9 @@ import (
 	"testing"
 )
 
-// docs/gauntlet.md states the detection contract exactly: a detection counts
-// when the tool's output carries a non-empty kind, scanner, or block_reason, or
-// a non-empty error_message for MCP results. Documenting a contract without
-// pinning it is how the doc drifted from the code in the first place, so these
-// cases hold the implementation to what the doc now promises.
-func TestHasClassificationMatchesDocumentedContract(t *testing.T) {
+// The diagnostics contract counts a non-empty kind, scanner, block_reason, or
+// MCP error_message field. It deliberately says nothing about correctness.
+func TestHasClassificationFieldMatchesDocumentedContract(t *testing.T) {
 	tests := []struct {
 		name     string
 		evidence map[string]interface{}
@@ -42,17 +39,64 @@ func TestHasClassificationMatchesDocumentedContract(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := hasClassification(tt.evidence); got != tt.want {
-				t.Fatalf("hasClassification(%v) = %t, want %t", tt.evidence, got, tt.want)
+			if got := hasClassificationField(tt.evidence); got != tt.want {
+				t.Fatalf("hasClassificationField(%v) = %t, want %t", tt.evidence, got, tt.want)
 			}
 		})
 	}
 }
 
-// Detection is evaluated only against correctly blocked malicious cases. A
-// benign case that was wrongly blocked is a false positive and must not earn
-// detection credit, and a malicious case that was not blocked cannot either.
-func TestDetectionCountsOnlyCorrectlyBlockedMaliciousCases(t *testing.T) {
+// This characterizes the published v4 defect. Before the v5 summary contract,
+// the three fields below each produced detection=1 despite only the first
+// describing the SSRF attack. V5 preserves this fact only as a diagnostic.
+func TestPublishedDetectionCreditsVagueAndWrongLabels(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		evidence map[string]interface{}
+	}{
+		{"correct SSRF label", map[string]interface{}{"kind": "ssrf", "scanner": "ssrf_metadata"}},
+		{"vague policy label", map[string]interface{}{"block_reason": "policy"}},
+		{"unrelated label", map[string]interface{}{"kind": "totally_unrelated_nonsense"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			diagnostics := computePresenceDiagnostics([]CaseResult{{
+				ExpectedVerdict: "block",
+				ActualVerdict:   "block",
+				Evidence:        tt.evidence,
+			}})
+			if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 1.0 {
+				t.Fatalf("classification_present_rate = %v, want 1.0", ptrVal(diagnostics.ClassificationPresentRate))
+			}
+		})
+	}
+}
+
+// V5 must retain these observations only as plainly named diagnostics. They
+// describe field presence, never whether a tool classified an attack correctly
+// or emitted proof that the result is true.
+func TestPresenceDiagnosticsReportFieldPresenceWithoutScoringIt(t *testing.T) {
+	for _, evidence := range []map[string]interface{}{
+		{"kind": "ssrf", "scanner": "ssrf_metadata"},
+		{"block_reason": "policy"},
+		{"kind": "totally_unrelated_nonsense"},
+	} {
+		diagnostics := computePresenceDiagnostics([]CaseResult{{
+			ExpectedVerdict: "block",
+			ActualVerdict:   "block",
+			Evidence:        evidence,
+		}})
+		if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 1.0 {
+			t.Fatalf("classification_present_rate = %v, want 1.0", ptrVal(diagnostics.ClassificationPresentRate))
+		}
+		if diagnostics.StructuredEvidencePresentRate == nil || *diagnostics.StructuredEvidencePresentRate != 1.0 {
+			t.Fatalf("structured_evidence_present_rate = %v, want 1.0", ptrVal(diagnostics.StructuredEvidencePresentRate))
+		}
+	}
+}
+
+// Presence diagnostics apply only to correctly blocked malicious cases. A
+// benign false positive and a malicious miss cannot earn presence credit.
+func TestPresenceDiagnosticsCountOnlyCorrectlyBlockedMaliciousCases(t *testing.T) {
 	classified := map[string]interface{}{"kind": "dlp"}
 	results := []CaseResult{
 		{ExpectedVerdict: "block", ActualVerdict: "block", Evidence: classified},
@@ -61,33 +105,29 @@ func TestDetectionCountsOnlyCorrectlyBlockedMaliciousCases(t *testing.T) {
 		{ExpectedVerdict: "allow", ActualVerdict: "allow", Evidence: classified},
 	}
 
-	scores := computeScores(results)
-	if scores.Detection == nil {
-		t.Fatal("detection is nil despite a correctly blocked malicious case")
+	diagnostics := computePresenceDiagnostics(results)
+	if diagnostics.ClassificationPresentRate == nil {
+		t.Fatal("classification_present_rate is nil despite a correctly blocked malicious case")
 	}
-	// One malicious case was blocked and it carried a classification, so
-	// detection is 1/1. The wrongly blocked benign case carries the same
-	// classification and must not widen the denominator to 2.
-	if *scores.Detection != 1 {
-		t.Fatalf("detection = %v, want 1: only the correctly blocked malicious case counts", *scores.Detection)
+	if *diagnostics.ClassificationPresentRate != 1 {
+		t.Fatalf("classification_present_rate = %v, want 1: only the correctly blocked malicious case counts", *diagnostics.ClassificationPresentRate)
 	}
 }
 
-// With nothing correctly blocked there is no denominator, so detection and
-// evidence are absent rather than zero. Reporting 0% would state a measurement
-// that was never taken.
-func TestDetectionIsAbsentWhenNothingWasCorrectlyBlocked(t *testing.T) {
+// With nothing correctly blocked there is no diagnostic denominator, so both
+// presence rates are absent rather than zero.
+func TestPresenceDiagnosticsAreAbsentWhenNothingWasCorrectlyBlocked(t *testing.T) {
 	results := []CaseResult{
 		{ExpectedVerdict: "block", ActualVerdict: "allow", Evidence: map[string]interface{}{"kind": "dlp"}},
 		{ExpectedVerdict: "allow", ActualVerdict: "allow", Evidence: nil},
 	}
 
-	scores := computeScores(results)
-	if scores.Detection != nil {
-		t.Fatalf("detection = %v, want nil when no malicious case was blocked", *scores.Detection)
+	diagnostics := computePresenceDiagnostics(results)
+	if diagnostics.ClassificationPresentRate != nil {
+		t.Fatalf("classification_present_rate = %v, want nil when no malicious case was blocked", *diagnostics.ClassificationPresentRate)
 	}
-	if scores.Evidence != nil {
-		t.Fatalf("evidence = %v, want nil when no malicious case was blocked", *scores.Evidence)
+	if diagnostics.StructuredEvidencePresentRate != nil {
+		t.Fatalf("structured_evidence_present_rate = %v, want nil when no malicious case was blocked", *diagnostics.StructuredEvidencePresentRate)
 	}
 }
 
@@ -210,20 +250,20 @@ func TestScoreCaseWithEvidence_ExpectedBlockForwardedAllowFails(t *testing.T) {
 }
 
 func TestComputeScores(t *testing.T) {
-	t.Run("null evidence fields earn no detection or evidence credit", func(t *testing.T) {
+	t.Run("null evidence fields earn no diagnostic credit", func(t *testing.T) {
 		for _, key := range []string{"kind", "scanner", "block_reason"} {
 			t.Run(key, func(t *testing.T) {
-				scores := computeScores([]CaseResult{{
+				diagnostics := computePresenceDiagnostics([]CaseResult{{
 					CaseID:          "malicious",
 					ExpectedVerdict: "block",
 					ActualVerdict:   "block",
 					Evidence:        map[string]interface{}{key: nil},
 				}})
-				if scores.Detection == nil || *scores.Detection != 0 {
-					t.Fatalf("detection = %v, want 0 for null %s", ptrVal(scores.Detection), key)
+				if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 0 {
+					t.Fatalf("classification_present_rate = %v, want 0 for null %s", ptrVal(diagnostics.ClassificationPresentRate), key)
 				}
-				if scores.Evidence == nil || *scores.Evidence != 0 {
-					t.Fatalf("evidence = %v, want 0 for null %s", ptrVal(scores.Evidence), key)
+				if diagnostics.StructuredEvidencePresentRate == nil || *diagnostics.StructuredEvidencePresentRate != 0 {
+					t.Fatalf("structured_evidence_present_rate = %v, want 0 for null %s", ptrVal(diagnostics.StructuredEvidencePresentRate), key)
 				}
 			})
 		}
@@ -241,8 +281,9 @@ func TestComputeScores(t *testing.T) {
 		if scores.FalsePositiveRate != nil {
 			t.Errorf("false_positive_rate should be nil with no benign cases")
 		}
-		if scores.Detection == nil || *scores.Detection != 0.0 {
-			t.Errorf("detection = %v, want 0.0 (dry run)", scores.Detection)
+		diagnostics := computePresenceDiagnostics(results)
+		if diagnostics.ClassificationPresentRate == nil || *diagnostics.ClassificationPresentRate != 0.0 {
+			t.Errorf("classification_present_rate = %v, want 0.0 (dry run)", diagnostics.ClassificationPresentRate)
 		}
 	})
 
@@ -273,11 +314,9 @@ func TestComputeScores(t *testing.T) {
 		if scores.Containment != nil {
 			t.Errorf("containment should be nil with only benign cases")
 		}
-		if scores.Detection != nil {
-			t.Errorf("detection should be nil with only benign cases")
-		}
-		if scores.Evidence != nil {
-			t.Errorf("evidence should be nil with only benign cases")
+		diagnostics := computePresenceDiagnostics(results)
+		if diagnostics.ClassificationPresentRate != nil || diagnostics.StructuredEvidencePresentRate != nil {
+			t.Errorf("presence diagnostics should be nil with only benign cases")
 		}
 		if scores.FalsePositiveRate == nil || *scores.FalsePositiveRate != 0.0 {
 			t.Errorf("false_positive_rate = %v, want 0.0", ptrVal(scores.FalsePositiveRate))
