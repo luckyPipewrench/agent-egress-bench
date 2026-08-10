@@ -319,7 +319,7 @@ Flags:
 
 - `--emit-receipt-profile <path>`: write the profile JSON to `<path>`. Default off.
 - `--receipt-verifier-file <path>`: optional JSON file describing the tool's receipt verifier (shape: the `verifier` object in the receipt-scoring schema). Omitted means "no verifier shipped" and the runner emits a degraded honest verifier block.
-- `--multifile-cases <dir>`: optional directory of multi-file MCP-drift cases. The reference profile uses `cases/mcp-drift`; omitting this flag runs only the single-file JSON corpus.
+- `--multifile-cases <dir>`: optional source-location override for the multi-file MCP-drift cases. By default the runner discovers registered multi-file families under `--cases`; an override must yield the same logical case IDs as that loader-backed corpus.
 
 Reproducibility:
 
@@ -342,7 +342,6 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
   --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
   --fixtures \
   --cases ./cases \
-  --multifile-cases ./cases/mcp-drift \
   --profile examples/pipelock/tool-profile.json \
   --output /tmp/gauntlet.json \
   --emit-receipt-profile /tmp/pipelock.json \

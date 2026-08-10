@@ -75,16 +75,17 @@ nothing to pass. The profile is the published evidence.
 
 ## Coverage scope
 
-The reference runner exercises the 193 single-file cases under
-[`../cases/`](../cases/) plus the 4 multi-file cases in
-[`../cases/mcp-drift/`](../cases/mcp-drift/) (12 JSON fixture files
-total: `before.json`, `after.json`, `expected.json` per case). Multi-file
-cases run via the runner's `--multifile-cases` flag, which loads each case
-directory, converts the before/after snapshot pair into a four-message
-JSON-RPC sequence (two `tools/list` requests interleaved with the two
-snapshots), and replays the sequence through a single MCP session against
-the running tool. The verdict on the second response is what the per-case
-row records.
+The reference runner discovers the 222 single-file cases under
+[`../cases/`](../cases/) plus the 6 multi-file cases in
+[`../cases/mcp-drift/`](../cases/mcp-drift/) (18 JSON fixture files total:
+`before.json`, `after.json`, and `expected.json` per case). The optional
+`--multifile-cases` flag only relocates that complete family. The runner
+refuses an override whose IDs differ from the loader-backed corpus. It loads
+each case directory, converts the before/after snapshot pair into a
+four-message JSON-RPC sequence (two `tools/list` requests interleaved with
+the two snapshots), and replays the sequence through a single MCP session
+against the running tool. The verdict on the second response is what the
+per-case row records.
 
 ## Files in this directory
 

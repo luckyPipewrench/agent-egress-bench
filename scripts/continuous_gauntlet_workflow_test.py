@@ -63,7 +63,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertNotIn("--fixtures", self.workflow)
         self.assertNotIn("--multifile-cases", self.workflow)
         self.assertIn("--fixtures", self.entrypoint)
-        self.assertIn("--multifile-cases", self.entrypoint)
+        self.assertNotIn("--multifile-cases", self.entrypoint)
 
     def test_zero_argument_entrypoint_avoids_old_bash_empty_array_expansion(self):
         self.assertIn("original_arg_count=$#", self.entrypoint)

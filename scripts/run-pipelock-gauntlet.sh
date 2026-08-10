@@ -393,7 +393,6 @@ cmd=(
   --managed-proxy-cmd "$managed_proxy_cmd"
   --managed-mcp-http-cmd "$managed_mcp_http_cmd"
   --cases ./cases
-  --multifile-cases ./cases/mcp-drift
   --profile examples/pipelock/tool-profile.json
   --fixtures
   --output "$summary_path"
@@ -416,8 +415,6 @@ printf '\n' >> "$command_path"
 failure_reason="canonical runner command contract failed"
 grep -Eq '(^|[[:space:]])--fixtures($|[[:space:]])' "$command_path" || \
   die "recorded command does not include --fixtures"
-grep -Eq '(^|[[:space:]])--multifile-cases($|[[:space:]])' "$command_path" || \
-  die "recorded command does not include --multifile-cases"
 
 failure_reason="corpus statistics or case index generation failed"
 make stats > "$stats_path"
