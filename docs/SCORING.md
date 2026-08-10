@@ -31,9 +31,10 @@ results: 22 passed, 3 failed, 0 unreachable, 10 not_applicable, 0 errors (35 tot
 ```
 
 Pass, fail, unreachable, not-applicable, and error result counters must sum to the total
-number of cases processed. In Gauntlet summary JSON, `case_count.applicable`
-includes applicable cases that ended in `error`, while `case_count.errors`
-reports that subset explicitly.
+number of cases processed. In Gauntlet summary JSON, `case_count.applicable` is
+the retained name for the routed-case partition. It includes routed cases that
+ended in `error`, while `case_count.errors` reports that unobserved subset
+explicitly. It is not an observed-measurement count.
 
 ## What Scoring Is NOT
 

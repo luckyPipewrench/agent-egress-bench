@@ -254,7 +254,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         reviewed = evaluator.load_object(record / promotion.PUBLISHED_DECISION_FILENAME)
         self.assertFalse(reviewed["blocked"])
         summary = fixture.summary.read_text(encoding="utf-8")
-        self.assertIn("Scope: `212 / 213` applicable", summary)
+        self.assertIn("Scope: `212 / 213` routed", summary)
         self.assertIn("Reviewed policy change proposed: `no`", summary)
 
     def test_same_promotion_is_idempotent(self):

@@ -49,7 +49,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Scope
 
 - Total cases: Absent from run artifacts
-- Applicable cases: Absent from run artifacts
+- Routed cases: Absent from run artifacts
 - Not-applicable cases: Absent from run artifacts
 - Error cases: Absent from run artifacts
 - Not-applicable case IDs and reasons:
@@ -57,7 +57,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 
 ## Metric vector
 
-Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.
+Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only routed cases this adapter delivered and observed.
 
 ### Full corpus
 
@@ -66,7 +66,7 @@ Each metric stands on its own. Full-corpus scores retain historical N/A rows as 
 - Evidence: Absent from run artifacts
 - False-positive rate: Absent from run artifacts
 
-### Applicable cases
+### Applicable-only observed cases
 
 - Containment: Absent from run artifacts
 - Detection: Absent from run artifacts

@@ -263,6 +263,31 @@ func TestBuyerReportTracksUnreachableRowsWithoutReclassifyingThem(t *testing.T) 
 	}
 }
 
+func TestBuyerReportCallsErrorInclusiveApplicableCountRouted(t *testing.T) {
+	fixture := newReportFixture()
+	fixture.summary["case_count"].(map[string]interface{})["errors"] = 1
+	fixture.results[1]["actual_verdict"] = "error"
+	fixture.results[1]["score"] = "error"
+	fixture.results[1]["notes"] = "adapter error: fixture unavailable"
+	fixture.bundle["bundle_status"] = "partial"
+	fixture.bundle["publication_eligible"] = false
+	fixture.decision["blocked"] = true
+	fixture.decision["execution_status"] = "blocked"
+	fixture.decision["publication_eligible"] = false
+	dir := t.TempDir()
+	fixture.write(t, dir)
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	if !strings.Contains(output.String(), "- Routed cases: 2") {
+		t.Fatalf("report presented an error-inclusive routed count as observed applicability:\n%s", output.String())
+	}
+}
+
 func sampleForRestrictedPattern(pattern string) string {
 	samples := map[string]string{
 		`(?i)leaderboards?`:                        "leaderboard",

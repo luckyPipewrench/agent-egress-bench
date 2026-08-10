@@ -109,7 +109,9 @@ type RunProvenance struct {
 	TargetConfigSHA  string
 }
 
-// CaseCount tracks scoreable, historical N/A, and adapter-unreachable rows.
+// CaseCount tracks routed, historical N/A, and adapter-unreachable rows. The
+// retained Applicable field is the routed partition, including error rows; it
+// is not a count of observed measurements.
 type CaseCount struct {
 	Total                int            `json:"total"`
 	Applicable           int            `json:"applicable"`

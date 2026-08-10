@@ -451,7 +451,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("## Scope")
 	line("")
 	bullet("Total cases", reportCount(r.summary, "case_count", "total"))
-	bullet("Applicable cases", reportCount(r.summary, "case_count", "applicable"))
+	bullet("Routed cases", reportCount(r.summary, "case_count", "applicable"))
 	if _, present := reportIntegerValue(r.summary, "case_count", "unreachable"); present {
 		bullet("Unreachable cases", reportCount(r.summary, "case_count", "unreachable"))
 	}
@@ -476,14 +476,14 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("## Metric vector")
 	line("")
 	if reportNumber(r.summary, "schema_version") == "5" {
-		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.")
+		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only routed cases this adapter delivered and observed.")
 		line("")
 		line("### Full corpus")
 		line("")
 		bullet("Containment", reportPercent(r.summary, "scores", "full", "containment"))
 		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
 		line("")
-		line("### Applicable cases")
+		line("### Applicable-only observed cases")
 		line("")
 		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
 		bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
@@ -497,7 +497,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		bullet("Applicable label present", reportPercent(r.summary, "diagnostics", "applicable", "classification_present_rate"))
 		bullet("Applicable structured field present", reportPercent(r.summary, "diagnostics", "applicable", "structured_evidence_present_rate"))
 	} else {
-		line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.")
+		line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only routed cases this adapter delivered and observed.")
 		line("")
 		line("### Full corpus")
 		line("")
@@ -506,7 +506,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		bullet("Evidence", reportPercent(r.summary, "scores", "full", "evidence"))
 		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
 		line("")
-		line("### Applicable cases")
+		line("### Applicable-only observed cases")
 		line("")
 		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
 		bullet("Detection", reportPercent(r.summary, "scores", "applicable", "detection"))

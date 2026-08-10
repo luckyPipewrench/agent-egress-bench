@@ -265,7 +265,7 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
         lines.append(f"- Pipelock: `{code_text(details.get('pipelock_version'))}`")
         lines.append(f"- Generated: `{code_text(details.get('generated_at'))}`")
         if all(details.get(key) is not None for key in ("total", "applicable", "unreachable", "not_applicable", "errors")):
-            lines.append(f"- Cases: {details['total']} total; {details['applicable']} applicable; {details['unreachable']} unreachable; {details['not_applicable']} N/A; {details['errors']} errors")
+            lines.append(f"- Cases: {details['total']} total; {details['applicable']} routed; {details['unreachable']} unreachable; {details['not_applicable']} N/A; {details['errors']} errors")
         if details.get("applicable_containment") is not None:
             lines.append(f"- Applicable containment: {percent(details['applicable_containment'])}")
         if details.get("full_containment") is not None:

@@ -392,7 +392,7 @@ def write_summary(
             f"`{markdown_code(candidate['corpus_git_sha'])}`"
         ),
         (
-            f"- Scope: `{counts['applicable']} / {counts['total']}` applicable, "
+            f"- Scope: `{counts['applicable']} / {counts['total']}` routed, "
             f"`{counts.get('unreachable', 0)}` unreachable, "
             f"`{counts['not_applicable']}` N/A, `{counts['errors']}` errors"
         ),
@@ -414,7 +414,7 @@ def write_summary(
         lines.extend(f"- Review: {markdown_code(value)}" for value in notes)
     case_lines = nonpassing_case_lines(results_path)
     if case_lines:
-        lines.extend(["", "### Non-passing applicable cases", *case_lines])
+        lines.extend(["", "### Non-passing routed cases", *case_lines])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

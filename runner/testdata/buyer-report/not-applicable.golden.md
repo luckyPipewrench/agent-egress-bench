@@ -50,7 +50,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Scope
 
 - Total cases: 3
-- Applicable cases: 2
+- Routed cases: 2
 - Not-applicable cases: 1
 - Error cases: 0
 - Not-applicable case IDs and reasons:
@@ -58,7 +58,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 
 ## Metric vector
 
-Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only cases this adapter delivered and observed.
+Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only routed cases this adapter delivered and observed.
 
 ### Full corpus
 
@@ -67,7 +67,7 @@ Each metric stands on its own. Full-corpus scores retain historical N/A rows as 
 - Evidence: 25.00%
 - False-positive rate: 10.00%
 
-### Applicable cases
+### Applicable-only observed cases
 
 - Containment: 80.00%
 - Detection: 60.00%
