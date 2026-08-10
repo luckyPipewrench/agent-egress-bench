@@ -4,6 +4,7 @@
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 
 RETIRED_REFERENCES = (
@@ -14,6 +15,7 @@ RETIRED_REFERENCES = (
 )
 TEXT_SUFFIXES = {".md", ".html", ".go", ".py", ".yml", ".yaml"}
 MARKDOWN_LINK = re.compile(r"!?\[[^]]*\]\(([^)]+)\)")
+LINK_TITLE = re.compile(r"^(?P<target>\S+)(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?$")
 REQUIRED_OWNERS = (
     "docs/SPEC.md",
     "docs/RUNNER.md",
@@ -43,6 +45,21 @@ def text_files(root):
         yield path
 
 
+def local_markdown_target(raw_target):
+    target = raw_target.strip()
+    if target.startswith("<"):
+        closing = target.find(">")
+        if closing <= 1:
+            fail(f"invalid angle-bracket Markdown target {raw_target!r}")
+        target = target[1:closing]
+    else:
+        match = LINK_TITLE.fullmatch(target)
+        if not match:
+            fail(f"invalid local Markdown target {raw_target!r}")
+        target = match.group("target")
+    return unquote(target).split("#", 1)[0]
+
+
 def check(root):
     files = list(text_files(root))
     markdown = [path for path in files if path.suffix == ".md"]
@@ -61,7 +78,7 @@ def check(root):
             continue
         for line_number, line in enumerate(text.splitlines(), 1):
             for raw_target in MARKDOWN_LINK.findall(line):
-                target = raw_target.strip().split("#", 1)[0]
+                target = local_markdown_target(raw_target)
                 if not target or "://" in target or target.startswith("mailto:"):
                     continue
                 links_checked += 1

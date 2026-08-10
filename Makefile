@@ -38,6 +38,7 @@ check-case-immutability:
 # Keep contract ownership links live and prevent deleted scoring documents from
 # becoming shadow authorities again. Missing and empty inputs fail the scan.
 check-docs:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_docs_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_docs.py
 
 # The G2 authentication verifier carries six CEE v0 schema copies. Missing,
