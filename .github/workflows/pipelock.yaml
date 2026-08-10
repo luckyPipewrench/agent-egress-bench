@@ -19,13 +19,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The action installs the latest Pipelock RELEASE. It still runs the
+      # whole-tree audit and resolves the shared config, but its built-in diff
+      # scan is disabled here and both diff scans below use a scanner built from
+      # Pipelock's default branch instead.
+      #
+      # Why: a scanner fix on Pipelock's default branch does not reach a release
+      # for weeks, and this repository inherits every bug that shipped meanwhile.
+      # Whole-file-deletion hunk parsing was fixed in pipelock#1145, which is on
+      # Pipelock's default branch and absent from v3.3.0, so the released binary
+      # rejects any pull request that deletes a file with "unverifiable input:
+      # content outside unified diff hunks" and surfaces it as "Secrets detected
+      # in PR diff" when there is no secret.
       - name: Pipelock Scan
         id: pipelock
         uses: luckyPipewrench/pipelock@9d2e37d296359c38e599525a0424cdc189a812e1 # v3.0.0
         with:
-          # The action's built-in diff scan is pull_request-specific. A
-          # workflow_dispatch run performs the equivalent scan below.
-          scan-diff: ${{ github.event_name == 'pull_request' }}
+          scan-diff: 'false'
           fail-on-findings: 'true'
           test-vectors: 'false'
           exclude-paths: |
@@ -34,6 +44,51 @@ jobs:
             scripts/
             runner/go.sum
             control-evidence/v0/conformance/*/*/*.dsse.json
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+          cache: false
+
+      - name: Build scanner from Pipelock main
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOBIN="${RUNNER_TEMP}/bin" go install github.com/luckyPipewrench/pipelock/cmd/pipelock@main
+          # Prepend so the plain `pipelock` command below resolves to this
+          # build rather than the release the action installed earlier.
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+          "${RUNNER_TEMP}/bin/pipelock" --version
+
+      - name: Scan pull request diff
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CONFIG_PATH: ${{ steps.pipelock.outputs['config-path'] }}
+        run: |
+          set -euo pipefail
+          diff_file="$(mktemp)"
+          trap 'rm -f "$diff_file"' EXIT
+          merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          # --text forces textual output so a path marked binary by an in-repo
+          # .gitattributes cannot reduce its content to "Binary files differ"
+          # and slip past the scanner unread.
+          git diff --no-ext-diff --no-textconv --text \
+            "$merge_base" "$HEAD_SHA" > "$diff_file"
+          scan_args=(
+            --exclude cases/
+            --exclude README.md
+            --exclude scripts/
+            --exclude runner/go.sum
+            --exclude 'control-evidence/v0/conformance/*/*/*.dsse.json'
+          )
+          if [[ -n "$CONFIG_PATH" && -f "$CONFIG_PATH" ]]; then
+            scan_args+=(--config "$CONFIG_PATH")
+          fi
+          pipelock git scan-diff "${scan_args[@]}" < "$diff_file"
 
       - name: Scan dispatched branch diff
         if: github.event_name == 'workflow_dispatch'
@@ -45,7 +100,7 @@ jobs:
           set -euo pipefail
           diff_file="$(mktemp)"
           trap 'rm -f "$diff_file"' EXIT
-          git diff --no-ext-diff --no-textconv \
+          git diff --no-ext-diff --no-textconv --text \
             "origin/$DEFAULT_BRANCH...HEAD" > "$diff_file"
           scan_args=(
             --exclude cases/
