@@ -476,7 +476,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("## Metric vector")
 	line("")
 	if reportNumber(r.summary, "schema_version") == "5" {
-		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only routed cases this adapter delivered and observed.")
+		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only the routed cases this adapter delivered AND observed, so error rows are counted as routed but are excluded from every score denominator.")
 		line("")
 		line("### Full corpus")
 		line("")
@@ -497,7 +497,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		bullet("Applicable label present", reportPercent(r.summary, "diagnostics", "applicable", "classification_present_rate"))
 		bullet("Applicable structured field present", reportPercent(r.summary, "diagnostics", "applicable", "structured_evidence_present_rate"))
 	} else {
-		line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only routed cases this adapter delivered and observed.")
+		line("Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only the routed cases this adapter delivered AND observed, so error rows are counted as routed but are excluded from every score denominator.")
 		line("")
 		line("### Full corpus")
 		line("")

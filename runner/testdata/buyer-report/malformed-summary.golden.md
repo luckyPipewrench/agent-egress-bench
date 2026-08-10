@@ -57,7 +57,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 
 ## Metric vector
 
-Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only routed cases this adapter delivered and observed.
+Each metric stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only the routed cases this adapter delivered AND observed, so error rows are counted as routed but are excluded from every score denominator.
 
 ### Full corpus
 
