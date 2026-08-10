@@ -502,8 +502,24 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	if summary.CaseCount.Total != len(expected) {
 		t.Fatalf("default run total = %d, want loader-backed %d", summary.CaseCount.Total, len(expected))
 	}
-	if summary.PerCategory["mcp_drift"].Applicable != 6 {
-		t.Fatalf("default run mcp_drift applicability = %+v, want 6", summary.PerCategory["mcp_drift"])
+	// Derived from the loader rather than pinned, so adding a multi-file case
+	// changes what this asserts instead of failing it. The claim under test is that
+	// a default run covers every registered multi-file case, not that there are
+	// currently six of them.
+	wantMCPDrift := 0
+	for _, c := range expected {
+		if c.Category == "mcp_drift" {
+			wantMCPDrift++
+		}
+	}
+	if wantMCPDrift == 0 {
+		t.Fatal("loader reported no mcp_drift cases, so this assertion would prove nothing")
+	}
+	if summary.PerCategory["mcp_drift"].Applicable != wantMCPDrift {
+		t.Fatalf(
+			"default run mcp_drift applicability = %+v, want loader-backed %d",
+			summary.PerCategory["mcp_drift"], wantMCPDrift,
+		)
 	}
 
 	data, err := os.ReadFile(receiptPath)
@@ -576,7 +592,19 @@ func copyMultiFileCases(t *testing.T, source, destination string, ids ...string)
 		if err := os.MkdirAll(caseDir, 0o750); err != nil {
 			t.Fatalf("mkdir override case %s: %v", id, err)
 		}
-		for _, name := range []string{"case.yaml", "before.json", "after.json", "expected.json"} {
+		// Copy whatever the case actually holds. A pinned filename list makes a case
+		// that names its fixtures differently, or carries an extra file, fail here on
+		// a missing read rather than on the behaviour under test, and it would also
+		// leave the copy silently incomplete for any digest comparison.
+		caseEntries, err := os.ReadDir(filepath.Join(source, id))
+		if err != nil {
+			t.Fatalf("read source case %s: %v", id, err)
+		}
+		for _, entry := range caseEntries {
+			if entry.IsDir() {
+				t.Fatalf("unexpected nested directory in multi-file case %s: %s", id, entry.Name())
+			}
+			name := entry.Name()
 			data, err := os.ReadFile(filepath.Join(source, id, name))
 			if err != nil {
 				t.Fatalf("read source %s/%s: %v", id, name, err)

@@ -171,7 +171,17 @@ func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, erro
 		}
 	}
 
-	sort.Slice(paths, func(i, j int) bool { return paths[i].logical < paths[j].logical })
+	// Stable, because the logical key is not guaranteed unique. Two multi-file
+	// directories can each hold a case subdirectory of the same name, and the key
+	// is deliberately relative to its own directory so relocating an override does
+	// not rewrite the corpus identity. Under an unstable sort, equal keys order
+	// arbitrarily and the digest stops being reproducible for the same bytes. The
+	// input order is fully determined -- a lexical walk, then directories in sorted
+	// category order, each already sorted -- so stability makes the result
+	// deterministic even where keys collide. Making the key itself unique per
+	// registered family is corpus-identity work and belongs with the framed
+	// manifest digest, not here.
+	sort.SliceStable(paths, func(i, j int) bool { return paths[i].logical < paths[j].logical })
 
 	h := sha256.New()
 	for _, candidate := range paths {

@@ -194,6 +194,24 @@ def read_go_constant(root, source):
     return int(matches[0])
 
 
+def declared_schema_version(document, label):
+    """Return a schema's declared `schema_version` const, or None if it declares none.
+
+    Walking `properties.schema_version.const` with chained `.get` calls assumed
+    every level is an object. A schema whose `properties` is a string raised
+    AttributeError, which `main` does not catch, so a malformed input produced a
+    traceback instead of the `check-contracts: FAIL - ...` line every other bad
+    input produces. A gate that crashes reports nothing an operator can act on.
+    """
+    properties = document.get("properties", {})
+    if not isinstance(properties, dict):
+        fail(f"{label}: properties must be an object")
+    declared = properties.get("schema_version", {})
+    if not isinstance(declared, dict):
+        fail(f"{label}: properties.schema_version must be an object")
+    return declared.get("const")
+
+
 def versioned_schema_inventory(root):
     inventory = set()
     schema_dir = root / "schemas"
@@ -201,7 +219,7 @@ def versioned_schema_inventory(root):
         fail("missing schemas directory")
     for path in sorted(schema_dir.glob("*.json")):
         document = load_object(path, "schema")
-        declared = document.get("properties", {}).get("schema_version", {}).get("const")
+        declared = declared_schema_version(document, str(path.relative_to(root)))
         versions = set()
         if declared is not None:
             versions.add(require_int(declared, f"{path.relative_to(root)} schema_version const"))
@@ -375,7 +393,7 @@ def check(root, manifest_path):
             document = load_object(root / relative, "schema")
             if document.get("$id") != expected_id:
                 fail(f"{relative}: $id does not match compatibility manifest")
-            declared = document.get("properties", {}).get("schema_version", {}).get("const")
+            declared = declared_schema_version(document, relative)
             if declared != version:
                 fail(f"{relative}: declares schema_version {declared!r}, manifest says {version}")
             if status == "active":
@@ -397,6 +415,8 @@ def check(root, manifest_path):
         if not isinstance(sources, list):
             fail(f"{name}.source_versions must be an array")
         for source in sources:
+            if not isinstance(source, dict):
+                fail(f"{name}.source_versions entries must be objects")
             coordinate = (source.get("path"), source.get("symbol"))
             value = read_go_constant(root, source)
             listed_constants.add(coordinate)

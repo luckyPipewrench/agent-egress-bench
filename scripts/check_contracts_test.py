@@ -57,6 +57,53 @@ class CheckContractsTest(unittest.TestCase):
         self.assertIn("check-contracts: FAIL - fixture unreadable", stderr.getvalue())
 
 
+class MalformedJsonTypeTest(unittest.TestCase):
+    """A malformed input must reach the gate's own failure path.
+
+    Every assertion here demands ValueError, which `main` turns into a
+    `check-contracts: FAIL - ...` line. An AttributeError from an unchecked `.get`
+    escapes that handler, so these tests fail if the type checks are removed.
+    """
+
+    def write_schema(self, root, document):
+        schemas = root / "schemas"
+        schemas.mkdir()
+        (schemas / "fixture-v1.schema.json").write_text(json.dumps(document), encoding="utf-8")
+
+    def test_rejects_non_object_properties(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_schema(root, {"title": "Fixture v1", "properties": "nope"})
+            with self.assertRaisesRegex(ValueError, "properties must be an object"):
+                check_contracts.versioned_schema_inventory(root)
+
+    def test_rejects_non_object_schema_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_schema(root, {"title": "Fixture v1", "properties": {"schema_version": "nope"}})
+            with self.assertRaisesRegex(ValueError, "properties.schema_version must be an object"):
+                check_contracts.versioned_schema_inventory(root)
+
+    def test_accepts_a_schema_that_declares_no_version_const(self):
+        self.assertIsNone(check_contracts.declared_schema_version({"properties": {}}, "fixture"))
+        self.assertEqual(
+            4,
+            check_contracts.declared_schema_version(
+                {"properties": {"schema_version": {"const": 4}}}, "fixture"
+            ),
+        )
+
+    def test_rejects_non_object_source_version_entry(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        manifest["artifact_families"][0]["source_versions"] = ["runner/case.go"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source_versions entries must be objects"):
+                check_contracts.check(ROOT, path)
+
+
 class ReadGoConstantTest(unittest.TestCase):
     """The governing value must come from a real constant.
 

@@ -138,6 +138,21 @@ func loadRunCorpus(root, multiFileOverride string) ([]Case, []string, error) {
 		return nil, nil, err
 	}
 	if multiFileOverride != "" {
+		// The override names one directory, so it can only stand in for the whole
+		// registered set while that set holds exactly one family. A second family
+		// would be dropped by this replacement. ensureExactRunCorpus below already
+		// refuses the resulting short corpus, so nothing scores against a shrunken
+		// denominator either way, but that failure would name a missing case ID and
+		// point nowhere near the cause. Refuse here instead, so adding a second
+		// multi-file family produces a message that says what has to change rather
+		// than a confusing corpus mismatch.
+		if len(effectiveDirs) > 1 {
+			return nil, nil, fmt.Errorf(
+				"--multifile-cases overrides a single directory but %d multi-file families are registered (%s); "+
+					"the flag needs to become a per-family override before it can be used here",
+				len(effectiveDirs), strings.Join(effectiveDirs, ", "),
+			)
+		}
 		effectiveDirs = []string{multiFileOverride}
 	}
 	cases, err := loadCorpusWithMultiFileDirs(root, effectiveDirs)
