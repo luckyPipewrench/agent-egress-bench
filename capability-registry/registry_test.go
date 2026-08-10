@@ -79,6 +79,15 @@ func TestValidateHistoryAllowsDeprecationOnly(t *testing.T) {
 	}
 }
 
+func TestValidateHistoryCommittedRegistryLayout(t *testing.T) {
+	// The registry root is also this Go module, so it contains Go sources,
+	// go.mod, and tests beside the permanent registry directory. Exercise that
+	// real layout rather than a synthetic directory containing only snapshots.
+	if err := ValidateHistory("."); err != nil {
+		t.Fatalf("ValidateHistory on committed registry layout: %v", err)
+	}
+}
+
 // A registry whose timeline can be forged is not an immutable registry, and
 // every one of these was accepted before the corresponding guard landed.
 
