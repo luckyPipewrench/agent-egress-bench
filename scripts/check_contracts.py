@@ -17,7 +17,25 @@ REQUIRED_RETAINED_RECORD_PATHS = {
     "ci/gauntlet-baseline.json",
     "gauntlet-site",
 }
+# Frozen schema assets the manifest must keep listing. Pinned here as well as in
+# the manifest so shrinking the inventory takes two deliberate edits: the v0
+# Control Evidence format is published with immutable conformance vectors, so
+# deleting one of these files or editing its $id would invalidate evidence that
+# cannot be regenerated.
 REQUIRED_RETAINED_SCHEMA_ASSETS = {
+    "schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
+    "schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
+    "schemas/control-evidence-buyer-reproduction-v0.schema.json",
+    "schemas/control-evidence-clock-evidence-v0.schema.json",
+    "schemas/control-evidence-context-v0.schema.json",
+    "schemas/control-evidence-dsse-v0.schema.json",
+    "schemas/control-evidence-health-control-material-v0.schema.json",
+    "schemas/control-evidence-manifest-v0.schema.json",
+    "schemas/control-evidence-observer-evidence-v0.schema.json",
+    "schemas/control-evidence-outcomes-v0.schema.json",
+    "schemas/control-evidence-requirement-v0.schema.json",
+    "schemas/control-evidence-run-envelope-v0.schema.json",
+    "schemas/control-evidence-token-material-v0.schema.json",
     "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
 }
 PUBLIC_SCHEMA_ID_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/schemas/"
