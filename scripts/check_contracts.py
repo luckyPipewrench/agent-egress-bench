@@ -17,6 +17,12 @@ REQUIRED_RETAINED_RECORD_PATHS = {
     "ci/gauntlet-baseline.json",
     "gauntlet-site",
 }
+REQUIRED_RETAINED_SCHEMA_ASSETS = {
+    "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+}
+PUBLIC_SCHEMA_ID_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/schemas/"
+VERSIONED_SCHEMA_FILENAME = re.compile(r"^.+-v([0-9]+)\.schema\.json$")
+TITLE_VERSION = re.compile(r"\bv([0-9]+)\b", re.IGNORECASE)
 
 
 def fail(message):
@@ -89,13 +95,64 @@ def versioned_schema_inventory(root):
         fail("missing schemas directory")
     for path in sorted(schema_dir.glob("*.json")):
         document = load_object(path, "schema")
-        version = document.get("properties", {}).get("schema_version", {}).get("const")
-        if version is not None:
-            require_int(version, f"{path.relative_to(root)} schema_version const")
+        declared = document.get("properties", {}).get("schema_version", {}).get("const")
+        versions = set()
+        if declared is not None:
+            versions.add(require_int(declared, f"{path.relative_to(root)} schema_version const"))
+        title = document.get("title", "")
+        if not isinstance(title, str):
+            fail(f"{path.relative_to(root)} schema title must be a string")
+        versions.update(int(match.group(1)) for match in TITLE_VERSION.finditer(title))
+        if versions:
+            if len(versions) != 1:
+                fail(f"{path.relative_to(root)} has conflicting declared schema versions: {sorted(versions)}")
+            version = versions.pop()
+            filename_match = VERSIONED_SCHEMA_FILENAME.fullmatch(path.name)
+            if filename_match is None or int(filename_match.group(1)) != version:
+                fail(
+                    f"{path.relative_to(root)} is a versioned schema but its filename does not "
+                    f"declare v{version}"
+                )
+            expected_id = f"{PUBLIC_SCHEMA_ID_PREFIX}{path.name}"
+            if document.get("$id") != expected_id:
+                fail(f"{path.relative_to(root)}: $id must be {expected_id!r}")
+        if declared is not None:
             inventory.add(path.relative_to(root).as_posix())
     if not inventory:
         fail("no versioned schemas discovered")
     return inventory
+
+
+def retained_schema_assets(root, assets):
+    if not isinstance(assets, list) or not assets:
+        fail("retained_schema_assets must be a non-empty array")
+    by_path = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            fail("retained schema assets must be objects")
+        relative = asset.get("path")
+        expected_id = asset.get("$id")
+        rationale = asset.get("rationale")
+        if not isinstance(relative, str) or not relative:
+            fail("retained schema asset path must be a non-empty string")
+        if relative in by_path:
+            fail(f"duplicate retained schema asset: {relative}")
+        if not isinstance(expected_id, str) or not expected_id:
+            fail(f"{relative}: retained schema asset $id must be a non-empty string")
+        if not isinstance(rationale, str) or not rationale.strip():
+            fail(f"{relative}: retained schema asset rationale must be a non-empty string")
+        document = load_object(root / relative, "retained schema asset")
+        if document.get("$id") != expected_id:
+            fail(f"{relative}: $id does not match retained schema asset manifest entry")
+        by_path[relative] = asset
+    actual_paths = set(by_path)
+    if actual_paths != REQUIRED_RETAINED_SCHEMA_ASSETS:
+        fail(
+            "retained schema asset inventory differs from the required set; "
+            f"missing={sorted(REQUIRED_RETAINED_SCHEMA_ASSETS - actual_paths)}, "
+            f"extra={sorted(actual_paths - REQUIRED_RETAINED_SCHEMA_ASSETS)}"
+        )
+    return len(by_path)
 
 
 def walk_schema_versions(value, label, found):
@@ -256,7 +313,8 @@ def check(root, manifest_path):
     unlisted = found_versions - set(frozen_readers)
     if unlisted:
         fail(f"retained public records contain versions without frozen readers: {sorted(unlisted)}")
-    return len(families), len(discovered_schemas), file_count, sorted(found_versions)
+    asset_count = retained_schema_assets(root, manifest.get("retained_schema_assets"))
+    return len(families), len(discovered_schemas), file_count, sorted(found_versions), asset_count
 
 
 def main():
@@ -267,14 +325,14 @@ def main():
     root = args.repo_root.resolve()
     manifest_path = args.manifest.resolve() if args.manifest else root / "contracts" / "artifacts.json"
     try:
-        families, schemas, records, versions = check(root, manifest_path)
+        families, schemas, records, versions, assets = check(root, manifest_path)
     except ValueError as exc:
         print(f"check-contracts: FAIL - {exc}", file=sys.stderr)
         return 1
     print(
         "check-contracts: OK "
         f"({families} families, {schemas} schemas, {records} retained JSON files, "
-        f"frozen record versions {versions})"
+        f"frozen record versions {versions}, {assets} retained schema assets)"
     )
     return 0
 

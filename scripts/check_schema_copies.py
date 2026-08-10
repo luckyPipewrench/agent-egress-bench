@@ -6,12 +6,12 @@ from pathlib import Path
 
 
 COPIED_SCHEMA_NAMES = {
-    "control-evidence-clock-evidence.schema.json",
-    "control-evidence-dsse.schema.json",
-    "control-evidence-manifest.schema.json",
-    "control-evidence-observer-evidence.schema.json",
-    "control-evidence-requirement.schema.json",
-    "control-evidence-run-envelope.schema.json",
+    "control-evidence-clock-evidence-v0.schema.json",
+    "control-evidence-dsse-v0.schema.json",
+    "control-evidence-manifest-v0.schema.json",
+    "control-evidence-observer-evidence-v0.schema.json",
+    "control-evidence-requirement-v0.schema.json",
+    "control-evidence-run-envelope-v0.schema.json",
 }
 
 

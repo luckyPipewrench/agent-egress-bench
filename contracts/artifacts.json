@@ -6,13 +6,13 @@
       "active_writer_version": 4,
       "accepted_reader_versions": [4],
       "frozen_versions": [],
-      "canonical_schema_path": "schemas/case.schema.json",
+      "canonical_schema_path": "schemas/case-v4.schema.json",
       "schemas": [
         {
           "version": 4,
           "status": "active",
-          "path": "schemas/case.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case.schema.json"
+          "path": "schemas/case-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-v4.schema.json"
         }
       ],
       "writer": ["cases/", "runner/case.go"],
@@ -43,13 +43,13 @@
       "active_writer_version": 4,
       "accepted_reader_versions": [4],
       "frozen_versions": [],
-      "canonical_schema_path": "schemas/result.schema.json",
+      "canonical_schema_path": "schemas/result-v4.schema.json",
       "schemas": [
         {
           "version": 4,
           "status": "active",
-          "path": "schemas/result.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result.schema.json"
+          "path": "schemas/result-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v4.schema.json"
         }
       ],
       "writer": ["runner/result_state.go", "runner/score.go"],
@@ -65,25 +65,25 @@
       "active_writer_version": 4,
       "accepted_reader_versions": [1, 3, 4],
       "frozen_versions": [1, 3],
-      "canonical_schema_path": "schemas/tool-profile.schema.json",
+      "canonical_schema_path": "schemas/tool-profile-v4.schema.json",
       "schemas": [
         {
           "version": 1,
           "status": "frozen",
           "path": "schemas/tool-profile-v1.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v1.schema.json"
         },
         {
           "version": 3,
           "status": "frozen",
           "path": "schemas/tool-profile-v3.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v3.schema.json"
         },
         {
           "version": 4,
           "status": "active",
-          "path": "schemas/tool-profile.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile.schema.json"
+          "path": "schemas/tool-profile-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v4.schema.json"
         }
       ],
       "writer": ["examples/*/tool-profile.json"],
@@ -99,13 +99,13 @@
       "active_writer_version": 4,
       "accepted_reader_versions": [1, 4],
       "frozen_versions": [1],
-      "canonical_schema_path": "schemas/receipt-scoring-profile.schema.json",
+      "canonical_schema_path": "schemas/receipt-scoring-profile-v4.schema.json",
       "schemas": [
         {
           "version": 4,
           "status": "active",
-          "path": "schemas/receipt-scoring-profile.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile.schema.json"
+          "path": "schemas/receipt-scoring-profile-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json"
         }
       ],
       "writer": ["runner/receipt_profile.go"],
@@ -125,8 +125,8 @@
         {
           "version": 4,
           "status": "frozen",
-          "path": "schemas/summary.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary.schema.json"
+          "path": "schemas/summary-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v4.schema.json"
         },
         {
           "version": 5,
@@ -205,5 +205,12 @@
         "reader": ["scripts/validate_gauntlet_records.py", "scripts/validate_gauntlet_scope.py"]
       }
     ]
-  }
+  },
+  "retained_schema_assets": [
+    {
+      "path": "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+      "rationale": "Load-bearing external signed trust-policy envelope contract. authentication.verifyPolicy requires JCS canonical form, the exact DSSE payloadType, exactly one signature, and a valid Ed25519 PAE signature before it trusts the policy."
+    }
+  ]
 }

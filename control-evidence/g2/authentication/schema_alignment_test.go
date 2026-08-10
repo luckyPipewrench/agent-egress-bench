@@ -11,7 +11,7 @@ import (
 )
 
 func TestEmbeddedV0SchemaCopiesMatchCanonicalSchemas(t *testing.T) {
-	names := []string{"control-evidence-dsse.schema.json", "control-evidence-requirement.schema.json", "control-evidence-run-envelope.schema.json", "control-evidence-manifest.schema.json", "control-evidence-clock-evidence.schema.json", "control-evidence-observer-evidence.schema.json"}
+	names := []string{"control-evidence-dsse-v0.schema.json", "control-evidence-requirement-v0.schema.json", "control-evidence-run-envelope-v0.schema.json", "control-evidence-manifest-v0.schema.json", "control-evidence-clock-evidence-v0.schema.json", "control-evidence-observer-evidence-v0.schema.json"}
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			copied, err := os.ReadFile(filepath.Join("schemas", "cee-v0", name))
@@ -30,7 +30,7 @@ func TestEmbeddedV0SchemaCopiesMatchCanonicalSchemas(t *testing.T) {
 }
 
 func TestTrustPolicySchemaRejectsRolePurposeMismatch(t *testing.T) {
-	schemaRaw, err := os.ReadFile(filepath.Join("..", "..", "..", "schemas", "control-evidence-trust-policy.schema.json"))
+	schemaRaw, err := os.ReadFile(filepath.Join("..", "..", "..", "schemas", "control-evidence-trust-policy-v1.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

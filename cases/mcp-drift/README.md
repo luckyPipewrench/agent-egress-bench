@@ -37,7 +37,7 @@ detection should be able to load a directory, replay `before.json`, replay
 ```yaml
 schema_version: 3
 id: <unique, immutable>
-category: mcp_drift                # new category — not in case.schema.json yet
+category: mcp_drift                # new category — not in case-v4.schema.json yet
 title: <human-readable>
 description: <what the case demonstrates>
 threat_model: <prose: what the attacker controls, what they want>

@@ -27,7 +27,7 @@ var validVerifiableValues = map[string]bool{"yes": true, "partial": true, "no": 
 var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": true}
 
 // ValidateReceiptProfile checks a ReceiptProfile against the structural
-// rules in schemas/receipt-scoring-profile.schema.json, including the
+// rules in schemas/receipt-scoring-profile-v4.schema.json, including the
 // cross-field invariants the schema encodes via allOf and if/then. It
 // also re-derives summary counts from per_case and confirms they match
 // (the kickoff's done-state item 2).

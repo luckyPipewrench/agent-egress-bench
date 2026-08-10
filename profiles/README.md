@@ -56,7 +56,7 @@ runner or adapter; the schema is tool-neutral.
    Pipelock; tools that speak the same HTTP-proxy + scan-API surface can
    reuse it. Other tools provide their own runner.
 2. Run your tool against the corpus and emit a profile that conforms to
-   [`../schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).
+   [`../schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
 3. Add `profiles/<tool>.json` and (optionally) a sibling `notes.md`
    describing how to reproduce the profile from scratch.
 4. Open a pull request.
@@ -64,7 +64,7 @@ runner or adapter; the schema is tool-neutral.
 The PR is reviewed for:
 
 - Profile JSON validates against
-  [`receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).
+  [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
 - Per-case results reference real case IDs in [`../cases/`](../cases/).
 - The `verifier` block, license, and exit-code contract are accurate.
 - The `corpus_version` matches a published corpus tag and the
@@ -98,7 +98,7 @@ row records.
   benign, false-positive benign) plus a placeholder verifier block. Uses
   `tool: "example-tool"` and SHA fields filled with zeros so it cannot
   be mistaken for a real profile.
-- [`../schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json):
+- [`../schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json):
   the JSON Schema both profile files validate against.
 
 ## Reproducing a published profile

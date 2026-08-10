@@ -135,7 +135,7 @@ In the summary JSON, N/A metrics are represented as `null`.
 
 V5 reports two diagnostics outside `scores`: `classification_present_rate` and `structured_evidence_present_rate`. Each uses correctly blocked malicious cases as its denominator. The first observes whether `kind`, `scanner`, `block_reason`, or an MCP `error_message` is present. The second also recognizes `decision` and `findings`.
 
-V5 summaries validate against [`schemas/summary-v5.schema.json`](../schemas/summary-v5.schema.json). The unversioned [`schemas/summary.schema.json`](../schemas/summary.schema.json) remains the frozen v4 schema so historical artifacts keep their original validation contract.
+V5 summaries validate against [`schemas/summary-v5.schema.json`](../schemas/summary-v5.schema.json). The unversioned [`schemas/summary-v4.schema.json`](../schemas/summary-v4.schema.json) remains the frozen v4 schema so historical artifacts keep their original validation contract.
 
 These values are not detection or proof scores. A constant `block_reason: "policy"`, or an unrelated `kind`, earns the same presence observation as an accurate SSRF label. `capability_tags` and `category` do not enter either rate. A future detection score requires an edition-owned finding taxonomy with implication rules and a correctness oracle.
 
@@ -145,7 +145,7 @@ The Gauntlet produces two outputs:
 
 ### Per-case results (JSONL)
 
-One JSON object per line goes to stdout, using the current v4 result format in [`schemas/result.schema.json`](../schemas/result.schema.json). Every active result line carries the exact capability-registry reference from its profile. [`RUNNER.md`](RUNNER.md) owns the delivery and output protocol.
+One JSON object per line goes to stdout, using the current v4 result format in [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json). Every active result line carries the exact capability-registry reference from its profile. [`RUNNER.md`](RUNNER.md) owns the delivery and output protocol.
 
 ### Gauntlet summary (JSON file)
 

@@ -2,7 +2,7 @@
 
 A runner connects a specific tool to the benchmark corpus. This document defines the contract every runner must satisfy.
 
-**JSON Schemas:** [`schemas/result.schema.json`](../schemas/result.schema.json) (result lines), [`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json) (tool profiles)
+**JSON Schemas:** [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json) (result lines), [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) (tool profiles)
 
 **Starter template:** [`examples/runner-template/`](../examples/runner-template/)
 
@@ -313,7 +313,7 @@ The expected record-manifest digest must come from an authenticated immutable so
 
 ## Receipt-Scoring Profile (optional)
 
-The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Output validates against [`schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).
+The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Output validates against [`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
 
 Flags:
 

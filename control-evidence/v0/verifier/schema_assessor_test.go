@@ -349,7 +349,7 @@ func TestAssessmentSchemaRejectsIncompletePassClaims(t *testing.T) {
 
 func assessmentSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "schemas", "control-evidence-assessment.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "schemas", "control-evidence-assessment-v1.schema.json")
 	schemaBytes := mustRead(t, schemaPath)
 	compiler := jsonschema.NewCompiler()
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))

@@ -3,7 +3,7 @@
 **Version:** 1
 **Status:** Stable
 
-**JSON Schema:** [`schemas/case.schema.json`](../schemas/case.schema.json)
+**JSON Schema:** [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json)
 
 ## Overview
 
@@ -223,9 +223,9 @@ rewrite it to a trusted fixture hostname or add it to a trusted-destination list
 
 JSON Schema files for programmatic validation:
 
-- [`schemas/case.schema.json`](../schemas/case.schema.json): case file schema
-- [`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json): tool profile schema
-- [`schemas/result.schema.json`](../schemas/result.schema.json): runner result line schema
+- [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json): case file schema
+- [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json): tool profile schema
+- [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json): runner result line schema
 
 ## Governance
 

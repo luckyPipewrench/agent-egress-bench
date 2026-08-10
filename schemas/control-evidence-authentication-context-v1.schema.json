@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-authentication-context-v1.schema.json",
+  "title": "Control Evidence authentication context v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "assessment_time",
+    "policy_id",
+    "policy_sha256",
+    "bootstrap_key_id",
+    "bootstrap_public_key",
+    "envelope_payload_sha256"
+  ],
+  "properties": {
+    "profile": {
+      "const": "control-evidence-authentication-context/v1"
+    },
+    "assessment_time": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "policy_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "bootstrap_key_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "bootstrap_public_key": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "envelope_payload_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

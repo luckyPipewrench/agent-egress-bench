@@ -43,12 +43,12 @@ outcome summary count. The raw Gauntlet result carries the error state.
 
 A tool can publish a receipt profile as a JSON file in the `profiles/`
 directory. The shape is defined by
-[`schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json)
+[`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json)
 (`$id`:
-`https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile.schema.json`).
+`https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json`).
 This is separate from the runner capability profile described in
 [`docs/RUNNER.md`](RUNNER.md) and
-[`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json).
+[`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json).
 
 ```json
 {
@@ -118,7 +118,7 @@ reads profiles directly and reproduces them before trusting them.
 The runner only marks `receipt_produced=yes` or
 `receipt_independently_verifiable=yes` from observed evidence. Tool profiles can
 declare an optional `receipt_evidence` block in
-[`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json):
+[`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json):
 
 ```json
 {
@@ -329,7 +329,7 @@ marketing claim.
 
 ## Reference artifacts in this repo
 
-- [`schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json):
+- [`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json):
   JSON Schema for receipt-scoring profile validation.
 - [`profiles/EXAMPLE.json`](../profiles/EXAMPLE.json): minimal template
   profile showing the four per-case combinations plus a placeholder

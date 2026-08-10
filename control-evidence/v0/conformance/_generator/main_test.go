@@ -371,7 +371,7 @@ func TestPackagedTokenMaterialDecryptsAndBindsCommitments(t *testing.T) {
 	if err != nil || string(plaintext) != string(packagedTokenPlaintext()) {
 		t.Fatal("g03 AES-GCM plaintext")
 	}
-	validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material.schema.json"))), "g03 decrypted token material", plaintext)
+	validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material-v0.schema.json"))), "g03 decrypted token material", plaintext)
 	var decodedMaterial map[string]any
 	if err := json.Unmarshal(plaintext, &decodedMaterial); err != nil {
 		t.Fatal(err)
@@ -461,7 +461,7 @@ func TestPackagedHealthMaterialDecryptsAndBindsBrackets(t *testing.T) {
 	if err != nil || string(plaintext) != string(packagedHealthPlaintext()) {
 		t.Fatal("g04 AES-GCM plaintext")
 	}
-	validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material.schema.json"))), "g04 decrypted health material", plaintext)
+	validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material-v0.schema.json"))), "g04 decrypted health material", plaintext)
 	var decodedMaterial map[string]any
 	if err := json.Unmarshal(plaintext, &decodedMaterial); err != nil {
 		t.Fatal(err)
@@ -561,7 +561,7 @@ func TestPackagedTokenAttackBoundariesAreFullyRebound(t *testing.T) {
 			if openErr != nil {
 				t.Fatal(openErr)
 			}
-			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material.schema.json"))), "m25 decrypted token material", plaintext)
+			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material-v0.schema.json"))), "m25 decrypted token material", plaintext)
 			var mapping map[string]any
 			if err := json.Unmarshal(plaintext, &mapping); err != nil {
 				t.Fatal(err)
@@ -635,7 +635,7 @@ func TestPackagedTokenRoleAndExactSetAttacksAreFullyRebound(t *testing.T) {
 			if err != nil || string(plaintext) != string(compactJSON(t, plaintext)) {
 				t.Fatal("exact-set attack is not authenticated JCS")
 			}
-			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material.schema.json"))), fixtureID+" decrypted token material", plaintext)
+			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material-v0.schema.json"))), fixtureID+" decrypted token material", plaintext)
 			var mapping map[string]any
 			if err := json.Unmarshal(plaintext, &mapping); err != nil {
 				t.Fatal(err)
@@ -733,7 +733,7 @@ func TestPackagedHealthAttackBoundariesAreFullyRebound(t *testing.T) {
 			if openErr != nil {
 				t.Fatal(openErr)
 			}
-			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material.schema.json"))), "m31 decrypted health material", plaintext)
+			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material-v0.schema.json"))), "m31 decrypted health material", plaintext)
 			if string(plaintext) == string(compactJSON(t, plaintext)) {
 				t.Fatal("m31 plaintext unexpectedly JCS")
 			}
@@ -818,7 +818,7 @@ func TestPackagedHealthRoleAndExactSetAttacksAreFullyRebound(t *testing.T) {
 			if err != nil || string(plaintext) != string(compactJSON(t, plaintext)) {
 				t.Fatal("exact-set attack is not authenticated JCS")
 			}
-			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material.schema.json"))), fixtureID+" decrypted health material", plaintext)
+			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material-v0.schema.json"))), fixtureID+" decrypted health material", plaintext)
 			var mapping map[string]any
 			if err := json.Unmarshal(plaintext, &mapping); err != nil {
 				t.Fatal(err)
@@ -908,7 +908,7 @@ func TestTokenConvergenceAttacksAreFullyRebound(t *testing.T) {
 			if err := json.Unmarshal(plaintext, &mapping); err != nil {
 				t.Fatal(err)
 			}
-			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material.schema.json"))), fixtureID+" decrypted token material", plaintext)
+			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-token-material-v0.schema.json"))), fixtureID+" decrypted token material", plaintext)
 			if fixtureID == "m35-token-duplicate-canary-id" {
 				if string(plaintext) != string(compact(mapping)) {
 					t.Fatal("m35 plaintext not JCS")
@@ -1027,7 +1027,7 @@ func TestHealthConvergenceAttacksAreFullyRebound(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material.schema.json"))), fixtureID+" decrypted health material", plaintext)
+			validateJSONBytes(t, compileSchema(t, filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas", "control-evidence-health-control-material-v0.schema.json"))), fixtureID+" decrypted health material", plaintext)
 			var mapping map[string]any
 			if err := json.Unmarshal(plaintext, &mapping); err != nil {
 				t.Fatal(err)
@@ -1485,8 +1485,8 @@ func TestUnknownPackagedProfilesHaveNoFallback(t *testing.T) {
 		key                                                        func(string) string
 		token                                                      bool
 	}{
-		{"m43-token-unsupported-packaged-profile", "token_material", "token-material", "token-material.bin", unknownTokenProfile, unknownTokenID, "control-evidence-token-material.schema.json", unknownTokenKey, true},
-		{"m44-health-unsupported-packaged-profile", "health_control_material", "health-control-material", "health-control-material.bin", unknownHealthProfile, unknownHealthID, "control-evidence-health-control-material.schema.json", unknownHealthKey, false},
+		{"m43-token-unsupported-packaged-profile", "token_material", "token-material", "token-material.bin", unknownTokenProfile, unknownTokenID, "control-evidence-token-material-v0.schema.json", unknownTokenKey, true},
+		{"m44-health-unsupported-packaged-profile", "health_control_material", "health-control-material", "health-control-material.bin", unknownHealthProfile, unknownHealthID, "control-evidence-health-control-material-v0.schema.json", unknownHealthKey, false},
 	} {
 		t.Run(item.id, func(t *testing.T) {
 			base := "malicious/" + item.id + "/"

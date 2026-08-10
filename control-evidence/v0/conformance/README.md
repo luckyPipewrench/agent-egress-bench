@@ -40,7 +40,7 @@ the signed descriptor plus an independent root input or AES key, never a
 producer-selected ID-to-input mapping. The deterministic AES nonce construction
 is fixture-only and prohibited in production.
 Every context rejects duplicate JSON keys and validates against
-`schemas/control-evidence-context.schema.json`. The harness accepts only those
+`schemas/control-evidence-context-v0.schema.json`. The harness accepts only those
 four exact material profiles; unsupported profiles are `unverifiable`, with no
 fallback. After AES authentication, decrypted bytes must already be exact RFC
 8785 JCS and must validate against the corresponding closed material schema.

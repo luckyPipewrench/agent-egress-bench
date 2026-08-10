@@ -142,7 +142,7 @@ func TestValidateReceiptProfile_RejectsBenignWithBlockedResult(t *testing.T) {
 }
 
 func TestReceiptProfileSchemaAllowsUnmeasuredRow(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "schemas", "receipt-scoring-profile.schema.json"))
+	data, err := os.ReadFile(filepath.Join("..", "schemas", "receipt-scoring-profile-v4.schema.json"))
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}

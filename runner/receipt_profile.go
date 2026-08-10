@@ -13,7 +13,7 @@ import (
 )
 
 // ReceiptProfile is the on-disk receipt-scoring artifact described by
-// schemas/receipt-scoring-profile.schema.json. It captures, for every
+// schemas/receipt-scoring-profile-v4.schema.json. It captures, for every
 // applicable corpus case the runner exercised, the five rubric dimensions
 // (blocked, explained, receipt_produced, receipt_independently_verifiable,
 // false_positive) plus declarative verifier metadata and provenance hashes.
@@ -66,7 +66,7 @@ type ReceiptPerCase struct {
 
 // loadReceiptVerifier reads a JSON file containing the verifier block. The
 // file shape matches the verifier object in
-// schemas/receipt-scoring-profile.schema.json. An empty path returns a
+// schemas/receipt-scoring-profile-v4.schema.json. An empty path returns a
 // degraded verifier block (no verifier shipped); the runner does not
 // invent verifier metadata.
 func loadReceiptVerifier(path string) (ReceiptVerifier, error) {

@@ -12,7 +12,7 @@ import (
 func TestContextSchema(t *testing.T) {
 	t.Parallel()
 	schemaDir := filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas"))
-	schema := compileSchema(t, filepath.Join(schemaDir, "control-evidence-context.schema.json"))
+	schema := compileSchema(t, filepath.Join(schemaDir, "control-evidence-context-v0.schema.json"))
 	for path, data := range allFiles() {
 		if filepath.Base(path) != "context.json" {
 			continue

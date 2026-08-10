@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-dsse-v0.schema.json",
+  "title": "Control Evidence v1 DSSE wrapper",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["payloadType", "payload", "signatures"],
+  "properties": {
+    "payloadType": {"type": "string", "enum": ["application/vnd.agent-egress-bench.control-evidence-requirement.v1+json", "application/vnd.agent-egress-bench.control-evidence-envelope.v1+json", "application/vnd.agent-egress-bench.control-evidence-clock-evidence.v1+json", "application/vnd.agent-egress-bench.control-evidence-observer-evidence.v1+json"]},
+    "payload": {"type": "string", "pattern": "^[A-Za-z0-9+/]+={0,2}$", "minLength": 4, "maxLength": 1048576, "contentEncoding": "base64"},
+    "signatures": {
+      "type": "array", "minItems": 1, "maxItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["keyid", "sig"],
+        "properties": {
+          "keyid": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+          "sig": {"type": "string", "pattern": "^[A-Za-z0-9+/]+={0,2}$", "minLength": 64, "maxLength": 256, "contentEncoding": "base64"}
+        }
+      }
+    }
+  },
+  "description": "The wrapper shape only. The verifier enforces DSSE PAE, Ed25519, key-ID policy, exact payload type, duplicate-key rejection, UTF-8/JCS canonical bytes, and signature trust."
+}

@@ -59,21 +59,21 @@ them; a producer or verifier must not use Go HTML escaping when forming or check
 
 | File | Decoded content |
 | --- | --- |
-| `schemas/control-evidence-dsse.schema.json` | DSSE wrapper shape |
-| `schemas/control-evidence-requirement.schema.json` | Buyer requirement payload |
-| `schemas/control-evidence-run-envelope.schema.json` | Run commitment payload |
-| `schemas/control-evidence-manifest.schema.json` | Closed package manifest |
-| `schemas/control-evidence-outcomes.schema.json` | Per-case/trial/canary ledger |
-| `schemas/control-evidence-clock-evidence.schema.json` | Non-vendor completion-clock record |
-| `schemas/control-evidence-observer-evidence.schema.json` | Observer-signed health or liveness record |
-| `schemas/control-evidence-token-material.schema.json` | Decrypted closed canary-ID/input mapping |
-| `schemas/control-evidence-health-control-material.schema.json` | Decrypted closed control-ID/input mapping |
-| `schemas/control-evidence-context.schema.json` | Independent conformance trust, material, clock, and replay input |
-| `schemas/control-evidence-assessment.schema.json` | Strict external assessment v1 for `schema-valid` and `authenticated-at(T)` |
+| `schemas/control-evidence-dsse-v0.schema.json` | DSSE wrapper shape |
+| `schemas/control-evidence-requirement-v0.schema.json` | Buyer requirement payload |
+| `schemas/control-evidence-run-envelope-v0.schema.json` | Run commitment payload |
+| `schemas/control-evidence-manifest-v0.schema.json` | Closed package manifest |
+| `schemas/control-evidence-outcomes-v0.schema.json` | Per-case/trial/canary ledger |
+| `schemas/control-evidence-clock-evidence-v0.schema.json` | Non-vendor completion-clock record |
+| `schemas/control-evidence-observer-evidence-v0.schema.json` | Observer-signed health or liveness record |
+| `schemas/control-evidence-token-material-v0.schema.json` | Decrypted closed canary-ID/input mapping |
+| `schemas/control-evidence-health-control-material-v0.schema.json` | Decrypted closed control-ID/input mapping |
+| `schemas/control-evidence-context-v0.schema.json` | Independent conformance trust, material, clock, and replay input |
+| `schemas/control-evidence-assessment-v1.schema.json` | Strict external assessment v1 for `schema-valid` and `authenticated-at(T)` |
 | `schemas/control-evidence-assessment-v2.schema.json` | Additive external assessment v2 including `buyer-reproduced` |
-| `schemas/control-evidence-buyer-reproduction-statement.schema.json` | External buyer-reproduction DSSE wrapper |
-| `schemas/control-evidence-buyer-reproduction.schema.json` | Decoded buyer-reproduction statement and exact source/transcript bindings |
-| `schemas/control-evidence-buyer-reproduction-transcript.schema.json` | Closed normalized rerun-outcome transcript |
+| `schemas/control-evidence-buyer-reproduction-statement-v0.schema.json` | External buyer-reproduction DSSE wrapper |
+| `schemas/control-evidence-buyer-reproduction-v0.schema.json` | Decoded buyer-reproduction statement and exact source/transcript bindings |
+| `schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json` | Closed normalized rerun-outcome transcript |
 
 The requirement pins its challenge nonce, required cases, each case's expected verdict, and canaries, observer identity/key,
 allowed signer roles, runner/adapter/tool identities, error limit, freshness policy, and independent
@@ -142,7 +142,7 @@ canary_id)`. Requirement, run, case, and trial enter the later token commitment 
 input derivation. In `packaged-encrypted` mode, `artifact_sha256` pins the stored encrypted bytes of
 exactly one `token-material` manifest member; after profile-defined decryption with independently
 supplied verifier material, its UTF-8 JSON bytes must validate against
-`schemas/control-evidence-token-material.schema.json`. The decoded mapping must match the signed
+`schemas/control-evidence-token-material-v0.schema.json`. The decoded mapping must match the signed
 profile/ID and contain exactly the required canary IDs once each. Context must match the signed
 mode/profile/ID and provides only the buyer's independent handle or decryption material, never a token
 mapping. The verifier rejects duplicate JSON object keys, then requires the decrypted plaintext bytes
@@ -169,7 +169,7 @@ only a handle to that independently managed input, and its mode/profile/ID must 
 In `packaged-encrypted` mode, the signed `artifact_sha256` identifies exactly one
 `health-control-material` manifest member. After decryption with material independently supplied to the
 verifier, its UTF-8 JSON bytes must validate against
-`schemas/control-evidence-health-control-material.schema.json` and match the signed profile and ID.
+`schemas/control-evidence-health-control-material-v0.schema.json` and match the signed profile and ID.
 The closed `controls[]` mapping provides `control_id -> input` bytes; context cannot supply or override
 that mapping. The verifier rejects duplicate JSON object keys, then requires the decrypted plaintext
 bytes to equal the RFC 8785 JCS encoding of the parsed value before schema validation. It rejects
@@ -210,7 +210,7 @@ scope and support profile. The floating values under `scores.full` and `scores.a
 as diagnostic runner output but are not authoritative verifier inputs.
 
 Exactly one manifest member has role `tool-profile`. Its exact bytes must hash to the signed
-`approved_tool_profile.sha256`, must validate against `schemas/tool-profile.schema.json`, and must also
+`approved_tool_profile.sha256`, must validate against `schemas/tool-profile-v4.schema.json`, and must also
 equal the live summary's `tool_profile_sha256`. Applicability, `tool_support`, and sufficiency inputs are
 derived from that buyer-approved artifact, never from the summary alone. A missing member is
 `insufficient-evidence`; a digest or decoded tool/runner identity mismatch is `scope-mismatch`.
@@ -274,7 +274,7 @@ Each test fixture's `context.json` is an independent verifier input, not package
 manifest role. A durable verifier may annotate a valid re-verification of the same retained package as
 `previously-accepted`; that nonce status is an annotation, while the top-level outcome remains `valid`.
 The verifier rejects duplicate object keys and validates the complete context against
-`schemas/control-evidence-context.schema.json` before using any value. Context pins the exact decoded
+`schemas/control-evidence-context-v0.schema.json` before using any value. Context pins the exact decoded
 buyer-requirement payload digest, trust-policy ID and digest, and corpus version, corpus digest,
 manifest digest, and scoring version. A trusted key alone is insufficient: a vendor cannot select a
 different permissive requirement previously signed by the same buyer or self-declare a substitute

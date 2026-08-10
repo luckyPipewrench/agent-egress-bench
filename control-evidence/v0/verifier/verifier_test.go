@@ -336,7 +336,7 @@ func TestEmbeddedSchemasMatchCanonicalCopies(t *testing.T) {
 			t.Fatal(err)
 		}
 		canonicalName := entry.Name()
-		if canonicalName == "tool-profile.schema.json" {
+		if canonicalName == "tool-profile-v3.schema.json" {
 			canonicalName = "tool-profile-v3.schema.json"
 		}
 		canonical, err := os.ReadFile(filepath.Join("..", "..", "..", "schemas", canonicalName))

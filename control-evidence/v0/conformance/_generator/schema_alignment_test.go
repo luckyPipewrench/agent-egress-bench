@@ -18,13 +18,13 @@ func TestGoldenAndEdgeArtifactsMatchSchemas(t *testing.T) {
 
 	schemaDir := filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas"))
 	schemas := map[string]*jsonschema.Schema{
-		"dsse":        compileSchema(t, filepath.Join(schemaDir, "control-evidence-dsse.schema.json")),
-		"requirement": compileSchema(t, filepath.Join(schemaDir, "control-evidence-requirement.schema.json")),
-		"envelope":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-run-envelope.schema.json")),
-		"manifest":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-manifest.schema.json")),
-		"outcomes":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-outcomes.schema.json")),
-		"clock":       compileSchema(t, filepath.Join(schemaDir, "control-evidence-clock-evidence.schema.json")),
-		"observer":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-observer-evidence.schema.json")),
+		"dsse":        compileSchema(t, filepath.Join(schemaDir, "control-evidence-dsse-v0.schema.json")),
+		"requirement": compileSchema(t, filepath.Join(schemaDir, "control-evidence-requirement-v0.schema.json")),
+		"envelope":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-run-envelope-v0.schema.json")),
+		"manifest":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-manifest-v0.schema.json")),
+		"outcomes":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-outcomes-v0.schema.json")),
+		"clock":       compileSchema(t, filepath.Join(schemaDir, "control-evidence-clock-evidence-v0.schema.json")),
+		"observer":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-observer-evidence-v0.schema.json")),
 	}
 
 	for _, category := range []string{"golden", "edge"} {
@@ -68,13 +68,13 @@ func TestMaliciousFixturesHaveOnlyDeclaredSchemaFailure(t *testing.T) {
 
 	schemaDir := filepath.Clean(filepath.Join("..", "..", "..", "..", "schemas"))
 	schemas := map[string]*jsonschema.Schema{
-		"dsse":        compileSchema(t, filepath.Join(schemaDir, "control-evidence-dsse.schema.json")),
-		"requirement": compileSchema(t, filepath.Join(schemaDir, "control-evidence-requirement.schema.json")),
-		"envelope":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-run-envelope.schema.json")),
-		"manifest":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-manifest.schema.json")),
-		"outcomes":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-outcomes.schema.json")),
-		"clock":       compileSchema(t, filepath.Join(schemaDir, "control-evidence-clock-evidence.schema.json")),
-		"observer":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-observer-evidence.schema.json")),
+		"dsse":        compileSchema(t, filepath.Join(schemaDir, "control-evidence-dsse-v0.schema.json")),
+		"requirement": compileSchema(t, filepath.Join(schemaDir, "control-evidence-requirement-v0.schema.json")),
+		"envelope":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-run-envelope-v0.schema.json")),
+		"manifest":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-manifest-v0.schema.json")),
+		"outcomes":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-outcomes-v0.schema.json")),
+		"clock":       compileSchema(t, filepath.Join(schemaDir, "control-evidence-clock-evidence-v0.schema.json")),
+		"observer":    compileSchema(t, filepath.Join(schemaDir, "control-evidence-observer-evidence-v0.schema.json")),
 	}
 	expectedFailure := map[string]string{
 		"m01-dsse-multi-signature":           "envelope-wrapper",
@@ -244,7 +244,7 @@ func toolProfileSchemas(t *testing.T, schemaDir string) map[int]*jsonschema.Sche
 	t.Helper()
 	return map[int]*jsonschema.Schema{
 		1: compileSchema(t, filepath.Join(schemaDir, "tool-profile-v1.schema.json")),
-		3: compileSchema(t, filepath.Join(schemaDir, "tool-profile.schema.json")),
+		3: compileSchema(t, filepath.Join(schemaDir, "tool-profile-v3.schema.json")),
 	}
 }
 

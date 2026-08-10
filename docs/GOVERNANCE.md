@@ -52,10 +52,10 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 
 | Family | Active writer | Accepted readers | Frozen | Canonical schema |
 | --- | ---: | --- | --- | --- |
-| Case and multi-file case | 4 | 4 | none | [`case.schema.json`](../schemas/case.schema.json), with the multi-file shape enforced in Go |
-| Result row | 4 | 4 | none | [`result.schema.json`](../schemas/result.schema.json) |
-| Tool profile | 4 | 1, 3, 4 | 1, 3 | [`tool-profile.schema.json`](../schemas/tool-profile.schema.json) |
-| Receipt-scoring profile | 4 | 1, 4 | 1 | [`receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json) |
+| Case and multi-file case | 4 | 4 | none | [`case-v4.schema.json`](../schemas/case-v4.schema.json), with the multi-file shape enforced in Go |
+| Result row | 4 | 4 | none | [`result-v4.schema.json`](../schemas/result-v4.schema.json) |
+| Tool profile | 4 | 1, 3, 4 | 1, 3 | [`tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) |
+| Receipt-scoring profile | 4 | 1, 4 | 1 | [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json) |
 | Summary | 5 | 4, 5 | 4 | [`summary-v5.schema.json`](../schemas/summary-v5.schema.json) |
 | Provenance candidate | 5 | 1, 2, 4, 5 | 1, 2 | Python reader, no JSON Schema |
 | Case index, promoted record, baseline | 1 | 1 | 1 | Go or Python reader, no JSON Schema |

@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-trust-policy-v1.schema.json",
+  "title": "Control Evidence external trust policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "policy_id",
+    "epoch",
+    "issued_at",
+    "next_update",
+    "keys",
+    "revocations"
+  ],
+  "properties": {
+    "profile": {
+      "const": "control-evidence-trust-policy/v1"
+    },
+    "policy_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "next_update": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "keys": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key_id",
+          "public_key",
+          "authority_id",
+          "role",
+          "purpose",
+          "not_before",
+          "expires_at"
+        ],
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Ed25519 public key identifier; the assessor requires this to equal public_key."
+          },
+          "public_key": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "authority_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "role": {
+            "enum": [
+              "buyer-requirement",
+              "run-envelope",
+              "observer-evidence",
+              "completion-clock"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "not_before": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "Z$"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "Z$"
+          }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"role": {"const": "buyer-requirement"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-requirement.v0+json"}}}
+          },
+          {
+            "if": {"properties": {"role": {"const": "run-envelope"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-envelope.v0+json"}}}
+          },
+          {
+            "if": {"properties": {"role": {"const": "observer-evidence"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-observer-evidence.v0+json"}}}
+          },
+          {
+            "if": {"properties": {"role": {"const": "completion-clock"}}, "required": ["role"]},
+            "then": {"properties": {"purpose": {"const": "application/vnd.agent-egress-bench.control-evidence-clock-evidence.v0+json"}}}
+          }
+        ]
+      }
+    },
+    "revocations": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key_id",
+          "effective_at",
+          "reason"
+        ],
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "effective_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "Z$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    }
+  }
+}
