@@ -13,6 +13,10 @@ REQUIRED_CONSTANTS = {
     ("validate/main.go", "activeCaseSchemaVersion"),
     ("runner/summary.go", "activeSummarySchemaVersion"),
 }
+REQUIRED_RETAINED_RECORD_PATHS = {
+    "ci/gauntlet-baseline.json",
+    "gauntlet-site",
+}
 
 
 def fail(message):
@@ -109,10 +113,18 @@ def walk_schema_versions(value, label, found):
 def retained_record_versions(root, paths):
     if not isinstance(paths, list) or not paths:
         fail("retained_public_records.paths must be a non-empty array")
+    if any(not isinstance(path, str) or not path for path in paths):
+        fail("retained public record paths must be non-empty strings")
+    if len(paths) != len(set(paths)):
+        fail("retained public record paths contain duplicates")
+    if set(paths) != REQUIRED_RETAINED_RECORD_PATHS:
+        fail(
+            "retained public record roots must remain complete; "
+            f"missing={sorted(REQUIRED_RETAINED_RECORD_PATHS - set(paths))}, "
+            f"extra={sorted(set(paths) - REQUIRED_RETAINED_RECORD_PATHS)}"
+        )
     files = []
     for relative in paths:
-        if not isinstance(relative, str) or not relative:
-            fail("retained public record paths must be non-empty strings")
         path = root / relative
         if path.is_file():
             files.append(path)
