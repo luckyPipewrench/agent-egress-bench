@@ -236,7 +236,8 @@ Key fields:
   is a subset of this count, not a third population.
 - `null` in per-category scores: metric is N/A for that category.
 
-The runner also prints result counters to stderr:
+The runner also prints result counters to stderr. This independent 35-case
+example is not the 142-case summary above:
 
 ```text
 results: 22 passed, 3 failed, 0 unreachable, 10 not_applicable, 0 errors (35 total)
