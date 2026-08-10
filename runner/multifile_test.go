@@ -453,10 +453,11 @@ func TestMultiFileCase_ToCase_WarnNormalizedToAllow(t *testing.T) {
 }
 
 // TestRunIntegratesMultiFileCases drives the full runner pipeline with
-// the dryrun adapter, single-file cases, AND the four real mcp-drift
+// the dryrun adapter and the default, loader-discovered corpus, including the
+// real mcp-drift
 // fixtures. The dryrun adapter echoes expected_verdict, so each case
 // scores pass. The test verifies that:
-//  1. The runner accepts --multifile-cases without error.
+//  1. The runner discovers multi-file cases without a caller-supplied flag.
 //  2. The receipt profile emitted at the end contains rows for the
 //     four mcp-drift case IDs.
 //  3. The block-expected rugpull rows record blocked=yes and the
@@ -481,11 +482,28 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	}
 
 	casesDir := filepath.Join("..", "cases")
-	multiFileDir := filepath.Join("..", "cases", "mcp-drift")
-
-	err = run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, receiptPath, "", multiFileDir, false)
+	err = run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, receiptPath, "", "", false)
 	if err != nil {
 		t.Fatalf("run: %v", err)
+	}
+
+	expected, err := loadCorpus(casesDir)
+	if err != nil {
+		t.Fatalf("loadCorpus: %v", err)
+	}
+	summaryData, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read summary: %v", err)
+	}
+	var summary GauntletSummary
+	if err := json.Unmarshal(summaryData, &summary); err != nil {
+		t.Fatalf("parse summary: %v", err)
+	}
+	if summary.CaseCount.Total != len(expected) {
+		t.Fatalf("default run total = %d, want loader-backed %d", summary.CaseCount.Total, len(expected))
+	}
+	if summary.PerCategory["mcp_drift"].Applicable != 6 {
+		t.Fatalf("default run mcp_drift applicability = %+v, want 6", summary.PerCategory["mcp_drift"])
 	}
 
 	data, err := os.ReadFile(receiptPath)
@@ -496,12 +514,17 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	if jsonErr := json.Unmarshal(data, &rp); jsonErr != nil {
 		t.Fatalf("parse receipt profile: %v", jsonErr)
 	}
+	if len(rp.PerCase) != len(expected) {
+		t.Fatalf("receipt profile rows = %d, want loader-backed %d", len(rp.PerCase), len(expected))
+	}
 
 	wantIDs := map[string]bool{
-		"mcp-drift-benign-001":        false,
-		"mcp-drift-rugpull-desc-002":  false,
-		"mcp-drift-rugpull-param-003": false,
-		"mcp-drift-collusion-004":     false,
+		"mcp-drift-benign-001":                 false,
+		"mcp-drift-rugpull-desc-002":           false,
+		"mcp-drift-rugpull-param-003":          false,
+		"mcp-drift-collusion-004":              false,
+		"mcp-drift-http-rugpull-desc-005":      false,
+		"mcp-drift-http-benign-refinement-006": false,
 	}
 	for _, row := range rp.PerCase {
 		if _, ok := wantIDs[row.CaseID]; !ok {
@@ -509,7 +532,7 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 		}
 		wantIDs[row.CaseID] = true
 		switch row.CaseID {
-		case "mcp-drift-benign-001":
+		case "mcp-drift-benign-001", "mcp-drift-http-benign-refinement-006":
 			// warn-expected → maps to allow → blocked=n/a, false_positive=no
 			// (dryrun returned allow, which matches the mapped expectation).
 			if row.Blocked != "n/a" {
@@ -532,5 +555,44 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 		if !found {
 			t.Errorf("multi-file case %s not present in receipt profile per_case", id)
 		}
+	}
+}
+
+func TestRunRejectsPartialMultiFileOverrideBeforeOutput(t *testing.T) {
+	tmpDir := t.TempDir()
+	profilePath := filepath.Join(tmpDir, "profile.json")
+	outputPath := filepath.Join(tmpDir, "summary.json")
+	profileData, err := json.Marshal(validV4Profile(t))
+	if err != nil {
+		t.Fatalf("marshal profile: %v", err)
+	}
+	if err := os.WriteFile(profilePath, profileData, 0o600); err != nil {
+		t.Fatalf("write profile: %v", err)
+	}
+
+	override := filepath.Join(tmpDir, "mcp-drift")
+	caseDir := filepath.Join(override, "mcp-drift-benign-001")
+	if err := os.MkdirAll(caseDir, 0o750); err != nil {
+		t.Fatalf("mkdir override: %v", err)
+	}
+	for _, name := range []string{"case.yaml", "before.json", "after.json", "expected.json"} {
+		data, err := os.ReadFile(filepath.Join("..", "cases", "mcp-drift", "mcp-drift-benign-001", name))
+		if err != nil {
+			t.Fatalf("read source %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(caseDir, name), data, 0o600); err != nil {
+			t.Fatalf("write override %s: %v", name, err)
+		}
+	}
+
+	err = run(filepath.Join("..", "cases"), profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", override, false)
+	if err == nil {
+		t.Fatal("partial multi-file override completed a reduced run")
+	}
+	if !strings.Contains(err.Error(), "loader-backed corpus") || !strings.Contains(err.Error(), "mcp-drift-rugpull-desc-002") {
+		t.Fatalf("partial override error = %v, want exact corpus rejection", err)
+	}
+	if _, statErr := os.Stat(outputPath); !os.IsNotExist(statErr) {
+		t.Fatalf("partial override wrote summary before failing: %v", statErr)
 	}
 }

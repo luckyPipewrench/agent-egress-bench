@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 type caseIndexDocument struct {
@@ -28,7 +30,15 @@ type corpusStatCase struct {
 // shared source for the manifest and for human-readable corpus statistics, so
 // both surfaces reflect precisely the cases the runner can execute.
 func loadCorpus(root string) ([]Case, error) {
-	cases, multiFileCases, err := loadCorpusParts(root)
+	return loadCorpusWithMultiFileDirs(root, registeredMultiFileCaseDirs(root))
+}
+
+// loadCorpusWithMultiFileDirs loads the single-file corpus plus exactly the
+// multi-file directories supplied by the caller. Keeping this one conversion
+// path prevents execution, statistics, and manifest generation from assigning
+// different meanings to a multi-file case.
+func loadCorpusWithMultiFileDirs(root string, multiFileDirs []string) ([]Case, error) {
+	cases, multiFileCases, err := loadCorpusPartsFromMultiFileDirs(root, multiFileDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +50,25 @@ func loadCorpus(root string) ([]Case, error) {
 		cases = append(cases, converted)
 	}
 	return cases, nil
+}
+
+// registeredMultiFileCaseDirs returns the multi-file families that belong to a
+// corpus root. A missing family directory is valid for a small local corpus;
+// a directory that exists is always loaded rather than silently skipped.
+func registeredMultiFileCaseDirs(root string) []string {
+	categories := make([]string, 0, len(multiFileCaseCategories))
+	for category := range multiFileCaseCategories {
+		categories = append(categories, category)
+	}
+	sort.Strings(categories)
+	dirs := make([]string, 0, len(categories))
+	for _, category := range categories {
+		directory := filepath.Join(root, category)
+		if _, err := os.Stat(directory); err == nil {
+			dirs = append(dirs, directory)
+		}
+	}
+	return dirs
 }
 
 // loadCorpusStats preserves each fixture's declared expected verdict. The
@@ -62,25 +91,82 @@ func loadCorpusStats(root string) ([]corpusStatCase, error) {
 }
 
 func loadCorpusParts(root string) ([]Case, []MultiFileCase, error) {
+	return loadCorpusPartsFromMultiFileDirs(root, registeredMultiFileCaseDirs(root))
+}
+
+func loadCorpusPartsFromMultiFileDirs(root string, multiFileDirs []string) ([]Case, []MultiFileCase, error) {
 	cases, err := loadCases(root)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	categories := make([]string, 0, len(multiFileCaseCategories))
-	for category := range multiFileCaseCategories {
-		categories = append(categories, category)
-	}
-	sort.Strings(categories)
 	var multiFileCases []MultiFileCase
-	for _, category := range categories {
-		mfCases, mfErr := loadMultiFileCases(filepath.Join(root, category))
+	for _, directory := range multiFileDirs {
+		mfCases, mfErr := loadMultiFileCases(directory)
 		if mfErr != nil {
 			return nil, nil, mfErr
 		}
 		multiFileCases = append(multiFileCases, mfCases...)
 	}
 	return cases, multiFileCases, nil
+}
+
+// loadRunCorpus treats --multifile-cases as a source-location override, never
+// as permission to omit a registered family. The selected IDs must equal the
+// loader-backed corpus before a run can start, so a denominator cannot shrink
+// into a quieter summary.
+func loadRunCorpus(root, multiFileOverride string) ([]Case, []string, error) {
+	effectiveDirs := registeredMultiFileCaseDirs(root)
+	if multiFileOverride != "" {
+		effectiveDirs = []string{multiFileOverride}
+	}
+	cases, err := loadCorpusWithMultiFileDirs(root, effectiveDirs)
+	if err != nil {
+		return nil, nil, err
+	}
+	canonical, err := loadCorpus(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ensureExactRunCorpus(cases, canonical); err != nil {
+		return nil, nil, err
+	}
+	return cases, effectiveDirs, nil
+}
+
+func ensureExactRunCorpus(runCases, canonicalCases []Case) error {
+	runIDs := make(map[string]struct{}, len(runCases))
+	for _, c := range runCases {
+		if _, duplicate := runIDs[c.ID]; duplicate {
+			return fmt.Errorf("run corpus contains duplicate case ID %q", c.ID)
+		}
+		runIDs[c.ID] = struct{}{}
+	}
+	canonicalIDs := make(map[string]struct{}, len(canonicalCases))
+	for _, c := range canonicalCases {
+		if _, duplicate := canonicalIDs[c.ID]; duplicate {
+			return fmt.Errorf("loader-backed corpus contains duplicate case ID %q", c.ID)
+		}
+		canonicalIDs[c.ID] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for id := range canonicalIDs {
+		if _, ok := runIDs[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	extra := make([]string, 0)
+	for id := range runIDs {
+		if _, ok := canonicalIDs[id]; !ok {
+			extra = append(extra, id)
+		}
+	}
+	if len(missing) == 0 && len(extra) == 0 && len(runCases) == len(canonicalCases) {
+		return nil
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	return fmt.Errorf("run corpus does not match loader-backed corpus: missing=%s extra=%s", strings.Join(missing, ","), strings.Join(extra, ","))
 }
 
 // writeCorpusStats emits a stable, loader-backed report suitable for checking

@@ -121,14 +121,12 @@ type CaseCount struct {
 	Errors               int            `json:"errors"`
 }
 
-// computeCorpusSHA256 hashes case-file contents across both the single-file
-// corpus rooted at casesDir and (optionally) the multi-file case directory
-// at multiFileDir. Files are sorted by absolute path before hashing so the
-// output is deterministic regardless of filesystem ordering. multiFileDir
-// may be empty: the single-file walker skips directories listed in
-// multiFileCaseCategories on its own, so the hash covers exactly the case
-// surface the runner loaded.
-func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
+// computeCorpusSHA256 hashes case-file contents across the single-file corpus
+// and the effective multi-file directories. Files are sorted by absolute path
+// before hashing so the output is deterministic regardless of filesystem
+// ordering. The caller supplies the effective directories so the digest covers
+// exactly the case surface execution loaded.
+func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, error) {
 	var paths []string
 
 	err := filepath.Walk(casesDir, func(path string, info os.FileInfo, err error) error {
@@ -150,7 +148,7 @@ func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
 		return "", fmt.Errorf("walking cases for hash: %w", err)
 	}
 
-	if multiFileDir != "" {
+	for _, multiFileDir := range multiFileDirs {
 		mfPaths, mfErr := computeMultiFileSHA256Paths(multiFileDir)
 		if mfErr != nil {
 			return "", mfErr
@@ -202,12 +200,13 @@ func buildSummary(
 	applicableResults []CaseResult,
 	unreachableIDs map[string]struct{},
 	naReasons map[NAKind]int,
-	casesDir, multiFileDir string,
+	casesDir string,
+	multiFileDirs []string,
 	casesByID map[string]Case,
 	profilePath string,
 	prov RunProvenance,
 ) (GauntletSummary, error) {
-	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDir)
+	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDirs...)
 	if err != nil {
 		return GauntletSummary{}, err
 	}

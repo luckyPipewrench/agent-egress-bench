@@ -9,7 +9,7 @@ import (
 )
 
 func TestComputeCorpusSHA256NonexistentDir(t *testing.T) {
-	_, err := computeCorpusSHA256("/nonexistent/dir", "")
+	_, err := computeCorpusSHA256("/nonexistent/dir")
 	if err == nil {
 		t.Fatal("expected error for nonexistent directory")
 	}
@@ -32,7 +32,7 @@ func TestWriteSummaryRejectsPreV3Artifact(t *testing.T) {
 
 func TestBuildSummaryErrorPath(t *testing.T) {
 	p := Profile{Tool: "test", ToolVersion: "1.0"}
-	_, err := buildSummary(p, nil, nil, nil, nil, "/nonexistent/dir", "", nil, "/nonexistent/profile.json", RunProvenance{})
+	_, err := buildSummary(p, nil, nil, nil, nil, "/nonexistent/dir", nil, nil, "/nonexistent/profile.json", RunProvenance{})
 	if err == nil {
 		t.Fatal("expected error for nonexistent cases dir")
 	}
@@ -79,7 +79,7 @@ func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 		nil,
 		nil,
 		dir,
-		"",
+		nil,
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		profilePath,
 		RunProvenance{},
@@ -111,7 +111,7 @@ func TestBuildSummaryRejectsInvalidFixedDateEnv(t *testing.T) {
 		nil,
 		nil,
 		dir,
-		"",
+		nil,
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		profilePath,
 		RunProvenance{},
@@ -137,7 +137,7 @@ func TestBuildSummaryKeepsUnreachableOutsideScoreableErrors(t *testing.T) {
 		map[string]struct{}{"a": {}},
 		nil,
 		dir,
-		"",
+		nil,
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
 		profilePath,
 		RunProvenance{},
@@ -176,7 +176,7 @@ func TestBuildSummarySyntheticRowsHaveIncompleteMeasurement(t *testing.T) {
 		nil,
 		nil,
 		dir,
-		"",
+		nil,
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "block"}},
 		profilePath,
 		RunProvenance{},
@@ -216,7 +216,7 @@ func TestBuildSummaryBelow80PercentCanBeMeasured(t *testing.T) {
 		nil,
 		nil,
 		dir,
-		"",
+		nil,
 		map[string]Case{"a": allCases[0], "b": allCases[1]},
 		profilePath,
 		RunProvenance{},
@@ -260,7 +260,7 @@ func TestComputeCorpusSHA256(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hash1, err := computeCorpusSHA256(dir, "")
+	hash1, err := computeCorpusSHA256(dir)
 	if err != nil {
 		t.Fatalf("computeCorpusSHA256: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestComputeCorpusSHA256(t *testing.T) {
 	}
 
 	// Same files = same hash.
-	hash2, err := computeCorpusSHA256(dir, "")
+	hash2, err := computeCorpusSHA256(dir)
 	if err != nil {
 		t.Fatalf("computeCorpusSHA256: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestComputeCorpusSHA256(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"id":"changed"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	hash3, err := computeCorpusSHA256(dir, "")
+	hash3, err := computeCorpusSHA256(dir)
 	if err != nil {
 		t.Fatalf("computeCorpusSHA256: %v", err)
 	}
