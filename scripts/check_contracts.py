@@ -121,6 +121,27 @@ def strip_go_comments_and_strings(text):
     return "".join(out)
 
 
+def go_const_blocks(text):
+    """Yield the body of each `const (...)` block in comment-stripped Go source.
+
+    Parenthesis depth is tracked rather than matched with a regex, because a
+    grouped constant can carry a parenthesised expression and a non-greedy match
+    would stop at the first inner close paren and truncate the block.
+    """
+    for match in re.finditer(r"\bconst\s*\(", text):
+        depth = 1
+        start = match.end()
+        i = start
+        while i < len(text) and depth:
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+            i += 1
+        if depth == 0:
+            yield text[start : i - 1]
+
+
 def read_go_constant(root, source):
     relative = source.get("path")
     symbol = source.get("symbol")
@@ -134,10 +155,18 @@ def read_go_constant(root, source):
     # grouped block. Matching only the first form made this gate reject a legal
     # refactor into a group, which is the failure direction that gets a gate
     # switched off rather than fixed.
+    #
+    # The grouped form is searched only inside `const (...)` spans. Matching it
+    # against the whole file accepted any line shaped `name = 4`, so removing the
+    # constant and leaving a `var` declaration or an assignment in `init` behind
+    # still satisfied the gate. The value has to come from a constant, or this
+    # check does not establish what the writer emits.
     optional_type = r"(?:\s+[A-Za-z_][A-Za-z0-9_.]*)?"
     single = rf"\bconst\s+{re.escape(symbol)}{optional_type}\s*=\s*([0-9]+)\b"
-    grouped = rf"(?m)^\s*{re.escape(symbol)}{optional_type}\s*=\s*([0-9]+)\s*(?://.*)?$"
-    matches = [m.group(1) for pattern in (single, grouped) for m in re.finditer(pattern, text)]
+    grouped = rf"(?m)^\s*{re.escape(symbol)}{optional_type}\s*=\s*([0-9]+)\s*$"
+    matches = [m.group(1) for m in re.finditer(single, text)]
+    for block in go_const_blocks(text):
+        matches.extend(m.group(1) for m in re.finditer(grouped, block))
     if not matches:
         fail(f"cannot find integer constant {symbol} in {relative}")
     # A second, differing declaration means the governing value is ambiguous, so

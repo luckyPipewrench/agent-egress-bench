@@ -57,5 +57,56 @@ class CheckContractsTest(unittest.TestCase):
         self.assertIn("check-contracts: FAIL - fixture unreadable", stderr.getvalue())
 
 
+class ReadGoConstantTest(unittest.TestCase):
+    """The governing value must come from a real constant.
+
+    Each case below satisfied an earlier version of this matcher. A commented or
+    quoted declaration passed while the constant was gone, and any line shaped
+    `name = 4` passed even as a mutable variable, so the gate could report a
+    governing version the compiler never saw.
+    """
+
+    def read(self, source):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "case.go"
+            path.write_text(source, encoding="utf-8")
+            return check_contracts.read_go_constant(
+                Path(directory), {"path": "case.go", "symbol": "activeSchemaVersion"}
+            )
+
+    def assert_rejected(self, source):
+        with self.assertRaisesRegex(ValueError, "cannot find integer constant"):
+            self.read(source)
+
+    def test_accepts_standalone_and_grouped_declarations(self):
+        self.assertEqual(4, self.read("package main\n\nconst activeSchemaVersion = 4\n"))
+        self.assertEqual(4, self.read("package main\n\nconst activeSchemaVersion int = 4\n"))
+        self.assertEqual(
+            4, self.read("package main\n\nconst (\n\tactiveSchemaVersion = 4\n)\n")
+        )
+
+    def test_rejects_a_mutable_variable(self):
+        self.assert_rejected("package main\n\nvar activeSchemaVersion = 4\n")
+
+    def test_rejects_an_assignment_outside_a_const_block(self):
+        self.assert_rejected(
+            "package main\n\nvar activeSchemaVersion int\n\n"
+            "func init() {\n\tactiveSchemaVersion = 4\n}\n"
+        )
+
+    def test_rejects_commented_and_quoted_declarations(self):
+        self.assert_rejected("package main\n\n// const activeSchemaVersion = 4\n")
+        self.assert_rejected("package main\n\n/* const activeSchemaVersion = 4 */\n")
+        self.assert_rejected('package main\n\nvar s = "const activeSchemaVersion = 4"\n')
+        self.assert_rejected("package main\n\nvar s = `const activeSchemaVersion = 4`\n")
+
+    def test_rejects_conflicting_declarations(self):
+        with self.assertRaisesRegex(ValueError, "conflicting values"):
+            self.read(
+                "package main\n\nconst (\n\tactiveSchemaVersion = 4\n)\n\n"
+                "const activeSchemaVersion = 5\n"
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
