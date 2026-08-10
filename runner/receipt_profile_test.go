@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 // stringPtr returns a pointer to s. Used in tests that build a fully-valid
@@ -889,4 +891,30 @@ func TestBuildReceiptProfile_UnreachableRowsAreNotScoredAsOutcomes(t *testing.T)
 	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
 		t.Fatalf("unreachable-row output failed validation:\n%s", strings.Join(issues, "\n"))
 	}
+}
+
+// Every committed receipt profile is v1 and the shared fixture is v3, so before
+// this test the active contract had no positive coverage: each case exercised a
+// frozen reader path only. A reader that accepts historical versions will happily
+// keep passing while the version it actually emits goes unchecked.
+func TestValidateReceiptProfile_AcceptsActiveSchemaVersion(t *testing.T) {
+	rp := validProfile()
+	rp.SchemaVersion = activeSchemaVersion
+	// The active version additionally binds the capability-registry snapshot,
+	// which the frozen v3 fixture does not carry. That requirement is exactly
+	// what had no positive coverage.
+	rp.CapabilityRegistry = testRegistryReference
+	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
+		t.Fatalf("active schema version %d rejected: %v", activeSchemaVersion, issues)
+	}
+}
+
+// The active version's registry binding had no negative coverage either:
+// disabling the check left every receipt-profile test green. A requirement no
+// test defends is a requirement that can be deleted by accident.
+func TestValidateReceiptProfile_ActiveVersionRequiresRegistryBinding(t *testing.T) {
+	rp := validProfile()
+	rp.SchemaVersion = activeSchemaVersion
+	rp.CapabilityRegistry = capabilityregistry.Reference{}
+	expectIssueMatch(t, rp, "capability_registry must contain")
 }

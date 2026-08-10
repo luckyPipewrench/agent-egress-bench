@@ -71,6 +71,56 @@ def require_path_list(root, value, label, allow_glob=False):
             fail(f"{label} path does not exist: {entry}")
 
 
+def strip_go_comments_and_strings(text):
+    """Blank out Go comments and string bodies before matching a declaration.
+
+    Matching raw source let a commented-out or quoted declaration satisfy this
+    gate, so deleting the real constant and leaving `// const x = 4` behind would
+    keep the check green while it protected nothing. Comment and string spans are
+    replaced with spaces rather than removed so that reported positions and line
+    structure survive.
+
+    This is a lexical pass, not a Go parser. It handles line comments, block
+    comments, interpreted strings, raw strings, and runes, which covers the ways
+    a declaration can hide in this repository's sources. A Go-side assertion that
+    the constant equals its manifest value would remove the class outright, since
+    the compiler would then have to agree the constant exists.
+    """
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        if ch == "/" and nxt == "/":
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+        elif ch == "/" and nxt == "*":
+            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            out.append("  ")
+            i += 2
+        elif ch in "\"'`":
+            quote = ch
+            out.append(" ")
+            i += 1
+            while i < n and text[i] != quote:
+                if quote != "`" and text[i] == "\\":
+                    out.append(" ")
+                    i += 1
+                if i < n:
+                    out.append("\n" if text[i] == "\n" else " ")
+                    i += 1
+            if i < n:
+                out.append(" ")
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def read_go_constant(root, source):
     relative = source.get("path")
     symbol = source.get("symbol")
@@ -79,7 +129,7 @@ def read_go_constant(root, source):
     path = root / relative
     if not path.is_file() or path.stat().st_size == 0:
         fail(f"governing source is missing or empty: {relative}")
-    text = path.read_text(encoding="utf-8")
+    text = strip_go_comments_and_strings(path.read_text(encoding="utf-8"))
     # Go declares a constant either on its own (`const name = 4`) or inside a
     # grouped block. Matching only the first form made this gate reject a legal
     # refactor into a group, which is the failure direction that gets a gate
@@ -258,7 +308,14 @@ def check(root, manifest_path):
                 fail(f"{name}: schema version {version} is listed more than once")
             schema_versions.add(version)
             status = schema.get("status")
-            expected_status = "frozen" if version in frozen else "active" if version == active else None
+            # The writer's own version is active even when it also appears in
+            # frozen_versions, which is a real state: a family can still emit v1
+            # while published records pin v1. Resolving frozen first made that
+            # combination unsatisfiable, because the family's only schema would
+            # have to be declared frozen and no schema could be active.
+            # Immutability for that version is carried by frozen_versions; this
+            # field records what the writer emits.
+            expected_status = "active" if version == active else "frozen" if version in frozen else None
             if expected_status is None or status != expected_status:
                 fail(f"{name}: schema v{version} has status {status!r}, expected {expected_status!r}")
             relative = schema.get("path")
