@@ -123,6 +123,18 @@ func TestRunCorpusSnapshotRefusesPartialMultiFileCase(t *testing.T) {
 	}
 }
 
+func TestRunCorpusSnapshotRefusesEmptyCorpus(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "mcp-drift"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadRunCorpus(root, "")
+	if err == nil || !strings.Contains(err.Error(), "refusing to hash an empty corpus") {
+		t.Fatalf("loadRunCorpus error = %v, want empty corpus refusal", err)
+	}
+}
+
 func TestBenchmarkManifestFamilyKeyIsUniqueAndOverrideInvariant(t *testing.T) {
 	root := t.TempDir()
 	canonical := filepath.Join(root, "mcp-drift")
