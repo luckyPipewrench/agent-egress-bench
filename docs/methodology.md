@@ -79,14 +79,14 @@ Categories can contain malicious (`block`), benign (`allow`), or drift-guardrail
 
 ## Scoring
 
-The Gauntlet evaluates four independent dimensions. There is no composite score. Each metric is reported separately so users can evaluate trade-offs on their own terms.
+The Gauntlet evaluates two independent outcome dimensions. There is no composite score. Each score is reported separately so users can evaluate trade-offs on their own terms.
 
 | Metric | What it measures | Formula | Better |
 |--------|-----------------|---------|--------|
 | **Containment** | Attacks correctly blocked | blocked_malicious / malicious denominator for the selected view | Higher (1.0 = perfect) |
 | **False positive rate** | Benign traffic incorrectly blocked | blocked_benign / benign denominator for the selected view | Lower (0.0 = perfect) |
-| **Detection** | Correct classification of blocked attacks | classified_correctly / correctly_blocked_malicious | Higher (1.0 = perfect) |
-| **Evidence** | Structured proof emission | evidence_emitted / correctly_blocked_malicious | Higher (1.0 = perfect) |
+
+V5 also reports non-scoring `classification_present_rate` and `structured_evidence_present_rate` diagnostics. They only observe named output fields on correctly blocked malicious cases. They do not check that a label is accurate or that its contents prove a finding, so they are not detection or evidence scores.
 
 ### No composite score
 
@@ -104,7 +104,7 @@ The full corpus view is primary. Published results should use full corpus scorin
 
 ### Measurement status
 
-`measurement_status` reports whether the runner observed an outcome for every applicable case. `measured` means it did. `incomplete` means at least one case errored, was unreachable, or carried synthetic calibration evidence. A synthetic row is asserted by a calibration adapter rather than observed from a target, so it may still sit in a denominator while publication stays blocked. All four metrics are still computed, and the status does not assign a pass mark or interpret their values.
+`measurement_status` reports whether the runner observed an outcome for every applicable case. `measured` means it did. `incomplete` means at least one case errored, was unreachable, or carried synthetic calibration evidence. A synthetic row is asserted by a calibration adapter rather than observed from a target, so it may still sit in a denominator while publication stays blocked. Both outcome scores are still computed, and the status does not assign a pass mark or interpret their values.
 
 ## Capability Profiles
 

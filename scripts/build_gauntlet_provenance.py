@@ -40,17 +40,18 @@ V4_RAW_EVIDENCE = {
     "capability_registry": "capability-registry.json",
     "receipt_profile": "receipt-profile.json",
 }
+ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 
 
 def raw_evidence_for_summary(summary):
     """Return the immutable evidence members for this artifact generation.
 
-    V2 evidence is frozen and did not retain registry bytes. Active v4 is a
+    V2 evidence is frozen and did not retain registry bytes. Active v4/v5 is a
     different contract: its raw profile, snapshot, and receipt profile are
     first-class evidence rather than a reconstructed view of current files.
     """
-    if summary.get("schema_version") == 4:
+    if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         return {**RAW_EVIDENCE, **V4_RAW_EVIDENCE}
     return RAW_EVIDENCE
 
@@ -125,9 +126,9 @@ def validate_v4_registry_binding(run_dir, summary, results):
         profile = json.loads(profile_bytes)
         snapshot = json.loads(snapshot_bytes)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"v4 registry evidence is not valid JSON: {exc}") from exc
+        raise ValueError(f"active registry evidence is not valid JSON: {exc}") from exc
     if not isinstance(profile, dict) or not isinstance(snapshot, dict):
-        raise ValueError("v4 registry evidence must be JSON objects")
+        raise ValueError("active registry evidence must be JSON objects")
     reference = registry_reference(summary.get("capability_registry"), "summary capability_registry")
     if hashlib.sha256(snapshot_bytes).hexdigest() != reference["sha256"]:
         raise ValueError("capability registry raw snapshot digest does not match summary")
@@ -292,9 +293,22 @@ def verify_score(summary, scope, metric, numerator, denominator):
         )
 
 
+def verify_diagnostic(summary, scope, diagnostic, numerator, denominator):
+    try:
+        actual = summary["diagnostics"][scope][diagnostic]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"runner summary is missing diagnostics.{scope}.{diagnostic}") from exc
+    expected = expected_fraction(numerator, denominator)
+    if actual != expected:
+        raise ValueError(
+            f"runner summary diagnostics.{scope}.{diagnostic} does not match bound diagnostic counts: "
+            f"{actual!r} != {expected!r}"
+        )
+
+
 def measurements(repo_root, run_dir):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
-    # Active v4 summaries always serialize the explicit unreachable counter.
+    # Active summaries always serialize the explicit unreachable counter.
     # The retained v2.4 summary predates that field and carries no
     # schema_version, so it keeps its original byte shape. Any scoring version
     # that is not a retained frozen one is active output and cannot borrow that
@@ -305,7 +319,7 @@ def measurements(repo_root, run_dir):
     # bump silently reopened the hole it was written to close, because a summary
     # carrying the new version matched neither branch.
     summary_schema_version = summary.get("schema_version")
-    if summary_schema_version == 4:
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         active_case_count = summary.get("case_count")
         if not isinstance(active_case_count, dict) or "unreachable" not in active_case_count:
             raise ValueError("active runner summary missing case_count.unreachable")
@@ -317,7 +331,7 @@ def measurements(repo_root, run_dir):
         ):
             raise ValueError("active runner summary case_count.unreachable must be a non-negative integer")
     elif summary_schema_version is not None:
-        raise ValueError("runner summary schema_version must be frozen v2 or active v4")
+        raise ValueError("runner summary schema_version must be frozen v2 or active v4/v5")
     elif summary.get("scoring_version") not in FROZEN_SCORING_VERSIONS:
         # Both guards are load-bearing and neither replaces the other. The
         # first rejects a summary carrying an unrecognised schema_version. This
@@ -344,11 +358,11 @@ def measurements(repo_root, run_dir):
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
     results = read_results(run_dir / RAW_EVIDENCE["results"])
-    # An active v4 artifact is uninterpretable without the exact raw registry
+    # An active artifact is uninterpretable without the exact raw registry
     # snapshot it names. Frozen v2 evidence has no such bytes and remains on the
     # historical reader path above.
     registry = None
-    if summary_schema_version == 4:
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         registry = validate_v4_registry_binding(run_dir, summary, results)
     manifest, manifest_ids = load_manifest(repo_root, run_dir)
     case_index_bytes, expected_by_id = load_case_index(
@@ -458,7 +472,7 @@ def measurements(repo_root, run_dir):
         for row in results
         if row.get("actual_verdict") != "unreachable"
     )
-    metric_counts = {
+    outcome_metric_counts = {
         "applicable": {
             "containment": {
                 "numerator": len(blocked_malicious),
@@ -467,11 +481,6 @@ def measurements(repo_root, run_dir):
             "false_positive_rate": {
                 "numerator": len(blocked_benign),
                 "denominator": len(applicable_benign),
-            },
-            "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
-            "evidence": {
-                "numerator": evidence_emitted,
-                "denominator": len(blocked_malicious),
             },
         },
         "full": {
@@ -483,13 +492,33 @@ def measurements(repo_root, run_dir):
                 "numerator": len(blocked_benign),
                 "denominator": full_benign,
             },
-            "detection": {"numerator": classified, "denominator": len(blocked_malicious)},
-            "evidence": {
+        },
+    }
+    diagnostic_counts = {
+        scope: {
+            "classification_present_rate": {
+                "numerator": classified,
+                "denominator": len(blocked_malicious),
+            },
+            "structured_evidence_present_rate": {
                 "numerator": evidence_emitted,
                 "denominator": len(blocked_malicious),
             },
-        },
+        }
+        for scope in ("applicable", "full")
     }
+    if summary_schema_version != 5:
+        # Frozen and active-v4 records keep the former score names and definition.
+        metric_counts = {
+            scope: {
+                **outcome_metric_counts[scope],
+                "detection": diagnostic_counts[scope]["classification_present_rate"],
+                "evidence": diagnostic_counts[scope]["structured_evidence_present_rate"],
+            }
+            for scope in ("applicable", "full")
+        }
+    else:
+        metric_counts = outcome_metric_counts
 
     logical_case_count = len(manifest_ids)
     case_count = summary.get("case_count")
@@ -547,7 +576,13 @@ def measurements(repo_root, run_dir):
     for scope, metrics in metric_counts.items():
         for metric, counts in metrics.items():
             verify_score(summary, scope, metric, counts["numerator"], counts["denominator"])
-    if summary_schema_version == 4:
+    if summary_schema_version == 5:
+        for scope, diagnostics in diagnostic_counts.items():
+            for diagnostic, counts in diagnostics.items():
+                verify_diagnostic(
+                    summary, scope, diagnostic, counts["numerator"], counts["denominator"]
+                )
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         # Scoped to the applicable rows so this mirrors exactly what the Go
         # runner can observe when it derives the same field. Synthetic rows
         # outside that scope are rejected outright above.
@@ -581,6 +616,7 @@ def measurements(repo_root, run_dir):
         "command": command,
         "make_stats": make_stats,
         "metric_counts": metric_counts,
+        "diagnostic_counts": diagnostic_counts if summary_schema_version == 5 else None,
         "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
         "case_index_sha256": hashlib.sha256(case_index_bytes).hexdigest(),
         "logical_case_count": logical_case_count,
@@ -686,7 +722,11 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
 
     candidate_scope = {
-        "schema_version": 4 if summary.get("schema_version") == 4 else 2,
+        "schema_version": (
+            summary.get("schema_version")
+            if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS
+            else 2
+        ),
         "local_run_id": metadata["local_run_id"],
         "generated_at": metadata["generated_at"],
         "corpus_ref_kind": metadata["corpus_ref_kind"],
@@ -723,6 +763,10 @@ def build_complete_bundle(repo_root, run_dir):
     }
     if summary.get("schema_version") == 4:
         candidate_scope["measurement_status"] = summary["measurement_status"]
+    elif summary.get("schema_version") == 5:
+        candidate_scope["measurement_status"] = summary["measurement_status"]
+        candidate_scope["diagnostics"] = summary["diagnostics"]
+        candidate_scope["diagnostic_counts"] = measured["diagnostic_counts"]
     else:
         candidate_scope["sufficient"] = summary["sufficient"]
     if measured["capability_registry"] is not None:

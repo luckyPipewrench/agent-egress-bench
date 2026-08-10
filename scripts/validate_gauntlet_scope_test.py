@@ -75,6 +75,34 @@ def complete_artifact():
     }
 
 
+def complete_v5_artifact():
+    artifact = complete_artifact()
+    artifact["schema_version"] = 5
+    artifact["runner_version"] = "0.4.3"
+    artifact["scoring_version"] = "2.8"
+    artifact["measurement_status"] = "measured"
+    artifact["capability_registry"] = {
+        "id": "aeb.core-capabilities",
+        "format": 1,
+        "revision": 1,
+        "sha256": "d" * 64,
+    }
+    artifact["diagnostics"] = {}
+    artifact["diagnostic_counts"] = {}
+    for scope in ("full", "applicable"):
+        scores = artifact["scores"][scope]
+        counts = artifact["metric_counts"][scope]
+        artifact["diagnostics"][scope] = {
+            "classification_present_rate": scores.pop("detection"),
+            "structured_evidence_present_rate": scores.pop("evidence"),
+        }
+        artifact["diagnostic_counts"][scope] = {
+            "classification_present_rate": counts.pop("detection"),
+            "structured_evidence_present_rate": counts.pop("evidence"),
+        }
+    return artifact
+
+
 def all_na_artifact():
     artifact = complete_artifact()
     artifact["case_count"] = {
@@ -120,6 +148,21 @@ class ValidateGauntletScopeTest(unittest.TestCase):
     def test_complete_artifact_passes(self):
         result = self.run_validator(complete_artifact())
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_complete_v5_artifact_passes_with_presence_diagnostics(self):
+        result = self.run_validator(complete_v5_artifact())
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_v5_rejects_legacy_presence_metric_names_in_scores(self):
+        artifact = complete_v5_artifact()
+        artifact["scores"]["applicable"]["detection"] = 1.0
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scores.applicable", result.stderr)
+        self.assertIn("unexpected keys", result.stderr)
 
     def test_unreachable_coverage_is_visible_but_outside_full_denominator(self):
         artifact = complete_artifact()

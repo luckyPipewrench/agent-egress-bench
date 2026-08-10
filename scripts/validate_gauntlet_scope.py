@@ -7,6 +7,7 @@ import math
 import re
 import sys
 import urllib.parse
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -45,6 +46,11 @@ V2_REQUIRED_SCOPE_PATHS = (
     ("canonical_url",),
 )
 METRICS = ("containment", "false_positive_rate", "detection", "evidence")
+OUTCOME_METRICS = ("containment", "false_positive_rate")
+PRESENCE_DIAGNOSTICS = (
+    "classification_present_rate",
+    "structured_evidence_present_rate",
+)
 SCOPES = ("applicable", "full")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -138,6 +144,42 @@ def validate_metric_fraction(document, scope, metric):
     return numerator, denominator
 
 
+def validate_diagnostic_fraction(document, scope, diagnostic):
+    """Bind a non-scoring diagnostic to its explicit numerator/denominator."""
+    rate_path = ("diagnostics", scope, diagnostic)
+    count_path = ("diagnostic_counts", scope, diagnostic)
+    numerator = non_negative_integer(document, count_path + ("numerator",))
+    denominator = non_negative_integer(document, count_path + ("denominator",))
+    if numerator > denominator:
+        raise ValueError("diagnostic numerator cannot exceed denominator: " + ".".join(count_path))
+
+    rate = finite_fraction(document, rate_path, allow_null=True)
+    if denominator == 0:
+        if rate is not None:
+            raise ValueError("diagnostic must be null when denominator is zero: " + ".".join(rate_path))
+        return numerator, denominator
+    if rate is None:
+        raise ValueError("diagnostic must be a number when denominator is non-zero: " + ".".join(rate_path))
+    if rate != numerator / denominator:
+        raise ValueError("diagnostic must equal numerator/denominator: " + ".".join(rate_path))
+    return numerator, denominator
+
+
+def require_exact_keys(document, path, expected):
+    value = path_value(document, path)
+    if not isinstance(value, dict):
+        raise ValueError("scope field must be an object: " + ".".join(path))
+    actual = set(value)
+    expected = set(expected)
+    if actual != expected:
+        raise ValueError(
+            "scope field has unexpected keys: "
+            + ".".join(path)
+            + f" (got {sorted(actual)!r}, want {sorted(expected)!r})"
+        )
+    return value
+
+
 def validate_canonical_url(document):
     """Require an absolute HTTPS canonical artifact URL."""
     canonical_url = path_value(document, ("canonical_url",))
@@ -161,6 +203,9 @@ def validate_scope(document):
         return
     if version == 4:
         validate_scope_v4(document)
+        return
+    if version == 5:
+        validate_scope_v5(document)
         return
     raise ValueError(f"unsupported schema_version: {version!r}")
 
@@ -338,6 +383,65 @@ def validate_scope_v4(document):
             raise ValueError(f"capability_registry.{key} must be a positive integer")
     if not isinstance(reference["sha256"], str) or not SHA256_HEX.fullmatch(reference["sha256"]):
         raise ValueError("capability_registry.sha256 must be 64 lower-case hex characters")
+
+
+def validate_scope_v5(document):
+    """Validate the active outcome-score plus presence-diagnostics contract."""
+    if document.get("schema_version") != 5:
+        raise ValueError("schema_version must be 5 for a v5 artifact")
+
+    # Reuse the v2 arithmetic and partition checks with an internal projection.
+    # V5 deliberately moved the old field-presence values out of scores, so the
+    # projection is validation machinery only and never changes the artifact.
+    projected = deepcopy(document)
+    projected["schema_version"] = 2
+    projected["scores"] = {}
+    projected["metric_counts"] = {}
+    for scope in SCOPES:
+        scores = require_exact_keys(document, ("scores", scope), OUTCOME_METRICS)
+        diagnostics = require_exact_keys(
+            document, ("diagnostics", scope), PRESENCE_DIAGNOSTICS
+        )
+        metric_counts = require_exact_keys(
+            document, ("metric_counts", scope), OUTCOME_METRICS
+        )
+        diagnostic_counts = require_exact_keys(
+            document, ("diagnostic_counts", scope), PRESENCE_DIAGNOSTICS
+        )
+        projected["scores"][scope] = {
+            **scores,
+            "detection": diagnostics["classification_present_rate"],
+            "evidence": diagnostics["structured_evidence_present_rate"],
+        }
+        projected["metric_counts"][scope] = {
+            **metric_counts,
+            "detection": diagnostic_counts["classification_present_rate"],
+            "evidence": diagnostic_counts["structured_evidence_present_rate"],
+        }
+
+    validate_scope_v2(projected)
+    validate_scope_v4({**projected, "capability_registry": document.get("capability_registry")})
+
+    counts = {
+        scope: {
+            diagnostic: validate_diagnostic_fraction(document, scope, diagnostic)
+            for diagnostic in PRESENCE_DIAGNOSTICS
+        }
+        for scope in SCOPES
+    }
+    for diagnostic in PRESENCE_DIAGNOSTICS:
+        if counts["full"][diagnostic][0] != counts["applicable"][diagnostic][0]:
+            raise ValueError(
+                f"diagnostic_counts.full.{diagnostic}.numerator must equal applicable numerator"
+            )
+        for scope in SCOPES:
+            containment_numerator = non_negative_integer(
+                document, ("metric_counts", scope, "containment", "numerator")
+            )
+            if counts[scope][diagnostic][1] != containment_numerator:
+                raise ValueError(
+                    f"diagnostic_counts.{scope}.{diagnostic}.denominator must equal blocked malicious count"
+                )
 
 
 def main(argv):

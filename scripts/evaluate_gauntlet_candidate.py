@@ -10,11 +10,16 @@ import tempfile
 from pathlib import Path
 
 
-REQUIRED_FLOORS = {
+LEGACY_REQUIRED_FLOORS = {
     "full": {"containment"},
     "applicable": {"containment", "detection", "evidence"},
 }
-REQUIRED_CEILINGS = {"applicable": {"false_positive_rate"}}
+ACTIVE_V5_REQUIRED_FLOORS = {
+    "full": {"containment"},
+    "applicable": {"containment"},
+}
+LEGACY_REQUIRED_CEILINGS = {"applicable": {"false_positive_rate"}}
+ACTIVE_V5_REQUIRED_CEILINGS = {"applicable": {"false_positive_rate"}}
 REQUIRED_COUNT_KEYS = ("total", "applicable", "not_applicable", "not_applicable_reasons")
 REQUIRED_IDENTITIES = (
     "corpus_git_sha",
@@ -78,6 +83,12 @@ def require_capability_registry(candidate):
     return reference
 
 
+def metric_contract_for(schema_version):
+    if schema_version == 5:
+        return ACTIVE_V5_REQUIRED_FLOORS, ACTIVE_V5_REQUIRED_CEILINGS
+    return LEGACY_REQUIRED_FLOORS, LEGACY_REQUIRED_CEILINGS
+
+
 def atomic_json_write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
@@ -122,9 +133,10 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         candidate = load_object(candidate_path)
         baseline = load_object(baseline_path)
 
-        if candidate.get("schema_version") not in {2, 4}:
-            raise ValueError("candidate schema_version must be 2 or 4")
-        if candidate.get("schema_version") == 4:
+        candidate_schema_version = candidate.get("schema_version")
+        if candidate_schema_version not in {2, 4, 5}:
+            raise ValueError("candidate schema_version must be 2, 4, or 5")
+        if candidate_schema_version in {4, 5}:
             require_capability_registry(candidate)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
@@ -150,7 +162,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                     f"candidate {candidate_key} does not match {evidence_label} evidence"
                 )
 
-        if candidate.get("schema_version") == 4:
+        if candidate_schema_version in {4, 5}:
             if candidate.get("measurement_status") != "measured":
                 decision["failures"].append(
                     "measurement_status="
@@ -191,10 +203,16 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 f"pipelock_version={actual_version!r}, baseline is {expected_version!r}"
             )
 
+        required_floors, required_ceilings = metric_contract_for(candidate_schema_version)
+        if candidate_schema_version == 5 and baseline.get("summary_schema_version") != 5:
+            raise ValueError(
+                "v5 candidate requires a reviewed baseline with summary_schema_version=5"
+            )
+
         floors = baseline.get("score_floors")
         if not isinstance(floors, dict):
             raise ValueError("baseline score_floors must be an object")
-        for scope, required_metrics in REQUIRED_FLOORS.items():
+        for scope, required_metrics in required_floors.items():
             metrics = floors.get(scope)
             if not isinstance(metrics, dict):
                 raise ValueError(f"baseline score_floors.{scope} must be an object")
@@ -206,6 +224,13 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         for scope, metrics in floors.items():
             if not isinstance(metrics, dict):
                 raise ValueError(f"baseline score_floors.{scope} must be an object")
+            allowed = required_floors.get(scope, set())
+            unexpected = set(metrics) - allowed
+            if unexpected:
+                raise ValueError(
+                    f"baseline score_floors.{scope} has unsupported metrics for candidate schema "
+                    f"v{candidate_schema_version}: {sorted(unexpected)!r}"
+                )
             for metric, raw_floor in metrics.items():
                 floor = fraction(raw_floor, f"baseline score_floors.{scope}.{metric}")
                 actual = fraction(
@@ -224,7 +249,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         ceilings = baseline.get("score_ceilings")
         if not isinstance(ceilings, dict):
             raise ValueError("baseline score_ceilings must be an object")
-        for scope, required_metrics in REQUIRED_CEILINGS.items():
+        for scope, required_metrics in required_ceilings.items():
             metrics = ceilings.get(scope)
             if not isinstance(metrics, dict):
                 raise ValueError(f"baseline score_ceilings.{scope} must be an object")
@@ -236,6 +261,13 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         for scope, metrics in ceilings.items():
             if not isinstance(metrics, dict):
                 raise ValueError(f"baseline score_ceilings.{scope} must be an object")
+            allowed = required_ceilings.get(scope, set())
+            unexpected = set(metrics) - allowed
+            if unexpected:
+                raise ValueError(
+                    f"baseline score_ceilings.{scope} has unsupported metrics for candidate schema "
+                    f"v{candidate_schema_version}: {sorted(unexpected)!r}"
+                )
             for metric, raw_ceiling in metrics.items():
                 ceiling = fraction(raw_ceiling, f"baseline score_ceilings.{scope}.{metric}")
                 actual = fraction(

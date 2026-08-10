@@ -180,7 +180,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         )
         (self.run_dir / "corpus-manifest.txt").write_text("a\nb\nc\n", encoding="utf-8")
 
-    def make_active_fixture(self, measurement_status="measured"):
+    def make_active_fixture(self, measurement_status="measured", summary_schema_version=4):
         snapshot_bytes = json.dumps(
             {
                 "id": "aeb.test-capabilities",
@@ -207,7 +207,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
 
         summary_path = self.run_dir / "raw-summary.json"
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        summary["schema_version"] = 4
+        summary["schema_version"] = summary_schema_version
         summary["case_count"]["unreachable"] = 0
         summary["capability_registry"] = reference
         summary["reported_claims"] = ["test"]
@@ -215,6 +215,16 @@ class ProvenanceBuilderTest(unittest.TestCase):
         summary["tool_profile_sha256"] = hashlib.sha256(profile_bytes).hexdigest()
         summary["measurement_status"] = measurement_status
         summary.pop("sufficient")
+        if summary_schema_version == 5:
+            summary["scoring_version"] = "2.8"
+            summary["runner_version"] = "0.4.3"
+            summary["diagnostics"] = {
+                scope: {
+                    "classification_present_rate": values.pop("detection"),
+                    "structured_evidence_present_rate": values.pop("evidence"),
+                }
+                for scope, values in summary["scores"].items()
+            }
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
         for row in self.results:
@@ -283,6 +293,22 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertEqual(scope["scores"]["full"]["containment"], 0.5)
         self.assertEqual(scope["measurement_status"], "measured")
         self.assertNotIn("sufficient", scope)
+
+    def test_v5_moves_field_presence_out_of_scores_and_binds_it_as_diagnostics(self):
+        self.make_active_fixture(summary_schema_version=5)
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads(
+            (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+        )["candidate_scope"]
+        self.assertEqual(scope["schema_version"], 5)
+        self.assertEqual(set(scope["scores"]["applicable"]), {"containment", "false_positive_rate"})
+        self.assertEqual(
+            scope["diagnostic_counts"]["applicable"]["classification_present_rate"],
+            {"numerator": 1, "denominator": 1},
+        )
 
     def test_active_measurement_status_must_match_result_coverage(self):
         self.make_active_fixture("incomplete")

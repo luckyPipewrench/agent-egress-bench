@@ -74,6 +74,27 @@ def active_candidate():
     return value
 
 
+def v5_candidate():
+    value = active_candidate()
+    value["schema_version"] = 5
+    value["scoring_version"] = "2.8"
+    value["runner_version"] = "0.4.3"
+    for scope in ("full", "applicable"):
+        value["scores"][scope].pop("detection", None)
+        value["scores"][scope].pop("evidence", None)
+    value["diagnostics"] = {
+        "full": {
+            "classification_present_rate": 1.0,
+            "structured_evidence_present_rate": 1.0,
+        },
+        "applicable": {
+            "classification_present_rate": 1.0,
+            "structured_evidence_present_rate": 1.0,
+        },
+    }
+    return value
+
+
 def baseline():
     return {
         "schema_version": 1,
@@ -95,6 +116,16 @@ def baseline():
         },
         "score_ceilings": {"applicable": {"false_positive_rate": 0.0}},
     }
+
+
+def v5_baseline():
+    value = baseline()
+    value["summary_schema_version"] = 5
+    value["scoring_version"] = "2.8"
+    value["runner_version"] = "0.4.3"
+    del value["score_floors"]["applicable"]["detection"]
+    del value["score_floors"]["applicable"]["evidence"]
+    return value
 
 
 class CandidateEvaluationTest(unittest.TestCase):
@@ -201,6 +232,17 @@ class CandidateEvaluationTest(unittest.TestCase):
             self.run_enforce(decision_path, candidate_path, baseline_path, evidence_path).returncode,
             0,
         )
+
+    def test_v5_candidate_cannot_silently_use_a_legacy_detection_baseline(self):
+        decision, *_ = self.run_evaluate(v5_candidate(), baseline())
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn("summary_schema_version=5", decision["failures"][-1])
+
+    def test_v5_candidate_uses_only_reviewed_outcome_metric_contract(self):
+        decision, *_ = self.run_evaluate(v5_candidate(), v5_baseline())
+
+        self.assertFalse(decision["blocked"], decision["failures"])
 
     def test_measured_candidate_below_historical_floor_reaches_publication_gate(self):
         value = active_candidate()

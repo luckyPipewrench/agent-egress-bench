@@ -9,6 +9,8 @@
     "schema_version": {"type": "integer", "const": 5},
     "capability_registry": {"$ref": "#/$defs/capability_registry"},
     "reported_claims": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "scores": {"$ref": "#/$defs/dual_outcome_scores"},
+    "diagnostics": {"$ref": "#/$defs/dual_presence_diagnostics"},
     "measurement_status": {"type": "string", "enum": ["measured", "incomplete"]}
   },
   "additionalProperties": true,
@@ -22,6 +24,47 @@
         "format": {"type": "integer", "minimum": 1},
         "revision": {"type": "integer", "minimum": 1},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "rate_or_null": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "outcome_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["containment", "false_positive_rate"],
+      "properties": {
+        "containment": {"$ref": "#/$defs/rate_or_null"},
+        "false_positive_rate": {"$ref": "#/$defs/rate_or_null"}
+      }
+    },
+    "presence_diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification_present_rate", "structured_evidence_present_rate"],
+      "properties": {
+        "classification_present_rate": {"$ref": "#/$defs/rate_or_null"},
+        "structured_evidence_present_rate": {"$ref": "#/$defs/rate_or_null"}
+      }
+    },
+    "dual_outcome_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["full", "applicable"],
+      "properties": {
+        "full": {"$ref": "#/$defs/outcome_scores"},
+        "applicable": {"$ref": "#/$defs/outcome_scores"}
+      }
+    },
+    "dual_presence_diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["full", "applicable"],
+      "properties": {
+        "full": {"$ref": "#/$defs/presence_diagnostics"},
+        "applicable": {"$ref": "#/$defs/presence_diagnostics"}
       }
     }
   }

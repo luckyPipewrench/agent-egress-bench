@@ -211,6 +211,13 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         return PromotionFixture(Path(temporary.name), candidate_value, baseline_value)
 
+    def test_v5_baseline_contract_change_requires_explicit_review(self):
+        self.assertTrue(
+            promotion.reviewable_policy_failure(
+                "v5 candidate requires a reviewed baseline with summary_schema_version=5"
+            )
+        )
+
     def test_clean_candidate_creates_append_only_record_pointer_and_baseline(self):
         fixture = self.fixture()
         original_candidate = fixture.candidate_path.read_bytes()

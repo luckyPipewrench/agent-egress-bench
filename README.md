@@ -102,22 +102,22 @@ The raw directory intentionally has no made-up public URL. GitHub Actions or ano
 
 The repository's scheduled Pipelock lane is read-only and produces review candidates, not automatic public claims. Approved candidates are retained as digest-addressed, hash-linked evidence directories, and a reviewed pull request advances the `latest-verified` pointer. The included reference renderer verifies and displays score, scope, N/A reasons, false-positive rate, and the canonical run URL together. It renders this repository's first-party Pipelock history and ranks nothing. See [Continuous Gauntlet Results](docs/CONTINUOUS-RESULTS.md) for the repository review and publication contract.
 
-For other tools, the runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, detection, evidence, per-category, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)).
+For other tools, the runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, non-scoring output-field diagnostics, and per-category results, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a byte-reproducible receipt-scoring profile (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)).
 
 > A minimal legacy shell example for fetch-only cases lives at [`examples/pipelock/harness.sh`](examples/pipelock/harness.sh). It covers a single transport (`/fetch?url=...` GET) and is kept for illustration only — it is not the Gauntlet and will misreport every body, header, WebSocket, MCP, and response-content case. Use the Go runner for any real benchmark.
 
 ## Gauntlet scoring
 
-The Gauntlet evaluates tools on four independent metrics beyond pass/fail:
+The Gauntlet evaluates tools on two independent outcome metrics beyond pass/fail:
 
 | Metric | What it measures |
 |--------|-----------------|
 | **Containment** | Percentage of attacks correctly blocked |
 | **False positive rate** | Percentage of benign traffic incorrectly blocked (lower is better) |
-| **Detection** | Whether the tool identified what it caught |
-| **Evidence** | Whether the tool emitted structured proof |
 
-The summary reports `measurement_status: measured` when every applicable case produced an observed outcome, or `measurement_status: incomplete` when any case errored, was unreachable, or carried synthetic calibration evidence. This status does not judge the metric values. There is no composite score or pass mark. Each metric is reported independently. The maintainer's own Pipelock run history is published at [pipelab.org/gauntlet](https://pipelab.org/gauntlet/) as disclosed first-party evidence. Every other tool publishes and owns its own results; see [Results Use and Attribution](docs/RESULTS-USE.md) for the facts that travel with a public result.
+The summary also carries non-scoring field-presence diagnostics. They do not validate detection accuracy or proof.
+
+The summary reports `measurement_status: measured` when every applicable case produced an observed outcome, or `measurement_status: incomplete` when any case errored, was unreachable, or carried synthetic calibration evidence. This status does not judge the score values. There is no composite score or pass mark. Each score is reported independently. The maintainer's own Pipelock run history is published at [pipelab.org/gauntlet](https://pipelab.org/gauntlet/) as disclosed first-party evidence. Every other tool publishes and owns its own results; see [Results Use and Attribution](docs/RESULTS-USE.md) for the facts that travel with a public result.
 
 Full methodology: [docs/gauntlet.md](docs/gauntlet.md)
 
@@ -220,7 +220,7 @@ Each publisher publishes and owns its own results. This repository publishes no 
 - [CONTROL-EVIDENCE-V1.md](docs/CONTROL-EVIDENCE-V1.md): active v4 registry-bound control-evidence contract
 - [CAPABILITY-VOCABULARY.md](docs/CAPABILITY-VOCABULARY.md): immutable reporting-label registry and profile evolution policy
 - [ARTIFACT-PROVENANCE.md](docs/ARTIFACT-PROVENANCE.md): opt-in external `schema-valid`, `authenticated-at(T)`, and `buyer-reproduced` provenance assessments
-- [gauntlet.md](docs/gauntlet.md): Gauntlet scoring methodology (containment, FP rate, detection, evidence)
+- [gauntlet.md](docs/gauntlet.md): Gauntlet scoring methodology (containment, false-positive rate, and non-scoring diagnostics)
 - [RUNNER.md](docs/RUNNER.md): runner output contract and verdict mapping
 - [GATEWAY-ADAPTER.md](docs/GATEWAY-ADAPTER.md): the narrow generic MCP gateway plugin contract and its current limits
 - [ADOPTION.md](docs/ADOPTION.md): guide for vendors adopting the benchmark
