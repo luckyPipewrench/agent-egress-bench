@@ -878,6 +878,7 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_scope["measurement_status"] = summary["measurement_status"]
     elif summary.get("schema_version") == 5:
         candidate_scope["measurement_status"] = summary["measurement_status"]
+        candidate_scope["benchmark_manifest_sha256"] = summary["benchmark_manifest_sha256"]
         candidate_scope["diagnostics"] = summary["diagnostics"]
         candidate_scope["diagnostic_counts"] = measured["diagnostic_counts"]
     else:

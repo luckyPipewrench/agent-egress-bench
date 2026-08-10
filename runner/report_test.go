@@ -154,6 +154,28 @@ func TestBuyerReportBlocksRestrictedClaimLanguageFromArtifacts(t *testing.T) {
 	}
 }
 
+func TestBuyerReportRequiresV5ManifestDigestInCandidateScope(t *testing.T) {
+	fixture := newReportFixture()
+	fixture.summary["schema_version"] = 5
+	fixture.summary["benchmark_manifest_sha256"] = strings.Repeat("c", 64)
+	fixture.summary["diagnostics"] = map[string]interface{}{
+		"full":       map[string]interface{}{},
+		"applicable": map[string]interface{}{},
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+
+	delete(fixture.bundle["candidate_scope"].(map[string]interface{}), "benchmark_manifest_sha256")
+	writeFixtureJSON(t, filepath.Join(dir, "run-bundle.json"), fixture.bundle)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := report.bundleValidation(); !strings.Contains(got, "candidate_scope.benchmark_manifest_sha256 does not match raw-summary.json") {
+		t.Fatalf("bundleValidation() = %q, want v5 manifest identity failure", got)
+	}
+}
+
 func TestBuyerReportRefusesUnboundV4Registry(t *testing.T) {
 	fixture := newReportFixture()
 	dir := t.TempDir()
@@ -499,6 +521,10 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 		"capability_registry": f.summary["capability_registry"],
 		"case_count":          f.summary["case_count"],
 		"scores":              f.summary["scores"],
+	}
+	if f.summary["schema_version"] == 5 {
+		f.bundle["candidate_scope"].(map[string]interface{})["benchmark_manifest_sha256"] = f.summary["benchmark_manifest_sha256"]
+		f.bundle["candidate_scope"].(map[string]interface{})["diagnostics"] = f.summary["diagnostics"]
 	}
 	f.decision["evidence_sha256"] = hashes
 	writeFixtureJSON(t, filepath.Join(dir, "run-bundle.json"), f.bundle)

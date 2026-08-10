@@ -235,6 +235,16 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         )
         self.assertFalse(decision["blocked"], decision["failures"])
 
+    def test_v5_baseline_retains_framed_manifest_identity(self):
+        value = candidate()
+        value["schema_version"] = 5
+        value["benchmark_manifest_sha256"] = "e" * 64
+
+        generated = promotion.proposed_baseline(value, "f" * 64)
+
+        self.assertEqual(generated["summary_schema_version"], 5)
+        self.assertEqual(generated["benchmark_manifest_sha256"], "e" * 64)
+
     def test_clean_candidate_creates_append_only_record_pointer_and_baseline(self):
         fixture = self.fixture()
         original_candidate = fixture.candidate_path.read_bytes()

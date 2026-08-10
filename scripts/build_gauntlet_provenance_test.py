@@ -316,6 +316,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
             (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
         )["candidate_scope"]
         self.assertEqual(scope["schema_version"], 5)
+        self.assertEqual(scope["benchmark_manifest_sha256"], "c" * 64)
         self.assertEqual(set(scope["scores"]["applicable"]), {"containment", "false_positive_rate"})
         self.assertEqual(
             scope["diagnostic_counts"]["applicable"]["classification_present_rate"],

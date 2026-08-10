@@ -52,10 +52,10 @@
     return value;
   }
 
-  function validateManifestDigest(value) {
-    nonEmptyString(value, 'corpus_manifest_sha256');
+  function validateManifestDigest(value, path) {
+    nonEmptyString(value, path);
     if (!/^[0-9a-f]{64}$/.test(value)) {
-      throw new Error('corpus_manifest_sha256 must be 64 lower-case hex characters');
+      throw new Error(path + ' must be 64 lower-case hex characters');
     }
     return value;
   }
@@ -113,7 +113,13 @@
     }
 
     nonEmptyString(scopeValue(artifact, ['artifact_id']), 'artifact_id');
-    validateManifestDigest(scopeValue(artifact, ['corpus_manifest_sha256']));
+    validateManifestDigest(scopeValue(artifact, ['corpus_manifest_sha256']), 'corpus_manifest_sha256');
+    if (artifact.schema_version === 5) {
+      validateManifestDigest(
+        scopeValue(artifact, ['benchmark_manifest_sha256']),
+        'benchmark_manifest_sha256'
+      );
+    }
     var logicalCaseCount = nonNegativeInteger(scopeValue(artifact, ['logical_case_count']), 'logical_case_count');
     if (logicalCaseCount === 0) throw new Error('logical_case_count must be greater than zero');
     nonEmptyString(scopeValue(artifact, ['runner_version']), 'runner_version');

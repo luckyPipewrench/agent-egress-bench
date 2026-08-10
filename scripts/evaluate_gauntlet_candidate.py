@@ -28,7 +28,14 @@ REQUIRED_IDENTITIES = (
     "scoring_version",
     "runner_version",
 )
-SCOPE_IDENTITIES = {"corpus_sha256", "corpus_version", "scoring_version", "runner_version"}
+V5_REQUIRED_IDENTITIES = REQUIRED_IDENTITIES + ("benchmark_manifest_sha256",)
+SCOPE_IDENTITIES = {
+    "benchmark_manifest_sha256",
+    "corpus_sha256",
+    "corpus_version",
+    "scoring_version",
+    "runner_version",
+}
 SHA256_HEX = set("0123456789abcdef")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
@@ -92,6 +99,16 @@ def require_capability_registry(candidate):
     if not isinstance(reference["sha256"], str) or len(reference["sha256"]) != 64 or any(character not in SHA256_HEX for character in reference["sha256"]):
         raise ValueError("candidate capability_registry.sha256 must be lower-case SHA-256")
     return reference
+
+
+def require_sha256(value, label):
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in SHA256_HEX for character in value)
+    ):
+        raise ValueError(f"{label} must be 64 lower-case hex characters")
+    return value
 
 
 def metric_contract_for(schema_version):
@@ -182,6 +199,10 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         if candidate_schema_version in {4, 5}:
             require_capability_registry(candidate)
         if candidate_schema_version == 5:
+            require_sha256(
+                candidate.get("benchmark_manifest_sha256"),
+                "candidate benchmark_manifest_sha256",
+            )
             validate_v5_candidate_metric_contract(candidate)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
@@ -421,7 +442,10 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 "case_count.not_applicable_reasons changed from the reviewed baseline"
             )
 
-        for identity_key in REQUIRED_IDENTITIES:
+        identity_keys = (
+            V5_REQUIRED_IDENTITIES if candidate_schema_version == 5 else REQUIRED_IDENTITIES
+        )
+        for identity_key in identity_keys:
             previous = baseline.get(identity_key)
             if not isinstance(previous, str) or not previous:
                 raise ValueError(f"baseline {identity_key} must be a non-empty string")
