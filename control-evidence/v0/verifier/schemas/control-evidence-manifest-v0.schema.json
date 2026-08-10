@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-manifest-v0.schema.json",
+  "title": "Control Evidence v0 package manifest",
+  "type": "object", "additionalProperties": false,
+  "required": ["profile", "entries", "total_uncompressed_bytes"],
+  "properties": {
+    "profile": {"const": "control-evidence-manifest/v0"},
+    "entries": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 256,
+      "allOf": [
+        {"contains": {"type": "object", "required": ["role"], "properties": {"role": {"const": "requirement"}}}},
+        {"contains": {"type": "object", "required": ["role"], "properties": {"role": {"const": "summary"}}}},
+        {"contains": {"type": "object", "required": ["role"], "properties": {"role": {"const": "outcomes"}}}}
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "path", "sha256", "media_type", "byte_length"],
+        "properties": {
+          "role": {"enum": ["requirement", "summary", "outcomes", "tool-profile", "clock-evidence", "observer-evidence", "token-material", "health-control-material", "trust-policy-copy", "runner-provenance", "policy", "adapter", "attachment"]},
+          "path": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$", "maxLength": 240},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "media_type": {"type": "string", "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$", "maxLength": 127},
+          "byte_length": {"type": "integer", "minimum": 1, "maximum": 67108864}
+        }
+      }
+    },
+    "total_uncompressed_bytes": {"type": "integer", "minimum": 5, "maximum": 268435456}
+  },
+  "description": "The manifest covers every package artifact except manifest.json and envelope.dsse.json. The envelope binds the manifest digest, avoiding a circular manifest/envelope hash. The verifier enforces normalized ASCII paths, uniqueness, mandatory role-to-path mapping, member/archive safety, byte lengths, digest equality, and total/archive limits."
+}

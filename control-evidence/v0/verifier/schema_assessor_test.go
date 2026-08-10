@@ -30,6 +30,20 @@ func TestAssessSchemaGoldenPackage(t *testing.T) {
 	}
 }
 
+func TestV0VerifierRejectsActiveV4ToolProfile(t *testing.T) {
+	schemas, err := loadSchemas()
+	if err != nil {
+		t.Fatalf("load schemas: %v", err)
+	}
+	profile, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", "pipelock", "tool-profile.json"))
+	if err != nil {
+		t.Fatalf("read v4 tool profile: %v", err)
+	}
+	if validToolProfileSchema(profile, schemas) {
+		t.Fatal("frozen v0 verifier accepted an active v4 tool profile")
+	}
+}
+
 func TestAssessSchemaAcceptsAllGoldenAndEdgePackages(t *testing.T) {
 	for _, class := range []string{"golden", "edge"} {
 		packages, err := filepath.Glob(filepath.Join("..", "conformance", class, "*"))
@@ -349,7 +363,7 @@ func TestAssessmentSchemaRejectsIncompletePassClaims(t *testing.T) {
 
 func assessmentSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "schemas", "control-evidence-assessment.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "schemas", "control-evidence-assessment-v1.schema.json")
 	schemaBytes := mustRead(t, schemaPath)
 	compiler := jsonschema.NewCompiler()
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))

@@ -414,7 +414,7 @@ func TestPackageAdmissionLimitsFailClosed(t *testing.T) {
 }
 
 func TestAssessmentResultsValidateAgainstPublicSchema(t *testing.T) {
-	schemaPath := filepath.Join("..", "..", "..", "schemas", "control-evidence-assessment.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "schemas", "control-evidence-assessment-v1.schema.json")
 	schemaRaw, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Fatal(err)

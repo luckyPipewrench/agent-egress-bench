@@ -520,7 +520,7 @@ func TestBuyerReproductionStatementLimitCoversPublishedPayloadMaximum(t *testing
 			} `json:"payload"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal(mustRead(t, filepath.Join("..", "..", "..", "schemas", "control-evidence-buyer-reproduction-statement.schema.json")), &published); err != nil {
+	if err := json.Unmarshal(mustRead(t, filepath.Join("..", "..", "..", "schemas", "control-evidence-buyer-reproduction-statement-v0.schema.json")), &published); err != nil {
 		t.Fatal(err)
 	}
 	if published.Properties.Payload.MaxLength < 1 {
@@ -533,9 +533,9 @@ func TestBuyerReproductionStatementLimitCoversPublishedPayloadMaximum(t *testing
 
 func TestBuyerReproductionEmbeddedSchemasMatchCanonical(t *testing.T) {
 	for _, name := range []string{
-		"control-evidence-buyer-reproduction.schema.json",
-		"control-evidence-buyer-reproduction-statement.schema.json",
-		"control-evidence-buyer-reproduction-transcript.schema.json",
+		"control-evidence-buyer-reproduction-v0.schema.json",
+		"control-evidence-buyer-reproduction-statement-v0.schema.json",
+		"control-evidence-buyer-reproduction-transcript-v0.schema.json",
 	} {
 		embedded, err := embeddedSchemas.ReadFile(filepath.Join("schemas", name))
 		if err != nil {

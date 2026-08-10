@@ -455,8 +455,6 @@ def measurements(repo_root, run_dir):
         raise ValueError(f"recorded runner command is not valid shell syntax: {exc}") from exc
     if "--fixtures" not in command_argv:
         raise ValueError("recorded runner command does not include --fixtures")
-    if "--multifile-cases" not in command_argv:
-        raise ValueError("recorded runner command does not include --multifile-cases")
     if not re.search(r"(?m)^Fixtures: HTTP=.* TLS=.* WS=.* DNS=.* MCP_HTTP=", stderr):
         raise ValueError("runner stderr does not prove fixture startup")
 

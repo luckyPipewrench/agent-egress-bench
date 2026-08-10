@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,6 +96,41 @@ func TestLoadCorpusIncludesMultiFileCases(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("loader-backed corpus omitted expected multi-file drift case; IDs: %s", strings.Join(caseIDs(cases), ", "))
+	}
+}
+
+func TestRegisteredMultiFileCaseDirsRejectsFileAtFamilyPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "mcp-drift"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write multi-file family path: %v", err)
+	}
+	_, err := registeredMultiFileCaseDirs(root)
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("registeredMultiFileCaseDirs error = %v, want non-directory rejection", err)
+	}
+}
+
+func TestEnsureExactRunCorpusRejectsMissingMultiFileCase(t *testing.T) {
+	canonical, err := loadCorpus("../cases")
+	if err != nil {
+		t.Fatalf("loadCorpus: %v", err)
+	}
+	if err := ensureExactRunCorpus(canonical, canonical); err != nil {
+		t.Fatalf("exact corpus rejected: %v", err)
+	}
+
+	partial := make([]Case, 0, len(canonical)-1)
+	for _, c := range canonical {
+		if c.ID != "mcp-drift-rugpull-desc-002" {
+			partial = append(partial, c)
+		}
+	}
+	err = ensureExactRunCorpus(partial, canonical)
+	if err == nil {
+		t.Fatal("partial corpus passed the exact run-corpus gate")
+	}
+	if !strings.Contains(err.Error(), "loader-backed corpus") || !strings.Contains(err.Error(), "mcp-drift-rugpull-desc-002") {
+		t.Fatalf("partial corpus error = %v, want missing multi-file ID", err)
 	}
 }
 

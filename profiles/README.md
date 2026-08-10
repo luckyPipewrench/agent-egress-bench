@@ -37,7 +37,7 @@ runner or adapter; the schema is tool-neutral.
 
 ## What a profile does not prove
 
-- **It is not a ranking.** Per [`docs/SCORING.md`](../docs/SCORING.md):
+- **It is not a ranking.** Per [`docs/RECEIPT-SCORING.md`](../docs/RECEIPT-SCORING.md):
   "Each tool can publish its own results. Cross-tool comparison tables
   are not part of this repo." Aggregate scores across profiles are out
   of scope for this directory.
@@ -56,7 +56,7 @@ runner or adapter; the schema is tool-neutral.
    Pipelock; tools that speak the same HTTP-proxy + scan-API surface can
    reuse it. Other tools provide their own runner.
 2. Run your tool against the corpus and emit a profile that conforms to
-   [`../schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).
+   [`../schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
 3. Add `profiles/<tool>.json` and (optionally) a sibling `notes.md`
    describing how to reproduce the profile from scratch.
 4. Open a pull request.
@@ -64,7 +64,7 @@ runner or adapter; the schema is tool-neutral.
 The PR is reviewed for:
 
 - Profile JSON validates against
-  [`receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).
+  [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
 - Per-case results reference real case IDs in [`../cases/`](../cases/).
 - The `verifier` block, license, and exit-code contract are accurate.
 - The `corpus_version` matches a published corpus tag and the
@@ -75,16 +75,17 @@ nothing to pass. The profile is the published evidence.
 
 ## Coverage scope
 
-The reference runner exercises the 193 single-file cases under
-[`../cases/`](../cases/) plus the 4 multi-file cases in
-[`../cases/mcp-drift/`](../cases/mcp-drift/) (12 JSON fixture files
-total: `before.json`, `after.json`, `expected.json` per case). Multi-file
-cases run via the runner's `--multifile-cases` flag, which loads each case
-directory, converts the before/after snapshot pair into a four-message
-JSON-RPC sequence (two `tools/list` requests interleaved with the two
-snapshots), and replays the sequence through a single MCP session against
-the running tool. The verdict on the second response is what the per-case
-row records.
+The reference runner discovers the 222 single-file cases under
+[`../cases/`](../cases/) plus the 6 multi-file cases in
+[`../cases/mcp-drift/`](../cases/mcp-drift/) (18 JSON fixture files total:
+`before.json`, `after.json`, and `expected.json` per case). The optional
+`--multifile-cases` flag only relocates that complete family. The runner
+refuses an override whose IDs differ from the loader-backed corpus. It loads
+each case directory, converts the before/after snapshot pair into a
+four-message JSON-RPC sequence (two `tools/list` requests interleaved with
+the two snapshots), and replays the sequence through a single MCP session
+against the running tool. The verdict on the second response is what the
+per-case row records.
 
 ## Files in this directory
 
@@ -98,7 +99,7 @@ row records.
   benign, false-positive benign) plus a placeholder verifier block. Uses
   `tool: "example-tool"` and SHA fields filled with zeros so it cannot
   be mistaken for a real profile.
-- [`../schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json):
+- [`../schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json):
   the JSON Schema both profile files validate against.
 
 ## Reproducing a published profile

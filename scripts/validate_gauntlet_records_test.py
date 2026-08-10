@@ -124,7 +124,7 @@ class ValidRecordFixture:
             "Fixtures: HTTP=x TLS=x WS=x DNS=x MCP_HTTP=x\n", encoding="utf-8"
         )
         (self.artifact_dir / "command.txt").write_text(
-            "aeb-gauntlet --fixtures --multifile-cases cases/mcp-drift\n", encoding="utf-8"
+            "aeb-gauntlet --fixtures\n", encoding="utf-8"
         )
         (self.artifact_dir / "make-stats.txt").write_text(
             "block: 2\nallow: 1\nwarn: 0\n", encoding="utf-8"

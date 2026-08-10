@@ -1,4 +1,4 @@
-.PHONY: preflight check-claim-language check-readme-categories check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-claim-language check-readme-categories check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -7,12 +7,45 @@ export TMPDIR GOCACHE
 # Default fixture for local validator/renderer contract tests. A workflow that
 # generates a real artifact must override this with that exact output path.
 GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.json
+AEB_IMMUTABILITY_BASE ?= origin/main
 
 # Pre-push gate. Race coverage remains here because the Go modules exercised
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
+# Keep the machine-readable compatibility inventory tied to the schemas,
+# source constants, and frozen public records it describes. The checker
+# rejects missing and empty inputs before it compares any values, so a failed
+# producer or an empty record tree cannot turn this into a false green.
+check-contracts:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
+
+# Case bytes are immutable once their ID reaches the merge base. New IDs and
+# their MANIFEST.txt / STATS.md updates remain allowed. A documented maintainer
+# repair may set AEB_CASE_IMMUTABILITY_REPAIR and
+# AEB_CASE_IMMUTABILITY_REASON; the gate prints OVERRIDE ACTIVE when it uses
+# that escape hatch so CI logs make the exceptional rewrite reviewable.
+check-case-immutability:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_case_immutability_test.py
+	@base="$$(git merge-base "$(AEB_IMMUTABILITY_BASE)" HEAD 2>/dev/null)"; \
+	if [ -z "$$base" ]; then \
+		echo "check-case-immutability: FAIL - cannot resolve a merge base with $(AEB_IMMUTABILITY_BASE); fetch that ref first" >&2; \
+		exit 1; \
+	fi; \
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_immutability.py --base "$$base"
+
+# Keep contract ownership links live and prevent deleted scoring documents from
+# becoming shadow authorities again. Missing and empty inputs fail the scan.
+check-docs:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_docs_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_docs.py
+
+# The G2 authentication verifier carries six CEE v0 schema copies. Missing,
+# empty, extra, symlinked, or byte-different copies fail before verifier tests.
+check-schema-copies:
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_schema_copies.py
 
 test-capability-registry:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"

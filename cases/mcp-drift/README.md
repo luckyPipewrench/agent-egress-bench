@@ -26,18 +26,17 @@ These cases are intentionally a different shape:
 └── notes.md       Attack narrative + detection logic explainer
 ```
 
-The existing `validate/` Go tool does not validate this layout — it walks
-single-JSON case files. The `case.yaml` schema below is the minimal
-specification for these multi-file cases. Vendors implementing rug-pull
-detection should be able to load a directory, replay `before.json`, replay
-`after.json`, and compare their emitted receipt against `expected.json`.
+The `validate/` Go tool checks the multi-file `schema_version` and `requires`
+vocabulary. The runner validates the full layout and replays `before.json`,
+then `after.json`, against one MCP session before comparing the emitted receipt
+with `expected.json`.
 
-## `case.yaml` schema (v0, inline)
+## `case.yaml` schema (v4, inline)
 
 ```yaml
-schema_version: 3
+schema_version: 4
 id: <unique, immutable>
-category: mcp_drift                # new category — not in case.schema.json yet
+category: mcp_drift                # multi-file category, not in the single-file case-v4 schema
 title: <human-readable>
 description: <what the case demonstrates>
 threat_model: <prose: what the attacker controls, what they want>

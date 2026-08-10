@@ -30,7 +30,7 @@ func buildProvenanceSummary(t *testing.T, dir, profilePath string, prov RunProve
 		nil,
 		nil,
 		dir,
-		"",
+		nil,
 		map[string]Case{"a": {ID: "a", Category: "url", ExpectedVerdict: "allow"}},
 		profilePath,
 		prov,

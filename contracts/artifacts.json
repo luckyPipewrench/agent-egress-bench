@@ -1,0 +1,431 @@
+{
+  "manifest_version": 1,
+  "artifact_families": [
+    {
+      "family": "case",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [
+        4
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/case-v4.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/case-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-v4.schema.json"
+        }
+      ],
+      "writer": [
+        "cases/",
+        "runner/case.go"
+      ],
+      "reader": [
+        "validate/main.go",
+        "runner/case.go"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/case.go",
+          "symbol": "activeSchemaVersion"
+        },
+        {
+          "path": "validate/main.go",
+          "symbol": "activeCaseSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "multi_file_case",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [
+        4
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": [
+        "cases/mcp-drift/"
+      ],
+      "reader": [
+        "validate/main.go",
+        "runner/multifile.go"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/case.go",
+          "symbol": "activeSchemaVersion"
+        },
+        {
+          "path": "validate/main.go",
+          "symbol": "activeCaseSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "result_row",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [
+        4
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/result-v4.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/result-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v4.schema.json"
+        }
+      ],
+      "writer": [
+        "runner/result_state.go",
+        "runner/score.go"
+      ],
+      "reader": [
+        "validate/main.go",
+        "scripts/build_gauntlet_provenance.py"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/case.go",
+          "symbol": "activeSchemaVersion"
+        },
+        {
+          "path": "validate/main.go",
+          "symbol": "activeCaseSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "tool_profile",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [
+        1,
+        3,
+        4
+      ],
+      "frozen_versions": [
+        1,
+        3
+      ],
+      "canonical_schema_path": "schemas/tool-profile-v4.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "frozen",
+          "path": "schemas/tool-profile-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v1.schema.json"
+        },
+        {
+          "version": 3,
+          "status": "frozen",
+          "path": "schemas/tool-profile-v3.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v3.schema.json"
+        },
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/tool-profile-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v4.schema.json"
+        }
+      ],
+      "writer": [
+        "examples/*/tool-profile.json"
+      ],
+      "reader": [
+        "validate/main.go",
+        "runner/case.go",
+        "control-evidence/v1/verifier"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/case.go",
+          "symbol": "activeSchemaVersion"
+        },
+        {
+          "path": "validate/main.go",
+          "symbol": "activeCaseSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "receipt_scoring_profile",
+      "active_writer_version": 4,
+      "accepted_reader_versions": [
+        1,
+        3,
+        4
+      ],
+      "frozen_versions": [
+        1,
+        3
+      ],
+      "canonical_schema_path": "schemas/receipt-scoring-profile-v4.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "frozen",
+          "path": "schemas/receipt-scoring-profile-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v1.schema.json"
+        },
+        {
+          "version": 3,
+          "status": "frozen",
+          "path": "schemas/receipt-scoring-profile-v3.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v3.schema.json"
+        },
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/receipt-scoring-profile-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json"
+        }
+      ],
+      "writer": [
+        "runner/receipt_profile.go"
+      ],
+      "reader": [
+        "runner/receipt_profile_validate.go",
+        "profiles/README.md"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/case.go",
+          "symbol": "activeSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "summary",
+      "active_writer_version": 5,
+      "accepted_reader_versions": [
+        4,
+        5
+      ],
+      "frozen_versions": [
+        4
+      ],
+      "canonical_schema_path": "schemas/summary-v5.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "frozen",
+          "path": "schemas/summary-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v4.schema.json"
+        },
+        {
+          "version": 5,
+          "status": "active",
+          "path": "schemas/summary-v5.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v5.schema.json"
+        }
+      ],
+      "writer": [
+        "runner/summary.go"
+      ],
+      "reader": [
+        "scripts/build_gauntlet_provenance.py",
+        "scripts/validate_gauntlet_scope.py"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/summary.go",
+          "symbol": "activeSummarySchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "provenance_candidate",
+      "active_writer_version": 5,
+      "accepted_reader_versions": [
+        1,
+        2,
+        4,
+        5
+      ],
+      "frozen_versions": [
+        1,
+        2
+      ],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": [
+        "scripts/build_gauntlet_provenance.py"
+      ],
+      "reader": [
+        "scripts/validate_gauntlet_scope.py",
+        "scripts/evaluate_gauntlet_candidate.py"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/summary.go",
+          "symbol": "activeSummarySchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "case_index",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [
+        1
+      ],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": [
+        "runner/corpus.go"
+      ],
+      "reader": [
+        "scripts/build_gauntlet_provenance.py"
+      ],
+      "source_versions": [],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "promoted_record",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [
+        1
+      ],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": [
+        "scripts/promote_gauntlet_candidate.py"
+      ],
+      "reader": [
+        "scripts/validate_gauntlet_records.py"
+      ],
+      "source_versions": [],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "promotion_baseline",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [
+        1
+      ],
+      "canonical_schema_path": null,
+      "schemas": [],
+      "writer": [
+        "scripts/promote_gauntlet_candidate.py"
+      ],
+      "reader": [
+        "scripts/evaluate_gauntlet_candidate.py",
+        "scripts/validate_gauntlet_records.py"
+      ],
+      "source_versions": [],
+      "gate": "make check-contracts"
+    }
+  ],
+  "retained_public_records": {
+    "paths": [
+      "ci/gauntlet-baseline.json",
+      "gauntlet-site"
+    ],
+    "frozen_readers": [
+      {
+        "version": 1,
+        "reader": [
+          "scripts/validate_gauntlet_records.py",
+          "scripts/validate_gauntlet_scope.py"
+        ]
+      },
+      {
+        "version": 2,
+        "reader": [
+          "scripts/validate_gauntlet_records.py",
+          "scripts/validate_gauntlet_scope.py"
+        ]
+      }
+    ]
+  },
+  "retained_schema_assets": [
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-clock-evidence-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-clock-evidence-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-context-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-context-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-dsse-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-dsse-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-health-control-material-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-health-control-material-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-manifest-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-manifest-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-observer-evidence-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-observer-evidence-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-outcomes-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-outcomes-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-requirement-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-requirement-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-run-envelope-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-run-envelope-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-token-material-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-token-material-v0.schema.json",
+      "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+      "rationale": "Load-bearing external signed trust-policy envelope contract. authentication.verifyPolicy requires JCS canonical form, the exact DSSE payloadType, exactly one signature, and a valid Ed25519 PAE signature before it trusts the policy."
+    }
+  ]
+}

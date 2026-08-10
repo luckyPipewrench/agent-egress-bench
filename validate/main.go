@@ -304,6 +304,9 @@ func runProfile(path string) int {
 }
 
 func registryRootForArtifact(path string) (string, error) {
+	if root := os.Getenv("AEB_CAPABILITY_REGISTRY"); root != "" {
+		return root, nil
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
@@ -428,6 +431,16 @@ func validateFile(path string, ids map[string]string) []string {
 	if err := dec.Decode(&c); err != nil {
 		addErr(fmt.Sprintf("JSON parse error: %v", err))
 		return errors
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		addErr(fmt.Sprintf("JSON field inventory error: %v", err))
+		return errors
+	}
+	for _, field := range []string{"schema_version", "id", "category", "title", "description", "input_type", "transport", "payload", "expected_verdict", "severity", "capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source"} {
+		if _, present := fields[field]; !present {
+			addErr(fmt.Sprintf("missing required field %q", field))
+		}
 	}
 	if c.SchemaVersion != activeCaseSchemaVersion {
 		addErr(fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, c.SchemaVersion))
@@ -889,7 +902,7 @@ func requiresTokenProblem(token string) string {
 	switch {
 	// Attack-difficulty and evasion-technique flags describe how hard an input
 	// is on a surface the tool already inspects. Gating on one lets a tool dodge
-	// the hard variant by declining the claim. See docs/SCORING.md.
+	// the hard variant by declining the claim. See docs/gauntlet.md.
 	case token == "encoding_evasion_scanning", token == "ssrf_bypass_scanning":
 		return fmt.Sprintf("%q is an attack-difficulty flag and cannot appear in requires; move it to capability_tags", token)
 	// Enforcement claims name the feature the case exists to test. Gating on one

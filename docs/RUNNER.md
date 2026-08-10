@@ -2,7 +2,7 @@
 
 A runner connects a specific tool to the benchmark corpus. This document defines the contract every runner must satisfy.
 
-**JSON Schemas:** [`schemas/result.schema.json`](../schemas/result.schema.json) (result lines), [`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json) (tool profiles)
+**JSON Schemas:** [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json) (result lines), [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) (tool profiles)
 
 **Starter template:** [`examples/runner-template/`](../examples/runner-template/)
 
@@ -265,14 +265,14 @@ The renderer reads these artifacts when present:
 
 | Artifact | Report content |
 |---|---|
-| `raw-summary.json` | Method versions, target product and version, profile digest, exact registry reference, reporting labels, scope counts, and the four metric vectors |
+| `raw-summary.json` | Method versions, target product and version, profile digest, exact registry reference, reporting labels, scope counts, two outcome metrics, and two diagnostic rates |
 | `results.jsonl` | Every historical not-applicable or unreachable case ID and its recorded reason |
 | `run-metadata.json` | Repository and exact method commit |
 | `run-bundle.json` | Bundle status, publication eligibility, retained material digests, and candidate bindings |
 | `execution-decision.json` | Execution status, failures, review notes, and publication eligibility |
 | `entrypoint-command.txt` and `command.txt` | The retained reproduction commands |
 
-The report checks every digest declared by the run bundle, checks the candidate bindings against the summary and run metadata, and checks the execution decision against the bundle. It reports these checks separately from the four metrics.
+The report checks every digest declared by the run bundle, checks the candidate bindings against the summary and run metadata, and checks the execution decision against the bundle. It reports these checks separately from the outcome metrics and non-scoring diagnostics.
 
 Missing facts render as `Absent from run artifacts`. Wrong types and contradictory bindings render as invalid. A malformed JSON or JSONL input leaves the rest of the report readable and marks the affected section. A partial, blocked, errored, or publication-ineligible run still produces a report with that state visible.
 
@@ -313,13 +313,13 @@ The expected record-manifest digest must come from an authenticated immutable so
 
 ## Receipt-Scoring Profile (optional)
 
-The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Output validates against [`schemas/receipt-scoring-profile.schema.json`](../schemas/receipt-scoring-profile.schema.json).
+The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Output validates against [`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
 
 Flags:
 
 - `--emit-receipt-profile <path>`: write the profile JSON to `<path>`. Default off.
 - `--receipt-verifier-file <path>`: optional JSON file describing the tool's receipt verifier (shape: the `verifier` object in the receipt-scoring schema). Omitted means "no verifier shipped" and the runner emits a degraded honest verifier block.
-- `--multifile-cases <dir>`: optional directory of multi-file MCP-drift cases. The reference profile uses `cases/mcp-drift`; omitting this flag runs only the single-file JSON corpus.
+- `--multifile-cases <dir>`: optional source-location override for the multi-file MCP-drift cases. By default the runner discovers registered multi-file families under `--cases`; an override must yield the same logical case IDs as that loader-backed corpus.
 
 Reproducibility:
 
@@ -342,7 +342,6 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
   --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
   --fixtures \
   --cases ./cases \
-  --multifile-cases ./cases/mcp-drift \
   --profile examples/pipelock/tool-profile.json \
   --output /tmp/gauntlet.json \
   --emit-receipt-profile /tmp/pipelock.json \

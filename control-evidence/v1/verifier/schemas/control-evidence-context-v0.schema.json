@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-context-v0.schema.json",
+  "title": "Control Evidence v1 independent conformance context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "reference_now", "requirement_payload_sha256", "trust_policy", "corpus", "trusted_keys", "token_material", "health_control_material", "nonce_ledger"],
+  "properties": {
+    "profile": {"const": "control-evidence-conformance-context/v1"},
+    "reference_now": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "requirement_payload_sha256": {"$ref": "#/$defs/sha256"},
+    "trust_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sha256", "manifest_sha256", "scoring_version"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "scoring_version": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "trusted_keys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["buyer", "vendor_runner", "observer", "customer_clock", "independent_witness_clock"],
+      "properties": {
+        "buyer": {"$ref": "#/$defs/ed25519Key"},
+        "vendor_runner": {"$ref": "#/$defs/ed25519Key"},
+        "observer": {"$ref": "#/$defs/ed25519Key"},
+        "customer_clock": {"$ref": "#/$defs/ed25519Key"},
+        "independent_witness_clock": {"$ref": "#/$defs/ed25519Key"}
+      }
+    },
+    "token_material": {"$ref": "#/$defs/material"},
+    "health_control_material": {"$ref": "#/$defs/material"},
+    "nonce_ledger": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirement_signer_key_id", "requirement_id", "challenge_nonce", "envelope_payload_sha256"],
+        "properties": {
+          "requirement_signer_key_id": {"$ref": "#/$defs/ed25519Key"},
+          "requirement_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+          "challenge_nonce": {"$ref": "#/$defs/sha256"},
+          "envelope_payload_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "ed25519Key": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "profile", "key_or_input_id"],
+      "properties": {
+        "mode": {"enum": ["buyer-derived", "packaged-encrypted"]},
+        "profile": {"type": "string", "minLength": 1, "maxLength": 128},
+        "key_or_input_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "root_input": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "aes_key_base64": {"type": "string", "pattern": "^[A-Za-z0-9+/]{43}=$"}
+      },
+      "oneOf": [
+        {
+          "properties": {"mode": {"const": "buyer-derived"}},
+          "required": ["root_input"],
+          "not": {"required": ["aes_key_base64"]}
+        },
+        {
+          "properties": {"mode": {"const": "packaged-encrypted"}},
+          "required": ["aes_key_base64"],
+          "not": {"required": ["root_input"]}
+        }
+      ]
+    }
+  }
+}

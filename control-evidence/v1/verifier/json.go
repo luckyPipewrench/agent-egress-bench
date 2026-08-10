@@ -52,21 +52,21 @@ func loadSchemas() (*schemaSet, error) {
 		return schema, nil
 	}
 	names := []string{
-		"control-evidence-dsse.schema.json",
-		"control-evidence-requirement.schema.json",
-		"control-evidence-run-envelope.schema.json",
-		"control-evidence-manifest.schema.json",
-		"control-evidence-outcomes.schema.json",
-		"control-evidence-clock-evidence.schema.json",
-		"control-evidence-observer-evidence.schema.json",
-		"control-evidence-token-material.schema.json",
-		"control-evidence-health-control-material.schema.json",
-		"control-evidence-context.schema.json",
+		"control-evidence-dsse-v0.schema.json",
+		"control-evidence-requirement-v0.schema.json",
+		"control-evidence-run-envelope-v0.schema.json",
+		"control-evidence-manifest-v0.schema.json",
+		"control-evidence-outcomes-v0.schema.json",
+		"control-evidence-clock-evidence-v0.schema.json",
+		"control-evidence-observer-evidence-v0.schema.json",
+		"control-evidence-token-material-v0.schema.json",
+		"control-evidence-health-control-material-v0.schema.json",
+		"control-evidence-context-v0.schema.json",
 		"tool-profile-v1.schema.json",
-		"tool-profile.schema.json",
-		"control-evidence-buyer-reproduction.schema.json",
-		"control-evidence-buyer-reproduction-statement.schema.json",
-		"control-evidence-buyer-reproduction-transcript.schema.json",
+		"tool-profile-v4.schema.json",
+		"control-evidence-buyer-reproduction-v0.schema.json",
+		"control-evidence-buyer-reproduction-statement-v0.schema.json",
+		"control-evidence-buyer-reproduction-transcript-v0.schema.json",
 	}
 	// Keyed by filename rather than by position. The previous form indexed a
 	// slice, so inserting a schema anywhere above shifted every index below it
@@ -82,25 +82,25 @@ func loadSchemas() (*schemaSet, error) {
 		compiled[name] = schema
 	}
 	return &schemaSet{
-		dsse:           compiled["control-evidence-dsse.schema.json"],
-		requirement:    compiled["control-evidence-requirement.schema.json"],
-		envelope:       compiled["control-evidence-run-envelope.schema.json"],
-		manifest:       compiled["control-evidence-manifest.schema.json"],
-		outcomes:       compiled["control-evidence-outcomes.schema.json"],
-		clock:          compiled["control-evidence-clock-evidence.schema.json"],
-		observer:       compiled["control-evidence-observer-evidence.schema.json"],
-		tokenMaterial:  compiled["control-evidence-token-material.schema.json"],
-		healthMaterial: compiled["control-evidence-health-control-material.schema.json"],
-		context:        compiled["control-evidence-context.schema.json"],
+		dsse:           compiled["control-evidence-dsse-v0.schema.json"],
+		requirement:    compiled["control-evidence-requirement-v0.schema.json"],
+		envelope:       compiled["control-evidence-run-envelope-v0.schema.json"],
+		manifest:       compiled["control-evidence-manifest-v0.schema.json"],
+		outcomes:       compiled["control-evidence-outcomes-v0.schema.json"],
+		clock:          compiled["control-evidence-clock-evidence-v0.schema.json"],
+		observer:       compiled["control-evidence-observer-evidence-v0.schema.json"],
+		tokenMaterial:  compiled["control-evidence-token-material-v0.schema.json"],
+		healthMaterial: compiled["control-evidence-health-control-material-v0.schema.json"],
+		context:        compiled["control-evidence-context-v0.schema.json"],
 		// Superseded profile versions stay compiled so historical evidence keeps
 		// validating against the contract it was recorded under.
 		toolProfiles: map[int]*jsonschema.Schema{
 			1: compiled["tool-profile-v1.schema.json"],
-			4: compiled["tool-profile.schema.json"],
+			4: compiled["tool-profile-v4.schema.json"],
 		},
-		buyerReproduction:           compiled["control-evidence-buyer-reproduction.schema.json"],
-		buyerReproductionStatement:  compiled["control-evidence-buyer-reproduction-statement.schema.json"],
-		buyerReproductionTranscript: compiled["control-evidence-buyer-reproduction-transcript.schema.json"],
+		buyerReproduction:           compiled["control-evidence-buyer-reproduction-v0.schema.json"],
+		buyerReproductionStatement:  compiled["control-evidence-buyer-reproduction-statement-v0.schema.json"],
+		buyerReproductionTranscript: compiled["control-evidence-buyer-reproduction-transcript-v0.schema.json"],
 	}, nil
 }
 

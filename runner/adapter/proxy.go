@@ -3056,7 +3056,7 @@ func classifyHTTPResponse(statusCode int, body string, upstreamReached bool) Res
 	// plain upstream failure (dial, TLS, timeout). Only a structured deny marker
 	// proves the tool actually made a decision. Scoring a bare "upstream error"
 	// as a block manufactures a false positive against the tool out of nothing
-	// but a broken fixture, and docs/SCORING.md requires an infrastructure
+	// but a broken fixture, and docs/gauntlet.md requires an infrastructure
 	// failure to score error rather than fail.
 	if statusCode == http.StatusBadGateway {
 		if hasDenyMarker(body) {
@@ -3073,7 +3073,7 @@ func classifyHTTPResponse(statusCode int, body string, upstreamReached bool) Res
 	// payload was never scanned, so there is no verdict to report. Scoring it
 	// "allow" passes a benign case that would pass with every scanner switched
 	// off, and hands a malicious case a miss the tool never had a chance at.
-	// README and docs/methodology.md both require an adapter that cannot execute
+	// README and docs/gauntlet.md both require an adapter that cannot execute
 	// a declared-applicable case to score error, which makes the gap visible
 	// instead of silently inflating the result.
 	if statusCode == http.StatusMethodNotAllowed {

@@ -121,15 +121,18 @@ type CaseCount struct {
 	Errors               int            `json:"errors"`
 }
 
-// computeCorpusSHA256 hashes case-file contents across both the single-file
-// corpus rooted at casesDir and (optionally) the multi-file case directory
-// at multiFileDir. Files are sorted by absolute path before hashing so the
-// output is deterministic regardless of filesystem ordering. multiFileDir
-// may be empty: the single-file walker skips directories listed in
-// multiFileCaseCategories on its own, so the hash covers exactly the case
-// surface the runner loaded.
-func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
-	var paths []string
+// computeCorpusSHA256 hashes case-file contents across the single-file corpus
+// and the effective multi-file directories. Files are sorted by their logical
+// corpus-relative paths before hashing, so relocating a complete multi-file
+// override does not rewrite the corpus identity. The caller supplies the
+// effective directories so the digest covers exactly the case surface
+// execution loaded.
+func computeCorpusSHA256(casesDir string, multiFileDirs ...string) (string, error) {
+	type hashPath struct {
+		logical string
+		path    string
+	}
+	var paths []hashPath
 
 	err := filepath.Walk(casesDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -143,28 +146,48 @@ func computeCorpusSHA256(casesDir, multiFileDir string) (string, error) {
 		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
 			return nil
 		}
-		paths = append(paths, path)
+		relative, relErr := filepath.Rel(casesDir, path)
+		if relErr != nil {
+			return fmt.Errorf("finding logical case path for hash: %w", relErr)
+		}
+		paths = append(paths, hashPath{logical: "single/" + filepath.ToSlash(relative), path: path})
 		return nil
 	})
 	if err != nil {
 		return "", fmt.Errorf("walking cases for hash: %w", err)
 	}
 
-	if multiFileDir != "" {
+	for _, multiFileDir := range multiFileDirs {
 		mfPaths, mfErr := computeMultiFileSHA256Paths(multiFileDir)
 		if mfErr != nil {
 			return "", mfErr
 		}
-		paths = append(paths, mfPaths...)
+		for _, path := range mfPaths {
+			relative, relErr := filepath.Rel(multiFileDir, path)
+			if relErr != nil {
+				return "", fmt.Errorf("finding logical multi-file case path for hash: %w", relErr)
+			}
+			paths = append(paths, hashPath{logical: "multi/" + filepath.ToSlash(relative), path: path})
+		}
 	}
 
-	sort.Strings(paths)
+	// Stable, because the logical key is not guaranteed unique. Two multi-file
+	// directories can each hold a case subdirectory of the same name, and the key
+	// is deliberately relative to its own directory so relocating an override does
+	// not rewrite the corpus identity. Under an unstable sort, equal keys order
+	// arbitrarily and the digest stops being reproducible for the same bytes. The
+	// input order is fully determined -- a lexical walk, then directories in sorted
+	// category order, each already sorted -- so stability makes the result
+	// deterministic even where keys collide. Making the key itself unique per
+	// registered family is corpus-identity work and belongs with the framed
+	// manifest digest, not here.
+	sort.SliceStable(paths, func(i, j int) bool { return paths[i].logical < paths[j].logical })
 
 	h := sha256.New()
-	for _, p := range paths {
-		data, readErr := os.ReadFile(p)
+	for _, candidate := range paths {
+		data, readErr := os.ReadFile(candidate.path)
 		if readErr != nil {
-			return "", fmt.Errorf("reading %s for hash: %w", p, readErr)
+			return "", fmt.Errorf("reading %s for hash: %w", candidate.path, readErr)
 		}
 		_, _ = h.Write(data)
 	}
@@ -202,12 +225,13 @@ func buildSummary(
 	applicableResults []CaseResult,
 	unreachableIDs map[string]struct{},
 	naReasons map[NAKind]int,
-	casesDir, multiFileDir string,
+	casesDir string,
+	multiFileDirs []string,
 	casesByID map[string]Case,
 	profilePath string,
 	prov RunProvenance,
 ) (GauntletSummary, error) {
-	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDir)
+	corpusSHA, err := computeCorpusSHA256(casesDir, multiFileDirs...)
 	if err != nil {
 		return GauntletSummary{}, err
 	}

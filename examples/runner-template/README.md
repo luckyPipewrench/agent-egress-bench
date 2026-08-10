@@ -266,5 +266,5 @@ verdict proof as attacks. A profile declaration cannot remove them from scope.
 
 - [docs/RUNNER.md](../../docs/RUNNER.md): the formal runner contract
 - [docs/SPEC.md](../../docs/SPEC.md): case schema and field definitions
-- [docs/SCORING.md](../../docs/SCORING.md): scoring model
+- [docs/gauntlet.md](../../docs/gauntlet.md): result states and scoring method
 - [examples/pipelock/](../pipelock/): reference runner implementation

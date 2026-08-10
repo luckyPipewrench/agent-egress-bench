@@ -30,9 +30,9 @@ func main() {
 	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 	toolVersion := flag.String("tool-version", "", "override the tool_version field from the profile in result summaries (uses profile value when empty)")
-	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile.schema.json) to this path alongside the Gauntlet summary")
+	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile-v4.schema.json) to this path alongside the Gauntlet summary")
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
-	multiFileCases := flag.String("multifile-cases", "", "directory of multi-file MCP-drift cases (each subdirectory has case.yaml + before.json + after.json + expected.json). Driver replays before then after through a single MCP session and observes the verdict on the second tools/list response.")
+	multiFileCases := flag.String("multifile-cases", "", "override the auto-discovered multi-file case directory. The selected case IDs must equal the loader-backed corpus.")
 	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
 	caseIndex := flag.Bool("case-index", false, "print loader-normalized case IDs and expected verdicts as JSON (requires --cases; ignores runner profile flags)")
 	reportDir := flag.String("report", "", "render a buyer-readable Markdown report from an existing Gauntlet artifact directory")
@@ -134,30 +134,9 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		profile.ToolVersion = toolVersion
 	}
 
-	cases, err := loadCases(casesDir)
+	cases, effectiveMultiFileDirs, err := loadRunCorpus(casesDir, multiFileCases)
 	if err != nil {
 		return err
-	}
-
-	// Load multi-file MCP-drift cases (cases/mcp-drift/<id>/{case.yaml, before.json,
-	// after.json, expected.json}). Each MultiFileCase is converted to a regular Case
-	// whose payload carries the four-message JSON-RPC sequence the mcp_stdio adapter
-	// already understands, so downstream scoring and receipt-profile code does not
-	// need to branch on case format. Cases are appended after the sorted single-file
-	// corpus; the receipt profile sorts per_case by case_id at emission time so
-	// ordering between the two sources does not affect byte-reproducibility.
-	if multiFileCases != "" {
-		mfCases, mfErr := loadMultiFileCases(multiFileCases)
-		if mfErr != nil {
-			return mfErr
-		}
-		for _, mfc := range mfCases {
-			converted, convertErr := mfc.toCase()
-			if convertErr != nil {
-				return fmt.Errorf("convert multi-file case %s: %w", mfc.ID, convertErr)
-			}
-			cases = append(cases, converted)
-		}
 	}
 
 	// Fail before fixture startup, adapter invocation, JSONL emission, summary,
@@ -255,7 +234,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	}
 
 	// Build and write summary.
-	summary, err := buildSummary(profile, cases, applicableResults, unreachableIDs, naReasons, casesDir, multiFileCases, casesByID, profilePath, prov)
+	summary, err := buildSummary(profile, cases, applicableResults, unreachableIDs, naReasons, casesDir, effectiveMultiFileDirs, casesByID, profilePath, prov)
 	if err != nil {
 		return err
 	}

@@ -3,7 +3,7 @@
 **Version:** 1
 **Status:** Stable
 
-**JSON Schema:** [`schemas/case.schema.json`](../schemas/case.schema.json)
+**JSON Schema:** [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json)
 
 ## Overview
 
@@ -217,29 +217,16 @@ rewrite it to a trusted fixture hostname or add it to a trusted-destination list
 
 ## Result state
 
-`requires` and `capability_tags` describe the case; they do not select it. A
-case is scoreable only when an adapter proves exact delivery of its declared
-wire input and observes a request-correlated verdict. Profile claims and case
-tags are registry-backed reporting labels, not selection authority.
-
-No exact adapter route is `unreachable`. A routed case without delivery proof
-or verdict observation is `error`. Historical N/A records retain their frozen
-meaning and are not rewritten.
+[`gauntlet.md`](gauntlet.md) owns scoreability, result states, denominators, and historical N/A behavior. `requires` and `capability_tags` remain case metadata defined in this specification.
 
 ## Machine-Readable Schemas
 
 JSON Schema files for programmatic validation:
 
-- [`schemas/case.schema.json`](../schemas/case.schema.json): case file schema
-- [`schemas/tool-profile.schema.json`](../schemas/tool-profile.schema.json): tool profile schema
-- [`schemas/result.schema.json`](../schemas/result.schema.json): runner result line schema
+- [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json): case file schema
+- [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json): tool profile schema
+- [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json): runner result line schema
 
 ## Governance
 
-See [GOVERNANCE.md](GOVERNANCE.md) for full policy. Key rules:
-
-1. Case IDs are immutable forever.
-2. Existing case semantics do not change silently. Semantic changes require a new case.
-3. New cases must include rationale, expected verdict, source or explanation, and false-positive assessment.
-4. Corpus versions are additive where possible.
-5. Author conflict is disclosed: created by the Pipelock author. Contributions from any vendor are welcome. This repository publishes no ranking, leaderboard, or cross-tool comparison table. <!-- claim-ok: states the non-claim -->
+[`GOVERNANCE.md`](GOVERNANCE.md) owns case immutability, semantic stability, versioning, neutrality, and contribution policy.

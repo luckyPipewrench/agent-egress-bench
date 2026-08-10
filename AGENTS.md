@@ -1,206 +1,72 @@
-# AGENTS.md: agent-egress-bench Development Guide
+# AGENTS.md: agent-egress-bench repository guide
 
-agent-egress-bench is a tool-neutral attack corpus for evaluating AI agent egress security tools. It contains JSON case files, multi-file MCP drift fixtures, a Go validator, a Gauntlet scoring runner, spec docs, and reference runners. This is NOT an application. The validator and runner are build tools, not the product. Run `make stats` before citing the current corpus count.
+agent-egress-bench is a public, tool-neutral corpus for testing AI agent egress security tools. Treat case IDs and merged case semantics as immutable. Never add real secrets or cross-tool rankings.
 
-## Hard Rules
+## Repository map
 
-- **Tool neutrality is sacred.** No case, doc, or design choice should favor any specific security tool. The pipelock runner in `examples/pipelock/` is a reference implementation, not a privileged position.
-- **Case IDs are immutable.** Once published, an ID never changes. Semantic changes = new case with new ID.
-- **No real secrets.** All credentials in cases must be obviously fake. Split at pattern boundaries if GitHub Push Protection blocks the push.
-- **No cross-tool comparisons.** This repo contains attack patterns, not tool rankings.
+| Path | Purpose |
+| --- | --- |
+| `cases/` | Single-file cases and multi-file MCP drift fixtures |
+| `validate/` | Stdlib-only Go validator |
+| `runner/` | Gauntlet runner, adapters, loaders, scoring, and reports |
+| `schemas/` | Public JSON Schema documents |
+| `contracts/artifacts.json` | Machine-readable artifact compatibility inventory |
+| `examples/` | Tool integration templates and reference runners |
+| `control-evidence/` | Control Evidence protocols, fixtures, and verifiers |
+| `gauntlet-site/` | Retained first-party result records and site data |
+| `docs/` | Public contracts, governance, and adoption guidance |
+| `scripts/` | CI, publication, and integrity checks |
 
-## Quick Reference
+## Contract owners
 
-| Item | Value |
-|------|-------|
-| Repo | `luckyPipewrench/agent-egress-bench` |
-| License | Apache 2.0 |
-| Go modules | `validate/` requires Go 1.24+; `runner/` requires Go 1.25+; the repository root has no `go.mod` |
-| Validator | stdlib-only Go, zero external deps |
-| Spec | `docs/SPEC.md` (source of truth for case format) |
-| Scoring | `docs/SCORING.md` (pass/fail) + `docs/gauntlet.md` (4-dimension scoring) |
-| Runner contract | `docs/RUNNER.md` |
-| Gauntlet runner | `runner/` (Go module with fixture and multi-file parser deps) |
-| OWASP mapping | `docs/OWASP-MAPPING.md` |
+| Contract | Owner |
+| --- | --- |
+| Case and multi-file fixture format | [`docs/SPEC.md`](docs/SPEC.md) |
+| Runner inputs and outputs | [`docs/RUNNER.md`](docs/RUNNER.md) |
+| Result states, scoring, and methodology | [`docs/gauntlet.md`](docs/gauntlet.md) |
+| Versioning, compatibility, neutrality, and immutability | [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) |
+| Receipt-scoring profiles | [`docs/RECEIPT-SCORING.md`](docs/RECEIPT-SCORING.md) |
+| Capability labels | [`docs/CAPABILITY-VOCABULARY.md`](docs/CAPABILITY-VOCABULARY.md) |
+| Public result claims | [`docs/RESULTS-USE.md`](docs/RESULTS-USE.md) |
 
-## Build, Test, Validate
+Do not copy field lists, enum values, version numbers, profile fields, or scoring rules into this file. Update the owner document and its executable gate.
+
+## Exact commands
+
+The repository root has no Go module. Set the shared caches before every Go command because `/tmp` is quota-constrained.
 
 ```bash
 export TMPDIR="$HOME/.cache/pipelock-tmp"
 export GOCACHE="$HOME/.cache/go-build"
 mkdir -p "$TMPDIR" "$GOCACHE"
 
-cd validate && go test -race -count=1 ./...                    # Validator tests
-cd validate && go build -o "$TMPDIR/aeb-validate" .           # Build validator
-"$TMPDIR/aeb-validate" ../cases                               # Validate all cases
-cd runner && go test -race -count=1 ./...                      # Runner tests
-cd runner && go build -o "$TMPDIR/aeb-gauntlet" .             # Build runner
-"$TMPDIR/aeb-gauntlet" --cases ../cases --profile ../examples/pipelock/tool-profile.json --output "$TMPDIR/summary.json"
+make check-contracts
+make stats
+make preflight
 ```
 
-Set those two variables for every Go command; `/tmp` is quota-constrained.
+For a narrow validator change:
 
-## Project Structure
-
-```text
-cases/
-  url/              URL-based exfiltration (DLP, entropy, encoding evasion, SSRF)
-  request-body/     Request body secret exfiltration
-  headers/          Header-based secret leaks
-  hostname-exfiltration/ Encoded secret data in DNS hostname labels
-  response-fetch/   Prompt injection in fetched response content
-  response-mitm/    Prompt injection via TLS-intercepted responses
-  mcp-input/        MCP tool call argument scanning (DLP, injection)
-  mcp-tool/         MCP tool description poisoning and rug-pull
-  mcp-chain/        Multi-step MCP tool call sequence detection
-  a2a-message/      A2A protocol message scanning (DLP, injection)
-  a2a-agent-card/   A2A Agent Card poisoning and drift
-  websocket-dlp/    WebSocket frame DLP, fragment evasion
-  ssrf-bypass/      SSRF via encoded IPs, cloud metadata
-  encoding-evasion/ Multi-layer encoding chains, homoglyphs
-  shell-obfuscation/ Obfuscated shell commands in tool args
-  crypto-financial/ Wallet addresses, seed phrases, credit cards
-  false-positive/   Benign traffic that must not be blocked
-validate/           Go validator (stdlib-only, zero deps)
-runner/             Canonical Gauntlet runner (Go, proxy + fixtures + MCP adapters). Writes per-case
-                    JSONL results to stdout and a Gauntlet summary JSON to --output
-examples/           Per-tool capability profiles, bench configs, and verifier metadata
-  pipelock/         Pipelock tool-profile.json + pipelock-benchmark.yaml + receipt-verifier.json (harness.sh is legacy fetch-only)
-docs/               Spec, scoring, Gauntlet methodology, runner contract, OWASP mapping
-scripts/            CI tooling (pr-review.py)
+```bash
+(cd validate && go test -race -count=1 ./...)
+(cd validate && go build -o "$TMPDIR/aeb-validate" .)
+"$TMPDIR/aeb-validate" cases cases
 ```
 
-## Case Format
+For a narrow runner change:
 
-The corpus holds two fixture shapes, and a logical case is one of either.
+```bash
+(cd runner && go test -race -count=1 ./...)
+(cd runner && go build -o "$TMPDIR/aeb-gauntlet" .)
+"$TMPDIR/aeb-gauntlet" --cases cases --profile examples/pipelock/tool-profile.json --output "$TMPDIR/summary.json"
+```
 
-**Single-file cases.** One JSON file whose filename (minus `.json`) matches the `id` field exactly, living in a category directory under `cases/`. This is the common shape and the rest of this section describes it.
+After adding or removing a logical case:
 
-**Multi-file cases.** One directory per case under `cases/mcp-drift/`, holding `case.yaml` plus the `before.json`, `after.json` and `expected.json` snapshots its `files` block names. The driver replays before and after through a single MCP session and observes the verdict on the second `tools/list` response. A directory under `cases/mcp-drift/` that has no `case.yaml` is a hard error, not a directory to skip, because a partially deleted case would otherwise vanish from the run and lower the denominator of a published score.
+```bash
+make cases-manifest
+make stats-update
+make preflight
+```
 
-`expected_verdict` is `block`, `allow`, or `warn`. The `warn` class is used by drift guardrail cases and exists only in the multi-file shape today.
-
-### Required Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `schema_version` | int | Must be `3` |
-| `id` | string | Unique, immutable identifier |
-| `category` | string | Attack surface category |
-| `title` | string | Short human-readable title |
-| `description` | string | What the case tests |
-| `input_type` | string | Input format being tested |
-| `transport` | string | Expected transport mechanism |
-| `payload` | object | Test payload (shape varies by input_type) |
-| `expected_verdict` | string | `block` or `allow` |
-| `severity` | string | `critical`, `high`, `medium`, or `low` |
-| `capability_tags` | array | What capabilities this exercises |
-| `requires` | array | Runtime prerequisites (can be empty `[]`) |
-| `false_positive_risk` | string | `low`, `medium`, or `high` |
-| `why_expected` | string | Machine-readable reason for expected verdict |
-
-### Conditional/Optional Fields
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `safe_example` | bool | **Required `true`** for benign cases (`expected_verdict: allow`) |
-| `notes` | string | Required. Human-readable context (use `""` if none) |
-| `source` | string | Required. Provenance: `"original"`, `"public: <url>"`, or `"synthetic: <desc>"`. Must be non-empty for Gauntlet categories. |
-
-### Category/Input Type/Transport Consistency
-
-The validator enforces these relationships:
-
-| Category | Allowed Input Types | Allowed Transports |
-|----------|--------------------|--------------------|
-| `url` | `url` | `fetch_proxy`, `http_proxy`, `websocket` |
-| `request_body` | `request_body` | `fetch_proxy`, `http_proxy`, `websocket` |
-| `headers` | `header` | `fetch_proxy`, `http_proxy`, `websocket` |
-| `hostname_exfiltration` | `url` | `fetch_proxy`, `http_proxy` |
-| `response_fetch` | `response_content` | `fetch_proxy`, `http_proxy`, `websocket` |
-| `response_mitm` | `response_content` | `http_proxy` only |
-| `mcp_input` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
-| `mcp_tool` | `mcp_tool_result`, `mcp_tool_definition` | `mcp_stdio`, `mcp_http` |
-| `mcp_chain` | `mcp_tool_sequence` | `mcp_stdio`, `mcp_http` |
-| `a2a_message` | `a2a_message` | `a2a` |
-| `a2a_agent_card` | `a2a_agent_card` | `a2a` |
-| `websocket_dlp` | `websocket_frame` | `websocket` |
-| `ssrf_bypass` | `url` | `fetch_proxy`, `http_proxy` |
-| `encoding_evasion` | `url`, `request_body`, `mcp_tool_call` | `fetch_proxy`, `mcp_stdio` |
-| `shell_obfuscation` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
-| `crypto_financial` | `url`, `request_body`, `header`, `mcp_tool_call` | `fetch_proxy`, `http_proxy`, `mcp_stdio` |
-| `false_positive` | any | any |
-
-### Payload Shape Per Input Type
-
-| Input Type | Required Payload Keys |
-|------------|----------------------|
-| `url` | `method` (string), `url` (string) |
-| `request_body` | `method`, `url`, `content_type`, `body` (all strings) |
-| `header` | `method`, `url` (strings), `headers` (object) |
-| `response_content` | `url`, `response_body` (strings) |
-| `mcp_tool_call/result/definition/sequence` | `jsonrpc_messages` (non-empty array) |
-| `a2a_message` | `jsonrpc_messages` (non-empty array, A2A methods) |
-| `a2a_agent_card` | `agent_card` (object with `name` and `skills`) |
-| `websocket_frame` | `url` (string), `frames` (non-empty array with `opcode` and `payload`) |
-
-## Enum Values
-
-**capability_tags:** `url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`, `hostname_exfil`
-
-**requires:** `tls_interception`, `url_dlp_scanning`, `request_body_dlp_scanning`, `header_dlp_scanning`, `response_prompt_injection_scanning`, `mcp_input_dlp_scanning`, `mcp_input_prompt_injection_scanning`, `mcp_tool_policy`, `mcp_tool_result_prompt_injection_scanning`, `mcp_tool_poison_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `a2a_dlp_scanning`, `a2a_prompt_injection_scanning`, `a2a_card_prompt_injection_scanning`, `a2a_card_drift_scanning`, `a2a_ssrf_scanning`, `websocket_dlp_scanning`, `websocket_prompt_injection_scanning`, `ssrf_scanning`, `ssrf_bypass_scanning`, `domain_blocklist`, `entropy_scanning`, `encoding_evasion_scanning`, `shell_analysis`, `crypto_dlp_scanning`, `hostname_exfil_scanning`, `dns_rebinding_fixture`
-
-**transports:** `fetch_proxy`, `http_proxy`, `mcp_stdio`, `mcp_http`, `websocket`, `a2a`
-
-## Common Development Tasks
-
-### Adding a case
-
-1. Pick category and directory (see table above)
-2. Name: `{category}-{subcategory}-{NNN}.json`, must match `id` field. For an MCP drift case, create a directory under `cases/mcp-drift/` named for the id, holding `case.yaml` plus the three snapshots it names
-3. Copy an existing case in the same directory as a template
-4. Benign cases (`expected_verdict: allow`) MUST have `"safe_example": true`
-5. Validate: `cd validate && go build -o "$TMPDIR/aeb-validate" . && "$TMPDIR/aeb-validate" ../cases`
-6. After adding or removing a logical case, run `make cases-manifest` and `make stats-update`. The first uses the runner loaders to regenerate the committed `cases/MANIFEST.txt`; `runner/corpus_manifest_test.go` compares that ID list with what the loaders execute in both directions. The second refreshes `cases/STATS.md` from the same loaded corpus. Review both generated files as part of the corpus change.
-
-### Adding a validator rule
-
-1. Update `validate/main.go` (add enum values, cross-field checks, payload validation)
-2. Add tests in `validate/main_test.go`
-3. Run: `cd validate && go test -race -count=1 ./...`
-4. Validate all existing cases still pass
-
-### Adding a runner
-
-Create `examples/{tool-name}/` with:
-- Runner script or binary
-- `tool-profile.json` (capability claims and supports flags)
-- `README.md` explaining usage
-
-Output must follow `docs/RUNNER.md` (JSONL, one object per case).
-
-## Fake Secrets
-
-Cases contain intentionally fake secrets. GitHub Push Protection flags patterns like `AKIA`, `ghp_`, `xoxb-`, `sk-live_`.
-
-- Use obviously synthetic values: the AWS documentation example key, `"AKIA" + "IOSFODNN7EXAMPLE"`
-- Split at the pattern boundary if a push or scan is blocked, as that example is written here. This guide is itself scanned, so writing the key whole would fail the repository's own secret scan
-- The `SG.FAKE_TEST_KEY` pattern works for SendGrid-style tokens
-- Never use real secrets, even expired ones
-
-## CI
-
-The `validate` workflow runs on every push/PR to `main`:
-1. Go tests for the validator (`go test -race -count=1 ./...`)
-2. Build validator binary
-3. Validate all cases against the corpus
-4. Check case count is > 0
-
-Branch protection requires passing CI. PRs required (no direct pushes to main).
-
-## Governance
-
-1. Case IDs are immutable forever. Never rename.
-2. Existing case semantics don't change. Semantic changes = new case.
-3. Corpus versions are additive.
-4. No cross-tool leaderboard in this repo.
+Use [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution steps. Run `make stats` before citing corpus counts. Run `make preflight` before proposing a public commit or pull request.

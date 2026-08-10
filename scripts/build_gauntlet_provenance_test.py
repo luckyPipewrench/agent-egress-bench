@@ -117,7 +117,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
             "Fixtures: HTTP=x TLS=x WS=x DNS=x MCP_HTTP=x\n", encoding="utf-8"
         )
         (self.run_dir / "command.txt").write_text(
-            "timeout 10s aeb-gauntlet --fixtures --multifile-cases cases/mcp-drift\n",
+            "timeout 10s aeb-gauntlet --fixtures\n",
             encoding="utf-8",
         )
         (self.run_dir / "make-stats.txt").write_text(
@@ -627,16 +627,15 @@ class ProvenanceBuilderTest(unittest.TestCase):
                     {"numerator": 0, "denominator": 1},
                 )
 
-    def test_fixture_and_multifile_flags_are_load_bearing(self):
+    def test_fixture_flag_is_load_bearing(self):
         original = (self.run_dir / "command.txt").read_text(encoding="utf-8")
-        for flag in ("--fixtures", "--multifile-cases"):
-            with self.subTest(flag=flag):
-                (self.run_dir / "command.txt").write_text(
-                    original.replace(flag, "--neutralized"), encoding="utf-8"
-                )
-                result = self.bundle()
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(flag, result.stderr)
+        flag = "--fixtures"
+        (self.run_dir / "command.txt").write_text(
+            original.replace(flag, "--neutralized"), encoding="utf-8"
+        )
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(flag, result.stderr)
         (self.run_dir / "command.txt").write_text(original, encoding="utf-8")
 
     def test_real_url_finalization_does_not_change_evidence_bytes(self):

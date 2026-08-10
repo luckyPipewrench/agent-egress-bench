@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-clock-evidence-v0.schema.json",
+  "title": "Control Evidence v1 completion clock evidence",
+  "type": "object", "additionalProperties": false,
+  "required": ["profile", "observation_kind", "requirement_sha256", "run_id", "observations_sha256", "started_at", "finished_at", "observed_at", "attestor"],
+  "properties": {
+    "profile": {"const": "control-evidence-clock-evidence/v1"}, "observation_kind": {"const": "run-completion-observed"},
+    "requirement_sha256": {"$ref": "#/$defs/sha256"}, "run_id": {"$ref": "#/$defs/id256"}, "observations_sha256": {"$ref": "#/$defs/sha256"},
+    "started_at": {"$ref": "#/$defs/time"}, "finished_at": {"$ref": "#/$defs/time"}, "observed_at": {"$ref": "#/$defs/time"},
+    "attestor": {"type": "object", "additionalProperties": false, "required": ["key_id", "authority_id", "role", "profile", "verifier_sha256", "policy_sha256"], "properties": {"key_id": {"$ref": "#/$defs/opaqueID"}, "authority_id": {"$ref": "#/$defs/opaqueID"}, "role": {"enum": ["customer-clock-attestor", "independent-witness-clock-attestor"]}, "profile": {"type": "string", "minLength": 1, "maxLength": 128}, "verifier_sha256": {"$ref": "#/$defs/sha256"}, "policy_sha256": {"$ref": "#/$defs/sha256"}}}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "id256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "time": {"type": "string", "format": "date-time", "pattern": "Z$", "minLength": 20, "maxLength": 35}, "opaqueID": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}},
+  "description": "This payload is signed by the attestor under its independently supplied trust policy. The verifier enforces signature, role/key/authority separation, requirement pinning, exact tuple binding, and permitted time skew."
+}
