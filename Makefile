@@ -7,6 +7,7 @@ export TMPDIR GOCACHE
 # Default fixture for local validator/renderer contract tests. A workflow that
 # generates a real artifact must override this with that exact output path.
 GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.json
+AEB_IMMUTABILITY_BASE ?= origin/main
 
 # Pre-push gate. Race coverage remains here because the Go modules exercised
 # below complete comfortably inside the edit-to-push budget and it catches real
@@ -27,7 +28,12 @@ check-contracts:
 # that escape hatch so CI logs make the exceptional rewrite reviewable.
 check-case-immutability:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_case_immutability_test.py
-	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_immutability.py --base "$$(git merge-base origin/main HEAD)"
+	@base="$$(git merge-base "$(AEB_IMMUTABILITY_BASE)" HEAD 2>/dev/null)"; \
+	if [ -z "$$base" ]; then \
+		echo "check-case-immutability: FAIL - cannot resolve a merge base with $(AEB_IMMUTABILITY_BASE); fetch that ref first" >&2; \
+		exit 1; \
+	fi; \
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_immutability.py --base "$$base"
 
 # Keep contract ownership links live and prevent deleted scoring documents from
 # becoming shadow authorities again. Missing and empty inputs fail the scan.
