@@ -51,11 +51,18 @@ jobs:
           go-version: '1.26'
           cache: false
 
-      - name: Build scanner from Pipelock main
+      # Pinned to an immutable commit rather than a branch. A moving `@main`
+      # would let any later commit on Pipelock change or disable this
+      # repository's secret gate with no reviewed change here. Advance this pin
+      # through a normal reviewed pull request when a scanner fix is needed.
+      # This commit contains pipelock#1145, the whole-file-deletion hunk fix.
+      - name: Build scanner from pinned Pipelock commit
         shell: bash
+        env:
+          PIPELOCK_REV: 96a57e78c0f577a6074c6b48917d618c1f88f1ab
         run: |
           set -euo pipefail
-          GOBIN="${RUNNER_TEMP}/bin" go install github.com/luckyPipewrench/pipelock/cmd/pipelock@main
+          GOBIN="${RUNNER_TEMP}/bin" go install "github.com/luckyPipewrench/pipelock/cmd/pipelock@${PIPELOCK_REV}"
           # Prepend so the plain `pipelock` command below resolves to this
           # build rather than the release the action installed earlier.
           echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
