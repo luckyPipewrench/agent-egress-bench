@@ -13,6 +13,16 @@ No case is written to favor or penalize a specific tool. Cases test observable b
 
 Once a case ID is merged to `main`, it never changes. No renaming. No reassignment. A case ID is a permanent identifier. If a case needs to be superseded, create a new case with a new ID.
 
+CI compares every file belonging to an existing case ID with the pull request merge base. It rejects changed, removed, or added files inside an existing MCP-drift case. New case IDs remain allowed, along with the generated manifest and stats changes that follow from adding them.
+
+Only a genuine repository repair may bypass this check. A maintainer must run the exact command below, with a visible reason that names the repair record:
+
+```bash
+AEB_CASE_IMMUTABILITY_REPAIR=I_UNDERSTAND_CASE_IMMUTABILITY_REPAIR AEB_CASE_IMMUTABILITY_REASON='repair: documented issue URL' make check-case-immutability
+```
+
+The gate prints `OVERRIDE ACTIVE` when it accepts a repair. CI must never set this override.
+
 ## Semantic stability
 
 Existing case semantics do not change silently. This includes the expected verdict, capability tags, payload content, and the meaning of a case. If the attack surface evolves in a way that changes what the correct verdict should be, create a new case. If a verdict was wrong from the start, open an issue and discuss before changing it. Unannounced semantic changes break reproducibility for every tool that has already run against the corpus.
@@ -60,7 +70,7 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Provenance candidate | 5 | 1, 2, 4, 5 | 1, 2 | Python reader, no JSON Schema |
 | Case index, promoted record, baseline | 1 | 1 | 1 | Go or Python reader, no JSON Schema |
 
-The current schema filenames are transitional. The summary family uses an unsuffixed frozen v4 file while the tool-profile family uses an unsuffixed active v4 file. The manifest records those paths so edits cannot land on the wrong generation without failing the gate. Schema renames and `$id` changes remain deferred until the owner decides whether unsuffixed public URLs become compatibility aliases.
+Every versioned schema has an explicit `-vN` filename and matching `$id`. The frozen v4 summary is `summary-v4.schema.json` and the active v5 summary is `summary-v5.schema.json`, so a path cannot silently retarget a historical contract. The repository provides no unsuffixed compatibility aliases.
 
 A proposed change to the active v5 summary, including the work tracked in pull request 153, may amend v5 only if every existing v5 artifact keeps the same accepted meaning, score, and verification result. Any change to those outcomes requires a new version. The owner must classify that change before publication; this policy does not decide the facts of that pull request.
 
