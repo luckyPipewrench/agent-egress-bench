@@ -79,13 +79,21 @@ def read_go_constant(root, source):
     path = root / relative
     if not path.is_file() or path.stat().st_size == 0:
         fail(f"governing source is missing or empty: {relative}")
-    match = re.search(
-        rf"\bconst\s+{re.escape(symbol)}\s*=\s*([0-9]+)\b",
-        path.read_text(encoding="utf-8"),
-    )
-    if match is None:
+    text = path.read_text(encoding="utf-8")
+    # Go declares a constant either on its own (`const name = 4`) or inside a
+    # grouped block. Matching only the first form made this gate reject a legal
+    # refactor into a group, which is the failure direction that gets a gate
+    # switched off rather than fixed.
+    single = rf"\bconst\s+{re.escape(symbol)}\s*=\s*([0-9]+)\b"
+    grouped = rf"(?m)^\s*{re.escape(symbol)}\s*=\s*([0-9]+)\s*(?://.*)?$"
+    matches = [m.group(1) for pattern in (single, grouped) for m in re.finditer(pattern, text)]
+    if not matches:
         fail(f"cannot find integer constant {symbol} in {relative}")
-    return int(match.group(1))
+    # A second, differing declaration means the governing value is ambiguous, so
+    # refuse rather than silently taking whichever one matched first.
+    if len(set(matches)) > 1:
+        fail(f"{symbol} in {relative} has conflicting values: {sorted(set(matches))}")
+    return int(matches[0])
 
 
 def versioned_schema_inventory(root):

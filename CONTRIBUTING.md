@@ -17,6 +17,17 @@ cd validate && go build -o aeb-validate . && ./aeb-validate ../cases
 
 Follow the immutability and supersession process in [docs/GOVERNANCE.md](docs/GOVERNANCE.md). If you disagree with an expected verdict, open an issue before changing corpus content.
 
+### Fake secrets, and getting your push blocked
+
+Cases carry intentionally fake credentials, so GitHub Push Protection will reject a push that looks like a real leak. It flags shapes such as `AKIA`, `ghp_`, `xoxb-`, and `sk-live_`.
+
+- Use obviously synthetic values. The AWS documentation example key is written here as `"AKIA" + "IOSFODNN7EXAMPLE"` because this file is scanned too, and writing that key whole would fail the repository's own secret scan.
+- Split a value at the pattern boundary when a push or a scan blocks it, exactly as the line above does.
+- `SG.FAKE_TEST_KEY` works for SendGrid-shaped tokens.
+- Never commit a real secret, including an expired one.
+
+A blocked push means the scanner matched a shape, not that you leaked anything. Reshape the fixture rather than bypassing the check.
+
 ## Adding a runner
 
 Start from the [runner template](examples/runner-template/) and follow [docs/ADOPTION.md](docs/ADOPTION.md). [docs/RUNNER.md](docs/RUNNER.md) owns the profile and output contracts.
