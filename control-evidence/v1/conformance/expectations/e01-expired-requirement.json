@@ -1,0 +1,10 @@
+{
+  "description": "An otherwise complete package fails when the buyer reference time is after requirement expiry.",
+  "runs": [
+    {
+      "expected_outcome": "stale",
+      "mode": "persistent",
+      "reason": "requirement_expired"
+    }
+  ]
+}

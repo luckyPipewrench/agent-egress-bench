@@ -1,0 +1,76 @@
+{
+  "entries": [
+    {
+      "byte_length": 49,
+      "media_type": "application/json",
+      "path": "adapter.json",
+      "role": "adapter",
+      "sha256": "ebb215dd7a1b2729d29ccb60000ad8e7932018c7bfe9cd7f6f021274735f44f5"
+    },
+    {
+      "byte_length": 2928,
+      "media_type": "application/json",
+      "path": "capability-registry.json",
+      "role": "capability-registry",
+      "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"
+    },
+    {
+      "byte_length": 1412,
+      "media_type": "application/json",
+      "path": "observer-following.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "eda625cd161437d10a0e2f7d2e0a37d5607143eb0aa5ef553a3d5f2b1a150640"
+    },
+    {
+      "byte_length": 1412,
+      "media_type": "application/json",
+      "path": "observer-preceding.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "8a6cf2ce8fa5f13070c1dedcb84da5b287cf60cd895fff00b9e57207e50e464a"
+    },
+    {
+      "byte_length": 1244,
+      "media_type": "application/json",
+      "path": "observer-target-1.dsse.json",
+      "role": "observer-evidence",
+      "sha256": "78ea1257f5171cf3e723253039afaeaebdb8306d89d77b1daa3b121c620d135b"
+    },
+    {
+      "byte_length": 2333,
+      "media_type": "application/json",
+      "path": "outcomes.json",
+      "role": "outcomes",
+      "sha256": "02cff08290bc2694d1baa38d1951ab37bc6be8a548e905f2daf5234f9d6d5b88"
+    },
+    {
+      "byte_length": 39,
+      "media_type": "application/json",
+      "path": "policy.json",
+      "role": "policy",
+      "sha256": "d1eec8625bb876a7ecc34a3bc2e910f1cb884fa20db35710615072198f3b364a"
+    },
+    {
+      "byte_length": 3862,
+      "media_type": "application/json",
+      "path": "requirement.dsse.json",
+      "role": "requirement",
+      "sha256": "1c90f577f76f77cd1c7cfe2576fc9bfc6387cd999bac9cfde79971fb31b0beec"
+    },
+    {
+      "byte_length": 865,
+      "media_type": "application/json",
+      "path": "summary.json",
+      "role": "summary",
+      "sha256": "f746d273c5af8b42a419383ad4dab64791675229f1d089eaec1740fb6f650575"
+    },
+    {
+      "byte_length": 329,
+      "media_type": "application/json",
+      "path": "tool-profile.json",
+      "role": "tool-profile",
+      "sha256": "0d247ae31c63f138408d6f36d30bd6e21f4adfe849f037c630bdc80c5819354a"
+    }
+  ],
+  "profile": "control-evidence-manifest/v1",
+  "total_uncompressed_bytes": 14473
+}

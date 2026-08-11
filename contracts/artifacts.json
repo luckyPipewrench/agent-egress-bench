@@ -381,6 +381,21 @@
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
     },
     {
+      "path": "schemas/control-evidence-buyer-reproduction-statement-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-statement-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 buyer-reproduction schema. The verifier schema-copy gate refuses deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-transcript-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-transcript-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 buyer-reproduction schema. The verifier schema-copy gate refuses deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 buyer-reproduction schema. The verifier schema-copy gate refuses deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
       "path": "schemas/control-evidence-clock-evidence-v0.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-clock-evidence-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
@@ -429,6 +444,56 @@
       "path": "schemas/control-evidence-token-material-v0.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-token-material-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit."
+    },
+    {
+      "path": "schemas/control-evidence-clock-evidence-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-clock-evidence-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-context-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-context-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-dsse-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-dsse-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-health-control-material-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-health-control-material-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-manifest-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-manifest-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-observer-evidence-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-observer-evidence-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-outcomes-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-outcomes-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-requirement-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-requirement-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-run-envelope-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-run-envelope-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
+    },
+    {
+      "path": "schemas/control-evidence-token-material-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-token-material-v1.schema.json",
+      "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy."
     },
     {
       "path": "schemas/control-evidence-trust-policy-dsse-v1.schema.json",

@@ -13,7 +13,6 @@ import (
 
 func main() {
 	packageDir := flag.String("package", "", "Control Evidence v1 package directory")
-	allowSidecars := flag.Bool("allow-conformance-sidecars", false, "ignore context.json and expect.json conformance sidecars")
 	flag.Parse()
 	if *packageDir == "" {
 		fmt.Fprintln(os.Stderr, "--package is required")
@@ -30,12 +29,11 @@ func main() {
 		os.Exit(2)
 	}
 	result := verifier.AssessSchema(verifier.SchemaOptions{
-		PackageDir:               *packageDir,
-		VerifierName:             "aeb-ce-schema-valid",
-		VerifierVersion:          "v1",
-		VerifierSHA256:           fmt.Sprintf("%x", sha256.Sum256(binary)),
-		AssessmentTime:           time.Now(),
-		AllowConformanceSidecars: *allowSidecars,
+		PackageDir:      *packageDir,
+		VerifierName:    "aeb-ce-schema-valid",
+		VerifierVersion: "v1",
+		VerifierSHA256:  fmt.Sprintf("%x", sha256.Sum256(binary)),
+		AssessmentTime:  time.Now(),
 	})
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 		os.Exit(2)

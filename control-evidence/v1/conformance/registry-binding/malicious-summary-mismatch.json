@@ -1,4 +1,0 @@
-{
-  "expect": "scope-mismatch",
-  "description": "A signed summary with a different registry revision is rejected before outcome rows are evaluated."
-}

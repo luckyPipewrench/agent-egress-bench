@@ -1,0 +1,10 @@
+{
+  "description": "An otherwise valid package is unverifiable without buyer-controlled durable replay state.",
+  "runs": [
+    {
+      "expected_outcome": "unverifiable",
+      "mode": "stateless",
+      "reason": "replay_ledger_required"
+    }
+  ]
+}

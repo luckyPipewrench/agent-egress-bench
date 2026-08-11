@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-v1.schema.json",
+  "title": "Control Evidence buyer reproduction statement payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "buyer_id", "signer", "source", "reproduction"],
+  "properties": {
+    "profile": {"const": "control-evidence-buyer-reproduction/v1"},
+    "buyer_id": {"$ref": "#/$defs/opaqueID"},
+    "signer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key_id", "role"],
+      "properties": {
+        "key_id": {"$ref": "#/$defs/hex32"},
+        "role": {"const": "buyer-reproducer"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envelope_payload_sha256", "requirement_payload_sha256", "tool_profile_sha256", "runner_binary_sha256", "corpus_sha256", "corpus_manifest_sha256", "scoring_version", "policy_sha256", "adapter_sha256", "original_run_id"],
+      "properties": {
+        "envelope_payload_sha256": {"$ref": "#/$defs/sha256"},
+        "requirement_payload_sha256": {"$ref": "#/$defs/sha256"},
+        "tool_profile_sha256": {"$ref": "#/$defs/sha256"},
+        "runner_binary_sha256": {"$ref": "#/$defs/sha256"},
+        "corpus_sha256": {"$ref": "#/$defs/sha256"},
+        "corpus_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "scoring_version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "adapter_sha256": {"$ref": "#/$defs/sha256"},
+        "original_run_id": {"$ref": "#/$defs/hex32"}
+      }
+    },
+    "reproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "transcript_sha256", "outcomes_projection_sha256"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/hex32"},
+        "transcript_sha256": {"$ref": "#/$defs/sha256"},
+        "outcomes_projection_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "hex32": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "opaqueID": {"type": "string", "minLength": 1, "maxLength": 256}
+  }
+}

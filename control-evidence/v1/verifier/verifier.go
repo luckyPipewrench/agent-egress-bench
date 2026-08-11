@@ -68,8 +68,11 @@ func VerifyWithOptions(packageDir string, options VerifyOptions) Result {
 		return *failure(outcomeInvalid, "verifier_schema_load_failed")
 	}
 	state := &verificationState{packageDir: packageDir, schemas: schemas}
-	contextBytes, err := readBounded(options.ContextPath, maxMemberSize)
+	contextBytes, err := readExternalBounded(packageDir, options.ContextPath, maxMemberSize)
 	if err != nil {
+		if errors.Is(err, errEvidenceNotExternal) {
+			return *failure(outcomeUnverifiable, "context_not_external")
+		}
 		return *failure(outcomeUnverifiable, "context_unavailable")
 	}
 	contextValue, err := strictJSON(contextBytes, &state.context)
@@ -155,7 +158,7 @@ func VerifyWithOptions(packageDir string, options VerifyOptions) Result {
 }
 
 func loadDirectoryPackage(root string) (map[string][]byte, error) {
-	return loadDirectoryPackageWithOptions(root, true)
+	return loadDirectoryPackageWithOptions(root, false)
 }
 
 func loadDirectoryPackageWithOptions(root string, allowConformanceSidecars bool) (map[string][]byte, error) {

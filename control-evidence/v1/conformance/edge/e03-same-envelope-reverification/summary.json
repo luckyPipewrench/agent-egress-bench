@@ -1,0 +1,36 @@
+{
+  "capability_registry": {
+    "format": 1,
+    "id": "aeb.core-capabilities",
+    "revision": 1,
+    "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"
+  },
+  "case_count": {
+    "applicable": 1,
+    "errors": 0,
+    "not_applicable": 0,
+    "not_applicable_reasons": {},
+    "total": 1
+  },
+  "corpus_sha256": "6b17b8fcc411a533c822a5117e33cf73fa6766739d7d36ac86dc4bea883af4fe",
+  "corpus_version": "v2.3.0",
+  "exercised": {
+    "capability_tags": [
+      "mcp_input_scan"
+    ]
+  },
+  "gauntlet_version": "1.0",
+  "per_category": {
+    "mcp_input": {
+      "applicable": 1
+    }
+  },
+  "reported_claims": [
+    "mcp_input_scan"
+  ],
+  "runner_version": "0.4.2",
+  "scoring_version": "2.4",
+  "tool": "example-tool",
+  "tool_profile_sha256": "0d247ae31c63f138408d6f36d30bd6e21f4adfe849f037c630bdc80c5819354a",
+  "tool_version": "v1"
+}
