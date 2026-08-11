@@ -121,15 +121,40 @@ class MalformedJsonTypeTest(unittest.TestCase):
             {"title": "typed"},
             {"description": "typed"},
             {"$defs": {"value": {"type": "string"}}},
+            {"minLength": 1},
+            {"pattern": "^[a-z]+$"},
+            {"anyOf": [{}]},
+            {"$ref": "#/$defs/missing"},
         ):
             with self.subTest(unconstrained=unconstrained):
                 with self.assertRaisesRegex(
-                    ValueError, "required fields have unconstrained property definitions: \\['typed'\\]"
+                    ValueError, "required field definitions accept null: \\['typed'\\]"
                 ):
                     check_contracts.require_top_level_required_properties(
                         {"required": ["typed"], "properties": {"typed": unconstrained}},
                         "fixture",
                     )
+
+    def test_accepts_required_property_definitions_that_reject_null(self):
+        fixtures = (
+            {"type": "string"},
+            {"enum": ["one", "two"]},
+            {"const": 1},
+            {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+            {"allOf": [{"minLength": 1}, {"type": "string"}]},
+            {"not": {"type": "null"}},
+            {"$ref": "#/$defs/value"},
+        )
+        for constrained in fixtures:
+            with self.subTest(constrained=constrained):
+                check_contracts.require_top_level_required_properties(
+                    {
+                        "$defs": {"value": {"type": "string"}},
+                        "required": ["typed"],
+                        "properties": {"typed": constrained},
+                    },
+                    "fixture",
+                )
 
     def test_check_applies_required_property_gate_to_every_active_schema(self):
         manifest = ROOT / "contracts" / "artifacts.json"

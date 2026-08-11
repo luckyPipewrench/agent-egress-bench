@@ -225,6 +225,71 @@ def declared_schema_version(document, label):
     return declared.get("const")
 
 
+def resolve_local_schema_ref(document, reference):
+    """Resolve one local JSON Pointer, returning None when it is unusable."""
+    if not isinstance(reference, str) or not reference.startswith("#/"):
+        return None
+    current = document
+    for raw_token in reference[2:].split("/"):
+        token = raw_token.replace("~1", "/").replace("~0", "~")
+        if not isinstance(current, dict) or token not in current:
+            return None
+        current = current[token]
+    return current
+
+
+def schema_accepts_null(schema, document, resolving=()):
+    """Return whether a JSON Schema permits null, conservatively on ambiguity."""
+    if schema is True:
+        return True
+    if schema is False:
+        return False
+    if not isinstance(schema, dict):
+        return True
+
+    accepts = True
+    if "$ref" in schema:
+        reference = schema["$ref"]
+        if reference in resolving:
+            return True
+        target = resolve_local_schema_ref(document, reference)
+        accepts = accepts and (
+            True
+            if target is None
+            else schema_accepts_null(target, document, resolving + (reference,))
+        )
+
+    if "type" in schema:
+        declared_type = schema["type"]
+        accepts = accepts and (
+            declared_type == "null"
+            or (isinstance(declared_type, list) and "null" in declared_type)
+        )
+    if "enum" in schema:
+        accepts = accepts and isinstance(schema["enum"], list) and None in schema["enum"]
+    if "const" in schema:
+        accepts = accepts and schema["const"] is None
+    if "allOf" in schema and isinstance(schema["allOf"], list):
+        accepts = accepts and all(
+            schema_accepts_null(branch, document, resolving) for branch in schema["allOf"]
+        )
+    if "anyOf" in schema and isinstance(schema["anyOf"], list):
+        accepts = accepts and any(
+            schema_accepts_null(branch, document, resolving) for branch in schema["anyOf"]
+        )
+    if "oneOf" in schema and isinstance(schema["oneOf"], list):
+        accepts = accepts and sum(
+            schema_accepts_null(branch, document, resolving) for branch in schema["oneOf"]
+        ) == 1
+    if "not" in schema:
+        accepts = accepts and not schema_accepts_null(schema["not"], document, resolving)
+    if "if" in schema:
+        branch = "then" if schema_accepts_null(schema["if"], document, resolving) else "else"
+        if branch in schema:
+            accepts = accepts and schema_accepts_null(schema[branch], document, resolving)
+    return accepts
+
+
 def require_top_level_required_properties(document, label):
     """Require every top-level required name to have an explicit schema.
 
@@ -246,29 +311,11 @@ def require_top_level_required_properties(document, label):
     missing = sorted(set(required) - set(properties))
     if missing:
         fail(f"{label}: required fields lack property definitions: {missing}")
-    validation_keywords = {
-        "$ref", "$dynamicRef", "type", "enum", "const",
-        "multipleOf", "maximum", "exclusiveMaximum", "minimum", "exclusiveMinimum",
-        "maxLength", "minLength", "pattern",
-        "maxItems", "minItems", "uniqueItems", "maxContains", "minContains",
-        "maxProperties", "minProperties", "required", "dependentRequired",
-        "allOf", "anyOf", "oneOf", "not", "if", "then", "else",
-        "properties", "patternProperties", "additionalProperties", "propertyNames",
-        "dependentSchemas", "unevaluatedProperties",
-        "prefixItems", "items", "contains", "unevaluatedItems",
-    }
-    unconstrained = sorted(
-        field
-        for field in required
-        if properties[field] is True
-        or properties[field] == {}
-        or (
-            isinstance(properties[field], dict)
-            and not validation_keywords.intersection(properties[field])
-        )
+    null_permissive = sorted(
+        field for field in required if schema_accepts_null(properties[field], document)
     )
-    if unconstrained:
-        fail(f"{label}: required fields have unconstrained property definitions: {unconstrained}")
+    if null_permissive:
+        fail(f"{label}: required field definitions accept null: {null_permissive}")
 
 
 def versioned_schema_inventory(root):
