@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const (
@@ -70,29 +71,114 @@ func main() {
 			verifyFiles(dir, files)
 			continue
 		}
-		replaceFiles(dir, files)
+		replaceFiles(root, dir, files)
 	}
 	if *verify {
 		verifyFiles(filepath.Join(root, "contexts"), contexts)
 		verifyFiles(filepath.Join(root, "expectations"), expectations)
 		return
 	}
-	replaceFiles(filepath.Join(root, "contexts"), contexts)
-	replaceFiles(filepath.Join(root, "expectations"), expectations)
+	replaceFiles(root, filepath.Join(root, "contexts"), contexts)
+	replaceFiles(root, filepath.Join(root, "expectations"), expectations)
 }
 
-func replaceFiles(dir string, files map[string][]byte) {
-	if err := os.RemoveAll(dir); err != nil {
+func replaceFiles(root, dir string, files map[string][]byte) {
+	root = mustAbs(root)
+	dir = mustAbs(dir)
+	if !generatedTarget(root, dir) {
+		panic(fmt.Sprintf("refusing to replace non-generated directory %s", dir))
+	}
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
 		panic(err)
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	parent, err := filepath.EvalSymlinks(filepath.Dir(dir))
+	if err != nil {
+		panic(err)
+	}
+	if !within(rootReal, parent) {
+		panic(fmt.Sprintf("generated directory parent escapes conformance root: %s", parent))
+	}
+	if info, err := os.Lstat(dir); err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			panic(fmt.Sprintf("generated target is not a real directory: %s", dir))
+		}
+	} else if !os.IsNotExist(err) {
+		panic(err)
+	}
+
+	staged, err := os.MkdirTemp(parent, "."+filepath.Base(dir)+".new-")
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = os.RemoveAll(staged) }()
+	if err := os.Chmod(staged, 0o750); err != nil {
 		panic(err)
 	}
 	for name, data := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+		if name == "." || filepath.Base(name) != name {
+			panic(fmt.Sprintf("invalid generated filename %q", name))
+		}
+		if err := os.WriteFile(filepath.Join(staged, name), data, 0o600); err != nil {
 			panic(err)
 		}
 	}
+	verifyFiles(staged, files)
+
+	backup, err := os.MkdirTemp(parent, "."+filepath.Base(dir)+".old-")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Remove(backup); err != nil {
+		panic(err)
+	}
+	hadOld := false
+	if err := os.Rename(dir, backup); err == nil {
+		hadOld = true
+	} else if !os.IsNotExist(err) {
+		panic(err)
+	}
+	if err := os.Rename(staged, dir); err != nil {
+		if hadOld {
+			_ = os.Rename(backup, dir)
+		}
+		panic(err)
+	}
+	staged = ""
+	if hadOld {
+		if err := os.RemoveAll(backup); err != nil {
+			panic(err)
+		}
+	}
+}
+
+func mustAbs(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Clean(abs)
+}
+
+func within(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func generatedTarget(root, dir string) bool {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	if rel == "contexts" || rel == "expectations" {
+		return true
+	}
+	for _, item := range vectors {
+		if rel == filepath.Join(item.category, item.id) {
+			return true
+		}
+	}
+	return false
 }
 
 func verifyFiles(dir string, wanted map[string][]byte) {
