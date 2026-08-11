@@ -93,6 +93,54 @@ class MalformedJsonTypeTest(unittest.TestCase):
             ),
         )
 
+    def test_rejects_required_field_without_property_definition(self):
+        with self.assertRaisesRegex(
+            ValueError, "required fields lack property definitions: \\['untyped'\\]"
+        ):
+            check_contracts.require_top_level_required_properties(
+                {
+                    "required": ["typed", "untyped"],
+                    "properties": {"typed": {"type": "string"}},
+                },
+                "fixture",
+            )
+
+    def test_accepts_required_fields_with_property_definitions(self):
+        check_contracts.require_top_level_required_properties(
+            {
+                "required": ["typed"],
+                "properties": {"typed": {"type": "string"}},
+            },
+            "fixture",
+        )
+
+    def test_rejects_unconstrained_required_property_definition(self):
+        for unconstrained in ({}, True):
+            with self.subTest(unconstrained=unconstrained):
+                with self.assertRaisesRegex(
+                    ValueError, "required fields have unconstrained property definitions: \\['typed'\\]"
+                ):
+                    check_contracts.require_top_level_required_properties(
+                        {"required": ["typed"], "properties": {"typed": unconstrained}},
+                        "fixture",
+                    )
+
+    def test_check_applies_required_property_gate_to_every_active_schema(self):
+        manifest = ROOT / "contracts" / "artifacts.json"
+        expected = {
+            entry["path"]
+            for family in json.loads(manifest.read_text(encoding="utf-8"))["artifact_families"]
+            for entry in family["schemas"]
+            if entry["status"] == "active"
+        }
+        with mock.patch.object(
+            check_contracts,
+            "require_top_level_required_properties",
+            wraps=check_contracts.require_top_level_required_properties,
+        ) as gate:
+            check_contracts.check(ROOT, manifest)
+        self.assertEqual(expected, {call.args[1] for call in gate.call_args_list})
+
     def test_rejects_non_object_source_version_entry(self):
         manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
         manifest["artifact_families"][0]["source_versions"] = ["runner/case.go"]

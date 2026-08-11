@@ -225,6 +225,34 @@ def declared_schema_version(document, label):
     return declared.get("const")
 
 
+def require_top_level_required_properties(document, label):
+    """Require every top-level required name to have an explicit schema.
+
+    JSON Schema permits a name in ``required`` without a matching entry in
+    ``properties``. With an open object that means the field must exist but may
+    contain any JSON value, including null. Active interchange contracts must
+    define the shape they require instead of relying on that permissive default.
+    """
+    required = document.get("required", [])
+    if not isinstance(required, list):
+        fail(f"{label}: required must be an array")
+    if any(not isinstance(field, str) or not field for field in required):
+        fail(f"{label}: required entries must be non-empty strings")
+    if len(required) != len(set(required)):
+        fail(f"{label}: required contains duplicate field names")
+    properties = document.get("properties", {})
+    if not isinstance(properties, dict):
+        fail(f"{label}: properties must be an object")
+    missing = sorted(set(required) - set(properties))
+    if missing:
+        fail(f"{label}: required fields lack property definitions: {missing}")
+    unconstrained = sorted(
+        field for field in required if properties[field] is True or properties[field] == {}
+    )
+    if unconstrained:
+        fail(f"{label}: required fields have unconstrained property definitions: {unconstrained}")
+
+
 def versioned_schema_inventory(root):
     inventory = set()
     schema_dir = root / "schemas"
@@ -410,6 +438,7 @@ def check(root, manifest_path):
             if declared != version:
                 fail(f"{relative}: declares schema_version {declared!r}, manifest says {version}")
             if status == "active":
+                require_top_level_required_properties(document, relative)
                 active_schema_paths.append(relative)
 
         if schemas and schema_versions != set(accepted):
