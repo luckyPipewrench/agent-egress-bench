@@ -10,7 +10,9 @@
 //     HTTPS_PROXY, so the tool only has to accept CONNECT on that address.
 //   - websocket: GET /ws?url=... plus runner-managed WebSocket fixtures
 //   - mcp_stdio: configured MCP stdio proxy command with JSON-RPC on stdio
-//   - mcp_http: JSON-RPC POST endpoint set with SetMCPHTTPURL
+//   - mcp_http: JSON-RPC POST endpoint set with SetMCPHTTPURL. Response-shaped
+//     and temporal inventory cases also require SetMCPHTTPFixture so the runner
+//     can serve and independently observe the upstream side of the exchange.
 //
 // Tool-specific block signals are normalized by the runner after the requested
 // transport has been exercised. A reverse proxy or API gateway with
@@ -2452,6 +2454,9 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 	if !ok || len(msgList) == 0 {
 		return Result{Err: fmt.Errorf("case %s: no jsonrpc_messages in payload", c.ID)}
 	}
+	if c.InputType == "mcp_tool_sequence_temporal" {
+		return p.runMCPHTTPTemporalInventory(c, timeout)
+	}
 	if c.InputType == "mcp_tool_definition" || c.InputType == "mcp_tool_result" {
 		return p.runMCPHTTPResponseCase(c, timeout)
 	}
@@ -2505,6 +2510,228 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		Verdict:  "allow",
 		Evidence: evidence,
 	}
+}
+
+// runMCPHTTPTemporalInventory replays a before/after tools/list sequence in
+// its real wire direction. The corpus responses are leased to the runner-owned
+// upstream and only their matching tools/list requests are sent through the
+// product. Posting the response snapshots as client requests would exercise
+// invalid JSON-RPC handling instead of temporal inventory scanning.
+func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration) Result {
+	steps, err := temporalInventorySteps(c)
+	if err != nil {
+		return Result{Verdict: "skip", Evidence: map[string]interface{}{
+			"reason": "MCP HTTP temporal inventory requires one before/after tools/list pair: " + err.Error(),
+		}}
+	}
+	if p.mcpHTTPFixture == nil {
+		return Result{Verdict: "skip", Evidence: map[string]interface{}{
+			"reason": "no MCP HTTP upstream fixture configured for temporal inventory",
+		}}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	client := newMCPHTTPClient(timeout)
+	evidence := map[string]interface{}{
+		"product_surface":                       "mcp_http_listener",
+		"session_bound":                         false,
+		"upstream_reached":                      false,
+		"original_inventory_delivered_to_agent": false,
+		"changed_inventory_delivered_to_agent":  false,
+	}
+	initializeMessage, initializeRequest, err := prepareGatewayRequest(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]interface{}{
+			"protocolVersion": "2025-03-26",
+			"capabilities":    map[string]interface{}{},
+			"clientInfo": map[string]interface{}{
+				"name":    "agent-egress-bench",
+				"version": "1",
+			},
+		},
+	})
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare MCP initialize request: %w", c.ID, err)}
+	}
+	initializeResponse, initializeContentType, initializeStatus, sessionID, err := p.sendMCPHTTPGatewayRequest(ctx, client, initializeMessage, "")
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: send MCP initialize request: %w", c.ID, err)}
+	}
+	if !proxyMCPHTTPDelivered(p.mcpHTTPFixture, initializeRequest) {
+		evidence["reason"] = "temporal_initialize_upstream_unproven"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	initializeBody, decodeErr := decodeGatewayResponse(initializeContentType, initializeResponse, initializeRequest.identity)
+	if decodeErr != nil || initializeStatus < http.StatusOK || initializeStatus >= http.StatusMultipleChoices || classifyMCPHTTPBlock(initializeBody) != nil || !validMCPInitializeResponse(initializeBody) {
+		evidence["reason"] = "temporal_initialize_not_established"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	if sessionID == "" {
+		evidence["reason"] = "temporal_session_unbound"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	evidence["session_bound"] = true
+
+	_, _, initializedStatus, _, err := p.sendMCPHTTPGatewayRequest(ctx, client, map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+		"params":  map[string]interface{}{},
+	}, sessionID)
+	if err != nil || initializedStatus < http.StatusOK || initializedStatus >= http.StatusMultipleChoices {
+		evidence["reason"] = "temporal_initialized_notification_failed"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+
+	baselineMessage, baselineRequest, err := prepareGatewayRequest(steps[0].request)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare baseline tools/list request: %w", c.ID, err)}
+	}
+	baselineRelease, err := p.mcpHTTPFixture.AcquireSessionToolDefinitionLease(ctx, baselineRequest.identity, sessionID, steps[0].tools)
+	if err != nil {
+		evidence["reason"] = "baseline_inventory_lease_timeout"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	baselineResponse, baselineContentType, baselineStatus, _, err := p.sendMCPHTTPGatewayRequest(ctx, client, baselineMessage, sessionID)
+	baselineRelease()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: send baseline tools/list request: %w", c.ID, err)}
+	}
+	baselineDelivered := proxyMCPHTTPDelivered(p.mcpHTTPFixture, baselineRequest)
+	evidence["original_inventory_reached_upstream"] = baselineDelivered
+	evidence["inventory_request_identities"] = []string{baselineRequest.identity}
+	if !baselineDelivered {
+		evidence["reason"] = "baseline_inventory_upstream_unproven"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	baselineBody, err := decodeGatewayResponse(baselineContentType, baselineResponse, baselineRequest.identity)
+	if err != nil || baselineStatus < http.StatusOK || baselineStatus >= http.StatusMultipleChoices {
+		evidence["reason"] = "baseline_inventory_not_established"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	baselineCanonical, baselineValid := toolsListCanonical(baselineBody)
+	if !baselineValid || !bytes.Equal(baselineCanonical, steps[0].canonical) {
+		evidence["reason"] = "baseline_inventory_not_established"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	evidence["original_inventory_delivered_to_agent"] = true
+
+	changedMessage, changedRequest, err := prepareGatewayRequest(steps[1].request)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: prepare changed tools/list request: %w", c.ID, err)}
+	}
+	changedRelease, err := p.mcpHTTPFixture.AcquireSessionToolDefinitionLease(ctx, changedRequest.identity, sessionID, steps[1].tools)
+	if err != nil {
+		evidence["reason"] = "changed_inventory_lease_timeout"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	changedResponse, changedContentType, changedStatus, _, err := p.sendMCPHTTPGatewayRequest(ctx, client, changedMessage, sessionID)
+	changedRelease()
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: send changed tools/list request: %w", c.ID, err)}
+	}
+	changedDelivered := proxyMCPHTTPDelivered(p.mcpHTTPFixture, changedRequest)
+	evidence["changed_inventory_reached_upstream"] = changedDelivered
+	evidence["inventory_request_identities"] = []string{baselineRequest.identity, changedRequest.identity}
+	if !changedDelivered {
+		evidence["reason"] = "changed_inventory_upstream_unproven"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	evidence["upstream_reached"] = true
+
+	if changedStatus < http.StatusOK || changedStatus >= http.StatusMultipleChoices {
+		if verdict := classifyMCPHTTPBlock(changedResponse); verdict != nil {
+			for key, value := range evidence {
+				verdict.Evidence[key] = value
+			}
+			return *verdict
+		}
+		result := classifyResponse(changedStatus, string(changedResponse))
+		for key, value := range evidence {
+			result.Evidence[key] = value
+		}
+		if result.Verdict == "block" {
+			return observedProxyVerdict(result)
+		}
+		return result
+	}
+	changedBody, err := decodeGatewayResponse(changedContentType, changedResponse, changedRequest.identity)
+	if err != nil {
+		evidence["reason"] = "malformed_or_uncorrelated_changed_inventory"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	if verdict := classifyMCPHTTPBlock(changedBody); verdict != nil {
+		for key, value := range evidence {
+			verdict.Evidence[key] = value
+		}
+		return *verdict
+	}
+	changedCanonical, changedValid := toolsListCanonical(changedBody)
+	if !changedValid {
+		evidence["reason"] = "malformed_changed_inventory"
+		return Result{Verdict: "skip", Evidence: evidence}
+	}
+	if !bytes.Equal(changedCanonical, steps[1].canonical) {
+		evidence["reason"] = "changed_inventory_withheld_or_modified"
+		return observedProxyVerdict(Result{Verdict: "block", Evidence: evidence})
+	}
+	evidence["changed_inventory_delivered_to_agent"] = true
+	return Result{Verdict: "allow", Evidence: evidence}
+}
+
+func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *http.Client, message map[string]interface{}, sessionID string) ([]byte, string, int, string, error) {
+	body, err := json.Marshal(message)
+	if err != nil {
+		return nil, "", 0, "", fmt.Errorf("marshal request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, "", 0, "", fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", 0, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, "", 0, "", fmt.Errorf("read response: %w", err)
+	}
+	return responseBody, resp.Header.Get("Content-Type"), resp.StatusCode, resp.Header.Get("Mcp-Session-Id"), nil
+}
+
+func newMCPHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func validMCPInitializeResponse(body []byte) bool {
+	var response struct {
+		Result struct {
+			ProtocolVersion string          `json:"protocolVersion"`
+			Capabilities    json.RawMessage `json:"capabilities"`
+			ServerInfo      struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"serverInfo"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil || response.Result.ProtocolVersion != "2025-03-26" || response.Result.ServerInfo.Name == "" || response.Result.ServerInfo.Version == "" {
+		return false
+	}
+	var capabilities map[string]interface{}
+	return json.Unmarshal(response.Result.Capabilities, &capabilities) == nil && capabilities != nil
 }
 
 // runMCPHTTPResponseCase drives a response-shaped corpus case in its actual
@@ -2593,7 +2820,7 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := (&http.Client{}).Do(httpReq)
+	resp, err := newMCPHTTPClient(timeout).Do(httpReq)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
 	}
@@ -2684,7 +2911,7 @@ func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Resu
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := newMCPHTTPClient(0).Do(req)
 	if err != nil {
 		return &Result{Err: fmt.Errorf("send tool-result baseline request: %w", err)}
 	}

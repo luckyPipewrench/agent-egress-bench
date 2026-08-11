@@ -236,7 +236,7 @@ func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) 
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare baseline tools/list request: %w", c.ID, err)}
 	}
-	baselineRelease, err := upstream.AcquireToolDefinitionLease(ctx, baselineRequest.identity, steps[0].tools)
+	baselineRelease, err := upstream.AcquireSessionToolDefinitionLease(ctx, baselineRequest.identity, sess.id, steps[0].tools)
 	if err != nil {
 		return gatewaySkip(c, "gateway baseline inventory lease failed: "+err.Error())
 	}
@@ -275,7 +275,7 @@ func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) 
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare changed tools/list request: %w", c.ID, err)}
 	}
-	changedRelease, err := upstream.AcquireToolDefinitionLease(ctx, changedRequest.identity, steps[1].tools)
+	changedRelease, err := upstream.AcquireSessionToolDefinitionLease(ctx, changedRequest.identity, sess.id, steps[1].tools)
 	if err != nil {
 		return gatewaySkip(c, "gateway changed inventory lease failed: "+err.Error())
 	}
