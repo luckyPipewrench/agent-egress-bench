@@ -7,21 +7,41 @@
   "required": ["schema_version", "gauntlet_version", "scoring_version", "runner_version", "tool", "tool_version", "corpus_version", "corpus_sha256", "benchmark_manifest_sha256", "tool_profile_sha256", "capability_registry", "reported_claims", "case_count", "exercised", "scores", "diagnostics", "measurement_status", "per_category"],
   "properties": {
     "schema_version": {"type": "integer", "const": 5},
+    "gauntlet_version": {"$ref": "#/$defs/nonempty_string"},
+    "scoring_version": {"$ref": "#/$defs/nonempty_string"},
+    "runner_version": {"$ref": "#/$defs/nonempty_string"},
+    "tool": {"$ref": "#/$defs/nonempty_string"},
+    "tool_version": {"$ref": "#/$defs/nonempty_string"},
+    "corpus_version": {"$ref": "#/$defs/nonempty_string"},
     "corpus_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "benchmark_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "tool_profile_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "capability_registry": {"$ref": "#/$defs/capability_registry"},
     "reported_claims": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "date": {"type": "string", "format": "date-time"},
+    "case_count": {"$ref": "#/$defs/case_count"},
+    "exercised": {"$ref": "#/$defs/exercised"},
     "scores": {"$ref": "#/$defs/dual_outcome_scores"},
     "diagnostics": {"$ref": "#/$defs/dual_presence_diagnostics"},
     "measurement_status": {"type": "string", "enum": ["measured", "incomplete"]},
     "per_category": {
       "type": "object",
+      "propertyNames": {"type": "string", "minLength": 1},
       "additionalProperties": {"$ref": "#/$defs/category_scores"}
-    }
+    },
+    "method_repository": {"$ref": "#/$defs/nonempty_string"},
+    "method_commit": {"$ref": "#/$defs/nonempty_string"},
+    "adapter_id": {"$ref": "#/$defs/nonempty_string"},
+    "adapter_owner": {"$ref": "#/$defs/nonempty_string"},
+    "target_config_ref": {"$ref": "#/$defs/nonempty_string"},
+    "target_config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
-  "additionalProperties": true,
+  "additionalProperties": false,
   "$defs": {
+    "nonempty_string": {
+      "type": "string",
+      "minLength": 1
+    },
     "capability_registry": {
       "type": "object",
       "additionalProperties": false,
@@ -32,6 +52,38 @@
         "revision": {"type": "integer", "minimum": 1},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       }
+    },
+    "case_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "applicable", "unreachable", "not_applicable", "not_applicable_reasons", "errors"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 1},
+        "applicable": {"type": "integer", "minimum": 0},
+        "unreachable": {"type": "integer", "minimum": 0},
+        "not_applicable": {"type": "integer", "minimum": 0},
+        "not_applicable_reasons": {
+          "type": "object",
+          "propertyNames": {"type": "string", "minLength": 1},
+          "additionalProperties": {"type": "integer", "minimum": 1}
+        },
+        "errors": {"type": "integer", "minimum": 0}
+      }
+    },
+    "exercised": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transports", "categories", "capability_tags"],
+      "properties": {
+        "transports": {"$ref": "#/$defs/string_set"},
+        "categories": {"$ref": "#/$defs/string_set"},
+        "capability_tags": {"$ref": "#/$defs/string_set"}
+      }
+    },
+    "string_set": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/nonempty_string"}
     },
     "rate_or_null": {
       "type": ["number", "null"],
