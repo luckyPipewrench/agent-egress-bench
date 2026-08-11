@@ -252,7 +252,7 @@ func TestLoadMultiFileCase_RejectsPathTraversal(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected loader error for path traversal, got nil")
 	}
-	if !strings.Contains(err.Error(), "filename in the case directory") {
+	if !strings.Contains(err.Error(), "safe relative-path pattern") {
 		t.Errorf("error did not explain path confinement: %v", err)
 	}
 }
@@ -269,13 +269,13 @@ func TestMultiFileComponentContractsRejectMalformedShapes(t *testing.T) {
 
 	objectID := validResponse()
 	objectID["id"] = map[string]interface{}{"nested": true}
-	if err := validateToolsListResponse(objectID); err == nil {
-		t.Fatal("accepted object-valued JSON-RPC id")
+	if err := validateToolsListResponse(objectID); err == nil || !strings.Contains(err.Error(), "id must be a string, number, or null") {
+		t.Fatalf("object-valued JSON-RPC id error = %v, want id type refusal", err)
 	}
 	missingSchema := validResponse()
 	delete(missingSchema["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{}), "inputSchema")
-	if err := validateToolsListResponse(missingSchema); err == nil {
-		t.Fatal("accepted tool without inputSchema")
+	if err := validateToolsListResponse(missingSchema); err == nil || !strings.Contains(err.Error(), "inputSchema must be an object") {
+		t.Fatalf("missing inputSchema error = %v, want inputSchema refusal", err)
 	}
 
 	c := MultiFileCase{ExpectedVerdict: "block", Transport: "mcp_http", Severity: "critical"}
@@ -735,6 +735,18 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 		t.Fatalf("snapshot hash = %s, want relocated override %s", snapshotHash, overrideHash)
 	}
 
+	notesPath := filepath.Join(override, "mcp-drift-benign-001", "notes.md")
+	if err := os.WriteFile(notesPath, []byte("changed required narrative\n"), 0o600); err != nil {
+		t.Fatalf("mutate required notes: %v", err)
+	}
+	notesHash, err := computeCorpusSHA256(casesDir, override)
+	if err != nil {
+		t.Fatalf("hash notes-mutated corpus: %v", err)
+	}
+	if notesHash == overrideHash {
+		t.Fatal("changing required notes.md left the corpus digest unchanged")
+	}
+
 	afterPath := filepath.Join(override, "mcp-drift-benign-001", "after.json")
 	if err := os.WriteFile(afterPath, []byte(`{"jsonrpc":"2.0","id":99,"result":{"tools":[]}}`), 0o600); err != nil {
 		t.Fatalf("mutate multi-file artifact: %v", err)
@@ -749,14 +761,23 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 }
 
 func TestValidateMultiFileNameRejectsSchemaInvalidNames(t *testing.T) {
-	for name, suffix := range map[string]string{
-		"before file.json": ".json",
-		".before.json":     ".json",
-		"nøtes.md":         ".md",
+	for _, test := range []struct {
+		name, suffix string
+		wantErr      bool
+	}{
+		{"before.json", ".json", false},
+		{"fixtures/before.json", ".json", false},
+		{"before file.json", ".json", true},
+		{".before.json", ".json", true},
+		{"nøtes.md", ".md", true},
 	} {
-		t.Run(name, func(t *testing.T) {
-			if err := validateMultiFileName(name, suffix, "fixture"); err == nil {
-				t.Fatalf("validateMultiFileName(%q) accepted a schema-invalid name", name)
+		t.Run(test.name, func(t *testing.T) {
+			err := validateMultiFileName(test.name, test.suffix, "fixture")
+			if test.wantErr && err == nil {
+				t.Fatalf("validateMultiFileName(%q) accepted a schema-invalid name", test.name)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("validateMultiFileName(%q) rejected a valid name: %v", test.name, err)
 			}
 		})
 	}

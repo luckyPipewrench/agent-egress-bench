@@ -35,7 +35,7 @@ Rows are uniquely sorted by `case_id` and retain exactly:
 - `expected_verdict`
 - `actual_verdict`
 - `score`
-- `evidence.result_state`
+- `result_state` (projected from the result row's `evidence.result_state`)
 
 That last field keeps delivery, observation, adapter, and reachability failures
 from collapsing into one generic `error`. Tool-specific evidence and notes are

@@ -31,18 +31,16 @@ class RunnerParityTest(unittest.TestCase):
             tool_profile_sha256="c" * 64, runner="aeb-gauntlet", runner_version="4",
             runtime="go1.25.10", os_name="linux", arch="amd64", concurrency=1,
             timeout_seconds=15.0, fixture_mode="local", network_mode="contained",
-            nonce_hex="d" * 32,
         )
         values.update(updates)
         return Namespace(**values)
 
     def prepare(self, name="reveal.json", **updates):
         path = self.root / name
-        if name != "reveal.json" and "nonce_hex" not in updates:
-            updates["nonce_hex"] = "e" * 32
+        nonce = updates.pop("nonce_hex", "e" * 32 if name != "reveal.json" else "d" * 32)
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            runner_parity.prepare(self.args(path, **updates))
+            runner_parity.prepare_with_nonce(self.args(path, **updates), nonce)
         return path, output.getvalue().strip()
 
     def test_prepare_verify_and_compare(self):

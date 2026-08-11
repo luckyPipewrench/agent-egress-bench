@@ -34,6 +34,13 @@ the normative decision receipt for adapters that expose receipt comparison;
 the generic reference adapter currently validates it but scores the observed
 binary verdict rather than claiming a field-by-field receipt comparison.
 
+The execution adapter is binary-verdict only. A case whose metadata says
+`expected_verdict: warn` is therefore normalized to the benign `allow` scoring
+class: allowing the changed inventory passes, while blocking it is a false
+positive. The retained case metadata and expected receipt still require the
+detector to emit the portable `warn` decision semantics; the binary score does
+not claim that field-level receipt comparison occurred.
+
 ## `case.yaml` example (schema v4)
 
 ```yaml

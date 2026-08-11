@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
 
 type multiFileCase struct {
 	SchemaVersion   int      `yaml:"schema_version"`
@@ -184,7 +184,7 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 			return c, fmt.Errorf("line %d: expected a top-level key", i+1)
 		}
 		key, rest, ok := strings.Cut(line, ":")
-		if !ok || strings.TrimSpace(key) != key || !known[key] {
+		if !ok || strings.TrimSpace(key) != key || !known[key] || (rest != "" && rest[0] != ' ') {
 			return c, fmt.Errorf("line %d: unknown or malformed field %q", i+1, key)
 		}
 		if present[key] {
@@ -192,6 +192,9 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 		}
 		present[key] = true
 		rest = strings.TrimSpace(rest)
+		if key == "schema_version" && (strings.HasPrefix(rest, "\"") || strings.HasPrefix(rest, "'")) {
+			return c, fmt.Errorf("schema_version must be an unquoted integer")
+		}
 		i++
 		switch {
 		case key == "files":
@@ -350,14 +353,11 @@ func validateMultiFileName(name, suffix, label string) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("%s must be non-empty", label)
 	}
-	if filepath.Base(name) != name || name == "." || name == ".." {
-		return fmt.Errorf("%s must be a filename in the case directory, got %q", label, name)
-	}
 	if !strings.HasSuffix(name, suffix) {
 		return fmt.Errorf("%s must end in %s, got %q", label, suffix, name)
 	}
 	if !multiFileComponentName.MatchString(name) {
-		return fmt.Errorf("%s must match the published filename pattern, got %q", label, name)
+		return fmt.Errorf("%s must match the published safe relative-path pattern, got %q", label, name)
 	}
 	return nil
 }

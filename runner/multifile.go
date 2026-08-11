@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
 
 var validMultiFileRequires = map[string]struct{}{
 	"tls_interception": {}, "url_dlp_scanning": {}, "request_body_dlp_scanning": {},
@@ -128,6 +128,7 @@ func selectedMultiFileSnapshotPaths(files []corpusFile, directory multiFileCaseD
 		if _, ok := available[notesPath]; !ok {
 			return nil, fmt.Errorf("multi-file case %s is missing required notes file %s", c.ID, notesPath)
 		}
+		paths = append(paths, notesPath)
 	}
 	return paths, nil
 }
@@ -347,9 +348,9 @@ func requireMultiFileYAMLKeys(data []byte, path string) error {
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
 		return fmt.Errorf("parsing %s: top-level value must be a mapping", path)
 	}
-	present := make(map[string]struct{}, len(document.Content[0].Content)/2)
+	present := make(map[string]*yaml.Node, len(document.Content[0].Content)/2)
 	for index := 0; index < len(document.Content[0].Content); index += 2 {
-		present[document.Content[0].Content[index].Value] = struct{}{}
+		present[document.Content[0].Content[index].Value] = document.Content[0].Content[index+1]
 	}
 	for _, key := range []string{
 		"schema_version", "id", "category", "title", "description", "threat_model",
@@ -358,6 +359,11 @@ func requireMultiFileYAMLKeys(data []byte, path string) error {
 	} {
 		if _, ok := present[key]; !ok {
 			return fmt.Errorf("%s: missing required field %s", path, key)
+		}
+	}
+	for _, key := range []string{"capability_tags", "requires"} {
+		if present[key].Kind != yaml.SequenceNode {
+			return fmt.Errorf("%s: %s must be a sequence", path, key)
 		}
 	}
 	return nil
@@ -463,14 +469,11 @@ func validateMultiFileName(name, suffix, label string) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("%s must be non-empty", label)
 	}
-	if filepath.Base(name) != name || name == "." || name == ".." {
-		return fmt.Errorf("%s must be a filename in the case directory, got %q", label, name)
-	}
 	if !strings.HasSuffix(name, suffix) {
 		return fmt.Errorf("%s must end in %s, got %q", label, suffix, name)
 	}
 	if !multiFileComponentName.MatchString(name) {
-		return fmt.Errorf("%s must match the published filename pattern, got %q", label, name)
+		return fmt.Errorf("%s must match the published safe relative-path pattern, got %q", label, name)
 	}
 	return nil
 }

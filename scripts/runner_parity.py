@@ -246,10 +246,13 @@ def atomic_write(path, value):
 
 
 def prepare(args):
+    return prepare_with_nonce(args, secrets.token_hex(16))
+
+
+def prepare_with_nonce(args, nonce):
     manifest_ids, manifest_digest = load_benchmark_manifest(args.benchmark_manifest)
     args.benchmark_manifest_sha256 = manifest_digest
     vector = load_results(args.results, args.tool, args.tool_version, manifest_ids)
-    nonce = args.nonce_hex or secrets.token_hex(16)
     if not NONCE.fullmatch(nonce):
         raise ValueError("nonce-hex must contain at least 128 random bits as lowercase hex")
     reveal = {"commitment": commitment_for(args, vector, nonce), "normalized_results": vector}
@@ -308,7 +311,6 @@ def parser():
     create.add_argument("--output", type=Path, required=True)
     create.add_argument("--concurrency", type=int, required=True)
     create.add_argument("--timeout-seconds", type=float, required=True)
-    create.add_argument("--nonce-hex")
     create.set_defaults(func=prepare)
     check = sub.add_parser("verify", help="verify a reveal against its pre-published digest")
     check.add_argument("--reveal", type=Path, required=True)

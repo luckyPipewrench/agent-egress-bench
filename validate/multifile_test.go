@@ -43,6 +43,7 @@ func TestMultiFileContractMatchesOfficialValidator(t *testing.T) {
 		"verdict":        func(v map[string]any) { v["expected_verdict"] = "error" },
 		"whitespace_id":  func(v map[string]any) { v["id"] = " " },
 		"null_source":    func(v map[string]any) { v["source"] = nil },
+		"null_requires":  func(v map[string]any) { v["requires"] = nil },
 		"unknown_field":  func(v map[string]any) { v["unexpected"] = true },
 		"unknown_requires": func(v map[string]any) {
 			v["requires"] = []any{"not_a_runtime_prerequisite"}
@@ -65,6 +66,19 @@ func TestMultiFileContractMatchesOfficialValidator(t *testing.T) {
 			mutated := cloneMultiFileDocument(t, baseline)
 			mutate(mutated)
 			assertMultiFileValidatorReject(t, mutated, source)
+		})
+	}
+}
+
+func TestRestrictedYAMLParserMatchesRunnerScalarBoundaries(t *testing.T) {
+	for name, source := range map[string]string{
+		"compact mapping":       "id:mcp-drift-001\n",
+		"quoted schema version": "schema_version: \"4\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseMultiFileCaseYAML([]byte(source)); err == nil {
+				t.Fatalf("accepted runner-incompatible YAML: %q", source)
+			}
 		})
 	}
 }

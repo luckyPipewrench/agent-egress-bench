@@ -125,7 +125,7 @@
     },
     "notes": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.md$"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.md$"
     },
     "source": {
       "$ref": "#/definitions/nonEmptyString"
@@ -139,7 +139,7 @@
     },
     "jsonFilename": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.json$"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.json$"
     }
   }
 }

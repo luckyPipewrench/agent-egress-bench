@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -49,6 +51,7 @@ func TestMultiFileCaseSchemaConformance(t *testing.T) {
 		},
 		"unknown_property":    func(v map[string]interface{}) { v["unexpected"] = true },
 		"null_required_value": func(v map[string]interface{}) { v["source"] = nil },
+		"null_requires":       func(v map[string]interface{}) { v["requires"] = nil },
 		"unsafe_before_path": func(v map[string]interface{}) {
 			v["files"].(map[string]interface{})["before"] = "../before.json"
 		},
@@ -104,9 +107,39 @@ func TestMultiFileCaseSchemaAcceptsEveryPublishedFixture(t *testing.T) {
 	}
 }
 
+func TestRootJSONSchemasCompileAndValidateFixtures(t *testing.T) {
+	caseSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "case-v4.schema.json"))
+	caseRaw, err := os.ReadFile(filepath.Join("..", "cases", "a2a-agent-card", "a2a-card-benign-normal-006.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var caseDocument map[string]interface{}
+	if err := json.Unmarshal(caseRaw, &caseDocument); err != nil {
+		t.Fatal(err)
+	}
+	if err := caseSchema.Validate(caseDocument); err != nil {
+		t.Fatalf("case-v4 rejected published fixture: %v", err)
+	}
+
+	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v4.schema.json"))
+	result := map[string]interface{}{
+		"schema_version": float64(4), "case_id": caseDocument["id"], "tool": "tool",
+		"tool_version": "1.0.0", "expected_verdict": "allow", "actual_verdict": "allow",
+		"score": "pass", "evidence": map[string]interface{}{}, "notes": "",
+		"capability_registry": map[string]interface{}{"id": "registry", "format": float64(1), "revision": float64(1), "sha256": strings.Repeat("a", 64)},
+	}
+	if err := resultSchema.Validate(result); err != nil {
+		t.Fatalf("result-v4 rejected valid result fixture: %v", err)
+	}
+}
+
 func compileMultiFileCaseSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	path := filepath.Join("..", "schemas", "multi-file-case-v4.schema.json")
+	return compileJSONSchema(t, filepath.Join("..", "schemas", "multi-file-case-v4.schema.json"))
+}
+
+func compileJSONSchema(t *testing.T, path string) *jsonschema.Schema {
+	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
