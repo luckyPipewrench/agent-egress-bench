@@ -7,10 +7,9 @@ derives the result from the signed requirement, outcomes, observer evidence,
 material commitments, freshness evidence, tool profile, and replay ledger.
 The independent context pins the exact buyer requirement, trust policy, corpus,
 and trusted role keys; a valid signature alone cannot select the accepted scope.
-For conformance convenience, each fixture stores that context beside the package.
-That layout is not a production trust model: an operator must obtain the context
-through a buyer-controlled channel and must never accept a context supplied by
-the package producer.
+The public corpus stores each context outside its package directory. An operator
+must likewise obtain context through a buyer-controlled channel and must never
+accept context supplied by the package producer.
 
 The verifier does not import the conformance generator and does not read
 `expect.json`. The conformance test uses that file only as a test assertion.
@@ -21,14 +20,14 @@ The verifier does not import the conformance generator and does not read
 cd control-evidence/v1/verifier
 install -d -m 700 "$HOME/.cache/aeb-cee-replay-demo"
 go run ./cmd/aeb-cee-verify \
-  --package ../conformance/golden/g01-vendor-time \
-  --context ../conformance/golden/g01-vendor-time/context.json \
+  --package ../conformance/golden/g01-valid-registry-bound \
+  --context ../conformance/contexts/g01-valid-registry-bound.json \
   --replay-ledger "$HOME/.cache/aeb-cee-replay-demo"
 ```
 
 The command above is a conformance example using public synthetic keys. Real
 verification must point `--context` at the operator's independently managed
-context, even if the evidence package also contains a file named `context.json`.
+context.
 It must also point `--replay-ledger` at an existing buyer-controlled directory
 with mode `0700`, outside the package. The verifier atomically records the
 single-use challenge there. Omitting durable replay state returns
@@ -39,17 +38,15 @@ verify signatures:
 
 ```sh
 go run ./cmd/aeb-ce-schema-valid \
-  --package ../conformance/golden/g01-vendor-time \
-  --allow-conformance-sidecars
+  --package ../conformance/golden/g01-valid-registry-bound
 ```
 
-The sidecar flag exists only for the public corpus layout. Omit it for submitted
-packages so undeclared `context.json` or `expect.json` files fail closed. A
-`schema-valid` PASS proves bounded package structure, closed manifest binding,
-strict/schema-governed JSON, and JCS signed payload bytes. It does not prove
-signature authentication, trusted ownership, freshness, result correctness,
-or scope completeness; compose it with the corresponding independent G2
-predicates instead of over-reading it.
+Submitted packages and public fixtures both fail closed on undeclared
+`context.json` or `expect.json` files. A `schema-valid` PASS proves bounded
+package structure, closed manifest binding, strict/schema-governed JSON, and JCS
+signed payload bytes. It does not prove signature authentication, trusted
+ownership, freshness, result correctness, or scope completeness; compose it
+with the corresponding independent G2 predicates instead of over-reading it.
 
 The buyer-reproduction assessor compares a later buyer-signed statement with an
 immutable source package and digest-binds a closed, normalized reproduction
@@ -107,6 +104,8 @@ buyer-controlled material profiles and lifecycle.
 go test -race -count=1 ./...
 ```
 
-The corpus test covers all 85 v1 packages and asserts the complete outcome,
-reason, and nonce-status distribution. A schema-drift test pins the embedded
-verifier schemas to the canonical repository copies.
+The corpus test covers seven payload-bearing v1 packages across eight verification
+runs. It asserts every production outcome, both fresh and repeated verification,
+and the exact reason and nonce status. The generator gate proves the committed
+bytes are deterministic. The schema-copy gate pins the verifier's embedded v1
+schemas to the canonical repository copies.

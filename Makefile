@@ -42,9 +42,10 @@ check-docs:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_docs_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_docs.py
 
-# The G2 authentication verifier carries six CEE v0 schema copies. Missing,
-# empty, extra, symlinked, or byte-different copies fail before verifier tests.
+# Independent verifier modules embed governed schema copies. Missing, empty,
+# extra, symlinked, or byte-different copies fail before verifier tests.
 check-schema-copies:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_schema_copies_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_schema_copies.py
 
 test-capability-registry:
@@ -107,6 +108,7 @@ test-control-evidence-verifier:
 
 test-control-evidence-v1-verifier:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@cd control-evidence/v1/conformance/_generator && go test -race -count=1 ./... && go run . --verify
 	@cd control-evidence/v1/verifier && go test -race -count=1 ./...
 
 test-control-evidence-g2-authentication:

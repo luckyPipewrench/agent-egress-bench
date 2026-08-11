@@ -1,0 +1,10 @@
+{
+  "description": "A complete v1 package binds every active artifact to one raw registry snapshot.",
+  "runs": [
+    {
+      "expected_outcome": "valid",
+      "mode": "persistent",
+      "reason": ""
+    }
+  ]
+}

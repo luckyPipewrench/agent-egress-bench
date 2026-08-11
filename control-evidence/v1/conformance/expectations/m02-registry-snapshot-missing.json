@@ -1,0 +1,10 @@
+{
+  "description": "A package without the referenced raw registry snapshot cannot support a score.",
+  "runs": [
+    {
+      "expected_outcome": "insufficient-evidence",
+      "mode": "persistent",
+      "reason": "capability_registry_snapshot_missing"
+    }
+  ]
+}

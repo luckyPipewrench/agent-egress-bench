@@ -1,4 +1,0 @@
-{
-  "expect": "valid",
-  "description": "A v1 package binds every active artifact to one raw registry snapshot."
-}

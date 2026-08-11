@@ -17,12 +17,11 @@ import (
 const assessmentProfile = "control-evidence-assessment/v1"
 
 type SchemaOptions struct {
-	PackageDir               string
-	VerifierName             string
-	VerifierVersion          string
-	VerifierSHA256           string
-	AssessmentTime           time.Time
-	AllowConformanceSidecars bool
+	PackageDir      string
+	VerifierName    string
+	VerifierVersion string
+	VerifierSHA256  string
+	AssessmentTime  time.Time
 }
 
 type AssessmentPredicate struct {
@@ -75,7 +74,7 @@ func AssessSchema(options SchemaOptions) SchemaAssessment {
 	if _, err := os.Lstat(options.PackageDir); err != nil {
 		return finish("UNVERIFIABLE", "package_unavailable")
 	}
-	files, err := loadDirectoryPackageWithOptions(options.PackageDir, options.AllowConformanceSidecars)
+	files, err := loadDirectoryPackage(options.PackageDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
 			return finish("UNVERIFIABLE", "package_unavailable")

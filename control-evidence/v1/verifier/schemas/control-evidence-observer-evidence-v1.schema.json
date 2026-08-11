@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-observer-evidence-v1.schema.json",
+  "title": "Control Evidence v1 observer evidence payload",
+  "type": "object", "additionalProperties": false,
+  "required": ["profile", "kind", "requirement_sha256", "run_id", "target_identity", "observer", "transport"],
+  "properties": {
+    "profile": {"const": "control-evidence-observer-evidence/v1"}, "kind": {"enum": ["health-control", "liveness-record", "target-observation"]},
+    "requirement_sha256": {"$ref": "#/$defs/sha256"}, "run_id": {"$ref": "#/$defs/id256"}, "target_identity": {"$ref": "#/$defs/opaqueID"}, "transport": {"const": "mcp_stdio"},
+    "observer": {"type": "object", "additionalProperties": false, "required": ["protocol", "version", "key_id"], "properties": {"protocol": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{0,63}$"}, "version": {"type": "string", "minLength": 1, "maxLength": 64}, "key_id": {"$ref": "#/$defs/opaqueID"}}},
+    "case_id": {"$ref": "#/$defs/caseID"}, "trial_index": {"type": "integer", "minimum": 1, "maximum": 100}, "canary_id": {"$ref": "#/$defs/canaryID"}, "canary_commitment_sha256": {"$ref": "#/$defs/sha256"}, "control_id": {"$ref": "#/$defs/canaryID"}, "health_control_commitment_sha256": {"$ref": "#/$defs/sha256"},
+    "observed_at": {"$ref": "#/$defs/time"}, "health_state": {"const": "allow-observed"}, "observation_state": {"const": "observed"},
+    "liveness": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"type": "object", "additionalProperties": false, "required": ["sequence", "observed_at", "health_state"], "properties": {"sequence": {"type": "integer", "minimum": 0, "maximum": 2147483647}, "observed_at": {"$ref": "#/$defs/time"}, "health_state": {"const": "alive"}}}}
+  },
+  "allOf": [
+    {"if": {"properties": {"kind": {"const": "health-control"}}}, "then": {"required": ["case_id", "trial_index", "canary_id", "canary_commitment_sha256", "control_id", "health_control_commitment_sha256", "observed_at", "health_state"], "not": {"anyOf": [{"required": ["liveness"]}, {"required": ["observation_state"]}]}}},
+    {"if": {"properties": {"kind": {"const": "target-observation"}}}, "then": {"required": ["case_id", "trial_index", "canary_id", "canary_commitment_sha256", "observed_at", "observation_state"], "not": {"anyOf": [{"required": ["liveness"]}, {"required": ["health_state"]}, {"required": ["control_id"]}, {"required": ["health_control_commitment_sha256"]}]}}},
+    {"if": {"properties": {"kind": {"const": "liveness-record"}}}, "then": {"required": ["liveness"], "not": {"anyOf": [{"required": ["case_id"]}, {"required": ["trial_index"]}, {"required": ["canary_id"]}, {"required": ["canary_commitment_sha256"]}, {"required": ["observed_at"]}, {"required": ["health_state"]}, {"required": ["observation_state"]}, {"required": ["control_id"]}, {"required": ["health_control_commitment_sha256"]}]}}}
+  ],
+  "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "id256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "time": {"type": "string", "format": "date-time", "pattern": "Z$", "minLength": 20, "maxLength": 35}, "opaqueID": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}, "caseID": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"}, "canaryID": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}},
+  "description": "This decoded payload is carried in a DSSE wrapper signed by the pinned observer key. The verifier checks signature, manifest binding, row binding, health-control bracketing, liveness ordering, and gap limits."
+}

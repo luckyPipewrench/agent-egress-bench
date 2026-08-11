@@ -1,0 +1,10 @@
+{
+  "description": "A manifest-bound summary naming another registry revision fails before outcome evaluation.",
+  "runs": [
+    {
+      "expected_outcome": "scope-mismatch",
+      "mode": "persistent",
+      "reason": "capability_registry_summary_mismatch"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Rechecking the exact same envelope remains valid and reports the retained nonce state.",
+  "runs": [
+    {
+      "expected_outcome": "valid",
+      "mode": "persistent",
+      "reason": ""
+    },
+    {
+      "expected_outcome": "valid",
+      "mode": "persistent",
+      "nonce_status": "reverified_same_envelope",
+      "reason": ""
+    }
+  ]
+}

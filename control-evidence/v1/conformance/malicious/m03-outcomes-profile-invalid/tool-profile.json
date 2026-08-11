@@ -1,0 +1,15 @@
+{
+  "capability_registry": {
+    "format": 1,
+    "id": "aeb.core-capabilities",
+    "revision": 1,
+    "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"
+  },
+  "claims": [
+    "mcp_input_scan"
+  ],
+  "runner_version": "0.4.2",
+  "schema_version": 4,
+  "tool": "example-tool",
+  "tool_version": "v1"
+}

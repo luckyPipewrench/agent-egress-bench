@@ -1,0 +1,10 @@
+{
+  "description": "A manifest-bound outcomes payload with the wrong profile fails schema validation.",
+  "runs": [
+    {
+      "expected_outcome": "invalid",
+      "mode": "persistent",
+      "reason": "outcomes_invalid"
+    }
+  ]
+}

@@ -52,21 +52,21 @@ func loadSchemas() (*schemaSet, error) {
 		return schema, nil
 	}
 	names := []string{
-		"control-evidence-dsse-v0.schema.json",
-		"control-evidence-requirement-v0.schema.json",
-		"control-evidence-run-envelope-v0.schema.json",
-		"control-evidence-manifest-v0.schema.json",
-		"control-evidence-outcomes-v0.schema.json",
-		"control-evidence-clock-evidence-v0.schema.json",
-		"control-evidence-observer-evidence-v0.schema.json",
-		"control-evidence-token-material-v0.schema.json",
-		"control-evidence-health-control-material-v0.schema.json",
-		"control-evidence-context-v0.schema.json",
+		"control-evidence-dsse-v1.schema.json",
+		"control-evidence-requirement-v1.schema.json",
+		"control-evidence-run-envelope-v1.schema.json",
+		"control-evidence-manifest-v1.schema.json",
+		"control-evidence-outcomes-v1.schema.json",
+		"control-evidence-clock-evidence-v1.schema.json",
+		"control-evidence-observer-evidence-v1.schema.json",
+		"control-evidence-token-material-v1.schema.json",
+		"control-evidence-health-control-material-v1.schema.json",
+		"control-evidence-context-v1.schema.json",
 		"tool-profile-v1.schema.json",
 		"tool-profile-v4.schema.json",
-		"control-evidence-buyer-reproduction-v0.schema.json",
-		"control-evidence-buyer-reproduction-statement-v0.schema.json",
-		"control-evidence-buyer-reproduction-transcript-v0.schema.json",
+		"control-evidence-buyer-reproduction-v1.schema.json",
+		"control-evidence-buyer-reproduction-statement-v1.schema.json",
+		"control-evidence-buyer-reproduction-transcript-v1.schema.json",
 	}
 	// Keyed by filename rather than by position. The previous form indexed a
 	// slice, so inserting a schema anywhere above shifted every index below it
@@ -81,27 +81,50 @@ func loadSchemas() (*schemaSet, error) {
 		}
 		compiled[name] = schema
 	}
-	return &schemaSet{
-		dsse:           compiled["control-evidence-dsse-v0.schema.json"],
-		requirement:    compiled["control-evidence-requirement-v0.schema.json"],
-		envelope:       compiled["control-evidence-run-envelope-v0.schema.json"],
-		manifest:       compiled["control-evidence-manifest-v0.schema.json"],
-		outcomes:       compiled["control-evidence-outcomes-v0.schema.json"],
-		clock:          compiled["control-evidence-clock-evidence-v0.schema.json"],
-		observer:       compiled["control-evidence-observer-evidence-v0.schema.json"],
-		tokenMaterial:  compiled["control-evidence-token-material-v0.schema.json"],
-		healthMaterial: compiled["control-evidence-health-control-material-v0.schema.json"],
-		context:        compiled["control-evidence-context-v0.schema.json"],
+	set := &schemaSet{
+		dsse:           compiled["control-evidence-dsse-v1.schema.json"],
+		requirement:    compiled["control-evidence-requirement-v1.schema.json"],
+		envelope:       compiled["control-evidence-run-envelope-v1.schema.json"],
+		manifest:       compiled["control-evidence-manifest-v1.schema.json"],
+		outcomes:       compiled["control-evidence-outcomes-v1.schema.json"],
+		clock:          compiled["control-evidence-clock-evidence-v1.schema.json"],
+		observer:       compiled["control-evidence-observer-evidence-v1.schema.json"],
+		tokenMaterial:  compiled["control-evidence-token-material-v1.schema.json"],
+		healthMaterial: compiled["control-evidence-health-control-material-v1.schema.json"],
+		context:        compiled["control-evidence-context-v1.schema.json"],
 		// Superseded profile versions stay compiled so historical evidence keeps
 		// validating against the contract it was recorded under.
 		toolProfiles: map[int]*jsonschema.Schema{
 			1: compiled["tool-profile-v1.schema.json"],
 			4: compiled["tool-profile-v4.schema.json"],
 		},
-		buyerReproduction:           compiled["control-evidence-buyer-reproduction-v0.schema.json"],
-		buyerReproductionStatement:  compiled["control-evidence-buyer-reproduction-statement-v0.schema.json"],
-		buyerReproductionTranscript: compiled["control-evidence-buyer-reproduction-transcript-v0.schema.json"],
-	}, nil
+		buyerReproduction:           compiled["control-evidence-buyer-reproduction-v1.schema.json"],
+		buyerReproductionStatement:  compiled["control-evidence-buyer-reproduction-statement-v1.schema.json"],
+		buyerReproductionTranscript: compiled["control-evidence-buyer-reproduction-transcript-v1.schema.json"],
+	}
+	if err := validateSchemaBindings(set); err != nil {
+		return nil, err
+	}
+	return set, nil
+}
+
+func validateSchemaBindings(set *schemaSet) error {
+	required := map[string]*jsonschema.Schema{
+		"dsse": set.dsse, "requirement": set.requirement, "envelope": set.envelope,
+		"manifest": set.manifest, "outcomes": set.outcomes, "clock": set.clock,
+		"observer": set.observer, "token-material": set.tokenMaterial,
+		"health-material": set.healthMaterial, "context": set.context,
+		"tool-profile-v1": set.toolProfiles[1], "tool-profile-v4": set.toolProfiles[4],
+		"buyer-reproduction":            set.buyerReproduction,
+		"buyer-reproduction-statement":  set.buyerReproductionStatement,
+		"buyer-reproduction-transcript": set.buyerReproductionTranscript,
+	}
+	for name, schema := range required {
+		if schema == nil {
+			return fmt.Errorf("embedded schema binding missing: %s", name)
+		}
+	}
+	return nil
 }
 
 func strictJSON(data []byte, dst any) (any, error) {
