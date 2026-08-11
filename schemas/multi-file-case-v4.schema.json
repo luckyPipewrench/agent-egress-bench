@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/multi-file-case-v4.schema.json",
+  "title": "agent-egress-bench Multi-File Case v4",
+  "description": "Metadata contract for one temporal MCP drift case directory. The document is stored as case.yaml; JSON Schema validation applies to its decoded YAML data model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "category",
+    "title",
+    "description",
+    "threat_model",
+    "input_type",
+    "transport",
+    "files",
+    "expected_verdict",
+    "severity",
+    "capability_tags",
+    "requires",
+    "false_positive_risk",
+    "why_expected",
+    "notes",
+    "source"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 4
+    },
+    "id": {
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "category": {
+      "const": "mcp_drift"
+    },
+    "title": {
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "description": {
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "threat_model": {
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "input_type": {
+      "const": "mcp_tool_sequence_temporal"
+    },
+    "transport": {
+      "enum": ["mcp_stdio", "mcp_http"]
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before", "after", "expected"],
+      "properties": {
+        "before": {
+          "$ref": "#/definitions/jsonFilename"
+        },
+        "after": {
+          "$ref": "#/definitions/jsonFilename"
+        },
+        "expected": {
+          "$ref": "#/definitions/jsonFilename"
+        }
+      }
+    },
+    "expected_verdict": {
+      "enum": ["block", "warn", "allow"]
+    },
+    "severity": {
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "capability_tags": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/nonEmptyString"
+      }
+    },
+    "requires": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "tls_interception",
+          "url_dlp_scanning",
+          "request_body_dlp_scanning",
+          "header_dlp_scanning",
+          "response_prompt_injection_scanning",
+          "mcp_input_dlp_scanning",
+          "mcp_input_prompt_injection_scanning",
+          "mcp_tool_policy",
+          "mcp_tool_result_prompt_injection_scanning",
+          "mcp_tool_poison_scanning",
+          "mcp_tool_baseline",
+          "mcp_chain_memory",
+          "mcp_cross_server_chain_memory",
+          "mcp_data_class_labels",
+          "a2a_dlp_scanning",
+          "a2a_prompt_injection_scanning",
+          "a2a_card_prompt_injection_scanning",
+          "a2a_card_drift_scanning",
+          "a2a_ssrf_scanning",
+          "websocket_dlp_scanning",
+          "websocket_prompt_injection_scanning",
+          "ssrf_scanning",
+          "domain_blocklist",
+          "entropy_scanning",
+          "shell_analysis",
+          "crypto_dlp_scanning",
+          "hostname_exfil_scanning",
+          "dns_rebinding_fixture"
+        ]
+      }
+    },
+    "false_positive_risk": {
+      "enum": ["low", "medium", "high"]
+    },
+    "why_expected": {
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "notes": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.md$"
+    },
+    "source": {
+      "$ref": "#/definitions/nonEmptyString"
+    }
+  },
+  "definitions": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "jsonFilename": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.json$"
+    }
+  }
+}

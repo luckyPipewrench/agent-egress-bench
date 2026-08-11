@@ -1,5 +1,4 @@
-// validate checks all case JSON files against the agent-egress-bench spec.
-// stdlib-only. No external dependencies.
+// validate checks benchmark artifacts against the agent-egress-bench contracts.
 package main
 
 import (
@@ -9,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
@@ -228,19 +226,30 @@ func runCases(casesDir string) int {
 		if err != nil {
 			return err
 		}
-		// Skip directories that use the multi-file case format (case.yaml +
-		// before.json + after.json + expected.json + notes.md). Those have
-		// their own per-directory schema and are not validated by this tool
-		// in v0 — the README in the directory documents the schema.
+		// Multi-file families own a directory contract rather than the
+		// single-file JSON shape. Validate each logical case once, then skip
+		// its JSON components so they cannot be mistaken for standalone cases.
 		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
-			// The full multi-file schema is documented per-directory and not
-			// validated here in v0, but the requires vocabulary IS enforced so
-			// the applicability rules (including the ban on attack-difficulty
-			// flags) cannot be bypassed through the multi-file case shape.
-			matches, _ := filepath.Glob(filepath.Join(path, "*", "case.yaml"))
-			for _, y := range matches {
-				errors = append(errors, validateMultiFileRequires(y)...)
+			entries, readErr := os.ReadDir(path)
+			if readErr != nil {
+				errors = append(errors, fmt.Sprintf("%s: cannot read multi-file case directory: %v", path, readErr))
+				return filepath.SkipDir
+			}
+			// Every immediate subdirectory is one logical case. Globbing for
+			// */case.yaml silently ignored a subdirectory that had none, so a
+			// corpus the runner hard-refuses to load validated clean here.
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				caseDir := filepath.Join(path, entry.Name())
+				caseYAML := filepath.Join(caseDir, "case.yaml")
 				fileCount++
+				if _, statErr := os.Stat(caseYAML); statErr != nil {
+					errors = append(errors, fmt.Sprintf("%s: cannot read required case.yaml: %v; restore case.yaml or remove the directory", caseDir, statErr))
+					continue
+				}
+				errors = append(errors, validateMultiFileCase(caseYAML, ids)...)
 			}
 			return filepath.SkipDir
 		}
@@ -914,196 +923,6 @@ func requiresTokenProblem(token string) string {
 		return fmt.Sprintf("invalid requires value: %q", token)
 	}
 	return ""
-}
-
-// validateMultiFileSchemaVersion enforces the active schema version on a
-// case.yaml. A missing or unparseable version is an error rather than an
-// assumed default, so an unclassifiable case can never validate.
-func validateMultiFileSchemaVersion(path, content string) []string {
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "schema_version:") {
-			continue
-		}
-		if line != trimmed {
-			return []string{fmt.Sprintf("%s: schema_version must be a top-level key", path)}
-		}
-		raw, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "schema_version:")))
-		if err != nil {
-			return []string{fmt.Sprintf("%s: %v", path, err)}
-		}
-		version, err := strconv.Atoi(strings.Trim(raw, `"'`))
-		if err != nil {
-			return []string{fmt.Sprintf("%s: schema_version must be an integer, got %q", path, raw)}
-		}
-		if version != activeCaseSchemaVersion {
-			return []string{fmt.Sprintf("%s: schema_version must be %d, got %d", path, activeCaseSchemaVersion, version)}
-		}
-		return nil
-	}
-	return []string{fmt.Sprintf("%s: missing schema_version", path)}
-}
-
-func validateMultiFileRequires(path string) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return []string{fmt.Sprintf("%s: cannot read case.yaml: %v", path, err)}
-	}
-	// The multi-file shape has to enforce the same version boundary as the
-	// single-file one. Checking only `requires` here left the validator
-	// fail-open: a case.yaml declaring any version at all, including one that
-	// does not exist, passed as long as its requirements were legal. The runner
-	// rejects it later, but the validator is what authors and CI run, so a
-	// corpus can be declared valid while carrying cases the scorer will refuse.
-	if errs := validateMultiFileSchemaVersion(path, string(data)); len(errs) > 0 {
-		return errs
-	}
-	toks, err := parseRequiresFromYAML(string(data))
-	if err != nil {
-		// Fail closed. A requires block this validator cannot read
-		// unambiguously is rejected rather than treated as empty, because
-		// treating it as empty silently waives every applicability rule the
-		// single-file shape enforces.
-		return []string{fmt.Sprintf("%s: %v", path, err)}
-	}
-	var errs []string
-	for _, tok := range toks {
-		if problem := requiresTokenProblem(tok); problem != "" {
-			errs = append(errs, fmt.Sprintf("%s: %s", path, problem))
-		}
-	}
-	return errs
-}
-
-// parseRequiresFromYAML reads the top-level requires list out of a case.yaml.
-//
-// The validator is deliberately stdlib-only, so this recognises a restricted
-// subset of YAML rather than pulling in a parser: a single-line flow sequence
-// (requires: [a, b]) or a block sequence of "- token" lines. Every other shape,
-// including a multi-line flow sequence, a scalar, or a mapping, is an error.
-// The alternative, guessing, is what let a "requires: [" with its items on
-// later lines parse as an empty list and accept a banned token.
-func parseRequiresFromYAML(content string) ([]string, error) {
-	lines := strings.Split(content, "\n")
-	var (
-		found     bool
-		foundLine int
-		result    []string
-	)
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "requires:") {
-			continue
-		}
-		// A duplicate key is ambiguous, and the ambiguity is exploitable: this
-		// validator would read the first value while another YAML consumer may
-		// take the last or reject the document, so a benign first requires can
-		// hide a prohibited token in a second one. Reject rather than pick.
-		if found {
-			return nil, fmt.Errorf("duplicate top-level requires key on lines %d and %d", foundLine, i+1)
-		}
-		found, foundLine = true, i+1
-		// Only a top-level key is understood. An indented requires: belongs to
-		// some nested structure this parser does not model, so reading it as
-		// the case's requires would be a guess.
-		if line != trimmed {
-			return nil, fmt.Errorf("requires must be a top-level key; found it indented on line %d", i+1)
-		}
-
-		rest, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "requires:")))
-		if err != nil {
-			return nil, err
-		}
-
-		// Assign rather than return: the scan has to reach the end of the file
-		// to notice a second requires key. Returning the first value is exactly
-		// the behaviour that made a duplicate key exploitable.
-		switch {
-		case rest == "":
-			block, err := parseRequiresBlockSequence(lines[i+1:])
-			if err != nil {
-				return nil, err
-			}
-			result = block
-		case strings.HasPrefix(rest, "["):
-			if !strings.HasSuffix(rest, "]") {
-				return nil, fmt.Errorf("requires uses a multi-line flow sequence on line %d, which this validator does not parse; use one line or a block sequence", i+1)
-			}
-			result = parseRequiresFlowSequence(rest)
-		default:
-			return nil, fmt.Errorf("requires must be a list, got %q on line %d", rest, i+1)
-		}
-	}
-	return result, nil
-}
-
-// parseRequiresBlockSequence reads the entries of a block sequence, stopping at
-// the first line that ends the block. Anything indented that is not an entry, a
-// comment, or blank is an error rather than a stop signal.
-func parseRequiresBlockSequence(lines []string) ([]string, error) {
-	var toks []string
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		if line == trimmed {
-			return toks, nil // next top-level key ends the block
-		}
-		if !strings.HasPrefix(trimmed, "- ") && trimmed != "-" {
-			return nil, fmt.Errorf("unexpected %q inside the requires block at offset %d; expected a list entry", trimmed, i+1)
-		}
-		entry, err := stripYAMLComment(strings.TrimSpace(strings.TrimPrefix(trimmed, "-")))
-		if err != nil {
-			return nil, err
-		}
-		if entry == "" {
-			return nil, fmt.Errorf("empty entry inside the requires block at offset %d", i+1)
-		}
-		toks = append(toks, trimQuotes(entry))
-	}
-	return toks, nil
-}
-
-// parseRequiresFlowSequence splits a single-line flow sequence.
-func parseRequiresFlowSequence(rest string) []string {
-	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(rest, "["), "]"))
-	if inner == "" {
-		return nil
-	}
-	var toks []string
-	for _, part := range strings.Split(inner, ",") {
-		if part = trimQuotes(strings.TrimSpace(part)); part != "" {
-			toks = append(toks, part)
-		}
-	}
-	return toks
-}
-
-func trimQuotes(value string) string {
-	return strings.Trim(value, "\"'")
-}
-
-// stripYAMLComment removes a trailing comment. A marker inside a quoted scalar
-// is not a comment, and an unterminated quote is an error rather than a guess.
-func stripYAMLComment(value string) (string, error) {
-	var quote rune
-	for i, r := range value {
-		switch {
-		case quote != 0:
-			if r == quote {
-				quote = 0
-			}
-		case r == '\'' || r == '"':
-			quote = r
-		case r == '#':
-			return strings.TrimSpace(value[:i]), nil
-		}
-	}
-	if quote != 0 {
-		return "", fmt.Errorf("unterminated quote in %q", value)
-	}
-	return strings.TrimSpace(value), nil
 }
 
 // ResultLine represents a single line in a runner results JSONL file.

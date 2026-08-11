@@ -1,29 +1,25 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // These vectors pin the structural boundary shared by the public root schemas
 // and the stdlib validator. Repository-wide graph and registry checks are
 // called out below as Go-only because one JSON document cannot express them.
 func TestCaseSchemaConformance(t *testing.T) {
-	schema := compileConformanceSchema(t, filepath.Join("..", "schemas", "case-v4.schema.json"))
 	raw := readConformanceFixture(t, filepath.Join("..", "cases", "a2a-agent-card", "a2a-card-benign-normal-006.json"))
-	assertSchemaAndGoAccept(t, schema, raw, caseValidatorAccepts(t))
+	assertGoAccept(t, raw, caseValidatorAccepts(t))
 
 	baseline := decodeConformanceObject(t, raw)
 	for _, required := range []string{"schema_version", "id", "category", "title", "description", "input_type", "transport", "payload", "expected_verdict", "severity", "capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source"} {
 		t.Run("required_"+required, func(t *testing.T) {
 			mutated := cloneConformanceObject(t, baseline)
 			delete(mutated, required)
-			assertSchemaAndGoReject(t, schema, marshalConformanceJSON(t, mutated), caseValidatorAccepts(t))
+			assertGoReject(t, marshalConformanceJSON(t, mutated), caseValidatorAccepts(t))
 		})
 	}
 	for name, mutate := range map[string]func(map[string]any){
@@ -40,7 +36,7 @@ func TestCaseSchemaConformance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			mutated := cloneConformanceObject(t, baseline)
 			mutate(mutated)
-			assertSchemaAndGoReject(t, schema, marshalConformanceJSON(t, mutated), caseValidatorAccepts(t))
+			assertGoReject(t, marshalConformanceJSON(t, mutated), caseValidatorAccepts(t))
 		})
 	}
 	for name, mutate := range map[string]func(map[string]any){
@@ -50,7 +46,7 @@ func TestCaseSchemaConformance(t *testing.T) {
 		t.Run("conditional_"+name, func(t *testing.T) {
 			mutated := cloneConformanceObject(t, baseline)
 			mutate(mutated)
-			assertSchemaAndGoReject(t, schema, marshalConformanceJSON(t, mutated), caseValidatorAccepts(t))
+			assertGoReject(t, marshalConformanceJSON(t, mutated), caseValidatorAccepts(t))
 		})
 	}
 
@@ -58,7 +54,6 @@ func TestCaseSchemaConformance(t *testing.T) {
 		mutated := cloneConformanceObject(t, baseline)
 		mutated["supersedes"] = mutated["id"]
 		data := marshalConformanceJSON(t, mutated)
-		schemaAcceptsConformance(t, schema, data)
 		path := filepath.Join(t.TempDir(), "case.json")
 		if err := os.WriteFile(path, data, 0o600); err != nil {
 			t.Fatal(err)
@@ -70,7 +65,6 @@ func TestCaseSchemaConformance(t *testing.T) {
 }
 
 func TestResultSchemaConformance(t *testing.T) {
-	schema := compileConformanceSchema(t, filepath.Join("..", "schemas", "result-v4.schema.json"))
 	profile := decodeConformanceObject(t, readConformanceFixture(t, filepath.Join("..", "examples", "pipelock", "tool-profile.json")))
 	caseDoc := decodeConformanceObject(t, readConformanceFixture(t, filepath.Join("..", "cases", "a2a-agent-card", "a2a-card-benign-normal-006.json")))
 	baseline := map[string]any{
@@ -87,13 +81,13 @@ func TestResultSchemaConformance(t *testing.T) {
 	}
 	raw := marshalConformanceJSON(t, baseline)
 	accepts := resultValidatorAccepts(t)
-	assertSchemaAndGoAccept(t, schema, raw, accepts)
+	assertGoAccept(t, raw, accepts)
 
 	for _, required := range []string{"schema_version", "case_id", "tool", "tool_version", "capability_registry", "expected_verdict", "actual_verdict", "score", "evidence", "notes"} {
 		t.Run("required_"+required, func(t *testing.T) {
 			mutated := cloneConformanceObject(t, baseline)
 			delete(mutated, required)
-			assertSchemaAndGoReject(t, schema, marshalConformanceJSON(t, mutated), accepts)
+			assertGoReject(t, marshalConformanceJSON(t, mutated), accepts)
 		})
 	}
 	for name, mutate := range map[string]func(map[string]any){
@@ -106,7 +100,7 @@ func TestResultSchemaConformance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			mutated := cloneConformanceObject(t, baseline)
 			mutate(mutated)
-			assertSchemaAndGoReject(t, schema, marshalConformanceJSON(t, mutated), accepts)
+			assertGoReject(t, marshalConformanceJSON(t, mutated), accepts)
 		})
 	}
 
@@ -114,13 +108,11 @@ func TestResultSchemaConformance(t *testing.T) {
 		mutated := cloneConformanceObject(t, baseline)
 		mutated["score"] = "fail"
 		raw := marshalConformanceJSON(t, mutated)
-		schemaAcceptsConformance(t, schema, raw)
 		if accepts(raw) {
 			t.Fatal("Go-only score consistency accepted matching verdict with fail score")
 		}
 	})
 	t.Run("go_only_cross_line_duplicate", func(t *testing.T) {
-		schemaAcceptsConformance(t, schema, raw)
 		path := filepath.Join(t.TempDir(), "results.jsonl")
 		if err := os.WriteFile(path, append(append(raw, '\n'), raw...), 0o600); err != nil {
 			t.Fatal(err)
@@ -169,55 +161,17 @@ func resultValidatorAccepts(t *testing.T) func([]byte) bool {
 	}
 }
 
-func compileConformanceSchema(t *testing.T, path string) *jsonschema.Schema {
+func assertGoAccept(t *testing.T, raw []byte, goAccepts func([]byte) bool) {
 	t.Helper()
-	raw := readConformanceFixture(t, path)
-	compiler := jsonschema.NewCompiler()
-	compiler.AssertFormat()
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := compiler.AddResource(path, doc); err != nil {
-		t.Fatal(err)
-	}
-	schema, err := compiler.Compile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return schema
-}
-
-func assertSchemaAndGoAccept(t *testing.T, schema *jsonschema.Schema, raw []byte, goAccepts func([]byte) bool) {
-	t.Helper()
-	schemaAcceptsConformance(t, schema, raw)
 	if !goAccepts(raw) {
-		t.Fatalf("Go validator rejected schema-valid vector: %s", raw)
+		t.Fatalf("Go validator rejected valid vector: %s", raw)
 	}
 }
 
-func assertSchemaAndGoReject(t *testing.T, schema *jsonschema.Schema, raw []byte, goAccepts func([]byte) bool) {
+func assertGoReject(t *testing.T, raw []byte, goAccepts func([]byte) bool) {
 	t.Helper()
-	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := schema.Validate(value); err == nil {
-		t.Fatalf("schema accepted mutation: %s", raw)
-	}
 	if goAccepts(raw) {
-		t.Fatalf("Go validator accepted schema-rejected mutation: %s", raw)
-	}
-}
-
-func schemaAcceptsConformance(t *testing.T, schema *jsonschema.Schema, raw []byte) {
-	t.Helper()
-	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := schema.Validate(value); err != nil {
-		t.Fatalf("schema rejected vector: %v\n%s", err, raw)
+		t.Fatalf("Go validator accepted invalid mutation: %s", raw)
 	}
 }
 

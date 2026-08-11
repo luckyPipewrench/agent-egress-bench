@@ -44,13 +44,21 @@
         4
       ],
       "frozen_versions": [],
-      "canonical_schema_path": null,
-      "schemas": [],
+      "canonical_schema_path": "schemas/multi-file-case-v4.schema.json",
+      "schemas": [
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/multi-file-case-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/multi-file-case-v4.schema.json"
+        }
+      ],
       "writer": [
         "cases/mcp-drift/"
       ],
       "reader": [
         "validate/main.go",
+        "validate/multifile.go",
         "runner/multifile.go"
       ],
       "source_versions": [

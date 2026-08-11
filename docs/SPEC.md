@@ -3,7 +3,8 @@
 **Version:** 1
 **Status:** Stable
 
-**JSON Schema:** [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json)
+**JSON Schemas:** [`case-v4`](../schemas/case-v4.schema.json) and
+[`multi-file-case-v4`](../schemas/multi-file-case-v4.schema.json)
 
 ## Overview
 
@@ -69,6 +70,9 @@ Single-file JSON v1 cases are binary. No `warn` appears in single-file JSON case
 The multi-file MCP drift fixtures use a separate `case.yaml` contract documented in
 [`cases/mcp-drift/README.md`](../cases/mcp-drift/README.md), where `warn` is allowed for
 benign drift that should be surfaced for operator review without being blocked.
+Its JSON Schema applies to the decoded YAML data model. The Go validator and
+runner also enforce directory-name identity, distinct component filenames, and
+the referenced tools/list and expected-receipt document contracts.
 
 ### severity
 
@@ -224,6 +228,7 @@ rewrite it to a trusted fixture hostname or add it to a trusted-destination list
 JSON Schema files for programmatic validation:
 
 - [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json): case file schema
+- [`schemas/multi-file-case-v4.schema.json`](../schemas/multi-file-case-v4.schema.json): temporal MCP drift `case.yaml` schema
 - [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json): tool profile schema
 - [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json): runner result line schema
 

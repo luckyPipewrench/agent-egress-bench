@@ -190,6 +190,19 @@ func TestLoadMultiFileCase_MissingExpected(t *testing.T) {
 	}
 }
 
+func TestLoadMultiFileCase_MissingNotes(t *testing.T) {
+	dir := t.TempDir()
+	copyMultiFileCases(t, filepath.Join("..", "cases", "mcp-drift"), dir, "mcp-drift-benign-001")
+	notesPath := filepath.Join(dir, "mcp-drift-benign-001", "notes.md")
+	if err := os.Remove(notesPath); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadMultiFileCases(dir)
+	if err == nil || !strings.Contains(err.Error(), "required notes file") {
+		t.Fatalf("missing notes error = %v, want required notes file refusal", err)
+	}
+}
+
 func TestLoadMultiFileCase_InvalidExpectedJSON(t *testing.T) {
 	dir := t.TempDir()
 	caseDir := filepath.Join(dir, "broken-case")
@@ -239,8 +252,48 @@ func TestLoadMultiFileCase_RejectsPathTraversal(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected loader error for path traversal, got nil")
 	}
-	if !strings.Contains(err.Error(), "inside the case directory") {
+	if !strings.Contains(err.Error(), "safe relative-path pattern") {
 		t.Errorf("error did not explain path confinement: %v", err)
+	}
+}
+
+func TestMultiFileComponentContractsRejectMalformedShapes(t *testing.T) {
+	validResponse := func() map[string]interface{} {
+		return map[string]interface{}{
+			"jsonrpc": "2.0", "id": json.Number("1"),
+			"result": map[string]interface{}{"tools": []interface{}{
+				map[string]interface{}{"name": "read_file", "inputSchema": map[string]interface{}{"type": "object"}},
+			}},
+		}
+	}
+
+	objectID := validResponse()
+	objectID["id"] = map[string]interface{}{"nested": true}
+	if err := validateToolsListResponse(objectID); err == nil || !strings.Contains(err.Error(), "id must be a string, number, or null") {
+		t.Fatalf("object-valued JSON-RPC id error = %v, want id type refusal", err)
+	}
+	missingSchema := validResponse()
+	delete(missingSchema["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{}), "inputSchema")
+	if err := validateToolsListResponse(missingSchema); err == nil || !strings.Contains(err.Error(), "inputSchema must be an object") {
+		t.Fatalf("missing inputSchema error = %v, want inputSchema refusal", err)
+	}
+	bothResultAndError := validResponse()
+	bothResultAndError["error"] = map[string]interface{}{"code": json.Number("-32000"), "message": "denied"}
+	if err := validateToolsListResponse(bothResultAndError); err == nil || !strings.Contains(err.Error(), "both result and error") {
+		t.Fatalf("result-and-error response error = %v, want exclusive response-shape refusal", err)
+	}
+
+	c := MultiFileCase{ExpectedVerdict: "block", Transport: "mcp_http", Severity: "critical"}
+	record := map[string]interface{}{
+		"version": json.Number("1"), "verdict": "block", "transport": "mcp_http",
+		"severity": "critical", "layer": "mcp_tool_baseline", "pattern": "drift", "intent": "deny",
+	}
+	if err := validateExpectedReceiptContract(c, map[string]interface{}{"version": "1", "action_record": record}); err == nil {
+		t.Fatal("accepted string top-level receipt version")
+	}
+	record["version"] = "1"
+	if err := validateExpectedReceiptContract(c, map[string]interface{}{"version": json.Number("1"), "action_record": record}); err == nil {
+		t.Fatal("accepted string action-record version")
 	}
 }
 
@@ -687,8 +740,20 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 		t.Fatalf("snapshot hash = %s, want relocated override %s", snapshotHash, overrideHash)
 	}
 
+	notesPath := filepath.Join(override, "mcp-drift-benign-001", "notes.md")
+	if err := os.WriteFile(notesPath, []byte("changed required narrative\n"), 0o600); err != nil {
+		t.Fatalf("mutate required notes: %v", err)
+	}
+	notesHash, err := computeCorpusSHA256(casesDir, override)
+	if err != nil {
+		t.Fatalf("hash notes-mutated corpus: %v", err)
+	}
+	if notesHash == overrideHash {
+		t.Fatal("changing required notes.md left the corpus digest unchanged")
+	}
+
 	afterPath := filepath.Join(override, "mcp-drift-benign-001", "after.json")
-	if err := os.WriteFile(afterPath, []byte(`{"jsonrpc":"2.0","id":99,"result":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(afterPath, []byte(`{"jsonrpc":"2.0","id":99,"result":{"tools":[]}}`), 0o600); err != nil {
 		t.Fatalf("mutate multi-file artifact: %v", err)
 	}
 	mutatedHash, err := computeCorpusSHA256(casesDir, override)
@@ -697,5 +762,28 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	}
 	if mutatedHash == overrideHash {
 		t.Fatal("changing a multi-file artifact left the corpus digest unchanged")
+	}
+}
+
+func TestValidateMultiFileNameRejectsSchemaInvalidNames(t *testing.T) {
+	for _, test := range []struct {
+		name, suffix string
+		wantErr      bool
+	}{
+		{"before.json", ".json", false},
+		{"fixtures/before.json", ".json", false},
+		{"before file.json", ".json", true},
+		{".before.json", ".json", true},
+		{"nøtes.md", ".md", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateMultiFileName(test.name, test.suffix, "fixture")
+			if test.wantErr && err == nil {
+				t.Fatalf("validateMultiFileName(%q) accepted a schema-invalid name", test.name)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("validateMultiFileName(%q) rejected a valid name: %v", test.name, err)
+			}
+		})
 	}
 }

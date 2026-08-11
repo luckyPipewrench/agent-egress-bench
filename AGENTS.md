@@ -23,6 +23,7 @@ agent-egress-bench is a public, tool-neutral corpus for testing AI agent egress 
 | --- | --- |
 | Case and multi-file fixture format | [`docs/SPEC.md`](docs/SPEC.md) |
 | Runner inputs and outputs | [`docs/RUNNER.md`](docs/RUNNER.md) |
+| Independent runner parity | [`docs/RUNNER-PARITY.md`](docs/RUNNER-PARITY.md) |
 | Result states, scoring, and methodology | [`docs/gauntlet.md`](docs/gauntlet.md) |
 | Versioning, compatibility, neutrality, and immutability | [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) |
 | Receipt-scoring profiles | [`docs/RECEIPT-SCORING.md`](docs/RECEIPT-SCORING.md) |
