@@ -246,8 +246,26 @@ def require_top_level_required_properties(document, label):
     missing = sorted(set(required) - set(properties))
     if missing:
         fail(f"{label}: required fields lack property definitions: {missing}")
+    validation_keywords = {
+        "$ref", "$dynamicRef", "type", "enum", "const",
+        "multipleOf", "maximum", "exclusiveMaximum", "minimum", "exclusiveMinimum",
+        "maxLength", "minLength", "pattern",
+        "maxItems", "minItems", "uniqueItems", "maxContains", "minContains",
+        "maxProperties", "minProperties", "required", "dependentRequired",
+        "allOf", "anyOf", "oneOf", "not", "if", "then", "else",
+        "properties", "patternProperties", "additionalProperties", "propertyNames",
+        "dependentSchemas", "unevaluatedProperties",
+        "prefixItems", "items", "contains", "unevaluatedItems",
+    }
     unconstrained = sorted(
-        field for field in required if properties[field] is True or properties[field] == {}
+        field
+        for field in required
+        if properties[field] is True
+        or properties[field] == {}
+        or (
+            isinstance(properties[field], dict)
+            and not validation_keywords.intersection(properties[field])
+        )
     )
     if unconstrained:
         fail(f"{label}: required fields have unconstrained property definitions: {unconstrained}")

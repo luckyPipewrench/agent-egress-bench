@@ -115,7 +115,13 @@ class MalformedJsonTypeTest(unittest.TestCase):
         )
 
     def test_rejects_unconstrained_required_property_definition(self):
-        for unconstrained in ({}, True):
+        for unconstrained in (
+            {},
+            True,
+            {"title": "typed"},
+            {"description": "typed"},
+            {"$defs": {"value": {"type": "string"}}},
+        ):
             with self.subTest(unconstrained=unconstrained):
                 with self.assertRaisesRegex(
                     ValueError, "required fields have unconstrained property definitions: \\['typed'\\]"
