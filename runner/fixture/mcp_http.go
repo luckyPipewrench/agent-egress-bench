@@ -270,6 +270,9 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		w.Header().Set("Content-Type", "application/json")
 		switch req.Method {
 		case "initialize":
+			if identity != "" {
+				w.Header().Set("Mcp-Session-Id", "aeb-session-"+identity)
+			}
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"aeb-mcp-fixture","version":"1"}}}`, id)
 		case "tools/list":
 			f.listCalls.Add(1)

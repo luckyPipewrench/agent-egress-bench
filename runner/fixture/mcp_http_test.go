@@ -46,6 +46,34 @@ func TestMCPHTTPFixtureCountsTotalPostsAndOperationCallsSeparately(t *testing.T)
 	}
 }
 
+func TestMCPHTTPFixtureInitializeMintsIdentityBoundSession(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	const identity = "aeb-request-session-proof"
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		f.URL(),
+		bytes.NewBufferString(`{"jsonrpc":"2.0","id":"`+identity+`","method":"initialize","params":{"_meta":{"aeb_request_identity":"`+identity+`"}}}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if got, want := resp.Header.Get("Mcp-Session-Id"), "aeb-session-"+identity; got != want {
+		t.Fatalf("Mcp-Session-Id = %q, want %q", got, want)
+	}
+}
+
 func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
 	f, err := StartMCPHTTP()
 	if err != nil {

@@ -131,9 +131,15 @@ func classifyMCPHTTPBlockForRange(body []byte, denyRange [2]int, productSurface 
 			}
 		}
 		if code <= -32600 {
-			return &Result{Err: fmt.Errorf("JSON-RPC protocol error %d: %s", code, rpcResp.Error.Message)}
+			return &Result{
+				Err:      fmt.Errorf("JSON-RPC protocol error %d: %s", code, rpcResp.Error.Message),
+				Evidence: map[string]interface{}{"product_surface": productSurface},
+			}
 		}
-		return &Result{Err: fmt.Errorf("JSON-RPC error %d: %s", code, rpcResp.Error.Message)}
+		return &Result{
+			Err:      fmt.Errorf("JSON-RPC error %d: %s", code, rpcResp.Error.Message),
+			Evidence: map[string]interface{}{"product_surface": productSurface},
+		}
 	}
 	return nil
 }
