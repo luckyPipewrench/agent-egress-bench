@@ -117,6 +117,8 @@ mcp-chain-dow-under-budget-011
 mcp-chain-env-network-002
 mcp-chain-exfil-001
 mcp-chain-http-benign-summary-014
+mcp-chain-http-read-encode-local-016
+mcp-chain-http-read-encode-send-015
 mcp-chain-http-read-send-013
 mcp-chain-persist-callback-006
 mcp-chain-read-write-send-005
@@ -135,7 +137,9 @@ mcp-input-double-encode-009
 mcp-input-env-leak-003
 mcp-input-hex-apikey-008
 mcp-input-http-benign-013
+mcp-input-http-benign-fragmented-015
 mcp-input-http-injection-012
+mcp-input-http-obfuscated-secret-014
 mcp-input-injection-002
 mcp-input-jwt-url-007
 mcp-input-nested-deep-011
@@ -147,11 +151,15 @@ mcp-tool-homoglyph-name-013
 mcp-tool-http-benign-verbose-002
 mcp-tool-http-description-poison-007
 mcp-tool-http-homoglyph-name-011
+mcp-tool-http-result-base64-injection-014
 mcp-tool-http-result-benign-010
+mcp-tool-http-result-benign-base64-015
 mcp-tool-http-result-injection-009
 mcp-tool-http-result-resource-benign-013
 mcp-tool-http-result-resource-injection-012
+mcp-tool-http-schema-benign-anyof-015
 mcp-tool-http-schema-poison-008
+mcp-tool-http-schema-type-confusion-014
 mcp-tool-poison-001
 mcp-tool-priority-006
 mcp-tool-rugpull-002
