@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Structural tests for the Pipelock secret-scan workflow.
 
-Each assertion here corresponds to a defect that was caught by a human reviewer
-rather than by any check, which is why they are tests and not comments.
+Each assertion corresponds to a defect caught by a human reviewer rather than by
+any check, which is why they are tests and not comments.
 
 The scan workflow was rewritten on 2026-08-10 because the published Pipelock
 action installs the latest RELEASE, and a scanner fix on Pipelock's default
@@ -12,89 +12,166 @@ deleted a file failed with "unverifiable input: content outside unified diff
 hunks" and the action surfaced that as "Secrets detected in PR diff" with no
 secret present. That blocked #157 for a day.
 
-Three properties of the rewrite are load-bearing and easy to lose silently.
+These assertions target the EXECUTABLE path, never workflow prose. An earlier
+version of this file searched the raw workflow text, which meant a file with two
+no-op steps and the pinned revision sitting inside a COMMENT would have passed
+every check while invoking no scanner at all. Review caught that. Matching on
+step display names or on any occurrence of a command in the file is decoration:
+the contract is the command that actually runs, reached through the parsed
+event condition.
 """
 
 import re
 import unittest
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pipelock.yaml"
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+SCAN_COMMAND = "pipelock git scan-diff"
+
+# The two events that must each reach a scan, keyed by the condition the step
+# is actually gated on rather than by its display name.
+REQUIRED_EVENTS = {
+    "pull_request": "github.event_name == 'pull_request'",
+    "workflow_dispatch": "github.event_name == 'workflow_dispatch'",
+}
+
+
+def load_workflow():
+    return yaml.safe_load(WORKFLOW.read_text())
+
+
+def scan_job(workflow):
+    jobs = workflow.get("jobs") or {}
+    job = jobs.get("security-scan")
+    if job is None:
+        raise AssertionError(
+            "no security-scan job; if the job was renamed, update this test rather than deleting it"
+        )
+    return job
+
+
+def steps_running(job, needle):
+    """Steps whose executed shell actually contains needle."""
+    return [s for s in (job.get("steps") or []) if needle in (s.get("run") or "")]
 
 
 class PipelockScanWorkflowTest(unittest.TestCase):
     def setUp(self):
-        self.workflow = WORKFLOW.read_text()
+        self.workflow = load_workflow()
+        self.job = scan_job(self.workflow)
 
-    def test_both_scan_paths_survive(self):
-        """Both trigger paths must keep a diff scan.
+    def test_both_events_reach_a_real_scan(self):
+        """Each trigger must reach a step that actually runs the scanner.
 
-        Promotion pull requests are created with GITHUB_TOKEN, which does not
-        emit a pull_request run, so the promotion workflow dispatches this one
-        against the generated branch instead. Losing either path leaves a class
-        of change entering main unscanned, and the loss is invisible because the
-        remaining path still reports success.
-
-        This is not hypothetical: an early draft of the rewrite dropped the
-        dispatch path entirely while rewriting the file from a stale checkout.
+        Promotion pull requests are created with GITHUB_TOKEN and do not emit a
+        pull_request run, so the promotion workflow dispatches this one against
+        the generated branch instead. Losing either path leaves a class of
+        change entering main unscanned, and the loss is invisible because the
+        surviving path still reports success.
         """
-        self.assertRegex(
-            self.workflow,
-            r"(?m)^  workflow_dispatch:$",
-            "workflow_dispatch trigger removed; promotion branches would go unscanned",
-        )
-        self.assertRegex(
-            self.workflow,
-            r"(?m)^  pull_request:$",
-            "pull_request trigger removed; ordinary pull requests would go unscanned",
-        )
-        for step in ("Scan pull request diff", "Scan dispatched branch diff"):
+        triggers = self.workflow.get(True) or self.workflow.get("on") or {}
+        for event in REQUIRED_EVENTS:
             self.assertIn(
-                f"- name: {step}",
-                self.workflow,
-                f"missing scan step: {step}",
+                event,
+                triggers,
+                f"{event} trigger removed; that class of change would go unscanned",
             )
 
-    def test_scanner_revision_is_immutable(self):
-        """The scanner must be pinned to a commit, never a moving ref.
+        scanning = steps_running(self.job, SCAN_COMMAND)
+        self.assertTrue(
+            scanning,
+            f"no step actually runs {SCAN_COMMAND!r}; the job may look intact while scanning nothing",
+        )
 
-        A floating `@main` would let any later commit on Pipelock change or
-        disable this repository's secret gate with no reviewed change here. The
-        first version of this rewrite used `@main` and that was caught in
-        review.
+        conditions = [str(s.get("if") or "") for s in scanning]
+        for event, condition in REQUIRED_EVENTS.items():
+            self.assertTrue(
+                any(condition in c for c in conditions),
+                f"no scanning step is gated on {condition!r}; {event} would run the job without scanning",
+            )
+
+    def test_scanner_is_built_from_an_immutable_pinned_revision(self):
+        """The executed install command must consume a pinned commit.
+
+        Asserting that a 40-character SHA appears somewhere in the file is not
+        enough: the real install could use a moving ref while an unrelated or
+        commented value satisfies the pattern. The pin only counts if the
+        command that installs the scanner consumes it.
         """
-        match = re.search(r"PIPELOCK_REV:\s*(\S+)", self.workflow)
-        self.assertIsNotNone(
-            match,
-            "no PIPELOCK_REV pin found; the scanner build must name an immutable revision",
-        )
-        rev = match.group(1).strip().strip("'\"")
-        self.assertRegex(
-            rev,
-            FULL_SHA,
-            f"PIPELOCK_REV is {rev!r}; pin a full 40-character commit rather than a branch or tag, "
-            "so a later upstream commit cannot silently change this gate",
-        )
+        installing = steps_running(self.job, "go install")
+        self.assertTrue(installing, "no step installs the scanner")
 
-    def test_diff_generation_forces_text(self):
-        """Diffs must be generated with --text.
+        for step in installing:
+            run = step["run"]
+            env = step.get("env") or {}
 
-        Without it, a path marked binary by an in-repo .gitattributes reduces to
+            module_refs = re.findall(r"cmd/pipelock@(\S+)", run)
+            self.assertTrue(
+                module_refs,
+                f"install command does not name a pipelock revision:\n  {run.strip()}",
+            )
+
+            for ref in module_refs:
+                ref = ref.strip('"').strip("'")
+                # The ref is normally an env expansion; resolve it before judging.
+                expansion = re.fullmatch(r"\$\{?(\w+)\}?", ref)
+                if expansion:
+                    key = expansion.group(1)
+                    self.assertIn(
+                        key,
+                        env,
+                        f"install consumes ${key} but the step does not define it, so the pinned "
+                        "revision cannot be verified here",
+                    )
+                    resolved = str(env[key]).strip()
+                else:
+                    resolved = ref
+
+                self.assertRegex(
+                    resolved,
+                    FULL_SHA,
+                    f"scanner installed from {resolved!r}; pin a full 40-character commit so a later "
+                    "upstream commit cannot silently change or disable this gate",
+                )
+
+    def test_scanned_diff_is_generated_with_text(self):
+        """The diff feeding the scanner must be generated with --text.
+
+        Without it a path marked binary by an in-repo .gitattributes reduces to
         a "Binary files differ" marker and its content is never scanned, so a
         credential can be added behind a one-line attributes rule.
+
+        Only the diff that actually feeds the scanner is checked. Requiring
+        every git diff in the file to carry --text would reject legitimate
+        non-scanning uses such as `git diff --quiet`.
         """
-        diff_lines = [ln for ln in self.workflow.splitlines() if "git diff" in ln]
-        self.assertTrue(diff_lines, "no git diff invocation found in the scan workflow")
-        for line in diff_lines:
-            self.assertIn(
-                "--text",
-                line,
-                f"diff generated without --text:\n  {line.strip()}\n"
-                "an in-repo .gitattributes rule could hide added content from the scanner",
+        scanning = steps_running(self.job, SCAN_COMMAND)
+        self.assertTrue(scanning, "no scanning step to check")
+
+        for step in scanning:
+            # Join continuations so a multi-line command is judged whole.
+            run = re.sub(r"\\\s*\n\s*", " ", step["run"])
+            diff_commands = [
+                line.strip()
+                for line in run.splitlines()
+                if "git diff" in line and ">" in line
+            ]
+            self.assertTrue(
+                diff_commands,
+                f"scanning step {step.get('name')!r} does not generate a diff file it then scans",
             )
+            for command in diff_commands:
+                self.assertIn(
+                    "--text",
+                    command,
+                    f"diff feeding the scanner is generated without --text:\n  {command}\n"
+                    "an in-repo .gitattributes rule could hide added content from the scanner",
+                )
 
 
 if __name__ == "__main__":
