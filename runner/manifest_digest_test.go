@@ -54,6 +54,47 @@ func TestBenchmarkManifestDigestSeparatesRegroupedBytes(t *testing.T) {
 	}
 }
 
+func TestCorpusSnapshotIgnoresNonCaseFiles(t *testing.T) {
+	caseJSON := `{"schema_version":4,"id":"nested-case","category":"url","expected_verdict":"block"}`
+	plain := writeDigestCorpus(t, map[string]string{"nested/case.json": caseJSON})
+	withDocs := writeDigestCorpus(t, map[string]string{
+		"nested/case.json": caseJSON,
+		"README.md":        "corpus notes",
+	})
+
+	plainCorpus, err := computeCorpusSHA256(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentedCorpus, err := computeCorpusSHA256(withDocs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if documentedCorpus != plainCorpus {
+		t.Fatalf("README changed corpus digest: got %s, want %s", documentedCorpus, plainCorpus)
+	}
+
+	plainManifest, err := computeBenchmarkManifestSHA256(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentedManifest, err := computeBenchmarkManifestSHA256(withDocs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if documentedManifest != plainManifest {
+		t.Fatalf("README changed manifest digest: got %s, want %s", documentedManifest, plainManifest)
+	}
+
+	run, err := loadRunCorpus(withDocs, "")
+	if err != nil {
+		t.Fatalf("load corpus containing README: %v", err)
+	}
+	if len(run.cases) != 1 || run.cases[0].ID != "nested-case" {
+		t.Fatalf("loaded cases = %#v, want only nested-case", run.cases)
+	}
+}
+
 func TestBenchmarkManifestFramingResistsBoundaryForgery(t *testing.T) {
 	honest := writeDigestCorpus(t, map[string]string{"x.json": `y.json{}`})
 	forged := writeDigestCorpus(t, map[string]string{"x.jsony.json": `{}`})
