@@ -72,13 +72,23 @@ func TestMultiFileContractMatchesOfficialValidator(t *testing.T) {
 }
 
 func TestRestrictedYAMLParserMatchesRunnerScalarBoundaries(t *testing.T) {
-	for name, source := range map[string]string{
-		"compact mapping":       "id:mcp-drift-001\n",
-		"quoted schema version": "schema_version: \"4\"\n",
+	for name, tc := range map[string]struct {
+		source string
+		want   string
+	}{
+		"compact mapping": {
+			source: "id:mcp-drift-001\n",
+			want:   `unknown or malformed field "id"`,
+		},
+		"quoted schema version": {
+			source: "schema_version: \"4\"\n",
+			want:   "schema_version must be an unquoted integer",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := parseMultiFileCaseYAML([]byte(source)); err == nil {
-				t.Fatalf("accepted runner-incompatible YAML: %q", source)
+			if _, err := parseMultiFileCaseYAML([]byte(tc.source)); err == nil ||
+				!strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("parser error = %v, want error containing %q", err, tc.want)
 			}
 		})
 	}
