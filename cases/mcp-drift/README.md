@@ -37,9 +37,10 @@ binary verdict rather than claiming a field-by-field receipt comparison.
 The execution adapter is binary-verdict only. A case whose metadata says
 `expected_verdict: warn` is therefore normalized to the benign `allow` scoring
 class: allowing the changed inventory passes, while blocking it is a false
-positive. The retained case metadata and expected receipt still require the
-detector to emit the portable `warn` decision semantics; the binary score does
-not claim that field-level receipt comparison occurred.
+positive. For this adapter, a pass proves only that the tool did not block the
+benign change. It does not prove that the tool detected the change or emitted a
+warning. Receipt-aware adapters can compare the retained `expected.json` and
+claim the portable `warn` decision only after they expose that observation.
 
 ## `case.yaml` example (schema v4)
 

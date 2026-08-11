@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -267,6 +268,11 @@ func TestOfficialValidatorRejectsMalformedComponentShapes(t *testing.T) {
 	delete(missingSchema["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{}), "inputSchema")
 	if err := validateMultiFileToolsList(missingSchema); err == nil {
 		t.Fatal("accepted tool without inputSchema")
+	}
+	bothResultAndError := validResponse()
+	bothResultAndError["error"] = map[string]interface{}{"code": json.Number("-32000"), "message": "denied"}
+	if err := validateMultiFileToolsList(bothResultAndError); err == nil || !strings.Contains(err.Error(), "both result and error") {
+		t.Fatalf("result-and-error response error = %v, want exclusive response-shape refusal", err)
 	}
 
 	c := multiFileCase{ExpectedVerdict: "block", Transport: "mcp_http", Severity: "critical"}

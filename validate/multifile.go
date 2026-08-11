@@ -468,6 +468,9 @@ func validateMultiFileToolsList(raw interface{}) error {
 	if !validMultiFileJSONRPCID(id) {
 		return fmt.Errorf("id must be a string, number, or null")
 	}
+	if _, exists := response["error"]; exists {
+		return fmt.Errorf("tools/list response must not contain both result and error")
+	}
 	result, ok := response["result"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("result must be an object")

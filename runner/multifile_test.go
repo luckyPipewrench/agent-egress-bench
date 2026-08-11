@@ -277,6 +277,11 @@ func TestMultiFileComponentContractsRejectMalformedShapes(t *testing.T) {
 	if err := validateToolsListResponse(missingSchema); err == nil || !strings.Contains(err.Error(), "inputSchema must be an object") {
 		t.Fatalf("missing inputSchema error = %v, want inputSchema refusal", err)
 	}
+	bothResultAndError := validResponse()
+	bothResultAndError["error"] = map[string]interface{}{"code": json.Number("-32000"), "message": "denied"}
+	if err := validateToolsListResponse(bothResultAndError); err == nil || !strings.Contains(err.Error(), "both result and error") {
+		t.Fatalf("result-and-error response error = %v, want exclusive response-shape refusal", err)
+	}
 
 	c := MultiFileCase{ExpectedVerdict: "block", Transport: "mcp_http", Severity: "critical"}
 	record := map[string]interface{}{

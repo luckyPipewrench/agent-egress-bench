@@ -331,8 +331,9 @@ the required IDs or scoring contract.
 The loader strictly decodes `case.yaml` against
 [`multi-file-case-v4`](../schemas/multi-file-case-v4.schema.json), rejects
 unknown or missing fields, requires the ID to equal the directory name, and
-accepts only distinct same-directory `.json` component filenames plus a
-same-directory `.md` notes filename. It then validates `before.json` and
+accepts only distinct safe case-relative `.json` component paths plus a safe
+case-relative `.md` notes path. Nested paths remain confined to the case
+directory. It then validates `before.json` and
 `after.json` as MCP `tools/list` responses, either directly or in the
 multi-server wrapper used by the cross-server fixture, and validates
 `expected.json` against the case verdict, transport, and severity.
@@ -343,11 +344,13 @@ the loader does not sort tool definitions or server responses. Missing files,
 malformed JSON/YAML, unsafe paths, duplicate server IDs, empty tool names, and
 metadata disagreements fail the load rather than dropping the case.
 
-Multi-file `warn` remains visible in corpus metadata but maps to `allow` in the
-binary result row because the active result schema has only block/allow
-expectations. The runner does not claim generic receipt-field parity: it
-validates the normative `expected.json`, while an adapter must explicitly
-expose receipt comparison before those fields can become observed evidence.
+Multi-file `warn` remains visible as the receipt-aware expectation in corpus
+metadata but maps to `allow` in the binary result row because the active result
+schema has only block/allow expectations. For the generic adapter, a pass proves
+only that the tool did not block the benign change. It does not prove that the
+tool detected the change or emitted a warning. The runner validates the
+normative `expected.json`, but an adapter must expose receipt comparison before
+those fields become observed evidence.
 
 Reproducibility:
 
