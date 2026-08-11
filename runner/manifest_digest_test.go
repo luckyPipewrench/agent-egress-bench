@@ -77,6 +77,26 @@ func TestBenchmarkManifestFramingResistsBoundaryForgery(t *testing.T) {
 	}
 }
 
+func TestCorpusSHA256PreservesLegacyVector(t *testing.T) {
+	files := []corpusFile{
+		{hashPath: hashPath{logical: "b.json"}, data: []byte("beta")},
+		{hashPath: hashPath{logical: "a.json"}, data: []byte("alpha")},
+	}
+	if got := corpusSHA256FromSnapshot(files); got != "a4c4aeb92c20500f364b12b3771ef3a11193e2cf04d0f28956a829749993b39f" {
+		t.Fatalf("legacy corpus digest = %s, want published vector", got)
+	}
+}
+
+func TestBenchmarkManifestRejectsDuplicateKeys(t *testing.T) {
+	files := []corpusFile{
+		{hashPath: hashPath{manifestKey: "multifile/shared/case/case.yaml"}, data: []byte("first")},
+		{hashPath: hashPath{manifestKey: "multifile/shared/case/case.yaml"}, data: []byte("second")},
+	}
+	if _, err := benchmarkManifestSHA256FromSnapshot(files); err == nil || !strings.Contains(err.Error(), "duplicate benchmark manifest key") {
+		t.Fatalf("duplicate manifest keys error = %v", err)
+	}
+}
+
 func TestRunCorpusSnapshotBindsExecutedBytesAfterMutation(t *testing.T) {
 	root := writeDigestCorpus(t, map[string]string{
 		"case.json": `{"schema_version":4,"id":"before","category":"url","expected_verdict":"block"}`,
@@ -190,12 +210,12 @@ func TestBenchmarkManifestFamilyKeyIsUniqueAndOverrideInvariant(t *testing.T) {
 func TestWriteSummaryRejectsMalformedDigests(t *testing.T) {
 	valid := strings.Repeat("a", 64)
 	for _, tc := range []struct {
-		name, corpus, manifest, profile string
+		name, corpus, manifest, profile, wantField string
 	}{
-		{"empty manifest", valid, "", valid},
-		{"uppercase manifest", valid, strings.ToUpper(valid), valid},
-		{"short corpus", "abc123", valid, valid},
-		{"malformed profile", valid, valid, strings.Repeat("z", 64)},
+		{"empty manifest", valid, "", valid, "benchmark_manifest_sha256"},
+		{"uppercase manifest", valid, strings.ToUpper(valid), valid, "benchmark_manifest_sha256"},
+		{"short corpus", "abc123", valid, valid, "corpus_sha256"},
+		{"malformed profile", valid, valid, strings.Repeat("z", 64), "tool_profile_sha256"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := writeSummary(GauntletSummary{
@@ -207,6 +227,9 @@ func TestWriteSummaryRejectsMalformedDigests(t *testing.T) {
 			}, filepath.Join(t.TempDir(), "summary.json"))
 			if err == nil {
 				t.Fatal("writeSummary accepted malformed digest")
+			}
+			if !strings.Contains(err.Error(), tc.wantField) {
+				t.Fatalf("writeSummary error = %v, want field %q", err, tc.wantField)
 			}
 		})
 	}

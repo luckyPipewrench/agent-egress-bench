@@ -683,6 +683,9 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	if overrideHash != defaultHash {
 		t.Fatalf("relocated override hash = %s, want canonical %s", overrideHash, defaultHash)
 	}
+	if snapshotHash := corpusSHA256FromSnapshot(runCorpus.snapshot.files); snapshotHash != overrideHash {
+		t.Fatalf("snapshot hash = %s, want relocated override %s", snapshotHash, overrideHash)
+	}
 
 	afterPath := filepath.Join(override, "mcp-drift-benign-001", "after.json")
 	if err := os.WriteFile(afterPath, []byte(`{"jsonrpc":"2.0","id":99,"result":{}}`), 0o600); err != nil {

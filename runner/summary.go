@@ -269,9 +269,14 @@ func corpusSHA256FromSnapshot(files []corpusFile) string {
 // benchmarkManifestSHA256FromSnapshot frames every canonical key and byte
 // sequence with unsigned varint lengths. Framing binds file boundaries, while
 // family-qualified keys bind a file to its registered multi-file family.
-func benchmarkManifestSHA256FromSnapshot(files []corpusFile) string {
+func benchmarkManifestSHA256FromSnapshot(files []corpusFile) (string, error) {
 	ordered := append([]corpusFile(nil), files...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].manifestKey < ordered[j].manifestKey })
+	for i := 1; i < len(ordered); i++ {
+		if ordered[i-1].manifestKey == ordered[i].manifestKey {
+			return "", fmt.Errorf("duplicate benchmark manifest key %q", ordered[i].manifestKey)
+		}
+	}
 	h := sha256.New()
 	var size [binary.MaxVarintLen64]byte
 	writeField := func(value []byte) {
@@ -283,7 +288,7 @@ func benchmarkManifestSHA256FromSnapshot(files []corpusFile) string {
 		writeField([]byte(file.manifestKey))
 		writeField(file.data)
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // computeCorpusSHA256 is retained for compatibility tests and standalone
@@ -313,7 +318,7 @@ func computeBenchmarkManifestSHA256(casesDir string, multiFileDirs ...string) (s
 	if err != nil {
 		return "", err
 	}
-	return benchmarkManifestSHA256FromSnapshot(files), nil
+	return benchmarkManifestSHA256FromSnapshot(files)
 }
 
 // computeProfileSHA256 hashes the tool profile file contents.
@@ -355,7 +360,10 @@ func buildSummary(
 		return GauntletSummary{}, fmt.Errorf("refusing to summarize an empty corpus snapshot")
 	}
 	corpusSHA := corpusSHA256FromSnapshot(corpus.files)
-	manifestSHA := benchmarkManifestSHA256FromSnapshot(corpus.files)
+	manifestSHA, err := benchmarkManifestSHA256FromSnapshot(corpus.files)
+	if err != nil {
+		return GauntletSummary{}, err
+	}
 
 	profileSHA, err := computeProfileSHA256(profilePath)
 	if err != nil {

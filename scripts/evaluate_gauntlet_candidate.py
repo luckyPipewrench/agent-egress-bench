@@ -28,7 +28,7 @@ REQUIRED_IDENTITIES = (
     "scoring_version",
     "runner_version",
 )
-V5_REQUIRED_IDENTITIES = REQUIRED_IDENTITIES + ("benchmark_manifest_sha256",)
+V5_REQUIRED_IDENTITIES = (*REQUIRED_IDENTITIES, "benchmark_manifest_sha256")
 SCOPE_IDENTITIES = {
     "benchmark_manifest_sha256",
     "corpus_sha256",
