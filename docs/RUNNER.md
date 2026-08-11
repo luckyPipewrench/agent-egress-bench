@@ -321,6 +321,34 @@ Flags:
 - `--receipt-verifier-file <path>`: optional JSON file describing the tool's receipt verifier (shape: the `verifier` object in the receipt-scoring schema). Omitted means "no verifier shipped" and the runner emits a degraded honest verifier block.
 - `--multifile-cases <dir>`: optional source-location override for the multi-file MCP-drift cases. By default the runner discovers registered multi-file families under `--cases`; an override must yield the same logical case IDs as that loader-backed corpus.
 
+### Multi-file MCP drift loader
+
+By default, each immediate child directory under the registered
+`cases/mcp-drift/` family is one logical case. An explicit
+`--multifile-cases` path changes only the source location; it does not change
+the required IDs or scoring contract.
+
+The loader strictly decodes `case.yaml` against
+[`multi-file-case-v4`](../schemas/multi-file-case-v4.schema.json), rejects
+unknown or missing fields, requires the ID to equal the directory name, and
+accepts only distinct same-directory `.json` component filenames plus a
+same-directory `.md` notes filename. It then validates `before.json` and
+`after.json` as MCP `tools/list` responses, either directly or in the
+multi-server wrapper used by the cross-server fixture, and validates
+`expected.json` against the case verdict, transport, and severity.
+
+The runtime sends the before snapshot first to establish the baseline, then
+the after snapshot through the same logical session. Array order is retained;
+the loader does not sort tool definitions or server responses. Missing files,
+malformed JSON/YAML, unsafe paths, duplicate server IDs, empty tool names, and
+metadata disagreements fail the load rather than dropping the case.
+
+Multi-file `warn` remains visible in corpus metadata but maps to `allow` in the
+binary result row because the active result schema has only block/allow
+expectations. The runner does not claim generic receipt-field parity: it
+validates the normative `expected.json`, while an adapter must explicitly
+expose receipt comparison before those fields can become observed evidence.
+
 Reproducibility:
 
 - The top-level Gauntlet summary contract, including `corpus_sha256`, `benchmark_manifest_sha256`, and `tool_profile_sha256`, is documented in [gauntlet.md](gauntlet.md#gauntlet-summary-json-file).
@@ -358,3 +386,8 @@ Published profile reproduction should name the exact tool binary and corpus comm
 used for the run. A mismatch means the corpus drifted, the tool drifted, or the
 runner changed. A relying party reproducing a profile should treat a mismatch as a
 signal to investigate, not to trust either side blindly.
+
+Independent runner comparisons use the pre-reveal commitment protocol in
+[`RUNNER-PARITY.md`](RUNNER-PARITY.md). It binds both the normalized decision
+vector and the environment that produced it without treating different host
+environments as different decisions.

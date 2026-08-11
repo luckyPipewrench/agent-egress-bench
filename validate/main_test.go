@@ -1704,150 +1704,6 @@ func TestRequiresAcceptsRuntimePrerequisite(t *testing.T) {
 	}
 }
 
-// The multi-file case shape (case.yaml) is a second door into the same
-// applicability rules. Before this guard existed the loader read requires from
-// case.yaml and no validator ever saw it, so the single-file guard above was
-// bypassable by authoring the case in the multi-file shape.
-func TestMultiFileRequiresValidation(t *testing.T) {
-	const header = "schema_version: 4\nid: mcp-drift-test-001\n"
-
-	tests := []struct {
-		name    string
-		yaml    string
-		wantErr string
-	}{
-		{
-			name:    "difficulty flag in block form",
-			yaml:    header + "requires:\n  - mcp_tool_baseline\n  - encoding_evasion_scanning\n",
-			wantErr: "attack-difficulty flag",
-		},
-		{
-			name:    "difficulty flag in inline form",
-			yaml:    header + "requires: [mcp_tool_baseline, ssrf_bypass_scanning]\n",
-			wantErr: "attack-difficulty flag",
-		},
-		// The multi-file path checked only requires, so a case.yaml declaring
-		// any version at all, including one that does not exist, validated
-		// clean as long as its requirements were legal. The runner rejected it
-		// later, but the validator is what authors and CI run, so a corpus
-		// could be declared valid while carrying cases the scorer refuses.
-		{
-			name:    "unknown schema version is rejected",
-			yaml:    "schema_version: 99\nid: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
-			wantErr: "schema_version must be 4, got 99",
-		},
-		{
-			name:    "superseded schema version is rejected",
-			yaml:    "schema_version: 2\nid: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
-			wantErr: "schema_version must be 4, got 2",
-		},
-		{
-			name:    "missing schema version is an error, not an assumed default",
-			yaml:    "id: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
-			wantErr: "missing schema_version",
-		},
-		{
-			name:    "non-integer schema version is rejected",
-			yaml:    "schema_version: three\nid: mcp-drift-test-001\nrequires: [mcp_tool_baseline]\n",
-			wantErr: "must be an integer",
-		},
-		{
-			name:    "enforcement claim in block form",
-			yaml:    header + "requires:\n  - budget_enforcement\n",
-			wantErr: "enforcement claim",
-		},
-		// A multi-line flow sequence is valid YAML. The previous parser saw
-		// "requires: [", trimmed it to nothing, and reported an empty list, so
-		// every token on the following lines was accepted unexamined. That made
-		// the multi-file shape a working bypass of the whole applicability rule
-		// set rather than a second door onto it.
-		{
-			name:    "multi-line flow sequence is rejected, not read as empty",
-			yaml:    header + "requires: [\n  mcp_tool_baseline,\n  encoding_evasion_scanning\n]\n",
-			wantErr: "multi-line flow sequence",
-		},
-		{
-			name:    "scalar requires is rejected",
-			yaml:    header + "requires: mcp_tool_baseline\n",
-			wantErr: "must be a list",
-		},
-		// Reading the first key and returning made a duplicate exploitable: a
-		// benign first requires satisfies this validator while another YAML
-		// consumer may take the last value or reject the document outright.
-		{
-			name:    "duplicate requires key is rejected, not resolved",
-			yaml:    header + "requires: []\nrequires: [encoding_evasion_scanning]\n",
-			wantErr: "duplicate top-level requires key",
-		},
-		{
-			name:    "duplicate requires key is rejected even when both are benign",
-			yaml:    header + "requires: [mcp_tool_baseline]\nrequires: [mcp_chain_memory]\n",
-			wantErr: "duplicate top-level requires key",
-		},
-		{
-			name:    "mapping under requires is rejected",
-			yaml:    header + "requires:\n  nested:\n    - mcp_tool_baseline\n",
-			wantErr: "expected a list entry",
-		},
-		{
-			name:    "unterminated quote is rejected",
-			yaml:    header + "requires: [\"mcp_tool_baseline]\n",
-			wantErr: "unterminated quote",
-		},
-		// Availability matters as much as the bypass: a trailing comment on an
-		// inline sequence is ordinary YAML, and rejecting it would push authors
-		// toward the shapes this validator handles worst.
-		{
-			name: "inline sequence with a trailing comment is accepted",
-			yaml: header + "requires: [mcp_tool_baseline] # rationale\n",
-		},
-		{
-			name: "quoted tokens are accepted",
-			yaml: header + "requires: [\"mcp_tool_baseline\", 'mcp_chain_memory']\n",
-		},
-		{
-			name: "empty flow sequence is accepted",
-			yaml: header + "requires: []\n",
-		},
-		{
-			name:    "unknown token",
-			yaml:    header + "requires:\n  - totally_bogus_token\n",
-			wantErr: "invalid requires value",
-		},
-		{
-			name: "valid tokens pass",
-			yaml: header + "requires:\n  - mcp_tool_poison_scanning\n  - mcp_tool_baseline\n",
-		},
-		{
-			name: "comments inside the block are ignored",
-			yaml: header + "requires:\n  # why this case needs a baseline\n  - mcp_tool_baseline\n",
-		},
-		{
-			name: "block ends at the next top-level key",
-			yaml: header + "requires:\n  - mcp_tool_baseline\nfalse_positive_risk: medium\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			path := filepath.Join(dir, "case.yaml")
-			if err := os.WriteFile(path, []byte(tt.yaml), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			errors := validateMultiFileRequires(path)
-			if tt.wantErr == "" {
-				if len(errors) > 0 {
-					t.Errorf("expected no errors, got: %v", errors)
-				}
-				return
-			}
-			assertContainsError(t, errors, tt.wantErr)
-		})
-	}
-}
-
 // The corpus walk must actually reach case.yaml files inside a multi-file case
 // directory. Without this the guard above is correct but never invoked, which
 // is the exact shape of a check that exists and checks nothing.
@@ -1868,8 +1724,41 @@ func TestRunCasesReachesMultiFileCases(t *testing.T) {
 		if err := os.MkdirAll(caseDir, 0o750); err != nil {
 			t.Fatal(err)
 		}
-		yaml := "schema_version: 4\nid: mcp-drift-test-001\nrequires:\n  - " + requires + "\n"
+		yaml := fmt.Sprintf(`schema_version: 4
+id: mcp-drift-test-001
+category: mcp_drift
+title: Test drift case
+description: Test temporal MCP case
+threat_model: Test-only threat model
+input_type: mcp_tool_sequence_temporal
+transport: mcp_stdio
+files:
+  before: before.json
+  after: after.json
+  expected: expected.json
+expected_verdict: block
+severity: high
+capability_tags: [mcp_tool_poison]
+requires: [%s]
+false_positive_risk: low
+why_expected: test_temporal_change
+notes: notes.md
+source: "synthetic: validator test"
+`, requires)
 		if err := os.WriteFile(filepath.Join(caseDir, "case.yaml"), []byte(yaml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		snapshot := `{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"test_tool","inputSchema":{}}]}}`
+		for _, name := range []string{"before.json", "after.json"} {
+			if err := os.WriteFile(filepath.Join(caseDir, name), []byte(snapshot), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		expected := `{"version":1,"action_record":{"version":1,"verdict":"block","transport":"mcp_stdio","severity":"high","layer":"mcp_tool_baseline","pattern":"test","intent":"test"}}`
+		if err := os.WriteFile(filepath.Join(caseDir, "expected.json"), []byte(expected), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(caseDir, "notes.md"), []byte("# Test case\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1889,6 +1778,23 @@ func TestRunCasesReachesMultiFileCases(t *testing.T) {
 		writeDriftCase(t, dir, "encoding_evasion_scanning")
 		if code := runCases(dir); code == 0 {
 			t.Error("expected runCases to fail on a multi-file case carrying a difficulty flag, got exit 0")
+		}
+	})
+
+	// The runner's loader treats a case directory with no case.yaml as a hard
+	// error (see TestLoadMultiFileCases_MissingCaseYAML). This walk globbed for
+	// */case.yaml, so such a directory matched nothing and was silently ignored:
+	// a corpus the scorer refuses to load validated clean here. The sibling
+	// "clean corpus passes" subtest above is the control proving this corpus
+	// shape exits 0 without the partial directory.
+	t.Run("multi-file case directory without case.yaml fails the run", func(t *testing.T) {
+		dir := newCorpus(t)
+		writeDriftCase(t, dir, "mcp_tool_baseline")
+		if err := os.MkdirAll(filepath.Join(dir, "mcp-drift", "mcp-drift-partial-001"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if code := runCases(dir); code == 0 {
+			t.Error("expected runCases to fail on a multi-file case directory with no case.yaml, got exit 0")
 		}
 	})
 }

@@ -26,12 +26,15 @@ These cases are intentionally a different shape:
 └── notes.md       Attack narrative + detection logic explainer
 ```
 
-The `validate/` Go tool checks the multi-file `schema_version` and `requires`
-vocabulary. The runner validates the full layout and replays `before.json`,
-then `after.json`, against one MCP session before comparing the emitted receipt
-with `expected.json`.
+The `validate/` Go tool and reference runner both enforce the complete
+[`multi-file-case-v4` schema](../../schemas/multi-file-case-v4.schema.json),
+the directory layout, and the component JSON contracts. The runner replays
+`before.json`, then `after.json`, through one MCP session. `expected.json` is
+the normative decision receipt for adapters that expose receipt comparison;
+the generic reference adapter currently validates it but scores the observed
+binary verdict rather than claiming a field-by-field receipt comparison.
 
-## `case.yaml` schema (v4, inline)
+## `case.yaml` example (schema v4)
 
 ```yaml
 schema_version: 4
@@ -75,8 +78,7 @@ enabled MUST:
 1. Load `before.json` and establish a baseline (one entry per tool, hashing
    `description + inputSchema`).
 2. Load `after.json` and compare against the baseline.
-3. Emit a receipt that matches `expected.json` on the following fields
-   (other fields are implementation-detail-free):
+3. Emit a receipt whose portable decision fields match `expected.json`:
 
    - `action_record.verdict`
    - `action_record.layer`

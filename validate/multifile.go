@@ -1,0 +1,338 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+type multiFileCase struct {
+	SchemaVersion   int      `yaml:"schema_version"`
+	ID              string   `yaml:"id"`
+	Category        string   `yaml:"category"`
+	Title           string   `yaml:"title"`
+	Description     string   `yaml:"description"`
+	ThreatModel     string   `yaml:"threat_model"`
+	InputType       string   `yaml:"input_type"`
+	Transport       string   `yaml:"transport"`
+	ExpectedVerdict string   `yaml:"expected_verdict"`
+	Severity        string   `yaml:"severity"`
+	CapabilityTags  []string `yaml:"capability_tags"`
+	Requires        []string `yaml:"requires"`
+	FPRisk          string   `yaml:"false_positive_risk"`
+	WhyExpected     string   `yaml:"why_expected"`
+	Files           struct {
+		Before   string `yaml:"before"`
+		After    string `yaml:"after"`
+		Expected string `yaml:"expected"`
+	} `yaml:"files"`
+	Notes  string `yaml:"notes"`
+	Source string `yaml:"source"`
+}
+
+func validateMultiFileCase(path string, ids map[string]string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: cannot read case.yaml: %v", path, err)}
+	}
+	if err := requireMultiFileKeys(data); err != nil {
+		return []string{fmt.Sprintf("%s: %v", path, err)}
+	}
+	var c multiFileCase
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&c); err != nil {
+		return []string{fmt.Sprintf("%s: YAML parse error: %v", path, err)}
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return []string{fmt.Sprintf("%s: multiple YAML documents", path)}
+		}
+		return []string{fmt.Sprintf("%s: YAML parse error: %v", path, err)}
+	}
+
+	var issues []string
+	add := func(message string) { issues = append(issues, fmt.Sprintf("%s: %s", path, message)) }
+	if c.SchemaVersion != activeCaseSchemaVersion {
+		add(fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, c.SchemaVersion))
+	}
+	if strings.TrimSpace(c.ID) == "" {
+		add("id must be non-empty")
+	} else {
+		if c.ID != filepath.Base(filepath.Dir(path)) {
+			add(fmt.Sprintf("id %q must match directory name %q", c.ID, filepath.Base(filepath.Dir(path))))
+		}
+		if previous, duplicate := ids[c.ID]; duplicate {
+			add(fmt.Sprintf("duplicate id %q (also in %s)", c.ID, previous))
+		} else {
+			ids[c.ID] = path
+		}
+	}
+	for field, value := range map[string]string{
+		"title": c.Title, "description": c.Description, "threat_model": c.ThreatModel,
+		"why_expected": c.WhyExpected, "source": c.Source,
+	} {
+		if strings.TrimSpace(value) == "" {
+			add(field + " must be non-empty")
+		}
+	}
+	if c.Category != "mcp_drift" {
+		add(fmt.Sprintf("category must be mcp_drift, got %q", c.Category))
+	}
+	if c.InputType != "mcp_tool_sequence_temporal" {
+		add(fmt.Sprintf("input_type must be mcp_tool_sequence_temporal, got %q", c.InputType))
+	}
+	if c.Transport != "mcp_stdio" && c.Transport != "mcp_http" {
+		add(fmt.Sprintf("transport must be mcp_stdio or mcp_http, got %q", c.Transport))
+	}
+	if !validVerdicts[c.ExpectedVerdict] {
+		add(fmt.Sprintf("invalid expected_verdict: %q", c.ExpectedVerdict))
+	}
+	if !validSeverities[c.Severity] {
+		add(fmt.Sprintf("invalid severity: %q", c.Severity))
+	}
+	if !validFPRisk[c.FPRisk] {
+		add(fmt.Sprintf("invalid false_positive_risk: %q", c.FPRisk))
+	}
+	if len(c.CapabilityTags) == 0 {
+		add("capability_tags must not be empty")
+	}
+	for _, issue := range validateUniqueMultiFileStrings(c.CapabilityTags, "capability_tags") {
+		add(issue)
+	}
+	for _, issue := range validateUniqueMultiFileStrings(c.Requires, "requires") {
+		add(issue)
+	}
+	for _, requirement := range c.Requires {
+		if problem := requiresTokenProblem(requirement); problem != "" {
+			add(problem)
+		}
+	}
+
+	fileNames := []struct {
+		label string
+		name  string
+	}{
+		{"before", c.Files.Before},
+		{"after", c.Files.After},
+		{"expected", c.Files.Expected},
+	}
+	seenFiles := make(map[string]string, len(fileNames))
+	loaded := make(map[string]map[string]interface{}, len(fileNames))
+	for _, file := range fileNames {
+		if err := validateMultiFileName(file.name, ".json", "files."+file.label); err != nil {
+			add(err.Error())
+			continue
+		}
+		if prior, duplicate := seenFiles[file.name]; duplicate {
+			add(fmt.Sprintf("files.%s duplicates files.%s path %q", file.label, prior, file.name))
+			continue
+		}
+		seenFiles[file.name] = file.label
+		value, err := readMultiFileJSONObject(filepath.Join(filepath.Dir(path), file.name))
+		if err != nil {
+			add(err.Error())
+			continue
+		}
+		loaded[file.label] = value
+	}
+	if err := validateMultiFileName(c.Notes, ".md", "notes"); err != nil {
+		add(err.Error())
+	} else {
+		notesPath := filepath.Join(filepath.Dir(path), c.Notes)
+		info, err := os.Stat(notesPath)
+		if err != nil {
+			add(fmt.Sprintf("reading required notes file %s: %v", notesPath, err))
+		} else if info.IsDir() {
+			add(fmt.Sprintf("required notes file is a directory: %s", notesPath))
+		}
+	}
+	if len(issues) == 0 {
+		if err := validateMultiFileDocuments(c, loaded["before"], loaded["after"], loaded["expected"]); err != nil {
+			add(err.Error())
+		}
+	}
+	return issues
+}
+
+func requireMultiFileKeys(data []byte) error {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("YAML parse error: %w", err)
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("top-level value must be a mapping")
+	}
+	present := make(map[string]struct{}, len(document.Content[0].Content)/2)
+	for index := 0; index < len(document.Content[0].Content); index += 2 {
+		present[document.Content[0].Content[index].Value] = struct{}{}
+	}
+	for _, key := range []string{
+		"schema_version", "id", "category", "title", "description", "threat_model",
+		"input_type", "transport", "files", "expected_verdict", "severity",
+		"capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source",
+	} {
+		if _, ok := present[key]; !ok {
+			return fmt.Errorf("missing required field %s", key)
+		}
+	}
+	return nil
+}
+
+func validateUniqueMultiFileStrings(values []string, label string) []string {
+	var issues []string
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			issues = append(issues, label+" entries must be non-empty")
+		}
+		if _, duplicate := seen[value]; duplicate {
+			issues = append(issues, fmt.Sprintf("%s contains duplicate value %q", label, value))
+		}
+		seen[value] = struct{}{}
+	}
+	return issues
+}
+
+func validateMultiFileName(name, suffix, label string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("%s must be non-empty", label)
+	}
+	if filepath.Base(name) != name || name == "." || name == ".." {
+		return fmt.Errorf("%s must be a filename in the case directory, got %q", label, name)
+	}
+	if !strings.HasSuffix(name, suffix) {
+		return fmt.Errorf("%s must end in %s, got %q", label, suffix, name)
+	}
+	return nil
+}
+
+func readMultiFileJSONObject(path string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var object map[string]interface{}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&object); err != nil {
+		return nil, fmt.Errorf("parsing %s as JSON object: %w", path, err)
+	}
+	if object == nil {
+		return nil, fmt.Errorf("parsing %s as JSON object: top-level value must be an object", path)
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("parsing %s as JSON object: multiple JSON values", path)
+		}
+		return nil, fmt.Errorf("parsing %s as JSON object: %w", path, err)
+	}
+	return object, nil
+}
+
+func validateMultiFileDocuments(c multiFileCase, before, after, expected map[string]interface{}) error {
+	for label, snapshot := range map[string]map[string]interface{}{"before": before, "after": after} {
+		responses, err := multiFileResponses(snapshot)
+		if err != nil {
+			return fmt.Errorf("%s snapshot: %w", label, err)
+		}
+		for index, response := range responses {
+			if err := validateMultiFileToolsList(response); err != nil {
+				return fmt.Errorf("%s snapshot response %d: %w", label, index, err)
+			}
+		}
+	}
+	record, ok := expected["action_record"].(map[string]interface{})
+	if fmt.Sprint(expected["version"]) != "1" || !ok {
+		return fmt.Errorf("expected.json must carry version 1 and an action_record object")
+	}
+	if fmt.Sprint(record["version"]) != "1" {
+		return fmt.Errorf("expected.json action_record.version must be 1")
+	}
+	for field, want := range map[string]string{"verdict": c.ExpectedVerdict, "transport": c.Transport, "severity": c.Severity} {
+		got, ok := record[field].(string)
+		if !ok || got != want {
+			return fmt.Errorf("expected.json action_record.%s must equal case.yaml value %q, got %q", field, want, got)
+		}
+	}
+	for _, field := range []string{"layer", "pattern", "intent"} {
+		value, ok := record[field].(string)
+		if !ok || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("expected.json action_record.%s must be a non-empty string", field)
+		}
+	}
+	return nil
+}
+
+func multiFileResponses(snapshot map[string]interface{}) ([]interface{}, error) {
+	rawServers, hasServers := snapshot["servers"]
+	if !hasServers {
+		return []interface{}{snapshot}, nil
+	}
+	servers, ok := rawServers.([]interface{})
+	if !ok || len(servers) == 0 {
+		return nil, fmt.Errorf("servers must be a non-empty array")
+	}
+	responses := make([]interface{}, 0, len(servers))
+	seen := make(map[string]struct{}, len(servers))
+	for index, raw := range servers {
+		server, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("servers[%d] must be an object", index)
+		}
+		response, ok := server["tools_list_response"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("servers[%d].tools_list_response must be an object", index)
+		}
+		serverID, ok := server["server_id"].(string)
+		if !ok || strings.TrimSpace(serverID) == "" {
+			return nil, fmt.Errorf("servers[%d].server_id must be a non-empty string", index)
+		}
+		if _, duplicate := seen[serverID]; duplicate {
+			return nil, fmt.Errorf("servers[%d].server_id duplicates %q", index, serverID)
+		}
+		seen[serverID] = struct{}{}
+		responses = append(responses, response)
+	}
+	return responses, nil
+}
+
+func validateMultiFileToolsList(raw interface{}) error {
+	response, ok := raw.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("tools/list response must be an object")
+	}
+	if response["jsonrpc"] != "2.0" {
+		return fmt.Errorf("jsonrpc must be %q", "2.0")
+	}
+	if _, ok := response["id"]; !ok {
+		return fmt.Errorf("missing id")
+	}
+	result, ok := response["result"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("result must be an object")
+	}
+	tools, ok := result["tools"].([]interface{})
+	if !ok {
+		return fmt.Errorf("result.tools must be an array")
+	}
+	for index, rawTool := range tools {
+		tool, ok := rawTool.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("result.tools[%d] must be an object", index)
+		}
+		name, ok := tool["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return fmt.Errorf("result.tools[%d].name must be a non-empty string", index)
+		}
+	}
+	return nil
+}

@@ -1,4 +1,4 @@
-.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-claim-language check-readme-categories check-capability-registry-history test-label-boundary stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-claim-language check-readme-categories check-capability-registry-history test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -13,7 +13,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history test-label-boundary test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history test-label-boundary test-runner-parity test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
 # Keep the machine-readable compatibility inventory tied to the schemas,
 # source constants, and frozen public records it describes. The checker
 # rejects missing and empty inputs before it compares any values, so a failed
@@ -58,6 +58,9 @@ check-capability-registry-history:
 test-label-boundary:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
 	@cd runner && go test -count=1 -run '^(TestLabelBoundary|TestClaimsDoNotChangeMeasurement)' .
+
+test-runner-parity:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/runner_parity_test.py
 
 # Reject documentation that makes a claim the method cannot support, and keep
 # docs/RESULTS-USE.md defining the assurance labels and the adverse-result

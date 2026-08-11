@@ -190,6 +190,19 @@ func TestLoadMultiFileCase_MissingExpected(t *testing.T) {
 	}
 }
 
+func TestLoadMultiFileCase_MissingNotes(t *testing.T) {
+	dir := t.TempDir()
+	copyMultiFileCases(t, filepath.Join("..", "cases", "mcp-drift"), dir, "mcp-drift-benign-001")
+	notesPath := filepath.Join(dir, "mcp-drift-benign-001", "notes.md")
+	if err := os.Remove(notesPath); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadMultiFileCases(dir)
+	if err == nil || !strings.Contains(err.Error(), "required notes file") {
+		t.Fatalf("missing notes error = %v, want required notes file refusal", err)
+	}
+}
+
 func TestLoadMultiFileCase_InvalidExpectedJSON(t *testing.T) {
 	dir := t.TempDir()
 	caseDir := filepath.Join(dir, "broken-case")
@@ -239,7 +252,7 @@ func TestLoadMultiFileCase_RejectsPathTraversal(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected loader error for path traversal, got nil")
 	}
-	if !strings.Contains(err.Error(), "inside the case directory") {
+	if !strings.Contains(err.Error(), "filename in the case directory") {
 		t.Errorf("error did not explain path confinement: %v", err)
 	}
 }
@@ -688,7 +701,7 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	}
 
 	afterPath := filepath.Join(override, "mcp-drift-benign-001", "after.json")
-	if err := os.WriteFile(afterPath, []byte(`{"jsonrpc":"2.0","id":99,"result":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(afterPath, []byte(`{"jsonrpc":"2.0","id":99,"result":{"tools":[]}}`), 0o600); err != nil {
 		t.Fatalf("mutate multi-file artifact: %v", err)
 	}
 	mutatedHash, err := computeCorpusSHA256(casesDir, override)
