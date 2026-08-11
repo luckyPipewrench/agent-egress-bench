@@ -1542,6 +1542,7 @@ func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httpt
 			return
 		}
 		upReq.Header.Set("Content-Type", "application/json")
+		upReq.Header.Set("Mcp-Session-Id", r.Header.Get("Mcp-Session-Id"))
 		resp, err := client.Do(upReq)
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
@@ -2394,12 +2395,18 @@ func forwardingGateway(t *testing.T, upstreamURL string) *httptest.Server {
 			t.Fatal(err)
 		}
 		upstream.Header.Set("Content-Type", "application/json")
+		if sessionID := r.Header.Get("Mcp-Session-Id"); sessionID != "" {
+			upstream.Header.Set("Mcp-Session-Id", sessionID)
+		}
 		resp, err := client.Do(upstream)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		if sessionID := resp.Header.Get("Mcp-Session-Id"); sessionID != "" {
+			w.Header().Set("Mcp-Session-Id", sessionID)
+		}
 		w.WriteHeader(resp.StatusCode)
 		if _, err := io.Copy(w, resp.Body); err != nil {
 			t.Fatal(err)
@@ -2433,6 +2440,9 @@ func transformingToolsListGateway(t *testing.T, upstreamURL string, transform fu
 			t.Fatal(err)
 		}
 		upstream.Header.Set("Content-Type", "application/json")
+		if sessionID := r.Header.Get("Mcp-Session-Id"); sessionID != "" {
+			upstream.Header.Set("Mcp-Session-Id", sessionID)
+		}
 		resp, err := client.Do(upstream)
 		if err != nil {
 			t.Fatal(err)

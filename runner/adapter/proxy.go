@@ -2532,10 +2532,11 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	client := &http.Client{}
+	client := newMCPHTTPClient(timeout)
 	evidence := map[string]interface{}{
 		"product_surface":                       "mcp_http_listener",
 		"session_bound":                         false,
+		"upstream_reached":                      false,
 		"original_inventory_delivered_to_agent": false,
 		"changed_inventory_delivered_to_agent":  false,
 	}
@@ -2564,7 +2565,7 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
 	initializeBody, decodeErr := decodeGatewayResponse(initializeContentType, initializeResponse, initializeRequest.identity)
-	if decodeErr != nil || initializeStatus < http.StatusOK || initializeStatus >= http.StatusMultipleChoices || classifyMCPHTTPBlock(initializeBody) != nil {
+	if decodeErr != nil || initializeStatus < http.StatusOK || initializeStatus >= http.StatusMultipleChoices || classifyMCPHTTPBlock(initializeBody) != nil || !validMCPInitializeResponse(initializeBody) {
 		evidence["reason"] = "temporal_initialize_not_established"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
@@ -2588,7 +2589,7 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare baseline tools/list request: %w", c.ID, err)}
 	}
-	baselineRelease, err := p.mcpHTTPFixture.AcquireToolDefinitionLease(ctx, baselineRequest.identity, steps[0].tools)
+	baselineRelease, err := p.mcpHTTPFixture.AcquireSessionToolDefinitionLease(ctx, baselineRequest.identity, sessionID, steps[0].tools)
 	if err != nil {
 		evidence["reason"] = "baseline_inventory_lease_timeout"
 		return Result{Verdict: "skip", Evidence: evidence}
@@ -2621,7 +2622,7 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare changed tools/list request: %w", c.ID, err)}
 	}
-	changedRelease, err := p.mcpHTTPFixture.AcquireToolDefinitionLease(ctx, changedRequest.identity, steps[1].tools)
+	changedRelease, err := p.mcpHTTPFixture.AcquireSessionToolDefinitionLease(ctx, changedRequest.identity, sessionID, steps[1].tools)
 	if err != nil {
 		evidence["reason"] = "changed_inventory_lease_timeout"
 		return Result{Verdict: "skip", Evidence: evidence}
@@ -2704,6 +2705,33 @@ func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *ht
 		return nil, "", 0, "", fmt.Errorf("read response: %w", err)
 	}
 	return responseBody, resp.Header.Get("Content-Type"), resp.StatusCode, resp.Header.Get("Mcp-Session-Id"), nil
+}
+
+func newMCPHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func validMCPInitializeResponse(body []byte) bool {
+	var response struct {
+		Result struct {
+			ProtocolVersion string          `json:"protocolVersion"`
+			Capabilities    json.RawMessage `json:"capabilities"`
+			ServerInfo      struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"serverInfo"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil || response.Result.ProtocolVersion != "2025-03-26" || response.Result.ServerInfo.Name == "" || response.Result.ServerInfo.Version == "" {
+		return false
+	}
+	var capabilities map[string]interface{}
+	return json.Unmarshal(response.Result.Capabilities, &capabilities) == nil && capabilities != nil
 }
 
 // runMCPHTTPResponseCase drives a response-shaped corpus case in its actual
@@ -2792,7 +2820,7 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := (&http.Client{}).Do(httpReq)
+	resp, err := newMCPHTTPClient(timeout).Do(httpReq)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
 	}
@@ -2883,7 +2911,7 @@ func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Resu
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := newMCPHTTPClient(0).Do(req)
 	if err != nil {
 		return &Result{Err: fmt.Errorf("send tool-result baseline request: %w", err)}
 	}

@@ -97,6 +97,40 @@ func TestMCPHTTPFixtureToolDefinitionLeaseResetsInventory(t *testing.T) {
 	}
 }
 
+func TestMCPHTTPFixtureSessionToolDefinitionLeaseRequiresExactSession(t *testing.T) {
+	f, err := StartMCPHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	const identity = "session-list"
+	release, err := f.AcquireSessionToolDefinitionLease(context.Background(), identity, "aeb-session-live", []json.RawMessage{json.RawMessage(`{"name":"leased_tool"}`)})
+	if err != nil {
+		t.Fatalf("AcquireSessionToolDefinitionLease: %v", err)
+	}
+	defer release()
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"aeb_request_identity":"` + identity + `"}}}`
+
+	for _, sessionID := range []string{"", "aeb-session-other"} {
+		status, response := postMCPFixtureWithSession(t, f.URL(), request, sessionID)
+		if status != http.StatusBadRequest || !bytes.Contains(response, []byte("missing or invalid MCP session")) {
+			t.Fatalf("session %q status/body = %d/%s, want rejected", sessionID, status, response)
+		}
+		if got := f.Observation(identity); len(got) != 0 {
+			t.Fatalf("rejected session %q recorded observations: %+v", sessionID, got)
+		}
+	}
+
+	status, response := postMCPFixtureWithSession(t, f.URL(), request, "aeb-session-live")
+	if status != http.StatusOK || !bytes.Contains(response, []byte(`"leased_tool"`)) {
+		t.Fatalf("exact session status/body = %d/%s, want leased inventory", status, response)
+	}
+	if got := f.Observation(identity); len(got) != 1 {
+		t.Fatalf("exact session observations = %+v, want one", got)
+	}
+}
+
 func TestMCPHTTPFixtureToolResultLeaseResetsResponse(t *testing.T) {
 	f, err := StartMCPHTTP()
 	if err != nil {
@@ -184,4 +218,26 @@ func postMCPFixture(t *testing.T, endpoint, request string) []byte {
 		t.Fatalf("fixture status = %d, body = %s", resp.StatusCode, body)
 	}
 	return body
+}
+
+func postMCPFixtureWithSession(t *testing.T, endpoint, request, sessionID string) (int, []byte) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewBufferString(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, body
 }

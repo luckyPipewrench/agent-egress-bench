@@ -24,6 +24,7 @@ type MCPHTTPFixture struct {
 	tools           []json.RawMessage
 	requestMu       sync.RWMutex
 	toolDefinitions map[string][]json.RawMessage
+	toolSessions    map[string]string
 	toolResults     map[string]json.RawMessage
 	observations    map[string][]MCPRequestObservation
 	finalSinkLeases map[string]MCPRequestObservation
@@ -181,6 +182,19 @@ func (f *MCPHTTPFixture) toolsSnapshot() []json.RawMessage {
 // Like tool results, inventories must route by request identity rather than a
 // fixture-wide semaphore or one concurrent case can receive another's tools.
 func (f *MCPHTTPFixture) AcquireToolDefinitionLease(ctx context.Context, identity string, tools []json.RawMessage) (func(), error) {
+	return f.acquireToolDefinitionLease(ctx, identity, "", tools)
+}
+
+// AcquireSessionToolDefinitionLease binds a tools/list inventory to the live
+// session that must arrive with the exact request identity.
+func (f *MCPHTTPFixture) AcquireSessionToolDefinitionLease(ctx context.Context, identity, sessionID string, tools []json.RawMessage) (func(), error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("tool-definition lease session is required")
+	}
+	return f.acquireToolDefinitionLease(ctx, identity, sessionID, tools)
+}
+
+func (f *MCPHTTPFixture) acquireToolDefinitionLease(ctx context.Context, identity, sessionID string, tools []json.RawMessage) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -193,12 +207,16 @@ func (f *MCPHTTPFixture) AcquireToolDefinitionLease(ctx context.Context, identit
 		return nil, fmt.Errorf("tool-definition lease %q already exists", identity)
 	}
 	f.toolDefinitions[identity] = append([]json.RawMessage(nil), tools...)
+	if sessionID != "" {
+		f.toolSessions[identity] = sessionID
+	}
 	f.requestMu.Unlock()
 	var released sync.Once
 	return func() {
 		released.Do(func() {
 			f.requestMu.Lock()
 			delete(f.toolDefinitions, identity)
+			delete(f.toolSessions, identity)
 			f.requestMu.Unlock()
 		})
 	}, nil
@@ -241,6 +259,7 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 	f := &MCPHTTPFixture{
 		listener:        ln,
 		toolDefinitions: make(map[string][]json.RawMessage),
+		toolSessions:    make(map[string]string),
 		toolResults:     make(map[string]json.RawMessage),
 		observations:    make(map[string][]MCPRequestObservation),
 		finalSinkLeases: make(map[string]MCPRequestObservation),
@@ -255,23 +274,40 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 		f.calls.Add(1)
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		_ = r.Body.Close()
-		observation, observed := f.recordObservation(body)
-		identity := observation.Identity
 		var req struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      json.RawMessage `json:"id"`
 			Method  string          `json:"method"`
 		}
 		_ = json.Unmarshal(body, &req)
+		var identityRequest struct {
+			Params struct {
+				Meta struct {
+					Identity string `json:"aeb_request_identity"`
+				} `json:"_meta"`
+			} `json:"params"`
+		}
+		_ = json.Unmarshal(body, &identityRequest)
+		identity := identityRequest.Params.Meta.Identity
 		id := req.ID
 		if len(id) == 0 {
 			id = json.RawMessage(`1`)
 		}
 		w.Header().Set("Content-Type", "application/json")
+		f.requestMu.RLock()
+		requiredSession, sessionBound := f.toolSessions[identity]
+		f.requestMu.RUnlock()
+		if sessionBound && r.Header.Get("Mcp-Session-Id") != requiredSession {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"missing or invalid MCP session"}}`, id)
+			return
+		}
+		observation, observed := f.recordObservation(body)
 		switch req.Method {
 		case "initialize":
 			if identity != "" {
-				w.Header().Set("Mcp-Session-Id", "aeb-session-"+identity)
+				sessionID := "aeb-session-" + identity
+				w.Header().Set("Mcp-Session-Id", sessionID)
 			}
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"aeb-mcp-fixture","version":"1"}}}`, id)
 		case "tools/list":
