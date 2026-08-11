@@ -42,6 +42,7 @@ V4_RAW_EVIDENCE = {
     "receipt_profile": "receipt-profile.json",
 }
 ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
+ACTIVE_SUMMARY_SCHEMA_VERSION = 5
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
@@ -420,7 +421,7 @@ def measurements(repo_root, run_dir):
         # scoring bump silently reopened the hole this closes: a summary
         # carrying the new version matched neither branch.
         raise ValueError("active runner summary missing schema_version")
-    if summary_schema_version == 5:
+    if summary_schema_version == ACTIVE_SUMMARY_SCHEMA_VERSION:
         validate_v5_summary_metric_contract(summary)
     for key in (
         "gauntlet_version",
@@ -432,6 +433,11 @@ def measurements(repo_root, run_dir):
         require_non_empty_string(summary, key, f"runner summary {key}")
     for key in ("corpus_sha256", "tool_profile_sha256"):
         require_sha256(summary, key)
+    # v5 is the active summary contract that introduced the framed corpus
+    # identity. Frozen v4 records must remain readable without a field that did
+    # not exist when they were emitted.
+    if summary_schema_version == ACTIVE_SUMMARY_SCHEMA_VERSION:
+        require_sha256(summary, "benchmark_manifest_sha256")
     command = (run_dir / RAW_EVIDENCE["command"]).read_text(encoding="utf-8").strip()
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
@@ -872,6 +878,7 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_scope["measurement_status"] = summary["measurement_status"]
     elif summary.get("schema_version") == 5:
         candidate_scope["measurement_status"] = summary["measurement_status"]
+        candidate_scope["benchmark_manifest_sha256"] = summary["benchmark_manifest_sha256"]
         candidate_scope["diagnostics"] = summary["diagnostics"]
         candidate_scope["diagnostic_counts"] = measured["diagnostic_counts"]
     else:

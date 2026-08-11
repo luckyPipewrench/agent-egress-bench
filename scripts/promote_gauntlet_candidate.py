@@ -186,6 +186,9 @@ def proposed_baseline(candidate, candidate_sha256):
     }
     if candidate.get("schema_version") == 5:
         baseline["summary_schema_version"] = 5
+        baseline["benchmark_manifest_sha256"] = require_sha256(
+            candidate.get("benchmark_manifest_sha256"), "benchmark_manifest_sha256"
+        )
     else:
         baseline["score_floors"]["applicable"].update(
             {

@@ -134,10 +134,11 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		profile.ToolVersion = toolVersion
 	}
 
-	cases, effectiveMultiFileDirs, err := loadRunCorpus(casesDir, multiFileCases)
+	runCorpus, err := loadRunCorpus(casesDir, multiFileCases)
 	if err != nil {
 		return err
 	}
+	cases := runCorpus.cases
 
 	// Fail before fixture startup, adapter invocation, JSONL emission, summary,
 	// or receipt output when the immutable reporting vocabulary cannot be
@@ -234,7 +235,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	}
 
 	// Build and write summary.
-	summary, err := buildSummary(profile, cases, applicableResults, unreachableIDs, naReasons, casesDir, effectiveMultiFileDirs, casesByID, profilePath, prov)
+	summary, err := buildSummary(profile, cases, applicableResults, unreachableIDs, naReasons, runCorpus.snapshot, casesByID, profilePath, prov)
 	if err != nil {
 		return err
 	}

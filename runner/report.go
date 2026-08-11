@@ -678,7 +678,7 @@ func (r *buyerReport) bundleValidation() string {
 				keys = append(keys, "capability_registry")
 			}
 			if reportNumber(r.summary, "schema_version") == "5" {
-				keys = append(keys, "diagnostics")
+				keys = append(keys, "benchmark_manifest_sha256", "diagnostics")
 			}
 			for _, key := range keys {
 				candidateValue, candidatePresent := candidateMap[key]

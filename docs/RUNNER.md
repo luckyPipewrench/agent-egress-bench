@@ -323,6 +323,7 @@ Flags:
 
 Reproducibility:
 
+- The top-level Gauntlet summary contract, including `corpus_sha256`, `benchmark_manifest_sha256`, and `tool_profile_sha256`, is documented in [gauntlet.md](gauntlet.md#gauntlet-summary-json-file).
 - Per-case rows are sorted by `case_id` and the runner emits no timestamps in the profile. Repeated runs against the same corpus and tool profile produce byte-identical output. A relying party can reproduce a published profile by running the same command and `sha256sum`-comparing the result.
 - The Gauntlet summary includes a `date` by default. For byte-stable summary JSON, set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value, or set it to an empty string to omit the field.
 

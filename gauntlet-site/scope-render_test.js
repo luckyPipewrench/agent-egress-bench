@@ -123,8 +123,16 @@ assert.match(window.renderGauntletScope(activeMeasured).children[0].textContent,
 const activeV5 = JSON.parse(JSON.stringify(activeMeasured));
 activeV5.schema_version = 5;
 activeV5._capabilityRegistry = { id: 'aeb.core-capabilities' };
+activeV5.benchmark_manifest_sha256 = 'f'.repeat(64);
 assert.match(window.renderGauntletScope(activeV5).children[0].textContent,
   /Containment 50\.0% of 158 malicious cases/);
+
+const v5WithoutBenchmarkManifest = JSON.parse(JSON.stringify(activeV5));
+delete v5WithoutBenchmarkManifest.benchmark_manifest_sha256;
+assert.throws(
+  () => window.renderGauntletScope(v5WithoutBenchmarkManifest),
+  /benchmark_manifest_sha256/
+);
 
 ['incomplete', 'complete', undefined].forEach((status) => {
   const artifact = JSON.parse(JSON.stringify(activeMeasured));

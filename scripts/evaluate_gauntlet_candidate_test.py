@@ -77,6 +77,7 @@ def active_candidate():
 def v5_candidate():
     value = active_candidate()
     value["schema_version"] = 5
+    value["benchmark_manifest_sha256"] = "e" * 64
     value["scoring_version"] = "2.8"
     value["runner_version"] = "0.4.3"
     for scope in ("full", "applicable"):
@@ -132,6 +133,7 @@ def baseline():
 def v5_baseline():
     value = baseline()
     value["summary_schema_version"] = 5
+    value["benchmark_manifest_sha256"] = "e" * 64
     value["scoring_version"] = "2.8"
     value["runner_version"] = "0.4.3"
     del value["score_floors"]["applicable"]["detection"]
@@ -254,6 +256,25 @@ class CandidateEvaluationTest(unittest.TestCase):
         decision, *_ = self.run_evaluate(v5_candidate(), v5_baseline())
 
         self.assertFalse(decision["blocked"], decision["failures"])
+
+    def test_v5_candidate_requires_framed_manifest_identity(self):
+        missing_candidate_digest = v5_candidate()
+        del missing_candidate_digest["benchmark_manifest_sha256"]
+        decision, *_ = self.run_evaluate(missing_candidate_digest, v5_baseline())
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "candidate benchmark_manifest_sha256 must be 64 lower-case hex characters",
+            decision["failures"],
+        )
+
+        missing_baseline_digest = v5_baseline()
+        del missing_baseline_digest["benchmark_manifest_sha256"]
+        decision, *_ = self.run_evaluate(v5_candidate(), missing_baseline_digest)
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "baseline benchmark_manifest_sha256 must be a non-empty string",
+            decision["failures"],
+        )
 
     def test_v5_null_ceiling_rate_requires_zero_denominator(self):
         value = v5_candidate()
