@@ -416,7 +416,7 @@ func buildSummary(
 		BenchmarkManifestSHA256: manifestSHA,
 		ToolProfileSHA256:       profileSHA,
 		CapabilityRegistry:      p.CapabilityRegistry,
-		ReportedClaims:          append([]string(nil), p.Claims...),
+		ReportedClaims:          append([]string{}, p.Claims...),
 		Date:                    date,
 		CaseCount: CaseCount{
 			Total:                len(allCases),
