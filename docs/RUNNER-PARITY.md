@@ -7,7 +7,9 @@ first, then reveal and compare it.
 ## Protocol
 
 1. Both sides agree on a unique comparison ID and pin the same corpus,
-   benchmark manifest, tool binary version, and tool profile digest. Never
+   benchmark manifest, tool binary version, and tool profile digest. The
+   prepare step reads the manifest itself, commits its digest, and requires
+   exactly one result row for every selected case ID with no extras. Never
    reuse the comparison ID for a later round.
 2. Each side runs privately and creates a reveal object with
    `scripts/runner_parity.py prepare`. The command prints a SHA-256 commitment.
@@ -57,7 +59,7 @@ python3 scripts/runner_parity.py prepare \
   --output /tmp/run-a/reveal.json \
   --comparison-id vendor-a-vendor-b-2026-08-10-round-1 \
   --corpus-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --benchmark-manifest-sha256 123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0 \
+  --benchmark-manifest cases/MANIFEST.txt \
   --tool pipelock --tool-version 4.0.0 \
   --tool-profile-sha256 23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01 \
   --runner aeb-gauntlet --runner-version 4 \
@@ -71,8 +73,11 @@ After both commitments are public:
 ```bash
 python3 scripts/runner_parity.py verify \
   --reveal /tmp/run-a/reveal.json \
+  --benchmark-manifest cases/MANIFEST.txt \
   --commitment-sha256 3456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012
-python3 scripts/runner_parity.py compare /tmp/run-a/reveal.json /tmp/run-b/reveal.json
+python3 scripts/runner_parity.py compare \
+  --benchmark-manifest cases/MANIFEST.txt \
+  /tmp/run-a/reveal.json /tmp/run-b/reveal.json
 ```
 
 The reveal file is sensitive before both commitments exist. Keep it private;

@@ -257,6 +257,41 @@ func TestLoadMultiFileCase_RejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestMultiFileComponentContractsRejectMalformedShapes(t *testing.T) {
+	validResponse := func() map[string]interface{} {
+		return map[string]interface{}{
+			"jsonrpc": "2.0", "id": json.Number("1"),
+			"result": map[string]interface{}{"tools": []interface{}{
+				map[string]interface{}{"name": "read_file", "inputSchema": map[string]interface{}{"type": "object"}},
+			}},
+		}
+	}
+
+	objectID := validResponse()
+	objectID["id"] = map[string]interface{}{"nested": true}
+	if err := validateToolsListResponse(objectID); err == nil {
+		t.Fatal("accepted object-valued JSON-RPC id")
+	}
+	missingSchema := validResponse()
+	delete(missingSchema["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{}), "inputSchema")
+	if err := validateToolsListResponse(missingSchema); err == nil {
+		t.Fatal("accepted tool without inputSchema")
+	}
+
+	c := MultiFileCase{ExpectedVerdict: "block", Transport: "mcp_http", Severity: "critical"}
+	record := map[string]interface{}{
+		"version": json.Number("1"), "verdict": "block", "transport": "mcp_http",
+		"severity": "critical", "layer": "mcp_tool_baseline", "pattern": "drift", "intent": "deny",
+	}
+	if err := validateExpectedReceiptContract(c, map[string]interface{}{"version": "1", "action_record": record}); err == nil {
+		t.Fatal("accepted string top-level receipt version")
+	}
+	record["version"] = "1"
+	if err := validateExpectedReceiptContract(c, map[string]interface{}{"version": json.Number("1"), "action_record": record}); err == nil {
+		t.Fatal("accepted string action-record version")
+	}
+}
+
 // TestMultiFileCase_ToCase_BlockExpected verifies the conversion from a
 // block-expected MultiFileCase to the regular Case shape carries the
 // four-message JSON-RPC sequence the mcp_stdio adapter expects: two
@@ -710,5 +745,19 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	}
 	if mutatedHash == overrideHash {
 		t.Fatal("changing a multi-file artifact left the corpus digest unchanged")
+	}
+}
+
+func TestValidateMultiFileNameRejectsSchemaInvalidNames(t *testing.T) {
+	for name, suffix := range map[string]string{
+		"before file.json": ".json",
+		".before.json":     ".json",
+		"nøtes.md":         ".md",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateMultiFileName(name, suffix, "fixture"); err == nil {
+				t.Fatalf("validateMultiFileName(%q) accepted a schema-invalid name", name)
+			}
+		})
 	}
 }

@@ -15,6 +15,8 @@ class RunnerParityTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.results = self.root / "results.jsonl"
+        self.manifest = self.root / "benchmark-manifest.txt"
+        self.manifest.write_text("a\nb\n", encoding="utf-8")
         rows = [
             {"schema_version": 4, "case_id": "b", "tool": "tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}},
             {"schema_version": 4, "case_id": "a", "tool": "tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "delivery_unavailable"}},
@@ -25,7 +27,7 @@ class RunnerParityTest(unittest.TestCase):
         values = dict(
             results=self.results, output=output, corpus_sha256="a" * 64,
             comparison_id="round-2026-08-10-a",
-            benchmark_manifest_sha256="b" * 64, tool="tool", tool_version="1.2.3",
+            benchmark_manifest=self.manifest, tool="tool", tool_version="1.2.3",
             tool_profile_sha256="c" * 64, runner="aeb-gauntlet", runner_version="4",
             runtime="go1.25.10", os_name="linux", arch="amd64", concurrency=1,
             timeout_seconds=15.0, fixture_mode="local", network_mode="contained",
@@ -49,11 +51,11 @@ class RunnerParityTest(unittest.TestCase):
         self.assertEqual(["a", "b"], [row["case_id"] for row in reveal["normalized_results"]])
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            runner_parity.verify(Namespace(reveal=left, commitment_sha256=digest))
+            runner_parity.verify(Namespace(reveal=left, commitment_sha256=digest, benchmark_manifest=self.manifest))
         self.assertEqual(digest, output.getvalue().strip())
         right, _ = self.prepare("right.json", runner="independent-runner")
         with contextlib.redirect_stdout(io.StringIO()):
-            runner_parity.compare(Namespace(left=left, right=right))
+            runner_parity.compare(Namespace(left=left, right=right, benchmark_manifest=self.manifest))
 
     def test_environment_is_committed_but_excluded_from_result_parity(self):
         left, left_digest = self.prepare()
@@ -66,7 +68,7 @@ class RunnerParityTest(unittest.TestCase):
             right_value["commitment"]["results"]["normalized_vector_sha256"],
         )
         with contextlib.redirect_stdout(io.StringIO()):
-            runner_parity.compare(Namespace(left=left, right=right))
+            runner_parity.compare(Namespace(left=left, right=right, benchmark_manifest=self.manifest))
 
     def test_mutating_result_after_commit_fails_closed(self):
         path, digest = self.prepare()
@@ -74,7 +76,7 @@ class RunnerParityTest(unittest.TestCase):
         reveal["normalized_results"][0]["case_id"] = "aa"
         path.write_text(json.dumps(reveal), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "does not match"):
-            runner_parity.verify(Namespace(reveal=path, commitment_sha256=digest))
+            runner_parity.verify(Namespace(reveal=path, commitment_sha256=digest, benchmark_manifest=self.manifest))
 
     def test_mutating_environment_breaks_published_commitment(self):
         path, digest = self.prepare()
@@ -82,7 +84,7 @@ class RunnerParityTest(unittest.TestCase):
         reveal["commitment"]["environment"]["concurrency"] = 8
         path.write_text(json.dumps(reveal), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "digest mismatch"):
-            runner_parity.verify(Namespace(reveal=path, commitment_sha256=digest))
+            runner_parity.verify(Namespace(reveal=path, commitment_sha256=digest, benchmark_manifest=self.manifest))
 
     def test_missing_result_state_is_rejected(self):
         row = json.loads(self.results.read_text(encoding="utf-8").splitlines()[0])
@@ -118,7 +120,7 @@ class RunnerParityTest(unittest.TestCase):
         reveal["commitment"]["environment"]["timeout_seconds"] = float("inf")
         path.write_text(json.dumps(reveal), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "positive finite"):
-            runner_parity.verify(Namespace(reveal=path, commitment_sha256="0" * 64))
+            runner_parity.verify(Namespace(reveal=path, commitment_sha256="0" * 64, benchmark_manifest=self.manifest))
 
     def test_compare_rejects_different_vectors(self):
         left, _ = self.prepare()
@@ -126,18 +128,18 @@ class RunnerParityTest(unittest.TestCase):
         self.results.write_text(rows, encoding="utf-8")
         right, _ = self.prepare("right.json")
         with self.assertRaisesRegex(ValueError, "vectors differ"):
-            runner_parity.compare(Namespace(left=left, right=right))
+            runner_parity.compare(Namespace(left=left, right=right, benchmark_manifest=self.manifest))
 
     def test_compare_rejects_same_reveal_or_nonce(self):
         left, _ = self.prepare()
         with self.assertRaisesRegex(ValueError, "distinct nonces"):
-            runner_parity.compare(Namespace(left=left, right=left))
+            runner_parity.compare(Namespace(left=left, right=left, benchmark_manifest=self.manifest))
 
     def test_compare_rejects_different_rounds(self):
         left, _ = self.prepare()
         right, _ = self.prepare("right.json", comparison_id="another-round")
         with self.assertRaisesRegex(ValueError, "same comparison round"):
-            runner_parity.compare(Namespace(left=left, right=right))
+            runner_parity.compare(Namespace(left=left, right=right, benchmark_manifest=self.manifest))
 
     def test_verify_rejects_laundered_result_semantics(self):
         path, digest = self.prepare()
@@ -145,7 +147,27 @@ class RunnerParityTest(unittest.TestCase):
         reveal["normalized_results"][0]["result_state"] = "observed"
         path.write_text(json.dumps(reveal), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "inconsistent observed"):
-            runner_parity.verify(Namespace(reveal=path, commitment_sha256=digest))
+            runner_parity.verify(Namespace(reveal=path, commitment_sha256=digest, benchmark_manifest=self.manifest))
+
+    def test_prepare_rejects_omitted_manifest_case(self):
+        rows = self.results.read_text(encoding="utf-8").splitlines()
+        self.results.write_text(rows[0] + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "missing=\\['a'\\]"):
+            self.prepare("omitted.json")
+
+    def test_prepare_rejects_unexpected_result_case(self):
+        row = json.loads(self.results.read_text(encoding="utf-8").splitlines()[0])
+        row["case_id"] = "c"
+        with self.results.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row) + "\n")
+        with self.assertRaisesRegex(ValueError, "unexpected=\\['c'\\]"):
+            self.prepare("unexpected.json")
+
+    def test_verify_rejects_different_manifest_bytes(self):
+        path, digest = self.prepare()
+        self.manifest.write_text("a\nb\nc\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "manifest digest"):
+            runner_parity.verify(Namespace(reveal=path, commitment_sha256=digest, benchmark_manifest=self.manifest))
 
 
 if __name__ == "__main__":

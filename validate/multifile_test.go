@@ -1,26 +1,28 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"testing"
-
-	"github.com/santhosh-tekuri/jsonschema/v6"
-	"gopkg.in/yaml.v3"
 )
 
-func TestMultiFileSchemaMatchesOfficialValidator(t *testing.T) {
-	schema := compileConformanceSchema(t, filepath.Join("..", "schemas", "multi-file-case-v4.schema.json"))
+func TestMultiFileContractMatchesOfficialValidator(t *testing.T) {
 	source := filepath.Join("..", "cases", "mcp-drift", "mcp-drift-http-rugpull-desc-005")
 	raw, err := os.ReadFile(filepath.Join(source, "case.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var baseline map[string]any
-	if err := yaml.Unmarshal(raw, &baseline); err != nil {
+	parsed, err := parseMultiFileCaseYAML(raw)
+	if err != nil {
 		t.Fatal(err)
 	}
-	assertMultiFileSchemaAndValidatorAccept(t, schema, baseline, source)
+	baseline := multiFileCaseDocument(parsed)
+	assertMultiFileValidatorAccept(t, baseline, source)
 
 	for _, required := range []string{
 		"schema_version", "id", "category", "title", "description", "threat_model",
@@ -30,7 +32,7 @@ func TestMultiFileSchemaMatchesOfficialValidator(t *testing.T) {
 		t.Run("required_"+required, func(t *testing.T) {
 			mutated := cloneMultiFileDocument(t, baseline)
 			delete(mutated, required)
-			assertMultiFileSchemaAndValidatorReject(t, schema, mutated, source)
+			assertMultiFileValidatorReject(t, mutated, source)
 		})
 	}
 
@@ -51,45 +53,46 @@ func TestMultiFileSchemaMatchesOfficialValidator(t *testing.T) {
 		"unsafe_before_path": func(v map[string]any) {
 			v["files"].(map[string]any)["before"] = "../before.json"
 		},
+		"space_in_before_name": func(v map[string]any) {
+			v["files"].(map[string]any)["before"] = "before file.json"
+		},
+		"leading_punctuation_in_before_name": func(v map[string]any) {
+			v["files"].(map[string]any)["before"] = ".before.json"
+		},
+		"non_ascii_notes_name": func(v map[string]any) { v["notes"] = "nøtes.md" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			mutated := cloneMultiFileDocument(t, baseline)
 			mutate(mutated)
-			assertMultiFileSchemaAndValidatorReject(t, schema, mutated, source)
+			assertMultiFileValidatorReject(t, mutated, source)
 		})
 	}
 }
 
 func cloneMultiFileDocument(t *testing.T, value map[string]any) map[string]any {
 	t.Helper()
-	raw, err := yaml.Marshal(value)
+	raw, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var clone map[string]any
-	if err := yaml.Unmarshal(raw, &clone); err != nil {
+	if err := json.Unmarshal(raw, &clone); err != nil {
 		t.Fatal(err)
 	}
 	return clone
 }
 
-func assertMultiFileSchemaAndValidatorAccept(t *testing.T, schema *jsonschema.Schema, document map[string]any, source string) {
+func assertMultiFileValidatorAccept(t *testing.T, document map[string]any, source string) {
 	t.Helper()
-	if err := schema.Validate(document); err != nil {
-		t.Fatalf("schema rejected fixture: %v", err)
-	}
 	if issues := validateMultiFileDocument(t, document, source); len(issues) != 0 {
-		t.Fatalf("validator rejected schema-valid fixture: %v", issues)
+		t.Fatalf("validator rejected valid fixture: %v", issues)
 	}
 }
 
-func assertMultiFileSchemaAndValidatorReject(t *testing.T, schema *jsonschema.Schema, document map[string]any, source string) {
+func assertMultiFileValidatorReject(t *testing.T, document map[string]any, source string) {
 	t.Helper()
-	if err := schema.Validate(document); err == nil {
-		t.Fatalf("schema accepted mutation: %#v", document)
-	}
 	if issues := validateMultiFileDocument(t, document, source); len(issues) == 0 {
-		t.Fatalf("validator accepted schema-rejected mutation: %#v", document)
+		t.Fatalf("validator accepted invalid mutation: %#v", document)
 	}
 }
 
@@ -99,27 +102,115 @@ func validateMultiFileDocument(t *testing.T, document map[string]any, source str
 	if id == "" {
 		id = "invalid-case"
 	}
-	dir := filepath.Join(t.TempDir(), id)
+	root := t.TempDir()
+	dir := filepath.Join(root, id)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := yaml.Marshal(document)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := encodeMultiFileYAMLForTest(t, document)
 	if err := os.WriteFile(filepath.Join(dir, "case.yaml"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"before.json", "after.json", "expected.json", "notes.md"} {
-		content, readErr := os.ReadFile(filepath.Join(source, name))
+	files, _ := document["files"].(map[string]any)
+	targets := map[string]string{
+		"before.json":   stringValue(files["before"]),
+		"after.json":    stringValue(files["after"]),
+		"expected.json": stringValue(files["expected"]),
+		"notes.md":      stringValue(document["notes"]),
+	}
+	for sourceName, targetName := range targets {
+		if targetName == "" {
+			continue
+		}
+		content, readErr := os.ReadFile(filepath.Join(source, sourceName))
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		if writeErr := os.WriteFile(filepath.Join(dir, name), content, 0o600); writeErr != nil {
+		targetPath := filepath.Join(dir, targetName)
+		if mkdirErr := os.MkdirAll(filepath.Dir(targetPath), 0o750); mkdirErr != nil {
+			t.Fatal(mkdirErr)
+		}
+		if writeErr := os.WriteFile(targetPath, content, 0o600); writeErr != nil {
 			t.Fatal(writeErr)
 		}
 	}
 	return validateMultiFileCase(filepath.Join(dir, "case.yaml"), make(map[string]string))
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func multiFileCaseDocument(c multiFileCase) map[string]any {
+	return map[string]any{
+		"schema_version": c.SchemaVersion, "id": c.ID, "category": c.Category,
+		"title": c.Title, "description": c.Description, "threat_model": c.ThreatModel,
+		"input_type": c.InputType, "transport": c.Transport,
+		"files":            map[string]any{"before": c.Files.Before, "after": c.Files.After, "expected": c.Files.Expected},
+		"expected_verdict": c.ExpectedVerdict, "severity": c.Severity,
+		"capability_tags": stringsToAny(c.CapabilityTags), "requires": stringsToAny(c.Requires),
+		"false_positive_risk": c.FPRisk, "why_expected": c.WhyExpected,
+		"notes": c.Notes, "source": c.Source,
+	}
+}
+
+func stringsToAny(values []string) []any {
+	result := make([]any, len(values))
+	for i, value := range values {
+		result[i] = value
+	}
+	return result
+}
+
+func encodeMultiFileYAMLForTest(t *testing.T, document map[string]any) []byte {
+	t.Helper()
+	var output bytes.Buffer
+	keys := make([]string, 0, len(document))
+	for key := range document {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := document[key]
+		switch typed := value.(type) {
+		case map[string]any:
+			fmt.Fprintf(&output, "%s:\n", key)
+			nested := make([]string, 0, len(typed))
+			for nestedKey := range typed {
+				nested = append(nested, nestedKey)
+			}
+			sort.Strings(nested)
+			for _, nestedKey := range nested {
+				fmt.Fprintf(&output, "  %s: %s\n", nestedKey, yamlTestScalar(typed[nestedKey]))
+			}
+		case []any:
+			fmt.Fprintf(&output, "%s:\n", key)
+			for _, item := range typed {
+				fmt.Fprintf(&output, "  - %s\n", yamlTestScalar(item))
+			}
+		default:
+			fmt.Fprintf(&output, "%s: %s\n", key, yamlTestScalar(value))
+		}
+	}
+	return output.Bytes()
+}
+
+func yamlTestScalar(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return strconv.Quote(typed)
+	case bool:
+		return strconv.FormatBool(typed)
+	case int:
+		return strconv.Itoa(typed)
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	default:
+		return fmt.Sprint(typed)
+	}
 }
 
 func TestMultiFileValidatorAcceptsEveryPublishedFixture(t *testing.T) {
@@ -141,6 +232,40 @@ func TestMultiFileValidatorAcceptsEveryPublishedFixture(t *testing.T) {
 	}
 	if count == 0 {
 		t.Fatal("no published multi-file fixtures were validated")
+	}
+}
+
+func TestOfficialValidatorRejectsMalformedComponentShapes(t *testing.T) {
+	validResponse := func() map[string]interface{} {
+		return map[string]interface{}{
+			"jsonrpc": "2.0", "id": json.Number("1"),
+			"result": map[string]interface{}{"tools": []interface{}{
+				map[string]interface{}{"name": "read_file", "inputSchema": map[string]interface{}{"type": "object"}},
+			}},
+		}
+	}
+	objectID := validResponse()
+	objectID["id"] = []interface{}{1}
+	if err := validateMultiFileToolsList(objectID); err == nil {
+		t.Fatal("accepted array-valued JSON-RPC id")
+	}
+	missingSchema := validResponse()
+	delete(missingSchema["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{}), "inputSchema")
+	if err := validateMultiFileToolsList(missingSchema); err == nil {
+		t.Fatal("accepted tool without inputSchema")
+	}
+
+	c := multiFileCase{ExpectedVerdict: "block", Transport: "mcp_http", Severity: "critical"}
+	record := map[string]interface{}{
+		"version": json.Number("1"), "verdict": "block", "transport": "mcp_http",
+		"severity": "critical", "layer": "mcp_tool_baseline", "pattern": "drift", "intent": "deny",
+	}
+	if err := validateMultiFileDocuments(c, validResponse(), validResponse(), map[string]interface{}{"version": "1", "action_record": record}); err == nil {
+		t.Fatal("accepted string top-level receipt version")
+	}
+	record["version"] = "1"
+	if err := validateMultiFileDocuments(c, validResponse(), validResponse(), map[string]interface{}{"version": json.Number("1"), "action_record": record}); err == nil {
+		t.Fatal("accepted string action-record version")
 	}
 }
 

@@ -45,7 +45,23 @@ def load_json(path):
         return json.load(handle)
 
 
-def load_results(path, expected_tool=None, expected_tool_version=None):
+def load_benchmark_manifest(path):
+    raw = path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    ids = []
+    for number, line in enumerate(raw.decode("utf-8").splitlines(), 1):
+        case_id = line.strip()
+        if not case_id or case_id != line:
+            raise ValueError(f"{path}:{number}: manifest entries must be non-empty IDs without surrounding whitespace")
+        ids.append(case_id)
+    if not ids:
+        raise ValueError(f"{path}: benchmark manifest is empty")
+    if ids != sorted(ids) or len(ids) != len(set(ids)):
+        raise ValueError(f"{path}: benchmark manifest IDs must be uniquely sorted")
+    return ids, digest
+
+
+def load_results(path, expected_tool=None, expected_tool_version=None, expected_case_ids=None):
     rows = []
     with path.open(encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
@@ -97,6 +113,10 @@ def load_results(path, expected_tool=None, expected_tool_version=None):
     ids = [row["case_id"] for row in rows]
     if len(ids) != len(set(ids)):
         raise ValueError(f"{path}: duplicate case_id in result vector")
+    if expected_case_ids is not None and ids != expected_case_ids:
+        missing = sorted(set(expected_case_ids) - set(ids))
+        unexpected = sorted(set(ids) - set(expected_case_ids))
+        raise ValueError(f"{path}: result IDs do not exactly match benchmark manifest; missing={missing}, unexpected={unexpected}")
     return rows
 
 
@@ -226,7 +246,9 @@ def atomic_write(path, value):
 
 
 def prepare(args):
-    vector = load_results(args.results, args.tool, args.tool_version)
+    manifest_ids, manifest_digest = load_benchmark_manifest(args.benchmark_manifest)
+    args.benchmark_manifest_sha256 = manifest_digest
+    vector = load_results(args.results, args.tool, args.tool_version, manifest_ids)
     nonce = args.nonce_hex or secrets.token_hex(16)
     if not NONCE.fullmatch(nonce):
         raise ValueError("nonce-hex must contain at least 128 random bits as lowercase hex")
@@ -239,6 +261,7 @@ def prepare(args):
 def verify(args):
     reveal = load_json(args.reveal)
     validate_reveal(reveal)
+    validate_reveal_manifest(reveal, args.benchmark_manifest)
     actual = sha256(reveal["commitment"])
     if actual != args.commitment_sha256:
         raise ValueError(f"commitment digest mismatch: got {actual}, want {args.commitment_sha256}")
@@ -249,6 +272,8 @@ def compare(args):
     left, right = load_json(args.left), load_json(args.right)
     validate_reveal(left)
     validate_reveal(right)
+    validate_reveal_manifest(left, args.benchmark_manifest)
+    validate_reveal_manifest(right, args.benchmark_manifest)
     for field in ("corpus", "tool"):
         if left["commitment"][field] != right["commitment"][field]:
             raise ValueError(f"reveals do not identify the same {field}")
@@ -261,12 +286,24 @@ def compare(args):
     print(left["commitment"]["results"]["normalized_vector_sha256"])
 
 
+def validate_reveal_manifest(reveal, manifest_path):
+    manifest_ids, manifest_digest = load_benchmark_manifest(manifest_path)
+    if reveal["commitment"]["corpus"]["benchmark_manifest_sha256"] != manifest_digest:
+        raise ValueError("benchmark manifest digest does not match reveal commitment")
+    result_ids = [row["case_id"] for row in reveal["normalized_results"]]
+    if result_ids != manifest_ids:
+        missing = sorted(set(manifest_ids) - set(result_ids))
+        unexpected = sorted(set(result_ids) - set(manifest_ids))
+        raise ValueError(f"reveal result IDs do not exactly match benchmark manifest; missing={missing}, unexpected={unexpected}")
+
+
 def parser():
     root = argparse.ArgumentParser(description=__doc__)
     sub = root.add_subparsers(dest="command", required=True)
     create = sub.add_parser("prepare", help="write a private reveal and print its public commitment digest")
-    for name in ("comparison-id", "corpus-sha256", "benchmark-manifest-sha256", "tool", "tool-version", "tool-profile-sha256", "runner", "runner-version", "runtime", "os", "arch", "fixture-mode", "network-mode"):
+    for name in ("comparison-id", "corpus-sha256", "tool", "tool-version", "tool-profile-sha256", "runner", "runner-version", "runtime", "os", "arch", "fixture-mode", "network-mode"):
         create.add_argument("--" + name, required=True)
+    create.add_argument("--benchmark-manifest", type=Path, required=True)
     create.add_argument("--results", type=Path, required=True)
     create.add_argument("--output", type=Path, required=True)
     create.add_argument("--concurrency", type=int, required=True)
@@ -276,10 +313,12 @@ def parser():
     check = sub.add_parser("verify", help="verify a reveal against its pre-published digest")
     check.add_argument("--reveal", type=Path, required=True)
     check.add_argument("--commitment-sha256", required=True)
+    check.add_argument("--benchmark-manifest", type=Path, required=True)
     check.set_defaults(func=verify)
     parity = sub.add_parser("compare", help="require two valid reveals to carry identical result vectors")
     parity.add_argument("left", type=Path)
     parity.add_argument("right", type=Path)
+    parity.add_argument("--benchmark-manifest", type=Path, required=True)
     parity.set_defaults(func=compare)
     return root
 

@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
+
+var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type multiFileCase struct {
 	SchemaVersion   int      `yaml:"schema_version"`
@@ -41,20 +43,8 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 	if err != nil {
 		return []string{fmt.Sprintf("%s: cannot read case.yaml: %v", path, err)}
 	}
-	if err := requireMultiFileKeys(data); err != nil {
-		return []string{fmt.Sprintf("%s: %v", path, err)}
-	}
-	var c multiFileCase
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&c); err != nil {
-		return []string{fmt.Sprintf("%s: YAML parse error: %v", path, err)}
-	}
-	var extra interface{}
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return []string{fmt.Sprintf("%s: multiple YAML documents", path)}
-		}
+	c, err := parseMultiFileCaseYAML(data)
+	if err != nil {
 		return []string{fmt.Sprintf("%s: YAML parse error: %v", path, err)}
 	}
 
@@ -162,28 +152,183 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 	return issues
 }
 
-func requireMultiFileKeys(data []byte) error {
-	var document yaml.Node
-	if err := yaml.Unmarshal(data, &document); err != nil {
-		return fmt.Errorf("YAML parse error: %w", err)
+// parseMultiFileCaseYAML accepts only the deliberately small case.yaml grammar:
+// top-level scalars, literal block scalars, two string lists, and the files
+// mapping. Keeping this parser narrow preserves the validator's stdlib-only
+// binary while rejecting YAML features whose decoded meaning is ambiguous.
+func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
+	var c multiFileCase
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	known := map[string]bool{
+		"schema_version": true, "id": true, "category": true, "title": true,
+		"description": true, "threat_model": true, "input_type": true,
+		"transport": true, "files": true, "expected_verdict": true,
+		"severity": true, "capability_tags": true, "requires": true,
+		"false_positive_risk": true, "why_expected": true, "notes": true, "source": true,
 	}
-	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return fmt.Errorf("top-level value must be a mapping")
-	}
-	present := make(map[string]struct{}, len(document.Content[0].Content)/2)
-	for index := 0; index < len(document.Content[0].Content); index += 2 {
-		present[document.Content[0].Content[index].Value] = struct{}{}
-	}
-	for _, key := range []string{
-		"schema_version", "id", "category", "title", "description", "threat_model",
-		"input_type", "transport", "files", "expected_verdict", "severity",
-		"capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source",
-	} {
-		if _, ok := present[key]; !ok {
-			return fmt.Errorf("missing required field %s", key)
+	present := make(map[string]bool, len(known))
+	values := make(map[string]string, len(known))
+	lists := make(map[string][]string, 2)
+	files := make(map[string]string, 3)
+
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			i++
+			continue
+		}
+		if strings.Contains(line, "\t") {
+			return c, fmt.Errorf("line %d: tabs are not allowed", i+1)
+		}
+		if line == "---" || line == "..." || strings.HasPrefix(line, " ") {
+			return c, fmt.Errorf("line %d: expected a top-level key", i+1)
+		}
+		key, rest, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != key || !known[key] {
+			return c, fmt.Errorf("line %d: unknown or malformed field %q", i+1, key)
+		}
+		if present[key] {
+			return c, fmt.Errorf("line %d: duplicate field %s", i+1, key)
+		}
+		present[key] = true
+		rest = strings.TrimSpace(rest)
+		i++
+		switch {
+		case key == "files":
+			if rest != "" {
+				return c, fmt.Errorf("files must be a block mapping")
+			}
+			for i < len(lines) && (strings.HasPrefix(lines[i], "  ") || strings.TrimSpace(lines[i]) == "") {
+				trimmed := strings.TrimSpace(lines[i])
+				i++
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					continue
+				}
+				if !strings.HasPrefix(lines[i-1], "  ") || strings.HasPrefix(lines[i-1], "   ") {
+					return c, fmt.Errorf("files entries must use exactly two spaces")
+				}
+				name, raw, found := strings.Cut(trimmed, ":")
+				if !found || (name != "before" && name != "after" && name != "expected") || files[name] != "" {
+					return c, fmt.Errorf("invalid or duplicate files entry %q", name)
+				}
+				value, parseErr := parseRestrictedYAMLScalar(strings.TrimSpace(raw))
+				if parseErr != nil {
+					return c, fmt.Errorf("files.%s: %w", name, parseErr)
+				}
+				files[name] = value
+			}
+		case key == "capability_tags" || key == "requires":
+			if rest != "" {
+				list, parseErr := parseRestrictedYAMLStringList(rest)
+				if parseErr != nil {
+					return c, fmt.Errorf("%s: %w", key, parseErr)
+				}
+				lists[key] = list
+				continue
+			}
+			for i < len(lines) && (strings.HasPrefix(lines[i], "  ") || strings.TrimSpace(lines[i]) == "") {
+				trimmed := strings.TrimSpace(lines[i])
+				i++
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					continue
+				}
+				if !strings.HasPrefix(lines[i-1], "  - ") {
+					return c, fmt.Errorf("%s entries must use exactly two spaces and '- '", key)
+				}
+				value, parseErr := parseRestrictedYAMLScalar(strings.TrimSpace(strings.TrimPrefix(trimmed, "-")))
+				if parseErr != nil {
+					return c, fmt.Errorf("%s: %w", key, parseErr)
+				}
+				lists[key] = append(lists[key], value)
+			}
+		case rest == "|" || rest == "|-":
+			var block []string
+			for i < len(lines) && (strings.HasPrefix(lines[i], "  ") || strings.TrimSpace(lines[i]) == "") {
+				if strings.TrimSpace(lines[i]) == "" {
+					block = append(block, "")
+				} else if !strings.HasPrefix(lines[i], "  ") {
+					break
+				} else {
+					block = append(block, strings.TrimPrefix(lines[i], "  "))
+				}
+				i++
+			}
+			values[key] = strings.TrimSpace(strings.Join(block, "\n"))
+		case rest == "" || rest == "null" || rest == "~" || rest == ">" || strings.HasPrefix(rest, "&") || strings.HasPrefix(rest, "*") || strings.HasPrefix(rest, "!"):
+			return c, fmt.Errorf("%s must use a supported non-null scalar", key)
+		default:
+			value, parseErr := parseRestrictedYAMLScalar(rest)
+			if parseErr != nil {
+				return c, fmt.Errorf("%s: %w", key, parseErr)
+			}
+			values[key] = value
 		}
 	}
-	return nil
+	for key := range known {
+		if !present[key] {
+			return c, fmt.Errorf("missing required field %s", key)
+		}
+	}
+	version, err := strconv.Atoi(values["schema_version"])
+	if err != nil {
+		return c, fmt.Errorf("schema_version must be an integer")
+	}
+	c.SchemaVersion = version
+	c.ID, c.Category, c.Title = values["id"], values["category"], values["title"]
+	c.Description, c.ThreatModel = values["description"], values["threat_model"]
+	c.InputType, c.Transport = values["input_type"], values["transport"]
+	c.ExpectedVerdict, c.Severity = values["expected_verdict"], values["severity"]
+	c.CapabilityTags, c.Requires = lists["capability_tags"], lists["requires"]
+	c.FPRisk, c.WhyExpected = values["false_positive_risk"], values["why_expected"]
+	c.Files.Before, c.Files.After, c.Files.Expected = files["before"], files["after"], files["expected"]
+	c.Notes, c.Source = values["notes"], values["source"]
+	return c, nil
+}
+
+func parseRestrictedYAMLStringList(raw string) ([]string, error) {
+	if len(raw) < 2 || raw[0] != '[' || raw[len(raw)-1] != ']' {
+		return nil, fmt.Errorf("must be a block sequence or bracketed string list")
+	}
+	contents := strings.TrimSpace(raw[1 : len(raw)-1])
+	if contents == "" {
+		return []string{}, nil
+	}
+	parts := strings.Split(contents, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		value, err := parseRestrictedYAMLScalar(strings.TrimSpace(part))
+		if err != nil {
+			return nil, err
+		}
+		if strings.ContainsAny(value, "[]{}") {
+			return nil, fmt.Errorf("nested collections are not supported")
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func parseRestrictedYAMLScalar(raw string) (string, error) {
+	if raw == "" || raw == "null" || raw == "~" {
+		return "", fmt.Errorf("value must be non-empty and non-null")
+	}
+	if strings.HasPrefix(raw, "\"") {
+		value, err := strconv.Unquote(raw)
+		if err != nil {
+			return "", fmt.Errorf("invalid quoted scalar: %w", err)
+		}
+		return value, nil
+	}
+	if strings.HasPrefix(raw, "'") {
+		if len(raw) < 2 || !strings.HasSuffix(raw, "'") {
+			return "", fmt.Errorf("unterminated quoted scalar")
+		}
+		return strings.ReplaceAll(raw[1:len(raw)-1], "''", "'"), nil
+	}
+	if strings.Contains(raw, " #") {
+		return "", fmt.Errorf("inline comments are not supported")
+	}
+	return raw, nil
 }
 
 func validateUniqueMultiFileStrings(values []string, label string) []string {
@@ -210,6 +355,9 @@ func validateMultiFileName(name, suffix, label string) error {
 	}
 	if !strings.HasSuffix(name, suffix) {
 		return fmt.Errorf("%s must end in %s, got %q", label, suffix, name)
+	}
+	if !multiFileComponentName.MatchString(name) {
+		return fmt.Errorf("%s must match the published filename pattern, got %q", label, name)
 	}
 	return nil
 }
@@ -251,10 +399,10 @@ func validateMultiFileDocuments(c multiFileCase, before, after, expected map[str
 		}
 	}
 	record, ok := expected["action_record"].(map[string]interface{})
-	if fmt.Sprint(expected["version"]) != "1" || !ok {
+	if !isMultiFileJSONIntegerOne(expected["version"]) || !ok {
 		return fmt.Errorf("expected.json must carry version 1 and an action_record object")
 	}
-	if fmt.Sprint(record["version"]) != "1" {
+	if !isMultiFileJSONIntegerOne(record["version"]) {
 		return fmt.Errorf("expected.json action_record.version must be 1")
 	}
 	for field, want := range map[string]string{"verdict": c.ExpectedVerdict, "transport": c.Transport, "severity": c.Severity} {
@@ -313,8 +461,12 @@ func validateMultiFileToolsList(raw interface{}) error {
 	if response["jsonrpc"] != "2.0" {
 		return fmt.Errorf("jsonrpc must be %q", "2.0")
 	}
-	if _, ok := response["id"]; !ok {
+	id, ok := response["id"]
+	if !ok {
 		return fmt.Errorf("missing id")
+	}
+	if !validMultiFileJSONRPCID(id) {
+		return fmt.Errorf("id must be a string, number, or null")
 	}
 	result, ok := response["result"].(map[string]interface{})
 	if !ok {
@@ -333,6 +485,23 @@ func validateMultiFileToolsList(raw interface{}) error {
 		if !ok || strings.TrimSpace(name) == "" {
 			return fmt.Errorf("result.tools[%d].name must be a non-empty string", index)
 		}
+		if _, ok := tool["inputSchema"].(map[string]interface{}); !ok {
+			return fmt.Errorf("result.tools[%d].inputSchema must be an object", index)
+		}
 	}
 	return nil
+}
+
+func validMultiFileJSONRPCID(value interface{}) bool {
+	switch value.(type) {
+	case nil, string, json.Number, float64:
+		return true
+	default:
+		return false
+	}
+}
+
+func isMultiFileJSONIntegerOne(value interface{}) bool {
+	number, ok := value.(json.Number)
+	return ok && number.String() == "1"
 }

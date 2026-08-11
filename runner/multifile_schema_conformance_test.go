@@ -52,6 +52,13 @@ func TestMultiFileCaseSchemaConformance(t *testing.T) {
 		"unsafe_before_path": func(v map[string]interface{}) {
 			v["files"].(map[string]interface{})["before"] = "../before.json"
 		},
+		"space_in_before_name": func(v map[string]interface{}) {
+			v["files"].(map[string]interface{})["before"] = "before file.json"
+		},
+		"leading_punctuation_in_before_name": func(v map[string]interface{}) {
+			v["files"].(map[string]interface{})["before"] = ".before.json"
+		},
+		"non_ascii_notes_name": func(v map[string]interface{}) { v["notes"] = "nøtes.md" },
 		"extra_files_key": func(v map[string]interface{}) {
 			v["files"].(map[string]interface{})["other"] = "other.json"
 		},

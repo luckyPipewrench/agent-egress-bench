@@ -7,11 +7,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 var validMultiFileRequires = map[string]struct{}{
 	"tls_interception": {}, "url_dlp_scanning": {}, "request_body_dlp_scanning": {},
@@ -466,6 +469,9 @@ func validateMultiFileName(name, suffix, label string) error {
 	if !strings.HasSuffix(name, suffix) {
 		return fmt.Errorf("%s must end in %s, got %q", label, suffix, name)
 	}
+	if !multiFileComponentName.MatchString(name) {
+		return fmt.Errorf("%s must match the published filename pattern, got %q", label, name)
+	}
 	return nil
 }
 
@@ -608,8 +614,12 @@ func validateToolsListResponse(value interface{}) error {
 	if response["jsonrpc"] != "2.0" {
 		return fmt.Errorf("jsonrpc must be %q", "2.0")
 	}
-	if _, ok := response["id"]; !ok {
+	id, ok := response["id"]
+	if !ok {
 		return fmt.Errorf("missing id")
+	}
+	if !validJSONRPCID(id) {
+		return fmt.Errorf("id must be a string, number, or null")
 	}
 	result, ok := response["result"].(map[string]interface{})
 	if !ok {
@@ -628,19 +638,31 @@ func validateToolsListResponse(value interface{}) error {
 		if !ok || strings.TrimSpace(name) == "" {
 			return fmt.Errorf("result.tools[%d].name must be a non-empty string", index)
 		}
+		if _, ok := tool["inputSchema"].(map[string]interface{}); !ok {
+			return fmt.Errorf("result.tools[%d].inputSchema must be an object", index)
+		}
 	}
 	return nil
 }
 
+func validJSONRPCID(value interface{}) bool {
+	switch value.(type) {
+	case nil, string, json.Number, float64:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateExpectedReceiptContract(c MultiFileCase, expected map[string]interface{}) error {
-	if fmt.Sprint(expected["version"]) != "1" {
+	if !isJSONIntegerOne(expected["version"]) {
 		return fmt.Errorf("version must be 1")
 	}
 	record, ok := expected["action_record"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("action_record must be an object")
 	}
-	if fmt.Sprint(record["version"]) != "1" {
+	if !isJSONIntegerOne(record["version"]) {
 		return fmt.Errorf("action_record.version must be 1")
 	}
 	for field, want := range map[string]string{
@@ -660,6 +682,11 @@ func validateExpectedReceiptContract(c MultiFileCase, expected map[string]interf
 		}
 	}
 	return nil
+}
+
+func isJSONIntegerOne(value interface{}) bool {
+	number, ok := value.(json.Number)
+	return ok && number.String() == "1"
 }
 
 func multiFileSnapshotResponses(snapshot map[string]interface{}) ([]interface{}, error) {

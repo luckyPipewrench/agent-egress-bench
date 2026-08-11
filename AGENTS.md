@@ -7,7 +7,7 @@ agent-egress-bench is a public, tool-neutral corpus for testing AI agent egress 
 | Path | Purpose |
 | --- | --- |
 | `cases/` | Single-file cases and multi-file MCP drift fixtures |
-| `validate/` | Go validator |
+| `validate/` | Stdlib-only Go validator |
 | `runner/` | Gauntlet runner, adapters, loaders, scoring, and reports |
 | `schemas/` | Public JSON Schema documents |
 | `contracts/artifacts.json` | Machine-readable artifact compatibility inventory |

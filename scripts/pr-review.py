@@ -50,7 +50,7 @@ DEEP_REASONING_EFFORT = "xhigh"
 class LLMReviewError(RuntimeError):
     """Raised when the LLM call completed but did not produce a usable review."""
 
-SYSTEM_PROMPT = """You are reviewing a pull request for agent-egress-bench, an open test corpus for evaluating AI agent egress security tools. The repo contains JSON test cases, a Go validator, a Gauntlet scoring runner, and documentation.
+SYSTEM_PROMPT = """You are reviewing a pull request for agent-egress-bench, an open test corpus for evaluating AI agent egress security tools. The repo contains JSON test cases, a Go validator (stdlib-only), a Gauntlet scoring runner (stdlib-only), and documentation.
 
 Focus on issues that materially affect correctness, corpus integrity, scoring accuracy, or governance compliance.
 
