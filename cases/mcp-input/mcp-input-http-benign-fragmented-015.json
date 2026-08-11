@@ -1,0 +1,42 @@
+{
+  "schema_version": 4,
+  "id": "mcp-input-http-benign-fragmented-015",
+  "category": "mcp_input",
+  "title": "Benign fragmented non-secret identifiers in HTTP tool arguments",
+  "description": "A Streamable HTTP tools/call request carries benign, non-sensitive identifiers split across arguments. No credential pattern is completed.",
+  "input_type": "mcp_tool_call",
+  "transport": "mcp_http",
+  "payload": {
+    "jsonrpc_messages": [
+      {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "store_diagnostic",
+          "arguments": {
+            "region": "us-west-2",
+            "shard_prefix": "shard",
+            "shard_middle": "prod",
+            "shard_suffix": "042",
+            "bucket": "logs.internal.example.com"
+          }
+        },
+        "id": 15
+      }
+    ]
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "mcp_input_scan",
+    "benign"
+  ],
+  "requires": [
+    "mcp_input_dlp_scanning"
+  ],
+  "false_positive_risk": "medium",
+  "why_expected": "benign_non_secret_fragments_do_not_complete_any_credential_pattern",
+  "notes": "False-positive control paired with mcp-input-http-obfuscated-secret-014. The three fields reconstruct the benign shard identifier 'shardprod042', not the AWS access key ID AKIAIOSFODNN7EXAMPLE.",
+  "source": "synthetic: benign fragmented non-secret identifiers in MCP HTTP tool call",
+  "safe_example": true
+}
