@@ -84,7 +84,7 @@ the referenced tools/list and expected-receipt document contracts.
 
 ## capability_tags (registry-backed reporting labels)
 
-`url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`, `hostname_exfil`, `denial_of_wallet`
+`url_dlp`, `request_body_dlp`, `header_dlp`, `response_injection`, `mcp_input_scan`, `mcp_session_binding`, `mcp_tool_result_dlp_scanning`, `mcp_tool_poison`, `mcp_chain`, `ssrf`, `domain_blocklist`, `entropy`, `encoding_evasion`, `benign`, `a2a_scan`, `a2a_card_poison`, `websocket_dlp`, `ssrf_bypass`, `shell_obfuscation`, `crypto_dlp`, `hostname_exfil`, `denial_of_wallet`
 
 Tags describe what the case exercises. They are validated against the immutable
 capability-registry snapshot bound by the active profile and result. Tags are

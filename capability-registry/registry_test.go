@@ -88,6 +88,25 @@ func TestValidateHistoryCommittedRegistryLayout(t *testing.T) {
 	}
 }
 
+func TestCommittedRevisionTwoIntroducesPlannedMCPCapabilities(t *testing.T) {
+	ref := Reference{
+		ID:       "aeb.core-capabilities",
+		Format:   1,
+		Revision: 2,
+		SHA256:   "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c",
+	}
+	resolved, err := (Resolver{Root: "."}).Resolve(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"mcp_session_binding", "mcp_tool_result_dlp_scanning"} {
+		entry, ok := resolved.Entry(id)
+		if !ok || entry.Status != "active" || entry.IntroducedRevision != 2 {
+			t.Fatalf("%s entry = %#v, present=%v", id, entry, ok)
+		}
+	}
+}
+
 // A registry whose timeline can be forged is not an immutable registry, and
 // every one of these was accepted before the corresponding guard landed.
 

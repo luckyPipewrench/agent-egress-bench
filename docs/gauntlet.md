@@ -178,7 +178,7 @@ A single JSON file with the full scoring breakdown:
   "capability_registry": {
     "id": "aeb.core-capabilities",
     "format": 1,
-    "revision": 1,
+    "revision": 2,
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "reported_claims": ["url_dlp", "header_dlp"],

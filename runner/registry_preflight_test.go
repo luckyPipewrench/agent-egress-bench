@@ -105,6 +105,18 @@ func TestPreflightRegistryRejectsUnknownIDs(t *testing.T) {
 	}
 }
 
+func TestRevisionOneProfileRejectsCurrentCorpusCapabilities(t *testing.T) {
+	cases, err := loadCases(filepath.Join("..", "cases"))
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+	profile := v4TestProfile()
+	_, err = preflightRegistry(profile, cases, filepath.Join("..", "cases"))
+	if err == nil || !strings.Contains(err.Error(), "mcp_tool_result_dlp_scanning") {
+		t.Fatalf("revision 1 corpus preflight error = %v, want new capability rejection", err)
+	}
+}
+
 func TestPreflightRegistryRejectsDigestAndFormatMismatch(t *testing.T) {
 	for name, mutate := range map[string]func(*capabilityregistry.Reference){
 		"digest": func(ref *capabilityregistry.Reference) { ref.SHA256 = strings.Repeat("0", 64) },
