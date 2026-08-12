@@ -25,8 +25,10 @@ check-contracts:
 # Keep the human tables, machine-readable cross-field contracts, JSON Schemas,
 # scorer, and validator on one active definition.
 check-public-contracts:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_public_contracts_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_contracts.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.build_gauntlet_provenance_test.ProvenanceBuilderTest.test_active_result_score_enforces_budget_timing
 	@cd validate && go test -count=1 -run '^TestPublic' .
 	@cd runner && go test -count=1 -run '^TestPublic' .
 

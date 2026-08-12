@@ -58,7 +58,7 @@ class PublicContractGateTest(unittest.TestCase):
     def test_budget_override_evidence_field_drift_fails(self):
         path = self.root / "contracts/result-states-v4.json"
         contract = json.loads(path.read_text())
-        contract["case_specific_overrides"][0]["when"]["evidence_fields"][0] = "wrong_field"
+        contract["case_specific_overrides"][0]["when"]["required_evidence_fields"][0] = "wrong_field"
         path.write_text(json.dumps(contract))
         with self.assertRaisesRegex(ValueError, "budget timing override is invalid"):
             check_public_contracts.check(self.root)

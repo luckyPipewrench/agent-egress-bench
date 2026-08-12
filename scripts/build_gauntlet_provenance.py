@@ -51,6 +51,45 @@ V5_DIAGNOSTIC_FIELDS = frozenset(
 )
 
 
+def load_budget_timing_case_ids(repo_root):
+    case_ids = set()
+    for path in (repo_root / "cases").rglob("*.json"):
+        if "mcp-drift" in path.relative_to(repo_root / "cases").parts:
+            continue
+        try:
+            case = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read canonical case metadata from {path}: {exc}") from exc
+        if not isinstance(case, dict) or case.get("expected_verdict") != "block":
+            continue
+        payload = case.get("payload")
+        if isinstance(payload, dict) and "budget_limit_calls" in payload:
+            case_id = case.get("id")
+            if not isinstance(case_id, str) or not case_id:
+                raise ValueError(f"canonical budget case has no valid id: {path}")
+            if case_id in case_ids:
+                raise ValueError(f"duplicate canonical budget case id: {case_id}")
+            case_ids.add(case_id)
+    return case_ids
+
+
+def active_result_score(expected, actual, evidence, budget_timing_required):
+    if actual == "not_applicable":
+        return "not_applicable"
+    if actual in {"unreachable", "error"}:
+        return "error"
+    if budget_timing_required and expected == "block" and actual == "block":
+        timing = evidence.get("budget_block_timing")
+        if timing == "at_over_budget":
+            return "pass"
+        if timing in {"before_over_budget", "after_over_budget"}:
+            return "fail"
+        raise ValueError("budget block result requires a valid budget_block_timing")
+    if "budget_block_timing" in evidence:
+        raise ValueError("non-budget result carries budget_block_timing")
+    return "pass" if actual == expected else "fail"
+
+
 def raw_evidence_for_summary(summary):
     """Return the immutable evidence members for this artifact generation.
 
@@ -454,6 +493,7 @@ def measurements(repo_root, run_dir):
         manifest_ids,
         require_categories=summary_schema_version == 5,
     )
+    budget_timing_case_ids = load_budget_timing_case_ids(repo_root)
 
     try:
         command_argv = shlex.split(command)
@@ -503,19 +543,15 @@ def measurements(repo_root, run_dir):
             "tool_version"
         ):
             raise ValueError(f"runner JSONL row {row_number} tool identity does not match summary")
-        case_specific_failure = (
-            score == "fail"
-            and "over_budget_call_id" in evidence
-            and evidence.get("budget_block_timing") == "before_over_budget"
-        )
-        if actual == "not_applicable":
-            expected_score = "not_applicable"
-        elif actual in {"unreachable", "error"}:
-            expected_score = "error"
-        elif actual == expected:
-            expected_score = "fail" if case_specific_failure else "pass"
-        else:
-            expected_score = "fail"
+        try:
+            expected_score = active_result_score(
+                expected,
+                actual,
+                evidence,
+                row["case_id"] in budget_timing_case_ids,
+            )
+        except ValueError as exc:
+            raise ValueError(f"runner JSONL row {row_number}: {exc}") from exc
         if score != expected_score:
             raise ValueError(
                 f"runner JSONL row {row_number} score {score!r} does not match its verdicts"

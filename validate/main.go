@@ -55,7 +55,7 @@ var (
 
 	validMeasuredVerdicts = map[string]bool{"block": true, "allow": true}
 
-	validMultiFileExpectedVerdicts = map[string]bool{"block": true, "allow": true, "warn": true}
+	validCaseExpectedVerdicts = map[string]bool{"block": true, "allow": true, "warn": true}
 
 	validSeverities = map[string]bool{
 		"critical": true, "high": true, "medium": true, "low": true,
@@ -179,7 +179,7 @@ const usageText = `usage: validate <command> <target>
 
 commands:
   cases   <dir>    validate case JSON files in a directory
-  results <file>   validate a runner results JSONL file
+  results <file> [cases-dir]   validate runner JSONL; cases-dir enables case-bound checks
   profile <file>   validate a tool profile JSON file
 
 for backwards compatibility, 'validate <dir>' works as 'validate cases <dir>'.
@@ -200,11 +200,15 @@ func main() {
 		}
 		os.Exit(runCases(os.Args[2]))
 	case "results":
-		if len(os.Args) < 3 {
-			fmt.Fprintf(os.Stderr, "usage: validate results <results-file>\n")
+		if len(os.Args) < 3 || len(os.Args) > 4 {
+			fmt.Fprintf(os.Stderr, "usage: validate results <results-file> [cases-directory]\n")
 			os.Exit(1)
 		}
-		os.Exit(runResults(os.Args[2]))
+		casesDir := ""
+		if len(os.Args) > 3 {
+			casesDir = os.Args[3]
+		}
+		os.Exit(runResults(os.Args[2], casesDir))
 	case "profile":
 		if len(os.Args) < 3 {
 			fmt.Fprintf(os.Stderr, "usage: validate profile <profile-file>\n")
@@ -286,8 +290,8 @@ func runCases(casesDir string) int {
 	return 0
 }
 
-func runResults(path string) int {
-	errors := validateResultsFile(path)
+func runResults(path, casesDir string) int {
+	errors := validateResultsFileAgainstCases(path, casesDir)
 	if len(errors) > 0 {
 		fmt.Fprintf(os.Stderr, "validation failed with %d error(s):\n\n", len(errors))
 		for _, e := range errors {
@@ -496,7 +500,7 @@ func validateFile(path string, ids map[string]string) []string {
 	if !validTransports[c.Transport] {
 		addErr(fmt.Sprintf("invalid transport: %q", c.Transport))
 	}
-	if !validMeasuredVerdicts[c.ExpectedVerdict] {
+	if !validCaseExpectedVerdicts[c.ExpectedVerdict] {
 		addErr(fmt.Sprintf("invalid expected_verdict: %q", c.ExpectedVerdict))
 	}
 	if !validSeverities[c.Severity] {
@@ -939,7 +943,16 @@ type ResultLine struct {
 	Notes              *string                      `json:"notes"`
 }
 
+type resultCaseMetadata struct {
+	ExpectedVerdict      string
+	BudgetTimingRequired bool
+}
+
 func validateResultLine(lineNum int, r ResultLine) []string {
+	return validateResultLineAgainstCase(lineNum, r, nil)
+}
+
+func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resultCaseMetadata) []string {
 	var errors []string
 	addErr := func(msg string) {
 		errors = append(errors, fmt.Sprintf("line %d: %s", lineNum, msg))
@@ -975,13 +988,20 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	if err := validateRegistryReference(r.CapabilityRegistry); err != nil {
 		addErr(fmt.Sprintf("invalid capability_registry: %v", err))
 	}
+	if caseMetadata != nil && r.ExpectedVerdict != caseMetadata.ExpectedVerdict {
+		addErr(fmt.Sprintf("expected_verdict %q does not match case metadata %q", r.ExpectedVerdict, caseMetadata.ExpectedVerdict))
+	}
 
 	// Score consistency checks. The exhaustive public matrix lives in
 	// contracts/result-states-v4.json and contract tests compare every row to
 	// this validator.
 	if validActualVerdicts[r.ActualVerdict] && validMeasuredVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
-		caseSpecificScore, hasCaseSpecificScore := expectedCaseSpecificScore(r)
+		caseSpecificScore, hasCaseSpecificScore, caseSpecificProblem := expectedCaseSpecificScore(r, caseMetadata)
+		if caseSpecificProblem != "" {
+			addErr(caseSpecificProblem)
+		}
 		switch {
+		case caseSpecificProblem != "":
 		case hasCaseSpecificScore && r.Score != caseSpecificScore:
 			addErr(fmt.Sprintf("inconsistent score: budget_block_timing requires score %q, got %q",
 				caseSpecificScore, r.Score))
@@ -1001,30 +1021,134 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	return errors
 }
 
-func expectedCaseSpecificScore(r ResultLine) (string, bool) {
-	if r.ExpectedVerdict != "block" || r.ActualVerdict != "block" || r.Evidence == nil {
-		return "", false
+func expectedCaseSpecificScore(r ResultLine, caseMetadata *resultCaseMetadata) (string, bool, string) {
+	if r.Evidence == nil {
+		return "", false, ""
 	}
-	// Gate on a budget-specific evidence field so an ordinary matching verdict
-	// cannot opt into the budget timing override.
-	if _, ok := r.Evidence["over_budget_call_id"]; !ok {
-		return "", false
+	if caseMetadata != nil && (!caseMetadata.BudgetTimingRequired || r.ExpectedVerdict != "block" || r.ActualVerdict != "block") {
+		if _, hasTiming := r.Evidence["budget_block_timing"]; hasTiming {
+			return "", false, "budget_block_timing is not valid for this case"
+		}
+		if !caseMetadata.BudgetTimingRequired {
+			if _, hasCallID := r.Evidence["over_budget_call_id"]; hasCallID {
+				return "", false, "over_budget_call_id is not valid for this case"
+			}
+		}
+	}
+	if r.ExpectedVerdict != "block" || r.ActualVerdict != "block" {
+		return "", false, ""
+	}
+	if caseMetadata != nil && !caseMetadata.BudgetTimingRequired {
+		return "", false, ""
+	}
+	if caseMetadata == nil {
+		// Structural-only validation has no corpus metadata. It can check a
+		// declared override but cannot require one for a particular case.
+		if _, ok := r.Evidence["over_budget_call_id"]; !ok {
+			return "", false, ""
+		}
 	}
 	timing, ok := r.Evidence["budget_block_timing"].(string)
 	if !ok {
-		return "", false
+		if caseMetadata != nil && caseMetadata.BudgetTimingRequired {
+			return "", false, "budget block result requires budget_block_timing evidence"
+		}
+		return "", false, ""
 	}
 	switch timing {
 	case "at_over_budget":
-		return "pass", true
+		return "pass", true, ""
 	case "before_over_budget", "after_over_budget":
-		return "fail", true
+		return "fail", true, ""
 	default:
-		return "", false
+		if caseMetadata != nil {
+			return "", false, fmt.Sprintf("invalid budget_block_timing: %q", timing)
+		}
+		return "", false, ""
 	}
 }
 
 func validateResultsFile(path string) []string {
+	return validateResultsFileWithMetadata(path, nil)
+}
+
+func validateResultsFileAgainstCases(path, casesDir string) []string {
+	if casesDir == "" {
+		return validateResultsFile(path)
+	}
+	metadata, err := loadResultCaseMetadata(casesDir)
+	if err != nil {
+		return []string{fmt.Sprintf("case metadata: %v", err)}
+	}
+	return validateResultsFileWithMetadata(path, metadata)
+}
+
+func loadResultCaseMetadata(casesDir string) (map[string]resultCaseMetadata, error) {
+	metadata := make(map[string]resultCaseMetadata)
+	add := func(id, expected string, budget bool) error {
+		if id == "" {
+			return fmt.Errorf("case has no id")
+		}
+		if expected == "warn" {
+			expected = "allow"
+		}
+		if _, exists := metadata[id]; exists {
+			return fmt.Errorf("duplicate case id %q", id)
+		}
+		metadata[id] = resultCaseMetadata{ExpectedVerdict: expected, BudgetTimingRequired: budget}
+		return nil
+	}
+	err := filepath.Walk(casesDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() && isMultiFileCaseDir(info.Name()) {
+			entries, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				data, err := os.ReadFile(filepath.Join(path, entry.Name(), "case.yaml"))
+				if err != nil {
+					return err
+				}
+				c, err := parseMultiFileCaseYAML(data)
+				if err != nil {
+					return err
+				}
+				if err := add(c.ID, c.ExpectedVerdict, false); err != nil {
+					return err
+				}
+			}
+			return filepath.SkipDir
+		}
+		if info.IsDir() || !strings.HasSuffix(info.Name(), ".json") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var c Case
+		if err := json.Unmarshal(data, &c); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		_, budget := c.Payload["budget_limit_calls"]
+		return add(c.ID, c.ExpectedVerdict, budget && c.ExpectedVerdict == "block")
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(metadata) == 0 {
+		return nil, fmt.Errorf("no cases found in %s", casesDir)
+	}
+	return metadata, nil
+}
+
+func validateResultsFileWithMetadata(path string, caseMetadata map[string]resultCaseMetadata) []string {
 	f, err := os.Open(path)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read error: %v", path, err)}
@@ -1054,7 +1178,16 @@ func validateResultsFile(path string) []string {
 			continue
 		}
 
-		lineErrors := validateResultLine(lineNum, r)
+		var metadata *resultCaseMetadata
+		if caseMetadata != nil {
+			value, ok := caseMetadata[r.CaseID]
+			if !ok {
+				allErrors = append(allErrors, fmt.Sprintf("line %d: case_id %q is not in the supplied cases directory", lineNum, r.CaseID))
+			} else {
+				metadata = &value
+			}
+		}
+		lineErrors := validateResultLineAgainstCase(lineNum, r, metadata)
 		allErrors = append(allErrors, lineErrors...)
 		if registryReference == nil {
 			copy := r.CapabilityRegistry

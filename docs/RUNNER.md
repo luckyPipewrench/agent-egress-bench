@@ -287,15 +287,16 @@ The validator can check your runner's JSONL output and tool profile:
 
 ```bash
 cd validate && go build -o aeb-validate .
-./aeb-validate results path/to/results.jsonl
+./aeb-validate results path/to/results.jsonl ../cases
 ./aeb-validate profile path/to/tool-profile.json
 ```
 
-This checks field presence, enum validity, and every active
-`expected_verdict`/`actual_verdict`/`score` combination. A matching verdict
-passes except when a case-specific rule says the tool enforced the right
-verdict at the wrong boundary. The current exception is budget timing, where a
-block before or after the first forbidden call fails.
+This checks field presence, enum validity, and the active cross-field result
+rules defined by [Gauntlet Scoring](gauntlet.md#per-case-results) and the
+machine-readable [`result-states-v4.json`](../contracts/result-states-v4.json).
+The cases directory binds each row to canonical case metadata, including whether
+budget timing evidence is required. Omitting it performs structural checks only
+and cannot authenticate a result row's case-specific claims.
 
 ### Scope-artifact verification
 
@@ -351,9 +352,10 @@ the loader does not sort tool definitions or server responses. Missing files,
 malformed JSON/YAML, unsafe paths, duplicate server IDs, empty tool names, and
 metadata disagreements fail the load rather than dropping the case.
 
-Multi-file `warn` remains visible as the receipt-aware expectation in corpus
-metadata but maps to `allow` in the binary result row because the active result
-schema has only block/allow expectations. For the generic adapter, a pass proves
+Schema-v4 `warn` remains available for compatibility and maps to `allow` in the
+binary result row because the active result schema has only block/allow
+expectations. Current single-file cases use block/allow; multi-file drift cases
+retain `warn` as the receipt-aware expectation in corpus metadata. For the generic adapter, a pass proves
 only that the tool did not block the benign change. It does not prove that the
 tool detected the change or emitted a warning. The runner validates the
 normative `expected.json`, but an adapter must expose receipt comparison before

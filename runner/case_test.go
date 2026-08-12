@@ -48,6 +48,22 @@ func TestLoadCases(t *testing.T) {
 	}
 }
 
+func TestLoadCasesNormalizesSchemaV4WarnToAllow(t *testing.T) {
+	dir := t.TempDir()
+	caseJSON := `{"schema_version":4,"id":"warn-case","expected_verdict":"warn"}`
+	if err := os.WriteFile(filepath.Join(dir, "warn-case.json"), []byte(caseJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cases, err := loadCases(dir)
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+	if len(cases) != 1 || cases[0].ExpectedVerdict != "allow" {
+		t.Fatalf("warn case = %+v, want one allow-normalized case", cases)
+	}
+}
+
 func TestLoadCasesDoesNotFilterSupersession(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{

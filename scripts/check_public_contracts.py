@@ -81,8 +81,8 @@ def check_case_shapes(root):
         fail("case schema input_type enum differs from case-shapes values")
     if set(schema_property(schema, "transport").get("enum", [])) != transports:
         fail("case schema transport enum differs from case-shapes values")
-    if set(schema_property(schema, "expected_verdict").get("enum", [])) != {"allow", "block"}:
-        fail("single-file case schema must accept only allow and block")
+    if set(schema_property(schema, "expected_verdict").get("enum", [])) != {"allow", "block", "warn"}:
+        fail("single-file case schema must preserve the schema-v4 allow/block/warn vocabulary")
     drift = multi["mcp_drift"]
     if schema_property(multi_schema, "category").get("const") != "mcp_drift":
         fail("multi-file schema category differs from case-shapes")
@@ -162,7 +162,8 @@ def check_result_states(root):
         "when": {
             "expected_verdict": "block",
             "actual_verdict": "block",
-            "evidence_fields": ["over_budget_call_id", "budget_block_timing"],
+            "case_payload_fields": ["budget_limit_calls"],
+            "required_evidence_fields": ["budget_block_timing"],
         },
         "scores_by_budget_block_timing": {
             "at_over_budget": "pass",

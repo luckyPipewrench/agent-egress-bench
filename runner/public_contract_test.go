@@ -14,7 +14,13 @@ type publicResultMatrixRow struct {
 }
 
 type publicResultStateOverride struct {
-	Name                      string            `json:"name"`
+	Name string `json:"name"`
+	When struct {
+		ExpectedVerdict        string   `json:"expected_verdict"`
+		ActualVerdict          string   `json:"actual_verdict"`
+		CasePayloadFields      []string `json:"case_payload_fields"`
+		RequiredEvidenceFields []string `json:"required_evidence_fields"`
+	} `json:"when"`
 	ScoresByBudgetBlockTiming map[string]string `json:"scores_by_budget_block_timing"`
 }
 
@@ -56,9 +62,15 @@ func TestPublicBudgetTimingOverrideMatchesScorer(t *testing.T) {
 	if len(contract.CaseSpecificOverrides) != 1 || contract.CaseSpecificOverrides[0].Name != "budget_block_timing" {
 		t.Fatalf("case-specific overrides = %+v", contract.CaseSpecificOverrides)
 	}
-	budgetCase := Case{ExpectedVerdict: "block", Payload: map[string]interface{}{"budget_limit_calls": float64(3)}}
-	for timing, want := range contract.CaseSpecificOverrides[0].ScoresByBudgetBlockTiming {
-		evidence := map[string]interface{}{"over_budget_call_id": float64(4), "budget_block_timing": timing}
+	override := contract.CaseSpecificOverrides[0]
+	if override.When.ExpectedVerdict != "block" || override.When.ActualVerdict != "block" ||
+		len(override.When.CasePayloadFields) != 1 || override.When.CasePayloadFields[0] != "budget_limit_calls" ||
+		len(override.When.RequiredEvidenceFields) != 1 || override.When.RequiredEvidenceFields[0] != "budget_block_timing" {
+		t.Fatalf("budget timing override condition = %+v", override.When)
+	}
+	budgetCase := Case{ExpectedVerdict: "block", Payload: map[string]interface{}{override.When.CasePayloadFields[0]: float64(3)}}
+	for timing, want := range override.ScoresByBudgetBlockTiming {
+		evidence := map[string]interface{}{override.When.RequiredEvidenceFields[0]: timing}
 		if got := scoreCaseWithEvidence(budgetCase, "block", evidence); got != want {
 			t.Errorf("budget timing %q score = %q, public contract wants %q", timing, got, want)
 		}

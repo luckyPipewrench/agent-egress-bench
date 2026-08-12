@@ -305,6 +305,16 @@ func proxyPolicyRejection(policyText string) bool {
 	return proxyPolicyRejectionRe.MatchString(policyText)
 }
 
+func transportErrorProvesProxyRejection(errText string, requestedURLs ...string) bool {
+	policyText := errText
+	for _, requestedURL := range requestedURLs {
+		if requestedURL != "" {
+			policyText = strings.ReplaceAll(policyText, requestedURL, "")
+		}
+	}
+	return proxyPolicyRejection(policyText)
+}
+
 func observedProxyVerdict(result Result) Result {
 	if result.Err == nil && (result.Verdict == "allow" || result.Verdict == "block") {
 		result.DeliveryProven = true
@@ -544,8 +554,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		}
 		if opcode == wsOpcodeClose {
 			closeCode, policyClose := webSocketCloseCode(payload)
-			compressedFrameRejection := closeCode == wsCloseProtocolError && caseUsesRSV1(c)
-			if !policyClose && !compressedFrameRejection {
+			if !policyClose {
 				return Result{
 					Verdict: "skip",
 					Evidence: map[string]interface{}{
@@ -556,15 +565,11 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 				}
 			}
 			upstreamAfter, upstreamProofAvailable := p.webSocketUpstreamMessageCount()
-			closeKind := "policy_close"
-			if compressedFrameRejection {
-				closeKind = "compressed_frame_rejection"
-			}
 			if !upstreamProofAvailable {
 				return Result{
 					Verdict: "skip",
 					Evidence: map[string]interface{}{
-						"reason":     "ws_" + closeKind + "_upstream_proof_unavailable",
+						"reason":     "ws_policy_close_upstream_proof_unavailable",
 						"close_code": closeCode,
 						"detail":     truncate(webSocketCloseReason(payload), 160),
 					},
@@ -574,7 +579,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 				return Result{
 					Verdict: "skip",
 					Evidence: map[string]interface{}{
-						"reason":                   "ws_" + closeKind + "_after_upstream_delivery",
+						"reason":                   "ws_policy_close_after_upstream_delivery",
 						"close_code":               closeCode,
 						"upstream_messages_before": upstreamBefore,
 						"upstream_messages_after":  upstreamAfter,
@@ -1004,12 +1009,8 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		// fixture route rewrites the target, those differ, and stripping the
 		// wrong one leaves the case's own hostname in the text where it can
 		// still decide the verdict.
-		policyText := strings.ReplaceAll(errStr, req.URL.String(), "")
-		if targetURL != "" {
-			policyText = strings.ReplaceAll(policyText, targetURL, "")
-		}
 		// Proxy actively rejected the CONNECT (policy decision).
-		if proxyPolicyRejection(policyText) {
+		if transportErrorProvesProxyRejection(errStr, req.URL.String(), targetURL) {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
 			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
@@ -1200,7 +1201,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
-		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
+		if transportErrorProvesProxyRejection(errStr, req.URL.String(), targetURL) {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
 			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
@@ -1331,26 +1332,8 @@ const (
 	wsOpcodeText           = 1
 	wsOpcodeBinary         = 2
 	wsOpcodeClose          = 8
-	wsCloseProtocolError   = 1002
 	wsClosePolicyViolation = 1008
 )
-
-func caseUsesRSV1(c Case) bool {
-	frames, ok := c.Payload["frames"].([]interface{})
-	if !ok {
-		return false
-	}
-	for _, raw := range frames {
-		frame, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if rsv1, _ := frame["rsv1"].(bool); rsv1 {
-			return true
-		}
-	}
-	return false
-}
 
 func (p *ProxyAdapter) writeWebSocketUpgrade(conn net.Conn, targetURL string) error {
 	keyBytes := make([]byte, 16)

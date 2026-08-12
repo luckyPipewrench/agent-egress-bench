@@ -693,6 +693,16 @@ func TestInvalidEnumValues(t *testing.T) {
 			assertContainsError(t, errors, tt.wantError)
 		})
 	}
+	t.Run("schema v4 warn remains accepted", func(t *testing.T) {
+		dir := t.TempDir()
+		writeCase(t, dir, "url", "url-enum-001.json", baseJSON("expected_verdict", "warn"))
+		errors := validateFile(filepath.Join(dir, "url", "url-enum-001.json"), make(map[string]string))
+		for _, issue := range errors {
+			if strings.Contains(issue, "expected_verdict") {
+				t.Fatalf("schema-v4 warn rejected: %v", errors)
+			}
+		}
+	})
 }
 
 func TestUnknownCapabilityTagDefersToPinnedRegistry(t *testing.T) {

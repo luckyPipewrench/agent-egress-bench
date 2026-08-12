@@ -31,9 +31,10 @@ type resultMatrixRow struct {
 type resultStateOverride struct {
 	Name string `json:"name"`
 	When struct {
-		ExpectedVerdict string   `json:"expected_verdict"`
-		ActualVerdict   string   `json:"actual_verdict"`
-		EvidenceFields  []string `json:"evidence_fields"`
+		ExpectedVerdict        string   `json:"expected_verdict"`
+		ActualVerdict          string   `json:"actual_verdict"`
+		CasePayloadFields      []string `json:"case_payload_fields"`
+		RequiredEvidenceFields []string `json:"required_evidence_fields"`
 	} `json:"when"`
 	ScoresByBudgetBlockTiming map[string]string `json:"scores_by_budget_block_timing"`
 }
@@ -144,9 +145,11 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 	}
 	override := contract.CaseSpecificOverrides[0]
 	if override.When.ExpectedVerdict != "block" || override.When.ActualVerdict != "block" ||
-		!reflect.DeepEqual(sortedCopy(override.When.EvidenceFields), []string{"budget_block_timing", "over_budget_call_id"}) {
+		!reflect.DeepEqual(override.When.CasePayloadFields, []string{"budget_limit_calls"}) ||
+		!reflect.DeepEqual(override.When.RequiredEvidenceFields, []string{"budget_block_timing"}) {
 		t.Fatalf("budget timing override condition = %+v", override.When)
 	}
+	budgetCase := &resultCaseMetadata{ExpectedVerdict: "block", BudgetTimingRequired: true}
 	for timing, score := range override.ScoresByBudgetBlockTiming {
 		result := ResultLine{
 			SchemaVersion: 4, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
@@ -154,7 +157,7 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 			ExpectedVerdict:    "block", ActualVerdict: "block", Score: score,
 			Evidence: map[string]interface{}{"over_budget_call_id": float64(4), "budget_block_timing": timing}, Notes: strPtr(""),
 		}
-		if errs := validateResultLine(1, result); len(errs) != 0 {
+		if errs := validateResultLineAgainstCase(1, result, budgetCase); len(errs) != 0 {
 			t.Errorf("budget timing %q with score %q rejected: %v", timing, score, errs)
 		}
 		for _, wrongScore := range contract.Scores {
@@ -162,10 +165,63 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 				continue
 			}
 			result.Score = wrongScore
-			if errs := validateResultLine(1, result); len(errs) == 0 {
+			if errs := validateResultLineAgainstCase(1, result, budgetCase); len(errs) == 0 {
 				t.Errorf("budget timing %q accepted wrong score %q", timing, wrongScore)
 			}
 		}
+	}
+	for name, evidence := range map[string]map[string]interface{}{
+		"missing": {},
+		"unknown": {"budget_block_timing": "unknown"},
+	} {
+		result := ResultLine{
+			SchemaVersion: 4, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
+			CapabilityRegistry: testRegistryReference,
+			ExpectedVerdict:    "block", ActualVerdict: "block", Score: "pass",
+			Evidence: evidence, Notes: strPtr(""),
+		}
+		if errs := validateResultLineAgainstCase(1, result, budgetCase); len(errs) == 0 {
+			t.Errorf("budget timing %s evidence accepted", name)
+		}
+	}
+	nonBudgetCase := &resultCaseMetadata{ExpectedVerdict: "block"}
+	nonBudgetResult := ResultLine{
+		SchemaVersion: 4, CaseID: "ordinary-case", Tool: "contract-tool", ToolVersion: "1",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "block", ActualVerdict: "block", Score: "fail",
+		Evidence: map[string]interface{}{"over_budget_call_id": float64(4), "budget_block_timing": "before_over_budget"}, Notes: strPtr(""),
+	}
+	if errs := validateResultLineAgainstCase(1, nonBudgetResult, nonBudgetCase); len(errs) == 0 {
+		t.Error("non-budget case accepted budget timing override")
+	}
+	for name, tc := range map[string]struct {
+		result   ResultLine
+		metadata *resultCaseMetadata
+	}{
+		"allow case": {
+			result: ResultLine{
+				SchemaVersion: 4, CaseID: "allow-case", Tool: "contract-tool", ToolVersion: "1",
+				CapabilityRegistry: testRegistryReference,
+				ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass",
+				Evidence: map[string]interface{}{"budget_block_timing": "at_over_budget"}, Notes: strPtr(""),
+			},
+			metadata: &resultCaseMetadata{ExpectedVerdict: "allow"},
+		},
+		"budget case without block verdict": {
+			result: ResultLine{
+				SchemaVersion: 4, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
+				CapabilityRegistry: testRegistryReference,
+				ExpectedVerdict:    "block", ActualVerdict: "allow", Score: "fail",
+				Evidence: map[string]interface{}{"budget_block_timing": "at_over_budget"}, Notes: strPtr(""),
+			},
+			metadata: budgetCase,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if errs := validateResultLineAgainstCase(1, tc.result, tc.metadata); len(errs) == 0 {
+				t.Error("result accepted stray budget timing evidence")
+			}
+		})
 	}
 	skip, ok := contract.AdapterOnlyStates["skip"]
 	if !ok || len(contract.AdapterOnlyStates) != 1 || skip.ActiveResult.ActualVerdict != "error" || skip.ActiveResult.Score != "error" {
@@ -173,5 +229,24 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 	}
 	if got, ok := contract.HistoricalOnlyStates["not_applicable"]; !ok || len(contract.HistoricalOnlyStates) != 1 || got == "" {
 		t.Fatalf("historical-only states = %+v, want a non-empty not_applicable entry", contract.HistoricalOnlyStates)
+	}
+}
+
+func TestPublicResultValidationLoadsCanonicalCaseMetadata(t *testing.T) {
+	metadata, err := loadResultCaseMetadata(filepath.Join("..", "cases"))
+	if err != nil {
+		t.Fatalf("load case metadata: %v", err)
+	}
+	budget := metadata["mcp-chain-dow-budget-exceeded-010"]
+	if budget.ExpectedVerdict != "block" || !budget.BudgetTimingRequired {
+		t.Fatalf("budget case metadata = %+v", budget)
+	}
+	warn := metadata["mcp-drift-benign-001"]
+	if warn.ExpectedVerdict != "allow" || warn.BudgetTimingRequired {
+		t.Fatalf("warn-normalized case metadata = %+v", warn)
+	}
+	ordinary := metadata["url-dlp-aws-key-001"]
+	if ordinary.ExpectedVerdict != "block" || ordinary.BudgetTimingRequired {
+		t.Fatalf("ordinary case metadata = %+v", ordinary)
 	}
 }

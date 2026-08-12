@@ -103,9 +103,10 @@
       "type": "string",
       "enum": [
         "block",
-        "allow"
+        "allow",
+        "warn"
       ],
-      "description": "Expected tool verdict for an active single-file case. Temporal multi-file cases have their own schema and may also use warn."
+      "description": "Expected tool verdict. Current single-file corpus cases use block or allow; warn remains accepted for schema-v4 compatibility."
     },
     "severity": {
       "type": "string",

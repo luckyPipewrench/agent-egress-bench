@@ -92,12 +92,14 @@ cannot enter through one reader.
 
 ### expected_verdict
 
-`block`, `allow`
+Active result rows use `block` or `allow`.
 
-Single-file JSON v1 cases are binary. No `warn` appears in single-file JSON case expectations.
+Schema v4 still accepts `warn` for compatibility, but no current single-file case uses it and
+new single-file cases must use `block` or `allow`.
 The multi-file MCP drift fixtures use a separate `case.yaml` contract documented in
 [`cases/mcp-drift/README.md`](../cases/mcp-drift/README.md), where `warn` is allowed for
 benign drift that should be surfaced for operator review without being blocked.
+The runner normalizes that case expectation to `allow` in the binary active result row.
 Its JSON Schema applies to the decoded YAML data model. The Go validator and
 runner also enforce directory-name identity, distinct component filenames, and
 the referenced tools/list and expected-receipt document contracts.

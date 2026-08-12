@@ -11,6 +11,8 @@ import time
 import unittest
 from pathlib import Path
 
+from scripts import build_gauntlet_provenance
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUILDER = REPO_ROOT / "scripts" / "build_gauntlet_provenance.py"
@@ -34,6 +36,26 @@ PIN_TAG = PIN["PIPELOCK_TAG"]
 
 
 class ProvenanceBuilderTest(unittest.TestCase):
+    def test_active_result_score_enforces_budget_timing(self):
+        contract = json.loads((REPO_ROOT / "contracts" / "result-states-v4.json").read_text())
+        scores = contract["case_specific_overrides"][0]["scores_by_budget_block_timing"]
+        for timing, expected_score in scores.items():
+            with self.subTest(timing=timing):
+                self.assertEqual(
+                    build_gauntlet_provenance.active_result_score(
+                        "block", "block", {"budget_block_timing": timing}, True
+                    ),
+                    expected_score,
+                )
+        for evidence in ({}, {"budget_block_timing": "unknown"}):
+            with self.subTest(evidence=evidence):
+                with self.assertRaisesRegex(ValueError, "valid budget_block_timing"):
+                    build_gauntlet_provenance.active_result_score("block", "block", evidence, True)
+        with self.assertRaisesRegex(ValueError, "non-budget"):
+            build_gauntlet_provenance.active_result_score(
+                "block", "block", {"budget_block_timing": "before_over_budget"}, False
+            )
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
