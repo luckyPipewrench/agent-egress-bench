@@ -1,0 +1,42 @@
+{
+  "contract": "aeb.result-states",
+  "format": 1,
+  "result_schema_version": 4,
+  "expected_verdicts": ["allow", "block"],
+  "actual_verdicts": ["allow", "block", "error", "unreachable"],
+  "scores": ["error", "fail", "pass"],
+  "matrix": [
+    {"expected_verdict": "allow", "actual_verdict": "allow", "score": "pass"},
+    {"expected_verdict": "allow", "actual_verdict": "block", "score": "fail"},
+    {"expected_verdict": "allow", "actual_verdict": "error", "score": "error"},
+    {"expected_verdict": "allow", "actual_verdict": "unreachable", "score": "error"},
+    {"expected_verdict": "block", "actual_verdict": "allow", "score": "fail"},
+    {"expected_verdict": "block", "actual_verdict": "block", "score": "pass"},
+    {"expected_verdict": "block", "actual_verdict": "error", "score": "error"},
+    {"expected_verdict": "block", "actual_verdict": "unreachable", "score": "error"}
+  ],
+  "case_specific_overrides": [
+    {
+      "name": "budget_block_timing",
+      "when": {
+        "expected_verdict": "block",
+        "actual_verdict": "block",
+        "evidence_fields": ["over_budget_call_id", "budget_block_timing"]
+      },
+      "scores_by_budget_block_timing": {
+        "at_over_budget": "pass",
+        "before_over_budget": "fail",
+        "after_over_budget": "fail"
+      }
+    }
+  ],
+  "adapter_only_states": {
+    "skip": {
+      "meaning": "A declared route could not prove delivery or observe a verdict.",
+      "active_result": {"actual_verdict": "error", "score": "error"}
+    }
+  },
+  "historical_only_states": {
+    "not_applicable": "Retained frozen evidence only. Active v4 runners do not emit it."
+  }
+}

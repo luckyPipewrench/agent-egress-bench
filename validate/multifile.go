@@ -82,7 +82,7 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 	if c.Transport != "mcp_stdio" && c.Transport != "mcp_http" {
 		add(fmt.Sprintf("transport must be mcp_stdio or mcp_http, got %q", c.Transport))
 	}
-	if !validVerdicts[c.ExpectedVerdict] {
+	if !validMultiFileExpectedVerdicts[c.ExpectedVerdict] {
 		add(fmt.Sprintf("invalid expected_verdict: %q", c.ExpectedVerdict))
 	}
 	if !validSeverities[c.Severity] {

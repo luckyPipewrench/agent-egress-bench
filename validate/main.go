@@ -53,9 +53,9 @@ var (
 		"a2a": true,
 	}
 
-	validVerdicts = map[string]bool{"block": true, "allow": true, "warn": true}
-
 	validMeasuredVerdicts = map[string]bool{"block": true, "allow": true}
+
+	validMultiFileExpectedVerdicts = map[string]bool{"block": true, "allow": true, "warn": true}
 
 	validSeverities = map[string]bool{
 		"critical": true, "high": true, "medium": true, "low": true,
@@ -496,7 +496,7 @@ func validateFile(path string, ids map[string]string) []string {
 	if !validTransports[c.Transport] {
 		addErr(fmt.Sprintf("invalid transport: %q", c.Transport))
 	}
-	if !validVerdicts[c.ExpectedVerdict] {
+	if !validMeasuredVerdicts[c.ExpectedVerdict] {
 		addErr(fmt.Sprintf("invalid expected_verdict: %q", c.ExpectedVerdict))
 	}
 	if !validSeverities[c.Severity] {
@@ -976,12 +976,21 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 		addErr(fmt.Sprintf("invalid capability_registry: %v", err))
 	}
 
-	// Score consistency checks.
-	if validActualVerdicts[r.ActualVerdict] && validVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
+	// Score consistency checks. The exhaustive public matrix lives in
+	// contracts/result-states-v4.json and contract tests compare every row to
+	// this validator.
+	if validActualVerdicts[r.ActualVerdict] && validMeasuredVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
+		caseSpecificScore, hasCaseSpecificScore := expectedCaseSpecificScore(r)
 		switch {
-		case r.ActualVerdict == r.ExpectedVerdict && r.Score != "pass" && !hasCaseSpecificFailureEvidence(r):
+		case hasCaseSpecificScore && r.Score != caseSpecificScore:
+			addErr(fmt.Sprintf("inconsistent score: budget_block_timing requires score %q, got %q",
+				caseSpecificScore, r.Score))
+		case !hasCaseSpecificScore && r.ActualVerdict == r.ExpectedVerdict && r.Score != "pass":
 			addErr(fmt.Sprintf("inconsistent score: actual_verdict matches expected_verdict (%q) but score is %q (should be pass)",
 				r.ActualVerdict, r.Score))
+		case validMeasuredVerdicts[r.ActualVerdict] && r.ActualVerdict != r.ExpectedVerdict && r.Score != "fail":
+			addErr(fmt.Sprintf("inconsistent score: actual_verdict %q does not match expected_verdict %q but score is %q (should be fail)",
+				r.ActualVerdict, r.ExpectedVerdict, r.Score))
 		case r.ActualVerdict == "unreachable" && r.Score != "error":
 			addErr(fmt.Sprintf("inconsistent score: actual_verdict is unreachable but score is %q (should be error)", r.Score))
 		case r.ActualVerdict == "error" && r.Score != "error":
@@ -992,18 +1001,27 @@ func validateResultLine(lineNum int, r ResultLine) []string {
 	return errors
 }
 
-func hasCaseSpecificFailureEvidence(r ResultLine) bool {
-	if r.Score != "fail" || r.Evidence == nil {
-		return false
+func expectedCaseSpecificScore(r ResultLine) (string, bool) {
+	if r.ExpectedVerdict != "block" || r.ActualVerdict != "block" || r.Evidence == nil {
+		return "", false
 	}
-	// Gate on a budget-specific evidence field so only a genuine
-	// budget-enforcement result (which always carries over_budget_call_id
-	// alongside before-over-budget timing) can bypass the
-	// matching-verdict-must-pass rule; a non-budget result line cannot.
+	// Gate on a budget-specific evidence field so an ordinary matching verdict
+	// cannot opt into the budget timing override.
 	if _, ok := r.Evidence["over_budget_call_id"]; !ok {
-		return false
+		return "", false
 	}
-	return r.Evidence["budget_block_timing"] == "before_over_budget"
+	timing, ok := r.Evidence["budget_block_timing"].(string)
+	if !ok {
+		return "", false
+	}
+	switch timing {
+	case "at_over_budget":
+		return "pass", true
+	case "before_over_budget", "after_over_budget":
+		return "fail", true
+	default:
+		return "", false
+	}
 }
 
 func validateResultsFile(path string) []string {

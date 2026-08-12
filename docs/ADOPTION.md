@@ -20,7 +20,14 @@ The [Pipelock reference runner](../examples/pipelock/) is a complete example. Th
 
 ### What to claim
 
-[`RUNNER.md`](RUNNER.md) owns the active tool-profile and delivery contracts. [`CAPABILITY-VOCABULARY.md`](CAPABILITY-VOCABULARY.md) owns reporting-label semantics, and [`gauntlet.md`](gauntlet.md) owns result states and scoreability.
+[`RUNNER.md`](RUNNER.md) owns the active tool-profile and delivery contracts.
+[`SPEC.md`](SPEC.md) owns case shapes, with the exact combinations published in
+[`contracts/case-shapes-v4.json`](../contracts/case-shapes-v4.json).
+[`gauntlet.md`](gauntlet.md) owns result states and scoreability, with every
+active combination published in
+[`contracts/result-states-v4.json`](../contracts/result-states-v4.json).
+[`CAPABILITY-VOCABULARY.md`](CAPABILITY-VOCABULARY.md) owns reporting-label
+semantics.
 
 ## Publish results
 

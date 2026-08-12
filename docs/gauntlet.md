@@ -56,15 +56,31 @@ Current counts belong in [`cases/STATS.md`](../cases/STATS.md), not in this docu
 
 ## Per-case results
 
-An active result row separates the observed verdict from the score. `actual_verdict` is `block`, `allow`, `unreachable`, or `error`. `score` is `pass`, `fail`, or `error`. Frozen historical rows can also carry `not_applicable` under their original reader.
+An active v4 result row records an expected verdict, the verdict the runner
+observed, and the resulting score. The exhaustive public contract is
+[`contracts/result-states-v4.json`](../contracts/result-states-v4.json).
+`make check-public-contracts` compares every row with the result schema, Go
+scorer, and Go validator.
 
-| Result outcome | Meaning |
-| --- | --- |
-| `pass` | An observed `block` or `allow` satisfied the case contract |
-| `fail` | An observed `block` or `allow` violated the case contract |
-| `not_applicable` | Frozen historical N/A evidence, retained without reinterpretation |
-| `unreachable` | The adapter has no exact route, so no measurement occurred |
-| `error` | The runner, tool, delivery proof, or verdict observation failed |
+| Expected verdict | Actual verdict | Score | Meaning |
+| --- | --- | --- | --- |
+| `allow` | `allow` | `pass` | Benign traffic reached the target |
+| `allow` | `block` | `fail` | The tool blocked benign traffic |
+| `allow` | `unreachable` | `error` | The adapter had no exact route |
+| `allow` | `error` | `error` | Delivery or observation failed |
+| `block` | `block` | `pass` | The tool stopped the attack at the required boundary |
+| `block` | `allow` | `fail` | The attack reached the target |
+| `block` | `unreachable` | `error` | The adapter had no exact route |
+| `block` | `error` | `error` | Delivery or observation failed |
+
+Budget cases add one evidence-bound override. A block on the first forbidden
+call, recorded as `budget_block_timing: at_over_budget`, passes. A block before
+or after that call fails even though `actual_verdict` is `block`.
+
+`skip` is an adapter-only state. An active runner converts it to
+`actual_verdict: error` and `score: error`; it never writes `skip` into a v4
+result row. `not_applicable` belongs only to frozen historical evidence. Active
+v4 runners do not emit it or reinterpret it.
 
 ## How Scoring Works
 

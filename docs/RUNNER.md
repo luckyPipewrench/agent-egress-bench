@@ -4,6 +4,8 @@ A runner connects a specific tool to the benchmark corpus. This document defines
 
 **JSON Schemas:** [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json) (result lines), [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) (tool profiles)
 
+**Cross-field result contract:** [`contracts/result-states-v4.json`](../contracts/result-states-v4.json). [`gauntlet.md`](gauntlet.md) explains the same matrix and owns its scoring meaning.
+
 **Starter template:** [`examples/runner-template/`](../examples/runner-template/)
 
 ## Can my tool be integrated?
@@ -289,7 +291,11 @@ cd validate && go build -o aeb-validate .
 ./aeb-validate profile path/to/tool-profile.json
 ```
 
-This checks field presence, enum validity, and score consistency. Most cases pass when `actual_verdict == expected_verdict`; sequence-boundary cases such as budget enforcement may still fail when evidence shows the tool blocked at the wrong step.
+This checks field presence, enum validity, and every active
+`expected_verdict`/`actual_verdict`/`score` combination. A matching verdict
+passes except when a case-specific rule says the tool enforced the right
+verdict at the wrong boundary. The current exception is budget timing, where a
+block before or after the first forbidden call fails.
 
 ### Scope-artifact verification
 

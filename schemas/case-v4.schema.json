@@ -103,10 +103,9 @@
       "type": "string",
       "enum": [
         "block",
-        "allow",
-        "warn"
+        "allow"
       ],
-      "description": "Expected tool verdict. v1 is binary (no warn)."
+      "description": "Expected tool verdict for an active single-file case. Temporal multi-file cases have their own schema and may also use warn."
     },
     "severity": {
       "type": "string",

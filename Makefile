@@ -1,4 +1,4 @@
-.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-claim-language check-readme-categories check-capability-registry-history test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -13,7 +13,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history test-label-boundary test-runner-parity test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-public-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history test-label-boundary test-runner-parity test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
 # Keep the machine-readable compatibility inventory tied to the schemas,
 # source constants, and frozen public records it describes. The checker
 # rejects missing and empty inputs before it compares any values, so a failed
@@ -21,6 +21,14 @@ preflight: check-contracts check-case-immutability check-schema-copies check-doc
 check-contracts:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
+
+# Keep the human tables, machine-readable cross-field contracts, JSON Schemas,
+# scorer, and validator on one active definition.
+check-public-contracts:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_public_contracts_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_contracts.py
+	@cd validate && go test -count=1 -run '^TestPublic' .
+	@cd runner && go test -count=1 -run '^TestPublic' .
 
 # Case bytes are immutable once their ID reaches the merge base. New IDs and
 # their MANIFEST.txt / STATS.md updates remain allowed. A documented maintainer

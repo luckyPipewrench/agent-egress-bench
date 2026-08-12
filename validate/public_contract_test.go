@@ -1,0 +1,177 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"testing"
+)
+
+type caseShape struct {
+	InputTypes []string `json:"input_types"`
+	Transports []string `json:"transports"`
+}
+
+type caseShapesContract struct {
+	Contract          string               `json:"contract"`
+	Format            int                  `json:"format"`
+	CaseSchemaVersion int                  `json:"case_schema_version"`
+	SingleFile        map[string]caseShape `json:"single_file"`
+	MultiFile         map[string]caseShape `json:"multi_file"`
+}
+
+type resultMatrixRow struct {
+	ExpectedVerdict string `json:"expected_verdict"`
+	ActualVerdict   string `json:"actual_verdict"`
+	Score           string `json:"score"`
+}
+
+type resultStateOverride struct {
+	Name string `json:"name"`
+	When struct {
+		ExpectedVerdict string   `json:"expected_verdict"`
+		ActualVerdict   string   `json:"actual_verdict"`
+		EvidenceFields  []string `json:"evidence_fields"`
+	} `json:"when"`
+	ScoresByBudgetBlockTiming map[string]string `json:"scores_by_budget_block_timing"`
+}
+
+type resultStatesContract struct {
+	Contract              string                `json:"contract"`
+	Format                int                   `json:"format"`
+	ResultSchemaVersion   int                   `json:"result_schema_version"`
+	ExpectedVerdicts      []string              `json:"expected_verdicts"`
+	ActualVerdicts        []string              `json:"actual_verdicts"`
+	Scores                []string              `json:"scores"`
+	Matrix                []resultMatrixRow     `json:"matrix"`
+	CaseSpecificOverrides []resultStateOverride `json:"case_specific_overrides"`
+	AdapterOnlyStates     map[string]struct {
+		ActiveResult resultMatrixRow `json:"active_result"`
+	} `json:"adapter_only_states"`
+	HistoricalOnlyStates map[string]string `json:"historical_only_states"`
+}
+
+func readPublicContract[T any](t *testing.T, name string) T {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "contracts", name))
+	if err != nil {
+		t.Fatalf("read public contract %s: %v", name, err)
+	}
+	var value T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatalf("decode public contract %s: %v", name, err)
+	}
+	return value
+}
+
+func sortedCopy(values []string) []string {
+	copyOfValues := append([]string(nil), values...)
+	sort.Strings(copyOfValues)
+	return copyOfValues
+}
+
+func mapKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return sortedCopy(keys)
+}
+
+func TestPublicCaseShapesMatchValidator(t *testing.T) {
+	contract := readPublicContract[caseShapesContract](t, "case-shapes-v4.json")
+	if contract.Contract != "aeb.case-shapes" || contract.Format != 1 || contract.CaseSchemaVersion != activeCaseSchemaVersion {
+		t.Fatalf("case-shapes identity/version = %q/%d/%d", contract.Contract, contract.Format, contract.CaseSchemaVersion)
+	}
+	if len(contract.SingleFile) != len(validCategoryInputType) || len(contract.SingleFile) != len(validCategoryTransport) {
+		t.Fatalf("single-file category count = %d, validator input/transport counts = %d/%d", len(contract.SingleFile), len(validCategoryInputType), len(validCategoryTransport))
+	}
+	for category, shape := range contract.SingleFile {
+		if got := sortedCopy(validCategoryInputType[category]); !reflect.DeepEqual(got, sortedCopy(shape.InputTypes)) {
+			t.Errorf("%s input_types = %v, public contract wants %v", category, got, sortedCopy(shape.InputTypes))
+		}
+		if got := sortedCopy(validCategoryTransport[category]); !reflect.DeepEqual(got, sortedCopy(shape.Transports)) {
+			t.Errorf("%s transports = %v, public contract wants %v", category, got, sortedCopy(shape.Transports))
+		}
+	}
+	multi, ok := contract.MultiFile["mcp_drift"]
+	if !ok || len(contract.MultiFile) != 1 {
+		t.Fatalf("multi-file shapes = %v, want exactly mcp_drift", contract.MultiFile)
+	}
+	if !reflect.DeepEqual(multi.InputTypes, []string{"mcp_tool_sequence_temporal"}) ||
+		!reflect.DeepEqual(sortedCopy(multi.Transports), []string{"mcp_http", "mcp_stdio"}) {
+		t.Fatalf("mcp_drift shape = %+v", multi)
+	}
+	if got, want := sortedCopy(mapKeys(validCategories)), sortedCopy(mapKeys(validCategoryInputType)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("category enum = %v, shape categories = %v", got, want)
+	}
+}
+
+func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
+	contract := readPublicContract[resultStatesContract](t, "result-states-v4.json")
+	if contract.Contract != "aeb.result-states" || contract.Format != 1 || contract.ResultSchemaVersion != activeCaseSchemaVersion {
+		t.Fatalf("result-states identity/version = %q/%d/%d", contract.Contract, contract.Format, contract.ResultSchemaVersion)
+	}
+	if len(contract.Matrix) != len(contract.ExpectedVerdicts)*len(contract.ActualVerdicts) {
+		t.Fatalf("matrix has %d rows, want %d", len(contract.Matrix), len(contract.ExpectedVerdicts)*len(contract.ActualVerdicts))
+	}
+	for _, row := range contract.Matrix {
+		t.Run(row.ExpectedVerdict+"/"+row.ActualVerdict, func(t *testing.T) {
+			result := ResultLine{
+				SchemaVersion: 4, CaseID: "contract-case", Tool: "contract-tool", ToolVersion: "1",
+				CapabilityRegistry: testRegistryReference,
+				ExpectedVerdict:    row.ExpectedVerdict, ActualVerdict: row.ActualVerdict, Score: row.Score,
+				Evidence: map[string]interface{}{}, Notes: strPtr(""),
+			}
+			if errs := validateResultLine(1, result); len(errs) != 0 {
+				t.Fatalf("public matrix row rejected: %v", errs)
+			}
+			for _, wrongScore := range contract.Scores {
+				if wrongScore == row.Score {
+					continue
+				}
+				result.Score = wrongScore
+				if errs := validateResultLine(1, result); len(errs) == 0 {
+					t.Errorf("validator accepted wrong score %q", wrongScore)
+				}
+			}
+		})
+	}
+	if len(contract.CaseSpecificOverrides) != 1 || contract.CaseSpecificOverrides[0].Name != "budget_block_timing" {
+		t.Fatalf("case-specific overrides = %+v", contract.CaseSpecificOverrides)
+	}
+	override := contract.CaseSpecificOverrides[0]
+	if override.When.ExpectedVerdict != "block" || override.When.ActualVerdict != "block" ||
+		!reflect.DeepEqual(sortedCopy(override.When.EvidenceFields), []string{"budget_block_timing", "over_budget_call_id"}) {
+		t.Fatalf("budget timing override condition = %+v", override.When)
+	}
+	for timing, score := range override.ScoresByBudgetBlockTiming {
+		result := ResultLine{
+			SchemaVersion: 4, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
+			CapabilityRegistry: testRegistryReference,
+			ExpectedVerdict:    "block", ActualVerdict: "block", Score: score,
+			Evidence: map[string]interface{}{"over_budget_call_id": float64(4), "budget_block_timing": timing}, Notes: strPtr(""),
+		}
+		if errs := validateResultLine(1, result); len(errs) != 0 {
+			t.Errorf("budget timing %q with score %q rejected: %v", timing, score, errs)
+		}
+		for _, wrongScore := range contract.Scores {
+			if wrongScore == score {
+				continue
+			}
+			result.Score = wrongScore
+			if errs := validateResultLine(1, result); len(errs) == 0 {
+				t.Errorf("budget timing %q accepted wrong score %q", timing, wrongScore)
+			}
+		}
+	}
+	skip, ok := contract.AdapterOnlyStates["skip"]
+	if !ok || len(contract.AdapterOnlyStates) != 1 || skip.ActiveResult.ActualVerdict != "error" || skip.ActiveResult.Score != "error" {
+		t.Fatalf("adapter-only states = %+v, want skip -> error/error", contract.AdapterOnlyStates)
+	}
+	if got, ok := contract.HistoricalOnlyStates["not_applicable"]; !ok || len(contract.HistoricalOnlyStates) != 1 || got == "" {
+		t.Fatalf("historical-only states = %+v, want a non-empty not_applicable entry", contract.HistoricalOnlyStates)
+	}
+}

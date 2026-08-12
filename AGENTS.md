@@ -11,6 +11,7 @@ agent-egress-bench is a public, tool-neutral corpus for testing AI agent egress 
 | `runner/` | Gauntlet runner, adapters, loaders, scoring, and reports |
 | `schemas/` | Public JSON Schema documents |
 | `contracts/artifacts.json` | Machine-readable artifact compatibility inventory |
+| `contracts/case-shapes-v4.json`, `contracts/result-states-v4.json` | Gated public cross-field contracts |
 | `examples/` | Tool integration templates and reference runners |
 | `control-evidence/` | Control Evidence protocols, fixtures, and verifiers |
 | `gauntlet-site/` | Retained first-party result records and site data |

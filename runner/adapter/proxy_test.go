@@ -1964,6 +1964,69 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 	}
 }
 
+func TestRunWebSocketFrameViaProxy_ProtocolCloseOnlyBlocksRSV1Case(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		rsv1              bool
+		upstreamDelivered bool
+		wantVerdict       string
+	}{
+		{name: "compressed frame rejected before delivery", rsv1: true, wantVerdict: "block"},
+		{name: "ordinary frame protocol error", wantVerdict: "skip"},
+		{name: "compressed frame already delivered", rsv1: true, upstreamDelivered: true, wantVerdict: "skip"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var upstreamMessages atomic.Int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hj := w.(http.Hijacker)
+				conn, rw, err := hj.Hijack()
+				if err != nil {
+					t.Fatalf("hijack: %v", err)
+				}
+				defer conn.Close() //nolint:errcheck // test cleanup
+				if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+					t.Fatalf("write upgrade response: %v", err)
+				}
+				if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+					t.Fatalf("read websocket frame: %v", err)
+				}
+				if tc.upstreamDelivered {
+					upstreamMessages.Add(1)
+				}
+				payload := append([]byte{0x03, 0xea}, []byte("compressed frames not supported")...)
+				if err := writeServerWebSocketFrame(conn, wsOpcodeClose, payload); err != nil {
+					t.Fatalf("write close frame: %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
+			result := a.Run(Case{
+				ID: "ws-protocol-close", Transport: "websocket", InputType: "websocket_frame",
+				Payload: map[string]interface{}{
+					"url": "wss://example.com/ws",
+					"frames": []interface{}{
+						map[string]interface{}{"opcode": "text", "payload": "probe", "rsv1": tc.rsv1},
+					},
+				},
+			}, time.Second)
+			if result.Err != nil || result.Verdict != tc.wantVerdict {
+				t.Fatalf("result = %+v, want verdict %q", result, tc.wantVerdict)
+			}
+			if tc.wantVerdict == "block" && (!result.DeliveryProven || !result.VerdictObserved) {
+				t.Fatalf("compressed-frame rejection did not become proof: %+v", result)
+			}
+			if tc.wantVerdict == "skip" && (result.DeliveryProven || result.VerdictObserved) {
+				t.Fatalf("unproven protocol close became proof: %+v", result)
+			}
+		})
+	}
+}
+
 func TestProxyAdapterRunWebSocketNormalCloseIsUnproven(t *testing.T) {
 	// Close 1000 means normal completion, not a policy decision. Treating it as
 	// a block lets a generic upstream shutdown manufacture containment.

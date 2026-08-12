@@ -544,7 +544,8 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		}
 		if opcode == wsOpcodeClose {
 			closeCode, policyClose := webSocketCloseCode(payload)
-			if !policyClose {
+			compressedFrameRejection := closeCode == wsCloseProtocolError && caseUsesRSV1(c)
+			if !policyClose && !compressedFrameRejection {
 				return Result{
 					Verdict: "skip",
 					Evidence: map[string]interface{}{
@@ -555,11 +556,15 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 				}
 			}
 			upstreamAfter, upstreamProofAvailable := p.webSocketUpstreamMessageCount()
+			closeKind := "policy_close"
+			if compressedFrameRejection {
+				closeKind = "compressed_frame_rejection"
+			}
 			if !upstreamProofAvailable {
 				return Result{
 					Verdict: "skip",
 					Evidence: map[string]interface{}{
-						"reason":     "ws_policy_close_upstream_proof_unavailable",
+						"reason":     "ws_" + closeKind + "_upstream_proof_unavailable",
 						"close_code": closeCode,
 						"detail":     truncate(webSocketCloseReason(payload), 160),
 					},
@@ -569,7 +574,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 				return Result{
 					Verdict: "skip",
 					Evidence: map[string]interface{}{
-						"reason":                   "ws_policy_close_after_upstream_delivery",
+						"reason":                   "ws_" + closeKind + "_after_upstream_delivery",
 						"close_code":               closeCode,
 						"upstream_messages_before": upstreamBefore,
 						"upstream_messages_after":  upstreamAfter,
@@ -1326,8 +1331,26 @@ const (
 	wsOpcodeText           = 1
 	wsOpcodeBinary         = 2
 	wsOpcodeClose          = 8
+	wsCloseProtocolError   = 1002
 	wsClosePolicyViolation = 1008
 )
+
+func caseUsesRSV1(c Case) bool {
+	frames, ok := c.Payload["frames"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, raw := range frames {
+		frame, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if rsv1, _ := frame["rsv1"].(bool); rsv1 {
+			return true
+		}
+	}
+	return false
+}
 
 func (p *ProxyAdapter) writeWebSocketUpgrade(conn net.Conn, targetURL string) error {
 	keyBytes := make([]byte, 16)

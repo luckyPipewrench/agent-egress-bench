@@ -1,0 +1,27 @@
+{
+  "contract": "aeb.case-shapes",
+  "format": 1,
+  "case_schema_version": 4,
+  "single_file": {
+    "a2a_agent_card": {"input_types": ["a2a_agent_card"], "transports": ["a2a"]},
+    "a2a_message": {"input_types": ["a2a_message"], "transports": ["a2a"]},
+    "crypto_financial": {"input_types": ["header", "mcp_tool_call", "request_body", "url"], "transports": ["fetch_proxy", "http_proxy", "mcp_stdio"]},
+    "encoding_evasion": {"input_types": ["mcp_tool_call", "request_body", "url"], "transports": ["fetch_proxy", "mcp_stdio"]},
+    "false_positive": {"input_types": ["a2a_message", "header", "mcp_tool_call", "mcp_tool_definition", "mcp_tool_result", "request_body", "response_content", "url", "websocket_frame"], "transports": ["a2a", "fetch_proxy", "http_proxy", "mcp_http", "mcp_stdio", "websocket"]},
+    "headers": {"input_types": ["header"], "transports": ["fetch_proxy", "http_proxy", "websocket"]},
+    "hostname_exfiltration": {"input_types": ["url"], "transports": ["fetch_proxy", "http_proxy"]},
+    "mcp_chain": {"input_types": ["mcp_tool_sequence"], "transports": ["mcp_http", "mcp_stdio"]},
+    "mcp_input": {"input_types": ["mcp_tool_call"], "transports": ["mcp_http", "mcp_stdio"]},
+    "mcp_tool": {"input_types": ["mcp_tool_definition", "mcp_tool_result"], "transports": ["mcp_http", "mcp_stdio"]},
+    "request_body": {"input_types": ["request_body"], "transports": ["fetch_proxy", "http_proxy", "websocket"]},
+    "response_fetch": {"input_types": ["response_content"], "transports": ["fetch_proxy", "http_proxy", "websocket"]},
+    "response_mitm": {"input_types": ["response_content"], "transports": ["http_proxy"]},
+    "shell_obfuscation": {"input_types": ["mcp_tool_call"], "transports": ["mcp_http", "mcp_stdio"]},
+    "ssrf_bypass": {"input_types": ["url"], "transports": ["fetch_proxy", "http_proxy"]},
+    "url": {"input_types": ["url"], "transports": ["fetch_proxy", "http_proxy", "websocket"]},
+    "websocket_dlp": {"input_types": ["websocket_frame"], "transports": ["websocket"]}
+  },
+  "multi_file": {
+    "mcp_drift": {"input_types": ["mcp_tool_sequence_temporal"], "transports": ["mcp_http", "mcp_stdio"]}
+  }
+}
