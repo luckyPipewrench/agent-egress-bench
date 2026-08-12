@@ -14,6 +14,7 @@ permissions: read-all
 
 concurrency:
   group: scorecard-${{ github.repository }}
+  queue: max
   cancel-in-progress: false
 
 jobs:
