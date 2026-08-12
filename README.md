@@ -82,7 +82,7 @@ cd validate && go build -o aeb-validate .
 **Validate a runner's results or tool profile:**
 
 ```bash
-./aeb-validate results path/to/results.jsonl
+./aeb-validate results path/to/results.jsonl ../cases
 ./aeb-validate profile path/to/tool-profile.json
 ```
 

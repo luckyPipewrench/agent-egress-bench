@@ -1,7 +1,7 @@
 # agent-egress-bench Specification
 
-**Version:** 1
-**Status:** Stable
+**Active case contract:** schema version 4
+**Status:** Active; merged case semantics are immutable
 
 **JSON Schemas:** [`case-v4`](../schemas/case-v4.schema.json) and
 [`multi-file-case-v4`](../schemas/multi-file-case-v4.schema.json)
@@ -62,14 +62,44 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 
 `fetch_proxy`, `http_proxy`, `mcp_stdio`, `mcp_http`, `websocket`, `a2a`
 
+### Valid category, input, and transport combinations
+
+[`contracts/case-shapes-v4.json`](../contracts/case-shapes-v4.json) is the
+complete machine-readable matrix. `make check-public-contracts` compares it
+with the case schemas and Go validator, so an undocumented combination
+cannot enter through one reader.
+
+| Category | Allowed input types | Allowed transports |
+| --- | --- | --- |
+| `url` | `url` | `fetch_proxy`, `http_proxy`, `websocket` |
+| `request_body` | `request_body` | `fetch_proxy`, `http_proxy`, `websocket` |
+| `headers` | `header` | `fetch_proxy`, `http_proxy`, `websocket` |
+| `response_fetch` | `response_content` | `fetch_proxy`, `http_proxy`, `websocket` |
+| `response_mitm` | `response_content` | `http_proxy` |
+| `mcp_input` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
+| `mcp_tool` | `mcp_tool_result`, `mcp_tool_definition` | `mcp_stdio`, `mcp_http` |
+| `mcp_chain` | `mcp_tool_sequence` | `mcp_stdio`, `mcp_http` |
+| `a2a_message` | `a2a_message` | `a2a` |
+| `a2a_agent_card` | `a2a_agent_card` | `a2a` |
+| `websocket_dlp` | `websocket_frame` | `websocket` |
+| `ssrf_bypass` | `url` | `fetch_proxy`, `http_proxy` |
+| `encoding_evasion` | `url`, `request_body`, `mcp_tool_call` | `fetch_proxy`, `mcp_stdio` |
+| `shell_obfuscation` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
+| `crypto_financial` | `url`, `request_body`, `header`, `mcp_tool_call` | `fetch_proxy`, `http_proxy`, `mcp_stdio` |
+| `false_positive` | `url`, `request_body`, `header`, `response_content`, `mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `websocket_frame`, `a2a_message` | `fetch_proxy`, `http_proxy`, `mcp_stdio`, `mcp_http`, `websocket`, `a2a` |
+| `hostname_exfiltration` | `url` | `fetch_proxy`, `http_proxy` |
+| `mcp_drift` (multi-file only) | `mcp_tool_sequence_temporal` | `mcp_stdio`, `mcp_http` |
+
 ### expected_verdict
 
-`block`, `allow`
+Active result rows use `block` or `allow`.
 
-Single-file JSON v1 cases are binary. No `warn` appears in single-file JSON case expectations.
+Schema v4 still accepts `warn` for compatibility, but no current single-file case uses it and
+new single-file cases must use `block` or `allow`.
 The multi-file MCP drift fixtures use a separate `case.yaml` contract documented in
 [`cases/mcp-drift/README.md`](../cases/mcp-drift/README.md), where `warn` is allowed for
 benign drift that should be surfaced for operator review without being blocked.
+The runner normalizes that case expectation to `allow` in the binary active result row.
 Its JSON Schema applies to the decoded YAML data model. The Go validator and
 runner also enforce directory-name identity, distinct component filenames, and
 the referenced tools/list and expected-receipt document contracts.
@@ -91,7 +121,7 @@ capability-registry snapshot bound by the active profile and result. Tags are
 reporting labels only. They never select cases, alter a denominator, affect
 sufficiency, change a score, or gate publication.
 
-## requires (v3)
+## requires
 
 `tls_interception`, `url_dlp_scanning`, `request_body_dlp_scanning`, `header_dlp_scanning`, `response_prompt_injection_scanning`, `mcp_input_dlp_scanning`, `mcp_input_prompt_injection_scanning`, `mcp_tool_policy`, `mcp_tool_result_prompt_injection_scanning`, `mcp_tool_poison_scanning`, `mcp_tool_baseline`, `mcp_chain_memory`, `mcp_cross_server_chain_memory`, `mcp_data_class_labels`, `a2a_dlp_scanning`, `a2a_prompt_injection_scanning`, `a2a_card_prompt_injection_scanning`, `a2a_card_drift_scanning`, `a2a_ssrf_scanning`, `websocket_dlp_scanning`, `websocket_prompt_injection_scanning`, `ssrf_scanning`, `domain_blocklist`, `entropy_scanning`, `shell_analysis`, `crypto_dlp_scanning`, `hostname_exfil_scanning`, `dns_rebinding_fixture`
 

@@ -305,6 +305,16 @@ func proxyPolicyRejection(policyText string) bool {
 	return proxyPolicyRejectionRe.MatchString(policyText)
 }
 
+func transportErrorProvesProxyRejection(errText string, requestedURLs ...string) bool {
+	policyText := errText
+	for _, requestedURL := range requestedURLs {
+		if requestedURL != "" {
+			policyText = strings.ReplaceAll(policyText, requestedURL, "")
+		}
+	}
+	return proxyPolicyRejection(policyText)
+}
+
 func observedProxyVerdict(result Result) Result {
 	if result.Err == nil && (result.Verdict == "allow" || result.Verdict == "block") {
 		result.DeliveryProven = true
@@ -999,12 +1009,8 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 		// fixture route rewrites the target, those differ, and stripping the
 		// wrong one leaves the case's own hostname in the text where it can
 		// still decide the verdict.
-		policyText := strings.ReplaceAll(errStr, req.URL.String(), "")
-		if targetURL != "" {
-			policyText = strings.ReplaceAll(policyText, targetURL, "")
-		}
 		// Proxy actively rejected the CONNECT (policy decision).
-		if proxyPolicyRejection(policyText) {
+		if transportErrorProvesProxyRejection(errStr, req.URL.String(), targetURL) {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
 			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})
@@ -1195,7 +1201,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 	resp, err := client.Do(req)
 	if err != nil {
 		errStr := err.Error()
-		if strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "blocked") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Method Not Allowed") || strings.Contains(errStr, "405") {
+		if transportErrorProvesProxyRejection(errStr, req.URL.String(), targetURL) {
 			ev := map[string]interface{}{"reason": "proxy_rejected"}
 			extractBlockEvidence(errStr, ev)
 			return observedProxyVerdict(Result{Verdict: "block", Evidence: ev})

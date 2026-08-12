@@ -116,17 +116,17 @@ runs.
 
 ### Budget capability scope
 
-The checked-in profile deliberately sets `budget_enforcement` to `false`.
-The current benchmark capability requires per-subject accounting with authenticated identities,
-but the canonical MCP stdio invocation above is one authenticated session.
-Caller-supplied tool arguments such as `subject_id` are payload data, not a
-trusted identity boundary. Pipelock can enforce a session-wide tool-call limit
-on this transport, but this adapter cannot honestly claim the benchmark's
-per-subject capability until it supplies a trusted multi-subject mapping. The
-benchmark config keeps that different session-wide limiter unlimited so it
-cannot decide unrelated cases. The current budget cases therefore score as
-`not_applicable` for this profile instead of as containment failures or
-accidental passes.
+Profiles do not select budget cases. The runner executes them whenever the
+adapter can deliver the MCP sequence and observe each result.
+
+The current cases require per-subject accounting, while the canonical MCP
+stdio invocation is one authenticated session. Their `subject_id` values are
+test data, not a trusted identity boundary. Pipelock's session-wide tool-call
+limit measures a different boundary, so the benchmark config leaves it
+unlimited. This keeps an unrelated early session block from earning credit for
+per-subject enforcement. Pipelock either enforces the case boundary or records
+a measured result under the owner [scoring rules](../../docs/gauntlet.md#per-case-results)
+and machine-readable [result-state contract](../../contracts/result-states-v4.json).
 
 The portable entry point above is the normal Pipelock operator surface. The long form below is retained for runner development and to make the managed-command contract inspectable:
 

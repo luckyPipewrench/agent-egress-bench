@@ -102,6 +102,11 @@ func loadCases(dir string) ([]Case, error) {
 		if c.SchemaVersion != activeSchemaVersion {
 			return fmt.Errorf("%s: schema_version must be %d for scoring, got %d", path, activeSchemaVersion, c.SchemaVersion)
 		}
+		// Schema v4 historically accepted warn. Active result rows are binary,
+		// so a warning expectation is measured as the benign allow boundary.
+		if c.ExpectedVerdict == "warn" {
+			c.ExpectedVerdict = "allow"
+		}
 		cases = append(cases, c)
 		return nil
 	})

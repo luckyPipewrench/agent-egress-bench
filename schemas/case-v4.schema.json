@@ -106,7 +106,7 @@
         "allow",
         "warn"
       ],
-      "description": "Expected tool verdict. v1 is binary (no warn)."
+      "description": "Expected tool verdict. Current single-file corpus cases use block or allow; warn remains accepted for schema-v4 compatibility."
     },
     "severity": {
       "type": "string",

@@ -1964,6 +1964,76 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 	}
 }
 
+func TestRunWebSocketFrameViaProxy_ProtocolCloseIsUnproven(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		frames []interface{}
+	}{
+		{
+			name: "single compressed frame",
+			frames: []interface{}{
+				map[string]interface{}{"opcode": "text", "payload": "probe", "rsv1": true},
+			},
+		},
+		{
+			name: "ordinary frame",
+			frames: []interface{}{
+				map[string]interface{}{"opcode": "text", "payload": "probe"},
+			},
+		},
+		{
+			name: "mixed fragmented message",
+			frames: []interface{}{
+				map[string]interface{}{"opcode": "text", "payload": "ordinary"},
+				map[string]interface{}{"opcode": "continuation", "payload": "probe", "rsv1": true},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hj := w.(http.Hijacker)
+				conn, rw, err := hj.Hijack()
+				if err != nil {
+					t.Fatalf("hijack: %v", err)
+				}
+				defer conn.Close() //nolint:errcheck // test cleanup
+				if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+					t.Fatalf("write upgrade response: %v", err)
+				}
+				if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+					t.Fatalf("read websocket frame: %v", err)
+				}
+				payload := append([]byte{0x03, 0xea}, []byte("compressed frames not supported")...)
+				if err := writeServerWebSocketFrame(conn, wsOpcodeClose, payload); err != nil {
+					t.Fatalf("write close frame: %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := a.Run(Case{
+				ID: "ws-protocol-close", Transport: "websocket", InputType: "websocket_frame",
+				Payload: map[string]interface{}{
+					"url":    "wss://example.com/ws",
+					"frames": tc.frames,
+				},
+			}, time.Second)
+			if result.Err != nil || result.Verdict != "skip" {
+				t.Fatalf("result = %+v, want unproven skip", result)
+			}
+			if result.DeliveryProven || result.VerdictObserved {
+				t.Fatalf("unproven protocol close became proof: %+v", result)
+			}
+			if result.Evidence["reason"] != "ws_close_not_policy_violation" {
+				t.Fatalf("reason = %q, want ws_close_not_policy_violation", result.Evidence["reason"])
+			}
+		})
+	}
+}
+
 func TestProxyAdapterRunWebSocketNormalCloseIsUnproven(t *testing.T) {
 	// Close 1000 means normal completion, not a policy decision. Treating it as
 	// a block lets a generic upstream shutdown manufacture containment.
@@ -4020,5 +4090,51 @@ func TestProxyPolicyRejectionIgnoresNumbersInsideAddresses(t *testing.T) {
 				t.Fatalf("proxyPolicyRejection(%q) = %v, want %v", tc.text, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestDoHTTPProxyRequestDoesNotTrustCaseURLAsPolicyEvidence(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	var accepted atomic.Int64
+	go func() {
+		conn, acceptErr := ln.Accept()
+		if acceptErr != nil {
+			return
+		}
+		accepted.Add(1)
+		if tcp, ok := conn.(*net.TCPConn); ok {
+			_ = tcp.SetLinger(0)
+		}
+		_ = conn.Close()
+	}()
+
+	proxyURL, err := url.Parse("http://" + ln.Addr().String())
+	if err != nil {
+		t.Fatalf("parse proxy URL: %v", err)
+	}
+	adapter := &ProxyAdapter{proxyURL: proxyURL}
+	result := adapter.doHTTPProxyRequest(
+		"case-controlled-policy-words",
+		http.MethodGet,
+		"http://blocked.vendor.example/path/403/Forbidden",
+		nil,
+		nil,
+		3*time.Second,
+		"",
+	)
+
+	if result.Verdict == "block" {
+		t.Fatalf("case-controlled URL scored as an observed block after an ambiguous transport error: %+v", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("ambiguous transport error proved a verdict: delivery=%v observed=%v", result.DeliveryProven, result.VerdictObserved)
+	}
+	if got := accepted.Load(); got != 1 {
+		t.Fatalf("reset fixture accepted %d connections, want 1", got)
 	}
 }
