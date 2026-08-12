@@ -77,6 +77,7 @@ fp-error-message-token-expired-009
 fp-example-aws-key-003
 fp-git-status-output-012
 fp-gitlab-lookalike-word-014
+fp-mcp-tool-result-credential-placeholder-019
 fp-multilingual-security-terms-001
 fp-nested-config-lookalike-018
 fp-networking-docs-localhost-008
@@ -162,6 +163,9 @@ mcp-tool-http-schema-poison-008
 mcp-tool-http-schema-type-confusion-014
 mcp-tool-poison-001
 mcp-tool-priority-006
+mcp-tool-result-credential-014
+mcp-tool-result-credential-base64-015
+mcp-tool-result-credential-hex-016
 mcp-tool-rugpull-002
 mcp-tool-schema-inject-004
 mcp-tool-shadow-003

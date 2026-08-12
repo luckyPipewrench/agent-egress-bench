@@ -59,6 +59,8 @@ Pick them from the exact capability-registry snapshot named below:
 | `header_dlp` | Detect secrets in HTTP headers |
 | `response_injection` | Detect prompt injection in fetched content |
 | `mcp_input_scan` | Detect secrets/injection in MCP tool arguments |
+| `mcp_session_binding` | Bind MCP state to the intended session |
+| `mcp_tool_result_dlp_scanning` | Detect credential material in MCP tool results |
 | `mcp_tool_poison` | Detect poisoned MCP tool descriptions |
 | `mcp_chain` | Detect multi-step exfiltration sequences |
 | `ssrf` | Detect SSRF attempts (private IPs, metadata endpoints) |

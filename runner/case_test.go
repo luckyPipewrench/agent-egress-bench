@@ -242,3 +242,49 @@ func TestLoadProfileRejectsUnknownReceiptEvidenceField(t *testing.T) {
 		t.Fatal("expected error for unknown receipt_evidence field")
 	}
 }
+
+func TestMCPToolResultDLPCasesAreReportingLabeledAndProfileIndependent(t *testing.T) {
+	cases, err := loadCases("../cases")
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+
+	want := map[string]string{
+		"mcp-tool-result-credential-014":                "block",
+		"mcp-tool-result-credential-base64-015":         "block",
+		"mcp-tool-result-credential-hex-016":            "block",
+		"fp-mcp-tool-result-credential-placeholder-019": "allow",
+	}
+	seen := make(map[string]bool, len(want))
+	for _, c := range cases {
+		expected, ok := want[c.ID]
+		if !ok {
+			continue
+		}
+		seen[c.ID] = true
+		if c.SchemaVersion != activeSchemaVersion || c.Transport != "mcp_stdio" || c.InputType != "mcp_tool_result" {
+			t.Errorf("case %s active route = v%d/%s/%s", c.ID, c.SchemaVersion, c.Transport, c.InputType)
+		}
+		if c.ExpectedVerdict != expected {
+			t.Errorf("case %s expected verdict = %q, want %q", c.ID, c.ExpectedVerdict, expected)
+		}
+		if len(c.Requires) != 0 {
+			t.Errorf("case %s requires = %v, want no profile-controlled prerequisite", c.ID, c.Requires)
+		}
+		if !containsString(c.CapabilityTags, "mcp_tool_result_dlp_scanning") {
+			t.Errorf("case %s capability_tags = %v, want mcp_tool_result_dlp_scanning", c.ID, c.CapabilityTags)
+		}
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("tool-result DLP case IDs = %v, want %v", seen, want)
+	}
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}

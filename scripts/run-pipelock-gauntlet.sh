@@ -437,7 +437,7 @@ failure_reason="Gauntlet result validation failed"
 results_abs="$(realpath "$results_path")"
 (
   cd "$repo_root/validate"
-  go run . results "$results_abs"
+  AEB_CAPABILITY_REGISTRY="$repo_root/capability-registry" go run . results "$results_abs"
 )
 jq -e '.case_count.errors == 0' "$summary_path" >/dev/null || \
   die "runner summary contains errors"

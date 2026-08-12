@@ -61,7 +61,7 @@ This is separate from the runner capability profile described in
   "capability_registry": {
     "id": "aeb.core-capabilities",
     "format": 1,
-    "revision": 1,
+    "revision": 2,
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "verifier": {
