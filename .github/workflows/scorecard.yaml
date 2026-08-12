@@ -5,14 +5,29 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 5 * * 1' # Weekly Monday 5AM UTC
-  push:
+  workflow_run:
+    workflows: [Security]
+    types: [completed]
     branches: [main]
 
 permissions: read-all
 
+concurrency:
+  group: scorecard-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
+    # A main-branch push starts Security first. Waiting for its successful
+    # CodeQL run prevents Scorecard from measuring the commit before its SAST
+    # evidence exists. Other explicit triggers remain independently runnable.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       security-events: write
       id-token: write
@@ -20,6 +35,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Run Scorecard
         uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
