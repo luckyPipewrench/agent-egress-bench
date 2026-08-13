@@ -112,7 +112,52 @@ class InventoryTest(unittest.TestCase):
         value = self.load_inventory()
         value["source_commit"] = "0" * 40
         self.write_inventory(value)
-        with self.assertRaisesRegex(ValueError, "not retained by the repository"):
+        with self.assertRaisesRegex(ValueError, "must resolve to a commit object"):
+            self.validate()
+
+    def test_rejects_tree_object_as_source_commit(self):
+        value = self.load_inventory()
+        value["source_commit"] = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD^{tree}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.write_inventory(value)
+        with self.assertRaisesRegex(ValueError, "must resolve to a commit object"):
+            self.validate()
+
+    def test_rejects_missing_result_tree_at_source_commit(self):
+        value = self.load_inventory()
+        record = self.root / "gauntlet-site/results/pipelock/digest/record-manifest.json"
+        record.unlink()
+        subprocess.run(["git", "-C", str(self.root), "add", "-u"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "remove records"], check=True)
+        value["source_commit"] = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.write_inventory(value)
+        with self.assertRaisesRegex(ValueError, "must resolve to a tree"):
+            self.validate()
+
+    def test_rejects_symlinked_record_in_source_commit(self):
+        value = self.load_inventory()
+        record = self.root / "gauntlet-site/results/pipelock/digest/record-manifest.json"
+        record.unlink()
+        record.symlink_to("../../../latest-verified.json")
+        subprocess.run(["git", "-C", str(self.root), "add", record.relative_to(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "replace with symlink"], check=True)
+        value["source_commit"] = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.write_inventory(value)
+        with self.assertRaisesRegex(ValueError, "must be a regular file at source_commit"):
             self.validate()
 
     def test_rejects_non_hex_source_commit(self):

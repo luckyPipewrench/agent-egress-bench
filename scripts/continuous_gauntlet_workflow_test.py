@@ -105,6 +105,10 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                 "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
                 True,
             ),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.1\nPIPELOCK_VERSION=3.3.1\n",
+                True,
+            ),
             ("PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\n", False),
             (
                 "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_REPO=luckyPipewrench/pipelock\n"

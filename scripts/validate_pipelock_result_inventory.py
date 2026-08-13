@@ -44,6 +44,37 @@ def git_file_bytes(repo_root, commit, source_path):
     return completed.stdout
 
 
+def git_object_type(repo_root, object_name):
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "cat-file", "-t", object_name],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def git_tree_entries(repo_root, source_commit, source_path, recursive=False):
+    command = ["git", "-C", str(repo_root), "ls-tree"]
+    if recursive:
+        command.append("-r")
+    command.extend(["-z", source_commit, "--", source_path.as_posix()])
+    completed = subprocess.run(command, check=False, capture_output=True)
+    if completed.returncode != 0:
+        raise ValueError("inventory source_commit is not retained by the repository")
+
+    entries = []
+    for record in completed.stdout.split(b"\0"):
+        if not record:
+            continue
+        metadata, raw_path = record.split(b"\t", 1)
+        mode, object_type, _object_id = metadata.decode("ascii").split(" ", 2)
+        entries.append((mode, object_type, Path(raw_path.decode("utf-8"))))
+    return entries
+
+
 def public_paths(repo_root):
     paths = list(PUBLIC_POINTERS)
     result_root = repo_root / RESULTS_ROOT
@@ -62,28 +93,27 @@ def public_paths(repo_root):
 
 
 def public_paths_at_commit(repo_root, source_commit):
-    completed = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo_root),
-            "ls-tree",
-            "-r",
-            "-z",
-            "--name-only",
-            source_commit,
-            "--",
-            RESULTS_ROOT.as_posix(),
-        ],
-        check=False,
-        capture_output=True,
-    )
-    if completed.returncode != 0:
-        raise ValueError("inventory source_commit is not retained by the repository")
-    paths = [*PUBLIC_POINTERS]
-    paths.extend(Path(value.decode()) for value in completed.stdout.split(b"\0") if value)
-    for source_path in paths:
+    if git_object_type(repo_root, source_commit) != "commit":
+        raise ValueError("inventory source_commit must resolve to a commit object")
+    if git_object_type(repo_root, f"{source_commit}:{RESULTS_ROOT.as_posix()}") != "tree":
+        raise ValueError("Pipelock result store must resolve to a tree at source_commit")
+
+    entries = []
+    for source_path in PUBLIC_POINTERS:
+        pointer_entries = git_tree_entries(repo_root, source_commit, source_path)
+        if len(pointer_entries) != 1 or pointer_entries[0][2] != source_path:
+            raise ValueError(f"inventory source is missing from source_commit: {source_path}")
+        entries.extend(pointer_entries)
+    result_entries = git_tree_entries(repo_root, source_commit, RESULTS_ROOT, recursive=True)
+    if not result_entries:
+        raise ValueError("Pipelock result store must contain retained records at source_commit")
+    entries.extend(result_entries)
+
+    for mode, object_type, source_path in entries:
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise ValueError(f"inventory source must be a regular file at source_commit: {source_path}")
         git_file_bytes(repo_root, source_commit, source_path)
+    paths = [source_path for _mode, _object_type, source_path in entries]
     return sorted(paths, key=lambda path: path.as_posix())
 
 
