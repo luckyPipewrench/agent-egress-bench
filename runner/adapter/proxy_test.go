@@ -1968,18 +1968,24 @@ func TestRunWebSocketFrameViaProxy_RSV1CloseRequiresTerminalFixtureProof(t *test
 	for _, tc := range []struct {
 		name              string
 		targetURL         string
-		dataFrameSeen     bool
-		closedEmpty       bool
-		staleClosedEmpty  bool
+		markedRSV1Frames  int
+		terminalClose     bool
+		staleClose        bool
 		provideOutcome    bool
+		frames            []interface{}
+		runTimeout        time.Duration
+		maxElapsed        time.Duration
 		wantVerdict       string
 		wantReason        string
 		wantDeliveryProof bool
 	}{
-		{name: "proxy rejects before upstream", targetURL: "wss://example.com/ws", closedEmpty: true, provideOutcome: true, wantVerdict: "block", wantReason: "rsv1_rejected_before_permissive_upstream", wantDeliveryProof: true},
-		{name: "upstream saw frame", targetURL: "wss://example.com/ws", dataFrameSeen: true, provideOutcome: true, wantVerdict: "skip", wantReason: "rsv1_reached_permissive_upstream"},
-		{name: "external destination stays unproven", targetURL: "wss://outside.invalid/ws", closedEmpty: true, provideOutcome: true, wantVerdict: "skip", wantReason: "ws_close_not_policy_violation"},
-		{name: "stale close for another marker stays unproven", targetURL: "wss://example.com/ws", staleClosedEmpty: true, provideOutcome: true, wantVerdict: "skip", wantReason: "rsv1_fixture_terminal_unproven"},
+		{name: "proxy rejects before marked frame reaches upstream", targetURL: "wss://example.com/ws", terminalClose: true, provideOutcome: true, wantVerdict: "block", wantReason: "rsv1_rejected_before_permissive_upstream", wantDeliveryProof: true},
+		{name: "marked frame reached upstream", targetURL: "wss://example.com/ws", markedRSV1Frames: 1, provideOutcome: true, wantVerdict: "skip", wantReason: "rsv1_reached_permissive_upstream"},
+		{name: "ordinary frame before rejected marked frame still blocks", targetURL: "wss://example.com/ws", terminalClose: true, provideOutcome: true, frames: []interface{}{map[string]interface{}{"opcode": "text", "payload": "ordinary"}, map[string]interface{}{"opcode": "text", "payload": "probe", "rsv1": true}}, wantVerdict: "block", wantReason: "rsv1_rejected_before_permissive_upstream", wantDeliveryProof: true},
+		{name: "one of two marked frames reaching upstream still blocks", targetURL: "wss://example.com/ws", markedRSV1Frames: 1, terminalClose: true, provideOutcome: true, frames: []interface{}{map[string]interface{}{"opcode": "text", "payload": "first", "rsv1": true}, map[string]interface{}{"opcode": "text", "payload": "second", "rsv1": true}}, wantVerdict: "block", wantReason: "rsv1_rejected_before_permissive_upstream", wantDeliveryProof: true},
+		{name: "external destination stays unproven", targetURL: "wss://outside.invalid/ws", terminalClose: true, provideOutcome: true, wantVerdict: "skip", wantReason: "ws_close_not_policy_violation"},
+		{name: "stale close for another marker stays unproven", targetURL: "wss://example.com/ws", staleClose: true, provideOutcome: true, runTimeout: 40 * time.Millisecond, maxElapsed: 250 * time.Millisecond, wantVerdict: "skip", wantReason: "rsv1_fixture_terminal_unproven"},
+		{name: "pre-upstream rejection without positive fixture proof stays unproven", targetURL: "wss://example.com/ws", provideOutcome: true, runTimeout: 40 * time.Millisecond, maxElapsed: 250 * time.Millisecond, wantVerdict: "skip", wantReason: "rsv1_fixture_terminal_unproven"},
 		{name: "terminal fixture proof unavailable", targetURL: "wss://example.com/ws", wantVerdict: "skip", wantReason: "rsv1_fixture_terminal_unproven"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2014,22 +2020,34 @@ func TestRunWebSocketFrameViaProxy_RSV1CloseRequiresTerminalFixtureProof(t *test
 			a.SetWSFixture("127.0.0.1:9")
 			a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
 			if tc.provideOutcome {
-				a.SetWSRSV1Outcome(func(marker string) (bool, bool) {
-					if tc.staleClosedEmpty {
-						return false, marker == "stale"
+				a.SetWSRSV1Outcome(func(marker string) (int, bool) {
+					if tc.staleClose {
+						return 0, marker == "stale"
 					}
-					return tc.dataFrameSeen, tc.closedEmpty
+					return tc.markedRSV1Frames, tc.terminalClose
 				})
+			}
+			runTimeout := tc.runTimeout
+			if runTimeout == 0 {
+				runTimeout = time.Second
+			}
+			started := time.Now()
+			frames := tc.frames
+			if len(frames) == 0 {
+				frames = []interface{}{
+					map[string]interface{}{"opcode": "text", "payload": "probe", "rsv1": true},
+				}
 			}
 			result := a.Run(Case{
 				ID: "ws-rsv1-attribution", Transport: "websocket", InputType: "websocket_frame",
 				Payload: map[string]interface{}{
-					"url": tc.targetURL,
-					"frames": []interface{}{
-						map[string]interface{}{"opcode": "text", "payload": "probe", "rsv1": true},
-					},
+					"url":    tc.targetURL,
+					"frames": frames,
 				},
-			}, time.Second)
+			}, runTimeout)
+			if tc.maxElapsed > 0 && time.Since(started) > tc.maxElapsed {
+				t.Fatalf("run exceeded attribution budget: elapsed %s, max %s", time.Since(started), tc.maxElapsed)
+			}
 			if result.Err != nil || result.Verdict != tc.wantVerdict {
 				t.Fatalf("result = %+v, want verdict %q", result, tc.wantVerdict)
 			}
@@ -2049,7 +2067,7 @@ func TestRunWebSocketFrameViaProxy_RSV1CloseRequiresTerminalFixtureProof(t *test
 // runner-owned /permissive-rsv1 endpoint, then simulates a product block by
 // closing the upstream connection before the RSV1 frame is delivered and
 // returning close 1002. The block may only be credited because the real fixture
-// positively recorded a terminal empty close.
+// positively recorded that the connection closed before the marked frame.
 func TestRunWebSocketFrameViaProxy_RSV1BlockUsesRealFixtureProof(t *testing.T) {
 	wsf, err := fixture.StartWS()
 	if err != nil {
@@ -2104,8 +2122,8 @@ func TestRunWebSocketFrameViaProxy_RSV1BlockUsesRealFixtureProof(t *testing.T) {
 			_ = up.Close()
 			return
 		}
-		// Terminate the upstream connection empty: the fixture records a
-		// terminal close before any data frame reached it.
+		// Terminate the upstream connection before forwarding the marked RSV1
+		// frame: the fixture records a marker-specific terminal outcome.
 		_ = up.Close()
 		payload := append([]byte{0x03, 0xea}, []byte("compressed frames not supported")...)
 		_ = writeServerWebSocketFrame(conn, wsOpcodeClose, payload)

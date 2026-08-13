@@ -90,9 +90,9 @@ type ProxyAdapter struct {
 	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
 
-	wsUpstreamMessages   func() int64              // runner-managed WS fixture message counter
-	wsRSV1Outcome        func(string) (bool, bool) // marked permissive-fixture outcome
-	mcpHTTPUpstreamCalls func() int64              // runner-managed MCP HTTP fixture request counter
+	wsUpstreamMessages   func() int64             // runner-managed WS fixture message counter
+	wsRSV1Outcome        func(string) (int, bool) // marked permissive-fixture outcome
+	mcpHTTPUpstreamCalls func() int64             // runner-managed MCP HTTP fixture request counter
 	mcpHTTPFixture       *fixture.MCPHTTPFixture
 }
 
@@ -221,7 +221,7 @@ func (p *ProxyAdapter) SetWSUpstreamMessageCounter(counter func() int64) {
 
 // SetWSRSV1Outcome lets the adapter distinguish a proxy rejection from a
 // destination that received the marked RSV1 frame and then closed.
-func (p *ProxyAdapter) SetWSRSV1Outcome(outcome func(string) (bool, bool)) {
+func (p *ProxyAdapter) SetWSRSV1Outcome(outcome func(string) (int, bool)) {
 	p.wsRSV1Outcome = outcome
 }
 
@@ -423,6 +423,7 @@ func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Dura
 // runWebSocketFrameViaProxy performs a real WebSocket upgrade through the
 // proxy and writes the corpus frames on the proxied connection.
 func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) Result {
+	runDeadline := time.Now().Add(timeout)
 	targetURL, _ := payloadString(c.Payload, "url")
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
@@ -442,7 +443,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	}
 	defer func() { _ = conn.Close() }()
 
-	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+	if err := conn.SetDeadline(runDeadline); err != nil {
 		return Result{Err: fmt.Errorf("case %s: ws deadline: %w", c.ID, err)}
 	}
 	br := bufio.NewReader(conn)
@@ -488,6 +489,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		}
 	}
 	expectedUpstreamMessages := countCorpusWebSocketMessages(frames)
+	expectedRSV1Frames := countCorpusRSV1Frames(frames)
 	upstreamBefore, _ := p.webSocketUpstreamMessageCount()
 	for _, raw := range frames {
 		frame, _ := raw.(map[string]interface{})
@@ -514,7 +516,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	// Budget: the first frame gets the full timeout (proxy may need time to
 	// reassemble fragments and run scanners). Subsequent reads use a short
 	// idle window so allow-cases don't pay the full timeout per case.
-	firstReadDeadline := time.Now().Add(timeout)
+	firstReadDeadline := runDeadline
 	const idleWindow = 500 * time.Millisecond
 	var lastFrame struct {
 		opcode       int
@@ -570,9 +572,9 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 			closeCode, policyClose := webSocketCloseCode(payload)
 			if !policyClose {
 				if closeCode == wsCloseProtocolError && permissiveRSV1Fixture {
-					dataFrameSeen, closedEmpty, terminalProof := p.waitForRSV1FixtureOutcome(rsv1Marker)
+					markedRSV1Frames, terminalClose, terminalProof := p.waitForRSV1FixtureOutcome(rsv1Marker, expectedRSV1Frames, runDeadline)
 					upstreamAfter, _ := p.webSocketUpstreamMessageCount()
-					if terminalProof && dataFrameSeen {
+					if terminalProof && markedRSV1Frames >= expectedRSV1Frames {
 						return Result{
 							Verdict: "skip",
 							Evidence: map[string]interface{}{
@@ -583,7 +585,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 							},
 						}
 					}
-					if terminalProof && closedEmpty {
+					if terminalProof && terminalClose && markedRSV1Frames < expectedRSV1Frames {
 						return Result{
 							Verdict: "block",
 							Evidence: map[string]interface{}{
@@ -730,6 +732,17 @@ func corpusUsesRSV1(payload map[string]interface{}) bool {
 	return false
 }
 
+func countCorpusRSV1Frames(frames []interface{}) int {
+	count := 0
+	for _, raw := range frames {
+		frame, _ := raw.(map[string]interface{})
+		if rsv1, _ := frame["rsv1"].(bool); rsv1 {
+			count++
+		}
+	}
+	return count
+}
+
 func webSocketURLWithPath(rawURL, path string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -741,28 +754,32 @@ func webSocketURLWithPath(rawURL, path string) string {
 	return u.String()
 }
 
-func (p *ProxyAdapter) waitForRSV1FixtureOutcome(marker string) (dataFrameSeen, closedEmpty, proven bool) {
+func (p *ProxyAdapter) waitForRSV1FixtureOutcome(marker string, expectedRSV1Frames int, runDeadline time.Time) (markedRSV1Frames int, terminalClose, proven bool) {
 	if p.wsRSV1Outcome == nil {
-		return false, false, false
+		return 0, false, false
 	}
-	dataFrameSeen, closedEmpty = p.wsRSV1Outcome(marker)
-	if dataFrameSeen || closedEmpty {
-		return dataFrameSeen, closedEmpty, true
+	markedRSV1Frames, terminalClose = p.wsRSV1Outcome(marker)
+	if markedRSV1Frames >= expectedRSV1Frames || terminalClose {
+		return markedRSV1Frames, terminalClose, true
 	}
-	deadline := time.NewTimer(time.Second)
+	remaining := time.Until(runDeadline)
+	if remaining <= 0 {
+		return markedRSV1Frames, terminalClose, false
+	}
+	deadline := time.NewTimer(remaining)
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer deadline.Stop()
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			dataFrameSeen, closedEmpty = p.wsRSV1Outcome(marker)
-			if dataFrameSeen || closedEmpty {
-				return dataFrameSeen, closedEmpty, true
+			markedRSV1Frames, terminalClose = p.wsRSV1Outcome(marker)
+			if markedRSV1Frames >= expectedRSV1Frames || terminalClose {
+				return markedRSV1Frames, terminalClose, true
 			}
 		case <-deadline.C:
-			dataFrameSeen, closedEmpty = p.wsRSV1Outcome(marker)
-			return dataFrameSeen, closedEmpty, false
+			markedRSV1Frames, terminalClose = p.wsRSV1Outcome(marker)
+			return markedRSV1Frames, terminalClose, false
 		}
 	}
 }

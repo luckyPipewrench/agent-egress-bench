@@ -30,8 +30,8 @@ type WSFixture struct {
 }
 
 type rsv1Outcome struct {
-	dataFrameSeen bool
-	closedEmpty   bool
+	markedRSV1Frames int
+	terminalClose    bool
 }
 
 type wsFixtureMessage struct {
@@ -80,12 +80,13 @@ func (f *WSFixture) WSURL() string {
 // Messages returns the number of application messages that reached the fixture.
 func (f *WSFixture) Messages() int64 { return f.messages.Load() }
 
-// RSV1Outcome returns runner-owned evidence for one marked permissive connection.
-func (f *WSFixture) RSV1Outcome(marker string) (dataFrameSeen, closedEmpty bool) {
+// RSV1Outcome returns how many marked RSV1 frames reached one permissive
+// connection and whether that upgraded connection reached a terminal close.
+func (f *WSFixture) RSV1Outcome(marker string) (markedRSV1Frames int, terminalClose bool) {
 	f.rsv1Mu.RLock()
 	defer f.rsv1Mu.RUnlock()
 	outcome := f.rsv1Outcomes[marker]
-	return outcome.dataFrameSeen, outcome.closedEmpty
+	return outcome.markedRSV1Frames, outcome.terminalClose
 }
 
 // StartWS creates and starts a WebSocket echo server on a random port.
@@ -117,7 +118,7 @@ func StartWS() (*WSFixture, error) {
 	// was not negotiated. That makes it unsuitable as an attribution fixture:
 	// close 1002 could then come from either the proxy or the destination. This
 	// deliberately permissive endpoint accepts the raw frame instead and records
-	// whether each connection terminated before any data reached it.
+	// whether the marked RSV1 frame reached its exact connection.
 	mux.HandleFunc("/permissive-rsv1/", f.servePermissiveRSV1)
 	// Health check for readiness.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -149,11 +150,10 @@ func (f *WSFixture) servePermissiveRSV1(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer conn.Close() //nolint:errcheck // fixture connection cleanup
-	dataFrameSeen := false
 	handshakeComplete := false
 	defer func() {
-		if handshakeComplete && !dataFrameSeen {
-			f.recordRSV1ClosedEmpty(marker)
+		if handshakeComplete {
+			f.recordRSV1TerminalClose(marker)
 		}
 	}()
 	acceptInput := []byte(key + webSocketGUID)
@@ -170,18 +170,20 @@ func (f *WSFixture) servePermissiveRSV1(w http.ResponseWriter, r *http.Request) 
 		if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
 			return
 		}
-		opcode, fin, payload, err := readPermissiveClientFrame(rw.Reader)
-		if err != nil || opcode == 8 {
+		opcode, fin, rsv1, payload, err := readPermissiveClientFrame(rw.Reader)
+		if err != nil {
+			return
+		}
+		if rsv1 {
+			f.recordMarkedRSV1(marker)
+		}
+		if opcode == 8 {
 			return
 		}
 		switch opcode {
 		case 1, 2:
 			if fragmentedOpcode != 0 {
 				return
-			}
-			if !dataFrameSeen {
-				dataFrameSeen = true
-				f.recordRSV1DataFrame(marker)
 			}
 			if !fin {
 				fragmentedOpcode = opcode
@@ -191,10 +193,6 @@ func (f *WSFixture) servePermissiveRSV1(w http.ResponseWriter, r *http.Request) 
 		case 0:
 			if fragmentedOpcode == 0 {
 				return
-			}
-			if !dataFrameSeen {
-				dataFrameSeen = true
-				f.recordRSV1DataFrame(marker)
 			}
 			if len(fragmentedPayload)+len(payload) > 1<<20 {
 				return
@@ -217,42 +215,43 @@ func (f *WSFixture) servePermissiveRSV1(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (f *WSFixture) recordRSV1DataFrame(marker string) {
+func (f *WSFixture) recordMarkedRSV1(marker string) {
 	f.rsv1Mu.Lock()
 	outcome := f.rsv1Outcomes[marker]
-	outcome.dataFrameSeen = true
+	outcome.markedRSV1Frames++
 	f.rsv1Outcomes[marker] = outcome
 	f.rsv1Mu.Unlock()
 }
 
-func (f *WSFixture) recordRSV1ClosedEmpty(marker string) {
+func (f *WSFixture) recordRSV1TerminalClose(marker string) {
 	f.rsv1Mu.Lock()
 	outcome := f.rsv1Outcomes[marker]
-	outcome.closedEmpty = true
+	outcome.terminalClose = true
 	f.rsv1Outcomes[marker] = outcome
 	f.rsv1Mu.Unlock()
 }
 
-func readPermissiveClientFrame(r *bufio.Reader) (byte, bool, []byte, error) {
+func readPermissiveClientFrame(r *bufio.Reader) (byte, bool, bool, []byte, error) {
 	header := make([]byte, 2)
 	if _, err := io.ReadFull(r, header); err != nil {
-		return 0, false, nil, err
+		return 0, false, false, nil, err
 	}
 	opcode := header[0] & 0x0f
 	fin := header[0]&0x80 != 0
+	rsv1 := header[0]&0x40 != 0
 	masked := header[1]&0x80 != 0
 	payloadLen := uint64(header[1] & 0x7f)
 	switch payloadLen {
 	case 126:
 		ext := make([]byte, 2)
 		if _, err := io.ReadFull(r, ext); err != nil {
-			return 0, false, nil, err
+			return 0, false, false, nil, err
 		}
 		payloadLen = uint64(ext[0])<<8 | uint64(ext[1])
 	case 127:
 		ext := make([]byte, 8)
 		if _, err := io.ReadFull(r, ext); err != nil {
-			return 0, false, nil, err
+			return 0, false, false, nil, err
 		}
 		payloadLen = 0
 		for _, b := range ext {
@@ -260,20 +259,20 @@ func readPermissiveClientFrame(r *bufio.Reader) (byte, bool, []byte, error) {
 		}
 	}
 	if !masked || payloadLen > 1<<20 {
-		return 0, false, nil, fmt.Errorf("invalid fixture frame")
+		return 0, false, false, nil, fmt.Errorf("invalid fixture frame")
 	}
 	mask := make([]byte, 4)
 	if _, err := io.ReadFull(r, mask); err != nil {
-		return 0, false, nil, err
+		return 0, false, false, nil, err
 	}
 	payload := make([]byte, payloadLen)
 	if _, err := io.ReadFull(r, payload); err != nil {
-		return 0, false, nil, err
+		return 0, false, false, nil, err
 	}
 	for i := range payload {
 		payload[i] ^= mask[i%len(mask)]
 	}
-	return opcode, fin, payload, nil
+	return opcode, fin, rsv1, payload, nil
 }
 
 func writePermissiveServerFrame(w io.Writer, opcode byte, payload []byte) error {
