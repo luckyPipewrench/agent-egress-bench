@@ -39,8 +39,12 @@ class ScorecardWorkflowTest(unittest.TestCase):
         )
 
     def test_scorecard_uses_the_same_event_commit(self):
-        self.assertNotIn("ref:", self.workflow.split("  scorecard:", 1)[1])
-        self.assertIn("persist-credentials: false", self.workflow)
+        jobs = self.workflow.split("jobs:\n", 1)[1]
+        codeql, scorecard = jobs.split("\n  scorecard:\n", 1)
+        for name, job in (("codeql", codeql), ("scorecard", scorecard)):
+            with self.subTest(job=name):
+                self.assertNotRegex(job, r"(?m)^\s+ref:")
+        self.assertIn("persist-credentials: false", scorecard)
 
     def test_trusted_scorecard_triggers_remain(self):
         for trigger in ("branch_protection_rule:", "workflow_dispatch:", "schedule:"):
