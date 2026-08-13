@@ -26,6 +26,16 @@ The default output is a unique directory under `continuous-gauntlet-runs/`. To c
 
 The destination must not already exist. The command verifies the corpus Git identity and cleanliness, downloads the release named by `release.env`, rejects draft or prerelease assets, verifies the archive against the release's `checksums.txt`, and verifies the extracted binary's version before running it. It then builds the repository runner and executes every canonical fixture and multi-file MCP drift case.
 
+A product-owned scheduler can keep its reviewed release pin in its own repository and pass that file
+without changing the benchmark checkout:
+
+```bash
+./scripts/run-pipelock-gauntlet.sh --release-pin ../pipelock/benchmark/release.env
+```
+
+The pin parser accepts only one `PIPELOCK_REPO`, `PIPELOCK_TAG`, and `PIPELOCK_VERSION` assignment.
+It rejects shell syntax, unknown keys, duplicate keys, and symlinks.
+
 Important files in the completed directory:
 
 | File | Meaning |
