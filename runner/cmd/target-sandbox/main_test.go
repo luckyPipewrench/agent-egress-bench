@@ -178,6 +178,9 @@ func TestUnixSocketListenerCannotBeReachedThroughSandbox(t *testing.T) {
 			_ = connection.Close()
 			t.Fatal("sandbox reached a host Unix socket")
 		}
+		if !errors.Is(err, syscall.EPERM) {
+			t.Fatalf("Unix socket dial returned %v, want EPERM", err)
+		}
 		return
 	}
 
