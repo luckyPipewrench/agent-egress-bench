@@ -91,6 +91,7 @@ type ProxyAdapter struct {
 	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
 
 	wsUpstreamMessages   func() int64 // runner-managed WS fixture message counter
+	wsRSV1ClosedEmpty    func() int64 // terminal permissive-fixture closes before a data frame
 	mcpHTTPUpstreamCalls func() int64 // runner-managed MCP HTTP fixture request counter
 	mcpHTTPFixture       *fixture.MCPHTTPFixture
 }
@@ -216,6 +217,12 @@ func (p *ProxyAdapter) SetWSFixtures(trustedAddr, untrustedAddr string) {
 // the runner-managed upstream fixture before scoring an allow.
 func (p *ProxyAdapter) SetWSUpstreamMessageCounter(counter func() int64) {
 	p.wsUpstreamMessages = counter
+}
+
+// SetWSRSV1ClosedBeforeMessageCounter lets the adapter distinguish a proxy
+// rejection from a destination that received the RSV1 frame and then closed.
+func (p *ProxyAdapter) SetWSRSV1ClosedBeforeMessageCounter(counter func() int64) {
+	p.wsRSV1ClosedEmpty = counter
 }
 
 // SetMCPHTTPURL configures the MCP-over-HTTP JSON-RPC listener URL.
@@ -420,7 +427,12 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	if targetURL == "" {
 		return Result{Err: fmt.Errorf("case %s: payload missing 'url'", c.ID)}
 	}
-	targetURL = p.routeWebSocketFixtureURL(targetURL)
+	routedTargetURL := p.routeWebSocketFixtureURL(targetURL)
+	permissiveRSV1Fixture := routedTargetURL != targetURL && corpusUsesRSV1(c.Payload)
+	targetURL = routedTargetURL
+	if permissiveRSV1Fixture {
+		targetURL = webSocketURLWithPath(targetURL, "/permissive-rsv1")
+	}
 
 	conn, err := net.DialTimeout("tcp", p.proxyURL.Host, timeout)
 	if err != nil {
@@ -475,6 +487,10 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	}
 	expectedUpstreamMessages := countCorpusWebSocketMessages(frames)
 	upstreamBefore, _ := p.webSocketUpstreamMessageCount()
+	rsv1ClosedEmptyBefore := int64(0)
+	if p.wsRSV1ClosedEmpty != nil {
+		rsv1ClosedEmptyBefore = p.wsRSV1ClosedEmpty()
+	}
 	for _, raw := range frames {
 		frame, _ := raw.(map[string]interface{})
 		if err := writeCorpusWebSocketFrame(conn, frame); err != nil {
@@ -555,6 +571,44 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		if opcode == wsOpcodeClose {
 			closeCode, policyClose := webSocketCloseCode(payload)
 			if !policyClose {
+				if closeCode == wsCloseProtocolError && permissiveRSV1Fixture {
+					upstreamAfter, closedEmptyAfter, terminalProof := p.waitForRSV1FixtureOutcome(
+						upstreamBefore, rsv1ClosedEmptyBefore, expectedUpstreamMessages,
+					)
+					if terminalProof && upstreamAfter-upstreamBefore >= int64(expectedUpstreamMessages) {
+						return Result{
+							Verdict: "skip",
+							Evidence: map[string]interface{}{
+								"reason":                   "rsv1_reached_permissive_upstream",
+								"close_code":               closeCode,
+								"upstream_messages_before": upstreamBefore,
+								"upstream_messages_after":  upstreamAfter,
+							},
+						}
+					}
+					if terminalProof && closedEmptyAfter > rsv1ClosedEmptyBefore {
+						return Result{
+							Verdict: "block",
+							Evidence: map[string]interface{}{
+								"scanner":                  "websocket_proxy",
+								"reason":                   "rsv1_rejected_before_permissive_upstream",
+								"close_code":               closeCode,
+								"upstream_messages_before": upstreamBefore,
+								"upstream_messages_after":  upstreamAfter,
+								"upstream_closed_empty":    true,
+								"block_reason":             truncate(webSocketCloseReason(payload), 160),
+							},
+						}
+					}
+					return Result{
+						Verdict: "skip",
+						Evidence: map[string]interface{}{
+							"reason":     "rsv1_fixture_terminal_unproven",
+							"close_code": closeCode,
+							"detail":     truncate(webSocketCloseReason(payload), 160),
+						},
+					}
+				}
 				return Result{
 					Verdict: "skip",
 					Evidence: map[string]interface{}{
@@ -666,6 +720,55 @@ func countCorpusWebSocketMessages(frames []interface{}) int {
 		}
 	}
 	return messages
+}
+
+func corpusUsesRSV1(payload map[string]interface{}) bool {
+	frames, _ := payload["frames"].([]interface{})
+	for _, raw := range frames {
+		frame, _ := raw.(map[string]interface{})
+		if rsv1, _ := frame["rsv1"].(bool); rsv1 {
+			return true
+		}
+	}
+	return false
+}
+
+func webSocketURLWithPath(rawURL, path string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	u.Path = path
+	u.RawPath = ""
+	u.RawQuery = ""
+	return u.String()
+}
+
+func (p *ProxyAdapter) waitForRSV1FixtureOutcome(messageBaseline, closedEmptyBaseline int64, expected int) (int64, int64, bool) {
+	if p.wsUpstreamMessages == nil || p.wsRSV1ClosedEmpty == nil {
+		return 0, 0, false
+	}
+	messages := p.wsUpstreamMessages()
+	closedEmpty := p.wsRSV1ClosedEmpty()
+	if messages-messageBaseline >= int64(expected) || closedEmpty > closedEmptyBaseline {
+		return messages, closedEmpty, true
+	}
+	deadline := time.NewTimer(time.Second)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer deadline.Stop()
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			messages = p.wsUpstreamMessages()
+			closedEmpty = p.wsRSV1ClosedEmpty()
+			if messages-messageBaseline >= int64(expected) || closedEmpty > closedEmptyBaseline {
+				return messages, closedEmpty, true
+			}
+		case <-deadline.C:
+			return p.wsUpstreamMessages(), p.wsRSV1ClosedEmpty(), false
+		}
+	}
 }
 
 func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
@@ -1332,6 +1435,7 @@ const (
 	wsOpcodeText           = 1
 	wsOpcodeBinary         = 2
 	wsOpcodeClose          = 8
+	wsCloseProtocolError   = 1002
 	wsClosePolicyViolation = 1008
 )
 

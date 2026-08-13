@@ -1964,6 +1964,189 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 	}
 }
 
+func TestRunWebSocketFrameViaProxy_RSV1CloseRequiresTerminalFixtureProof(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		targetURL         string
+		markUpstream      bool
+		markClosedEmpty   bool
+		provideTerminal   bool
+		wantVerdict       string
+		wantDeliveryProof bool
+	}{
+		{name: "proxy rejects before upstream", targetURL: "wss://example.com/ws", markClosedEmpty: true, provideTerminal: true, wantVerdict: "block", wantDeliveryProof: true},
+		{name: "upstream saw frame", targetURL: "wss://example.com/ws", markUpstream: true, provideTerminal: true, wantVerdict: "skip"},
+		{name: "external destination stays unproven", targetURL: "wss://outside.invalid/ws", markClosedEmpty: true, provideTerminal: true, wantVerdict: "skip"},
+		{name: "terminal fixture proof unavailable", targetURL: "wss://example.com/ws", wantVerdict: "skip"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var upstreamMessages atomic.Int64
+			var closedEmpty atomic.Int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hj := w.(http.Hijacker)
+				conn, rw, err := hj.Hijack()
+				if err != nil {
+					t.Errorf("hijack: %v", err)
+					return
+				}
+				defer conn.Close() //nolint:errcheck // test cleanup
+				if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+					t.Errorf("write upgrade response: %v", err)
+					return
+				}
+				if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+					t.Errorf("read websocket frame: %v", err)
+					return
+				}
+				if tc.markUpstream {
+					upstreamMessages.Add(1)
+				}
+				if tc.markClosedEmpty {
+					closedEmpty.Add(1)
+				}
+				payload := append([]byte{0x03, 0xea}, []byte("compressed frames not supported")...)
+				if err := writeServerWebSocketFrame(conn, wsOpcodeClose, payload); err != nil {
+					t.Errorf("write close frame: %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			a, err := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.SetWSFixture("127.0.0.1:9")
+			a.SetWSUpstreamMessageCounter(upstreamMessages.Load)
+			if tc.provideTerminal {
+				a.SetWSRSV1ClosedBeforeMessageCounter(closedEmpty.Load)
+			}
+			result := a.Run(Case{
+				ID: "ws-rsv1-attribution", Transport: "websocket", InputType: "websocket_frame",
+				Payload: map[string]interface{}{
+					"url": tc.targetURL,
+					"frames": []interface{}{
+						map[string]interface{}{"opcode": "text", "payload": "probe", "rsv1": true},
+					},
+				},
+			}, time.Second)
+			if result.Err != nil || result.Verdict != tc.wantVerdict {
+				t.Fatalf("result = %+v, want verdict %q", result, tc.wantVerdict)
+			}
+			if result.DeliveryProven != tc.wantDeliveryProof || result.VerdictObserved != tc.wantDeliveryProof {
+				t.Fatalf("proof = delivery:%v verdict:%v, want %v", result.DeliveryProven, result.VerdictObserved, tc.wantDeliveryProof)
+			}
+			if tc.wantVerdict == "block" && result.Evidence["reason"] != "rsv1_rejected_before_permissive_upstream" {
+				t.Fatalf("reason = %q", result.Evidence["reason"])
+			}
+			if tc.markUpstream && result.Evidence["reason"] != "rsv1_reached_permissive_upstream" {
+				t.Fatalf("upstream-delivered reason = %q", result.Evidence["reason"])
+			}
+			if !tc.provideTerminal && result.Evidence["reason"] != "rsv1_fixture_terminal_unproven" {
+				t.Fatalf("missing-terminal reason = %q", result.Evidence["reason"])
+			}
+		})
+	}
+}
+
+// TestRunWebSocketFrameViaProxy_RSV1BlockUsesRealFixtureProof exercises the
+// attribution decision against the real permissive fixture and the real counter
+// wiring, rather than hand-set counters. A fake proxy relays the upgrade to the
+// runner-owned /permissive-rsv1 endpoint, then simulates a product block by
+// closing the upstream connection before the RSV1 frame is delivered and
+// returning close 1002. The block may only be credited because the real fixture
+// positively recorded a terminal empty close.
+func TestRunWebSocketFrameViaProxy_RSV1BlockUsesRealFixtureProof(t *testing.T) {
+	wsf, err := fixture.StartWS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wsf.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close() //nolint:errcheck // test cleanup
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		br := bufio.NewReader(conn)
+		if _, err := http.ReadRequest(br); err != nil {
+			return
+		}
+		// Relay the upgrade to the real permissive fixture so a genuine upstream
+		// connection exists, then block before forwarding the client's frame.
+		up, err := net.Dial("tcp", wsf.Addr())
+		if err != nil {
+			return
+		}
+		if _, err := fmt.Fprint(up,
+			"GET /permissive-rsv1 HTTP/1.1\r\nHost: fixture\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"); err != nil {
+			_ = up.Close()
+			return
+		}
+		if _, err := http.ReadResponse(bufio.NewReader(up), &http.Request{Method: http.MethodGet}); err != nil {
+			_ = up.Close()
+			return
+		}
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			_ = up.Close()
+			return
+		}
+		// Consume the adapter's RSV1 frame but do NOT forward it upstream.
+		if _, _, err := readWebSocketFrame(br); err != nil {
+			_ = up.Close()
+			return
+		}
+		// Terminate the upstream connection empty: the fixture records a
+		// terminal close before any data frame reached it.
+		_ = up.Close()
+		payload := append([]byte{0x03, 0xea}, []byte("compressed frames not supported")...)
+		_ = writeServerWebSocketFrame(conn, wsOpcodeClose, payload)
+	}()
+
+	a, err := NewProxyAdapter(ln.Addr().String(), "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetWSFixture(wsf.Addr())
+	a.SetWSUpstreamMessageCounter(wsf.Messages)
+	a.SetWSRSV1ClosedBeforeMessageCounter(wsf.RSV1ClosedBeforeMessage)
+
+	result := a.Run(Case{
+		ID: "ws-rsv1-real-fixture", Transport: "websocket", InputType: "websocket_frame",
+		Payload: map[string]interface{}{
+			"url": "wss://example.com/ws",
+			"frames": []interface{}{
+				map[string]interface{}{"opcode": "text", "payload": "probe", "rsv1": true},
+			},
+		},
+	}, 3*time.Second)
+
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "block" {
+		t.Fatalf("verdict = %q, want block (evidence %+v)", result.Verdict, result.Evidence)
+	}
+	if !result.DeliveryProven || !result.VerdictObserved {
+		t.Fatalf("proof = delivery:%v verdict:%v, want both true", result.DeliveryProven, result.VerdictObserved)
+	}
+	if result.Evidence["reason"] != "rsv1_rejected_before_permissive_upstream" {
+		t.Fatalf("reason = %q", result.Evidence["reason"])
+	}
+	if got := wsf.RSV1ClosedBeforeMessage(); got == 0 {
+		t.Fatalf("real fixture recorded no terminal empty close; got %d", got)
+	}
+	if got := wsf.Messages(); got != 0 {
+		t.Fatalf("frame reached upstream unexpectedly; messages = %d", got)
+	}
+}
+
 func TestRunWebSocketFrameViaProxy_ProtocolCloseIsUnproven(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
