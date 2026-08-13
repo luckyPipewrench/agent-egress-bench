@@ -1,7 +1,7 @@
 // Copyright 2026 Agent Egress Bench contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//go:build arm64
+//go:build linux && arm64
 
 package main
 

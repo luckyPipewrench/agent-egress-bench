@@ -493,6 +493,21 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("does not match the requested source attempt", rejected.stdout)
 
+    def test_legacy_run_id_only_candidate_is_accepted_without_expected_attempt(self):
+        fixture = self.fixture(candidate())
+        accepted = fixture.run()
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+    def test_legacy_run_id_only_candidate_is_rejected_by_attempt_bound_promotion(self):
+        fixture = self.fixture(candidate())
+        command = fixture.command()
+        command.extend(["--expected-run-attempt", "1"])
+        rejected = subprocess.run(
+            command, cwd=REPO_ROOT, text=True, capture_output=True, check=False
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("does not match the requested source attempt", rejected.stdout)
+
     def test_timezone_free_candidate_time_is_rejected(self):
         fixture = self.fixture(candidate(generated_at="2026-08-05T00:10:08"))
         result = fixture.run()

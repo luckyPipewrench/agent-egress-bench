@@ -1,15 +1,17 @@
 // Copyright 2026 Agent Egress Bench contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// target-sandbox runs a benchmark target with filesystem writes restricted to
-// one scratch directory. Read and execute access remain available so the target
-// can load its binary, config, CA material, and subprocess bridge.
+//go:build linux
+
+// target-sandbox runs a benchmark target with filesystem access restricted to
+// explicitly supplied inputs and one scratch directory.
 package main
 
 import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"unsafe"
@@ -17,7 +19,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const usage = "usage: target-sandbox WRITABLE-DIR -- COMMAND [ARG...]"
+const usage = "usage: target-sandbox WRITABLE-DIR READABLE-PATH... -- COMMAND [ARG...]"
+
+func readAccess() uint64 {
+	return unix.LANDLOCK_ACCESS_FS_EXECUTE |
+		unix.LANDLOCK_ACCESS_FS_READ_FILE |
+		unix.LANDLOCK_ACCESS_FS_READ_DIR
+}
 
 func writeAccessForABI(abi uintptr) uint64 {
 	access := uint64(
@@ -56,7 +64,7 @@ func landlockABI() (uintptr, error) {
 	return abi, nil
 }
 
-func restrictWrites(writable string) error {
+func restrictFilesystem(writable string, readable []string) error {
 	abi, err := landlockABI()
 	if err != nil {
 		return fmt.Errorf("query Landlock ABI: %w", err)
@@ -64,7 +72,8 @@ func restrictWrites(writable string) error {
 	if abi < 1 {
 		return errors.New("kernel reported no supported Landlock ABI")
 	}
-	access := writeAccessForABI(abi)
+	writeAccess := writeAccessForABI(abi)
+	access := writeAccess | readAccess()
 	ruleset := unix.LandlockRulesetAttr{Access_fs: access}
 	rulesetFD, _, errno := unix.RawSyscall6(
 		unix.SYS_LANDLOCK_CREATE_RULESET,
@@ -80,13 +89,23 @@ func restrictWrites(writable string) error {
 	}
 	defer unix.Close(int(rulesetFD)) //nolint:errcheck // best-effort after a failed setup
 
-	for _, allowedPath := range []string{writable, "/dev/null"} {
+	allowedPaths := append([]string{writable, "/dev/null"}, readable...)
+	for index, allowedPath := range allowedPaths {
+		pathInfo, statErr := os.Stat(allowedPath)
+		if statErr != nil {
+			return fmt.Errorf("inspect allowed path %s: %w", allowedPath, statErr)
+		}
 		pathFD, openErr := unix.Open(allowedPath, unix.O_PATH|unix.O_CLOEXEC, 0)
 		if openErr != nil {
-			return fmt.Errorf("open writable path %s: %w", allowedPath, openErr)
+			return fmt.Errorf("open allowed path %s: %w", allowedPath, openErr)
 		}
-		allowedAccess := access
-		if allowedPath == "/dev/null" {
+		allowedAccess := readAccess()
+		if !pathInfo.IsDir() {
+			allowedAccess &^= unix.LANDLOCK_ACCESS_FS_READ_DIR
+		}
+		if index == 0 {
+			allowedAccess = access
+		} else if allowedPath == "/dev/null" {
 			allowedAccess = unix.LANDLOCK_ACCESS_FS_WRITE_FILE
 			if abi >= 3 {
 				allowedAccess |= unix.LANDLOCK_ACCESS_FS_TRUNCATE
@@ -118,6 +137,33 @@ func restrictWrites(writable string) error {
 		return fmt.Errorf("restrict process with Landlock: %w", errno)
 	}
 	return nil
+}
+
+func closeInheritedDescriptors() error {
+	if err := unix.CloseRange(3, ^uint(0), unix.CLOSE_RANGE_CLOEXEC); err != nil {
+		return fmt.Errorf("mark inherited descriptors close-on-exec: %w", err)
+	}
+	return nil
+}
+
+func readablePaths(configured, command []string) []string {
+	paths := append([]string(nil), configured...)
+	values := append([]string(nil), command...)
+	values = append(values, os.Getenv("SSL_CERT_FILE"))
+	for _, value := range values {
+		if !filepath.IsAbs(value) {
+			continue
+		}
+		info, err := os.Stat(value)
+		if err != nil {
+			continue
+		}
+		if !info.IsDir() {
+			value = filepath.Dir(value)
+		}
+		paths = append(paths, value)
+	}
+	return paths
 }
 
 func isolatedEnvironment(writable string) []string {
@@ -181,7 +227,14 @@ func restrictDelegationChannels() error {
 }
 
 func run(args []string) error {
-	if len(args) < 3 || args[1] != "--" {
+	separator := -1
+	for index, arg := range args {
+		if arg == "--" {
+			separator = index
+			break
+		}
+	}
+	if separator < 2 || separator+1 >= len(args) {
 		return errors.New(usage)
 	}
 	writable, err := os.Stat(args[0])
@@ -192,13 +245,17 @@ func run(args []string) error {
 		return errors.New("writable path must be a directory")
 	}
 	runtime.LockOSThread()
-	if err := restrictWrites(args[0]); err != nil {
+	command := args[separator+1:]
+	if err := restrictFilesystem(args[0], readablePaths(args[1:separator], command)); err != nil {
 		return err
 	}
 	if err := restrictDelegationChannels(); err != nil {
 		return err
 	}
-	return unix.Exec(args[2], args[2:], isolatedEnvironment(args[0]))
+	if err := closeInheritedDescriptors(); err != nil {
+		return err
+	}
+	return unix.Exec(command[0], command, isolatedEnvironment(args[0]))
 }
 
 func main() {

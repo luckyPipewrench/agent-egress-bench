@@ -404,6 +404,10 @@ failure_reason="target sandbox build failed"
 target_binary="$pipelock_bin"
 target_sandbox="$work_dir/aeb-target-sandbox"
 target_state="$work_dir/target-state"
+: "${TMPDIR:=$HOME/.cache/pipelock-tmp}"
+: "${GOCACHE:=$HOME/.cache/go-build}"
+export TMPDIR GOCACHE
+mkdir -p "$TMPDIR" "$GOCACHE"
 (
   cd "$repo_root/runner"
   go build -o "$target_sandbox" ./cmd/target-sandbox
@@ -411,13 +415,21 @@ target_state="$work_dir/target-state"
 mkdir "$target_state"
 chmod 0700 "$target_state"
 target_wrapper="$work_dir/pipelock-sandboxed"
-printf '#!/usr/bin/env bash\nexec %q %q -- %q "$@"\n' \
-  "$target_sandbox" "$target_state" "$target_binary" > "$target_wrapper"
+{
+  printf '#!/usr/bin/env bash\nexec %q %q' "$target_sandbox" "$target_state"
+  for readable_path in \
+    "$work_dir" "$repo_root/examples/pipelock" \
+    /usr /bin /lib /lib64 /etc/ssl /etc/pki /etc/resolv.conf /etc/hosts \
+    /etc/nsswitch.conf /etc/gai.conf /etc/passwd /etc/group /etc/localtime; do
+    [[ -e "$readable_path" ]] && printf ' %q' "$readable_path"
+  done
+  printf ' -- %q "$@"\n' "$target_binary"
+} > "$target_wrapper"
 chmod 0755 "$target_wrapper"
 pipelock_bin="$target_wrapper"
 
 failure_reason="Pipelock version check failed inside the target sandbox"
-version_output="$($pipelock_bin --version)"
+version_output="$("$pipelock_bin" --version)"
 printf '%s\n' "$version_output" > "$output_dir/pipelock-version.txt"
 reported_version="$(awk '/^pipelock version / { print $3 }' <<<"$version_output")"
 [[ "$reported_version" == "$PIPELOCK_VERSION" ]] || \

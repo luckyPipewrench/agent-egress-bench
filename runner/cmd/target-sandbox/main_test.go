@@ -1,6 +1,8 @@
 // Copyright 2026 Agent Egress Bench contributors
 // SPDX-License-Identifier: Apache-2.0
 
+//go:build linux
+
 package main
 
 import (
@@ -25,11 +27,13 @@ func TestSandboxHelperProcess(t *testing.T) {
 	writable := os.Getenv("AEB_TARGET_SANDBOX_WRITABLE")
 	denied := os.Getenv("AEB_TARGET_SANDBOX_DENIED")
 	runtime.LockOSThread()
-	if err := restrictWrites(writable); err != nil {
+	if err := restrictFilesystem(writable, []string{"/usr", "/bin", "/lib", "/lib64", "/etc/hosts"}); err != nil {
 		_, _ = os.Stderr.WriteString(err.Error())
 		os.Exit(125)
 	}
-	command := "printf probe > /dev/null && printf allowed > \"$1/allowed\" && printf denied > \"$2/denied\""
+	command := "if cat \"$2/secret\" >/dev/null 2>&1; then exit 70; fi; " +
+		"printf probe > /dev/null && printf allowed > \"$1/allowed\" && " +
+		"if printf denied > \"$2/denied\" 2>/dev/null; then exit 71; fi"
 	if err := unix.Exec("/bin/sh", []string{"sh", "-c", command, "sh", writable, denied}, []string{
 		"PATH=/usr/bin:/bin",
 	}); err != nil {
@@ -48,24 +52,54 @@ func TestRestrictsWritesOutsideScratchDirectory(t *testing.T) {
 	if err := os.Mkdir(denied, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command(os.Args[0], "-test.run=TestSandboxHelperProcess")
+	if err := os.WriteFile(filepath.Join(denied, "secret"), []byte("credential"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestSandboxHelperProcess")
 	command.Env = append(os.Environ(),
 		"AEB_TARGET_SANDBOX_HELPER=1",
 		"AEB_TARGET_SANDBOX_WRITABLE="+writable,
 		"AEB_TARGET_SANDBOX_DENIED="+denied,
 	)
 	output, err := command.CombinedOutput()
-	if err == nil {
-		t.Fatal("sandboxed command unexpectedly wrote outside its scratch directory")
-	}
-	if strings.Contains(string(output), "query Landlock ABI") {
+	var setupErr *exec.ExitError
+	if errors.As(err, &setupErr) && setupErr.ExitCode() == 125 {
 		t.Fatalf("Landlock is unavailable on the test kernel: %s", output)
+	}
+	if err != nil {
+		t.Fatalf("sandbox helper failed: %v; output=%s", err, output)
 	}
 	if _, err := os.Stat(filepath.Join(writable, "allowed")); err != nil {
 		t.Fatalf("allowed write did not complete: %v; output=%s", err, output)
 	}
 	if _, err := os.Stat(filepath.Join(denied, "denied")); !os.IsNotExist(err) {
 		t.Fatalf("denied write exists or stat failed unexpectedly: %v", err)
+	}
+}
+
+func TestInheritedDescriptorIsClosedBeforeTargetExec(t *testing.T) {
+	if os.Getenv("AEB_TARGET_SANDBOX_FD_HELPER") == "1" {
+		if err := closeInheritedDescriptors(); err != nil {
+			t.Fatal(err)
+		}
+		if err := unix.Exec("/bin/sh", []string{"sh", "-c", "test ! -e /proc/self/fd/3"}, []string{
+			"PATH=/usr/bin:/bin",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	file, err := os.Open("/dev/null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestInheritedDescriptorIsClosedBeforeTargetExec")
+	command.Env = append(os.Environ(), "AEB_TARGET_SANDBOX_FD_HELPER=1")
+	command.ExtraFiles = []*os.File{file}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("inherited descriptor remained available: %v; output=%s", err, output)
 	}
 }
 
@@ -121,7 +155,7 @@ func TestUnixSocketsDeniedWithoutBreakingTCP(t *testing.T) {
 		return
 	}
 
-	command := exec.Command(os.Args[0], "-test.run=TestUnixSocketsDeniedWithoutBreakingTCP")
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestUnixSocketsDeniedWithoutBreakingTCP")
 	command.Env = append(os.Environ(), "AEB_TARGET_SANDBOX_SOCKET_HELPER=1")
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -138,7 +172,10 @@ func TestUnixSocketListenerCannotBeReachedThroughSandbox(t *testing.T) {
 		if err := restrictDelegationChannels(); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := net.Dial("unix", os.Getenv("AEB_TARGET_SANDBOX_SOCKET")); err == nil {
+		var dialer net.Dialer
+		connection, err := dialer.DialContext(t.Context(), "unix", os.Getenv("AEB_TARGET_SANDBOX_SOCKET"))
+		if err == nil {
+			_ = connection.Close()
 			t.Fatal("sandbox reached a host Unix socket")
 		}
 		return
@@ -150,12 +187,13 @@ func TestUnixSocketListenerCannotBeReachedThroughSandbox(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
 	socketPath := filepath.Join(socketDir, "helper.sock")
-	listener, err := net.Listen("unix", socketPath)
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(t.Context(), "unix", socketPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
-	command := exec.Command(os.Args[0], "-test.run=TestUnixSocketListenerCannotBeReachedThroughSandbox")
+	defer func() { _ = listener.Close() }()
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestUnixSocketListenerCannotBeReachedThroughSandbox")
 	command.Env = append(os.Environ(),
 		"AEB_TARGET_SANDBOX_DIAL_HELPER=1",
 		"AEB_TARGET_SANDBOX_SOCKET="+socketPath,
@@ -190,7 +228,7 @@ func TestX32CompatSyscallsAreKilled(t *testing.T) {
 		os.Exit(111)
 	}
 
-	command := exec.Command(os.Args[0], "-test.run=TestX32CompatSyscallsAreKilled")
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestX32CompatSyscallsAreKilled")
 	command.Env = append(os.Environ(), "AEB_TARGET_SANDBOX_X32_HELPER=1")
 	err := command.Run()
 	if err == nil {
@@ -245,7 +283,7 @@ func TestIOUringSetupIsDenied(t *testing.T) {
 		return
 	}
 
-	command := exec.Command(os.Args[0], "-test.run=TestIOUringSetupIsDenied")
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestIOUringSetupIsDenied")
 	command.Env = append(os.Environ(), "AEB_TARGET_SANDBOX_IO_URING_HELPER=1")
 	output, err := command.CombinedOutput()
 	if err != nil {

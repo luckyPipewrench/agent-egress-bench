@@ -90,7 +90,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("--release-pin", self.entrypoint)
         self.assertIn("release pin contains an invalid line", self.entrypoint)
 
-    def test_target_runs_under_a_write_restricted_environment(self):
+    def test_target_runs_under_a_filesystem_restricted_environment(self):
         self.assertIn("go build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
         self.assertIn('pipelock_bin="$target_wrapper"', self.entrypoint)
         self.assertIn('sha256sum "$target_binary"', self.entrypoint)
@@ -99,7 +99,8 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         sandbox = (REPO_ROOT / "runner" / "cmd" / "target-sandbox" / "main.go").read_text(
             encoding="utf-8"
         )
-        self.assertIn("restrictWrites(args[0])", sandbox)
+        self.assertIn("restrictFilesystem(args[0]", sandbox)
+        self.assertIn("closeInheritedDescriptors()", sandbox)
         self.assertIn("restrictDelegationChannels()", sandbox)
         self.assertIn("SECCOMP_RET_ERRNO", sandbox)
 
@@ -161,6 +162,12 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                 "PIPELOCK_VERSION=3.3.0\n"
                 "PIPELOCK_ASSET_SHA256_AMD64=not-a-digest\n"
                 f"PIPELOCK_ASSET_SHA256_ARM64={'b' * 64}\n",
+                False,
+            ),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\n"
+                "PIPELOCK_VERSION=3.3.0\n"
+                f"PIPELOCK_ASSET_SHA256_AMD64={'a' * 64}\n",
                 False,
             ),
         )
