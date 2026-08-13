@@ -231,6 +231,7 @@ class ValidRecordFixture:
                     "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
                 ),
                 expected_run_id="123",
+                expected_run_attempt=None,
                 accept_policy_change=False,
             )
         )
@@ -286,6 +287,7 @@ class ValidRecordFixture:
                 artifact_prefix=promotion.DEFAULT_ARTIFACT_PREFIX,
                 url_prefix=promotion.DEFAULT_URL_PREFIX,
                 expected_run_id="124",
+                expected_run_attempt=None,
                 accept_policy_change=False,
             )
         )

@@ -94,10 +94,16 @@ jobs:
             }
           fi
           head_sha="$(jq -r '.head_sha' "$run_json")"
+          run_attempt="$(jq -r '.run_attempt' "$run_json")"
+          [[ "$run_attempt" =~ ^[1-9][0-9]*$ ]] || {
+            echo "source run attempt is invalid" >&2
+            exit 1
+          }
           git merge-base --is-ancestor "$head_sha" "origin/$DEFAULT_BRANCH" || {
             echo "source run head is not in current default-branch history" >&2
             exit 1
           }
+          printf 'RUN_ATTEMPT=%s\n' "$run_attempt" >> "$GITHUB_ENV"
 
       - name: Download candidate evidence
         shell: bash
@@ -108,7 +114,7 @@ jobs:
           mkdir -p "$ARTIFACT_DIR"
           gh run download "$RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name continuous-gauntlet-pipelock \
+            --name "continuous-gauntlet-pipelock-$RUN_ATTEMPT" \
             --dir "$ARTIFACT_DIR"
           corpus_sha="$(jq -r '.corpus_git_sha' "$ARTIFACT_DIR/continuous-gauntlet-pipelock.json")"
           [[ "$corpus_sha" =~ ^[0-9a-f]{40}$ ]] || {
@@ -135,6 +141,7 @@ jobs:
             --latest gauntlet-site/latest-verified.json \
             --summary "$PR_BODY" \
             --expected-run-id "$RUN_ID" \
+            --expected-run-attempt "$RUN_ATTEMPT" \
             "${policy_args[@]}"
           python3 scripts/validate_gauntlet_records.py \
             --site-root gauntlet-site \
@@ -153,7 +160,7 @@ jobs:
             echo "latest pointer returned an invalid candidate digest" >&2
             exit 1
           }
-          branch="gauntlet-result-$RUN_ID"
+          branch="gauntlet-result-$RUN_ID-$RUN_ATTEMPT"
           record_dir="gauntlet-site/results/pipelock/$candidate_sha"
           git switch -c "$branch"
           git config user.name "github-actions[bot]"
@@ -177,7 +184,7 @@ jobs:
             echo "needs_validation=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git commit -m "results: promote Gauntlet run $RUN_ID"
+          git commit -m "results: promote Gauntlet run $RUN_ID attempt $RUN_ATTEMPT"
           if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null; then
             git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
             python3 scripts/verify_existing_gauntlet_promotion.py \
@@ -205,7 +212,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --base "$DEFAULT_BRANCH" \
               --head "$branch" \
-              --title "results: promote Gauntlet run $RUN_ID" \
+              --title "results: promote Gauntlet run $RUN_ID attempt $RUN_ATTEMPT" \
               --body-file "$PR_BODY"
           fi
           echo "needs_validation=true" >> "$GITHUB_OUTPUT"
@@ -217,7 +224,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          branch="gauntlet-result-$RUN_ID"
+          branch="gauntlet-result-$RUN_ID-$RUN_ATTEMPT"
           dispatch_failed=0
           for workflow in validate.yaml security.yaml pipelock.yaml; do
             if ! gh workflow run "$workflow" \

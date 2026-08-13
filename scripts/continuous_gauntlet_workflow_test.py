@@ -81,6 +81,8 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         release_pin = RELEASE_PIN.read_text(encoding="utf-8")
         self.assertRegex(release_pin, r"(?m)^PIPELOCK_TAG=v[^\s]+$")
         self.assertRegex(release_pin, r"(?m)^PIPELOCK_VERSION=[^\s]+$")
+        self.assertRegex(release_pin, r"(?m)^PIPELOCK_ASSET_SHA256_AMD64=[0-9a-f]{64}$")
+        self.assertRegex(release_pin, r"(?m)^PIPELOCK_ASSET_SHA256_ARM64=[0-9a-f]{64}$")
         version = re.search(r"(?m)^PIPELOCK_VERSION=([^\s]+)$", release_pin).group(1)
         self.assertNotIn(version, self.workflow)
         self.assertNotIn(version, self.entrypoint)
@@ -88,7 +90,20 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("--release-pin", self.entrypoint)
         self.assertIn("release pin contains an invalid line", self.entrypoint)
 
-    def test_release_pin_parser_accepts_only_the_three_data_fields(self):
+    def test_target_runs_under_a_write_restricted_environment(self):
+        self.assertIn("go build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
+        self.assertIn('pipelock_bin="$target_wrapper"', self.entrypoint)
+        self.assertIn('sha256sum "$target_binary"', self.entrypoint)
+        self.assertIn("target sandbox integrity check failed", self.entrypoint)
+        self.assertIn("benchmark target modified the corpus checkout", self.entrypoint)
+        sandbox = (REPO_ROOT / "runner" / "cmd" / "target-sandbox" / "main.go").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("restrictWrites(args[0])", sandbox)
+        self.assertIn("restrictDelegationChannels()", sandbox)
+        self.assertIn("SECCOMP_RET_ERRNO", sandbox)
+
+    def test_release_pin_parser_accepts_only_the_five_data_fields(self):
         start = self.entrypoint.index('release_pin_input="$release_pin"')
         end = self.entrypoint.index('started_at="$(date', start)
         parser_block = self.entrypoint[start:end]
@@ -100,38 +115,52 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                 parser_block,
             )
         )
+        digests = (
+            f"PIPELOCK_ASSET_SHA256_AMD64={'a' * 64}\n"
+            f"PIPELOCK_ASSET_SHA256_ARM64={'b' * 64}\n"
+        )
         cases = (
             (
-                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\n"
+                "PIPELOCK_VERSION=3.3.0\n" + digests,
                 True,
             ),
             (
-                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.1\nPIPELOCK_VERSION=3.3.1\n",
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.1\n"
+                "PIPELOCK_VERSION=3.3.1\n" + digests,
                 True,
             ),
             ("PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\n", False),
             (
                 "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_REPO=luckyPipewrench/pipelock\n"
-                "PIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                "PIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n" + digests,
                 False,
             ),
             (
                 "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=$(touch /tmp/not-run)\n"
-                "PIPELOCK_VERSION=3.3.0\n",
+                "PIPELOCK_VERSION=3.3.0\n" + digests,
                 False,
             ),
             (
-                "PIPELOCK_REPO=other/tool\nPIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                "PIPELOCK_REPO=other/tool\nPIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n"
+                + digests,
                 False,
             ),
             (
                 "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.1\n"
-                "PIPELOCK_VERSION=3.3.0\n",
+                "PIPELOCK_VERSION=3.3.0\n" + digests,
                 False,
             ),
             (
                 "PIPELOCK_REPO=luckyPipewrench/pipelock\nUNKNOWN=value\n"
-                "PIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                "PIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n" + digests,
+                False,
+            ),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\n"
+                "PIPELOCK_VERSION=3.3.0\n"
+                "PIPELOCK_ASSET_SHA256_AMD64=not-a-digest\n"
+                f"PIPELOCK_ASSET_SHA256_ARM64={'b' * 64}\n",
                 False,
             ),
         )
@@ -233,7 +262,16 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         block = step_block(self.workflow, "Finalize GitHub provenance artifact")
         self.assertIn("build_gauntlet_provenance.py finalize", block)
         self.assertIn('https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}', block)
+        self.assertIn('${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}', block)
         self.assertNotIn("example.invalid", self.workflow)
+
+    def test_runner_and_artifacts_are_pinned_to_one_attempt(self):
+        self.assertRegex(self.workflow, r"(?m)^    runs-on: ubuntu-24\.04$")
+        self.assertIn('go-version: "1.25.12"', self.workflow)
+        upload = step_block(self.workflow, "Upload provenance artifact")
+        owner_upload = step_block(self.workflow, "Upload owner review artifact")
+        self.assertIn("continuous-gauntlet-pipelock-${{ github.run_attempt }}", upload)
+        self.assertIn("continuous-gauntlet-owner-review-${{ github.run_attempt }}", owner_upload)
 
     def test_stable_release_metadata_is_checked_behaviorally(self):
         start = self.entrypoint.index('actual_tag="$(jq -r')
@@ -291,6 +329,12 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.strip(), expected)
+
+    def test_downloaded_release_bytes_match_the_reviewed_architecture_digest(self):
+        digest_check = '[[ "$asset_sha256" == "$expected_asset_sha256" ]]'
+        self.assertIn(digest_check, self.entrypoint)
+        self.assertLess(self.entrypoint.index('curl -fsSL "$asset_url"'), self.entrypoint.index(digest_check))
+        self.assertLess(self.entrypoint.index(digest_check), self.entrypoint.index('tar -xzf "$work_dir/$asset"'))
 
     def test_scheduled_lane_has_no_public_write_permission(self):
         self.assertRegex(self.workflow, r"(?m)^permissions:\n  contents: read$")

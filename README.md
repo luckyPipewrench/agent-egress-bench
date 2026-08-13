@@ -94,7 +94,7 @@ For the pinned Pipelock release, use the portable entry point from a clean Linux
 ./scripts/run-pipelock-gauntlet.sh
 ```
 
-The command downloads the reviewed Pipelock release, verifies its published checksum and reported version, starts the required local fixtures and managed Pipelock processes, runs the single-file and multi-file cases, and leaves one timestamped directory under `continuous-gauntlet-runs/`. That directory contains the exact internal command, stdout results, stderr, summary, case index, corpus stats, release identity, file digests, and a machine-readable execution decision.
+The command downloads the reviewed Pipelock release, verifies its pinned asset digest, published checksum, and reported version, then confines target writes with Landlock and denies Unix-domain sockets with seccomp. It starts the required local fixtures and managed Pipelock processes, runs the single-file and multi-file cases, and leaves one timestamped directory under `continuous-gauntlet-runs/`. That directory contains the exact internal command, stdout results, stderr, summary, case index, corpus stats, release identity, file digests, and a machine-readable execution decision.
 
 It requires Linux, Go 1.25 or newer, Python 3, Git, curl, jq, tar, GNU timeout, SHA-256 utilities, and one of `socat`, `ncat`, or `nc`. Use `--output-dir` to place the self-contained run directory somewhere else. The [Pipelock reference-runner guide](examples/pipelock/README.md) documents the evidence files, explicit development mode, the underlying long-form command, and a neutral scheduling example.
 
