@@ -204,6 +204,8 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/gauntlet_site_index_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_records_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_gauntlet_records.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_pipelock_result_inventory_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_pipelock_result_inventory.py
 	@node gauntlet-site/scope-render_test.js
 	@node gauntlet-site/latest-result_test.js
 	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }

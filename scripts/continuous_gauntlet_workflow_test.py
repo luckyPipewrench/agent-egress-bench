@@ -84,7 +84,82 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         version = re.search(r"(?m)^PIPELOCK_VERSION=([^\s]+)$", release_pin).group(1)
         self.assertNotIn(version, self.workflow)
         self.assertNotIn(version, self.entrypoint)
-        self.assertIn('source "$release_pin"', self.entrypoint)
+        self.assertNotIn('source "$release_pin"', self.entrypoint)
+        self.assertIn("--release-pin", self.entrypoint)
+        self.assertIn("release pin contains an invalid line", self.entrypoint)
+
+    def test_release_pin_parser_accepts_only_the_three_data_fields(self):
+        start = self.entrypoint.index('release_pin_input="$release_pin"')
+        end = self.entrypoint.index('started_at="$(date', start)
+        parser_block = self.entrypoint[start:end]
+        shell = "\n".join(
+            (
+                "set -Eeuo pipefail",
+                'die() { printf "%s\\n" "$*" >&2; exit 1; }',
+                'release_pin="$1"',
+                parser_block,
+            )
+        )
+        cases = (
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                True,
+            ),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.1\nPIPELOCK_VERSION=3.3.1\n",
+                True,
+            ),
+            ("PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.0\n", False),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_REPO=luckyPipewrench/pipelock\n"
+                "PIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                False,
+            ),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=$(touch /tmp/not-run)\n"
+                "PIPELOCK_VERSION=3.3.0\n",
+                False,
+            ),
+            (
+                "PIPELOCK_REPO=other/tool\nPIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                False,
+            ),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nPIPELOCK_TAG=v3.3.1\n"
+                "PIPELOCK_VERSION=3.3.0\n",
+                False,
+            ),
+            (
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\nUNKNOWN=value\n"
+                "PIPELOCK_TAG=v3.3.0\nPIPELOCK_VERSION=3.3.0\n",
+                False,
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            pin = Path(temporary) / "release.env"
+            for payload, accepted in cases:
+                with self.subTest(payload=payload):
+                    pin.write_text(payload, encoding="utf-8")
+                    result = subprocess.run(
+                        ["bash", "-c", shell, "bash", str(pin)],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+            target = Path(temporary) / "target.env"
+            target.write_text(cases[0][0], encoding="utf-8")
+            pin.unlink()
+            pin.symlink_to(target)
+            result = subprocess.run(
+                ["bash", "-c", shell, "bash", str(pin)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("cannot be a symbolic link", result.stderr)
 
     def test_stdio_profile_does_not_claim_unexercised_subject_budget(self):
         profile = json.loads(PIPELOCK_PROFILE.read_text(encoding="utf-8"))

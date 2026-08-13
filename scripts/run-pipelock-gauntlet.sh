@@ -32,6 +32,7 @@ Options:
   --deadline-epoch SECONDS         Stop early enough to preserve finalization time.
   --reserve-seconds SECONDS        Keep this many seconds before the deadline (default: 360).
   --benchmark-timeout-seconds N    Maximum runner time without a deadline (default: 1440).
+  --release-pin FILE               Read the reviewed Pipelock release identity from FILE.
   --development                    Allow a dirty or unreviewed corpus and mark the run noncanonical.
   --development-binary PATH        Use PATH instead of a released binary and mark the run noncanonical.
   -h, --help                       Show this help.
@@ -72,6 +73,11 @@ while (($#)); do
       benchmark_timeout_seconds="$2"
       shift 2
       ;;
+    --release-pin)
+      (($# >= 2)) || die "--release-pin requires a value"
+      release_pin="$2"
+      shift 2
+      ;;
     --development)
       development_mode=true
       shift
@@ -99,10 +105,39 @@ fi
 ((benchmark_timeout_seconds > 0)) || die "--benchmark-timeout-seconds must be greater than zero"
 
 [[ "$(pwd -P)" == "$repo_root" ]] || die "run this command from the repository root: $repo_root"
-[[ -f "$release_pin" ]] || die "missing reviewed release pin: $release_pin"
+release_pin_input="$release_pin"
+[[ ! -L "$release_pin_input" ]] || die "reviewed release pin cannot be a symbolic link: $release_pin_input"
+release_pin="$(realpath -e "$release_pin_input")" || \
+  die "reviewed release pin does not resolve: $release_pin_input"
+[[ -f "$release_pin" ]] || die "reviewed release pin must be a regular file: $release_pin_input"
 unset PIPELOCK_REPO PIPELOCK_TAG PIPELOCK_VERSION
-# shellcheck disable=SC1090
-source "$release_pin"
+release_repo_count=0
+release_tag_count=0
+release_version_count=0
+while IFS= read -r release_line || [[ -n "$release_line" ]]; do
+  [[ -z "$release_line" || "$release_line" == \#* ]] && continue
+  [[ "$release_line" =~ ^([A-Z_]+)=([A-Za-z0-9._/-]+)$ ]] || \
+    die "release pin contains an invalid line"
+  release_key="${BASH_REMATCH[1]}"
+  release_value="${BASH_REMATCH[2]}"
+  case "$release_key" in
+    PIPELOCK_REPO)
+      PIPELOCK_REPO="$release_value"
+      release_repo_count=$((release_repo_count + 1))
+      ;;
+    PIPELOCK_TAG)
+      PIPELOCK_TAG="$release_value"
+      release_tag_count=$((release_tag_count + 1))
+      ;;
+    PIPELOCK_VERSION)
+      PIPELOCK_VERSION="$release_value"
+      release_version_count=$((release_version_count + 1))
+      ;;
+    *) die "release pin contains an unknown key: $release_key" ;;
+  esac
+done < "$release_pin"
+[[ "$release_repo_count" == 1 && "$release_tag_count" == 1 && "$release_version_count" == 1 ]] || \
+  die "release pin must define each required key exactly once"
 : "${PIPELOCK_REPO:?release pin must define PIPELOCK_REPO}"
 : "${PIPELOCK_TAG:?release pin must define PIPELOCK_TAG}"
 : "${PIPELOCK_VERSION:?release pin must define PIPELOCK_VERSION}"

@@ -1,0 +1,435 @@
+{
+  "entries": [
+    {
+      "bytes": 4233,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/gauntlet-results.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/gauntlet-results.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/gauntlet-results.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/gauntlet-results.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "5d7b4fb993bed479294edbdd2cd6a796cc45a34e965eef1602313d9c2d5bc696",
+      "source_path": "gauntlet-site/gauntlet-results.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/gauntlet-results.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/gauntlet-results.json"
+      ]
+    },
+    {
+      "bytes": 862,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/latest-verified.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/latest-verified.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/latest-verified.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/latest-verified.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "31806f96af60f59f8ea0385cd893d1650d8e86b7f6bec384c91456a68728c3c4",
+      "source_path": "gauntlet-site/latest-verified.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/latest-verified.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/latest-verified.json"
+      ]
+    },
+    {
+      "bytes": 14558,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "2a36b9f2ce028055f41d8781f5da68249a34f9b42a3b09beea9dc5e98c3fafa0",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json"
+      ]
+    },
+    {
+      "bytes": 1254,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/checksums.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/checksums.txt"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/checksums.txt",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/checksums.txt"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "e8bed22541f2660700c9a58884da3a00f0270ad437b9483015b74ba19e438877",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/checksums.txt",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/checksums.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/checksums.txt"
+      ]
+    },
+    {
+      "bytes": 820,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/command.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/command.txt"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/command.txt",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/command.txt"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "158deca442751a2ad6b371f00260f4695eb3c6affef24afc18e860871fc23948",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/command.txt",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/command.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/command.txt"
+      ]
+    },
+    {
+      "bytes": 5314,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json"
+      ]
+    },
+    {
+      "bytes": 5753,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/corpus-manifest.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/corpus-manifest.txt"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/corpus-manifest.txt",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/corpus-manifest.txt"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "ef82e319ad3efd7d407e15de27631f2b8fdf9f227ecc7f8253308ac44053916a",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/corpus-manifest.txt",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/corpus-manifest.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/corpus-manifest.txt"
+      ]
+    },
+    {
+      "bytes": 162,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/entrypoint-command.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/entrypoint-command.txt"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/entrypoint-command.txt",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/entrypoint-command.txt"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "5bb1e1a8b9a934a6dc818d8432ba4cba817b4da498744e80bd6610984df561d5",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/entrypoint-command.txt",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/entrypoint-command.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/entrypoint-command.txt"
+      ]
+    },
+    {
+      "bytes": 1294,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/execution-decision.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/execution-decision.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/execution-decision.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/execution-decision.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "dc5707b1151bb0a90f0a22034294fc4d9e0a831f3fe6df0dea7ef03aa3bdce35",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/execution-decision.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/execution-decision.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/execution-decision.json"
+      ]
+    },
+    {
+      "bytes": 438,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/make-stats.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/make-stats.txt"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/make-stats.txt",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/make-stats.txt"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "a43158709df0fe447c3eb2e5ff3f89d66a907b1a102ff5210e635bf841f8ecfa",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/make-stats.txt",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/make-stats.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/make-stats.txt"
+      ]
+    },
+    {
+      "bytes": 405,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-release.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-release.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-release.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-release.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "016d9287cd2a63c000b5012f7ff0f24ae7d88b28e321ad08e3dbf3c9c6d6ee7f",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-release.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-release.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-release.json"
+      ]
+    },
+    {
+      "bytes": 23,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-version.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-version.txt"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-version.txt",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-version.txt"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "f7475df97325d18fe948b25d17d390766c2a236b2c9617f0dd3b1a58db4ecfdd",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-version.txt",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-version.txt",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/pipelock-version.txt"
+      ]
+    },
+    {
+      "bytes": 4265,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/raw-summary.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/raw-summary.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/raw-summary.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/raw-summary.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "6d90c1db915a1f7623826f09a84826db14f07996931f705ce58a89ca8d605fae",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/raw-summary.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/raw-summary.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/raw-summary.json"
+      ]
+    },
+    {
+      "bytes": 2300,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/record-manifest.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/record-manifest.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/record-manifest.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/record-manifest.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "17d069ecebe70f52413cd2509aa80c551d0a0e3703385471cc406088625fabb6",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/record-manifest.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/record-manifest.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/record-manifest.json"
+      ]
+    },
+    {
+      "bytes": 74732,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/results.jsonl",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/results.jsonl"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/results.jsonl",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/results.jsonl"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "4abc24358a3107aa3b8c50304d66ba6a085f88c6b27d796b52d782b80723f16f",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/results.jsonl",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/results.jsonl",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/results.jsonl"
+      ]
+    },
+    {
+      "bytes": 1208,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-baseline.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-baseline.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-baseline.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-baseline.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "f7eed83f9f719932f50e6184d84f034dea714e28a49a309926e5d52bf5b87c6f",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-baseline.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-baseline.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-baseline.json"
+      ]
+    },
+    {
+      "bytes": 1759,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-promotion-decision.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-promotion-decision.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-promotion-decision.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-promotion-decision.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "126ee10e867821b429aaf976aed89a2e16ae61009822b9fc6eddcb5b58671a61",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-promotion-decision.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-promotion-decision.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/reviewed-promotion-decision.json"
+      ]
+    },
+    {
+      "bytes": 6528,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-bundle.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-bundle.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-bundle.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-bundle.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "e4cbce2725d7b9afeaa2f29ecf200144adb20142d76e5bca1ee537eb7580cdd6",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-bundle.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-bundle.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-bundle.json"
+      ]
+    },
+    {
+      "bytes": 357,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-metadata.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-metadata.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-metadata.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-metadata.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "b32407d7ea52794fd6dd1470a1676031c88e238ab4a7a3d20487bca625e759c3",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-metadata.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-metadata.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/run-metadata.json"
+      ]
+    },
+    {
+      "bytes": 2120,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/runner.stderr",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/runner.stderr"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/runner.stderr",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/runner.stderr"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "497bd9e0ce33d70aa35b88eac25ab3de490cec256dd7e4b75b384cfa0898b304",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/runner.stderr",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/runner.stderr",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/runner.stderr"
+      ]
+    },
+    {
+      "bytes": 1261,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "819e94a8550ddf76677ad8a6ba96c75ec1fdad54a35bfd27ed07ad3a528eb091",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json"
+      ]
+    },
+    {
+      "bytes": 2387,
+      "legacy_live_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-promotion-decision.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-promotion-decision.json"
+      ],
+      "planned_destination": {
+        "path": "static/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-promotion-decision.json",
+        "repository": "luckyPipewrench/pipelab.org",
+        "url": "https://pipelab.org/gauntlet/evidence/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-promotion-decision.json"
+      },
+      "retention": "keep the commit-pinned source bytes as a read-only restore copy",
+      "sha256": "4f77476769d033d57a0d9930b2c145984945e31ca0e7420ff01bf4cd0fa65d7b",
+      "source_path": "gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-promotion-decision.json",
+      "source_urls": [
+        "https://github.com/luckyPipewrench/agent-egress-bench/blob/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-promotion-decision.json",
+        "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/47e22d833f19ce0b7430fca591fb31520ee90fa4/gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-promotion-decision.json"
+      ]
+    }
+  ],
+  "migration": {
+    "execution_owner": "luckyPipewrench/pipelock",
+    "publication_owner": "luckyPipewrench/pipelab.org",
+    "source_retention_owner": "luckyPipewrench/agent-egress-bench",
+    "status": "inventory_complete"
+  },
+  "record_verification": {
+    "command": "python3 scripts/validate_gauntlet_records.py",
+    "result": "verified"
+  },
+  "schema_version": 1,
+  "source_commit": "47e22d833f19ce0b7430fca591fb31520ee90fa4",
+  "source_repository": "luckyPipewrench/agent-egress-bench"
+}
