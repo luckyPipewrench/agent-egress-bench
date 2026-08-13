@@ -110,13 +110,15 @@ release_pin_input="$release_pin"
 release_pin="$(realpath -e "$release_pin_input")" || \
   die "reviewed release pin does not resolve: $release_pin_input"
 [[ -f "$release_pin" ]] || die "reviewed release pin must be a regular file: $release_pin_input"
-unset PIPELOCK_REPO PIPELOCK_TAG PIPELOCK_VERSION
+unset PIPELOCK_REPO PIPELOCK_TAG PIPELOCK_VERSION PIPELOCK_ASSET_SHA256_AMD64 PIPELOCK_ASSET_SHA256_ARM64
 release_repo_count=0
 release_tag_count=0
 release_version_count=0
+release_amd64_digest_count=0
+release_arm64_digest_count=0
 while IFS= read -r release_line || [[ -n "$release_line" ]]; do
   [[ -z "$release_line" || "$release_line" == \#* ]] && continue
-  [[ "$release_line" =~ ^([A-Z_]+)=([A-Za-z0-9._/-]+)$ ]] || \
+  [[ "$release_line" =~ ^([A-Z0-9_]+)=([A-Za-z0-9._/-]+)$ ]] || \
     die "release pin contains an invalid line"
   release_key="${BASH_REMATCH[1]}"
   release_value="${BASH_REMATCH[2]}"
@@ -133,16 +135,29 @@ while IFS= read -r release_line || [[ -n "$release_line" ]]; do
       PIPELOCK_VERSION="$release_value"
       release_version_count=$((release_version_count + 1))
       ;;
+    PIPELOCK_ASSET_SHA256_AMD64)
+      PIPELOCK_ASSET_SHA256_AMD64="$release_value"
+      release_amd64_digest_count=$((release_amd64_digest_count + 1))
+      ;;
+    PIPELOCK_ASSET_SHA256_ARM64)
+      PIPELOCK_ASSET_SHA256_ARM64="$release_value"
+      release_arm64_digest_count=$((release_arm64_digest_count + 1))
+      ;;
     *) die "release pin contains an unknown key: $release_key" ;;
   esac
 done < "$release_pin"
-[[ "$release_repo_count" == 1 && "$release_tag_count" == 1 && "$release_version_count" == 1 ]] || \
+[[ "$release_repo_count" == 1 && "$release_tag_count" == 1 && "$release_version_count" == 1 && \
+  "$release_amd64_digest_count" == 1 && "$release_arm64_digest_count" == 1 ]] || \
   die "release pin must define each required key exactly once"
 : "${PIPELOCK_REPO:?release pin must define PIPELOCK_REPO}"
 : "${PIPELOCK_TAG:?release pin must define PIPELOCK_TAG}"
 : "${PIPELOCK_VERSION:?release pin must define PIPELOCK_VERSION}"
+: "${PIPELOCK_ASSET_SHA256_AMD64:?release pin must define PIPELOCK_ASSET_SHA256_AMD64}"
+: "${PIPELOCK_ASSET_SHA256_ARM64:?release pin must define PIPELOCK_ASSET_SHA256_ARM64}"
 [[ "$PIPELOCK_REPO" == "luckyPipewrench/pipelock" ]] || die "release pin names an unexpected repository"
 [[ "$PIPELOCK_TAG" == "v$PIPELOCK_VERSION" ]] || die "release tag and version do not match"
+[[ "$PIPELOCK_ASSET_SHA256_AMD64" =~ ^[0-9a-f]{64}$ ]] || die "amd64 release digest is invalid"
+[[ "$PIPELOCK_ASSET_SHA256_ARM64" =~ ^[0-9a-f]{64}$ ]] || die "arm64 release digest is invalid"
 
 started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 run_stamp="$(date -u +'%Y%m%dT%H%M%SZ')"
@@ -328,8 +343,14 @@ if [[ -n "$development_binary" ]]; then
   : > "$output_dir/checksums.txt"
 else
   case "$(uname -m)" in
-    x86_64) release_arch=amd64 ;;
-    aarch64|arm64) release_arch=arm64 ;;
+    x86_64)
+      release_arch=amd64
+      expected_asset_sha256="$PIPELOCK_ASSET_SHA256_AMD64"
+      ;;
+    aarch64|arm64)
+      release_arch=arm64
+      expected_asset_sha256="$PIPELOCK_ASSET_SHA256_ARM64"
+      ;;
     *) die "unsupported Linux architecture: $(uname -m)" ;;
   esac
   [[ "$(uname -s)" == "Linux" ]] || die "the portable Pipelock runner currently supports Linux only"
@@ -372,17 +393,48 @@ else
     printf '%s\n' "$checksum_line" | sha256sum --check -
   )
   asset_sha256="$(sha256sum "$work_dir/$asset" | awk '{print $1}')"
+  [[ "$asset_sha256" == "$expected_asset_sha256" ]] || \
+    die "release asset digest does not match the reviewed pin"
   tar -xzf "$work_dir/$asset" -C "$work_dir"
   pipelock_bin="$work_dir/pipelock"
   chmod 0755 "$pipelock_bin"
 fi
 
-version_output="$($pipelock_bin --version)"
+failure_reason="target sandbox build failed"
+target_binary="$pipelock_bin"
+target_sandbox="$work_dir/aeb-target-sandbox"
+target_state="$work_dir/target-state"
+: "${TMPDIR:=$HOME/.cache/pipelock-tmp}"
+: "${GOCACHE:=$HOME/.cache/go-build}"
+export TMPDIR GOCACHE
+mkdir -p "$TMPDIR" "$GOCACHE"
+(
+  cd "$repo_root/runner"
+  go build -o "$target_sandbox" ./cmd/target-sandbox
+)
+mkdir "$target_state"
+chmod 0700 "$target_state"
+target_wrapper="$work_dir/pipelock-sandboxed"
+{
+  printf '#!/usr/bin/env bash\nexec %q %q' "$target_sandbox" "$target_state"
+  for readable_path in \
+    "$work_dir" "$repo_root/examples/pipelock" \
+    /usr /bin /lib /lib64 /etc/ssl /etc/pki /etc/resolv.conf /etc/hosts \
+    /etc/nsswitch.conf /etc/gai.conf /etc/passwd /etc/group /etc/localtime; do
+    [[ -e "$readable_path" ]] && printf ' %q' "$readable_path"
+  done
+  printf ' -- %q "$@"\n' "$target_binary"
+} > "$target_wrapper"
+chmod 0755 "$target_wrapper"
+pipelock_bin="$target_wrapper"
+
+failure_reason="Pipelock version check failed inside the target sandbox"
+version_output="$("$pipelock_bin" --version)"
 printf '%s\n' "$version_output" > "$output_dir/pipelock-version.txt"
 reported_version="$(awk '/^pipelock version / { print $3 }' <<<"$version_output")"
 [[ "$reported_version" == "$PIPELOCK_VERSION" ]] || \
   die "Pipelock version mismatch: expected $PIPELOCK_VERSION, got ${reported_version:-<none>}"
-binary_sha256="$(sha256sum "$pipelock_bin" | awk '{print $1}')"
+binary_sha256="$(sha256sum "$target_binary" | awk '{print $1}')"
 
 release_args=(
   release
@@ -467,6 +519,13 @@ if [[ "$run_status" -ne 0 ]]; then
 fi
 grep -Eq '^Fixtures: HTTP=.* TLS=.* WS=.* DNS=.* MCP_HTTP=' "$stderr_path" || \
   die "runner did not report fixture startup"
+
+failure_reason="target sandbox integrity check failed"
+post_run_dirty="$(git status --porcelain=v1 --untracked-files=all)"
+[[ "$post_run_dirty" == "$dirty_output" ]] || {
+  printf '%s\n' "$post_run_dirty" >&2
+  die "benchmark target modified the corpus checkout"
+}
 
 failure_reason="Gauntlet result validation failed"
 results_abs="$(realpath "$results_path")"

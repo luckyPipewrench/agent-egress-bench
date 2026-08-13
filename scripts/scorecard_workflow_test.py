@@ -57,9 +57,9 @@ class ScorecardWorkflowTest(unittest.TestCase):
             self.workflow,
             r"(?m)^concurrency:\n"
             r"  group: scorecard-\$\{\{ github\.repository \}\}\n"
-            r"  queue: max\n"
             r"  cancel-in-progress: false$",
         )
+        self.assertNotIn("queue:", self.workflow)
         self.assertRegex(self.workflow, r"(?m)^    timeout-minutes: 10$")
 
 

@@ -24,7 +24,9 @@ The default output is a unique directory under `continuous-gauntlet-runs/`. To c
 ./scripts/run-pipelock-gauntlet.sh --output-dir /var/lib/agent-egress-bench/runs/manual-20260805
 ```
 
-The destination must not already exist. The command verifies the corpus Git identity and cleanliness, downloads the release named by `release.env`, rejects draft or prerelease assets, verifies the archive against the release's `checksums.txt`, and verifies the extracted binary's version before running it. It then builds the repository runner and executes every canonical fixture and multi-file MCP drift case.
+The destination must not already exist. The command verifies the corpus Git identity and cleanliness, downloads the release named by `release.env`, rejects draft or prerelease assets, and requires the archive to match both the reviewed architecture digest and the release's `checksums.txt`. It verifies the extracted binary's version before running it.
+
+On Linux, the command also builds a small Landlock and seccomp launcher from the pinned benchmark checkout. The Pipelock process and its children can read only the target files, benchmark adapter inputs, runtime system files, and run-specific fixture inputs; unrelated host files are denied. They can write only to a private scratch directory. Unix-domain sockets, inherited descriptors, and `io_uring` setup are denied so the target cannot ask a local privileged service such as a container daemon to rewrite the workspace on its behalf; normal TCP and HTTP benchmark traffic remains available. CI control paths and credentials are removed from the target environment. The benchmark fails closed when either sandbox layer is unavailable or when the target changes the corpus checkout.
 
 A product-owned scheduler can keep its reviewed release pin in its own repository and pass that file
 without changing the benchmark checkout:
@@ -33,8 +35,7 @@ without changing the benchmark checkout:
 ./scripts/run-pipelock-gauntlet.sh --release-pin ../pipelock/benchmark/release.env
 ```
 
-The pin parser accepts only one `PIPELOCK_REPO`, `PIPELOCK_TAG`, and `PIPELOCK_VERSION` assignment.
-It rejects shell syntax, unknown keys, duplicate keys, and symlinks.
+The pin parser accepts one repository, tag, version, and SHA-256 digest for each supported Linux architecture. It rejects shell syntax, unknown or duplicate keys, malformed digests, and symlinks.
 
 Important files in the completed directory:
 
@@ -57,6 +58,8 @@ Important files in the completed directory:
 | `entrypoint-command.txt` | Exact operator command that started the run |
 
 A runner error or timeout still leaves a blocked decision plus whatever evidence was produced. A successful portable run still is not a published result. A platform must retain the directory, assign a real artifact ID and HTTPS URL, finalize the candidate, and apply its reviewed publication policy.
+
+The current GitHub promotion workflow binds an artifact to both its workflow run ID and run attempt. Older candidates whose artifact IDs contain only a run ID remain valid for offline record validation, but they cannot be promoted through the attempt-bound workflow.
 
 ### Explicit development mode
 

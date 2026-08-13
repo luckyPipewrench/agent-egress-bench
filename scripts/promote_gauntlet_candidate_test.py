@@ -57,10 +57,11 @@ def baseline():
     }
 
 
-def candidate(run_id="123", generated_at="2026-08-05T00:10:08Z"):
+def candidate(run_id="123", run_attempt=None, generated_at="2026-08-05T00:10:08Z"):
+    artifact_suffix = run_id if run_attempt is None else f"{run_id}:{run_attempt}"
     return {
         "schema_version": 2,
-        "artifact_id": f"github-actions:luckyPipewrench/agent-egress-bench:{run_id}",
+        "artifact_id": f"github-actions:luckyPipewrench/agent-egress-bench:{artifact_suffix}",
         "canonical_url": (
             "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/" + run_id
         ),
@@ -189,8 +190,11 @@ class PromotionFixture:
             "--summary",
             str(self.summary),
             "--expected-run-id",
-            self.candidate_value["artifact_id"].rsplit(":", 1)[1],
+            self.candidate_value["canonical_url"].rsplit("/", 1)[1],
         ]
+        artifact_parts = self.candidate_value["artifact_id"].split(":")
+        if len(artifact_parts) == 4:
+            command.extend(["--expected-run-attempt", artifact_parts[-1]])
         if accept_policy_change:
             command.append("--accept-policy-change")
         return command
@@ -476,6 +480,33 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("does not match the requested source run", result.stdout)
+
+    def test_run_attempt_is_bound_when_present(self):
+        fixture = self.fixture(candidate(run_attempt="2"))
+        accepted = fixture.run()
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        command = fixture.command()
+        command[command.index("--expected-run-attempt") + 1] = "3"
+        rejected = subprocess.run(
+            command, cwd=REPO_ROOT, text=True, capture_output=True, check=False
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("does not match the requested source attempt", rejected.stdout)
+
+    def test_legacy_run_id_only_candidate_is_accepted_without_expected_attempt(self):
+        fixture = self.fixture(candidate())
+        accepted = fixture.run()
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+    def test_legacy_run_id_only_candidate_is_rejected_by_attempt_bound_promotion(self):
+        fixture = self.fixture(candidate())
+        command = fixture.command()
+        command.extend(["--expected-run-attempt", "1"])
+        rejected = subprocess.run(
+            command, cwd=REPO_ROOT, text=True, capture_output=True, check=False
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("does not match the requested source attempt", rejected.stdout)
 
     def test_timezone_free_candidate_time_is_rejected(self):
         fixture = self.fixture(candidate(generated_at="2026-08-05T00:10:08"))

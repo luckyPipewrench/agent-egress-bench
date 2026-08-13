@@ -70,6 +70,9 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertIn('"origin/$DEFAULT_BRANCH"', verify)
         self.assertIn("git merge-base --is-ancestor", verify)
         self.assertIn('[[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]', verify)
+        self.assertIn(".run_attempt", verify)
+        self.assertIn('[[ "$run_attempt" =~ ^[1-9][0-9]*$ ]]', verify)
+        self.assertIn('RUN_ATTEMPT=%s\\n', verify)
 
     def test_runner_paths_are_initialized_at_step_scope(self):
         job_env = self.workflow.split("    steps:", 1)[0]
@@ -90,7 +93,7 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
     def test_artifact_and_promotion_paths_are_fixed(self):
         download = step_block(self.workflow, "Download candidate evidence")
         prepare = step_block(self.workflow, "Prepare append-only record")
-        self.assertIn("--name continuous-gauntlet-pipelock", download)
+        self.assertIn('--name "continuous-gauntlet-pipelock-$RUN_ATTEMPT"', download)
         self.assertIn("corpus_git_sha", download)
         self.assertIn("git merge-base --is-ancestor", download)
         self.assertIn("scripts/promote_gauntlet_candidate.py", prepare)
@@ -98,6 +101,7 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("gauntlet-site/results", prepare)
         self.assertIn("gauntlet-site/latest-verified.json", prepare)
         self.assertIn('--expected-run-id "$RUN_ID"', prepare)
+        self.assertIn('--expected-run-attempt "$RUN_ATTEMPT"', prepare)
         self.assertIn("scripts/validate_gauntlet_records.py", prepare)
         self.assertNotIn("GH_TOKEN", prepare)
 
@@ -116,7 +120,7 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
 
     def test_public_write_is_feature_branch_and_pr_only(self):
         create = step_block(self.workflow, "Create reviewed promotion pull request")
-        self.assertIn('branch="gauntlet-result-$RUN_ID"', create)
+        self.assertIn('branch="gauntlet-result-$RUN_ID-$RUN_ATTEMPT"', create)
         self.assertIn('git push origin "HEAD:refs/heads/$branch"', create)
         self.assertIn("gh pr create", create)
         self.assertIn("scripts/verify_existing_gauntlet_promotion.py", create)
@@ -140,6 +144,7 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertNotIn("git push origin main", create)
         self.assertNotIn("gh pr merge", self.workflow)
         self.assertNotIn("--force", self.workflow)
+        self.assertIn("run $RUN_ID attempt $RUN_ATTEMPT", create)
 
     def test_generated_pr_branch_gets_required_validation_dispatch(self):
         workflow_dir = REPO_ROOT / ".github" / "workflows"
@@ -162,6 +167,7 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         )
         self.assertIn('gh workflow run "$workflow"', dispatch)
         self.assertIn('--ref "$branch"', dispatch)
+        self.assertIn('branch="gauntlet-result-$RUN_ID-$RUN_ATTEMPT"', dispatch)
         self.assertIn("dispatch_failed=0", dispatch)
         self.assertIn('exit "$dispatch_failed"', dispatch)
         self.assertIn("GH_TOKEN:", dispatch)

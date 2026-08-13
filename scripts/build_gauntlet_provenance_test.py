@@ -898,6 +898,20 @@ if [ "$1" = "build" ]; then
   shift
   [ "$1" = "-o" ]
   target="$2"
+  last=""
+  for argument in "$@"; do
+    last="$argument"
+  done
+  if [ "$last" = "./cmd/target-sandbox" ]; then
+    cat > "$target" <<'SANDBOX'
+#!/bin/sh
+while [ "$1" != "--" ]; do shift; done
+shift
+exec "$@"
+SANDBOX
+    chmod 0755 "$target"
+    exit 0
+  fi
   cat > "$target" <<'RUNNER'
 #!/bin/sh
 if printf '%s\\n' "$@" | grep -q -- '--case-index'; then

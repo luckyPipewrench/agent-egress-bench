@@ -81,6 +81,7 @@ def validate_record(record_dir, repo_root):
         promotion.DEFAULT_ARTIFACT_PREFIX,
         promotion.DEFAULT_URL_PREFIX,
         None,
+        None,
     )
     promotion.validate_execution_decision(record_dir / promotion.EXECUTION_DECISION_FILENAME)
     reconstruct_candidate(record_dir, candidate, repo_root)

@@ -98,7 +98,9 @@ def validate_execution_decision(path):
         raise ValueError("execution decision failures must be an empty array")
 
 
-def validate_candidate_origin(candidate, artifact_prefix, url_prefix, expected_run_id):
+def validate_candidate_origin(
+    candidate, artifact_prefix, url_prefix, expected_run_id, expected_run_attempt
+):
     artifact_id = require_non_empty_string(candidate, "artifact_id")
     canonical_url = require_non_empty_string(candidate, "canonical_url")
     if not artifact_id.startswith(artifact_prefix):
@@ -108,14 +110,26 @@ def validate_candidate_origin(candidate, artifact_prefix, url_prefix, expected_r
     parsed = urlparse(canonical_url)
     if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
         raise ValueError("canonical_url must be an absolute HTTPS URL")
-    run_id = artifact_id.removeprefix(artifact_prefix)
+    identity_parts = artifact_id.removeprefix(artifact_prefix).split(":")
+    if len(identity_parts) not in {1, 2}:
+        raise ValueError("artifact_id must end in a run ID and optional run attempt")
+    run_id = identity_parts[0]
+    run_attempt = identity_parts[1] if len(identity_parts) == 2 else None
     if not run_id.isascii() or not run_id.isdigit() or run_id.startswith("0"):
         raise ValueError("artifact_id must end in a positive decimal run ID")
+    if run_attempt is not None and (
+        not run_attempt.isascii()
+        or not run_attempt.isdigit()
+        or run_attempt.startswith("0")
+    ):
+        raise ValueError("artifact_id run attempt must be a positive decimal integer")
     expected_url = url_prefix + run_id
     if canonical_url != expected_url:
         raise ValueError("artifact_id and canonical_url run IDs do not match")
     if expected_run_id is not None and run_id != expected_run_id:
         raise ValueError("candidate run ID does not match the requested source run")
+    if expected_run_attempt is not None and run_attempt != expected_run_attempt:
+        raise ValueError("candidate run attempt does not match the requested source attempt")
 
 
 def validate_reference_candidate(candidate):
@@ -437,7 +451,11 @@ def promote(args):
     candidate = require_object(candidate_path)
     validate_reference_candidate(candidate)
     validate_candidate_origin(
-        candidate, args.artifact_prefix, args.url_prefix, args.expected_run_id
+        candidate,
+        args.artifact_prefix,
+        args.url_prefix,
+        args.expected_run_id,
+        args.expected_run_attempt,
     )
     candidate_sha256 = evaluator.file_sha256(candidate_path)
     validate_site_layout(args.store_root, args.latest)
@@ -598,6 +616,7 @@ def parse_args():
         default=DEFAULT_URL_PREFIX,
     )
     parser.add_argument("--expected-run-id")
+    parser.add_argument("--expected-run-attempt")
     parser.add_argument("--accept-policy-change", action="store_true")
     return parser.parse_args()
 
