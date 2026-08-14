@@ -10,7 +10,13 @@ from pathlib import Path
 
 REQUIRED_CONSTANTS = {
     ("runner/case.go", "activeCaseSchemaVersion"),
+    ("runner/case.go", "activeMultiFileCaseSchemaVersion"),
+    ("runner/case.go", "activeResultSchemaVersion"),
+    ("runner/case.go", "activeToolProfileSchemaVersion"),
+    ("runner/case.go", "activeReceiptProfileSchemaVersion"),
     ("validate/main.go", "activeCaseSchemaVersion"),
+    ("validate/main.go", "activeResultSchemaVersion"),
+    ("validate/main.go", "activeToolProfileSchemaVersion"),
     ("runner/summary.go", "activeSummarySchemaVersion"),
 }
 REQUIRED_RETAINED_RECORD_PATHS = {

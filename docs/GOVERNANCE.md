@@ -43,7 +43,7 @@ changes before a runner may exclude any case.
 
 Ask one question about any proposed change:
 
-> Could an artifact someone already saved still be read, verified, and scored the same way afterwards?
+> Could an artifact someone already saved still be read, verified, and scored the same way afterward?
 
 Yes, so amend that family in place and leave its version alone. No, so bump that one family and keep its old reader working. The rest of this section is that question stated precisely, plus what freezing means.
 

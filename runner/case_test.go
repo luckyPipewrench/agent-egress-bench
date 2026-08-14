@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,12 +67,13 @@ func TestLoadCasesNormalizesSchemaV4WarnToAllow(t *testing.T) {
 
 func TestLoadCasesDoesNotFilterSupersession(t *testing.T) {
 	dir := t.TempDir()
+	// Built from activeCaseSchemaVersion rather than a literal. loadCases returns
+	// an error rather than skipping on a version mismatch, so a hardcoded version
+	// makes this test fail inside its own loadCases call the first time the case
+	// family moves, reporting a version problem where the subject is supersession.
 	files := map[string]string{
-		// Must track activeCaseSchemaVersion: loadCases returns an error rather than
-		// skipping on a version mismatch, so a stale version here makes this test
-		// fail on its own loadCases call before it tests supersession at all.
-		"old.json": `{"schema_version":4,"id":"old"}`,
-		"new.json": `{"schema_version":4,"id":"new","supersedes":"old"}`,
+		"old.json": fmt.Sprintf(`{"schema_version":%d,"id":"old"}`, activeCaseSchemaVersion),
+		"new.json": fmt.Sprintf(`{"schema_version":%d,"id":"new","supersedes":"old"}`, activeCaseSchemaVersion),
 	}
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {

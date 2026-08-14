@@ -13,12 +13,24 @@ import (
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
-// activeCaseSchemaVersion is the case schema version this validator enforces.
-// Both case shapes read it, so the single-file and multi-file paths cannot
-// drift apart on the version boundary the way they previously did on the
-// requires vocabulary. It mirrors activeSchemaVersion in the runner; the two
-// move together whenever the coordinated artifact set is bumped.
-const activeCaseSchemaVersion = 4
+// Active schema version per artifact family, mirroring the runner's constants
+// of the same names.
+//
+// activeCaseSchemaVersion covers both case shapes deliberately, so the
+// single-file and multi-file paths cannot drift apart on the version boundary
+// the way they previously did on the requires vocabulary.
+//
+// The result-row and tool-profile versions are separate because those are
+// separate families in contracts/artifacts.json. This validator previously
+// checked all three against the case constant, which meant a result-row bump
+// would have been enforced as a case bump and rejected every valid artifact of
+// the other two families. A validator that couples families it is supposed to
+// judge independently turns one family's version change into everyone's outage.
+const (
+	activeCaseSchemaVersion        = 4
+	activeResultSchemaVersion      = 4
+	activeToolProfileSchemaVersion = 4
+)
 
 // Valid enum values for v1 schema.
 var (
@@ -961,8 +973,8 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	if r.CaseID == "" {
 		addErr("missing case_id")
 	}
-	if r.SchemaVersion != activeCaseSchemaVersion {
-		addErr(fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, r.SchemaVersion))
+	if r.SchemaVersion != activeResultSchemaVersion {
+		addErr(fmt.Sprintf("schema_version must be %d, got %d", activeResultSchemaVersion, r.SchemaVersion))
 	}
 	if r.Tool == "" {
 		addErr("missing tool")
@@ -1236,8 +1248,8 @@ type Profile struct {
 func validateProfile(p Profile) []string {
 	var errors []string
 
-	if p.SchemaVersion != activeCaseSchemaVersion {
-		errors = append(errors, fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, p.SchemaVersion))
+	if p.SchemaVersion != activeToolProfileSchemaVersion {
+		errors = append(errors, fmt.Sprintf("schema_version must be %d, got %d", activeToolProfileSchemaVersion, p.SchemaVersion))
 	}
 	if p.Tool == "" {
 		errors = append(errors, "missing tool")

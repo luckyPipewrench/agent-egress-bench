@@ -104,7 +104,7 @@
         },
         {
           "path": "validate/main.go",
-          "symbol": "activeCaseSchemaVersion"
+          "symbol": "activeResultSchemaVersion"
         }
       ],
       "gate": "make check-contracts"
@@ -157,7 +157,7 @@
         },
         {
           "path": "validate/main.go",
-          "symbol": "activeCaseSchemaVersion"
+          "symbol": "activeToolProfileSchemaVersion"
         }
       ],
       "gate": "make check-contracts"
