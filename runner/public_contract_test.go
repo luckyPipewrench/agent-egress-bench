@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,6 +29,7 @@ type publicResultStatesContract struct {
 	Contract              string                      `json:"contract"`
 	Format                int                         `json:"format"`
 	ResultSchemaVersion   int                         `json:"result_schema_version"`
+	EvidenceResultStates  map[string]string           `json:"evidence_result_states"`
 	Matrix                []publicResultMatrixRow     `json:"matrix"`
 	CaseSpecificOverrides []publicResultStateOverride `json:"case_specific_overrides"`
 }
@@ -73,6 +75,45 @@ func TestPublicBudgetTimingOverrideMatchesScorer(t *testing.T) {
 		evidence := map[string]interface{}{override.When.RequiredEvidenceFields[0]: timing}
 		if got := scoreCaseWithEvidence(budgetCase, "block", evidence); got != want {
 			t.Errorf("budget timing %q score = %q, public contract wants %q", timing, got, want)
+		}
+	}
+}
+
+// TestPublicResultStatesMatchEmitter binds the published state vocabulary to
+// the states this runner actually writes.
+//
+// Every row carries evidence.result_state, added by evidenceWithResultState.
+// The result schema describes evidence as freeform and the validator never
+// reads it, so contracts/result-states-v4.json is the only place an outside
+// implementer can learn that the field exists, what its values mean, and that
+// the parity reader rejects a row without one. A published vocabulary that
+// drifts from the emitter is worse than none, because it is followed.
+func TestPublicResultStatesMatchEmitter(t *testing.T) {
+	contract := loadPublicResultStates(t)
+
+	emitted := map[string]bool{
+		string(ResultStateObserved):            true,
+		string(ResultStateUnreachable):         true,
+		string(ResultStateAdapterError):        true,
+		string(ResultStateDeliveryUnavailable): true,
+		string(ResultStateVerdictUnobservable): true,
+		string(ResultStateInvalidVerdict):      true,
+	}
+
+	if len(contract.EvidenceResultStates) == 0 {
+		t.Fatal("public contract publishes no evidence_result_states")
+	}
+	for name, meaning := range contract.EvidenceResultStates {
+		if !emitted[name] {
+			t.Errorf("public contract publishes result state %q that this runner never emits", name)
+		}
+		if strings.TrimSpace(meaning) == "" {
+			t.Errorf("public contract publishes result state %q with no stated meaning", name)
+		}
+	}
+	for name := range emitted {
+		if _, ok := contract.EvidenceResultStates[name]; !ok {
+			t.Errorf("this runner emits result state %q that the public contract does not publish", name)
 		}
 	}
 }

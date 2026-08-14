@@ -6,6 +6,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_parity  # noqa: E402  (path set above so the sibling module resolves)
+
 
 BACKTICK_VALUE = re.compile(r"`([^`]+)`")
 
@@ -128,6 +131,25 @@ def check_result_states(root):
     ):
         if set(contract.get(field, [])) != set(schema_property(schema, schema_field).get("enum", [])):
             fail(f"result schema {schema_field} enum differs from result-states {field}")
+    # evidence.result_state is emitted on every row by the runner and required
+    # by scripts/runner_parity.py. The result schema calls evidence freeform and
+    # the validator does not read it, so the published contract is the only
+    # place an outside implementer can learn the field and its vocabulary. Bind
+    # the two so they cannot drift apart silently.
+    published_states = contract.get("evidence_result_states")
+    if not isinstance(published_states, dict) or not published_states:
+        fail("result-states must publish a non-empty evidence_result_states object")
+    for name, meaning in published_states.items():
+        if not isinstance(meaning, str) or not meaning.strip():
+            fail(f"evidence_result_states.{name} must document what the state means")
+    if set(published_states) != set(runner_parity.RESULT_STATES):
+        missing = sorted(set(runner_parity.RESULT_STATES) - set(published_states))
+        extra = sorted(set(published_states) - set(runner_parity.RESULT_STATES))
+        fail(
+            "evidence_result_states differs from the parity reader's RESULT_STATES; "
+            f"unpublished={missing}, unenforced={extra}"
+        )
+
     matrix = contract.get("matrix")
     if not isinstance(matrix, list):
         fail("result-states matrix must be an array")
