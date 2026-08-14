@@ -31,7 +31,7 @@
   },
   "packageRules": [
     {
-      "description": "Update INDIRECT Go dependencies too. Renovate skips them by default, so a vulnerability in an indirect module is invisible to this automation and stays open until someone notices it by hand. GO-2026-6179 and GO-2026-6180 in golang.org/x/mod sat open from 2026-05-09 for exactly this reason.",
+      "description": "Enable updates for indirect Go dependencies. Renovate disables normal indirect updates by default, so a transitive module stays pinned until something else moves it.",
       "matchManagers": [
         "gomod"
       ],
