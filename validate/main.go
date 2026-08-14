@@ -16,9 +16,11 @@ import (
 // Active schema version per artifact family, mirroring the runner's constants
 // of the same names.
 //
-// activeCaseSchemaVersion covers both case shapes deliberately, so the
-// single-file and multi-file paths cannot drift apart on the version boundary
-// the way they previously did on the requires vocabulary.
+// There is no multi-file constant here because this validator does not version
+// multi-file cases: it reads `case.yaml` only for the requires vocabulary and
+// never inspects its schema_version. The single-file and multi-file shapes are
+// held together by routing both through requiresTokenProblem, not by a shared
+// version number.
 //
 // The result-row and tool-profile versions are separate because those are
 // separate families in contracts/artifacts.json. This validator previously

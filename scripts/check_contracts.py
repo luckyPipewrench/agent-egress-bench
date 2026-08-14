@@ -544,10 +544,27 @@ def check(root, manifest_path):
         fail(f"versioned schema inventory mismatch; unlisted={missing}, nonexistent={extra}")
     if not REQUIRED_CONSTANTS.issubset(listed_constants):
         fail(f"governing constants missing from manifest: {sorted(REQUIRED_CONSTANTS - listed_constants)}")
-    case_runner = constant_values[("runner/case.go", "activeCaseSchemaVersion")]
-    case_validator = constant_values[("validate/main.go", "activeCaseSchemaVersion")]
-    if case_runner != case_validator:
-        fail(f"runner and validator case schema versions differ: {case_runner} != {case_validator}")
+    # Every source constant a family declares must equal that family's active
+    # writer version. Checked generically rather than as named pairs: the
+    # per-family split was landed three times because each round only bound the
+    # coordinates someone remembered, so a newly split constant could drift
+    # while the manifest, the runner, and the Go contract test all still agreed.
+    # Whatever the manifest declares is what gets verified.
+    for family in manifest.get("artifact_families", []):
+        name = family.get("family")
+        active = family.get("active_writer_version")
+        if not isinstance(active, int):
+            continue
+        for source in family.get("source_versions", []) or []:
+            coordinate = (source.get("path"), source.get("symbol"))
+            if coordinate not in constant_values:
+                continue
+            found = constant_values[coordinate]
+            if found != active:
+                fail(
+                    f"family {name}: {coordinate[0]}:{coordinate[1]} is {found}, "
+                    f"but active_writer_version is {active}; move both together or neither"
+                )
 
     records = manifest.get("retained_public_records")
     if not isinstance(records, dict):
