@@ -1,19 +1,79 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":semanticCommits"],
+  "extends": [
+    "config:recommended",
+    ":semanticCommits"
+  ],
   "minimumReleaseAge": "10 days",
   "internalChecksFilter": "strict",
   "dependencyDashboard": false,
-  "schedule": ["* * * * 1"],
+  "schedule": [
+    "* * * * 1"
+  ],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
-  "labels": ["dependencies"],
-  "lockFileMaintenance": { "enabled": false },
+  "labels": [
+    "dependencies"
+  ],
+  "lockFileMaintenance": {
+    "enabled": false
+  },
   "osvVulnerabilityAlerts": true,
-  "vulnerabilityAlerts": { "labels": ["security", "fast-track"], "minimumReleaseAge": "0 days", "schedule": ["at any time"] },
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security",
+      "fast-track"
+    ],
+    "minimumReleaseAge": "0 days",
+    "schedule": [
+      "at any time"
+    ]
+  },
   "packageRules": [
-    { "description": "Pin GitHub Actions to digests for the OpenSSF Scorecard pinned-dependencies check. Digest-maintenance PRs batch into the weekly group below.", "matchManagers": ["github-actions"], "pinDigests": true },
-    { "description": "Collapse every non-major update (minor, patch, digest, pin) into ONE weekly batched PR so PR volume stays low.", "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest", "bump"], "groupName": "weekly dependencies" },
-    { "description": "Major updates stay individual and manually reviewed (no automerge), not delayed to the weekly window.", "matchUpdateTypes": ["major"], "addLabels": ["major-update", "needs-review"], "automerge": false, "schedule": ["at any time"] }
+    {
+      "description": "Enable updates for indirect Go dependencies. Renovate disables normal indirect updates by default, so a transitive module stays pinned until something else moves it.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
+      "enabled": true
+    },
+    {
+      "description": "Pin GitHub Actions to digests for the OpenSSF Scorecard pinned-dependencies check. Digest-maintenance PRs batch into the weekly group below.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Collapse every non-major update (minor, patch, digest, pin) into ONE weekly batched PR so PR volume stays low.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pinDigest",
+        "bump"
+      ],
+      "groupName": "weekly dependencies"
+    },
+    {
+      "description": "Major updates stay individual and manually reviewed (no automerge), not delayed to the weekly window.",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "addLabels": [
+        "major-update",
+        "needs-review"
+      ],
+      "automerge": false,
+      "schedule": [
+        "at any time"
+      ]
+    }
+  ],
+  "postUpdateOptions": [
+    "gomodTidy"
   ]
 }

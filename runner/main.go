@@ -370,7 +370,7 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 			debugf(debug, "case %s: FAIL expected=%s actual=%s evidence=%v", c.ID, c.ExpectedVerdict, adapterResult.Verdict, evidence)
 		}
 		result := CaseResult{
-			SchemaVersion:      activeSchemaVersion,
+			SchemaVersion:      activeResultSchemaVersion,
 			CaseID:             c.ID,
 			Tool:               profile.Tool,
 			ToolVersion:        profile.ToolVersion,

@@ -47,7 +47,7 @@ func loadPublicResultStates(t *testing.T) publicResultStatesContract {
 
 func TestPublicResultStateMatrixMatchesScorer(t *testing.T) {
 	contract := loadPublicResultStates(t)
-	if contract.Contract != "aeb.result-states" || contract.Format != 1 || contract.ResultSchemaVersion != activeSchemaVersion {
+	if contract.Contract != "aeb.result-states" || contract.Format != 1 || contract.ResultSchemaVersion != activeResultSchemaVersion {
 		t.Fatalf("result-states identity/version = %q/%d/%d", contract.Contract, contract.Format, contract.ResultSchemaVersion)
 	}
 	for _, row := range contract.Matrix {

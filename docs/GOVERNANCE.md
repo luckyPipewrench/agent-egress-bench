@@ -39,6 +39,16 @@ changes before a runner may exclude any case.
 
 ## Versioning and compatibility
 
+### The short version
+
+Ask one question about any proposed change:
+
+> Could an artifact someone already saved still be read, verified, and scored the same way afterward?
+
+Yes, so amend that family in place and leave its version alone. No, so bump that one family and keep its old reader working. The rest of this section is that question stated precisely, plus what freezing means.
+
+Two things follow that are easy to get backwards. A version number belongs to ONE family, so bumping result rows does not move cases, profiles, or anything else; the writer constants are per family and `runner/schema_version_contract_test.go` fails if any of them disagrees with the manifest. And a high version number is not evidence of churn, because these numbers were assigned when versioned filenames were adopted rather than earned one release at a time.
+
 Each artifact family has its own version. Cases, result rows, tool profiles, receipt profiles, summaries, provenance candidates, case indexes, promotion records, baselines, and Control Evidence documents do not become compatible because two version numbers happen to match. The machine-readable [`contracts/artifacts.json`](../contracts/artifacts.json) manifest names each active writer, accepted reader, frozen version, schema, and gate.
 
 An active schema may change in place only when every existing artifact that declares that version remains valid with the same meaning and score. Clarifications, schema corrections that change no accepted instance, and optional fields with a documented behavior-preserving default can qualify. This rule never permits a change to an existing case ID, payload, expected verdict, capability tags, or semantics.

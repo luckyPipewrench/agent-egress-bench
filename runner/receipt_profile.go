@@ -225,7 +225,7 @@ func buildReceiptProfile(
 	}
 
 	return ReceiptProfile{
-		SchemaVersion:      activeSchemaVersion,
+		SchemaVersion:      activeReceiptProfileSchemaVersion,
 		Tool:               p.Tool,
 		ToolVersion:        p.ToolVersion,
 		CorpusVersion:      corpusVersion,

@@ -46,7 +46,7 @@ var readableReceiptProfileVersions = func() map[int]bool {
 		3:               true,
 		v4SchemaVersion: true,
 	}
-	versions[activeSchemaVersion] = true
+	versions[activeReceiptProfileSchemaVersion] = true
 	return versions
 }()
 
@@ -65,7 +65,7 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 	// did not exist when it was produced. Emission still uses the active
 	// version, so nothing new is written at a superseded one.
 	if !isReadableReceiptProfileVersion(rp.SchemaVersion) {
-		issues = append(issues, fmt.Sprintf("schema_version must be %d for scoring, or a readable historical version, got %d", activeSchemaVersion, rp.SchemaVersion))
+		issues = append(issues, fmt.Sprintf("schema_version must be %d for scoring, or a readable historical version, got %d", activeReceiptProfileSchemaVersion, rp.SchemaVersion))
 	}
 	if strings.TrimSpace(rp.Tool) == "" {
 		issues = append(issues, "tool must be a non-empty string")
@@ -82,7 +82,7 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 	if !sha256HexPattern.MatchString(rp.ToolProfileSHA256) {
 		issues = append(issues, "tool_profile_sha256 must be 64 lower-case hex characters")
 	}
-	if rp.SchemaVersion == activeSchemaVersion {
+	if rp.SchemaVersion == activeReceiptProfileSchemaVersion {
 		if rp.CapabilityRegistry.ID == "" || rp.CapabilityRegistry.Format != 1 || rp.CapabilityRegistry.Revision < 1 || !sha256HexPattern.MatchString(rp.CapabilityRegistry.SHA256) {
 			issues = append(issues, "capability_registry must contain a supported id, format, revision, and 64-character sha256")
 		}

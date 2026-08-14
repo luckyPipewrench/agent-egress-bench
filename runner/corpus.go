@@ -261,8 +261,8 @@ func loadCasesFromSnapshot(files []corpusFile, multiFileDirs []multiFileCaseDir)
 		if err := json.Unmarshal(file.data, &c); err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", file.path, err)
 		}
-		if c.SchemaVersion != activeSchemaVersion {
-			return nil, fmt.Errorf("%s: schema_version must be %d for scoring, got %d", file.path, activeSchemaVersion, c.SchemaVersion)
+		if c.SchemaVersion != activeCaseSchemaVersion {
+			return nil, fmt.Errorf("%s: schema_version must be %d for scoring, got %d", file.path, activeCaseSchemaVersion, c.SchemaVersion)
 		}
 		cases = append(cases, c)
 	}
