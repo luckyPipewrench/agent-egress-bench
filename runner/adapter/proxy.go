@@ -2585,6 +2585,10 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 	}
 
 	client := &http.Client{Timeout: timeout}
+	// Establish the session before the case's own messages so a target that
+	// requires an issued token evaluates them, rather than refusing every one
+	// for want of a session and turning that refusal into a scored block.
+	sessionToken := p.establishMCPHTTPListenerSession(context.Background(), client)
 	var responses int
 	upstreamBefore, _ := p.mcpHTTPUpstreamCallCount()
 	for _, msg := range msgList {
@@ -2595,6 +2599,7 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
+		setListenerSessionToken(req, sessionToken)
 		resp, err := client.Do(req)
 		if err != nil {
 			return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
@@ -2603,12 +2608,18 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+				if listenerSessionRefusalIsUnproven(verdict, resp.Header) {
+					return listenerSessionUnprovenResult()
+				}
 				return *verdict
 			}
 			return classifyResponse(resp.StatusCode, string(body))
 		}
 		responses++
 		if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+			if listenerSessionRefusalIsUnproven(verdict, resp.Header) {
+				return listenerSessionUnprovenResult()
+			}
 			return *verdict
 		}
 	}
@@ -2679,7 +2690,7 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare MCP initialize request: %w", c.ID, err)}
 	}
-	initializeResponse, initializeContentType, initializeStatus, sessionID, err := p.sendMCPHTTPGatewayRequest(ctx, client, initializeMessage, "")
+	initialize, err := p.sendMCPHTTPGatewayRequest(ctx, client, initializeMessage, "", "")
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: send MCP initialize request: %w", c.ID, err)}
 	}
@@ -2687,23 +2698,28 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 		evidence["reason"] = "temporal_initialize_upstream_unproven"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
-	initializeBody, decodeErr := decodeGatewayResponse(initializeContentType, initializeResponse, initializeRequest.identity)
-	if decodeErr != nil || initializeStatus < http.StatusOK || initializeStatus >= http.StatusMultipleChoices || classifyMCPHTTPBlock(initializeBody) != nil || !validMCPInitializeResponse(initializeBody) {
+	initializeBody, decodeErr := decodeGatewayResponse(initialize.contentType, initialize.body, initializeRequest.identity)
+	if decodeErr != nil || initialize.status < http.StatusOK || initialize.status >= http.StatusMultipleChoices || classifyMCPHTTPBlock(initializeBody) != nil || !validMCPInitializeResponse(initializeBody) {
 		evidence["reason"] = "temporal_initialize_not_established"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
+	sessionID := initialize.sessionID
 	if sessionID == "" {
 		evidence["reason"] = "temporal_session_unbound"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
 	evidence["session_bound"] = true
+	// This initialize is itself the setup frame, so any issued token arrives on
+	// its response and is replayed on every later request in this session.
+	// Opening a second session to obtain one would abandon this one.
+	sessionToken := initialize.sessionToken
 
-	_, _, initializedStatus, _, err := p.sendMCPHTTPGatewayRequest(ctx, client, map[string]interface{}{
+	initialized, err := p.sendMCPHTTPGatewayRequest(ctx, client, map[string]interface{}{
 		"jsonrpc": "2.0",
 		"method":  "notifications/initialized",
 		"params":  map[string]interface{}{},
-	}, sessionID)
-	if err != nil || initializedStatus < http.StatusOK || initializedStatus >= http.StatusMultipleChoices {
+	}, sessionID, sessionToken)
+	if err != nil || initialized.status < http.StatusOK || initialized.status >= http.StatusMultipleChoices {
 		evidence["reason"] = "temporal_initialized_notification_failed"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
@@ -2717,7 +2733,7 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 		evidence["reason"] = "baseline_inventory_lease_timeout"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
-	baselineResponse, baselineContentType, baselineStatus, _, err := p.sendMCPHTTPGatewayRequest(ctx, client, baselineMessage, sessionID)
+	baseline, err := p.sendMCPHTTPGatewayRequest(ctx, client, baselineMessage, sessionID, sessionToken)
 	baselineRelease()
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: send baseline tools/list request: %w", c.ID, err)}
@@ -2729,8 +2745,8 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 		evidence["reason"] = "baseline_inventory_upstream_unproven"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
-	baselineBody, err := decodeGatewayResponse(baselineContentType, baselineResponse, baselineRequest.identity)
-	if err != nil || baselineStatus < http.StatusOK || baselineStatus >= http.StatusMultipleChoices {
+	baselineBody, err := decodeGatewayResponse(baseline.contentType, baseline.body, baselineRequest.identity)
+	if err != nil || baseline.status < http.StatusOK || baseline.status >= http.StatusMultipleChoices {
 		evidence["reason"] = "baseline_inventory_not_established"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
@@ -2750,7 +2766,7 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 		evidence["reason"] = "changed_inventory_lease_timeout"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
-	changedResponse, changedContentType, changedStatus, _, err := p.sendMCPHTTPGatewayRequest(ctx, client, changedMessage, sessionID)
+	changed, err := p.sendMCPHTTPGatewayRequest(ctx, client, changedMessage, sessionID, sessionToken)
 	changedRelease()
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: send changed tools/list request: %w", c.ID, err)}
@@ -2764,14 +2780,14 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	}
 	evidence["upstream_reached"] = true
 
-	if changedStatus < http.StatusOK || changedStatus >= http.StatusMultipleChoices {
-		if verdict := classifyMCPHTTPBlock(changedResponse); verdict != nil {
+	if changed.status < http.StatusOK || changed.status >= http.StatusMultipleChoices {
+		if verdict := classifyMCPHTTPBlock(changed.body); verdict != nil {
 			for key, value := range evidence {
 				verdict.Evidence[key] = value
 			}
 			return *verdict
 		}
-		result := classifyResponse(changedStatus, string(changedResponse))
+		result := classifyResponse(changed.status, string(changed.body))
 		for key, value := range evidence {
 			result.Evidence[key] = value
 		}
@@ -2780,7 +2796,7 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 		}
 		return result
 	}
-	changedBody, err := decodeGatewayResponse(changedContentType, changedResponse, changedRequest.identity)
+	changedBody, err := decodeGatewayResponse(changed.contentType, changed.body, changedRequest.identity)
 	if err != nil {
 		evidence["reason"] = "malformed_or_uncorrelated_changed_inventory"
 		return Result{Verdict: "skip", Evidence: evidence}
@@ -2804,30 +2820,176 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	return Result{Verdict: "allow", Evidence: evidence}
 }
 
-func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *http.Client, message map[string]interface{}, sessionID string) ([]byte, string, int, string, error) {
+// mcpHTTPGatewayResponse carries one listener response. The listener-issued
+// session token is returned alongside the MCP session id because the two are
+// distinct: the id is upstream routing data the client supplies, the token is
+// the target's own proof that this client owns its state partition.
+type mcpHTTPGatewayResponse struct {
+	body         []byte
+	contentType  string
+	status       int
+	sessionID    string
+	sessionToken string
+}
+
+func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *http.Client, message map[string]interface{}, sessionID, sessionToken string) (mcpHTTPGatewayResponse, error) {
 	body, err := json.Marshal(message)
 	if err != nil {
-		return nil, "", 0, "", fmt.Errorf("marshal request: %w", err)
+		return mcpHTTPGatewayResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, "", 0, "", fmt.Errorf("build request: %w", err)
+		return mcpHTTPGatewayResponse{}, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	if sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", sessionID)
 	}
+	setListenerSessionToken(req, sessionToken)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", 0, "", err
+		return mcpHTTPGatewayResponse{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, "", 0, "", fmt.Errorf("read response: %w", err)
+		return mcpHTTPGatewayResponse{}, fmt.Errorf("read response: %w", err)
 	}
-	return responseBody, resp.Header.Get("Content-Type"), resp.StatusCode, resp.Header.Get("Mcp-Session-Id"), nil
+	return mcpHTTPGatewayResponse{
+		body:         responseBody,
+		contentType:  resp.Header.Get("Content-Type"),
+		status:       resp.StatusCode,
+		sessionID:    resp.Header.Get("Mcp-Session-Id"),
+		sessionToken: resp.Header.Get(listenerSessionTokenHeader),
+	}, nil
+}
+
+// listenerSessionTokenHeader carries a listener-issued session token. A target
+// that partitions retained per-client state by an authenticated principal
+// cannot safely key that partition on client-supplied routing data, so it
+// issues its own token during setup and requires it on later stateful
+// requests. The runner replays whatever token the target issued; it never
+// mints, guesses, or reuses one across cases.
+const (
+	listenerSessionTokenHeader          = "Pipelock-Session-Token"
+	listenerSessionRequiredErrorCode    = -32003
+	listenerSessionRequiredErrorMessage = "stateful MCP listener request requires an authenticated principal or a legacy Pipelock session token"
+	// Structured block-reason layer, emitted on every refusal from the
+	// listener's session layer regardless of which one fired.
+	listenerBlockLayerHeader  = "X-Pipelock-Block-Reason-Layer"
+	listenerSessionBlockLayer = "mcp_listener_session"
+)
+
+// establishMCPHTTPListenerSession performs the listener setup handshake and
+// returns the token the target issued, or an empty string when the target
+// issues none.
+//
+// An empty result is a normal outcome, not a failure: a target that keeps no
+// per-client state, or one predating listener-issued tokens, answers setup
+// without the header and then accepts stateful requests without it. Returning
+// empty keeps those targets measurable on the same adapter, so one runner spans
+// both, and a target that DOES require a token is driven correctly instead of
+// having every stateful request refused and scored as a false positive.
+//
+// The setup frame is adapter transport setup, in the same class as opening the
+// connection. It is not part of any case's wire input, and the caller still
+// proves delivery of the case's own messages separately.
+func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, client *http.Client) string {
+	// Setup is recognized only on a non-batch initialize that carries no
+	// negotiated protocol version, so this frame must stay exactly that shape.
+	// Do not add an Mcp-Protocol-Version header here: it makes the target treat
+	// this as an already-negotiated request, skip setup, and issue no token.
+	message := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      "aeb-listener-session-setup",
+		"method":  "initialize",
+		"params":  map[string]interface{}{},
+	}
+	body, err := json.Marshal(message)
+	if err != nil {
+		return ""
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// The body is drained and discarded. Only the issued token matters here,
+	// and leaving it unread would strand the connection.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return ""
+	}
+	return resp.Header.Get(listenerSessionTokenHeader)
+}
+
+// setListenerSessionToken replays an issued token on a later stateful request.
+// It is a no-op when the target issued none.
+func setListenerSessionToken(req *http.Request, token string) {
+	if validListenerSessionToken(token) {
+		req.Header.Set(listenerSessionTokenHeader, token)
+	}
+}
+
+// validListenerSessionToken matches the listener-issued bearer format. Do not
+// replay an arbitrary response header into a later case: a malformed value is
+// not a session capability and Pipelock rejects it before the case reaches the
+// upstream fixture.
+func validListenerSessionToken(token string) bool {
+	if len(token) != 43 {
+		return false
+	}
+	for i := 0; i < len(token); i++ {
+		if (token[i] < 'A' || token[i] > 'Z') &&
+			(token[i] < 'a' || token[i] > 'z') &&
+			(token[i] < '0' || token[i] > '9') &&
+			token[i] != '-' && token[i] != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// listenerSessionRefusalIsUnproven recognizes the listener's own refusal
+// before it forwards a case. That is transport/setup failure, not evidence
+// that the target evaluated and blocked the case.
+//
+// Match the structured layer header first and the exact message only as a
+// fallback. The header is a machine-readable contract field, so it survives a
+// reworded message and it covers EVERY refusal from this layer rather than the
+// one sentence sampled while writing this. Pipelock has at least two: a
+// missing session and a legacy token presented against current-protocol state.
+//
+// Deliberately NOT "any block that did not reach upstream": a proxy blocking
+// exfiltration before forwarding is the product working, and treating those as
+// unproven would erase real detections wholesale.
+func listenerSessionRefusalIsUnproven(result *Result, header http.Header) bool {
+	if result == nil {
+		return false
+	}
+	if header.Get(listenerBlockLayerHeader) == listenerSessionBlockLayer {
+		return true
+	}
+	code, codeOK := result.Evidence["error_code"].(int)
+	message, messageOK := result.Evidence["error_message"].(string)
+	return codeOK && messageOK && code == listenerSessionRequiredErrorCode && message == listenerSessionRequiredErrorMessage
+}
+
+func listenerSessionUnprovenResult() Result {
+	return Result{Verdict: "skip", Evidence: map[string]interface{}{
+		"product_surface":  "mcp_http_listener",
+		"reason":           "listener_session_unproven",
+		"upstream_reached": false,
+		"error_code":       listenerSessionRequiredErrorCode,
+		"error_message":    listenerSessionRequiredErrorMessage,
+	}}
 }
 
 func newMCPHTTPClient(timeout time.Duration) *http.Client {
@@ -2876,6 +3038,11 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: prepare response request identity: %w", c.ID, err)}
 	}
+	// Establish the session before any tool-definition lease is held. The setup
+	// frame reaches the upstream fixture, so running it inside a lease window
+	// perturbs the very delivery proof the lease exists to make exact.
+	responseClient := newMCPHTTPClient(timeout)
+	sessionToken := p.establishMCPHTTPListenerSession(ctx, responseClient)
 	var (
 		request       map[string]interface{}
 		gatewayReq    gatewayRequest
@@ -2928,7 +3095,7 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	}
 	defer release()
 	if c.InputType == "mcp_tool_result" {
-		if result := p.primeMCPHTTPToolResultBaseline(ctx); result != nil {
+		if result := p.primeMCPHTTPToolResultBaseline(ctx, sessionToken); result != nil {
 			return *result
 		}
 	}
@@ -2943,7 +3110,8 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := newMCPHTTPClient(timeout).Do(httpReq)
+	setListenerSessionToken(httpReq, sessionToken)
+	resp, err := responseClient.Do(httpReq)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
 	}
@@ -3003,7 +3171,10 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 // it to return the fixture-owned result. This is part of the protocol path,
 // not a workaround: gateways that bind calls to the last tools/list inventory
 // must see the same ordinary discovery exchange a real MCP client performs.
-func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Result {
+// The caller passes the session token it already established, so one case
+// opens exactly one session. Establishing a second one here would send another
+// setup frame upstream and change the method sequence the fixture observes.
+func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context, sessionToken string) *Result {
 	identity, err := nextGatewayRequestIdentity()
 	if err != nil {
 		return &Result{Err: fmt.Errorf("prepare tool-result baseline identity: %w", err)}
@@ -3018,6 +3189,7 @@ func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Resu
 	if err != nil {
 		return &Result{Err: fmt.Errorf("prepare tool-result baseline request: %w", err)}
 	}
+	baselineClient := newMCPHTTPClient(0)
 	tools := []json.RawMessage{json.RawMessage(`{"name":"aeb_tool_result_fixture","description":"Runner-owned benchmark fixture tool.","inputSchema":{"type":"object"}}`)}
 	release, err := p.mcpHTTPFixture.AcquireToolDefinitionLease(ctx, gatewayReq.identity, tools)
 	if err != nil {
@@ -3034,7 +3206,8 @@ func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context) *Resu
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := newMCPHTTPClient(0).Do(req)
+	setListenerSessionToken(req, sessionToken)
+	resp, err := baselineClient.Do(req)
 	if err != nil {
 		return &Result{Err: fmt.Errorf("send tool-result baseline request: %w", err)}
 	}
