@@ -42,10 +42,11 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # No security-events: write. This job no longer uploads SARIF, so it needs
-      # no permission to write code-scanning alerts. The codeql job above keeps
-      # its own. id-token remains because publish_results signs the result for
-      # the public Scorecard API.
+      # No security-events: write. This job no longer uploads SARIF to code
+      # scanning, so it needs no permission to write code-scanning alerts. It
+      # does still upload results.sarif as a build artifact below. The codeql
+      # job above keeps its own permission. id-token remains because
+      # publish_results signs the result for the public Scorecard API.
       id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
