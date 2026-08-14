@@ -50,7 +50,8 @@ jobs:
       # scanning, so it needs no permission to write code-scanning alerts. It
       # does still upload results.sarif as a build artifact below. The codeql
       # job above keeps its own permission. id-token remains because
-      # publish_results signs the result for the public Scorecard API.
+      # publish_results uses GitHub's OIDC token to verify the result's
+      # authenticity when publishing it to the public Scorecard API.
       id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
