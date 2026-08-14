@@ -3163,8 +3163,24 @@ func TestRunMCPHTTP_ResponseCasesUseFixtureRequestResponseDirection(t *testing.T
 			t.Fatalf("%s result = %+v, want fixture-proven allow", tc.ID, result)
 		}
 	}
-	if len(methods) != 3 || methods[0] != "tools/list" || methods[1] != "tools/list" || methods[2] != "tools/call" {
-		t.Fatalf("gateway methods = %v, want tools/list definition, tools/list bootstrap, tools/call result", methods)
+	// Each case opens exactly one session, so its ordinary MCP initialize leads
+	// the case's own methods. Real MCP clients always initialize before calling,
+	// and a target that issues a session token only does so during that setup.
+	// Assert the exact sequence, including the initialize count: a second
+	// initialize inside one case would mean a helper opened its own redundant
+	// session, which is what sending setup inside a tool-definition lease did
+	// before, perturbing the very delivery proof the lease exists to make exact.
+	want := []string{
+		"initialize", "tools/list", // definition case
+		"initialize", "tools/list", "tools/call", // result case: bootstrap, then the call
+	}
+	if len(methods) != len(want) {
+		t.Fatalf("gateway methods = %v, want %v", methods, want)
+	}
+	for i, method := range want {
+		if methods[i] != method {
+			t.Fatalf("gateway methods = %v, want %v", methods, want)
+		}
 	}
 }
 
@@ -4336,5 +4352,93 @@ func TestDoHTTPProxyRequestDoesNotTrustCaseURLAsPolicyEvidence(t *testing.T) {
 	}
 	if got := accepted.Load(); got != 1 {
 		t.Fatalf("reset fixture accepted %d connections, want 1", got)
+	}
+}
+
+// TestRunMCPHTTP_ReplaysListenerIssuedSessionToken proves the runner replays a
+// listener-issued session token on the case's own requests.
+//
+// A target that partitions retained per-client state by principal cannot key
+// that partition on client-supplied routing data, so it issues its own token
+// during setup and refuses later stateful requests that arrive without it. A
+// runner that ignores the token has every such request refused and scores the
+// refusal as the target blocking the case. That turns correct target behaviour
+// into a false positive on benign traffic and leaves attack cases unmeasurable.
+func TestRunMCPHTTP_ReplaysListenerIssuedSessionToken(t *testing.T) {
+	upstream, err := fixture.StartMCPHTTP()
+	if err != nil {
+		t.Fatalf("StartMCPHTTP: %v", err)
+	}
+	defer upstream.Close()
+
+	const issuedToken = "listener-issued-token-value"
+	var refusedMissing, carriedToken atomic.Int64
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("read listener request: %v", readErr)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		// Setup issues the token, exactly as a stateful listener does.
+		if request.Method == "initialize" {
+			w.Header().Set("Pipelock-Session-Token", issuedToken)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
+			return
+		}
+		// Every later request must carry it back, or it is refused the way a
+		// real listener refuses an unbound stateful request.
+		if r.Header.Get("Pipelock-Session-Token") != issuedToken {
+			refusedMissing.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"stateful MCP listener request requires an authenticated principal or a legacy Pipelock session token"}}`))
+			return
+		}
+		carriedToken.Add(1)
+		upstreamResp, postErr := http.Post(upstream.URL(), "application/json", bytes.NewReader(body)) //nolint:gosec,noctx // runner-owned fixture
+		if postErr != nil {
+			t.Errorf("forward to fixture: %v", postErr)
+			return
+		}
+		defer func() { _ = upstreamResp.Body.Close() }()
+		response, readErr := io.ReadAll(upstreamResp.Body)
+		if readErr != nil {
+			t.Errorf("read fixture response: %v", readErr)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(response)
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPFixture(upstream)
+
+	result := a.runMCPHTTP(Case{
+		ID: "http-tool-definition-token", Transport: "mcp_http", InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"tools": []interface{}{map[string]interface{}{
+				"name": "fixture_tool", "description": "safe", "inputSchema": map[string]interface{}{"type": "object"},
+			}}},
+		}}},
+	}, time.Second)
+
+	if result.Err != nil || result.Verdict != "allow" || result.Evidence["upstream_reached"] != true {
+		t.Fatalf("result = %+v, want fixture-proven allow", result)
+	}
+	if got := refusedMissing.Load(); got != 0 {
+		t.Fatalf("listener refused %d request(s) for a missing session token, want 0", got)
+	}
+	if carriedToken.Load() == 0 {
+		t.Fatal("no request carried the issued session token")
 	}
 }
