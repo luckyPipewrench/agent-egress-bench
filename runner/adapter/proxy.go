@@ -77,22 +77,22 @@ type ProxyAdapter struct {
 	scanToken  string // bearer token for scan API auth
 	mcpCmd     string // MCP proxy command that wraps an upstream stdio server
 	mcpHTTPURL string // MCP-over-HTTP JSON-RPC listener URL
-	// Declared by the target, empty for every target that declares nothing.
-	// Empty means the runner sends no setup frame and replays no token.
-	mcpHTTPSessionHeader string
-	mcpHTTPSessionFormat string
-	httpFixtureAddr      string                  // HTTP fixture for response-mitm via fetch
-	setHTTPRoute         func(path, body string) // callback to register HTTP fixture routes
-	setHTTPRouteCT       func(path, body, contentType string)
-	tlsFixtureAddr       string // HTTPS fixture for CONNECT interception cases
-	tlsCAFile            string
-	setTLSRoute          func(path, body string)
-	setTLSRouteCT        func(path, body, contentType string)
-	setTLSRouteHost      func(host, path, body, contentType string)
-	tlsRequests          func() int64  // requests the TLS fixture has served
-	wsAddr               string        // trusted WS fixture for websocket cases
-	wsUntrustedAddr      string        // untrusted WS fixture for reserved sink cases
-	responseRouteID      atomic.Uint64 // unique low-entropy response fixture route
+	// Declared by the target, zero for every target that declares nothing.
+	// Zero means the runner replays no token and recognizes no refusal, while
+	// the ordinary MCP initialize still happens.
+	session         ListenerSessionDeclaration
+	httpFixtureAddr string                  // HTTP fixture for response-mitm via fetch
+	setHTTPRoute    func(path, body string) // callback to register HTTP fixture routes
+	setHTTPRouteCT  func(path, body, contentType string)
+	tlsFixtureAddr  string // HTTPS fixture for CONNECT interception cases
+	tlsCAFile       string
+	setTLSRoute     func(path, body string)
+	setTLSRouteCT   func(path, body, contentType string)
+	setTLSRouteHost func(host, path, body, contentType string)
+	tlsRequests     func() int64  // requests the TLS fixture has served
+	wsAddr          string        // trusted WS fixture for websocket cases
+	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
+	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
 
 	wsUpstreamMessages   func() int64             // runner-managed WS fixture message counter
 	wsRSV1Outcome        func(string) (int, bool) // marked permissive-fixture outcome
@@ -232,16 +232,52 @@ func (p *ProxyAdapter) SetWSRSV1Outcome(outcome func(string) (int, bool)) {
 // SetMCPHTTPURL configures the MCP-over-HTTP JSON-RPC listener URL.
 func (p *ProxyAdapter) SetMCPHTTPURL(rawURL string) { p.mcpHTTPURL = rawURL }
 
-// SetMCPHTTPListenerSession declares that the target issues a session token
-// during MCP HTTP setup and requires it on later stateful requests. Leave it
-// unset for a target that does not, which is the default and sends no setup
-// frame at all.
+// SetMCPHTTPListenerSession declares how a target issues its MCP HTTP session
+// token and how it refuses a stateful request that arrives without one. Leave
+// it unset for a target that has no such mechanism, which is the default.
 //
-// The header name lives here, in a per-run declaration, rather than in shared
-// runner code, so no target absorbs another target's mechanism.
-func (p *ProxyAdapter) SetMCPHTTPListenerSession(header, format string) {
-	p.mcpHTTPSessionHeader = header
-	p.mcpHTTPSessionFormat = format
+// An unset declaration disables token extraction and replay. It does NOT
+// suppress the MCP initialize request, which every client sends and which is
+// protocol conformance rather than an accommodation.
+//
+// Both the token header and the refusal signature live here, in a per-run
+// declaration, rather than in shared runner code. Declaring only the token
+// header is not enough for neutrality: the runner also has to recognize a
+// refusal to tell a setup failure apart from a real policy block, and leaving
+// that recognition hardcoded to one vendor means a target that refuses
+// differently has its setup failures scored as blocks it never made.
+func (p *ProxyAdapter) SetMCPHTTPListenerSession(d ListenerSessionDeclaration) {
+	p.session = d
+}
+
+// ListenerSessionDeclaration is one target's session mechanism, declared per
+// run. The zero value means the target has none.
+type ListenerSessionDeclaration struct {
+	// TokenHeader is the response header the target issues its token in, and
+	// the request header the runner replays it in.
+	TokenHeader string
+	// TokenFormat names the issued token's shape so a malformed value is not
+	// replayed. Empty accepts any header-safe value.
+	TokenFormat string
+	// RefusalHeader and RefusalValue identify a refusal the target emits
+	// BEFORE it forwards a request, which is transport failure rather than a
+	// decision about the case. Prefer a structured field the target documents
+	// over matching human-readable text, which drifts with wording.
+	RefusalHeader string
+	RefusalValue  string
+}
+
+// declaredRefusal reports whether this response is the target's own declared
+// session refusal.
+//
+// Undeclared means unrecognized, deliberately. Guessing a refusal shape for a
+// target that never declared one is how vendor semantics leak back into the
+// shared path.
+func (d ListenerSessionDeclaration) declaredRefusal(header http.Header) bool {
+	if d.RefusalHeader == "" || d.RefusalValue == "" {
+		return false
+	}
+	return header.Get(d.RefusalHeader) == d.RefusalValue
 }
 
 // SetMCPHTTPUpstreamCallCounter lets the adapter prove the protected MCP HTTP
@@ -2624,7 +2660,7 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
-				if listenerSessionRefusalIsUnproven(verdict, resp.Header) {
+				if p.listenerSessionRefusalIsUnproven(verdict, resp.Header) {
 					return listenerSessionUnprovenResult()
 				}
 				return *verdict
@@ -2633,7 +2669,7 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		}
 		responses++
 		if verdict := classifyMCPHTTPBlock(body); verdict != nil {
-			if listenerSessionRefusalIsUnproven(verdict, resp.Header) {
+			if p.listenerSessionRefusalIsUnproven(verdict, resp.Header) {
 				return listenerSessionUnprovenResult()
 			}
 			return *verdict
@@ -2890,21 +2926,17 @@ func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *ht
 // The header and token format are DECLARED per target, never compiled in. A
 // benchmark is only worth its score if the path every target runs through is
 // the same path, so shared runner code must not carry one vendor's mechanism.
-// An undeclared session means no setup frame and no header, which is the exact
-// behaviour every target had before this handshake existed.
+// An undeclared session means no token is read or replayed and no refusal is
+// recognized. No vendor header name, refusal value, or error wording appears
+// below: every one of those is declared per target and lives with that target's
+// configuration.
 const (
-	listenerSessionRequiredErrorCode    = -32003
-	listenerSessionRequiredErrorMessage = "stateful MCP listener request requires an authenticated principal or a legacy Pipelock session token"
 	// A declared token shape: 256 bits of entropy, unpadded URL-safe base64,
 	// so 43 characters. Named rather than assumed, so a target declaring a
 	// different shape is checked against its own.
 	listenerSessionFormatBase64URL256 = "base64url_256"
 	// 256 bits in unpadded URL-safe base64 is 43 characters.
 	listenerSessionTokenLengthBase64URL256 = 43
-	// Structured block-reason layer, emitted on every refusal from the
-	// listener's session layer regardless of which one fired.
-	listenerBlockLayerHeader  = "X-Pipelock-Block-Reason-Layer"
-	listenerSessionBlockLayer = "mcp_listener_session"
 )
 
 // establishMCPHTTPListenerSession performs the listener setup handshake and
@@ -2970,20 +3002,20 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 // Without a declaration it reads nothing, so no response header of any target
 // is interpreted as a session capability by accident.
 func (p *ProxyAdapter) declaredSessionToken(header http.Header) string {
-	if p.mcpHTTPSessionHeader == "" {
+	if p.session.TokenHeader == "" {
 		return ""
 	}
-	return header.Get(p.mcpHTTPSessionHeader)
+	return header.Get(p.session.TokenHeader)
 }
 
 // setListenerSessionToken replays an issued token on a later stateful request.
 // It is a no-op when nothing was declared or nothing was issued.
 func (p *ProxyAdapter) setListenerSessionToken(req *http.Request, token string) {
-	if p.mcpHTTPSessionHeader == "" {
+	if p.session.TokenHeader == "" {
 		return
 	}
-	if validListenerSessionToken(token, p.mcpHTTPSessionFormat) {
-		req.Header.Set(p.mcpHTTPSessionHeader, token)
+	if validListenerSessionToken(token, p.session.TokenFormat) {
+		req.Header.Set(p.session.TokenHeader, token)
 	}
 }
 
@@ -3036,16 +3068,11 @@ func validListenerSessionToken(token, format string) bool {
 // Deliberately NOT "any block that did not reach upstream": a proxy blocking
 // exfiltration before forwarding is the product working, and treating those as
 // unproven would erase real detections wholesale.
-func listenerSessionRefusalIsUnproven(result *Result, header http.Header) bool {
+func (p *ProxyAdapter) listenerSessionRefusalIsUnproven(result *Result, header http.Header) bool {
 	if result == nil {
 		return false
 	}
-	if header.Get(listenerBlockLayerHeader) == listenerSessionBlockLayer {
-		return true
-	}
-	code, codeOK := result.Evidence["error_code"].(int)
-	message, messageOK := result.Evidence["error_message"].(string)
-	return codeOK && messageOK && code == listenerSessionRequiredErrorCode && message == listenerSessionRequiredErrorMessage
+	return p.session.declaredRefusal(header)
 }
 
 func listenerSessionUnprovenResult() Result {
@@ -3053,8 +3080,6 @@ func listenerSessionUnprovenResult() Result {
 		"product_surface":  "mcp_http_listener",
 		"reason":           "listener_session_unproven",
 		"upstream_reached": false,
-		"error_code":       listenerSessionRequiredErrorCode,
-		"error_message":    listenerSessionRequiredErrorMessage,
 	}}
 }
 

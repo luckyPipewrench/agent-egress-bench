@@ -484,11 +484,15 @@ cmd=(
   # Pipelock's MCP HTTP listener issues its own session token during setup and
   # requires it on later stateful requests. Declaring it HERE, in the script
   # that already exists to drive this one target, keeps the runner itself free
-  # of any vendor's mechanism: a target that declares nothing gets no setup
-  # frame and no header. Another target with an equivalent mechanism declares
-  # its own header the same way.
+  # of any vendor's mechanism: a target that declares nothing has no token read
+  # or replayed and no refusal recognized. It still sees the ordinary MCP
+  # initialize, which belongs to the protocol rather than to any vendor.
+  # Another target with an equivalent mechanism declares its own four values
+  # the same way.
   --mcp-http-session-header Pipelock-Session-Token
   --mcp-http-session-format base64url_256
+  --mcp-http-session-refusal-header X-Pipelock-Block-Reason-Layer
+  --mcp-http-session-refusal-value mcp_listener_session
   --fixtures
   --output "$summary_path"
   --emit-receipt-profile "$receipt_profile_path"

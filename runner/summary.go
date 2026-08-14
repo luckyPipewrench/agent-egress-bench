@@ -118,6 +118,11 @@ type RunProvenance struct {
 	// stays auditable without one.
 	MCPHTTPSessionHeader string
 	MCPHTTPSessionFormat string
+	// How that target signals it refused a request for want of a session, so
+	// the runner can tell transport failure from a decision about the case
+	// without knowing any particular vendor's refusal shape.
+	MCPHTTPSessionRefusalHeader string
+	MCPHTTPSessionRefusalValue  string
 }
 
 // CaseCount tracks routed, historical N/A, and adapter-unreachable rows. The
