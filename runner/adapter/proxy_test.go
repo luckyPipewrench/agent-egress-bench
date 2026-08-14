@@ -3167,15 +3167,20 @@ func TestRunMCPHTTP_ResponseCasesUseFixtureRequestResponseDirection(t *testing.T
 	// This adapter declares no listener session, so the target sees ONLY the
 	// case's own methods and no setup frame. That is the neutrality property
 	// the declaration exists to protect: a target that needs no handshake
-	// absorbs nothing on behalf of a target that does, and this sequence is
-	// identical to the one observed before the handshake existed.
+	// absorbs nothing on behalf of a target that does: it is never sent a
+	// vendor header, and it is never asked to honor one.
 	//
-	// Assert the exact sequence rather than a prefix. An extra frame here is
-	// the whole defect, so a length-only or contains-style check would pass
-	// while the runner quietly injected traffic into every target.
+	// It does see the ordinary MCP lifecycle. Initialize opens every real MCP
+	// client's session, so sending it is protocol conformance rather than an
+	// accommodation, and a server that enforces the lifecycle would reject a
+	// bare tools/list before the case reached the egress path under test.
+	//
+	// Assert the exact sequence rather than a prefix. A stray extra frame is
+	// the defect this guards, so a length-only or contains-style check would
+	// pass while the runner quietly injected traffic into every target.
 	want := []string{
-		"tools/list",               // definition case
-		"tools/list", "tools/call", // result case: bootstrap, then the call
+		"initialize", "tools/list", // definition case
+		"initialize", "tools/list", "tools/call", // result case: bootstrap, then the call
 	}
 	if len(methods) != len(want) {
 		t.Fatalf("gateway methods = %v, want %v", methods, want)
@@ -4665,7 +4670,17 @@ func TestRunMCPHTTP_ConcurrentCasesKeepListenerTokensSeparate(t *testing.T) {
 			if sequence == caseCount {
 				close(allSetupsStarted)
 			}
-			<-allSetupsStarted
+			// Bound the barrier. An unconditional receive here blocks forever
+			// when a case fails before it sends setup, because the channel then
+			// never closes. The deferred listener.Close waits on this handler,
+			// so the package times out instead of the test failing on its own
+			// terms, and a timeout reports far less than an assertion does.
+			select {
+			case <-allSetupsStarted:
+			case <-time.After(5 * time.Second):
+				t.Errorf("timed out waiting for %d concurrent setup requests, saw %d", caseCount, issued.Load())
+				return
+			}
 			token := fmt.Sprintf("%043d", sequence)
 			tokenUses.Store(token, &atomic.Int64{})
 			w.Header().Set(testListenerSessionHeader, token)
@@ -4880,9 +4895,14 @@ func TestRunMCPHTTP_UndeclaredSessionSendsNoSetupFrame(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("result = %+v, want a measured case", result)
 	}
-	want := []string{"tools/call"}
-	if len(methods) != len(want) || methods[0] != want[0] {
-		t.Fatalf("target observed %v, want exactly %v with no setup frame", methods, want)
+	// An undeclared target still sees the ordinary MCP lifecycle. Initialize
+	// belongs to the protocol, not to any vendor, and a server that enforces it
+	// would reject a bare tools/call before the case reached the egress path.
+	// The neutrality invariant is the token assertion below, not the absence of
+	// a standard frame.
+	want := []string{"initialize", "tools/call"}
+	if len(methods) != len(want) || methods[0] != want[0] || methods[1] != want[1] {
+		t.Fatalf("target observed %v, want exactly %v", methods, want)
 	}
 	if sawTokenReply.Load() {
 		t.Fatal("runner replayed a session token to a target that declared none")

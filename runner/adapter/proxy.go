@@ -2899,6 +2899,8 @@ const (
 	// so 43 characters. Named rather than assumed, so a target declaring a
 	// different shape is checked against its own.
 	listenerSessionFormatBase64URL256 = "base64url_256"
+	// 256 bits in unpadded URL-safe base64 is 43 characters.
+	listenerSessionTokenLengthBase64URL256 = 43
 	// Structured block-reason layer, emitted on every refusal from the
 	// listener's session layer regardless of which one fired.
 	listenerBlockLayerHeader  = "X-Pipelock-Block-Reason-Layer"
@@ -2919,14 +2921,15 @@ const (
 // The setup frame is adapter transport setup, in the same class as opening the
 // connection. It is not part of any case's wire input, and the caller still
 // proves delivery of the case's own messages separately.
+//
+// Initialization is NOT conditional on the declaration. Every MCP client opens
+// with initialize before it lists or calls tools, so a runner that skips it
+// sends a protocol-invalid sequence, and a server that enforces the lifecycle
+// rejects the case before it reaches the egress path under test. That turns a
+// measurement into an error and looks like a finding. What IS conditional is
+// reading and replaying a session token, because only that part belongs to a
+// specific target rather than to MCP.
 func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, client *http.Client) string {
-	// No declaration, no setup frame. This is the branch that keeps the change
-	// neutral: a target that declares no session observes exactly the traffic
-	// it observed before, rather than absorbing an extra frame it never needed
-	// so that one other target could be measured.
-	if p.mcpHTTPSessionHeader == "" {
-		return ""
-	}
 	// Setup is recognized only on a non-batch initialize that carries no
 	// negotiated protocol version, so this frame must stay exactly that shape.
 	// Do not add an Mcp-Protocol-Version header here: it makes the target treat
@@ -2958,7 +2961,9 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return ""
 	}
-	return resp.Header.Get(p.mcpHTTPSessionHeader)
+	// Read the token only from a declared header. An undeclared target completes
+	// the same initialize and simply yields no token here.
+	return p.declaredSessionToken(resp.Header)
 }
 
 // declaredSessionToken reads an issued token from the declared header only.
@@ -3003,7 +3008,7 @@ func validListenerSessionToken(token, format string) bool {
 		}
 	}
 	if format == listenerSessionFormatBase64URL256 {
-		if len(token) != 43 {
+		if len(token) != listenerSessionTokenLengthBase64URL256 {
 			return false
 		}
 		for i := 0; i < len(token); i++ {
