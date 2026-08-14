@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -4371,7 +4372,7 @@ func TestRunMCPHTTP_ReplaysListenerIssuedSessionToken(t *testing.T) {
 	}
 	defer upstream.Close()
 
-	const issuedToken = "listener-issued-token-value"
+	const issuedToken = "0123456789012345678901234567890123456789012"
 	var refusedMissing, carriedToken atomic.Int64
 	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, readErr := io.ReadAll(r.Body)
@@ -4440,5 +4441,347 @@ func TestRunMCPHTTP_ReplaysListenerIssuedSessionToken(t *testing.T) {
 	}
 	if carriedToken.Load() == 0 {
 		t.Fatal("no request carried the issued session token")
+	}
+}
+
+// A listener-session refusal is not case delivery evidence: the protected
+// upstream never received the case. If setup was unavailable or failed to
+// issue a usable token, the runner must leave that case unmeasured instead of
+// awarding the listener a block.
+func TestRunMCPHTTP_ListenerSessionRefusalIsUnproven(t *testing.T) {
+	var methods []string
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read listener request: %v", err)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		methods = append(methods, request.Method)
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method == "initialize" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","error":{"code":-32003,"message":"pipelock session setup unavailable"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"stateful MCP listener request requires an authenticated principal or a legacy Pipelock session token"}}`))
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	result := a.Run(Case{
+		ID: "listener-session-refusal", Transport: "mcp_http", InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "safe_tool"},
+		}}},
+	}, time.Second)
+
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "listener_session_unproven" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want an unproven listener-session skip", result)
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("listener-session refusal proved a verdict: delivery=%v observed=%v", result.DeliveryProven, result.VerdictObserved)
+	}
+	wantMethods := []string{"initialize", "tools/call"}
+	if !slices.Equal(methods, wantMethods) {
+		t.Fatalf("listener methods = %v, want %v", methods, wantMethods)
+	}
+}
+
+func TestRunMCPHTTP_TokenlessSetupOmitsListenerSessionHeader(t *testing.T) {
+	var upstreamCalls atomic.Int64
+	var methods []string
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read listener request: %v", err)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		methods = append(methods, request.Method)
+		if got := r.Header.Get(listenerSessionTokenHeader); got != "" {
+			t.Errorf("%s = %q, want absent when setup issued no token", listenerSessionTokenHeader, got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method == "initialize" {
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
+			return
+		}
+		upstreamCalls.Add(1)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`))
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPUpstreamCallCounter(upstreamCalls.Load)
+	result := a.Run(Case{
+		ID: "tokenless-listener-session", Transport: "mcp_http", InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "safe_tool"},
+		}}},
+	}, time.Second)
+
+	if result.Err != nil || result.Verdict != "allow" || !result.DeliveryProven || !result.VerdictObserved {
+		t.Fatalf("result = %+v, want a delivered tokenless allow", result)
+	}
+	wantMethods := []string{"initialize", "tools/call"}
+	if !slices.Equal(methods, wantMethods) {
+		t.Fatalf("listener methods = %v, want %v", methods, wantMethods)
+	}
+}
+
+func TestRunMCPHTTP_MalformedListenerSessionTokenIsUnproven(t *testing.T) {
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read listener request: %v", err)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method == "initialize" {
+			w.Header().Set(listenerSessionTokenHeader, "malformed-token")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
+			return
+		}
+		if got := r.Header.Get(listenerSessionTokenHeader); got != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"pipelock: upstream error: invalid Pipelock-Session-Token header"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"stateful MCP listener request requires an authenticated principal or a legacy Pipelock session token"}}`))
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	result := a.Run(Case{
+		ID: "malformed-listener-token", Transport: "mcp_http", InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "safe_tool"},
+		}}},
+	}, time.Second)
+
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "listener_session_unproven" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want an unproven malformed-token skip", result)
+	}
+}
+
+func TestRunMCPHTTP_SetupDoesNotProveCaseDelivery(t *testing.T) {
+	var upstreamCalls atomic.Int64
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read listener request: %v", err)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method == "initialize" {
+			upstreamCalls.Add(1)
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`))
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPUpstreamCallCounter(upstreamCalls.Load)
+	result := a.Run(Case{
+		ID: "setup-is-not-delivery", Transport: "mcp_http", InputType: "mcp_tool_call",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": "safe_tool"},
+		}}},
+	}, time.Second)
+
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["upstream_reached"] != false {
+		t.Fatalf("result = %+v, want an unproven case delivery", result)
+	}
+	if result.Evidence["upstream_calls_before"] != int64(1) || result.Evidence["upstream_calls_after"] != int64(1) {
+		t.Fatalf("upstream call proof = before=%v after=%v, want setup excluded from the case interval", result.Evidence["upstream_calls_before"], result.Evidence["upstream_calls_after"])
+	}
+	if result.DeliveryProven || result.VerdictObserved {
+		t.Fatalf("setup-only delivery proved a verdict: delivery=%v observed=%v", result.DeliveryProven, result.VerdictObserved)
+	}
+}
+
+func TestRunMCPHTTP_ConcurrentCasesKeepListenerTokensSeparate(t *testing.T) {
+	const caseCount = 2
+	var issued atomic.Int64
+	var upstreamCalls atomic.Int64
+	var tokenUses sync.Map // map[string]*atomic.Int64
+	allSetupsStarted := make(chan struct{})
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read listener request: %v", err)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method == "initialize" {
+			sequence := issued.Add(1)
+			if sequence == caseCount {
+				close(allSetupsStarted)
+			}
+			<-allSetupsStarted
+			token := fmt.Sprintf("%043d", sequence)
+			tokenUses.Store(token, &atomic.Int64{})
+			w.Header().Set(listenerSessionTokenHeader, token)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
+			return
+		}
+		token := r.Header.Get(listenerSessionTokenHeader)
+		value, ok := tokenUses.Load(token)
+		if !ok {
+			t.Errorf("case token %q was not issued", token)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		value.(*atomic.Int64).Add(1)
+		upstreamCalls.Add(1)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`))
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPUpstreamCallCounter(upstreamCalls.Load)
+	results := make(chan Result, caseCount)
+	var wg sync.WaitGroup
+	for i := 0; i < caseCount; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results <- a.Run(Case{
+				ID: fmt.Sprintf("concurrent-listener-token-%d", i), Transport: "mcp_http", InputType: "mcp_tool_call",
+				Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+					"jsonrpc": "2.0", "id": i + 1, "method": "tools/call", "params": map[string]interface{}{"name": "safe_tool"},
+				}}},
+			}, time.Second)
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	for result := range results {
+		if result.Err != nil || result.Verdict != "allow" || !result.DeliveryProven || !result.VerdictObserved {
+			t.Fatalf("result = %+v, want a delivered concurrent allow", result)
+		}
+	}
+	if got := issued.Load(); got != caseCount {
+		t.Fatalf("initialize count = %d, want one per case (%d)", got, caseCount)
+	}
+	seen := 0
+	tokenUses.Range(func(token, value interface{}) bool {
+		seen++
+		if got := value.(*atomic.Int64).Load(); got != 1 {
+			t.Errorf("token %q used %d times, want once", token, got)
+		}
+		return true
+	})
+	if seen != caseCount {
+		t.Fatalf("issued token count = %d, want %d", seen, caseCount)
+	}
+}
+
+// TestRunMCPHTTP_SiblingListenerSessionRefusalIsUnproven covers the OTHER
+// refusal from the listener's session layer: a legacy token presented against
+// current-protocol state. It carries a different message from the
+// session-required refusal, so matching that one sentence does not catch it,
+// and it would otherwise be scored as the target blocking the case.
+//
+// Matching the structured layer header covers every refusal from that layer,
+// including ones added later, without the runner having to enumerate messages.
+func TestRunMCPHTTP_SiblingListenerSessionRefusalIsUnproven(t *testing.T) {
+	upstream, err := fixture.StartMCPHTTP()
+	if err != nil {
+		t.Fatalf("StartMCPHTTP: %v", err)
+	}
+	defer upstream.Close()
+
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("read listener request: %v", readErr)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		if request.Method == "initialize" {
+			// Issue a well-formed token so the runner replays it and reaches
+			// the refusal below, rather than stopping at format validation.
+			w.Header().Set("Pipelock-Session-Token", "0123456789abcdefghijklmnopqrstuvwxyzABCDEFG")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
+			return
+		}
+		// The sibling refusal: same layer, different message, never forwarded
+		// upstream. Verbatim from pipelock's rejectLegacyTokenForCurrentProtocol.
+		w.Header().Set("X-Pipelock-Block-Reason-Layer", "mcp_listener_session")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"pipelock: upstream error: legacy Pipelock session token cannot select current-protocol listener state"}}`))
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPFixture(upstream)
+
+	result := a.runMCPHTTP(Case{
+		ID: "http-sibling-session-refusal", Transport: "mcp_http", InputType: "mcp_input",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+			"params": map[string]interface{}{"name": "safe_tool", "arguments": map[string]interface{}{}},
+		}}},
+	}, time.Second)
+
+	if result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want an unproven listener-session skip, not a scored verdict", result)
+	}
+	if result.Evidence["reason"] != "listener_session_unproven" {
+		t.Fatalf("evidence reason = %v, want listener_session_unproven", result.Evidence["reason"])
+	}
+	if result.Evidence["upstream_reached"] != false {
+		t.Fatalf("evidence upstream_reached = %v, want false", result.Evidence["upstream_reached"])
 	}
 }

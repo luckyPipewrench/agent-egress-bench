@@ -2608,12 +2608,18 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+				if listenerSessionRefusalIsUnproven(verdict, resp.Header) {
+					return listenerSessionUnprovenResult()
+				}
 				return *verdict
 			}
 			return classifyResponse(resp.StatusCode, string(body))
 		}
 		responses++
 		if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+			if listenerSessionRefusalIsUnproven(verdict, resp.Header) {
+				return listenerSessionUnprovenResult()
+			}
 			return *verdict
 		}
 	}
@@ -2865,7 +2871,15 @@ func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *ht
 // issues its own token during setup and requires it on later stateful
 // requests. The runner replays whatever token the target issued; it never
 // mints, guesses, or reuses one across cases.
-const listenerSessionTokenHeader = "Pipelock-Session-Token"
+const (
+	listenerSessionTokenHeader          = "Pipelock-Session-Token"
+	listenerSessionRequiredErrorCode    = -32003
+	listenerSessionRequiredErrorMessage = "stateful MCP listener request requires an authenticated principal or a legacy Pipelock session token"
+	// Structured block-reason layer, emitted on every refusal from the
+	// listener's session layer regardless of which one fired.
+	listenerBlockLayerHeader  = "X-Pipelock-Block-Reason-Layer"
+	listenerSessionBlockLayer = "mcp_listener_session"
+)
 
 // establishMCPHTTPListenerSession performs the listener setup handshake and
 // returns the token the target issued, or an empty string when the target
@@ -2919,9 +2933,63 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 // setListenerSessionToken replays an issued token on a later stateful request.
 // It is a no-op when the target issued none.
 func setListenerSessionToken(req *http.Request, token string) {
-	if token != "" {
+	if validListenerSessionToken(token) {
 		req.Header.Set(listenerSessionTokenHeader, token)
 	}
+}
+
+// validListenerSessionToken matches the listener-issued bearer format. Do not
+// replay an arbitrary response header into a later case: a malformed value is
+// not a session capability and Pipelock rejects it before the case reaches the
+// upstream fixture.
+func validListenerSessionToken(token string) bool {
+	if len(token) != 43 {
+		return false
+	}
+	for i := 0; i < len(token); i++ {
+		if (token[i] < 'A' || token[i] > 'Z') &&
+			(token[i] < 'a' || token[i] > 'z') &&
+			(token[i] < '0' || token[i] > '9') &&
+			token[i] != '-' && token[i] != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// listenerSessionRefusalIsUnproven recognizes the listener's own refusal
+// before it forwards a case. That is transport/setup failure, not evidence
+// that the target evaluated and blocked the case.
+//
+// Match the structured layer header first and the exact message only as a
+// fallback. The header is a machine-readable contract field, so it survives a
+// reworded message and it covers EVERY refusal from this layer rather than the
+// one sentence sampled while writing this. Pipelock has at least two: a
+// missing session and a legacy token presented against current-protocol state.
+//
+// Deliberately NOT "any block that did not reach upstream": a proxy blocking
+// exfiltration before forwarding is the product working, and treating those as
+// unproven would erase real detections wholesale.
+func listenerSessionRefusalIsUnproven(result *Result, header http.Header) bool {
+	if result == nil {
+		return false
+	}
+	if header.Get(listenerBlockLayerHeader) == listenerSessionBlockLayer {
+		return true
+	}
+	code, codeOK := result.Evidence["error_code"].(int)
+	message, messageOK := result.Evidence["error_message"].(string)
+	return codeOK && messageOK && code == listenerSessionRequiredErrorCode && message == listenerSessionRequiredErrorMessage
+}
+
+func listenerSessionUnprovenResult() Result {
+	return Result{Verdict: "skip", Evidence: map[string]interface{}{
+		"product_surface":  "mcp_http_listener",
+		"reason":           "listener_session_unproven",
+		"upstream_reached": false,
+		"error_code":       listenerSessionRequiredErrorCode,
+		"error_message":    listenerSessionRequiredErrorMessage,
+	}}
 }
 
 func newMCPHTTPClient(timeout time.Duration) *http.Client {
