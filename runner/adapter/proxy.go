@@ -543,16 +543,18 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	expectedUpstreamMessages := countCorpusWebSocketMessages(frames)
 	expectedRSV1Frames := countCorpusRSV1Frames(frames)
 	upstreamBefore, _ := p.webSocketUpstreamMessageCount()
+	var frameWriteErr error
 	for _, raw := range frames {
 		frame, _ := raw.(map[string]interface{})
 		if err := writeCorpusWebSocketFrame(conn, frame); err != nil {
-			return Result{
-				Verdict: "skip",
-				Evidence: map[string]interface{}{
-					"reason": "connection_closed_while_writing_frame",
-					"detail": truncate(err.Error(), 120),
-				},
-			}
+			// The peer can send a close frame while the remaining corpus
+			// frames are still being written. Preserve that write failure so
+			// an EOF without a close stays unproven, but first read any close
+			// already sent by the peer. RSV1 attribution requires the received
+			// protocol close and the marker-scoped fixture outcome below; a
+			// write failure alone never becomes containment proof.
+			frameWriteErr = err
+			break
 		}
 	}
 
@@ -568,8 +570,14 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	// Budget: the first frame gets the full timeout (proxy may need time to
 	// reassemble fragments and run scanners). Subsequent reads use a short
 	// idle window so allow-cases don't pay the full timeout per case.
-	firstReadDeadline := runDeadline
 	const idleWindow = 500 * time.Millisecond
+	firstReadDeadline := runDeadline
+	if frameWriteErr != nil {
+		closeReadDeadline := time.Now().Add(idleWindow)
+		if closeReadDeadline.Before(firstReadDeadline) {
+			firstReadDeadline = closeReadDeadline
+		}
+	}
 	var lastFrame struct {
 		opcode       int
 		payloadBytes int
@@ -577,16 +585,41 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	}
 	for {
 		var dl time.Time
-		if lastFrame.seen {
-			dl = time.Now().Add(idleWindow)
-		} else {
+		switch {
+		case frameWriteErr != nil:
+			// After a write failure this loop exists only to collect a close
+			// the peer already sent, so it gets ONE fixed window. Renewing per
+			// frame here would let a peer that keeps talking stretch that
+			// collection out to the full case deadline, which is the opposite
+			// of the bounded read the write-failure path is supposed to be.
 			dl = firstReadDeadline
+		case lastFrame.seen:
+			dl = time.Now().Add(idleWindow)
+		default:
+			dl = firstReadDeadline
+		}
+		// The idle window is per-read, so a peer that sends something before
+		// each window expires renews it forever and the loop outlives the case
+		// deadline it was given. Clamp to that deadline: a chatty target must
+		// not be able to hold a case open indefinitely, which on a benchmark
+		// stalls the whole run rather than scoring anything.
+		if dl.After(runDeadline) {
+			dl = runDeadline
 		}
 		if deadlineErr := conn.SetReadDeadline(dl); deadlineErr != nil {
 			return Result{Err: fmt.Errorf("case %s: ws read deadline: %w", c.ID, deadlineErr)}
 		}
 		opcode, payload, err := readWebSocketFrame(br)
 		if err != nil {
+			if frameWriteErr != nil {
+				return Result{
+					Verdict: "skip",
+					Evidence: map[string]interface{}{
+						"reason": "connection_closed_while_writing_frame",
+						"detail": truncate(frameWriteErr.Error(), 120),
+					},
+				}
+			}
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				ev := map[string]interface{}{
 					"scanner": "websocket_proxy",

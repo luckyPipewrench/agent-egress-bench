@@ -5045,3 +5045,84 @@ func TestListenerSessionDeclaration_Validate(t *testing.T) {
 		})
 	}
 }
+
+// TestRunWebSocketFrameViaProxy_ChattyPeerCannotOutlastRunDeadline pins the read
+// loop to the case deadline.
+//
+// The per-read idle window is renewed on every iteration once any frame has
+// arrived, so a peer that sends something before each window expires renews it
+// forever. Without a clamp the loop outlives the deadline the case was given,
+// and on a benchmark one chatty target stalls the whole run instead of scoring
+// anything. A target under measurement is exactly the party that must not get to
+// decide how long measurement takes.
+func TestRunWebSocketFrameViaProxy_ChattyPeerCannotOutlastRunDeadline(t *testing.T) {
+	const runTimeout = 300 * time.Millisecond
+
+	stop := make(chan struct{})
+	defer close(stop)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Errorf("test server does not support hijacking")
+			return
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		defer conn.Close() //nolint:errcheck // test cleanup
+		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
+			return
+		}
+		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
+			return
+		}
+		// Never close. Emit a frame well inside the idle window so the window is
+		// always renewed before it can expire.
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("noise")); err != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	a, _ := NewProxyAdapter(srv.Listener.Addr().String(), "", "", "")
+
+	// Run it off the test goroutine so a regression FAILS here rather than
+	// hanging until the package timeout. The bug under test is an unbounded
+	// wait, so a test that waits for it to finish inherits the same defect.
+	done := make(chan time.Duration, 1)
+	go func() {
+		start := time.Now()
+		_ = a.runWebSocketFrameViaProxy(Case{
+			ID:        "ws-chatty-peer",
+			Transport: "websocket",
+			InputType: "websocket_frame",
+			Payload: map[string]interface{}{
+				"url":    "wss://example.com/ws",
+				"frames": []interface{}{map[string]interface{}{"opcode": "text", "payload": "probe"}},
+			},
+		}, runTimeout)
+		done <- time.Since(start)
+	}()
+
+	// Generous ceiling. The point is that the run ends on its own deadline
+	// rather than lasting as long as the peer keeps talking.
+	select {
+	case elapsed := <-done:
+		if elapsed > 5*runTimeout {
+			t.Fatalf("run took %s under a %s case timeout, want termination near the case deadline", elapsed, runTimeout)
+		}
+	case <-time.After(5 * runTimeout):
+		t.Fatalf("run outlived %s under a %s case timeout, so a talking peer controls the run length", 5*runTimeout, runTimeout)
+	}
+}
