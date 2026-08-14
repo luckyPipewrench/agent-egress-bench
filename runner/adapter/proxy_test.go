@@ -3164,16 +3164,18 @@ func TestRunMCPHTTP_ResponseCasesUseFixtureRequestResponseDirection(t *testing.T
 			t.Fatalf("%s result = %+v, want fixture-proven allow", tc.ID, result)
 		}
 	}
-	// Each case opens exactly one session, so its ordinary MCP initialize leads
-	// the case's own methods. Real MCP clients always initialize before calling,
-	// and a target that issues a session token only does so during that setup.
-	// Assert the exact sequence, including the initialize count: a second
-	// initialize inside one case would mean a helper opened its own redundant
-	// session, which is what sending setup inside a tool-definition lease did
-	// before, perturbing the very delivery proof the lease exists to make exact.
+	// This adapter declares no listener session, so the target sees ONLY the
+	// case's own methods and no setup frame. That is the neutrality property
+	// the declaration exists to protect: a target that needs no handshake
+	// absorbs nothing on behalf of a target that does, and this sequence is
+	// identical to the one observed before the handshake existed.
+	//
+	// Assert the exact sequence rather than a prefix. An extra frame here is
+	// the whole defect, so a length-only or contains-style check would pass
+	// while the runner quietly injected traffic into every target.
 	want := []string{
-		"initialize", "tools/list", // definition case
-		"initialize", "tools/list", "tools/call", // result case: bootstrap, then the call
+		"tools/list",               // definition case
+		"tools/list", "tools/call", // result case: bootstrap, then the call
 	}
 	if len(methods) != len(want) {
 		t.Fatalf("gateway methods = %v, want %v", methods, want)
@@ -4389,14 +4391,14 @@ func TestRunMCPHTTP_ReplaysListenerIssuedSessionToken(t *testing.T) {
 		}
 		// Setup issues the token, exactly as a stateful listener does.
 		if request.Method == "initialize" {
-			w.Header().Set("Pipelock-Session-Token", issuedToken)
+			w.Header().Set(testListenerSessionHeader, issuedToken)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
 			return
 		}
 		// Every later request must carry it back, or it is refused the way a
 		// real listener refuses an unbound stateful request.
-		if r.Header.Get("Pipelock-Session-Token") != issuedToken {
+		if r.Header.Get(testListenerSessionHeader) != issuedToken {
 			refusedMissing.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
@@ -4423,6 +4425,7 @@ func TestRunMCPHTTP_ReplaysListenerIssuedSessionToken(t *testing.T) {
 	a := &ProxyAdapter{}
 	a.SetMCPHTTPURL(listener.URL)
 	a.SetMCPHTTPFixture(upstream)
+	a.SetMCPHTTPListenerSession(testListenerSessionHeader, testListenerSessionFormat)
 
 	result := a.runMCPHTTP(Case{
 		ID: "http-tool-definition-token", Transport: "mcp_http", InputType: "mcp_tool_definition",
@@ -4477,6 +4480,7 @@ func TestRunMCPHTTP_ListenerSessionRefusalIsUnproven(t *testing.T) {
 
 	a := &ProxyAdapter{}
 	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPListenerSession(testListenerSessionHeader, testListenerSessionFormat)
 	result := a.Run(Case{
 		ID: "listener-session-refusal", Transport: "mcp_http", InputType: "mcp_tool_call",
 		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
@@ -4513,8 +4517,8 @@ func TestRunMCPHTTP_TokenlessSetupOmitsListenerSessionHeader(t *testing.T) {
 			return
 		}
 		methods = append(methods, request.Method)
-		if got := r.Header.Get(listenerSessionTokenHeader); got != "" {
-			t.Errorf("%s = %q, want absent when setup issued no token", listenerSessionTokenHeader, got)
+		if got := r.Header.Get(testListenerSessionHeader); got != "" {
+			t.Errorf("%s = %q, want absent when setup issued no token", testListenerSessionHeader, got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if request.Method == "initialize" {
@@ -4528,6 +4532,7 @@ func TestRunMCPHTTP_TokenlessSetupOmitsListenerSessionHeader(t *testing.T) {
 
 	a := &ProxyAdapter{}
 	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPListenerSession(testListenerSessionHeader, testListenerSessionFormat)
 	a.SetMCPHTTPUpstreamCallCounter(upstreamCalls.Load)
 	result := a.Run(Case{
 		ID: "tokenless-listener-session", Transport: "mcp_http", InputType: "mcp_tool_call",
@@ -4561,11 +4566,11 @@ func TestRunMCPHTTP_MalformedListenerSessionTokenIsUnproven(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if request.Method == "initialize" {
-			w.Header().Set(listenerSessionTokenHeader, "malformed-token")
+			w.Header().Set(testListenerSessionHeader, "malformed-token")
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
 			return
 		}
-		if got := r.Header.Get(listenerSessionTokenHeader); got != "" {
+		if got := r.Header.Get(testListenerSessionHeader); got != "" {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"pipelock: upstream error: invalid Pipelock-Session-Token header"}}`))
 			return
@@ -4577,6 +4582,7 @@ func TestRunMCPHTTP_MalformedListenerSessionTokenIsUnproven(t *testing.T) {
 
 	a := &ProxyAdapter{}
 	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPListenerSession(testListenerSessionHeader, testListenerSessionFormat)
 	result := a.Run(Case{
 		ID: "malformed-listener-token", Transport: "mcp_http", InputType: "mcp_tool_call",
 		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
@@ -4614,6 +4620,7 @@ func TestRunMCPHTTP_SetupDoesNotProveCaseDelivery(t *testing.T) {
 
 	a := &ProxyAdapter{}
 	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPListenerSession(testListenerSessionHeader, testListenerSessionFormat)
 	a.SetMCPHTTPUpstreamCallCounter(upstreamCalls.Load)
 	result := a.Run(Case{
 		ID: "setup-is-not-delivery", Transport: "mcp_http", InputType: "mcp_tool_call",
@@ -4661,11 +4668,11 @@ func TestRunMCPHTTP_ConcurrentCasesKeepListenerTokensSeparate(t *testing.T) {
 			<-allSetupsStarted
 			token := fmt.Sprintf("%043d", sequence)
 			tokenUses.Store(token, &atomic.Int64{})
-			w.Header().Set(listenerSessionTokenHeader, token)
+			w.Header().Set(testListenerSessionHeader, token)
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
 			return
 		}
-		token := r.Header.Get(listenerSessionTokenHeader)
+		token := r.Header.Get(testListenerSessionHeader)
 		value, ok := tokenUses.Load(token)
 		if !ok {
 			t.Errorf("case token %q was not issued", token)
@@ -4680,6 +4687,7 @@ func TestRunMCPHTTP_ConcurrentCasesKeepListenerTokensSeparate(t *testing.T) {
 
 	a := &ProxyAdapter{}
 	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPListenerSession(testListenerSessionHeader, testListenerSessionFormat)
 	a.SetMCPHTTPUpstreamCallCounter(upstreamCalls.Load)
 	results := make(chan Result, caseCount)
 	var wg sync.WaitGroup
@@ -4749,7 +4757,7 @@ func TestRunMCPHTTP_SiblingListenerSessionRefusalIsUnproven(t *testing.T) {
 		if request.Method == "initialize" {
 			// Issue a well-formed token so the runner replays it and reaches
 			// the refusal below, rather than stopping at format validation.
-			w.Header().Set("Pipelock-Session-Token", "0123456789abcdefghijklmnopqrstuvwxyzABCDEFG")
+			w.Header().Set(testListenerSessionHeader, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFG")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
 			return
@@ -4766,6 +4774,7 @@ func TestRunMCPHTTP_SiblingListenerSessionRefusalIsUnproven(t *testing.T) {
 	a := &ProxyAdapter{}
 	a.SetMCPHTTPURL(listener.URL)
 	a.SetMCPHTTPFixture(upstream)
+	a.SetMCPHTTPListenerSession(testListenerSessionHeader, testListenerSessionFormat)
 
 	result := a.runMCPHTTP(Case{
 		ID: "http-sibling-session-refusal", Transport: "mcp_http", InputType: "mcp_input",
@@ -4783,5 +4792,99 @@ func TestRunMCPHTTP_SiblingListenerSessionRefusalIsUnproven(t *testing.T) {
 	}
 	if result.Evidence["upstream_reached"] != false {
 		t.Fatalf("evidence upstream_reached = %v, want false", result.Evidence["upstream_reached"])
+	}
+}
+
+// The generic session tests declare a NON-vendor header on purpose. If the
+// handshake only worked for one vendor's header name, the runner would still
+// carry that vendor's mechanism in shared code, which is the defect the
+// declaration exists to remove.
+const (
+	testListenerSessionHeader = "X-Example-Session-Token"
+	testListenerSessionFormat = "base64url_256"
+)
+
+// TestRunMCPHTTP_UndeclaredSessionSendsNoSetupFrame is the neutrality
+// invariant, asserted on its own rather than left implicit in a sequence
+// check elsewhere.
+//
+// A benchmark is only worth its score if every target runs the same path. When
+// the runner learned one target's session handshake, it began sending an extra
+// initialize to every MCP HTTP target and reading a vendor-named response
+// header, so one vendor's mechanism sat in the path all the others ran through.
+// A target that declares no session must observe exactly its own case traffic,
+// and must never have a response header of its own interpreted as a session
+// capability.
+func TestRunMCPHTTP_UndeclaredSessionSendsNoSetupFrame(t *testing.T) {
+	upstream, err := fixture.StartMCPHTTP()
+	if err != nil {
+		t.Fatalf("StartMCPHTTP: %v", err)
+	}
+	defer upstream.Close()
+
+	var (
+		methods       []string
+		sawTokenReply atomic.Bool
+	)
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("read listener request: %v", readErr)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		methods = append(methods, request.Method)
+		// An undeclared runner must not replay any header back, including one
+		// this target happens to emit under a name another vendor uses.
+		for _, name := range []string{testListenerSessionHeader, "Pipelock-Session-Token"} {
+			if r.Header.Get(name) != "" {
+				sawTokenReply.Store(true)
+			}
+		}
+		w.Header().Set("Pipelock-Session-Token", "0123456789012345678901234567890123456789012")
+		upstreamResp, postErr := http.Post(upstream.URL(), "application/json", bytes.NewReader(body)) //nolint:gosec,noctx // runner-owned fixture
+		if postErr != nil {
+			t.Errorf("forward to fixture: %v", postErr)
+			return
+		}
+		defer func() { _ = upstreamResp.Body.Close() }()
+		response, readErr := io.ReadAll(upstreamResp.Body)
+		if readErr != nil {
+			t.Errorf("read fixture response: %v", readErr)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(response)
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPFixture(upstream)
+	// Deliberately no SetMCPHTTPListenerSession call.
+
+	result := a.runMCPHTTP(Case{
+		ID: "http-undeclared-session", Transport: "mcp_http", InputType: "mcp_input",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+			"params": map[string]interface{}{"name": "safe_tool", "arguments": map[string]interface{}{}},
+		}}},
+	}, time.Second)
+
+	if result.Err != nil {
+		t.Fatalf("result = %+v, want a measured case", result)
+	}
+	want := []string{"tools/call"}
+	if len(methods) != len(want) || methods[0] != want[0] {
+		t.Fatalf("target observed %v, want exactly %v with no setup frame", methods, want)
+	}
+	if sawTokenReply.Load() {
+		t.Fatal("runner replayed a session token to a target that declared none")
 	}
 }

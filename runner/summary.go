@@ -109,6 +109,15 @@ type RunProvenance struct {
 	AdapterOwner     string
 	TargetConfigRef  string
 	TargetConfigSHA  string
+	// How this run drove an MCP HTTP target that issues its own session token.
+	// Empty for a target that declares none, which is every target by default.
+	//
+	// Not serialized into the summary: that schema is closed, so carrying it
+	// there is a published-contract change and its own decision. The exact
+	// flags already appear in the run's recorded command, so an accommodation
+	// stays auditable without one.
+	MCPHTTPSessionHeader string
+	MCPHTTPSessionFormat string
 }
 
 // CaseCount tracks routed, historical N/A, and adapter-unreachable rows. The

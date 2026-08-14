@@ -25,6 +25,8 @@ func main() {
 	scanToken := flag.String("scan-token", "", "bearer token for scan API authentication")
 	mcpCmd := flag.String("mcp-cmd", "", "MCP stdio proxy command for MCP/A2A/shell cases; commands may opt in to AEB_MCP_STDIO_UPSTREAM_ADDR for runner-observed upstream proof")
 	mcpHTTPURL := flag.String("mcp-http-url", "", "MCP HTTP listener URL for mcp_http cases")
+	mcpHTTPSessionHeader := flag.String("mcp-http-session-header", "", "response header a target uses to issue an MCP HTTP session token, replayed on that case's later requests; unset means the runner performs no session setup and sends no extra frame")
+	mcpHTTPSessionFormat := flag.String("mcp-http-session-format", "", "declared format of the issued session token, currently base64url_256; unset accepts any header-safe value")
 	managedProxyCmd := flag.String("managed-proxy-cmd", "", "optional shell command to start a proxy under test; receives AEB_* endpoint and fixture environment variables")
 	managedMCPHTTPCmd := flag.String("managed-mcp-http-cmd", "", "optional shell command to start an MCP HTTP endpoint under test; receives AEB_* endpoint and fixture environment variables")
 	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
@@ -109,6 +111,8 @@ func main() {
 		prov.TargetConfigRef = *targetConfig
 		prov.TargetConfigSHA = sha
 	}
+	prov.MCPHTTPSessionHeader = *mcpHTTPSessionHeader
+	prov.MCPHTTPSessionFormat = *mcpHTTPSessionFormat
 
 	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion, prov); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -213,6 +217,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		if mcpHTTPURL != "" {
 			pa.SetMCPHTTPURL(mcpHTTPURL)
 		}
+		pa.SetMCPHTTPListenerSession(prov.MCPHTTPSessionHeader, prov.MCPHTTPSessionFormat)
 		adapt = pa
 	case "mcp-gateway":
 		if gatewayPluginPath == "" {

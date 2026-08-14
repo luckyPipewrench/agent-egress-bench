@@ -481,6 +481,14 @@ cmd=(
   --managed-mcp-http-cmd "$managed_mcp_http_cmd"
   --cases ./cases
   --profile examples/pipelock/tool-profile.json
+  # Pipelock's MCP HTTP listener issues its own session token during setup and
+  # requires it on later stateful requests. Declaring it HERE, in the script
+  # that already exists to drive this one target, keeps the runner itself free
+  # of any vendor's mechanism: a target that declares nothing gets no setup
+  # frame and no header. Another target with an equivalent mechanism declares
+  # its own header the same way.
+  --mcp-http-session-header Pipelock-Session-Token
+  --mcp-http-session-format base64url_256
   --fixtures
   --output "$summary_path"
   --emit-receipt-profile "$receipt_profile_path"
