@@ -35,8 +35,12 @@ jobs:
 
       - uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
 
+  # No needs: codeql. The two jobs were ordered so their SARIF uploads could not
+  # race each other, and this job no longer uploads SARIF, so the ordering has
+  # nothing left to protect. Keeping it would make a CodeQL failure or skip take
+  # the Scorecard publication and its artifact down with it, which is a coupling
+  # that costs availability and buys nothing.
   scorecard:
-    needs: codeql
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -85,6 +89,3 @@ jobs:
       # them to the OpenSSF Scorecard API that backs the badge and the public
       # viewer, and the artifact above keeps the raw SARIF. This narrows where
       # the grade is displayed. It does not withhold it.
-      #
-      # needs: codeql above is retained. It orders the two jobs and costs
-      # nothing now that only one of them uploads SARIF.
