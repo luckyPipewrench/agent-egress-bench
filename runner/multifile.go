@@ -370,8 +370,8 @@ func requireMultiFileYAMLKeys(data []byte, path string) error {
 }
 
 func validateMultiFileCaseMetadata(c MultiFileCase, caseYAMLPath string) error {
-	if c.SchemaVersion != activeSchemaVersion {
-		return fmt.Errorf("%s: schema_version must be %d, got %d", caseYAMLPath, activeSchemaVersion, c.SchemaVersion)
+	if c.SchemaVersion != activeMultiFileCaseSchemaVersion {
+		return fmt.Errorf("%s: schema_version must be %d, got %d", caseYAMLPath, activeMultiFileCaseSchemaVersion, c.SchemaVersion)
 	}
 	if strings.TrimSpace(c.ID) == "" {
 		return fmt.Errorf("%s: id must be non-empty", caseYAMLPath)

@@ -203,7 +203,7 @@ func TestBuyerReportRefusesReceiptProfileWithMismatchedRegistryReference(t *test
 	// in both provenance records. Its registry reference alone belongs to a
 	// different run, so only an explicit cross-artifact binding can reject it.
 	receipt := validProfile()
-	receipt.SchemaVersion = activeSchemaVersion
+	receipt.SchemaVersion = activeReceiptProfileSchemaVersion
 	receipt.Tool = fixture.summary["tool"].(string)
 	receipt.ToolVersion = fixture.summary["tool_version"].(string)
 	receipt.CorpusVersion = fixture.summary["corpus_version"].(string)
@@ -245,7 +245,7 @@ func TestV4ReceiptProfileBindingStaysReadableAfterActiveSchemaAdvances(t *testin
 	fixture.write(t, dir)
 
 	// This is intentionally a literal v4 receipt beside a literal v4 result.
-	// When activeSchemaVersion advances, this historical pair must remain
+	// When activeReceiptProfileSchemaVersion advances, this historical pair must remain
 	// readable rather than being compared to the schema used for new output.
 	receipt := validProfile()
 	receipt.SchemaVersion = 4
@@ -464,7 +464,7 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	receipt := validProfile()
-	receipt.SchemaVersion = activeSchemaVersion
+	receipt.SchemaVersion = activeReceiptProfileSchemaVersion
 	receipt.Tool = f.summary["tool"].(string)
 	receipt.ToolVersion = f.summary["tool_version"].(string)
 	receipt.CorpusVersion = f.summary["corpus_version"].(string)

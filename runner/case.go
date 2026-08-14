@@ -11,9 +11,26 @@ import (
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
+// Active writer version, one constant per artifact family.
+//
+// contracts/artifacts.json states that each family versions independently, and
+// docs/GOVERNANCE.md says two families are not compatible merely because their
+// numbers match. A single shared constant contradicted both: every family that
+// read it moved whenever any one of them needed to move, so a change confined
+// to result rows would have forced cases, profiles and receipt profiles to a
+// new version they had no reason to leave. That is version churn manufactured
+// by the code rather than required by the contract.
+//
+// These are all 4 today. That is a coincidence of history, not a relationship.
+// Change exactly the one whose format changed, and leave the others alone.
 const (
-	activeSchemaVersion = 4
-	v4SchemaVersion     = 4
+	activeCaseSchemaVersion           = 4
+	activeMultiFileCaseSchemaVersion  = 4
+	activeResultSchemaVersion         = 4
+	activeToolProfileSchemaVersion    = 4
+	activeReceiptProfileSchemaVersion = 4
+
+	v4SchemaVersion = 4
 )
 
 // Case represents a single active benchmark case. CapabilityTags are
@@ -99,8 +116,8 @@ func loadCases(dir string) ([]Case, error) {
 		if err := json.Unmarshal(data, &c); err != nil {
 			return fmt.Errorf("parsing %s: %w", path, err)
 		}
-		if c.SchemaVersion != activeSchemaVersion {
-			return fmt.Errorf("%s: schema_version must be %d for scoring, got %d", path, activeSchemaVersion, c.SchemaVersion)
+		if c.SchemaVersion != activeCaseSchemaVersion {
+			return fmt.Errorf("%s: schema_version must be %d for scoring, got %d", path, activeCaseSchemaVersion, c.SchemaVersion)
 		}
 		// Schema v4 historically accepted warn. Active result rows are binary,
 		// so a warning expectation is measured as the benign allow boundary.
@@ -145,8 +162,8 @@ func loadProfile(path string) (Profile, error) {
 		return Profile{}, fmt.Errorf("parsing profile: %w", err)
 	}
 	p.profileDir = filepath.Dir(path)
-	if p.SchemaVersion != activeSchemaVersion {
-		return Profile{}, fmt.Errorf("profile schema_version must be %d for scoring, got %d", activeSchemaVersion, p.SchemaVersion)
+	if p.SchemaVersion != activeToolProfileSchemaVersion {
+		return Profile{}, fmt.Errorf("profile schema_version must be %d for scoring, got %d", activeToolProfileSchemaVersion, p.SchemaVersion)
 	}
 	if err := validateProfileForRun(p); err != nil {
 		return Profile{}, fmt.Errorf("invalid profile: %w", err)

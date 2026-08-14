@@ -67,7 +67,7 @@ func TestLoadCasesNormalizesSchemaV4WarnToAllow(t *testing.T) {
 func TestLoadCasesDoesNotFilterSupersession(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
-		// Must track activeSchemaVersion: loadCases returns an error rather than
+		// Must track activeCaseSchemaVersion: loadCases returns an error rather than
 		// skipping on a version mismatch, so a stale version here makes this test
 		// fail on its own loadCases call before it tests supersession at all.
 		"old.json": `{"schema_version":4,"id":"old"}`,
@@ -278,7 +278,7 @@ func TestMCPToolResultDLPCasesAreReportingLabeledAndProfileIndependent(t *testin
 			continue
 		}
 		seen[c.ID] = true
-		if c.SchemaVersion != activeSchemaVersion || c.Transport != "mcp_stdio" || c.InputType != "mcp_tool_result" {
+		if c.SchemaVersion != activeCaseSchemaVersion || c.Transport != "mcp_stdio" || c.InputType != "mcp_tool_result" {
 			t.Errorf("case %s active route = v%d/%s/%s", c.ID, c.SchemaVersion, c.Transport, c.InputType)
 		}
 		if c.ExpectedVerdict != expected {

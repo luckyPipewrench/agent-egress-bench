@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 REQUIRED_CONSTANTS = {
-    ("runner/case.go", "activeSchemaVersion"),
+    ("runner/case.go", "activeCaseSchemaVersion"),
     ("validate/main.go", "activeCaseSchemaVersion"),
     ("runner/summary.go", "activeSummarySchemaVersion"),
 }
@@ -538,7 +538,7 @@ def check(root, manifest_path):
         fail(f"versioned schema inventory mismatch; unlisted={missing}, nonexistent={extra}")
     if not REQUIRED_CONSTANTS.issubset(listed_constants):
         fail(f"governing constants missing from manifest: {sorted(REQUIRED_CONSTANTS - listed_constants)}")
-    case_runner = constant_values[("runner/case.go", "activeSchemaVersion")]
+    case_runner = constant_values[("runner/case.go", "activeCaseSchemaVersion")]
     case_validator = constant_values[("validate/main.go", "activeCaseSchemaVersion")]
     if case_runner != case_validator:
         fail(f"runner and validator case schema versions differ: {case_runner} != {case_validator}")

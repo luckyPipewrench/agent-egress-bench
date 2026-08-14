@@ -899,13 +899,13 @@ func TestBuildReceiptProfile_UnreachableRowsAreNotScoredAsOutcomes(t *testing.T)
 // keep passing while the version it actually emits goes unchecked.
 func TestValidateReceiptProfile_AcceptsActiveSchemaVersion(t *testing.T) {
 	rp := validProfile()
-	rp.SchemaVersion = activeSchemaVersion
+	rp.SchemaVersion = activeReceiptProfileSchemaVersion
 	// The active version additionally binds the capability-registry snapshot,
 	// which the frozen v3 fixture does not carry. That requirement is exactly
 	// what had no positive coverage.
 	rp.CapabilityRegistry = testRegistryReference
 	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
-		t.Fatalf("active schema version %d rejected: %v", activeSchemaVersion, issues)
+		t.Fatalf("active schema version %d rejected: %v", activeReceiptProfileSchemaVersion, issues)
 	}
 }
 
@@ -914,7 +914,7 @@ func TestValidateReceiptProfile_AcceptsActiveSchemaVersion(t *testing.T) {
 // test defends is a requirement that can be deleted by accident.
 func TestValidateReceiptProfile_ActiveVersionRequiresRegistryBinding(t *testing.T) {
 	rp := validProfile()
-	rp.SchemaVersion = activeSchemaVersion
+	rp.SchemaVersion = activeReceiptProfileSchemaVersion
 	rp.CapabilityRegistry = capabilityregistry.Reference{}
 	expectIssueMatch(t, rp, "capability_registry must contain")
 }

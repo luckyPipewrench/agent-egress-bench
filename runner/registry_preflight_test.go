@@ -20,7 +20,7 @@ var testRegistryReference = capabilityregistry.Reference{
 
 func v4TestProfile() Profile {
 	return Profile{
-		SchemaVersion:      activeSchemaVersion,
+		SchemaVersion:      activeToolProfileSchemaVersion,
 		Tool:               "test-tool",
 		ToolVersion:        "1.0.0",
 		RunnerVersion:      "v1",
@@ -46,7 +46,7 @@ func validV4Profile(t *testing.T) map[string]any {
 
 func v4TestCase() Case {
 	return Case{
-		SchemaVersion:   activeSchemaVersion,
+		SchemaVersion:   activeCaseSchemaVersion,
 		ID:              "registry-test-001",
 		Category:        "url",
 		InputType:       "url",
