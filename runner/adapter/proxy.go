@@ -590,6 +590,14 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		} else {
 			dl = firstReadDeadline
 		}
+		// The idle window is per-read, so a peer that sends something before
+		// each window expires renews it forever and the loop outlives the case
+		// deadline it was given. Clamp to that deadline: a chatty target must
+		// not be able to hold a case open indefinitely, which on a benchmark
+		// stalls the whole run rather than scoring anything.
+		if dl.After(runDeadline) {
+			dl = runDeadline
+		}
 		if deadlineErr := conn.SetReadDeadline(dl); deadlineErr != nil {
 			return Result{Err: fmt.Errorf("case %s: ws read deadline: %w", c.ID, deadlineErr)}
 		}
