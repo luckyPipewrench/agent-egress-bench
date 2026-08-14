@@ -585,9 +585,17 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 	}
 	for {
 		var dl time.Time
-		if lastFrame.seen {
+		switch {
+		case frameWriteErr != nil:
+			// After a write failure this loop exists only to collect a close
+			// the peer already sent, so it gets ONE fixed window. Renewing per
+			// frame here would let a peer that keeps talking stretch that
+			// collection out to the full case deadline, which is the opposite
+			// of the bounded read the write-failure path is supposed to be.
+			dl = firstReadDeadline
+		case lastFrame.seen:
 			dl = time.Now().Add(idleWindow)
-		} else {
+		default:
 			dl = firstReadDeadline
 		}
 		// The idle window is per-read, so a peer that sends something before
