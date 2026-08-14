@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Structural tests for Scorecard's dependency on same-workflow SAST evidence."""
+"""Structural tests for the trusted Scorecard job and what it may publish."""
 
 import unittest
 from pathlib import Path
@@ -15,11 +15,37 @@ class ScorecardWorkflowTest(unittest.TestCase):
         self.workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
         self.triggers = self.workflow.split("concurrency:", 1)[0]
 
-    def test_scorecard_runs_after_codeql_in_security_workflow(self):
+    def test_scorecard_stays_in_the_trusted_security_workflow(self):
+        # These three are the reason the job was moved here: a standalone
+        # workflow triggered by workflow_run runs privileged and then checks out
+        # the triggering run's code, which is a privilege-escalation shape.
         self.assertFalse(RETIRED_WORKFLOW.exists())
-        self.assertRegex(self.workflow, r"(?m)^  scorecard:\n    needs: codeql$")
         self.assertNotIn("workflow_run", self.workflow)
         self.assertRegex(self.workflow, r"(?m)^permissions: read-all$")
+
+    def test_scorecard_does_not_upload_sarif_or_wait_on_codeql(self):
+        # This replaces an assertion that required `needs: codeql`. That
+        # ordering existed so the two jobs could not upload SARIF concurrently.
+        # Scorecard no longer uploads SARIF at all, so the ordering has nothing
+        # left to protect, and keeping it would let a CodeQL failure take the
+        # Scorecard publication down with it.
+        #
+        # Both halves are asserted together on purpose: dropping the dependency
+        # is only safe while this job uploads no SARIF, so re-adding an upload
+        # without restoring the ordering must fail here.
+        self.assertNotIn("upload-sarif", self.workflow)
+        self.assertNotRegex(self.workflow, r"(?m)^  scorecard:\n    needs:")
+        jobs = self.workflow.split("jobs:\n", 1)[1]
+        _, scorecard = jobs.split("\n  scorecard:\n", 1)
+        # Match a permission LINE, not the phrase. The workflow comment explains
+        # why the permission is absent and contains the same words, so a
+        # substring check passes for the wrong reason and then fails when the
+        # explanation is written.
+        self.assertNotRegex(
+            scorecard.split("steps:", 1)[0],
+            r"(?m)^\s+security-events:\s*write\s*$",
+        )
+        self.assertIn("publish_results: true", scorecard)
 
     def test_pull_request_code_never_reaches_scorecard(self):
         self.assertRegex(
