@@ -4475,7 +4475,7 @@ func TestRunMCPHTTP_ListenerSessionRefusalIsUnproven(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if request.Method == "initialize" {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","error":{"code":-32003,"message":"pipelock session setup unavailable"}}`))
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","error":{"code":-32003,"message":"example target: session setup unavailable"}}`))
 			return
 		}
 		w.Header().Set(testListenerRefusalHeader, testListenerRefusalValue)
@@ -4578,7 +4578,7 @@ func TestRunMCPHTTP_MalformedListenerSessionTokenIsUnproven(t *testing.T) {
 		}
 		if got := r.Header.Get(testListenerSessionHeader); got != "" {
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"pipelock: upstream error: invalid Pipelock-Session-Token header"}}`))
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"example target: invalid session token header"}}`))
 			return
 		}
 		w.Header().Set(testListenerRefusalHeader, testListenerRefusalValue)
@@ -4779,8 +4779,9 @@ func TestRunMCPHTTP_SiblingListenerSessionRefusalIsUnproven(t *testing.T) {
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
 			return
 		}
-		// The sibling refusal: same layer, different message, never forwarded
-		// upstream. Verbatim from pipelock's rejectLegacyTokenForCurrentProtocol.
+		// A second declared refusal shape: same declared signature, different
+		// wording, never forwarded upstream. A target may refuse for more than
+		// one reason, and the declaration has to cover all of them.
 		w.Header().Set(testListenerRefusalHeader, testListenerRefusalValue)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -4818,7 +4819,7 @@ func TestRunMCPHTTP_SiblingListenerSessionRefusalIsUnproven(t *testing.T) {
 // declaration exists to remove.
 const (
 	testListenerSessionHeader = "X-Example-Session-Token"
-	testListenerSessionFormat = "base64url_256"
+	testListenerSessionFormat = listenerSessionFormatBase64URL256
 	// A refusal signature that belongs to no real vendor. The runner must
 	// recognize a declared refusal by declaration alone, so the tests declare
 	// one no shipping product emits.
@@ -4928,5 +4929,119 @@ func testListenerSessionDeclaration() ListenerSessionDeclaration {
 		TokenFormat:   testListenerSessionFormat,
 		RefusalHeader: testListenerRefusalHeader,
 		RefusalValue:  testListenerRefusalValue,
+	}
+}
+
+// TestRunMCPHTTP_DeclaredRefusalWithUnclassifiedBodyIsUnproven pins the branch
+// order in runMCPHTTP.
+//
+// The declared refusal has to be tested before anything inspects the body. When
+// the check lived inside the block-classification branch, a target that set its
+// declared refusal header and answered with a body this runner does not
+// recognize fell through to status-only classification, and a 403 there became
+// a scored block the target never made about the case. A refusal is transport
+// failure whatever the body looks like, and a benchmark that credits it as a
+// block reports a detection that never happened.
+func TestRunMCPHTTP_DeclaredRefusalWithUnclassifiedBodyIsUnproven(t *testing.T) {
+	upstream, err := fixture.StartMCPHTTP()
+	if err != nil {
+		t.Fatalf("StartMCPHTTP: %v", err)
+	}
+	defer upstream.Close()
+
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("read listener request: %v", readErr)
+			return
+		}
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode listener request: %v", err)
+			return
+		}
+		if request.Method == "initialize" {
+			w.Header().Set(testListenerSessionHeader, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFG")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"setup","result":{}}`))
+			return
+		}
+		// Declared refusal, and a body no JSON-RPC classifier recognizes. Plain
+		// text with a 403 is what a reverse proxy or gateway in front of the
+		// target commonly returns.
+		w.Header().Set(testListenerRefusalHeader, testListenerRefusalValue)
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("forbidden"))
+	}))
+	defer listener.Close()
+
+	a := &ProxyAdapter{}
+	a.SetMCPHTTPURL(listener.URL)
+	a.SetMCPHTTPFixture(upstream)
+	a.SetMCPHTTPListenerSession(testListenerSessionDeclaration())
+
+	result := a.runMCPHTTP(Case{
+		ID: "http-declared-refusal-unclassified", Transport: "mcp_http", InputType: "mcp_input",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+			"params": map[string]interface{}{"name": "safe_tool", "arguments": map[string]interface{}{}},
+		}}},
+	}, time.Second)
+
+	if result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want an unproven skip rather than a scored verdict", result)
+	}
+	if result.Evidence["reason"] != "listener_session_unproven" {
+		t.Fatalf("evidence reason = %v, want listener_session_unproven", result.Evidence["reason"])
+	}
+	if result.Evidence["upstream_reached"] != false {
+		t.Fatalf("evidence upstream_reached = %v, want false", result.Evidence["upstream_reached"])
+	}
+}
+
+// TestListenerSessionDeclaration_Validate covers the two misconfigurations that
+// are silent at run time: a half-declared refusal never matches, so every
+// refusal scores as a block, and an unrecognized format name falls back to the
+// loose check, so strict validation disappears without a message.
+func TestListenerSessionDeclaration_Validate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		decl    ListenerSessionDeclaration
+		wantErr bool
+	}{
+		{name: "empty is valid", decl: ListenerSessionDeclaration{}},
+		{name: "complete declaration", decl: testListenerSessionDeclaration()},
+		{
+			name:    "refusal header without value",
+			decl:    ListenerSessionDeclaration{RefusalHeader: testListenerRefusalHeader},
+			wantErr: true,
+		},
+		{
+			name:    "refusal value without header",
+			decl:    ListenerSessionDeclaration{RefusalValue: testListenerRefusalValue},
+			wantErr: true,
+		},
+		{
+			name:    "unknown token format",
+			decl:    ListenerSessionDeclaration{TokenHeader: testListenerSessionHeader, TokenFormat: "base64url256"},
+			wantErr: true,
+		},
+		{
+			name: "empty token format is permitted",
+			decl: ListenerSessionDeclaration{TokenHeader: testListenerSessionHeader},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.decl.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatal("Validate() = nil, want an error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("Validate() = %v, want nil", err)
+			}
+		})
 	}
 }

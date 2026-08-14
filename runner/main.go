@@ -221,12 +221,19 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		if mcpHTTPURL != "" {
 			pa.SetMCPHTTPURL(mcpHTTPURL)
 		}
-		pa.SetMCPHTTPListenerSession(adapter.ListenerSessionDeclaration{
+		session := adapter.ListenerSessionDeclaration{
 			TokenHeader:   prov.MCPHTTPSessionHeader,
 			TokenFormat:   prov.MCPHTTPSessionFormat,
 			RefusalHeader: prov.MCPHTTPSessionRefusalHeader,
 			RefusalValue:  prov.MCPHTTPSessionRefusalValue,
-		})
+		}
+		// Refuse a half-declared session before the run rather than after the
+		// score. The adapter owns the rule so one definition covers the CLI and
+		// every other caller.
+		if err := session.Validate(); err != nil {
+			return fmt.Errorf("mcp http session declaration: %w", err)
+		}
+		pa.SetMCPHTTPListenerSession(session)
 		adapt = pa
 	case "mcp-gateway":
 		if gatewayPluginPath == "" {

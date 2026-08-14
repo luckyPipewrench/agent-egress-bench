@@ -2658,20 +2658,23 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		_ = resp.Body.Close()
+		// Test the declared refusal FIRST, before anything looks at the body.
+		// Gating this on the body classifying as a block leaves the hole the
+		// declaration exists to close: a target that sets its refusal header
+		// but answers with a body this runner does not recognize falls through
+		// to status-only classification, and a 403 there becomes a scored block
+		// the target never made about the case.
+		if p.session.declaredRefusal(resp.Header) {
+			return listenerSessionUnprovenResult()
+		}
 		if resp.StatusCode >= 400 {
 			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
-				if p.listenerSessionRefusalIsUnproven(verdict, resp.Header) {
-					return listenerSessionUnprovenResult()
-				}
 				return *verdict
 			}
 			return classifyResponse(resp.StatusCode, string(body))
 		}
 		responses++
 		if verdict := classifyMCPHTTPBlock(body); verdict != nil {
-			if p.listenerSessionRefusalIsUnproven(verdict, resp.Header) {
-				return listenerSessionUnprovenResult()
-			}
 			return *verdict
 		}
 	}
@@ -3055,24 +3058,22 @@ func validListenerSessionToken(token, format string) bool {
 	return true
 }
 
-// listenerSessionRefusalIsUnproven recognizes the listener's own refusal
-// before it forwards a case. That is transport/setup failure, not evidence
-// that the target evaluated and blocked the case.
+// Validate reports why a declaration cannot be honored, so a misconfiguration
+// stops the run instead of silently changing the score.
 //
-// Match the structured layer header first and the exact message only as a
-// fallback. The header is a machine-readable contract field, so it survives a
-// reworded message and it covers EVERY refusal from this layer rather than the
-// one sentence sampled while writing this. Pipelock has at least two: a
-// missing session and a legacy token presented against current-protocol state.
-//
-// Deliberately NOT "any block that did not reach upstream": a proxy blocking
-// exfiltration before forwarding is the product working, and treating those as
-// unproven would erase real detections wholesale.
-func (p *ProxyAdapter) listenerSessionRefusalIsUnproven(result *Result, header http.Header) bool {
-	if result == nil {
-		return false
+// Both failures below are quiet by construction, which is what makes them worth
+// rejecting up front: a half-declared refusal never matches, so every refusal
+// becomes a block the target never made, and an unrecognized format name falls
+// back to the loose header-safety check, so a typo disables strict validation
+// without saying so.
+func (d ListenerSessionDeclaration) Validate() error {
+	if (d.RefusalHeader == "") != (d.RefusalValue == "") {
+		return fmt.Errorf("a declared session refusal needs both a header and a value, got header=%q value=%q", d.RefusalHeader, d.RefusalValue)
 	}
-	return p.session.declaredRefusal(header)
+	if d.TokenFormat != "" && d.TokenFormat != listenerSessionFormatBase64URL256 {
+		return fmt.Errorf("unknown session token format %q, available: %s", d.TokenFormat, listenerSessionFormatBase64URL256)
+	}
+	return nil
 }
 
 func listenerSessionUnprovenResult() Result {
