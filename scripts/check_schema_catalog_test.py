@@ -57,6 +57,34 @@ class SchemaCatalogTest(unittest.TestCase):
     def test_accepts_catalog_derived_from_schema_files(self):
         self.assertEqual(1, check_schema_catalog.check(self.root, roots=TEST_ROOTS))
 
+    def test_released_catalog_has_source_commit_pinned_retrieval_urls(self):
+        commit = "a" * 40
+        catalog = json.loads(
+            schema_catalog.rendered_catalog(
+                self.root,
+                source_commit=commit,
+                release="v1.2.3",
+                roots=TEST_ROOTS,
+            )
+        )
+        self.assertEqual(commit, catalog["source_commit"])
+        self.assertEqual("v1.2.3", catalog["release"])
+        self.assertEqual(
+            f"https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/schemas/fixture-v1.schema.json",
+            catalog["schemas"][0]["retrieval_url"],
+        )
+
+    def test_released_catalog_refuses_an_unpinned_or_invalid_source_commit(self):
+        with self.assertRaisesRegex(ValueError, "requires both a source commit and release name"):
+            schema_catalog.rendered_catalog(self.root, release="v1.2.3", roots=TEST_ROOTS)
+        with self.assertRaisesRegex(ValueError, "40-character lower-case Git SHA"):
+            schema_catalog.rendered_catalog(
+                self.root,
+                source_commit="main",
+                release="v1.2.3",
+                roots=TEST_ROOTS,
+            )
+
     def test_rejects_stale_hash_after_schema_bytes_change(self):
         self.schema.write_text(
             json.dumps(
@@ -97,6 +125,14 @@ class SchemaCatalogTest(unittest.TestCase):
         catalog = self.root / "schemas" / "index.json"
         content = json.loads(catalog.read_text(encoding="utf-8"))
         content["schemas"][0]["path"] = "schemas/other-v1.schema.json"
+        catalog.write_text(json.dumps(content) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "is stale"):
+            check_schema_catalog.check(self.root, roots=TEST_ROOTS)
+
+    def test_rejects_a_release_only_retrieval_url_in_the_committed_catalog(self):
+        catalog = self.root / "schemas" / "index.json"
+        content = json.loads(catalog.read_text(encoding="utf-8"))
+        content["schemas"][0]["retrieval_url"] = "https://example.invalid/schema.json"
         catalog.write_text(json.dumps(content) + "\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "is stale"):
             check_schema_catalog.check(self.root, roots=TEST_ROOTS)

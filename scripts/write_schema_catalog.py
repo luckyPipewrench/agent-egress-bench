@@ -37,6 +37,8 @@ def main() -> int:
         parser.error(f"refusing to write through a symlinked destination: {destination}")
 
     source_commit = head_commit(root) if args.release else ""
+    if args.release and not source_commit:
+        parser.error("a released schema catalog requires a checked-out Git commit")
     destination.write_bytes(rendered_catalog(root, source_commit, args.release))
     print(f"write-schema-catalog: wrote {destination}")
     return 0

@@ -91,6 +91,7 @@ class ReleaseBuildTest(unittest.TestCase):
         binary_overrides: dict[tuple[str, str], bytes] | None = None,
         mode_overrides: dict[tuple[str, str], int] | None = None,
     ) -> None:
+        self.write_schema_assets(dist, identity)
         binary_overrides = binary_overrides or {}
         mode_overrides = mode_overrides or {}
         for platform in release["runner"]["platforms"]:
@@ -112,6 +113,33 @@ class ReleaseBuildTest(unittest.TestCase):
                         info.size = len(runner)
                         info.mode = mode_overrides.get((goos, goarch), 0o755)
                         archive.addfile(info, __import__("io").BytesIO(runner))
+
+    def write_schema_assets(self, dist: Path, identity: bytes) -> None:
+        release = json.loads(identity)
+        version = release["release"]["version"]
+        catalog = dist / f"agent-egress-bench_{version}_schema-catalog.json"
+        subprocess.run(
+            [
+                sys.executable,
+                str(self.root / "scripts/write_schema_catalog.py"),
+                "--release",
+                release["release"]["tag"],
+                "--output",
+                str(catalog),
+            ],
+            check=True,
+        )
+        self.invoke(
+            "schema-bundle",
+            "--repo-root",
+            str(self.root),
+            "--identity",
+            str(self.identity),
+            "--catalog",
+            str(catalog),
+            "--dist",
+            str(dist),
+        )
 
     def forge_release(self, identity: dict) -> Path:
         release = Path(self.temp.name) / "fakerel"
@@ -329,6 +357,156 @@ class ReleaseBuildTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("checksum mismatch", result.stderr)
+
+    def test_release_binds_citation_metadata_into_the_data_bundle_and_checksums(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        self.assertEqual(
+            hashlib.sha256((self.root / "CITATION.cff").read_bytes()).hexdigest(),
+            identity["data_files"]["CITATION.cff"],
+        )
+        data_bundle = next(dist.glob("*_data.tar.gz"))
+        with tarfile.open(data_bundle, "r:gz") as archive:
+            citation = archive.extractfile("CITATION.cff")
+            self.assertIsNotNone(citation)
+            assert citation is not None
+            self.assertEqual((self.root / "CITATION.cff").read_bytes(), citation.read())
+        self.write_runner_archives(dist, self.identity.read_bytes(), identity)
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        checksums = {
+            name: digest
+            for digest, name in (
+                line.split("  ", 1)
+                for line in (dist / "checksums.txt").read_text(encoding="utf-8").splitlines()
+            )
+        }
+        self.assertIn(data_bundle.name, checksums)
+        self.assertEqual(hashlib.sha256(data_bundle.read_bytes()).hexdigest(), checksums[data_bundle.name])
+        self.invoke("verify", "--release-dir", str(dist))
+
+    def test_release_binds_a_schema_bundle_to_the_commit_pinned_catalog(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        self.write_runner_archives(dist, self.identity.read_bytes(), identity)
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        self.invoke("verify", "--release-dir", str(dist))
+
+        catalog_path = next(dist.glob("*_schema-catalog.json"))
+        bundle_path = next(dist.glob("*_schemas.tar.gz"))
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        self.assertEqual(self.commit, catalog["source_commit"])
+        self.assertEqual("snapshot", catalog["release"])
+        with tarfile.open(bundle_path, "r:gz") as archive:
+            contents = {
+                entry.name: archive.extractfile(entry).read()
+                for entry in archive.getmembers()
+                if entry.isfile()
+            }
+        self.assertEqual(catalog_path.read_bytes(), contents["schemas/index.json"])
+        self.assertEqual(
+            {"schemas/index.json", *(entry["path"] for entry in catalog["schemas"])},
+            set(contents),
+        )
+        for entry in catalog["schemas"]:
+            self.assertEqual(
+                f"https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{self.commit}/{entry['path']}",
+                entry["retrieval_url"],
+            )
+            self.assertEqual(entry["sha256"], hashlib.sha256(contents[entry["path"]]).hexdigest())
+
+    def test_download_verifier_rejects_a_release_without_schema_bundle(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        next(dist.glob("*_schemas.tar.gz")).unlink()
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing its data bundle, schema artifacts, or declared runner platforms", result.stderr)
+
+    def test_download_verifier_rejects_schema_bytes_changed_after_rechecksum(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        bundle_path = next(dist.glob("*_schemas.tar.gz"))
+        catalog = json.loads(next(dist.glob("*_schema-catalog.json")).read_text(encoding="utf-8"))
+        changed_path = catalog["schemas"][0]["path"]
+        with tarfile.open(bundle_path, "r:gz") as archive:
+            contents = {
+                entry.name: archive.extractfile(entry).read()
+                for entry in archive.getmembers()
+                if entry.isfile()
+            }
+        contents[changed_path] += b"\n"
+        with tarfile.open(bundle_path, "w:gz") as archive:
+            for name, data in sorted(contents.items()):
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schema bundle digest does not match release catalog", result.stderr)
+
+    def test_download_verifier_rejects_a_substituted_schema_identity(self) -> None:
+        # A digest proves the bytes and says nothing about the name they are
+        # published under. With the catalog $id substituted, every other signal
+        # still reads green: the paths resolve, the digests match the real
+        # schemas, and the checksums are regenerated over the altered catalog.
+        # An offline consumer would register correct bytes under the wrong
+        # identity and validate against a contract it never chose.
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+
+        catalog_path = next(dist.glob("*_schema-catalog.json"))
+        bundle_path = next(dist.glob("*_schemas.tar.gz"))
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog["schemas"][0]["$id"] = "https://example.invalid/schemas/substituted-v1.schema.json"
+        catalog_bytes = (json.dumps(catalog, indent=2) + "\n").encode("utf-8")
+        catalog_path.write_bytes(catalog_bytes)
+
+        # Repack the bundle so its embedded catalog copy agrees with the asset,
+        # leaving the digest and file-list checks satisfied.
+        with tarfile.open(bundle_path, "r:gz") as archive:
+            contents = {
+                entry.name: archive.extractfile(entry).read()
+                for entry in archive.getmembers()
+                if entry.isfile()
+            }
+        contents["schemas/index.json"] = catalog_bytes
+        with tarfile.open(bundle_path, "w:gz") as archive:
+            for name, data in sorted(contents.items()):
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0, "a substituted schema identity verified clean")
+        self.assertIn("declares an $id the release catalog does not name", result.stderr)
 
     def test_download_verifier_runs_from_the_documented_extract_layout(self) -> None:
         self.prepare()

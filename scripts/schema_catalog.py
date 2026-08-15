@@ -16,7 +16,9 @@ from pathlib import Path
 
 
 VERSIONED_SCHEMA_FILENAME = re.compile(r"^.+-v[0-9]+\.schema\.json$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 CATALOG_PATH = Path("schemas/index.json")
+RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
 
 # Every directory holding published versioned schemas. The verifier copies are
 # governed assets in their own right: a consumer validating a Control Evidence
@@ -49,7 +51,7 @@ def head_commit(root: Path) -> str:
     return result.stdout.strip()
 
 
-def schema_entries(root: Path, roots=SCHEMA_ROOTS):
+def schema_entries(root: Path, source_commit: str = "", roots=SCHEMA_ROOTS):
     """Return catalog entries derived from every published schema root.
 
     `roots` is injectable for tests only. Production uses the explicit
@@ -83,7 +85,10 @@ def schema_entries(root: Path, roots=SCHEMA_ROOTS):
             # which contract applies, so refuse to publish a catalog that
             # cannot answer its own lookup.
             seen_ids.setdefault(declared, []).append((relative, digest))
-            entries.append({"path": relative, "$id": declared, "sha256": digest})
+            entry = {"path": relative, "$id": declared, "sha256": digest}
+            if source_commit:
+                entry["retrieval_url"] = RAW_SCHEMA_URL.format(commit=source_commit, path=relative)
+            entries.append(entry)
 
     for declared, occurrences in sorted(seen_ids.items()):
         digests = {digest for _, digest in occurrences}
@@ -111,6 +116,11 @@ def rendered_catalog(root: Path, source_commit: str = "", release: str = "", roo
     consumer pinning that artifact can map identity to bytes and say which
     repository state produced them.
     """
+    if bool(source_commit) != bool(release):
+        raise ValueError("a released schema catalog requires both a source commit and release name")
+    if source_commit and not COMMIT_RE.fullmatch(source_commit):
+        raise ValueError("released schema catalog source commit must be a 40-character lower-case Git SHA")
+
     catalog = {
         "format": 1,
         "repository": "https://github.com/luckyPipewrench/agent-egress-bench",
@@ -119,5 +129,5 @@ def rendered_catalog(root: Path, source_commit: str = "", release: str = "", roo
         catalog["source_commit"] = source_commit
     if release:
         catalog["release"] = release
-    catalog["schemas"] = schema_entries(root, roots)
+    catalog["schemas"] = schema_entries(root, source_commit, roots)
     return (json.dumps(catalog, indent=2) + "\n").encode("utf-8")
