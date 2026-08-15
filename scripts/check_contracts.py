@@ -8,11 +8,6 @@ import re
 import sys
 from pathlib import Path
 
-try:
-    from schema_catalog import PUBLIC_SCHEMA_ID_PREFIX
-except ModuleNotFoundError:  # Imported as scripts.check_contracts in unit tests.
-    from scripts.schema_catalog import PUBLIC_SCHEMA_ID_PREFIX
-
 
 REQUIRED_CONSTANTS = {
     ("runner/case.go", "activeCaseSchemaVersion"),
@@ -63,6 +58,7 @@ REQUIRED_RETAINED_SCHEMA_ASSETS = {
     "schemas/control-evidence-token-material-v1.schema.json",
     "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
 }
+PUBLIC_SCHEMA_ID_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/schemas/"
 VERSIONED_SCHEMA_FILENAME = re.compile(r"^.+-v([0-9]+)\.schema\.json$")
 TITLE_VERSION = re.compile(r"\bv([0-9]+)\b", re.IGNORECASE)
 

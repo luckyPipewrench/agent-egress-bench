@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-assessment-v2.schema.json",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-assessment-v2.schema.json",
   "title": "Control Evidence external assessment v2",
   "type": "object",
   "additionalProperties": false,

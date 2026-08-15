@@ -14,7 +14,7 @@
           "version": 4,
           "status": "active",
           "path": "schemas/case-v4.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/case-v4.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-v4.schema.json"
         }
       ],
       "writer": [
@@ -50,7 +50,7 @@
           "version": 4,
           "status": "active",
           "path": "schemas/multi-file-case-v4.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/multi-file-case-v4.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/multi-file-case-v4.schema.json"
         }
       ],
       "writer": [
@@ -86,7 +86,7 @@
           "version": 4,
           "status": "active",
           "path": "schemas/result-v4.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/result-v4.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v4.schema.json"
         }
       ],
       "writer": [
@@ -127,21 +127,21 @@
           "version": 1,
           "status": "frozen",
           "path": "schemas/tool-profile-v1.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v1.schema.json",
-          "sha256": "f2e9073ca251bdfad0d47c655402aced3742b3230ce8f46dec4223a1d80034a1"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v1.schema.json",
+          "sha256": "735f88aa9df75602ceeed858f8e4ad4dc1e59b973a2eba1fb233115592d588f6"
         },
         {
           "version": 3,
           "status": "frozen",
           "path": "schemas/tool-profile-v3.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v3.schema.json",
-          "sha256": "fe44f8afff452f76f949a7596feb7da561f95e02eb6e6c08721cfffa41a99a86"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v3.schema.json",
+          "sha256": "68afc04144eb645ea6366b2e4df21a682d98f99d55ad7cbba455b69da60977ae"
         },
         {
           "version": 4,
           "status": "active",
           "path": "schemas/tool-profile-v4.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v4.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v4.schema.json"
         }
       ],
       "writer": [
@@ -182,21 +182,21 @@
           "version": 1,
           "status": "frozen",
           "path": "schemas/receipt-scoring-profile-v1.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/receipt-scoring-profile-v1.schema.json",
-          "sha256": "ff0c78f267243475a64bcf628b8db09cbd87d224176db87189ec2202e2ec46d3"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v1.schema.json",
+          "sha256": "bdfe1e53208f98ee07e448d7b6990b3bed2f176fe90574fe7aa8fbfaf115c14d"
         },
         {
           "version": 3,
           "status": "frozen",
           "path": "schemas/receipt-scoring-profile-v3.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/receipt-scoring-profile-v3.schema.json",
-          "sha256": "79ab1801fbc6d42c85e000875d4112e9f52797502aa813d2184b4b9c5dad0594"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v3.schema.json",
+          "sha256": "9c02758fe709d5f373668d0f8f5c3a630dc7bd2b5e3cbf2c8708cdb13edd62bb"
         },
         {
           "version": 4,
           "status": "active",
           "path": "schemas/receipt-scoring-profile-v4.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/receipt-scoring-profile-v4.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json"
         }
       ],
       "writer": [
@@ -230,14 +230,14 @@
           "version": 4,
           "status": "frozen",
           "path": "schemas/summary-v4.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/summary-v4.schema.json",
-          "sha256": "8ce7d3d3f84a90dc8ce131143c3c0aa3108740637b5c3d00258a8d5ac6e34466"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v4.schema.json",
+          "sha256": "e856970251d322634743a5e66abae2390f1fce6f27ef17d993753c4447bfcd23"
         },
         {
           "version": 5,
           "status": "active",
           "path": "schemas/summary-v5.schema.json",
-          "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/summary-v5.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v5.schema.json"
         }
       ],
       "writer": [
@@ -372,165 +372,165 @@
   "retained_schema_assets": [
     {
       "path": "schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "10a0979860e73d50120b52e97f6d437bb64f3bb7cc1716ce64cbf66f7a24d9f3"
+      "sha256": "ff7a0bbd9850709d763f1880a0e57257892b43bb40c887271d8f233f599fac39"
     },
     {
       "path": "schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "6fbe0d9d960c2b6b0fe46892328da2e625fb6a67bd503bd9f9f0e049e7ce7cfa"
+      "sha256": "387c5e5ca83a05d109bfbaa72bd31bde049273a5884467b550f32ddae380b12e"
     },
     {
       "path": "schemas/control-evidence-buyer-reproduction-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "5ce0eae99509bcbe96bb182f3c409e79879cf3be3edf0a4d4d4f74660120b00a"
+      "sha256": "8162e4ee43928973cd425dc64b144642330fd9d4c6e12e9067e783dc6c21b0fc"
     },
     {
       "path": "schemas/control-evidence-buyer-reproduction-statement-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-statement-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-statement-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 buyer-reproduction schema. The verifier schema-copy gate refuses deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "657d96fd83297988dd8f9c0e6a204edfcc1b87b8422d086dcc41b806164c868a"
+      "sha256": "11f82e507ad222cd4b8f6122a5bdceba31c3b9b88f646a36e4225e50e1ba20fd"
     },
     {
       "path": "schemas/control-evidence-buyer-reproduction-transcript-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-transcript-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-transcript-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 buyer-reproduction schema. The verifier schema-copy gate refuses deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "317571261ae614869ef847ac35b1bbdc25d1d08735eb428eb15768f8764e71e8"
+      "sha256": "643c9ed117324dc93ecc8248e695f0b0ee2956899c39fd1b42520440a781908a"
     },
     {
       "path": "schemas/control-evidence-buyer-reproduction-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-buyer-reproduction-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 buyer-reproduction schema. The verifier schema-copy gate refuses deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "3d653bac223318f41b63493a9f94fefa997d85b24b38624dc5f3a75b41986d6b"
+      "sha256": "0835f56765a20f3ce2f39ed71d8f785f5804a92290391c1f9738f8bd90ff7135"
     },
     {
       "path": "schemas/control-evidence-clock-evidence-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-clock-evidence-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-clock-evidence-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "a179fda72801881b972cdb932da16a49cd3bb9865a2d65f6089fc2035e56b7ef"
+      "sha256": "c9d4d24b309d5ea8792539b30c36d421abf378ff8ef2ea673ca69aa81b0bab6e"
     },
     {
       "path": "schemas/control-evidence-context-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-context-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-context-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "0e242bb95b06b4ca899684659edf3bf62a8a4c495fc4e2cd4349e1c05983ee22"
+      "sha256": "c09ff4cf61a9106f1238ced64b8459849a0485635b36ef0f438cf61380f6caf0"
     },
     {
       "path": "schemas/control-evidence-dsse-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-dsse-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-dsse-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "1f42684f685b48fc87f7f7e34a2824719b46b971bd83ae6d8ccff7f3c8de93b5"
+      "sha256": "72d46fb927cc96ebe1f71d0ec2108d3cbe4b73159d1a441336bc2e417251f6e7"
     },
     {
       "path": "schemas/control-evidence-health-control-material-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-health-control-material-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-health-control-material-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "cc01044651c2ce00f8af186af2d9ab5a098434cef11bc2e5ab295613da5315e3"
+      "sha256": "6c0c8720b1bb71d1ddea9d043b91192dfbe1970847cc2e5810f4465eed0dae17"
     },
     {
       "path": "schemas/control-evidence-manifest-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-manifest-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-manifest-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "13270c8f4a7fedae88b83bbac96ce28c909802403059b14b4e1c6ed8def2ff22"
+      "sha256": "a768160a4f1f13bfa5d5d08f338f2dfc4d940ee1cd132b24165ae826a8c17194"
     },
     {
       "path": "schemas/control-evidence-observer-evidence-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-observer-evidence-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-observer-evidence-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "6ee2b5c1753a6e04b7321afe9fe7e6b97b803499bdd0bcf512eb8ada184cf5d0"
+      "sha256": "6b2cd7d1710866edc92c272bb337986f9109423e3b9a3fe6400185c77944b02b"
     },
     {
       "path": "schemas/control-evidence-outcomes-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-outcomes-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-outcomes-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "207b12565b795031b7b006b727b8e2229b9919bac9c7cd59761c740f6ca5aa74"
+      "sha256": "72445b937348c6eee11e1bd9a0b6bda798fb2c35cd4c548e514b67490b986f4a"
     },
     {
       "path": "schemas/control-evidence-requirement-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-requirement-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-requirement-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "36d035daa059d635182cb0762e501cf8de1b582c778cd7108c48f642b2898bc6"
+      "sha256": "b6e71bf7f19b036f713fa9bc547198002e0c4906ca75457948179f4abca9ee3b"
     },
     {
       "path": "schemas/control-evidence-run-envelope-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-run-envelope-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-run-envelope-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "5f69e31cc18b3dd10e453ec67c396043d4e74fb54ce96444c6cd2cc749120aa0"
+      "sha256": "24d7c95a26017fc9c5a454bc71cfb98a4786c2626eff233afa544bfb99e3d570"
     },
     {
       "path": "schemas/control-evidence-token-material-v0.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-token-material-v0.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-token-material-v0.schema.json",
       "rationale": "Frozen v0 Control Evidence schema. The v0 artifact format is published and its conformance vectors are immutable, so this file and its $id must keep existing unchanged even though nothing resolves the identifier over the network. Listed here so the gate refuses a silent deletion or an $id edit.",
-      "sha256": "0886c5878caa7d69862b438d0fda1ecc23110a21050d72145414ebe8fdf2b8d3"
+      "sha256": "adf7cc753cf20109579a6365afd2b7f470c2c53ccb31ed7f8d50fe433ba415c9"
     },
     {
       "path": "schemas/control-evidence-clock-evidence-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-clock-evidence-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-clock-evidence-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "3f00b41f8ec7942761004a182b1aa693c2011995a7ce2c5bfa583d25ce793c59"
+      "sha256": "589ddd1dd4bd5eaa8599944aeef41fa83ce6f5f8c367ab652f821076423ecab7"
     },
     {
       "path": "schemas/control-evidence-context-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-context-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-context-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "01e3ab171112bea41965002ea5e171f0e27b7c4dba1dc170dcdab804c70ec430"
+      "sha256": "a76d6176e1a8e62e84d411480cf415a539bd76ebaf68b4082f0d5d230c6ff8a7"
     },
     {
       "path": "schemas/control-evidence-dsse-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-dsse-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-dsse-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "b8b7189b3bfc9cc9f3a40a71602b96baf881c5555095a89a702bb9a15b5057fb"
+      "sha256": "ba5ccaa1a8cbab8c55c8090426c171d85b597eef76555cc02ab8e755c5c3c639"
     },
     {
       "path": "schemas/control-evidence-health-control-material-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-health-control-material-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-health-control-material-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "20367f34f0896a4729ab746c0f3eb45f83c0b82db5a57478d44a50e4ee37390a"
+      "sha256": "ad37ec8e36f1d866dc85ad97f3956382fca831e6c8f27824872db5132138d5b2"
     },
     {
       "path": "schemas/control-evidence-manifest-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-manifest-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-manifest-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "e6fc95c070e80d3c500cfed1d2e25e2f18bb5b24d6a514bbd1752dd53b9e4b93"
+      "sha256": "a2e069c17dfb30f5da97245de4d1d3d2bc1e2c40e341e324fed3fc2cf03c2308"
     },
     {
       "path": "schemas/control-evidence-observer-evidence-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-observer-evidence-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-observer-evidence-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "29610425155cdace1dd838cca8f8facacd297fab52cda5147c36d5053e9ee450"
+      "sha256": "fb79705c3d42099ccbaaeced443cd268c5a9cf17965fc3d9e8c8618a4273a045"
     },
     {
       "path": "schemas/control-evidence-outcomes-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-outcomes-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-outcomes-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "4085803376dd5e7f30eae3b07d7a49683528162c2c0b6b81f14424c819dd98ef"
+      "sha256": "72d592660fa0bf754bceee207a93d9a0bd7a6418555bb1ae12b47b36658723be"
     },
     {
       "path": "schemas/control-evidence-requirement-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-requirement-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-requirement-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "1dc05b80f1963c466a6bf08c6a4d4225540394ea623dbeb1fea3b443abdf8007"
+      "sha256": "10921c6569b27adc54fb6b96665fda8246f8233a4f4d7192fed9340db8c7eb5e"
     },
     {
       "path": "schemas/control-evidence-run-envelope-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-run-envelope-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-run-envelope-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "afb4cf600be918585a659bcb67ba16e00a9e4425dd4de8d14c3742184d9f71c5"
+      "sha256": "c163d05e563468685b9e9d3dbcd5d47c07228b2ffcb15ea1d971d8017cad739d"
     },
     {
       "path": "schemas/control-evidence-token-material-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-token-material-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-token-material-v1.schema.json",
       "rationale": "Load-bearing Control Evidence v1 package schema. The payload-bearing v1 conformance corpus and verifier schema-copy gate refuse deletion, identifier drift, or divergence from the embedded reader copy.",
-      "sha256": "ef15e51b472c1e09b503bc8ba6d720665789a2a3855243ff4d2e4cfaf8892024"
+      "sha256": "f21c52f81de312cb543fb420bad1dea9a35f4a3b0591d61e4866102b3df503b3"
     },
     {
       "path": "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
-      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-trust-policy-dsse-v1.schema.json",
       "rationale": "Load-bearing external signed trust-policy envelope contract. authentication.verifyPolicy requires JCS canonical form, the exact DSSE payloadType, exactly one signature, and a valid Ed25519 PAE signature before it trusts the policy.",
-      "sha256": "111b951820a20b4e65e5e554d5622f1125758413242aa44d520b53424d249dbe"
+      "sha256": "0963734eb213c518d46ac102a70793b77c5d74951a151ed889d127c5b850357b"
     }
   ]
 }

@@ -80,7 +80,7 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Provenance candidate | 5 | 1, 2, 4, 5 | 1, 2 | Python reader, no JSON Schema |
 | Case index, promoted record, baseline | 1 | 1 | 1 | Go or Python reader, no JSON Schema |
 
-Every versioned schema has an explicit `-vN` filename and matching resolving `$id`; [SCHEMAS.md](SCHEMAS.md) defines the identifier and discovery contract. The frozen v4 summary is `summary-v4.schema.json` and the active v5 summary is `summary-v5.schema.json`, so a path cannot silently retarget a historical contract. The repository provides no unsuffixed compatibility aliases.
+Every versioned schema has an explicit `-vN` filename and matching `$id`. The frozen v4 summary is `summary-v4.schema.json` and the active v5 summary is `summary-v5.schema.json`, so a path cannot silently retarget a historical contract. The repository provides no unsuffixed compatibility aliases.
 
 A proposed change to the active v5 summary, including the work tracked in pull request 153, may amend v5 only if every existing v5 artifact keeps the same accepted meaning, score, and verification result. Any change to those outcomes requires a new version. The owner must classify that change before publication; this policy does not decide the facts of that pull request.
 

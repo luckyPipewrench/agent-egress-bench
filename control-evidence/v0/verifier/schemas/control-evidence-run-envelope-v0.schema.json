@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-run-envelope-v0.schema.json",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-run-envelope-v0.schema.json",
   "title": "Control Evidence v0 run-envelope payload",
   "type": "object", "additionalProperties": false,
   "required": ["profile", "requirement_sha256", "challenge_nonce", "run_id", "started_at", "finished_at", "expires_at", "runner", "corpus", "tool", "policy", "adapter", "scope", "artifacts", "observations", "freshness_basis", "signer"],

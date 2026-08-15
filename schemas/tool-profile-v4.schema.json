@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v4.schema.json",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v4.schema.json",
   "title": "agent-egress-bench Tool Profile",
   "description": "Active v4 tool profile. Claims are registry-backed reporting labels only. Adapter-proven delivery and observed verdicts determine measurement.",
   "type": "object",

@@ -5,10 +5,10 @@ import json
 import sys
 from pathlib import Path
 
-from schema_catalog import CATALOG_PATH, rendered_catalog
+from schema_catalog import CATALOG_PATH, SCHEMA_ROOTS, rendered_catalog
 
 
-def check(root: Path) -> int:
+def check(root: Path, roots=SCHEMA_ROOTS) -> int:
     catalog_path = root / CATALOG_PATH
     if catalog_path.is_symlink():
         raise ValueError(f"schema catalog must be a regular file, not a symlink: {CATALOG_PATH}")
@@ -17,7 +17,7 @@ def check(root: Path) -> int:
     actual = catalog_path.read_bytes()
     if not actual:
         raise ValueError(f"empty schema catalog: {CATALOG_PATH}")
-    expected = rendered_catalog(root)
+    expected = rendered_catalog(root, roots=roots)
     if actual != expected:
         raise ValueError(
             f"{CATALOG_PATH} is stale; regenerate it from the canonical schemas with "

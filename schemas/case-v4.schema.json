@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/case-v4.schema.json",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-v4.schema.json",
   "title": "agent-egress-bench Case",
   "description": "A single test case for evaluating AI agent egress security tools. Each case specifies an input, the expected verdict (block or allow), and its delivery and observation prerequisites.",
   "type": "object",

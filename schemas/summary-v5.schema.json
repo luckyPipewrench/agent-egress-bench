@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/summary-v5.schema.json",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v5.schema.json",
   "title": "agent-egress-bench Gauntlet Summary",
   "description": "Active v5 summary. Scores contain only measured outcome rates. Field-presence observations live in diagnostics and do not establish detection accuracy or proof.",
   "type": "object",

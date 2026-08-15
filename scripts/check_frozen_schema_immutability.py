@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 """Keep frozen schema bytes immutable across commits.
 
-The sole allowed historical transition changes the former non-resolving GitHub
-browser URL to the raw-document endpoint. It may not change any other byte.
+A frozen schema's bytes are the contract. Comparison is byte-for-byte against
+the base revision, with no permitted transformation: parsed-JSON equality would
+accept a reformat, a key reorder, or an escaping change, and a consumer pinning
+a digest sees all of those as a different document.
+
+Deliberately no repair exception. An evergreen exception here is a standing
+authorization to edit exactly the files this exists to protect, and it is the
+one an author reaches for when their change is blocked. The supported route for
+changing a frozen contract is a new version. A genuine historical repair is a
+governance decision that should arrive as its own reviewed change, visible in
+the diff, rather than as a code path that quietly permits the class forever.
 """
 
 import argparse
@@ -10,11 +19,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-
-from schema_catalog import PUBLIC_SCHEMA_ID_PREFIX
-
-
-LEGACY_SCHEMA_ID_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/schemas/"
 
 
 def load_object(data, label):
@@ -41,44 +45,37 @@ def frozen_schema_paths(manifest):
     return paths
 
 
-def is_identifier_only_migration(path, before, after):
-    """Accept only the one legacy identifier rewrite for a frozen schema."""
-    before_object = load_object(before, f"base schema {path}")
-    after_object = load_object(after, f"current schema {path}")
-    filename = Path(path).name
-    if before_object.get("$id") != LEGACY_SCHEMA_ID_PREFIX + filename:
-        return False
-    if after_object.get("$id") != PUBLIC_SCHEMA_ID_PREFIX + filename:
-        return False
-    before_object.pop("$id")
-    after_object.pop("$id")
-    return before_object == after_object
-
-
-def git_show(root, revision, path):
+def git_show_bytes(root, revision, path):
     result = subprocess.run(
         ["git", "-C", str(root), "show", f"{revision}:{path}"],
         capture_output=True,
-        text=True,
     )
     if result.returncode:
-        raise ValueError(f"cannot read {path} at {revision}: {result.stderr.strip()}")
+        message = result.stderr.decode("utf-8", "replace").strip()
+        raise ValueError(f"cannot read {path} at {revision}: {message}")
     return result.stdout
 
 
 def changed_paths(root, base):
+    # Diff the whole tree, not a `schemas` pathspec. Frozen assets also live
+    # under control-evidence/**, and a pathspec that omitted them would report
+    # a clean run while a retained verifier schema was edited: a gate that
+    # passes by not looking.
     result = subprocess.run(
-        ["git", "-C", str(root), "diff", "--name-only", base, "--", "schemas"],
+        ["git", "-C", str(root), "diff", "--name-only", base],
         capture_output=True,
         text=True,
     )
     if result.returncode:
-        raise ValueError(f"cannot inspect schema changes from {base}: {result.stderr.strip()}")
+        raise ValueError(f"cannot inspect changes from {base}: {result.stderr.strip()}")
     return {line for line in result.stdout.splitlines() if line}
 
 
 def check(root, base):
-    manifest = load_object(git_show(root, base, "contracts/artifacts.json"), "base compatibility manifest")
+    manifest = load_object(
+        git_show_bytes(root, base, "contracts/artifacts.json").decode("utf-8"),
+        "base compatibility manifest",
+    )
     frozen = frozen_schema_paths(manifest)
     changed = changed_paths(root, base)
     protected_changes = sorted(changed & frozen)
@@ -86,7 +83,7 @@ def check(root, base):
         current = root / path
         if not current.is_file():
             raise ValueError(f"frozen schema was removed: {path}")
-        if not is_identifier_only_migration(path, git_show(root, base, path), current.read_text(encoding="utf-8")):
+        if current.read_bytes() != git_show_bytes(root, base, path):
             raise ValueError(f"frozen schema bytes changed: {path}")
     return len(frozen), len(protected_changes)
 
@@ -97,13 +94,13 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     try:
-        frozen, changed = check(root, args.base)
+        frozen, touched = check(root, args.base)
     except (OSError, ValueError) as exc:
         print(f"check-frozen-schema-immutability: FAIL - {exc}", file=sys.stderr)
         return 1
     print(
         "check-frozen-schema-immutability: OK "
-        f"({frozen} frozen schemas, {changed} permitted identifier migrations)"
+        f"({frozen} frozen schemas, {touched} touched and byte-identical)"
     )
     return 0
 

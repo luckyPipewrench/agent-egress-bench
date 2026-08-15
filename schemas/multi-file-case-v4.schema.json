@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/multi-file-case-v4.schema.json",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/multi-file-case-v4.schema.json",
   "title": "agent-egress-bench Multi-File Case v4",
   "description": "Metadata contract for one temporal MCP drift case directory. The document is stored as case.yaml; JSON Schema validation applies to its decoded YAML data model.",
   "type": "object",

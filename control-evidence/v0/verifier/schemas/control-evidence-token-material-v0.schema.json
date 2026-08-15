@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-token-material-v0.schema.json",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-token-material-v0.schema.json",
   "title": "Control Evidence v0 decrypted canary token material",
   "type": "object", "additionalProperties": false,
   "required": ["profile", "key_or_input_id", "tokens"],

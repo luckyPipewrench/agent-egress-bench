@@ -24,6 +24,11 @@ def load_module(name):
 schema_catalog = load_module("schema_catalog")
 check_schema_catalog = load_module("check_schema_catalog")
 
+# The catalog records whatever identity a schema declares, so the fixture uses
+# the same non-resolving shape the published schemas actually carry.
+TEST_ROOTS = ("schemas",)
+FIXTURE_ID = "https://github.com/luckyPipewrench/agent-egress-bench/schemas/fixture-v1.schema.json"
+
 
 class SchemaCatalogTest(unittest.TestCase):
     def setUp(self):
@@ -35,26 +40,28 @@ class SchemaCatalogTest(unittest.TestCase):
         self.schema.write_text(
             json.dumps(
                 {
-                    "$id": schema_catalog.PUBLIC_SCHEMA_ID_PREFIX + self.schema.name,
+                    "$id": FIXTURE_ID,
                     "title": "Fixture v1",
                 }
             )
             + "\n",
             encoding="utf-8",
         )
-        (schemas / "index.json").write_bytes(schema_catalog.rendered_catalog(self.root))
+        (schemas / "index.json").write_bytes(
+            schema_catalog.rendered_catalog(self.root, roots=TEST_ROOTS)
+        )
 
     def tearDown(self):
         self.temporary.cleanup()
 
     def test_accepts_catalog_derived_from_schema_files(self):
-        self.assertEqual(1, check_schema_catalog.check(self.root))
+        self.assertEqual(1, check_schema_catalog.check(self.root, roots=TEST_ROOTS))
 
     def test_rejects_stale_hash_after_schema_bytes_change(self):
         self.schema.write_text(
             json.dumps(
                 {
-                    "$id": schema_catalog.PUBLIC_SCHEMA_ID_PREFIX + self.schema.name,
+                    "$id": FIXTURE_ID,
                     "title": "Changed fixture v1",
                 }
             )
@@ -62,7 +69,7 @@ class SchemaCatalogTest(unittest.TestCase):
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "is stale"):
-            check_schema_catalog.check(self.root)
+            check_schema_catalog.check(self.root, roots=TEST_ROOTS)
 
     def test_rejects_catalog_entry_that_does_not_name_its_schema(self):
         catalog = self.root / "schemas" / "index.json"
@@ -70,7 +77,7 @@ class SchemaCatalogTest(unittest.TestCase):
         content["schemas"][0]["path"] = "schemas/other-v1.schema.json"
         catalog.write_text(json.dumps(content) + "\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "is stale"):
-            check_schema_catalog.check(self.root)
+            check_schema_catalog.check(self.root, roots=TEST_ROOTS)
 
 
 if __name__ == "__main__":
