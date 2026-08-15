@@ -24,7 +24,12 @@ jobs:
   # unmergeable.
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Raised from 10 after this job gained a real GoReleaser build. Measured on
+    # run 2026-08-15T15:09Z it takes 5m19s, against roughly 3m before, so half
+    # the old budget is now spent and a loaded runner would start cancelling a
+    # job that is working correctly. A cancelled release-layout check reads as a
+    # failure nobody can reproduce locally.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -37,8 +42,18 @@ jobs:
           # and the receipt generator covered by the shared local preflight.
           go-version: "1.25"
 
+      - name: Install pinned GoReleaser for release archive integration
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.17.1
+          install-only: true
+
       - name: Run local preflight gate
         run: make preflight
+
+      - name: Verify pinned GoReleaser archive layout
+        run: make test-release-snapshot
 
       - name: Enforce append-only Gauntlet history
         shell: bash

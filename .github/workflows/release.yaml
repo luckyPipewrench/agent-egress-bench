@@ -1,0 +1,95 @@
+name: Release benchmark artifacts
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.25.13'
+
+      - name: Run repository release gates
+        shell: bash
+        run: make preflight
+
+      - name: Install pinned GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.17.1
+          install-only: true
+
+      - name: Build and verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+            ./scripts/release-build.sh --tag "$GITHUB_REF_NAME" --commit "$release_commit"
+          else
+            ./scripts/release-build.sh --tag snapshot --commit "$GITHUB_SHA" --snapshot
+          fi
+
+      - name: Upload release artifacts for inspection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agent-egress-bench-release-${{ github.sha }}
+          path: dist/release/
+          if-no-files-found: error
+          retention-days: 14
+
+  attest:
+    needs: release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-egress-bench-release-${{ github.sha }}
+          path: dist/release
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/release/*
+
+  publish:
+    needs: [release, attest]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-egress-bench-release-${{ github.sha }}
+          path: dist/release
+
+      - name: Create an owned draft release or resume one on workflow retry
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/release_publish.py --tag "$GITHUB_REF_NAME" --dist dist/release

@@ -1,4 +1,4 @@
-.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -13,7 +13,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-contracts check-public-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-public-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
 
 check-scorecard-workflow:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/scorecard_workflow_test.py
@@ -210,3 +210,22 @@ check-gauntlet-site:
 	@node gauntlet-site/latest-result_test.js
 	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }
 	@python3 scripts/validate_gauntlet_scope.py "$(GAUNTLET_SCOPE_ARTIFACT)"
+
+# The release contract tests break source declarations and downloaded artifacts
+# on purpose. They prove the release guards stop an inconsistent package.
+test-release-build:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_build_test.py
+
+test-release-workflow:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_workflow_test.py scripts/release_publish_test.py
+
+# This integration test is deliberately separate from preflight because it
+# requires the pinned GoReleaser binary installed by the validation workflow.
+test-release-snapshot:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_snapshot_test.py
+
+# Snapshot mode builds the exact archive layout without creating a tag or a
+# GitHub release. Release assets are written to dist/release. goreleaser must
+# already be installed and pinned by the caller.
+release-snapshot:
+	@./scripts/release-build.sh --tag snapshot --commit "$$(git rev-parse HEAD)" --snapshot

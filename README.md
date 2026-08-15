@@ -173,6 +173,7 @@ Core contracts:
 - [RUNNER.md](docs/RUNNER.md): runner input, output, adapter, and verdict-mapping contract
 - [gauntlet.md](docs/gauntlet.md): result states, scoring, scope, and publication methodology
 - [GOVERNANCE.md](docs/GOVERNANCE.md): neutrality, case immutability, versioning, and compatibility
+- [RELEASES.md](docs/RELEASES.md): pinned runner, corpus, and schema release verification
 - [contracts/artifacts.json](contracts/artifacts.json): machine-readable artifact compatibility inventory
 
 Evidence and publication:
