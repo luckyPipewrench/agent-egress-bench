@@ -57,8 +57,10 @@ def check_workflow(path: Path) -> None:
         raise AssertionError("tag-only attestation does not consume the built release artifacts")
     if "subject-path: dist/release/*\n" not in attest:
         raise AssertionError("all release assets are not attested")
-    if "needs: [release, attest]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "gh release create \"$GITHUB_REF_NAME\" dist/release/* --title \"$GITHUB_REF_NAME\" --verify-tag" not in publish:
+    if "needs: [release, attest]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "gh release create \"$GITHUB_REF_NAME\" dist/release/* --title \"$GITHUB_REF_NAME\" --verify-tag --draft" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
+    if "--json isDraft" not in publish or "refusing to overwrite published release" not in publish or "gh release upload \"$GITHUB_REF_NAME\" dist/release/* --clobber" not in publish or "gh release edit \"$GITHUB_REF_NAME\" --draft=false" not in publish:
+        raise AssertionError("draft release retry is not safe")
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
@@ -87,6 +89,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("subject-path: dist/release/*", "subject-path: dist/release/*.tar.gz", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "all release assets"):
+                check_workflow(candidate)
+
+    def test_partial_publish_stays_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("--verify-tag --draft", "--verify-tag", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "GitHub release creation"):
                 check_workflow(candidate)
 
 

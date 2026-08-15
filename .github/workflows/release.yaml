@@ -85,10 +85,19 @@ jobs:
           name: agent-egress-bench-release-${{ github.sha }}
           path: dist/release
 
-      - name: Create GitHub release
+      - name: Create or resume a draft GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" dist/release/* --title "$GITHUB_REF_NAME" --verify-tag
+          if existing="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            if [[ "$existing" != true ]]; then
+              echo "refusing to overwrite published release $GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" dist/release/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/release/* --title "$GITHUB_REF_NAME" --verify-tag --draft
+          fi
+          gh release edit "$GITHUB_REF_NAME" --draft=false

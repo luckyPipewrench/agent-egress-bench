@@ -35,4 +35,4 @@ After extracting the platform archive, run `aeb-gauntlet --version`. A tagged bi
 
 `make release-snapshot` builds the archive matrix, data bundle, checksums, and identity verification under `dist/release`. It creates no tag and no GitHub release. The command requires a pinned GoReleaser installation. The release workflow installs GoReleaser v2.17.1 and runs this snapshot path for manual workflow dispatches.
 
-Tag pushes matching `v*` run the same gates against the tag, attach provenance to the runner archives, upload the generated artifacts for inspection, and then create the GitHub release. The workflow stops before publication when the release identity, corpus data, schema contract, archive layout, or checksum verification disagrees.
+Tag pushes matching `v*` run the same gates against the tag, attach provenance to every release asset, upload the generated artifacts for inspection, and publish a draft only after those checks pass. A failed upload remains a draft and the next tag-push retry resumes it. The workflow stops before publication when the release identity, corpus data, schema contract, archive layout, or checksum verification disagrees.
