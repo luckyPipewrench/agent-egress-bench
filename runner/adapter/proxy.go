@@ -90,7 +90,7 @@ type ProxyAdapter struct {
 	setTLSRouteCT       func(path, body, contentType string)
 	setTLSRouteHost     func(host, path, body, contentType string)
 	tlsRequests         func() int64  // requests the TLS fixture has served
-	httpFixtureRequests func(string) int64 // requests the HTTP fixture served for one exact path
+	httpFixtureRequests func(string, string) int64 // trusted-listener deliveries for one route and token
 	wsAddr              string        // trusted WS fixture for websocket cases
 	wsUntrustedAddr     string        // untrusted WS fixture for reserved sink cases
 	responseRouteID     atomic.Uint64 // unique low-entropy response fixture route
@@ -169,35 +169,65 @@ func (p *ProxyAdapter) SetHTTPFixtureWithContentType(addr string, setRoute func(
 // only that the runner attempted setup; the proxy can still synthesize a
 // response without contacting the fixture.
 //
-// The counter is per-path. A whole-fixture total would be advanced by any
-// other route, by the untrusted sink listener, or by a concurrently executing
-// case, so a synthesized response could inherit another request's delivery
-// and score as observed.
-func (p *ProxyAdapter) SetHTTPFixtureRequestCounter(counter func(string) int64) {
+// The counter is scoped to the trusted listener, one route, and one delivery
+// token. A fixture-wide total is advanced by any other route; a path-only
+// counter is advanced by the untrusted sink serving the same route table, and
+// by another case sharing a declared endpoint. Either way a synthesized
+// response inherits someone else's delivery and scores as observed.
+func (p *ProxyAdapter) SetHTTPFixtureRequestCounter(counter func(string, string) int64) {
 	p.httpFixtureRequests = counter
 }
 
-func (p *ProxyAdapter) httpFixtureRequestBaseline(path string) int64 {
-	if p.httpFixtureRequests == nil {
-		return 0
-	}
-	return p.httpFixtureRequests(path)
+// deliveryProof identifies one fixture interaction: the route it registered
+// and the token that route's URL carries.
+type deliveryProof struct {
+	path     string
+	token    string
+	baseline int64
 }
 
-func (p *ProxyAdapter) httpFixtureServed(path string, before int64) bool {
-	return p.httpFixtureRequests != nil && p.httpFixtureRequests(path) > before
+// beginHTTPFixtureDelivery mints a token for this interaction and snapshots
+// its counter. The token is what makes attribution exact when cases share a
+// declared path or a target fetches asynchronously.
+func (p *ProxyAdapter) beginHTTPFixtureDelivery(path string) (deliveryProof, error) {
+	token, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return deliveryProof{}, err
+	}
+	proof := deliveryProof{path: path, token: token}
+	if p.httpFixtureRequests != nil {
+		proof.baseline = p.httpFixtureRequests(path, token)
+	}
+	return proof, nil
+}
+
+// annotate adds the delivery token to a fixture URL without disturbing any
+// query the case declared.
+func (d deliveryProof) annotate(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set(fixture.DeliveryTokenParam, d.token)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func (p *ProxyAdapter) httpFixtureServed(proof deliveryProof) bool {
+	return p.httpFixtureRequests != nil &&
+		p.httpFixtureRequests(proof.path, proof.token) > proof.baseline
 }
 
 // requireHTTPFixtureDelivery turns a superficially normal response into an
-// unproven result when the fixture did not observe a request for this case's
-// own route. This is used only for response-shaped cases, where fixture
-// delivery is part of the named control's input rather than an optional
-// upstream side effect.
-func (p *ProxyAdapter) requireHTTPFixtureDelivery(result Result, path string, before int64, reason string) Result {
+// unproven result when the fixture did not serve this exact interaction. This
+// is used only for response-shaped cases, where fixture delivery is part of
+// the named control's input rather than an optional upstream side effect.
+func (p *ProxyAdapter) requireHTTPFixtureDelivery(result Result, proof deliveryProof, reason string) Result {
 	if result.Err != nil || (result.Verdict != "allow" && result.Verdict != "block") {
 		return result
 	}
-	if p.httpFixtureServed(path, before) {
+	if p.httpFixtureServed(proof) {
 		return result
 	}
 	if result.Evidence == nil {
@@ -205,6 +235,7 @@ func (p *ProxyAdapter) requireHTTPFixtureDelivery(result Result, path string, be
 	}
 	result.Evidence["reason"] = reason
 	result.Evidence["upstream_reached"] = false
+	result.Evidence["expected_delivery_token"] = proof.token
 	result.Verdict = "skip"
 	result.DeliveryProven = false
 	result.VerdictObserved = false
@@ -512,13 +543,20 @@ func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Dura
 	// path races if execution becomes concurrent or a retry overlaps a request.
 	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
 	p.setHTTPRoute(path, responseBody)
-	fixtureBaseline := p.httpFixtureRequestBaseline(path)
+	proof, err := p.beginHTTPFixtureDelivery(path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: %w", c.ID, err)}
+	}
+	target, err := proof.annotate("http://" + net.JoinHostPort(fixtureHostname, port) + path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: annotate fixture URL: %w", c.ID, err)}
+	}
 	fixtureCase := c
 	fixtureCase.Payload = map[string]interface{}{
 		"method": http.MethodGet,
-		"url":    "http://" + net.JoinHostPort(fixtureHostname, port) + path,
+		"url":    target,
 	}
-	return p.requireHTTPFixtureDelivery(p.runFetchProxy(fixtureCase, timeout), path, fixtureBaseline, "http_fixture_unproven")
+	return p.requireHTTPFixtureDelivery(p.runFetchProxy(fixtureCase, timeout), proof, "http_fixture_unproven")
 }
 
 // runWebSocketFrameViaProxy performs a real WebSocket upgrade through the
@@ -1349,15 +1387,21 @@ func (p *ProxyAdapter) runA2AMessageViaForwardProxy(c Case, timeout time.Duratio
 	}
 	headers := http.Header{"Content-Type": []string{"application/a2a+json"}}
 	// This path comes from the case's declared A2A endpoint, so unlike the
-	// response and agent-card routes it is not unique per run and several
-	// cases share it. The baseline is therefore snapshotted immediately
-	// before this case's own request, which is exact while the runner
-	// executes cases sequentially. Concurrent execution would need a
-	// per-run token in the route before this proof stays sound.
-	fixtureBaseline := p.httpFixtureRequestBaseline(path)
+	// response and agent-card routes several cases share it. A path-only
+	// baseline would let one case's real fetch prove another case's
+	// synthesized allow, so the token is what makes attribution exact here,
+	// including when a target fetches after its response already returned.
+	proof, err := p.beginHTTPFixtureDelivery(path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: %w", c.ID, err)}
+	}
+	target, err = proof.annotate(target)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: annotate A2A target: %w", c.ID, err)}
+	}
 	result := p.doHTTPProxyRequest(c.ID, http.MethodPost, target, strings.NewReader(string(body)), headers, timeout, "")
 	if result.Verdict == "allow" {
-		result = p.requireHTTPFixtureDelivery(result, path, fixtureBaseline, "a2a_message_fixture_unproven")
+		result = p.requireHTTPFixtureDelivery(result, proof, "a2a_message_fixture_unproven")
 	}
 	if result.Evidence == nil {
 		result.Evidence = map[string]interface{}{}
@@ -1422,11 +1466,17 @@ func (p *ProxyAdapter) runA2AAgentCardViaForwardProxy(c Case, timeout time.Durat
 	} else {
 		p.setHTTPRoute(path, string(body))
 	}
-	target := "http://" + net.JoinHostPort(fixtureHostname, port) + path
+	proof, err := p.beginHTTPFixtureDelivery(path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: %w", c.ID, err)}
+	}
+	target, err := proof.annotate("http://" + net.JoinHostPort(fixtureHostname, port) + path)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: annotate agent-card URL: %w", c.ID, err)}
+	}
 	headers := http.Header{"Accept": []string{"application/a2a+json"}}
-	fixtureBaseline := p.httpFixtureRequestBaseline(path)
 	result := p.doHTTPProxyRequest(c.ID, http.MethodGet, target, nil, headers, timeout, "")
-	result = p.requireHTTPFixtureDelivery(result, path, fixtureBaseline, "a2a_agent_card_fixture_unproven")
+	result = p.requireHTTPFixtureDelivery(result, proof, "a2a_agent_card_fixture_unproven")
 	if result.Evidence == nil {
 		result.Evidence = map[string]interface{}{}
 	}
@@ -2765,15 +2815,19 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		if p.session.declaredRefusal(resp.Header) {
 			return listenerSessionUnprovenResult()
 		}
-		// A notification has no id, so there is no response to correlate and
-		// an empty body is the correct outcome. A target may still refuse it,
-		// so the body is classified directly instead of being dropped.
+		// A notification has no id, so nothing ties a response body back to
+		// it. A deny-shaped body here could be a stale or generic listener
+		// response to something else entirely, and crediting containment on
+		// that would let an unrelated refusal score. Report it unproven
+		// instead and let the loop's upstream accounting decide delivery.
 		if requestID == "" {
-			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
-				return *verdict
-			}
-			if resp.StatusCode >= 400 {
-				return classifyResponse(resp.StatusCode, string(body))
+			if resp.StatusCode >= 400 || classifyMCPHTTPBlock(body) != nil {
+				return Result{Verdict: "skip", Evidence: map[string]interface{}{
+					"product_surface":  "mcp_http_listener",
+					"reason":           "mcp_http_notification_uncorrelated",
+					"status_code":      resp.StatusCode,
+					"upstream_reached": false,
+				}}
 			}
 			continue
 		}
