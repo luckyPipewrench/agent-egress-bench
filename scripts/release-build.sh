@@ -91,8 +91,8 @@ if [[ -f "$host_archive" ]]; then
   native_dir="$(mktemp -d "$TMPDIR/aeb-${host_os}-${host_arch}.XXXXXX")"
   trap 'rm -rf "$native_dir"' EXIT
   tar -xzf "$host_archive" -C "$native_dir"
-  python3 scripts/release_build.py verify --release-dir "$release_dir" --executable "$native_dir/aeb-gauntlet"
+  python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root . --executable "$native_dir/aeb-gauntlet"
 else
   echo "release-build: no archive for ${host_os}/${host_arch}; verifying without the executable check" >&2
-  python3 scripts/release_build.py verify --release-dir "$release_dir"
+  python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root .
 fi
