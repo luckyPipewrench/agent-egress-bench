@@ -15,6 +15,28 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+func TestHTTPFixtureCountsServedRequests(t *testing.T) {
+	f, err := StartHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	f.SetRoute("/proof", "ok")
+
+	if got := f.Requests(); got != 0 {
+		t.Fatalf("requests before client call = %d, want 0", got)
+	}
+	resp, err := http.Get("http://" + f.Addr() + "/proof") //nolint:gosec,noctx // runner-owned fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if got := f.Requests(); got != 1 {
+		t.Fatalf("requests after client call = %d, want 1", got)
+	}
+}
+
 func TestTLSFixture(t *testing.T) {
 	f, err := StartTLS()
 	if err != nil {

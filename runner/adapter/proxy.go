@@ -80,19 +80,20 @@ type ProxyAdapter struct {
 	// Declared by the target, zero for every target that declares nothing.
 	// Zero means the runner replays no token and recognizes no refusal, while
 	// the ordinary MCP initialize still happens.
-	session         ListenerSessionDeclaration
-	httpFixtureAddr string                  // HTTP fixture for response-mitm via fetch
-	setHTTPRoute    func(path, body string) // callback to register HTTP fixture routes
-	setHTTPRouteCT  func(path, body, contentType string)
-	tlsFixtureAddr  string // HTTPS fixture for CONNECT interception cases
-	tlsCAFile       string
-	setTLSRoute     func(path, body string)
-	setTLSRouteCT   func(path, body, contentType string)
-	setTLSRouteHost func(host, path, body, contentType string)
-	tlsRequests     func() int64  // requests the TLS fixture has served
-	wsAddr          string        // trusted WS fixture for websocket cases
-	wsUntrustedAddr string        // untrusted WS fixture for reserved sink cases
-	responseRouteID atomic.Uint64 // unique low-entropy response fixture route
+	session             ListenerSessionDeclaration
+	httpFixtureAddr     string                  // HTTP fixture for response-mitm via fetch
+	setHTTPRoute        func(path, body string) // callback to register HTTP fixture routes
+	setHTTPRouteCT      func(path, body, contentType string)
+	tlsFixtureAddr      string // HTTPS fixture for CONNECT interception cases
+	tlsCAFile           string
+	setTLSRoute         func(path, body string)
+	setTLSRouteCT       func(path, body, contentType string)
+	setTLSRouteHost     func(host, path, body, contentType string)
+	tlsRequests         func() int64  // requests the TLS fixture has served
+	httpFixtureRequests func() int64  // requests the HTTP fixture has served
+	wsAddr              string        // trusted WS fixture for websocket cases
+	wsUntrustedAddr     string        // untrusted WS fixture for reserved sink cases
+	responseRouteID     atomic.Uint64 // unique low-entropy response fixture route
 
 	wsUpstreamMessages   func() int64             // runner-managed WS fixture message counter
 	wsRSV1Outcome        func(string) (int, bool) // marked permissive-fixture outcome
@@ -161,6 +162,47 @@ func (p *ProxyAdapter) SetHTTPFixtureWithContentType(addr string, setRoute func(
 	p.setHTTPRoute = func(path, body string) {
 		setRoute(path, body, "text/html; charset=utf-8")
 	}
+}
+
+// SetHTTPFixtureRequestCounter lets response-shaped transports prove the
+// runner-owned HTTP fixture served the case. A configured route alone proves
+// only that the runner attempted setup; the proxy can still synthesize a
+// response without contacting the fixture.
+func (p *ProxyAdapter) SetHTTPFixtureRequestCounter(counter func() int64) {
+	p.httpFixtureRequests = counter
+}
+
+func (p *ProxyAdapter) httpFixtureRequestBaseline() int64 {
+	if p.httpFixtureRequests == nil {
+		return 0
+	}
+	return p.httpFixtureRequests()
+}
+
+func (p *ProxyAdapter) httpFixtureServed(before int64) bool {
+	return p.httpFixtureRequests != nil && p.httpFixtureRequests() > before
+}
+
+// requireHTTPFixtureDelivery turns a superficially normal response into an
+// unproven result when the fixture did not observe the request. This is used
+// only for response-shaped cases, where fixture delivery is part of the named
+// control's input rather than an optional upstream side effect.
+func (p *ProxyAdapter) requireHTTPFixtureDelivery(result Result, before int64, reason string) Result {
+	if result.Err != nil || (result.Verdict != "allow" && result.Verdict != "block") {
+		return result
+	}
+	if p.httpFixtureServed(before) {
+		return result
+	}
+	if result.Evidence == nil {
+		result.Evidence = map[string]interface{}{}
+	}
+	result.Evidence["reason"] = reason
+	result.Evidence["upstream_reached"] = false
+	result.Verdict = "skip"
+	result.DeliveryProven = false
+	result.VerdictObserved = false
+	return result
 }
 
 // SetTLSFixture configures the HTTPS fixture for CONNECT interception cases.
@@ -464,12 +506,13 @@ func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Dura
 	// path races if execution becomes concurrent or a retry overlaps a request.
 	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
 	p.setHTTPRoute(path, responseBody)
+	fixtureBaseline := p.httpFixtureRequestBaseline()
 	fixtureCase := c
 	fixtureCase.Payload = map[string]interface{}{
 		"method": http.MethodGet,
 		"url":    "http://" + net.JoinHostPort(fixtureHostname, port) + path,
 	}
-	return p.runFetchProxy(fixtureCase, timeout)
+	return p.requireHTTPFixtureDelivery(p.runFetchProxy(fixtureCase, timeout), fixtureBaseline, "http_fixture_unproven")
 }
 
 // runWebSocketFrameViaProxy performs a real WebSocket upgrade through the
@@ -1299,7 +1342,11 @@ func (p *ProxyAdapter) runA2AMessageViaForwardProxy(c Case, timeout time.Duratio
 		p.setHTTPRoute(path, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
 	}
 	headers := http.Header{"Content-Type": []string{"application/a2a+json"}}
+	fixtureBaseline := p.httpFixtureRequestBaseline()
 	result := p.doHTTPProxyRequest(c.ID, http.MethodPost, target, strings.NewReader(string(body)), headers, timeout, "")
+	if result.Verdict == "allow" {
+		result = p.requireHTTPFixtureDelivery(result, fixtureBaseline, "a2a_message_fixture_unproven")
+	}
 	if result.Evidence == nil {
 		result.Evidence = map[string]interface{}{}
 	}
@@ -1365,7 +1412,9 @@ func (p *ProxyAdapter) runA2AAgentCardViaForwardProxy(c Case, timeout time.Durat
 	}
 	target := "http://" + net.JoinHostPort(fixtureHostname, port) + path
 	headers := http.Header{"Accept": []string{"application/a2a+json"}}
+	fixtureBaseline := p.httpFixtureRequestBaseline()
 	result := p.doHTTPProxyRequest(c.ID, http.MethodGet, target, nil, headers, timeout, "")
+	result = p.requireHTTPFixtureDelivery(result, fixtureBaseline, "a2a_agent_card_fixture_unproven")
 	if result.Evidence == nil {
 		result.Evidence = map[string]interface{}{}
 	}
@@ -2676,7 +2725,11 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 	sessionToken := p.establishMCPHTTPListenerSession(context.Background(), client)
 	var responses int
 	upstreamBefore, _ := p.mcpHTTPUpstreamCallCount()
-	for _, msg := range msgList {
+	for _, rawMessage := range msgList {
+		msg, requestID, err := correlateMCPHTTPRequest(rawMessage)
+		if err != nil {
+			return Result{Err: fmt.Errorf("case %s: correlate MCP HTTP request: %w", c.ID, err)}
+		}
 		line, _ := json.Marshal(msg)
 		req, err := http.NewRequest(http.MethodPost, p.mcpHTTPURL, bytes.NewReader(line))
 		if err != nil {
@@ -2700,14 +2753,28 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		if p.session.declaredRefusal(resp.Header) {
 			return listenerSessionUnprovenResult()
 		}
+		decoded, decodeErr := decodeGatewayResponse(resp.Header.Get("Content-Type"), body, requestID)
+		if decodeErr != nil {
+			return Result{Verdict: "skip", Evidence: map[string]interface{}{
+				"product_surface":  "mcp_http_listener",
+				"reason":           "mcp_http_response_uncorrelated",
+				"request_identity": requestID,
+				"status_code":      resp.StatusCode,
+				"upstream_reached": false,
+			}}
+		}
 		if resp.StatusCode >= 400 {
-			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+			if verdict := classifyMCPHTTPBlock(decoded); verdict != nil {
+				verdict.Evidence["request_identity"] = requestID
 				return *verdict
 			}
-			return classifyResponse(resp.StatusCode, string(body))
+			result := classifyResponse(resp.StatusCode, string(decoded))
+			result.Evidence["request_identity"] = requestID
+			return result
 		}
 		responses++
-		if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+		if verdict := classifyMCPHTTPBlock(decoded); verdict != nil {
+			verdict.Evidence["request_identity"] = requestID
 			return *verdict
 		}
 	}
@@ -2732,6 +2799,28 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		Verdict:  "allow",
 		Evidence: evidence,
 	}
+}
+
+// correlateMCPHTTPRequest gives every request a fresh JSON-RPC ID before it
+// crosses the target boundary. Corpus IDs are stable fixture data, so accepting
+// a denial merely because it repeats one of them lets a stale response earn
+// containment credit. JSON-RPC permits string IDs; only the correlation field
+// changes, never the corpus method or payload.
+func correlateMCPHTTPRequest(rawMessage interface{}) (map[string]interface{}, string, error) {
+	message, ok := rawMessage.(map[string]interface{})
+	if !ok {
+		return nil, "", fmt.Errorf("MCP HTTP message must be an object")
+	}
+	if _, hasID := message["id"]; !hasID {
+		return nil, "", fmt.Errorf("MCP HTTP scoring requires a JSON-RPC request ID")
+	}
+	requestID, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return nil, "", err
+	}
+	correlated := shallowCloneMap(message)
+	correlated["id"] = requestID
+	return correlated, requestID, nil
 }
 
 // runMCPHTTPTemporalInventory replays a before/after tools/list sequence in
@@ -3694,10 +3783,21 @@ func classifyHTTPResponse(statusCode int, body string, upstreamReached bool) Res
 	}
 
 	if statusCode == http.StatusForbidden || statusCode == http.StatusBadRequest {
-		evidence["reason"] = fmt.Sprintf("http_%d", statusCode)
-		// Extract structured block details from response body.
-		extractBlockEvidence(body, evidence)
-		return Result{Verdict: "block", Evidence: evidence}
+		// A status alone names no actor. An origin, reverse proxy, fixture, or
+		// policy control can all return 400/403, so containment credit needs a
+		// positive deny marker from the evaluated path.
+		if hasDenyMarker(body) {
+			evidence["reason"] = fmt.Sprintf("http_%d", statusCode)
+			extractBlockEvidence(body, evidence)
+			return Result{Verdict: "block", Evidence: evidence}
+		}
+		if upstreamReached {
+			evidence["reason"] = fmt.Sprintf("http_%d_passthrough", statusCode)
+			return Result{Verdict: "allow", Evidence: evidence}
+		}
+		evidence["reason"] = fmt.Sprintf("http_%d_origin_unconfirmed", statusCode)
+		evidence["upstream_error"] = truncate(body, 120)
+		return Result{Verdict: "skip", Evidence: evidence}
 	}
 
 	// 502 is ambiguous: the proxy returns it both for a policy block and for a

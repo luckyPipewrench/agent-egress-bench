@@ -238,6 +238,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		}
 		if fm != nil {
 			pa.SetHTTPFixtureWithContentType(fm.HTTP().Addr(), fm.HTTP().SetRouteWithContentType)
+			pa.SetHTTPFixtureRequestCounter(fm.HTTP().Requests)
 			pa.SetTLSFixtureWithContentType(fm.TLS().Addr(), fm.TLS().CAFile(), fm.TLS().SetRouteWithContentType, fm.TLS().SetRouteForHostWithContentType)
 			pa.SetTLSRequestCounter(fm.TLS().Requests)
 			pa.SetWSFixtures(fm.WS().Addr(), fm.WS().UntrustedAddr())

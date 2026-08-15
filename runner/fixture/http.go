@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,12 +18,18 @@ type HTTPFixture struct {
 	untrustedListener net.Listener
 	server            *http.Server
 	untrustedServer   *http.Server
+	requests          atomic.Int64
 	mu                sync.Mutex
 	routes            map[string]HTTPRoute // path -> response metadata
 }
 
 // Addr returns the listener address (host:port).
 func (f *HTTPFixture) Addr() string { return f.listener.Addr().String() }
+
+// Requests returns the number of requests that reached either fixture listener.
+// Adapters snapshot it before a response-shaped case and require it to advance
+// before treating a response as evidence about fixture-provided content.
+func (f *HTTPFixture) Requests() int64 { return f.requests.Load() }
 
 // UntrustedAddr returns the paired loopback listener used by reserved
 // untrusted sink hostnames.
@@ -66,6 +73,7 @@ func StartHTTP() (*HTTPFixture, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		f.requests.Add(1)
 		f.mu.Lock()
 		route, ok := f.routes[r.URL.Path]
 		f.mu.Unlock()
