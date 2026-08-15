@@ -35,6 +35,9 @@ The in-repo copy is deterministic and carries no commit or release field. A
 commit cannot name the commit that contains it, so embedding one would make
 the committed catalog permanently disagree with its own regeneration check.
 
+The released catalog adds a `retrieval_url` for every entry. Each URL pins the
+exact `source_commit` recorded by the catalog, never the moving default branch.
+
 ## Pinning a version, and reproducing an old run
 
 Pin the released catalog artifact, not the copy on the default branch. The
@@ -49,6 +52,11 @@ For a result you intend to reproduce later, retain the catalog artifact, its
 digest, and the schema bytes themselves alongside the result. A digest says
 which bytes; the commit and release say which repository state produced them.
 Reproducing a two-year-old run needs both.
+
+Every release also includes a schema bundle containing that released catalog
+at `schemas/index.json` and every schema it names. Verify the bundle against
+the release `checksums.txt`, then validate each extracted file against the
+catalog without network access.
 
 To validate:
 
@@ -73,6 +81,12 @@ rejects any byte difference, including a reformat or a key reorder that leaves
 the parsed document identical, because a consumer pinning a digest sees those
 as a different document. There is no permitted-migration exception. Changing a
 frozen contract means publishing a new version.
+
+## Forward identifier policy
+
+A new schema version may use a versioned resolving identifier on a controlled
+domain when one exists. Existing identifiers never migrate, because consumers
+may have registered or referenced the original name and pinned its bytes.
 
 ## Adapter quickstarts
 
