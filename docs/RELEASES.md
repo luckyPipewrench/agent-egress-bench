@@ -23,6 +23,15 @@ tar -xzf aeb-release/agent-egress-bench_0.1.0_data.tar.gz -C aeb-release
 
 The verifier rejects a missing asset, a checksum mismatch, an archive whose embedded identity differs from the release identity, a changed corpus or schema file, or a data bundle whose file list differs from the recorded tree.
 
+To bind that package back to the cited source, clone the same tag and supply it to the verifier:
+
+```bash
+git clone --depth 1 --branch v0.1.0 https://github.com/luckyPipewrench/agent-egress-bench.git aeb-source
+(cd aeb-source && python3 scripts/release_build.py verify --release-dir ../aeb-release --repo-root .)
+```
+
+That command refuses when the release identity does not match the checked-out source tree.
+
 An operator can also check the GitHub provenance attached to any release asset:
 
 ```bash
