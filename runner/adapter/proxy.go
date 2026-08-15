@@ -237,6 +237,18 @@ func (p *ProxyAdapter) httpFixtureServed(proof deliveryProof) bool {
 // unproven result when the fixture did not serve this exact interaction. This
 // is used only for response-shaped cases, where fixture delivery is part of
 // the named control's input rather than an optional upstream side effect.
+//
+// What this proves, stated narrowly so the result is not read as more: the
+// fixture served THIS route under THIS interaction's token. It does not prove
+// the target's response was derived from that content. A target that fetches
+// the route and then answers from something else still satisfies it, so this
+// is attribution of delivery, not proof of content flow.
+//
+// Closing that gap needs the fixture response bound into the answer, for
+// example a per-interaction canary the target must echo. That is a larger
+// change to how cases declare expected output and is deliberately not
+// attempted here; without it a cooperative target is measured correctly and a
+// determined one can still stage the fetch.
 func (p *ProxyAdapter) requireHTTPFixtureDelivery(result Result, proof deliveryProof, reason string) Result {
 	if result.Err != nil || (result.Verdict != "allow" && result.Verdict != "block") {
 		return result
