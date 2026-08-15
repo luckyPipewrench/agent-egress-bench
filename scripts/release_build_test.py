@@ -508,6 +508,104 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, "a substituted schema identity verified clean")
         self.assertIn("declares an $id the release catalog does not name", result.stderr)
 
+    def test_repo_backed_verifier_rejects_regenerated_schema_content(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+
+        catalog_path = next(dist.glob("*_schema-catalog.json"))
+        bundle_path = next(dist.glob("*_schemas.tar.gz"))
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        changed = catalog["schemas"][0]
+        with tarfile.open(bundle_path, "r:gz") as archive:
+            contents = {
+                entry.name: archive.extractfile(entry).read()
+                for entry in archive.getmembers()
+                if entry.isfile()
+            }
+        schema = json.loads(contents[changed["path"]])
+        schema["description"] = "release-only schema mutation"
+        changed_bytes = (json.dumps(schema, indent=2) + "\n").encode("utf-8")
+        contents[changed["path"]] = changed_bytes
+        changed["sha256"] = hashlib.sha256(changed_bytes).hexdigest()
+        catalog_bytes = (json.dumps(catalog, indent=2) + "\n").encode("utf-8")
+        catalog_path.write_bytes(catalog_bytes)
+        contents["schemas/index.json"] = catalog_bytes
+        with tarfile.open(bundle_path, "w:gz") as archive:
+            for name, data in sorted(contents.items()):
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist), "--repo-root", str(self.root)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0, "regenerated schema content verified clean")
+        self.assertIn("release schema content does not match the supplied source tree", result.stderr)
+
+    def test_repo_backed_verifier_allows_catalog_serialization_and_tar_metadata_changes(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+
+        catalog_path = next(dist.glob("*_schema-catalog.json"))
+        bundle_path = next(dist.glob("*_schemas.tar.gz"))
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog["schemas"].reverse()
+        catalog_bytes = json.dumps(catalog, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        catalog_path.write_bytes(catalog_bytes)
+        with tarfile.open(bundle_path, "r:gz") as archive:
+            contents = {
+                entry.name: archive.extractfile(entry).read()
+                for entry in archive.getmembers()
+                if entry.isfile()
+            }
+        contents["schemas/index.json"] = catalog_bytes
+        with tarfile.open(bundle_path, "w:gz") as archive:
+            for name, data in reversed(sorted(contents.items())):
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                entry.mtime = 0
+                archive.addfile(entry, io.BytesIO(data))
+
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        self.invoke("verify", "--release-dir", str(dist), "--repo-root", str(self.root))
+
+    def test_repo_backed_verifier_rejects_partial_or_unreadable_schema_source(self) -> None:
+        for failure in ("missing", "invalid JSON"):
+            with self.subTest(failure=failure):
+                self.prepare()
+                dist = self.root / "dist"
+                self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+                identity = self.identity.read_bytes()
+                self.write_runner_archives(dist, identity, json.loads(identity))
+                self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+                schema = self.root / "schemas/case-v4.schema.json"
+                original = schema.read_bytes()
+                if failure == "missing":
+                    schema.unlink()
+                    expected = "release schema paths do not match the supplied source tree"
+                else:
+                    schema.write_text("{", encoding="utf-8")
+                    expected = "cannot re-derive the supplied source tree schema catalog"
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist), "--repo-root", str(self.root)],
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertNotEqual(result.returncode, 0, f"{failure} schema source verified clean")
+                self.assertIn(expected, result.stderr)
+                schema.write_bytes(original)
+                shutil.rmtree(dist)
+                self.identity.unlink()
+
     def test_download_verifier_runs_from_the_documented_extract_layout(self) -> None:
         self.prepare()
         dist = self.root / "dist"
