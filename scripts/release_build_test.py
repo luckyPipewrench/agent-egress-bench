@@ -82,6 +82,15 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("disagrees with the checked-out source tree", result.stderr)
 
+    def test_identity_rejects_changed_corpus_version(self) -> None:
+        self.prepare()
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        identity["corpus"]["version"] = "v999.0.0"
+        self.identity.write_text(json.dumps(identity), encoding="utf-8")
+        result = subprocess.run([sys.executable, str(SCRIPT), "check-identity", "--repo-root", str(self.root), "--identity", str(self.identity)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("disagrees with the checked-out source tree", result.stderr)
+
     def test_download_verifier_rejects_tampered_checksum_artifact(self) -> None:
         self.prepare()
         dist = self.root / "dist"
