@@ -1,0 +1,216 @@
+{
+  "format": 1,
+  "repository": "https://github.com/luckyPipewrench/agent-egress-bench",
+  "schemas": [
+    {
+      "path": "schemas/case-v4.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/case-v4.schema.json",
+      "sha256": "b7f1ff323e31bcffdb6a28b1a5f8ee48657de678d2baa948bbb54c5b69e604a5"
+    },
+    {
+      "path": "schemas/control-evidence-assessment-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-assessment-v1.schema.json",
+      "sha256": "bf373b6c040946ea6e570ad1fdd2bac34d7a28437e73d2b2550268c96094bc5d"
+    },
+    {
+      "path": "schemas/control-evidence-assessment-v2.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-assessment-v2.schema.json",
+      "sha256": "b3c92bfbcf96b4576d312fa4369969da9d9d7e695ed3f843c930f335fd6edacf"
+    },
+    {
+      "path": "schemas/control-evidence-authentication-context-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-authentication-context-v1.schema.json",
+      "sha256": "7d2d4336641babb62f4a6a1eedfbac18f50fa9f3e715ebb88440542a253ceb2a"
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-statement-v0.schema.json",
+      "sha256": "10a0979860e73d50120b52e97f6d437bb64f3bb7cc1716ce64cbf66f7a24d9f3"
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-statement-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-statement-v1.schema.json",
+      "sha256": "657d96fd83297988dd8f9c0e6a204edfcc1b87b8422d086dcc41b806164c868a"
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-transcript-v0.schema.json",
+      "sha256": "6fbe0d9d960c2b6b0fe46892328da2e625fb6a67bd503bd9f9f0e049e7ce7cfa"
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-transcript-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-transcript-v1.schema.json",
+      "sha256": "317571261ae614869ef847ac35b1bbdc25d1d08735eb428eb15768f8764e71e8"
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-v0.schema.json",
+      "sha256": "5ce0eae99509bcbe96bb182f3c409e79879cf3be3edf0a4d4d4f74660120b00a"
+    },
+    {
+      "path": "schemas/control-evidence-buyer-reproduction-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-buyer-reproduction-v1.schema.json",
+      "sha256": "3d653bac223318f41b63493a9f94fefa997d85b24b38624dc5f3a75b41986d6b"
+    },
+    {
+      "path": "schemas/control-evidence-clock-evidence-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-clock-evidence-v0.schema.json",
+      "sha256": "a179fda72801881b972cdb932da16a49cd3bb9865a2d65f6089fc2035e56b7ef"
+    },
+    {
+      "path": "schemas/control-evidence-clock-evidence-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-clock-evidence-v1.schema.json",
+      "sha256": "3f00b41f8ec7942761004a182b1aa693c2011995a7ce2c5bfa583d25ce793c59"
+    },
+    {
+      "path": "schemas/control-evidence-context-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-context-v0.schema.json",
+      "sha256": "0e242bb95b06b4ca899684659edf3bf62a8a4c495fc4e2cd4349e1c05983ee22"
+    },
+    {
+      "path": "schemas/control-evidence-context-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-context-v1.schema.json",
+      "sha256": "01e3ab171112bea41965002ea5e171f0e27b7c4dba1dc170dcdab804c70ec430"
+    },
+    {
+      "path": "schemas/control-evidence-dsse-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-dsse-v0.schema.json",
+      "sha256": "1f42684f685b48fc87f7f7e34a2824719b46b971bd83ae6d8ccff7f3c8de93b5"
+    },
+    {
+      "path": "schemas/control-evidence-dsse-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-dsse-v1.schema.json",
+      "sha256": "b8b7189b3bfc9cc9f3a40a71602b96baf881c5555095a89a702bb9a15b5057fb"
+    },
+    {
+      "path": "schemas/control-evidence-health-control-material-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-health-control-material-v0.schema.json",
+      "sha256": "cc01044651c2ce00f8af186af2d9ab5a098434cef11bc2e5ab295613da5315e3"
+    },
+    {
+      "path": "schemas/control-evidence-health-control-material-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-health-control-material-v1.schema.json",
+      "sha256": "20367f34f0896a4729ab746c0f3eb45f83c0b82db5a57478d44a50e4ee37390a"
+    },
+    {
+      "path": "schemas/control-evidence-manifest-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-manifest-v0.schema.json",
+      "sha256": "13270c8f4a7fedae88b83bbac96ce28c909802403059b14b4e1c6ed8def2ff22"
+    },
+    {
+      "path": "schemas/control-evidence-manifest-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-manifest-v1.schema.json",
+      "sha256": "e6fc95c070e80d3c500cfed1d2e25e2f18bb5b24d6a514bbd1752dd53b9e4b93"
+    },
+    {
+      "path": "schemas/control-evidence-observer-evidence-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-observer-evidence-v0.schema.json",
+      "sha256": "6ee2b5c1753a6e04b7321afe9fe7e6b97b803499bdd0bcf512eb8ada184cf5d0"
+    },
+    {
+      "path": "schemas/control-evidence-observer-evidence-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-observer-evidence-v1.schema.json",
+      "sha256": "29610425155cdace1dd838cca8f8facacd297fab52cda5147c36d5053e9ee450"
+    },
+    {
+      "path": "schemas/control-evidence-outcomes-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-outcomes-v0.schema.json",
+      "sha256": "207b12565b795031b7b006b727b8e2229b9919bac9c7cd59761c740f6ca5aa74"
+    },
+    {
+      "path": "schemas/control-evidence-outcomes-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-outcomes-v1.schema.json",
+      "sha256": "4085803376dd5e7f30eae3b07d7a49683528162c2c0b6b81f14424c819dd98ef"
+    },
+    {
+      "path": "schemas/control-evidence-requirement-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-requirement-v0.schema.json",
+      "sha256": "36d035daa059d635182cb0762e501cf8de1b582c778cd7108c48f642b2898bc6"
+    },
+    {
+      "path": "schemas/control-evidence-requirement-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-requirement-v1.schema.json",
+      "sha256": "1dc05b80f1963c466a6bf08c6a4d4225540394ea623dbeb1fea3b443abdf8007"
+    },
+    {
+      "path": "schemas/control-evidence-run-envelope-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-run-envelope-v0.schema.json",
+      "sha256": "5f69e31cc18b3dd10e453ec67c396043d4e74fb54ce96444c6cd2cc749120aa0"
+    },
+    {
+      "path": "schemas/control-evidence-run-envelope-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-run-envelope-v1.schema.json",
+      "sha256": "afb4cf600be918585a659bcb67ba16e00a9e4425dd4de8d14c3742184d9f71c5"
+    },
+    {
+      "path": "schemas/control-evidence-token-material-v0.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-token-material-v0.schema.json",
+      "sha256": "0886c5878caa7d69862b438d0fda1ecc23110a21050d72145414ebe8fdf2b8d3"
+    },
+    {
+      "path": "schemas/control-evidence-token-material-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-token-material-v1.schema.json",
+      "sha256": "ef15e51b472c1e09b503bc8ba6d720665789a2a3855243ff4d2e4cfaf8892024"
+    },
+    {
+      "path": "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-trust-policy-dsse-v1.schema.json",
+      "sha256": "111b951820a20b4e65e5e554d5622f1125758413242aa44d520b53424d249dbe"
+    },
+    {
+      "path": "schemas/control-evidence-trust-policy-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-trust-policy-v1.schema.json",
+      "sha256": "670c2d3b602081e3b23a318be47c82dba6aed0d624337a1c3d4783e3a92c73ee"
+    },
+    {
+      "path": "schemas/multi-file-case-v4.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/multi-file-case-v4.schema.json",
+      "sha256": "5d2dca64dd6123f39452980027ed2431027d3cc6e74420b079018074a77c4a9b"
+    },
+    {
+      "path": "schemas/receipt-scoring-profile-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/receipt-scoring-profile-v1.schema.json",
+      "sha256": "ff0c78f267243475a64bcf628b8db09cbd87d224176db87189ec2202e2ec46d3"
+    },
+    {
+      "path": "schemas/receipt-scoring-profile-v3.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/receipt-scoring-profile-v3.schema.json",
+      "sha256": "79ab1801fbc6d42c85e000875d4112e9f52797502aa813d2184b4b9c5dad0594"
+    },
+    {
+      "path": "schemas/receipt-scoring-profile-v4.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/receipt-scoring-profile-v4.schema.json",
+      "sha256": "2350f6a54a1a0ee945ee9e0b3792bdf3bd8dacda7d4216ccd1150507ebd66059"
+    },
+    {
+      "path": "schemas/result-v4.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/result-v4.schema.json",
+      "sha256": "08cb90e5477ec9a931b50c1767dfb1b041b84893edb71004462640ed17c6c1a5"
+    },
+    {
+      "path": "schemas/summary-v4.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/summary-v4.schema.json",
+      "sha256": "8ce7d3d3f84a90dc8ce131143c3c0aa3108740637b5c3d00258a8d5ac6e34466"
+    },
+    {
+      "path": "schemas/summary-v5.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/summary-v5.schema.json",
+      "sha256": "e53a5cf471c8f2a77d2d5a5461588bf8b2313cb5af29d339e0fd4e019991a1eb"
+    },
+    {
+      "path": "schemas/tool-profile-v1.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v1.schema.json",
+      "sha256": "f2e9073ca251bdfad0d47c655402aced3742b3230ce8f46dec4223a1d80034a1"
+    },
+    {
+      "path": "schemas/tool-profile-v3.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v3.schema.json",
+      "sha256": "fe44f8afff452f76f949a7596feb7da561f95e02eb6e6c08721cfffa41a99a86"
+    },
+    {
+      "path": "schemas/tool-profile-v4.schema.json",
+      "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v4.schema.json",
+      "sha256": "04166565467fc5ff51b5790bb3f2e90f84ff8ddf366d3bdd4d126897ae6b4111"
+    }
+  ]
+}
