@@ -40,7 +40,7 @@ if [[ -n "$runner_args_text" ]]; then
 fi
 for arg in "${runner_args[@]}"; do
   case "$arg" in
-    --cases|--cases=*|--profile|--profile=*|--adapter|--adapter=*|--output|--output=*|--require-complete|--require-complete=*)
+    -cases|-cases=*|--cases|--cases=*|-profile|-profile=*|--profile|--profile=*|-adapter|-adapter=*|--adapter|--adapter=*|-output|-output=*|--output|--output=*|-require-complete|-require-complete=*|--require-complete|--require-complete=*|-version|-version=*|--version|--version=*|-release-identity-metadata|-release-identity-metadata=*|--release-identity-metadata|--release-identity-metadata=*|-stats|-stats=*|--stats|--stats=*|-case-index|-case-index=*|--case-index|--case-index=*|-report|-report=*|--report|--report=*)
       fail "runner-args cannot override $arg"
       ;;
   esac
@@ -112,6 +112,15 @@ docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
 run_exit=$?
 set -e
 
+measurement_status="absent"
+if [[ -s "$summary_path" ]]; then
+  measurement_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["measurement_status"])' "$summary_path")"
+fi
+if [[ "$measurement_status" != measured && "$run_exit" -eq 0 ]]; then
+  echo "agent-egress-bench Action: measurement status is $measurement_status; retained artifacts describe a partial run" >&2
+  run_exit=1
+fi
+
 export AEB_ACTION_METADATA_PATH="$metadata_path"
 export AEB_ACTION_IMAGE="$image"
 export AEB_ACTION_IMAGE_ID="$image_id"
@@ -133,11 +142,6 @@ path.write_text(json.dumps({
     "runner_exit_code": int(os.environ["AEB_ACTION_RUN_EXIT"]),
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
-
-measurement_status="absent"
-if [[ -s "$summary_path" ]]; then
-  measurement_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["measurement_status"])' "$summary_path")"
-fi
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   echo "results=$results_path" >> "$GITHUB_OUTPUT"
