@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import io
 import json
@@ -222,7 +223,7 @@ def make_data_bundle(repo: Path, identity_path: Path, dist: Path) -> Path:
     identity = verify_identity(repo, identity_path)
     output = dist / f"agent-egress-bench_{identity['release']['version']}_data.tar.gz"
     dist.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(output, "w:gz", format=tarfile.PAX_FORMAT) as archive:
+    with output.open("wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=identity["source"]["commit_timestamp"], filename="") as compressed, tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
         for name in sorted(identity["data_files"]):
             add_tar_bytes(archive, name, (repo / name).read_bytes(), identity["source"]["commit_timestamp"])
         add_tar_bytes(archive, IDENTITY_NAME, identity_path.read_bytes(), identity["source"]["commit_timestamp"])

@@ -115,6 +115,16 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("checksum mismatch", result.stderr)
 
+    def test_data_bundle_is_reproducible_for_one_identity(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        bundle = next(dist.glob("*_data.tar.gz"))
+        first = bundle.read_bytes()
+        bundle.unlink()
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        self.assertEqual(first, next(dist.glob("*_data.tar.gz")).read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()
