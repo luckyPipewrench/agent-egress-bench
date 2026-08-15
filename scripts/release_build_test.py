@@ -57,6 +57,26 @@ class ReleaseBuildTest(unittest.TestCase):
             "--commit", self.commit, "--snapshot", "--output", str(self.identity),
         )
 
+    def write_runner_archives(self, dist: Path, identity: bytes, release: dict, include_binaries: bool = True) -> None:
+        for platform in release["runner"]["platforms"]:
+            name = f"agent-egress-bench_{self.snapshot_version}_{platform['goos']}_{platform['goarch']}"
+            if platform["goos"] == "windows":
+                with zipfile.ZipFile(dist / f"{name}.zip", "w") as archive:
+                    archive.writestr(".release/release-identity.json", identity)
+                    if include_binaries:
+                        archive.writestr("aeb-gauntlet.exe", b"fixture runner")
+            else:
+                with tarfile.open(dist / f"{name}.tar.gz", "w:gz") as archive:
+                    info = tarfile.TarInfo(".release/release-identity.json")
+                    info.size = len(identity)
+                    archive.addfile(info, __import__("io").BytesIO(identity))
+                    if include_binaries:
+                        info = tarfile.TarInfo("aeb-gauntlet")
+                        runner = b"fixture runner"
+                        info.size = len(runner)
+                        info.mode = 0o755
+                        archive.addfile(info, __import__("io").BytesIO(runner))
+
     def test_contract_source_disagreement_fails_before_identity_exists(self) -> None:
         contracts = self.root / "contracts/artifacts.json"
         data = json.loads(contracts.read_text(encoding="utf-8"))
@@ -91,22 +111,34 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("disagrees with the checked-out source tree", result.stderr)
 
+    def test_identity_reads_compiled_runner_metadata_not_comments(self) -> None:
+        summary = self.root / "runner/summary.go"
+        summary.write_text('// corpusVersion = "v999.0.0"\n' + summary.read_text(encoding="utf-8"), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "runner/summary.go"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "commented version"], check=True)
+        commit = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
+        identity = self.root / ".release/comment-identity.json"
+        version = f"1.0.0-SNAPSHOT-{commit[:7]}"
+        self.invoke("prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", version, "--commit", commit, "--snapshot", "--output", str(identity))
+        self.assertEqual("v2.4.0", json.loads(identity.read_text(encoding="utf-8"))["corpus"]["version"])
+
+    def test_identity_rejects_untracked_release_input(self) -> None:
+        (self.root / "cases/untracked-release-input.txt").write_text("not in the commit\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", self.snapshot_version, "--commit", self.commit, "--snapshot", "--output", str(self.identity)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tracked or untracked changes", result.stderr)
+
     def test_download_verifier_rejects_tampered_checksum_artifact(self) -> None:
         self.prepare()
         dist = self.root / "dist"
         self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
         identity = self.identity.read_bytes()
         release = json.loads(identity)
-        for platform in release["runner"]["platforms"]:
-            name = f"agent-egress-bench_{self.snapshot_version}_{platform['goos']}_{platform['goarch']}"
-            if platform["goos"] == "windows":
-                with zipfile.ZipFile(dist / f"{name}.zip", "w") as archive:
-                    archive.writestr("release-identity.json", identity)
-            else:
-                with tarfile.open(dist / f"{name}.tar.gz", "w:gz") as archive:
-                    info = tarfile.TarInfo("release-identity.json")
-                    info.size = len(identity)
-                    archive.addfile(info, __import__("io").BytesIO(identity))
+        self.write_runner_archives(dist, identity, release)
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
         self.invoke("verify", "--release-dir", str(dist))
         data_bundle = next(dist.glob("*_data.tar.gz"))
@@ -114,6 +146,18 @@ class ReleaseBuildTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("checksum mismatch", result.stderr)
+
+    def test_download_verifier_rejects_archive_without_runner_binary(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        release = json.loads(identity)
+        self.write_runner_archives(dist, identity, release, include_binaries=False)
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must contain exactly one aeb-gauntlet", result.stderr)
 
     def test_data_bundle_is_reproducible_for_one_identity(self) -> None:
         self.prepare()
@@ -124,6 +168,19 @@ class ReleaseBuildTest(unittest.TestCase):
         bundle.unlink()
         self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
         self.assertEqual(first, next(dist.glob("*_data.tar.gz")).read_bytes())
+
+    def test_release_shell_rejects_unsafe_dist_before_cleanup(self) -> None:
+        sentinel = Path(self.temp.name) / "do-not-delete"
+        sentinel.mkdir()
+        result = subprocess.run(
+            ["bash", str(self.root / "scripts/release-build.sh"), "--tag", "snapshot", "--commit", self.commit, "--snapshot", "--dist", str(sentinel)],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertTrue(sentinel.is_dir())
+        self.assertIn("only the configured dist directory", result.stderr)
 
 
 if __name__ == "__main__":

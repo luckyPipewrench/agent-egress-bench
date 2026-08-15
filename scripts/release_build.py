@@ -17,6 +17,8 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from check_contracts import read_go_constant
+
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
@@ -65,13 +67,6 @@ def git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def go_constant(path: Path, symbol: str) -> int | str:
-    match = re.search(rf"\b{re.escape(symbol)}\s*=\s*(?:\"([^\"]+)\"|([0-9]+))", path.read_text(encoding="utf-8"))
-    if not match:
-        fail(f"missing {symbol} in {path}")
-    return match.group(1) if match.group(1) is not None else int(match.group(2))
-
-
 def safe_name(value: str) -> str:
     path = PurePosixPath(value)
     if not value or path.is_absolute() or ".." in path.parts or str(path) == ".":
@@ -93,7 +88,32 @@ def data_paths(repo: Path) -> list[str]:
         if not path.is_file() or path.is_symlink():
             fail(f"required release data file is absent: {name}")
         result.append(name)
-    return sorted(result)
+    result = sorted(result)
+    tracked = set(filter(None, git(repo, "ls-tree", "-r", "--name-only", "HEAD", "--", *DATA_ROOTS, *DATA_FILES).splitlines()))
+    if set(result) != tracked:
+        missing, extra = sorted(tracked - set(result)), sorted(set(result) - tracked)
+        fail(f"release data differs from the tracked source tree: missing={missing}, extra={extra}")
+    return result
+
+
+def runner_metadata(repo: Path) -> dict[str, str]:
+    result = subprocess.run(
+        ["go", "run", ".", "--release-identity-metadata"],
+        cwd=repo / "runner",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        fail(f"runner release metadata failed: {result.stderr.strip()}")
+    try:
+        metadata = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        fail(f"runner release metadata is not JSON: {exc}")
+    fields = ("runner_version", "scoring_version", "corpus_version")
+    if not isinstance(metadata, dict) or set(metadata) != set(fields) or any(not isinstance(metadata.get(field), str) or not metadata[field] for field in fields):
+        fail("runner release metadata has invalid fields")
+    return {field: metadata[field] for field in fields}
 
 
 def contract_families(repo: Path) -> list[dict[str, Any]]:
@@ -119,7 +139,10 @@ def contract_families(repo: Path) -> list[dict[str, Any]]:
         for source in sources:
             if not isinstance(source, dict) or not isinstance(source.get("path"), str) or not isinstance(source.get("symbol"), str):
                 fail(f"artifact family {name} has invalid source version")
-            actual = go_constant(repo / source["path"], source["symbol"])
+            try:
+                actual = read_go_constant(repo, source)
+            except ValueError as exc:
+                fail(str(exc))
             if actual != active:
                 fail(f"artifact family {name} declares v{active}, but {source['path']}:{source['symbol']} is {actual!r}")
         canonical = family.get("canonical_schema_path")
@@ -149,7 +172,7 @@ def contract_families(repo: Path) -> list[dict[str, Any]]:
     return sorted(observed, key=lambda value: value["family"])
 
 
-def corpus(repo: Path) -> dict[str, Any]:
+def corpus(repo: Path, version: str) -> dict[str, Any]:
     path = repo / "cases/MANIFEST.txt"
     raw = path.read_bytes()
     try:
@@ -158,7 +181,7 @@ def corpus(repo: Path) -> dict[str, Any]:
         fail(f"cases/MANIFEST.txt is not UTF-8: {exc}")
     if not ids or len(ids) != len(set(ids)):
         fail("cases/MANIFEST.txt must contain unique non-empty IDs")
-    return {"version": go_constant(repo / "runner/summary.go", "corpusVersion"), "manifest_path": "cases/MANIFEST.txt", "manifest_sha256": sha256_bytes(raw), "case_count": len(ids)}
+    return {"version": version, "manifest_path": "cases/MANIFEST.txt", "manifest_sha256": sha256_bytes(raw), "case_count": len(ids)}
 
 
 def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bool) -> dict[str, Any]:
@@ -173,19 +196,19 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
         fail("release commit does not match checked-out HEAD")
     if not snapshot and git(repo, "rev-parse", f"{tag}^{{commit}}") != commit:
         fail(f"release tag {tag} does not resolve to requested commit")
-    if git(repo, "status", "--porcelain", "--untracked-files=no"):
-        fail("release tree has tracked changes")
+    if git(repo, "status", "--porcelain", "--untracked-files=all"):
+        fail("release tree has tracked or untracked changes")
     timestamp = git(repo, "show", "-s", "--format=%ct", commit)
     if not timestamp.isdigit():
         fail("release commit timestamp is invalid")
-    runner = repo / "runner/summary.go"
+    metadata = runner_metadata(repo)
     data = data_paths(repo)
     return {
         "schema_version": 1,
         "release": {"tag": tag, "version": version, "snapshot": snapshot},
         "source": {"repository": "luckyPipewrench/agent-egress-bench", "commit": commit, "commit_timestamp": int(timestamp)},
-        "runner": {"binary": "aeb-gauntlet", "runner_version": go_constant(runner, "runnerVersion"), "scoring_version": go_constant(runner, "scoringVersion"), "platforms": [{"goos": goos, "goarch": arch} for goos, arch in PLATFORMS]},
-        "corpus": corpus(repo),
+        "runner": {"binary": "aeb-gauntlet", "runner_version": metadata["runner_version"], "scoring_version": metadata["scoring_version"], "platforms": [{"goos": goos, "goarch": arch} for goos, arch in PLATFORMS]},
+        "corpus": corpus(repo, metadata["corpus_version"]),
         "schema_contract": {"artifacts_manifest_path": "contracts/artifacts.json", "artifacts_manifest_sha256": sha256_file(repo / "contracts/artifacts.json"), "families": contract_families(repo)},
         "data_files": {name: sha256_file(repo / name) for name in data},
         "verification": {"checksums": {"algorithm": "sha256", "path": CHECKSUM_NAME}, "command": "python3 scripts/release_build.py verify --release-dir <downloaded-release-directory>"},
@@ -259,16 +282,23 @@ def parse_checksums(path: Path) -> dict[str, str]:
 
 
 def archive_identity(path: Path) -> bytes:
+    expected_binary = "aeb-gauntlet.exe" if path.suffix == ".zip" else "aeb-gauntlet"
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as archive:
-            entries = [name for name in archive.namelist() if PurePosixPath(name).name == IDENTITY_NAME]
-            if len(entries) != 1 or archive.getinfo(entries[0]).is_dir():
+            entries = [item for item in archive.infolist() if item.filename == f".release/{IDENTITY_NAME}" and not item.is_dir()]
+            binaries = [item for item in archive.infolist() if item.filename == expected_binary and not item.is_dir()]
+            if len(entries) != 1:
                 fail(f"{path.name} must contain exactly one regular {IDENTITY_NAME}")
+            if len(binaries) != 1:
+                fail(f"{path.name} must contain exactly one {expected_binary}")
             return archive.read(entries[0])
     with tarfile.open(path, "r:*") as archive:
-        entries = [item for item in archive.getmembers() if PurePosixPath(item.name).name == IDENTITY_NAME]
-        if len(entries) != 1 or not entries[0].isfile():
+        entries = [item for item in archive.getmembers() if item.name == f".release/{IDENTITY_NAME}" and item.isfile()]
+        binaries = [item for item in archive.getmembers() if item.name == expected_binary and item.isfile()]
+        if len(entries) != 1:
             fail(f"{path.name} must contain exactly one regular {IDENTITY_NAME}")
+        if len(binaries) != 1:
+            fail(f"{path.name} must contain exactly one {expected_binary}")
         handle = archive.extractfile(entries[0])
         if handle is None:
             fail(f"{path.name} has unreadable {IDENTITY_NAME}")

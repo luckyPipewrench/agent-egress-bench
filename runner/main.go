@@ -24,6 +24,7 @@ var (
 
 func main() {
 	version := flag.Bool("version", false, "print the runner release version and commit")
+	releaseMetadata := flag.Bool("release-identity-metadata", false, "print runner metadata used in a release identity")
 	casesDir := flag.String("cases", "", "directory of case JSON files (required)")
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
@@ -64,6 +65,22 @@ func main() {
 	flag.Parse()
 	if *version {
 		_, _ = fmt.Fprintf(os.Stdout, "aeb-gauntlet %s %s\n", releaseVersion, releaseCommit)
+		return
+	}
+	if *releaseMetadata {
+		metadata := struct {
+			RunnerVersion  string `json:"runner_version"`
+			ScoringVersion string `json:"scoring_version"`
+			CorpusVersion  string `json:"corpus_version"`
+		}{
+			RunnerVersion:  runnerVersion,
+			ScoringVersion: scoringVersion,
+			CorpusVersion:  corpusVersion,
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(metadata); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: write release metadata: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 	if *reportDir != "" {

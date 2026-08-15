@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: scripts/release-build.sh --tag vX.Y.Z --commit <40-char-sha> [--snapshot] [--dist <directory>]" >&2
+  echo "usage: scripts/release-build.sh --tag vX.Y.Z --commit <40-char-sha> [--snapshot]" >&2
   exit 2
 }
 
@@ -20,6 +20,10 @@ while (($#)); do
   esac
 done
 [[ -n "$tag" && -n "$commit" ]] || usage
+if [[ "$dist" != dist ]]; then
+  echo "release-build: only the configured dist directory is supported; omit --dist" >&2
+  exit 2
+fi
 
 if [[ "$snapshot" == true ]]; then
   [[ "$tag" == snapshot ]] || usage
