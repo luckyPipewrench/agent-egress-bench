@@ -386,12 +386,15 @@ class ReleaseBuildTest(unittest.TestCase):
             encoding="utf-8",
         )
         fake_go.chmod(0o755)
+        environment = {**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"}
+        environment.pop("TMPDIR", None)
+        environment.pop("GOCACHE", None)
         result = subprocess.run(
             ["bash", str(self.root / "scripts/release-build.sh"), "--tag", "snapshot", "--commit", self.commit, "--snapshot"],
             cwd=self.root,
             text=True,
             capture_output=True,
-            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+            env=environment,
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("shared Go caches configured", result.stderr)
