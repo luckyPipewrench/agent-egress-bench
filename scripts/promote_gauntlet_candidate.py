@@ -38,6 +38,7 @@ DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
 DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 PROMOTED_RECORD_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promoted-record-v1.schema.json"
+PROMOTION_BASELINE_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promotion-baseline-v1.schema.json"
 REVIEWABLE_SCORE_FAILURE = re.compile(
     r"^scores\.(?:full|applicable)\.[a-z_]+=.+, "
     r"(?:below baseline floor|above baseline ceiling) .+$"
@@ -220,6 +221,7 @@ def proposed_baseline(candidate, candidate_sha256):
                 "evidence": applicable_scores.get("evidence"),
             }
         )
+    artifact_schema.validate_file(baseline, PROMOTION_BASELINE_SCHEMA, "proposed baseline")
     return baseline
 
 

@@ -109,7 +109,11 @@ def v5_candidate():
 
 def baseline():
     return {
+        "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
         "schema_version": 1,
+        "recorded_on": "2026-08-01",
+        "verified_candidate_sha256": "a" * 64,
+        "verified_artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:122",
         "pipelock_version": PIPELOCK_VERSION,
         "corpus_git_sha": "b" * 40,
         "corpus_sha256": "c" * 64,

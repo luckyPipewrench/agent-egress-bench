@@ -3,11 +3,21 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
 import tempfile
 from pathlib import Path
+
+try:
+    import artifact_schema
+except ModuleNotFoundError:
+    _artifact_schema_spec = importlib.util.spec_from_file_location(
+        "artifact_schema", Path(__file__).with_name("artifact_schema.py")
+    )
+    artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
+    _artifact_schema_spec.loader.exec_module(artifact_schema)
 
 
 LEGACY_REQUIRED_FLOORS = {
@@ -37,6 +47,7 @@ SCOPE_IDENTITIES = {
     "runner_version",
 }
 SHA256_HEX = set("0123456789abcdef")
+PROMOTION_BASELINE_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promotion-baseline-v1.schema.json"
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
 V5_DIAGNOSTIC_FIELDS = frozenset(
@@ -456,6 +467,8 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 decision["review_notes"].append(
                     f"{identity_key} moved {previous!r} -> {current!r}"
                 )
+
+        artifact_schema.validate_file(baseline, PROMOTION_BASELINE_SCHEMA, "baseline")
 
         if not decision["failures"] and scope_changed:
             decision["promotion_status"] = "scope_changed_requires_review"

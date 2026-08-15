@@ -56,6 +56,16 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
             with self.subTest(path=path):
                 artifact_schema.validate_file(json.loads(path.read_text()), schema, str(path))
 
+    def test_existing_promotion_baselines(self):
+        schema = ROOT / "schemas" / "promotion-baseline-v1.schema.json"
+        baselines = [ROOT / "ci" / "gauntlet-baseline.json"]
+        baselines.extend(
+            sorted((ROOT / "gauntlet-site" / "results" / "pipelock").glob("*/reviewed-baseline.json"))
+        )
+        for path in baselines:
+            with self.subTest(path=path):
+                artifact_schema.validate_file(json.loads(path.read_text()), schema, str(path))
+
 
 if __name__ == "__main__":
     unittest.main()

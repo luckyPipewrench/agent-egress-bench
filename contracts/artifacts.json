@@ -341,8 +341,15 @@
       "frozen_versions": [
         1
       ],
-      "canonical_schema_path": null,
-      "schemas": [],
+      "canonical_schema_path": "schemas/promotion-baseline-v1.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "active",
+          "path": "schemas/promotion-baseline-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promotion-baseline-v1.schema.json"
+        }
+      ],
       "writer": [
         "scripts/promote_gauntlet_candidate.py"
       ],
