@@ -298,7 +298,9 @@ def load_manifest(repo_root, run_dir):
 def load_case_index(path, manifest_ids, require_categories=False):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
-    artifact_schema.validate_file(case_index, CASE_INDEX_SCHEMA, "loader case index")
+    case_index = artifact_schema.validate_file(
+        case_index, CASE_INDEX_SCHEMA, "loader case index"
+    )
     if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
         raise ValueError("loader case index must be a schema_version 1 object")
     rows = case_index.get("cases")
@@ -1055,7 +1057,7 @@ def finalize_command(args):
             "portable_bundle_sha256": file_sha256(bundle_path),
         }
     )
-    artifact_schema.validate_file(
+    candidate = artifact_schema.validate_file(
         candidate,
         PROVENANCE_SCHEMAS[candidate["schema_version"]],
         "provenance candidate",

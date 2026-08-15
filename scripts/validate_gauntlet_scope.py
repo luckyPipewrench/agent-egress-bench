@@ -312,7 +312,7 @@ def validate_scope(document, manifest_identity, manifest_label):
         validate_scope_v5(document, manifest_identity, manifest_label)
     else:
         raise ValueError(f"unsupported schema_version: {version!r}")
-    artifact_schema.validate_file(
+    return artifact_schema.validate_file(
         document, PROVENANCE_SCHEMAS[version], f"provenance candidate v{version}"
     )
 

@@ -51,7 +51,10 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
             self.assertTrue(accepted, path)
             for vector in accepted:
                 with self.subTest(vector=path.name, case=vector["description"]):
-                    artifact_schema.validate(materialize(vector, path), schema, vector["description"])
+                    validated = artifact_schema.validate(
+                        materialize(vector, path), schema, vector["description"]
+                    )
+                    self.assertIsNotNone(validated)
             for vector in document["rejected"]:
                 with self.subTest(vector=path.name, case=vector["description"]):
                     base = materialize(accepted[vector.get("accepted_index", 0)], path)
@@ -65,7 +68,10 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
         self.assertTrue(records)
         for path in records:
             with self.subTest(path=path):
-                artifact_schema.validate_file(json.loads(path.read_text()), schema, str(path))
+                validated = artifact_schema.validate_file(
+                    json.loads(path.read_text()), schema, str(path)
+                )
+                self.assertIsNotNone(validated)
 
     def test_existing_promotion_baselines(self):
         schema = ROOT / "schemas" / "promotion-baseline-v1.schema.json"
@@ -75,7 +81,10 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
         )
         for path in baselines:
             with self.subTest(path=path):
-                artifact_schema.validate_file(json.loads(path.read_text()), schema, str(path))
+                validated = artifact_schema.validate_file(
+                    json.loads(path.read_text()), schema, str(path)
+                )
+                self.assertIsNotNone(validated)
 
 
 if __name__ == "__main__":

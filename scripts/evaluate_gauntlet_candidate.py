@@ -474,8 +474,10 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                     f"{identity_key} moved {previous!r} -> {current!r}"
                 )
 
-        artifact_schema.validate_file(baseline, PROMOTION_BASELINE_SCHEMA, "baseline")
-        artifact_schema.validate_file(
+        baseline = artifact_schema.validate_file(
+            baseline, PROMOTION_BASELINE_SCHEMA, "baseline"
+        )
+        candidate = artifact_schema.validate_file(
             candidate,
             PROVENANCE_SCHEMAS[candidate_schema_version],
             f"provenance candidate v{candidate_schema_version}",

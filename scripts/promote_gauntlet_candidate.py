@@ -150,6 +150,7 @@ def validate_reference_candidate(candidate):
         evaluator.require_capability_registry(candidate)
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
+    parse_timestamp(require_non_empty_string(candidate, "generated_at"), "generated_at")
     tool_version = require_non_empty_string(candidate, "tool_version")
     if tool_version != require_non_empty_string(candidate, "pipelock_version"):
         raise ValueError("candidate tool_version and pipelock_version must match")
@@ -221,7 +222,9 @@ def proposed_baseline(candidate, candidate_sha256):
                 "evidence": applicable_scores.get("evidence"),
             }
         )
-    artifact_schema.validate_file(baseline, PROMOTION_BASELINE_SCHEMA, "proposed baseline")
+    baseline = artifact_schema.validate_file(
+        baseline, PROMOTION_BASELINE_SCHEMA, "proposed baseline"
+    )
     return baseline
 
 
@@ -273,7 +276,9 @@ def validate_record(record_dir, candidate_sha256):
     manifest = require_object(manifest_path)
     if manifest.get("schema_version") != 1:
         raise ValueError("record manifest schema_version must be 1")
-    artifact_schema.validate_file(manifest, PROMOTED_RECORD_SCHEMA, "record manifest")
+    manifest = artifact_schema.validate_file(
+        manifest, PROMOTED_RECORD_SCHEMA, "record manifest"
+    )
     require_sha256(manifest.get("candidate_sha256"), "record candidate_sha256")
     if manifest["candidate_sha256"] != candidate_sha256:
         raise ValueError("existing record candidate digest does not match its directory")
@@ -569,13 +574,11 @@ def promote(args):
                 previous_candidate_sha256,
                 previous_record_manifest_sha256,
             )
+            record_manifest = artifact_schema.validate_file(
+                record_manifest, PROMOTED_RECORD_SCHEMA, "record manifest"
+            )
             evaluator.atomic_json_write(
                 temporary_record / RECORD_MANIFEST_FILENAME, record_manifest
-            )
-            artifact_schema.validate_file(
-                require_object(temporary_record / RECORD_MANIFEST_FILENAME),
-                PROMOTED_RECORD_SCHEMA,
-                "record manifest",
             )
             if record_dir.exists():
                 validate_record(record_dir, candidate_sha256)
