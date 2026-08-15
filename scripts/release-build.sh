@@ -36,6 +36,12 @@ fi
 
 if [[ "$snapshot" == true ]]; then
   [[ "$tag" == snapshot ]] || usage
+  # Pin the tag GoReleaser resolves from instead of predicting which one it
+  # would pick. Both sides then derive the version from one explicit input, so
+  # the two cannot disagree; previously each selected a tag independently and a
+  # divergence was only caught later by the final verify.
+  goreleaser_tag="$(python3 scripts/release_build.py snapshot-tag --repo-root . --commit "$commit")"
+  export GORELEASER_CURRENT_TAG="$goreleaser_tag"
   version="$(python3 scripts/release_build.py snapshot-version --repo-root . --commit "$commit")"
   snapshot_args=(--snapshot)
 else
@@ -48,6 +54,7 @@ else
   fi
   commit=$tag_commit
   version=${tag#v}
+  export GORELEASER_CURRENT_TAG="$tag"
   snapshot_args=()
 fi
 

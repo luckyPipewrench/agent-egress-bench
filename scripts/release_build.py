@@ -92,13 +92,26 @@ def configured_snapshot_template(repo: Path) -> str:
     fail("GoReleaser snapshot.version_template is required")
 
 
-def snapshot_version(repo: Path, commit: str) -> str:
+def snapshot_source_tag(repo: Path, commit: str) -> str:
+    """Pick the tag the snapshot version is built from.
+
+    The caller exports this as GORELEASER_CURRENT_TAG so GoReleaser uses the
+    same tag rather than selecting one independently. Predicting GoReleaser's
+    own choice was a second implementation of its tag resolution and could
+    diverge from it; pinning the input removes that possibility instead of
+    detecting it afterwards.
+    """
     if not COMMIT_RE.fullmatch(commit):
         fail("snapshot commit must be a 40-character lower-case Git SHA")
     tags = git(repo, "tag", "--merged", commit, "--sort=-v:refname").splitlines()
     tag = next((candidate for candidate in tags if candidate.startswith("v") and VERSION_RE.fullmatch(candidate[1:])), "")
     if not tag:
         fail("GoReleaser snapshot source tag must be a v-prefixed semantic version")
+    return tag
+
+
+def snapshot_version(repo: Path, commit: str) -> str:
+    tag = snapshot_source_tag(repo, commit)
     template = configured_snapshot_template(repo)
     values = {"{{ .Version }}": tag[1:], "{{ .ShortCommit }}": commit[:7]}
     if any(token not in values for token in re.findall(r"{{[^}]+}}", template)):
@@ -607,6 +620,9 @@ def main() -> int:
     snapshot_version_command = commands.add_parser("snapshot-version")
     snapshot_version_command.add_argument("--repo-root", type=Path, default=Path("."))
     snapshot_version_command.add_argument("--commit", required=True)
+    snapshot_tag_command = commands.add_parser("snapshot-tag")
+    snapshot_tag_command.add_argument("--repo-root", type=Path, default=Path("."))
+    snapshot_tag_command.add_argument("--commit", required=True)
     check = commands.add_parser("check-identity")
     check.add_argument("--repo-root", type=Path, default=Path("."))
     check.add_argument("--identity", type=Path, required=True)
@@ -628,6 +644,8 @@ def main() -> int:
             args.output.write_bytes(canonical_json(build_identity(args.repo_root.resolve(), args.tag, args.version, args.commit, args.snapshot)))
         elif args.command == "snapshot-version":
             print(snapshot_version(args.repo_root.resolve(), args.commit))
+        elif args.command == "snapshot-tag":
+            print(snapshot_source_tag(args.repo_root.resolve(), args.commit))
         elif args.command == "check-identity":
             verify_identity(args.repo_root.resolve(), args.identity)
         elif args.command == "data-bundle":
