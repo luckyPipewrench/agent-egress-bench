@@ -1,4 +1,4 @@
-.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow release-snapshot validate-cases validate
+.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -218,6 +218,11 @@ test-release-build:
 
 test-release-workflow:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_workflow_test.py
+
+# This integration test is deliberately separate from preflight because it
+# requires the pinned GoReleaser binary installed by the validation workflow.
+test-release-snapshot:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_snapshot_test.py
 
 # Snapshot mode builds the exact archive layout without creating a tag or a
 # GitHub release. Release assets are written to dist/release. goreleaser must

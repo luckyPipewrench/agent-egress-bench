@@ -37,8 +37,18 @@ jobs:
           # and the receipt generator covered by the shared local preflight.
           go-version: "1.25"
 
+      - name: Install pinned GoReleaser for release archive integration
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.17.1
+          install-only: true
+
       - name: Run local preflight gate
         run: make preflight
+
+      - name: Verify pinned GoReleaser archive layout
+        run: make test-release-snapshot
 
       - name: Enforce append-only Gauntlet history
         shell: bash

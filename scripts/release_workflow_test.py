@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO / ".github/workflows/release.yaml"
+VALIDATE_WORKFLOW = REPO / ".github/workflows/validate.yaml"
 
 
 def job_block(workflow: str, name: str) -> str:
@@ -73,9 +74,26 @@ def check_workflow(path: Path) -> None:
         raise AssertionError("draft release retry is not safe")
 
 
+def check_validate_release_integration(path: Path) -> None:
+    workflow = without_comments(path.read_text(encoding="utf-8"))
+    validate = job_block(workflow, "validate")
+    required = (
+        "goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94",
+        "distribution: goreleaser",
+        "version: v2.17.1",
+        "install-only: true",
+        "run: make test-release-snapshot",
+    )
+    if any(value not in validate for value in required):
+        raise AssertionError("validation workflow does not run the pinned release archive integration test")
+
+
 class ReleaseWorkflowTest(unittest.TestCase):
     def test_workflow_has_release_and_dry_run_boundaries(self) -> None:
         check_workflow(WORKFLOW)
+
+    def test_validation_workflow_runs_the_pinned_release_archive_integration(self) -> None:
+        check_validate_release_integration(VALIDATE_WORKFLOW)
 
     def test_release_creation_guard_is_load_bearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -128,6 +146,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace('release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"', 'release_commit="$GITHUB_SHA"', 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "does not resolve the pushed tag"):
                 check_workflow(candidate)
+
+    def test_release_archive_integration_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "validate.yaml"
+            candidate.write_text(VALIDATE_WORKFLOW.read_text(encoding="utf-8").replace("run: make test-release-snapshot", "run: true", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "does not run the pinned release archive integration"):
+                check_validate_release_integration(candidate)
 
 
 if __name__ == "__main__":
