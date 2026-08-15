@@ -220,10 +220,110 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
     }
 
 
-def read_identity(path: Path) -> dict[str, Any]:
-    identity = load_json(path)
+def exact_object(value: Any, label: str, fields: set[str]) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != fields:
+        fail(f"{label} must contain exactly {sorted(fields)}")
+    return value
+
+
+def nonempty_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        fail(f"{label} must be a non-empty string")
+    return value
+
+
+def positive_int(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        fail(f"{label} must be a positive integer")
+    return value
+
+
+def validate_identity_structure(identity: dict[str, Any]) -> None:
     if identity.get("schema_version") != 1:
         fail("release identity schema_version must be 1")
+    exact_object(identity, "release identity", {"schema_version", "release", "source", "runner", "corpus", "schema_contract", "data_files", "verification"})
+
+    release = exact_object(identity["release"], "release identity release", {"tag", "version", "snapshot"})
+    tag = nonempty_string(release["tag"], "release identity release.tag")
+    version = nonempty_string(release["version"], "release identity release.version")
+    snapshot = release["snapshot"]
+    if not isinstance(snapshot, bool):
+        fail("release identity release.snapshot must be a boolean")
+    if snapshot:
+        if tag != "snapshot" or not SNAPSHOT_VERSION_RE.fullmatch(version):
+            fail("release identity snapshot tag or version is invalid")
+    elif not VERSION_RE.fullmatch(version) or tag != f"v{version}":
+        fail("release identity release tag and version are invalid")
+
+    source = exact_object(identity["source"], "release identity source", {"repository", "commit", "commit_timestamp"})
+    if source["repository"] != "luckyPipewrench/agent-egress-bench":
+        fail("release identity source.repository is invalid")
+    if not isinstance(source["commit"], str) or not COMMIT_RE.fullmatch(source["commit"]):
+        fail("release identity source.commit is invalid")
+    positive_int(source["commit_timestamp"], "release identity source.commit_timestamp")
+
+    runner = exact_object(identity["runner"], "release identity runner", {"binary", "runner_version", "scoring_version", "platforms"})
+    if runner["binary"] != "aeb-gauntlet":
+        fail("release identity runner.binary is invalid")
+    nonempty_string(runner["runner_version"], "release identity runner.runner_version")
+    nonempty_string(runner["scoring_version"], "release identity runner.scoring_version")
+    platforms = runner["platforms"]
+    if not isinstance(platforms, list):
+        fail("release identity runner.platforms must be an array")
+    pairs: list[tuple[str, str]] = []
+    for index, platform in enumerate(platforms):
+        platform = exact_object(platform, f"release identity runner.platforms[{index}]", {"goos", "goarch"})
+        pairs.append((nonempty_string(platform["goos"], f"release identity runner.platforms[{index}].goos"), nonempty_string(platform["goarch"], f"release identity runner.platforms[{index}].goarch")))
+    if len(pairs) != len(set(pairs)) or set(pairs) != set(PLATFORMS):
+        fail("release identity runner.platforms must contain the exact supported platform matrix")
+
+    corpus_value = exact_object(identity["corpus"], "release identity corpus", {"version", "manifest_path", "manifest_sha256", "case_count"})
+    nonempty_string(corpus_value["version"], "release identity corpus.version")
+    if corpus_value["manifest_path"] != "cases/MANIFEST.txt":
+        fail("release identity corpus.manifest_path is invalid")
+    if not isinstance(corpus_value["manifest_sha256"], str) or not SHA256_RE.fullmatch(corpus_value["manifest_sha256"]):
+        fail("release identity corpus.manifest_sha256 is invalid")
+    positive_int(corpus_value["case_count"], "release identity corpus.case_count")
+
+    schema_contract = exact_object(identity["schema_contract"], "release identity schema_contract", {"artifacts_manifest_path", "artifacts_manifest_sha256", "families"})
+    if schema_contract["artifacts_manifest_path"] != "contracts/artifacts.json" or not isinstance(schema_contract["artifacts_manifest_sha256"], str) or not SHA256_RE.fullmatch(schema_contract["artifacts_manifest_sha256"]):
+        fail("release identity schema contract manifest is invalid")
+    families = schema_contract["families"]
+    if not isinstance(families, list) or not families:
+        fail("release identity schema_contract.families must be non-empty")
+    family_names: set[str] = set()
+    for index, family in enumerate(families):
+        family = exact_object(family, f"release identity schema_contract.families[{index}]", {"family", "active_writer_version", "schema_path", "schema_sha256", "schema_id"})
+        name = nonempty_string(family["family"], f"release identity schema_contract.families[{index}].family")
+        if name in family_names:
+            fail("release identity schema_contract.families contains duplicate names")
+        family_names.add(name)
+        positive_int(family["active_writer_version"], f"release identity schema_contract.families[{index}].active_writer_version")
+        safe_name(nonempty_string(family["schema_path"], f"release identity schema_contract.families[{index}].schema_path"))
+        if not isinstance(family["schema_sha256"], str) or not SHA256_RE.fullmatch(family["schema_sha256"]):
+            fail(f"release identity schema_contract.families[{index}].schema_sha256 is invalid")
+        nonempty_string(family["schema_id"], f"release identity schema_contract.families[{index}].schema_id")
+
+    data_files = identity["data_files"]
+    if not isinstance(data_files, dict) or not data_files:
+        fail("release identity data_files must be a non-empty object")
+    for name, digest in data_files.items():
+        if not isinstance(name, str) or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+            fail("release identity data_files has an invalid entry")
+        safe_name(name)
+    if set(DATA_FILES) - set(data_files) or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
+        fail("release identity data_files does not contain the required corpus, schema, contract, and verifier data")
+
+    verification = exact_object(identity["verification"], "release identity verification", {"checksums", "command"})
+    checksums = exact_object(verification["checksums"], "release identity verification.checksums", {"algorithm", "path"})
+    if checksums["algorithm"] != "sha256" or checksums["path"] != CHECKSUM_NAME:
+        fail("release identity verification checksums are invalid")
+    nonempty_string(verification["command"], "release identity verification.command")
+
+
+def read_identity(path: Path) -> dict[str, Any]:
+    identity = load_json(path)
+    validate_identity_structure(identity)
     return identity
 
 
@@ -324,6 +424,35 @@ def bundle_contents(path: Path) -> dict[str, bytes]:
     return result
 
 
+def bundle_corpus_ids(contents: dict[str, bytes]) -> set[str]:
+    result: set[str] = set()
+    for name in contents:
+        path = PurePosixPath(name)
+        if path.parts[0] != "cases":
+            continue
+        if path.suffix == ".json":
+            result.add(path.stem)
+        elif len(path.parts) == 4 and path.name == "case.yaml":
+            result.add(path.parts[2])
+    return result
+
+
+def verify_bundle_corpus(identity: dict[str, Any], contents: dict[str, bytes]) -> None:
+    corpus_value = identity["corpus"]
+    manifest_path = corpus_value["manifest_path"]
+    manifest = contents[manifest_path]
+    if sha256_bytes(manifest) != corpus_value["manifest_sha256"]:
+        fail("data bundle corpus manifest does not match release identity")
+    try:
+        ids = [line.strip() for line in manifest.decode("utf-8").splitlines() if line.strip()]
+    except UnicodeDecodeError as exc:
+        fail(f"data bundle corpus manifest is not UTF-8: {exc}")
+    if not ids or len(ids) != len(set(ids)) or len(ids) != corpus_value["case_count"]:
+        fail("data bundle corpus manifest has invalid case IDs or count")
+    if not set(ids).issubset(bundle_corpus_ids(contents)):
+        fail("data bundle does not contain every case named by its corpus manifest")
+
+
 def binary_names(identity: dict[str, Any]) -> set[str]:
     version = identity["release"]["version"]
     return {f"agent-egress-bench_{version}_{item['goos']}_{item['goarch']}.{'zip' if item['goos'] == 'windows' else 'tar.gz'}" for item in identity["runner"]["platforms"]}
@@ -356,6 +485,7 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
     for name, digest in data_files.items():
         if not isinstance(name, str) or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) or sha256_bytes(contents[name]) != digest:
             fail(f"data bundle digest does not match release identity: {name}")
+    verify_bundle_corpus(identity, contents)
     if repo is not None:
         expected = build_identity(repo.resolve(), identity["release"]["tag"], identity["release"]["version"], identity["source"]["commit"], identity["release"]["snapshot"])
         if canonical_json(expected) != canonical_json(identity):

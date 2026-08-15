@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import shutil
@@ -77,6 +79,33 @@ class ReleaseBuildTest(unittest.TestCase):
                         info.size = len(runner)
                         info.mode = 0o755
                         archive.addfile(info, __import__("io").BytesIO(runner))
+
+    def forge_release(self, identity: dict) -> Path:
+        release = Path(self.temp.name) / "fakerel"
+        release.mkdir()
+        identity_bytes = json.dumps(identity, sort_keys=True).encode("utf-8")
+        identity_path = release / "release-identity.json"
+        identity_path.write_bytes(identity_bytes)
+        data_name = f"agent-egress-bench_{identity['release']['version']}_data.tar.gz"
+        with tarfile.open(release / data_name, "w:gz") as archive:
+            info = tarfile.TarInfo("release-identity.json")
+            info.size = len(identity_bytes)
+            archive.addfile(info, io.BytesIO(identity_bytes))
+        assets = [identity_path, release / data_name]
+        (release / "checksums.txt").write_text(
+            "\n".join(f"{hashlib.sha256(asset.read_bytes()).hexdigest()}  {asset.name}" for asset in assets) + "\n",
+            encoding="utf-8",
+        )
+        return release
+
+    def assert_forged_release_refused(self, identity: dict, message: str) -> None:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(self.forge_release(identity))],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(message, result.stderr)
 
     def test_contract_source_disagreement_fails_before_identity_exists(self) -> None:
         contracts = self.root / "contracts/artifacts.json"
@@ -203,6 +232,24 @@ class ReleaseBuildTest(unittest.TestCase):
             capture_output=True,
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
+
+    def test_download_verifier_rejects_a_forged_empty_release(self) -> None:
+        self.prepare()
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        identity["release"] = {"tag": "v9.9.9", "version": "9.9.9", "snapshot": False}
+        identity["source"] = {"repository": "luckyPipewrench/agent-egress-bench", "commit": "0" * 40, "commit_timestamp": 1}
+        identity["runner"]["platforms"] = []
+        identity["data_files"] = {}
+        self.assert_forged_release_refused(identity, "runner.platforms must contain the exact supported platform matrix")
+
+    def test_download_verifier_rejects_absent_corpus_metadata(self) -> None:
+        self.prepare()
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        del identity["corpus"]
+        self.assert_forged_release_refused(identity, "release identity must contain exactly")
+
+    def test_download_verifier_rejects_truncated_identity(self) -> None:
+        self.assert_forged_release_refused({"schema_version": 1, "release": {"tag": "v9.9.9", "version": "9.9.9", "snapshot": False}}, "release identity must contain exactly")
 
     def test_download_verifier_rejects_archive_without_runner_binary(self) -> None:
         self.prepare()
