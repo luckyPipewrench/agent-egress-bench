@@ -16,6 +16,7 @@ REQUIRED_CONSTANTS = {
     ("runner/case.go", "activeToolProfileSchemaVersion"),
     ("runner/case.go", "activeReceiptProfileSchemaVersion"),
     ("validate/main.go", "activeCaseSchemaVersion"),
+    ("validate/main.go", "activeMultiFileCaseSchemaVersion"),
     ("validate/main.go", "activeResultSchemaVersion"),
     ("validate/main.go", "activeToolProfileSchemaVersion"),
     ("runner/summary.go", "activeSummarySchemaVersion"),
