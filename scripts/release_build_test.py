@@ -132,6 +132,26 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("tracked or untracked changes", result.stderr)
 
+    def test_identity_rejects_untracked_runner_source(self) -> None:
+        (self.root / "runner/untracked_release_override.go").write_text("package main\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", self.snapshot_version, "--commit", self.commit, "--snapshot", "--output", str(self.identity)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tracked or untracked changes", result.stderr)
+
+    def test_identity_rejects_ignored_untracked_release_data(self) -> None:
+        (self.root / "cases/untracked-release-input.pyc").write_bytes(b"not in the commit\n")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", self.snapshot_version, "--commit", self.commit, "--snapshot", "--output", str(self.identity)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release data differs from the tracked source tree", result.stderr)
+
     def test_download_verifier_rejects_tampered_checksum_artifact(self) -> None:
         self.prepare()
         dist = self.root / "dist"
