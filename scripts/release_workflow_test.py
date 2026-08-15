@@ -67,7 +67,7 @@ def check_workflow(path: Path) -> None:
         raise AssertionError("all release assets are not attested")
     if "needs: [release, attest]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "gh release create \"$GITHUB_REF_NAME\" dist/release/* --title \"$GITHUB_REF_NAME\" --verify-tag --draft" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
-    if "--json isDraft" not in publish or "refusing to overwrite published release" not in publish or "gh release upload \"$GITHUB_REF_NAME\" dist/release/* --clobber" not in publish or "gh release edit \"$GITHUB_REF_NAME\" --draft=false" not in publish:
+    if "Create a draft release or resume one on workflow retry" not in publish or "--json isDraft" not in publish or "refusing to overwrite published release" not in publish or "gh release upload \"$GITHUB_REF_NAME\" dist/release/* --clobber" not in publish or "gh release edit \"$GITHUB_REF_NAME\" --draft=false" not in publish:
         raise AssertionError("draft release retry is not safe")
 
 
@@ -104,6 +104,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("--verify-tag --draft", "--verify-tag", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "GitHub release creation"):
+                check_workflow(candidate)
+
+    def test_draft_resume_is_scoped_to_a_workflow_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("Create a draft release or resume one on workflow retry", "Create a draft GitHub release", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "draft release retry"):
                 check_workflow(candidate)
 
     def test_commented_release_guard_does_not_count(self) -> None:

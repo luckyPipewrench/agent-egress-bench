@@ -85,7 +85,7 @@ jobs:
           name: agent-egress-bench-release-${{ github.sha }}
           path: dist/release
 
-      - name: Create or resume a draft GitHub release
+      - name: Create a draft release or resume one on workflow retry
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
