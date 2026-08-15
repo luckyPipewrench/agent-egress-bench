@@ -32,6 +32,7 @@ def check_workflow(path: Path) -> None:
     preamble = workflow[:workflow.index("jobs:\n")]
     release = job_block(workflow, "release")
     attest = job_block(workflow, "attest")
+    image = job_block(workflow, "image")
     publish = job_block(workflow, "publish")
     required = (
         "tags:\n      - 'v*'",
@@ -68,7 +69,21 @@ def check_workflow(path: Path) -> None:
         raise AssertionError("tag-only attestation does not consume the built release artifacts")
     if "subject-path: dist/release/*\n" not in attest:
         raise AssertionError("all release assets are not attested")
-    if "needs: [release, attest]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish:
+    image_required = (
+        "needs: release",
+        "if: github.event_name == 'push'",
+        "packages: write",
+        "docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
+        "version: v0.36.1",
+        "--platform linux/amd64,linux/arm64",
+        "--provenance=mode=max",
+        "--sbom=true",
+        "--push",
+        "reported_version=",
+    )
+    if any(value not in image for value in image_required):
+        raise AssertionError("runner image publication is not pinned, multi-architecture, or tag-gated")
+    if "needs: [release, attest, image]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
     if "Create an owned draft release or resume one on workflow retry" not in publish or "release_publish.py" not in publish:
         raise AssertionError("draft release retry is not safe")
@@ -117,6 +132,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("subject-path: dist/release/*", "subject-path: dist/release/*.tar.gz", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "all release assets"):
+                check_workflow(candidate)
+
+    def test_multi_architecture_image_guard_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("--platform linux/amd64,linux/arm64", "--platform linux/amd64", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 
     def test_publication_uses_the_owned_draft_guard(self) -> None:
