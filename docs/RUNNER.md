@@ -389,10 +389,15 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
   --receipt-verifier-file examples/pipelock/receipt-verifier.json \
   --timeout 15s
 
-# Compare byte-for-byte with the committed artifact.
-sha256sum /tmp/pipelock.json profiles/pipelock.json
-diff -q /tmp/pipelock.json profiles/pipelock.json
+# Inspect the emitted profile.
+sha256sum /tmp/pipelock.json
 ```
+
+`profiles/pipelock.json` is a retained historical artifact from Pipelock 3.1.0 on
+corpus v2.0.0, pinned by `profiles/retained-artifacts.json`. A run against a
+current tool and corpus is EXPECTED to differ from it, so a byte-for-byte diff
+against that file is not a reproduction check. To reproduce it, pin the same tool
+version and corpus commit it records, then compare.
 
 Published profile reproduction should name the exact tool binary and corpus commit
 used for the run. A mismatch means the corpus drifted, the tool drifted, or the

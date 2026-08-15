@@ -87,7 +87,7 @@ nothing to pass. The profile is the published evidence.
 
 ## Coverage scope
 
-The reference runner discovers the 222 single-file cases under
+The reference runner discovers the 234 single-file cases under
 [`../cases/`](../cases/) plus the 6 multi-file cases in
 [`../cases/mcp-drift/`](../cases/mcp-drift/) (18 JSON fixture files total:
 `before.json`, `after.json`, and `expected.json` per case). The optional
