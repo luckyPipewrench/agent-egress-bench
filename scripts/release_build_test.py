@@ -330,6 +330,34 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("checksum mismatch", result.stderr)
 
+    def test_release_binds_citation_metadata_into_the_data_bundle_and_checksums(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        self.assertEqual(
+            hashlib.sha256((self.root / "CITATION.cff").read_bytes()).hexdigest(),
+            identity["data_files"]["CITATION.cff"],
+        )
+        data_bundle = next(dist.glob("*_data.tar.gz"))
+        with tarfile.open(data_bundle, "r:gz") as archive:
+            citation = archive.extractfile("CITATION.cff")
+            self.assertIsNotNone(citation)
+            assert citation is not None
+            self.assertEqual((self.root / "CITATION.cff").read_bytes(), citation.read())
+        self.write_runner_archives(dist, self.identity.read_bytes(), identity)
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        checksums = {
+            name: digest
+            for digest, name in (
+                line.split("  ", 1)
+                for line in (dist / "checksums.txt").read_text(encoding="utf-8").splitlines()
+            )
+        }
+        self.assertIn(data_bundle.name, checksums)
+        self.assertEqual(hashlib.sha256(data_bundle.read_bytes()).hexdigest(), checksums[data_bundle.name])
+        self.invoke("verify", "--release-dir", str(dist))
+
     def test_download_verifier_runs_from_the_documented_extract_layout(self) -> None:
         self.prepare()
         dist = self.root / "dist"
