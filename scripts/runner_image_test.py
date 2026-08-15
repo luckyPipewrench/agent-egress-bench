@@ -32,6 +32,7 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn("--require-complete", script)
         self.assertIn("-require-complete=*", script)
         self.assertIn('if [[ "$measurement_status" != measured && "$run_exit" -eq 0 ]]', script)
+        self.assertIn('rm -f -- "$results_path" "$summary_path" "$metadata_path"', script)
         self.assertIn("offline mode requires a preloaded digest-pinned image", script)
         result = subprocess.run(["bash", "-n", str(ROOT / "scripts" / "run-oci-action.sh")], capture_output=True, text=True)
         self.assertEqual(0, result.returncode, msg=result.stderr)

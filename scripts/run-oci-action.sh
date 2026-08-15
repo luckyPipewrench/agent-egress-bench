@@ -21,6 +21,10 @@ mkdir -p "$GITHUB_WORKSPACE/$output_dir"
 output_real="$(realpath "$GITHUB_WORKSPACE/$output_dir")"
 [[ "$output_real" == "$workspace_real/"* ]] || fail "output-dir must stay inside GITHUB_WORKSPACE"
 output_rel="${output_real#"$workspace_real/"}"
+results_path="$output_real/results.jsonl"
+summary_path="$output_real/summary.json"
+metadata_path="$output_real/run-metadata.json"
+rm -f -- "$results_path" "$summary_path" "$metadata_path"
 
 parse_string_array() {
   python3 -c 'import json, re, sys
@@ -91,9 +95,6 @@ if [[ "$offline" == true ]]; then
   network_mode="none"
 fi
 
-results_path="$output_real/results.jsonl"
-summary_path="$output_real/summary.json"
-metadata_path="$output_real/run-metadata.json"
 image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 
 set +e
