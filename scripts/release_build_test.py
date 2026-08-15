@@ -578,6 +578,38 @@ class ReleaseBuildTest(unittest.TestCase):
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
         self.invoke("verify", "--release-dir", str(dist), "--repo-root", str(self.root))
 
+    def test_repo_backed_verifier_allows_a_release_rebuilt_from_the_same_schema_surface(self) -> None:
+        schema = self.root / "schemas/repo-backed-test-v1.schema.json"
+        schema.write_text(
+            json.dumps(
+                {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "$id": "https://example.invalid/schemas/repo-backed-test-v1.schema.json",
+                    "type": "object",
+                },
+                indent=2,
+            ) + "\n",
+            encoding="utf-8",
+        )
+        subprocess.run([sys.executable, str(self.root / "scripts/write_schema_catalog.py")], cwd=self.root, check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "schemas/index.json", str(schema.relative_to(self.root))], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "add schema fixture"], check=True)
+        self.commit = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+        self.snapshot_version = f"1.0.0-SNAPSHOT-{self.commit[:7]}"
+
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        self.invoke("verify", "--release-dir", str(dist), "--repo-root", str(self.root))
+
     def test_repo_backed_verifier_rejects_partial_or_unreadable_schema_source(self) -> None:
         for failure in ("missing", "invalid JSON"):
             with self.subTest(failure=failure):
