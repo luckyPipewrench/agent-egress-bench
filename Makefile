@@ -23,6 +23,7 @@ check-scorecard-workflow:
 # producer or an empty record tree cannot turn this into a false green.
 check-contracts:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/artifact_schema_conformance_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
 
 # The discovery document is generated from the canonical schema files. It pins

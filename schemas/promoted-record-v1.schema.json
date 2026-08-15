@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v1.schema.json",
+  "title": "agent-egress-bench Promoted Record v1",
+  "x-aeb-nullable-required": ["previous_candidate_sha256", "previous_record_manifest_sha256"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool", "tool_version", "artifact_id", "canonical_url", "generated_at", "candidate_sha256", "previous_candidate_sha256", "previous_record_manifest_sha256", "files"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "tool": {"$ref": "#/$defs/nonempty"},
+    "tool_version": {"$ref": "#/$defs/nonempty"},
+    "artifact_id": {"$ref": "#/$defs/nonempty"},
+    "canonical_url": {"$ref": "#/$defs/nonempty"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "previous_candidate_sha256": {"$ref": "#/$defs/nullable_sha256"},
+    "previous_record_manifest_sha256": {"$ref": "#/$defs/nullable_sha256"},
+    "files": {"type": "object", "minProperties": 1, "propertyNames": {"type": "string", "minLength": 1}, "additionalProperties": {"$ref": "#/$defs/sha256"}}
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullable_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+  }
+}

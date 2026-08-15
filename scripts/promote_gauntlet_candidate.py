@@ -2,6 +2,7 @@
 """Prepare an append-only Gauntlet result and latest-verified pointer."""
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -13,6 +14,14 @@ from urllib.parse import urlparse
 
 import build_gauntlet_provenance as provenance
 import evaluate_gauntlet_candidate as evaluator
+try:
+    import artifact_schema
+except ModuleNotFoundError:
+    _artifact_schema_spec = importlib.util.spec_from_file_location(
+        "artifact_schema", Path(__file__).with_name("artifact_schema.py")
+    )
+    artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
+    _artifact_schema_spec.loader.exec_module(artifact_schema)
 
 
 CANDIDATE_FILENAME = "continuous-gauntlet-pipelock.json"
@@ -28,6 +37,7 @@ SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
 DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
 DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+PROMOTED_RECORD_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promoted-record-v1.schema.json"
 REVIEWABLE_SCORE_FAILURE = re.compile(
     r"^scores\.(?:full|applicable)\.[a-z_]+=.+, "
     r"(?:below baseline floor|above baseline ceiling) .+$"
@@ -261,6 +271,7 @@ def validate_record(record_dir, candidate_sha256):
     manifest = require_object(manifest_path)
     if manifest.get("schema_version") != 1:
         raise ValueError("record manifest schema_version must be 1")
+    artifact_schema.validate_file(manifest, PROMOTED_RECORD_SCHEMA, "record manifest")
     require_sha256(manifest.get("candidate_sha256"), "record candidate_sha256")
     if manifest["candidate_sha256"] != candidate_sha256:
         raise ValueError("existing record candidate digest does not match its directory")
@@ -558,6 +569,11 @@ def promote(args):
             )
             evaluator.atomic_json_write(
                 temporary_record / RECORD_MANIFEST_FILENAME, record_manifest
+            )
+            artifact_schema.validate_file(
+                require_object(temporary_record / RECORD_MANIFEST_FILENAME),
+                PROMOTED_RECORD_SCHEMA,
+                "record manifest",
             )
             if record_dir.exists():
                 validate_record(record_dir, candidate_sha256)

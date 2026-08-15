@@ -383,8 +383,15 @@ def require_top_level_required_properties(document, label):
     missing = sorted(set(required) - set(properties))
     if missing:
         fail(f"{label}: required fields lack property definitions: {missing}")
+    nullable_required = document.get("x-aeb-nullable-required", [])
+    if not isinstance(nullable_required, list) or any(
+        not isinstance(field, str) or field not in required for field in nullable_required
+    ):
+        fail(f"{label}: x-aeb-nullable-required must name required fields")
     null_permissive = sorted(
-        field for field in required if schema_accepts_null(properties[field], document)
+        field
+        for field in required
+        if field not in nullable_required and schema_accepts_null(properties[field], document)
     )
     if null_permissive:
         fail(f"{label}: required field definitions accept null: {null_permissive}")
