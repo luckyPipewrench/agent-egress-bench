@@ -68,7 +68,7 @@
         },
         {
           "path": "validate/main.go",
-          "symbol": "activeCaseSchemaVersion"
+          "symbol": "activeMultiFileCaseSchemaVersion"
         }
       ],
       "gate": "make check-contracts"
