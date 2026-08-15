@@ -23,6 +23,11 @@ VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-
 SNAPSHOT_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-SNAPSHOT-[0-9a-f]{7}$")
 IDENTITY_NAME = "release-identity.json"
 CHECKSUM_NAME = "checksums.txt"
+SCHEMA_CATALOG_PATH = "schemas/index.json"
+SCHEMA_CATALOG_SUFFIX = "_schema-catalog.json"
+SCHEMA_BUNDLE_SUFFIX = "_schemas.tar.gz"
+REPOSITORY = "luckyPipewrench/agent-egress-bench"
+RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
 DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities")
 DATA_FILES = ("README.md", "LICENSE", "NOTICE", "CITATION.cff", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md", "scripts/release_build.py")
 PLATFORMS = tuple((goos, arch) for goos in ("linux", "darwin", "windows") for arch in ("amd64", "arm64"))
@@ -275,7 +280,7 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
     return {
         "schema_version": 1,
         "release": {"tag": tag, "version": version, "snapshot": snapshot},
-        "source": {"repository": "luckyPipewrench/agent-egress-bench", "commit": commit, "commit_timestamp": int(timestamp)},
+        "source": {"repository": REPOSITORY, "commit": commit, "commit_timestamp": int(timestamp)},
         "runner": {"binary": "aeb-gauntlet", "runner_version": metadata["runner_version"], "scoring_version": metadata["scoring_version"], "platforms": [{"goos": goos, "goarch": arch} for goos, arch in PLATFORMS]},
         "corpus": corpus(repo, metadata["corpus_version"]),
         "schema_contract": {"artifacts_manifest_path": "contracts/artifacts.json", "artifacts_manifest_sha256": sha256_file(repo / "contracts/artifacts.json"), "families": contract_families(repo)},
@@ -320,7 +325,7 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
         fail("release identity release tag and version are invalid")
 
     source = exact_object(identity["source"], "release identity source", {"repository", "commit", "commit_timestamp"})
-    if source["repository"] != "luckyPipewrench/agent-egress-bench":
+    if source["repository"] != REPOSITORY:
         fail("release identity source.repository is invalid")
     if not isinstance(source["commit"], str) or not COMMIT_RE.fullmatch(source["commit"]):
         fail("release identity source.commit is invalid")
@@ -422,6 +427,71 @@ def make_data_bundle(repo: Path, identity_path: Path, dist: Path) -> Path:
     return output
 
 
+def schema_asset_names(identity: dict[str, Any]) -> tuple[str, str]:
+    version = identity["release"]["version"]
+    prefix = f"agent-egress-bench_{version}"
+    return f"{prefix}{SCHEMA_CATALOG_SUFFIX}", f"{prefix}{SCHEMA_BUNDLE_SUFFIX}"
+
+
+def release_catalog_entries(identity: dict[str, Any], catalog_bytes: bytes) -> list[dict[str, str]]:
+    try:
+        catalog = json.loads(catalog_bytes)
+    except json.JSONDecodeError as exc:
+        fail(f"release schema catalog is not JSON: {exc}")
+    if not isinstance(catalog, dict):
+        fail("release schema catalog must be an object")
+    if set(catalog) != {"format", "repository", "source_commit", "release", "schemas"}:
+        fail("release schema catalog has invalid fields")
+    if catalog["format"] != 1 or catalog["repository"] != f"https://github.com/{REPOSITORY}":
+        fail("release schema catalog has invalid identity")
+    if catalog["source_commit"] != identity["source"]["commit"] or catalog["release"] != identity["release"]["tag"]:
+        fail("release schema catalog does not match release identity")
+    schemas = catalog["schemas"]
+    if not isinstance(schemas, list) or not schemas:
+        fail("release schema catalog has no schema entries")
+    paths: set[str] = set()
+    entries: list[dict[str, str]] = []
+    for index, entry in enumerate(schemas):
+        entry = exact_object(entry, f"release schema catalog schemas[{index}]", {"path", "$id", "sha256", "retrieval_url"})
+        path = safe_name(nonempty_string(entry["path"], f"release schema catalog schemas[{index}].path"))
+        if path in paths or path == SCHEMA_CATALOG_PATH:
+            fail("release schema catalog has duplicate or reserved schema paths")
+        paths.add(path)
+        nonempty_string(entry["$id"], f"release schema catalog schemas[{index}].$id")
+        digest = entry["sha256"]
+        if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+            fail(f"release schema catalog schemas[{index}].sha256 is invalid")
+        expected_url = RAW_SCHEMA_URL.format(commit=identity["source"]["commit"], path=path)
+        if entry["retrieval_url"] != expected_url:
+            fail(f"release schema catalog schemas[{index}].retrieval_url is not pinned to the release commit")
+        entries.append({"path": path, "sha256": digest})
+    return entries
+
+
+def make_schema_bundle(repo: Path, identity_path: Path, catalog_path: Path, dist: Path) -> Path:
+    identity = verify_identity(repo, identity_path)
+    if not catalog_path.is_file() or catalog_path.is_symlink():
+        fail(f"release schema catalog is absent or unsafe: {catalog_path}")
+    catalog_bytes = catalog_path.read_bytes()
+    entries = release_catalog_entries(identity, catalog_bytes)
+    catalog_name, bundle_name = schema_asset_names(identity)
+    if catalog_path.name != catalog_name:
+        fail("release schema catalog has an unexpected asset name")
+    output = dist / bundle_name
+    dist.mkdir(parents=True, exist_ok=True)
+    with output.open("wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=identity["source"]["commit_timestamp"], filename="") as compressed, tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        add_tar_bytes(archive, SCHEMA_CATALOG_PATH, catalog_bytes, identity["source"]["commit_timestamp"])
+        for entry in sorted(entries, key=lambda item: item["path"]):
+            path = repo / entry["path"]
+            if not path.is_file() or path.is_symlink():
+                fail(f"release schema catalog names an absent or unsafe schema: {entry['path']}")
+            contents = path.read_bytes()
+            if sha256_bytes(contents) != entry["sha256"]:
+                fail(f"release schema catalog digest does not match source schema: {entry['path']}")
+            add_tar_bytes(archive, entry["path"], contents, identity["source"]["commit_timestamp"])
+    return output
+
+
 def write_checksums(dist: Path, identity_path: Path) -> Path:
     if not identity_path.is_file():
         fail(f"release identity is absent: {identity_path}")
@@ -520,6 +590,24 @@ def bundle_contents(path: Path) -> dict[str, bytes]:
     return result
 
 
+def verify_schema_bundle(identity: dict[str, Any], release_dir: Path) -> None:
+    catalog_name, bundle_name = schema_asset_names(identity)
+    catalog_path, bundle_path = release_dir / catalog_name, release_dir / bundle_name
+    if not catalog_path.is_file() or not bundle_path.is_file():
+        fail("release is missing its schema catalog or schema bundle")
+    catalog_bytes = catalog_path.read_bytes()
+    entries = release_catalog_entries(identity, catalog_bytes)
+    contents = bundle_contents(bundle_path)
+    if contents.get(SCHEMA_CATALOG_PATH) != catalog_bytes:
+        fail("schema bundle catalog does not match the release catalog asset")
+    expected_paths = {SCHEMA_CATALOG_PATH, *(entry["path"] for entry in entries)}
+    if set(contents) != expected_paths:
+        fail("schema bundle file list does not match the release catalog")
+    for entry in entries:
+        if sha256_bytes(contents[entry["path"]]) != entry["sha256"]:
+            fail(f"schema bundle digest does not match release catalog: {entry['path']}")
+
+
 def bundle_corpus_ids(contents: dict[str, bytes]) -> set[str]:
     result: set[str] = set()
     for name in contents:
@@ -571,8 +659,9 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
             fail(f"checksum mismatch: {name}")
     binaries = binary_archives(identity)
     data_name = f"agent-egress-bench_{identity['release']['version']}_data.tar.gz"
-    if data_name not in checksums or not set(binaries).issubset(checksums):
-        fail("release is missing its data bundle or declared runner platforms")
+    catalog_name, bundle_name = schema_asset_names(identity)
+    if data_name not in checksums or catalog_name not in checksums or bundle_name not in checksums or not set(binaries).issubset(checksums):
+        fail("release is missing its data bundle, schema artifacts, or declared runner platforms")
     expected_identity = identity_path.read_bytes()
     for name, (goos, goarch) in binaries.items():
         if archive_identity(release_dir / name, goos, goarch) != expected_identity:
@@ -585,6 +674,7 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
         if not isinstance(name, str) or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) or sha256_bytes(contents[name]) != digest:
             fail(f"data bundle digest does not match release identity: {name}")
     verify_bundle_corpus(identity, contents)
+    verify_schema_bundle(identity, release_dir)
     if repo is not None:
         expected = build_identity(repo.resolve(), identity["release"]["tag"], identity["release"]["version"], identity["source"]["commit"], identity["release"]["snapshot"])
         if canonical_json(expected) != canonical_json(identity):
@@ -630,6 +720,11 @@ def main() -> int:
     bundle.add_argument("--repo-root", type=Path, default=Path("."))
     bundle.add_argument("--identity", type=Path, required=True)
     bundle.add_argument("--dist", type=Path, required=True)
+    schema_bundle = commands.add_parser("schema-bundle")
+    schema_bundle.add_argument("--repo-root", type=Path, default=Path("."))
+    schema_bundle.add_argument("--identity", type=Path, required=True)
+    schema_bundle.add_argument("--catalog", type=Path, required=True)
+    schema_bundle.add_argument("--dist", type=Path, required=True)
     sums = commands.add_parser("checksums")
     sums.add_argument("--identity", type=Path, required=True)
     sums.add_argument("--dist", type=Path, required=True)
@@ -650,6 +745,8 @@ def main() -> int:
             verify_identity(args.repo_root.resolve(), args.identity)
         elif args.command == "data-bundle":
             print(make_data_bundle(args.repo_root.resolve(), args.identity, args.dist))
+        elif args.command == "schema-bundle":
+            print(make_schema_bundle(args.repo_root.resolve(), args.identity, args.catalog, args.dist))
         elif args.command == "checksums":
             print(write_checksums(args.dist, args.identity))
         elif args.command == "verify":

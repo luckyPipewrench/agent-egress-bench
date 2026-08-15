@@ -76,6 +76,9 @@ release_dir="$dist/release"
 mkdir -p "$release_dir"
 find "$dist" -maxdepth 1 -type f \( -name 'agent-egress-bench_*.tar.gz' -o -name 'agent-egress-bench_*.zip' \) -exec mv {} "$release_dir" \;
 python3 scripts/release_build.py data-bundle --identity "$identity" --dist "$release_dir"
+schema_catalog="$release_dir/agent-egress-bench_${version}_schema-catalog.json"
+python3 scripts/write_schema_catalog.py --release "$tag" --output "$schema_catalog"
+python3 scripts/release_build.py schema-bundle --identity "$identity" --catalog "$schema_catalog" --dist "$release_dir"
 python3 scripts/release_build.py checksums --identity "$identity" --dist "$release_dir"
 # Run the binary this host can actually execute. Hardcoding linux/amd64 works on
 # CI and silently breaks a macOS or arm64 developer running a snapshot. When no
