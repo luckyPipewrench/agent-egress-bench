@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,8 +14,20 @@ REPO = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO / ".github/workflows/release.yaml"
 
 
+def job_block(workflow: str, name: str) -> str:
+    match = re.search(rf"(?m)^  {re.escape(name)}:\n", workflow)
+    if match is None:
+        raise AssertionError(f"release workflow is missing job {name!r}")
+    next_job = re.search(r"(?m)^  [A-Za-z][A-Za-z0-9_-]*:\n", workflow[match.end():])
+    return workflow[match.start(): match.end() + next_job.start() if next_job else len(workflow)]
+
+
 def check_workflow(path: Path) -> None:
     workflow = path.read_text(encoding="utf-8")
+    preamble = workflow[:workflow.index("jobs:\n")]
+    release = job_block(workflow, "release")
+    attest = job_block(workflow, "attest")
+    publish = job_block(workflow, "publish")
     required = (
         "tags:\n      - 'v*'",
         "workflow_dispatch:",
@@ -33,20 +46,20 @@ def check_workflow(path: Path) -> None:
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "path: dist/release/",
         "retention-days: 14",
-        "if: github.event_name == 'push'",
-        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-        "contents: write",
-        "gh release create \"$GITHUB_REF_NAME\" dist/release/* --title \"$GITHUB_REF_NAME\" --verify-tag",
     )
     for value in required:
         if value not in workflow:
             raise AssertionError(f"release workflow is missing required release guard: {value!r}")
-    create_index = workflow.index("gh release create")
-    conditional_index = workflow.rfind("if: github.event_name == 'push'", 0, create_index)
-    if conditional_index < 0:
+    if "permissions:\n  contents: read" not in preamble or "attestations: write" in preamble or "id-token: write" in preamble:
+        raise AssertionError("manual workflow token is not read-only")
+    if "permissions:" in release:
+        raise AssertionError("release build or manual dry run overrides its read-only token")
+    if "if: github.event_name == 'push'" not in attest or "attestations: write" not in attest or "id-token: write" not in attest:
+        raise AssertionError("attestation write permission is not confined to tag pushes")
+    if "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c" not in attest or "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8" not in attest:
+        raise AssertionError("tag-only attestation does not consume the built release artifacts")
+    if "needs: [release, attest]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "gh release create \"$GITHUB_REF_NAME\" dist/release/* --title \"$GITHUB_REF_NAME\" --verify-tag" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
-    if "contents: write" in workflow[:conditional_index]:
-        raise AssertionError("release build or manual dry run receives contents-write permission")
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
@@ -56,8 +69,18 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_release_creation_guard_is_load_bearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "release.yaml"
-            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("if: github.event_name == 'push'", "if: always()", 1), encoding="utf-8")
-            with self.assertRaisesRegex(AssertionError, "release guard"):
+            workflow = WORKFLOW.read_text(encoding="utf-8")
+            publish_start = workflow.index("  publish:\n")
+            condition = workflow.index("if: github.event_name == 'push'", publish_start)
+            candidate.write_text(workflow[:condition] + "if: always()" + workflow[condition + len("if: github.event_name == 'push'"):], encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "GitHub release creation"):
+                check_workflow(candidate)
+
+    def test_manual_token_boundary_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("permissions:\n  contents: read\n", "permissions:\n  contents: read\n  attestations: write\n", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "manual workflow token"):
                 check_workflow(candidate)
 
 
