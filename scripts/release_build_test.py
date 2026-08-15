@@ -324,6 +324,18 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must contain exactly one aeb-gauntlet", result.stderr)
 
+    def test_checksums_reports_an_absent_distribution_directory(self) -> None:
+        self.prepare()
+        missing = self.root / "missing-dist"
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "checksums", "--identity", str(self.identity), "--dist", str(missing)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release verification failed: release distribution directory is absent", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_data_bundle_is_reproducible_for_one_identity(self) -> None:
         self.prepare()
         dist = self.root / "dist"

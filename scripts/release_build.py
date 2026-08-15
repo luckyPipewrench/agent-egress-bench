@@ -412,6 +412,8 @@ def make_data_bundle(repo: Path, identity_path: Path, dist: Path) -> Path:
 def write_checksums(dist: Path, identity_path: Path) -> Path:
     if not identity_path.is_file():
         fail(f"release identity is absent: {identity_path}")
+    if not dist.is_dir():
+        fail(f"release distribution directory is absent: {dist}")
     shutil.copyfile(identity_path, dist / IDENTITY_NAME)
     files = sorted(path for path in dist.iterdir() if path.is_file() and path.name != CHECKSUM_NAME)
     if not files:
