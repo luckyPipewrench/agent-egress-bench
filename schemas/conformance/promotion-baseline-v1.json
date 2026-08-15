@@ -1,7 +1,10 @@
 {
   "schema": "../promotion-baseline-v1.schema.json",
   "accepted": [{
-    "description": "retained legacy promotion baseline",
+    "description": "retained source baseline without later verified identity fields",
+    "source": "../../gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/source-baseline.json"
+  }, {
+    "description": "retained reviewed promotion baseline",
     "instance": {
       "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
       "schema_version": 1,
@@ -21,7 +24,8 @@
   }],
   "rejected": [
     {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
-    {"description": "missing required identity", "mutation": {"remove": ["verified_candidate_sha256"]}},
+    {"description": "half-populated verified identity", "accepted_index": 1, "mutation": {"remove": ["verified_candidate_sha256"]}},
+    {"description": "half-populated summary identity", "accepted_index": 1, "mutation": {"replace": ["summary_schema_version"], "value": 5}},
     {"description": "unknown field", "mutation": {"replace": ["unexpected"], "value": true}},
     {"description": "malformed commit", "mutation": {"replace": ["corpus_git_sha"], "value": "bad"}},
     {"description": "out-of-range floor", "mutation": {"replace": ["score_floors", "full", "containment"], "value": 2}},

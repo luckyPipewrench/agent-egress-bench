@@ -66,6 +66,14 @@ def _validate(value, schema, root, path):
         missing = [name for name in schema.get("required", []) if name not in value]
         if missing:
             raise ValueError(f"{path} is missing required fields: {missing}")
+        for trigger, dependencies in schema.get("dependentRequired", {}).items():
+            if trigger not in value:
+                continue
+            missing_dependencies = [name for name in dependencies if name not in value]
+            if missing_dependencies:
+                raise ValueError(
+                    f"{path} field {trigger!r} requires fields: {missing_dependencies}"
+                )
         if len(value) < schema.get("minProperties", 0):
             raise ValueError(f"{path} has too few properties")
         properties = schema.get("properties", {})

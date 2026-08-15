@@ -4,7 +4,13 @@
   "title": "agent-egress-bench Promotion Baseline v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["_comment", "schema_version", "recorded_on", "verified_candidate_sha256", "verified_artifact_id", "pipelock_version", "corpus_git_sha", "corpus_sha256", "corpus_version", "scoring_version", "runner_version", "observed_case_count", "score_floors", "score_ceilings"],
+  "required": ["_comment", "schema_version", "recorded_on", "pipelock_version", "corpus_git_sha", "corpus_sha256", "corpus_version", "scoring_version", "runner_version", "observed_case_count", "score_floors", "score_ceilings"],
+  "dependentRequired": {
+    "verified_candidate_sha256": ["verified_artifact_id"],
+    "verified_artifact_id": ["verified_candidate_sha256"],
+    "summary_schema_version": ["benchmark_manifest_sha256"],
+    "benchmark_manifest_sha256": ["summary_schema_version"]
+  },
   "properties": {
     "_comment": {"$ref": "#/$defs/nonempty"},
     "schema_version": {"type": "integer", "const": 1},

@@ -77,7 +77,11 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
         schema = ROOT / "schemas" / "promotion-baseline-v1.schema.json"
         baselines = [ROOT / "ci" / "gauntlet-baseline.json"]
         baselines.extend(
-            sorted((ROOT / "gauntlet-site" / "results" / "pipelock").glob("*/reviewed-baseline.json"))
+            sorted(
+                path
+                for pattern in ("*/source-baseline.json", "*/reviewed-baseline.json")
+                for path in (ROOT / "gauntlet-site" / "results" / "pipelock").glob(pattern)
+            )
         )
         for path in baselines:
             with self.subTest(path=path):
