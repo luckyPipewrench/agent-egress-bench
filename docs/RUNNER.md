@@ -2,7 +2,7 @@
 
 A runner connects a specific tool to the benchmark corpus. This document defines the contract every runner must satisfy.
 
-**JSON Schemas:** [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json) (result lines), [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) (tool profiles)
+**JSON Schemas:** [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json) (result lines), [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) (tool profiles). [SCHEMAS.md](SCHEMAS.md) explains schema identifiers, the discovery catalog, and adapter quickstarts.
 
 **Cross-field result contract:** [`contracts/result-states-v4.json`](../contracts/result-states-v4.json). [`gauntlet.md`](gauntlet.md) explains the same matrix and owns its scoring meaning.
 

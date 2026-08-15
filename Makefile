@@ -1,4 +1,4 @@
-.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
+.PHONY: preflight check-case-immutability check-frozen-schema-immutability check-schema-catalog check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -13,7 +13,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-contracts check-public-contracts check-case-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-schema-catalog check-public-contracts check-case-immutability check-frozen-schema-immutability check-schema-copies check-docs test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
 
 check-scorecard-workflow:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/scorecard_workflow_test.py
@@ -24,6 +24,13 @@ check-scorecard-workflow:
 check-contracts:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
+
+# The discovery document is generated from the canonical schema files. It pins
+# every versioned schema's resolving identifier and current bytes without
+# making a second hand-maintained schema inventory.
+check-schema-catalog:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_schema_catalog_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_schema_catalog.py
 
 # Keep the human tables, machine-readable cross-field contracts, JSON Schemas,
 # scorer, and validator on one active definition.
@@ -48,6 +55,19 @@ check-case-immutability:
 		exit 1; \
 	fi; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_immutability.py --base "$$base"
+
+# Frozen schemas are immutable, byte for byte, with no permitted transition.
+# A reformat or key reorder that leaves the parsed document identical still
+# fails, because a consumer pinning a digest sees a different document.
+# Changing a frozen contract means publishing a new version.
+check-frozen-schema-immutability:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_frozen_schema_immutability_test.py
+	@base="$$(git merge-base "$(AEB_IMMUTABILITY_BASE)" HEAD 2>/dev/null)"; \
+	if [ -z "$$base" ]; then \
+		echo "check-frozen-schema-immutability: FAIL - cannot resolve a merge base with $(AEB_IMMUTABILITY_BASE); fetch that ref first" >&2; \
+		exit 1; \
+	fi; \
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_frozen_schema_immutability.py --base "$$base"
 
 # Keep contract ownership links live and prevent deleted scoring documents from
 # becoming shadow authorities again. Missing and empty inputs fail the scan.
