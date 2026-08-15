@@ -108,7 +108,7 @@ var (
 		"domain_blocklist": true, "entropy_scanning": true,
 		"shell_analysis":      true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
-		"dns_rebinding_fixture": true, "budget_enforcement": true,
+		"dns_rebinding_fixture": true,
 	}
 
 	validActualVerdicts = map[string]bool{
@@ -188,6 +188,19 @@ type Case struct {
 	Source          string                 `json:"source"`
 	Supersedes      string                 `json:"supersedes,omitempty"`
 }
+
+var (
+	caseRequiredFields = []string{
+		"schema_version", "id", "category", "title", "description", "input_type", "transport", "payload",
+		"expected_verdict", "severity", "capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source",
+	}
+	resultRequiredFields = []string{
+		"schema_version", "case_id", "tool", "tool_version", "capability_registry", "expected_verdict", "actual_verdict", "score", "evidence", "notes",
+	}
+	profileRequiredFields = []string{
+		"schema_version", "tool", "tool_version", "runner_version", "claims", "capability_registry",
+	}
+)
 
 const usageText = `usage: validate <command> <target>
 
@@ -464,7 +477,7 @@ func validateFile(path string, ids map[string]string) []string {
 		addErr(fmt.Sprintf("JSON field inventory error: %v", err))
 		return errors
 	}
-	for _, field := range []string{"schema_version", "id", "category", "title", "description", "input_type", "transport", "payload", "expected_verdict", "severity", "capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source"} {
+	for _, field := range caseRequiredFields {
 		if _, present := fields[field]; !present {
 			addErr(fmt.Sprintf("missing required field %q", field))
 		}
@@ -1245,6 +1258,25 @@ type Profile struct {
 	RunnerVersion      string                       `json:"runner_version"`
 	Claims             []string                     `json:"claims"`
 	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	ReceiptEvidence    *ReceiptEvidence             `json:"receipt_evidence,omitempty"`
+}
+
+// ReceiptEvidence is the optional receipt-evidence declaration in the active
+// tool-profile schema. The validator does not execute it, but it must accept
+// and structurally validate the same declaration the runner consumes.
+type ReceiptEvidence struct {
+	EvidenceDir                 string   `json:"evidence_dir"`
+	FileGlob                    string   `json:"file_glob"`
+	JSONLRecordType             string   `json:"jsonl_record_type"`
+	DetailJSONPointer           string   `json:"detail_json_pointer"`
+	DetailEncoding              string   `json:"detail_encoding"`
+	RecordCaseIDJSONPointer     string   `json:"record_case_id_json_pointer"`
+	RecordIdentifierJSONPointer string   `json:"record_identifier_json_pointer"`
+	CaseIdentifierJSONPointer   string   `json:"case_identifier_json_pointer"`
+	VerifyCommand               []string `json:"verify_command"`
+	VerifyTimeoutSeconds        int      `json:"verify_timeout_seconds"`
+	ValidExitCodes              []int    `json:"valid_exit_codes"`
+	PartialExitCodes            []int    `json:"partial_exit_codes"`
 }
 
 func validateProfile(p Profile) []string {
@@ -1278,7 +1310,58 @@ func validateProfile(p Profile) []string {
 	if err := validateRegistryReference(p.CapabilityRegistry); err != nil {
 		errors = append(errors, fmt.Sprintf("invalid capability_registry: %v", err))
 	}
+	if p.ReceiptEvidence != nil {
+		for _, issue := range validateReceiptEvidence(*p.ReceiptEvidence) {
+			errors = append(errors, "invalid receipt_evidence: "+issue)
+		}
+	}
 
+	return errors
+}
+
+func validateReceiptEvidence(e ReceiptEvidence) []string {
+	var errors []string
+	if strings.TrimSpace(e.EvidenceDir) == "" {
+		errors = append(errors, "evidence_dir must be non-empty")
+	}
+	if strings.TrimSpace(e.FileGlob) == "" {
+		errors = append(errors, "file_glob must be non-empty")
+	}
+	if e.DetailJSONPointer != "" && !strings.HasPrefix(e.DetailJSONPointer, "/") {
+		errors = append(errors, "detail_json_pointer must be empty or start with /")
+	}
+	switch e.DetailEncoding {
+	case "object", "json_string", "object_or_json_string":
+	default:
+		errors = append(errors, "detail_encoding must be object, json_string, or object_or_json_string")
+	}
+	for _, pointer := range []struct {
+		name  string
+		value string
+	}{
+		{"record_case_id_json_pointer", e.RecordCaseIDJSONPointer},
+		{"record_identifier_json_pointer", e.RecordIdentifierJSONPointer},
+		{"case_identifier_json_pointer", e.CaseIdentifierJSONPointer},
+	} {
+		if pointer.value != "" && !strings.HasPrefix(pointer.value, "/") {
+			errors = append(errors, pointer.name+" must be empty or start with /")
+		}
+	}
+	if len(e.VerifyCommand) == 0 {
+		errors = append(errors, "verify_command must not be empty")
+	}
+	for _, value := range e.VerifyCommand {
+		if strings.TrimSpace(value) == "" {
+			errors = append(errors, "verify_command entries must be non-empty")
+			break
+		}
+	}
+	if e.VerifyTimeoutSeconds < 1 {
+		errors = append(errors, "verify_timeout_seconds must be positive")
+	}
+	if len(e.ValidExitCodes) == 0 {
+		errors = append(errors, "valid_exit_codes must not be empty")
+	}
 	return errors
 }
 
