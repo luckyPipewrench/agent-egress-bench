@@ -3,7 +3,8 @@ title: agent-egress-bench
 message: "If you use this corpus in research, please cite it."
 type: dataset
 authors:
-  - name: Joshua Waldrep
+  - given-names: Joshua
+    family-names: Waldrep
     alias: luckyPipewrench
 repository-code: https://github.com/luckyPipewrench/agent-egress-bench
 license: Apache-2.0
