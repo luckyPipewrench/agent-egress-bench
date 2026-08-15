@@ -15,6 +15,28 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+func TestHTTPFixtureCountsServedRequests(t *testing.T) {
+	f, err := StartHTTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	f.SetRoute("/proof", "ok")
+
+	if got := f.Requests(); got != 0 {
+		t.Fatalf("requests before client call = %d, want 0", got)
+	}
+	resp, err := http.Get("http://" + f.Addr() + "/proof") //nolint:gosec,noctx // runner-owned fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if got := f.Requests(); got != 1 {
+		t.Fatalf("requests after client call = %d, want 1", got)
+	}
+}
+
 func TestTLSFixture(t *testing.T) {
 	f, err := StartTLS()
 	if err != nil {
@@ -294,5 +316,75 @@ func TestDNSFixture_ResolverIntegration(t *testing.T) {
 	}
 	if len(ips) == 0 || ips[0] != "93.184.216.34" {
 		t.Errorf("resolved = %v, want [93.184.216.34]", ips)
+	}
+}
+
+
+// Delivery proof must identify one interaction. Each assertion below closes a
+// way a case could otherwise inherit a request it never made.
+func TestHTTPFixture_RequestsForIsScopedToListenerRouteAndToken(t *testing.T) {
+	f, err := StartHTTP()
+	if err != nil {
+		t.Fatalf("StartHTTP: %v", err)
+	}
+	defer f.Close()
+
+	f.SetRoute("/response/c1", "case one body")
+	f.SetRoute("/response/c2", "case two body")
+
+	get := func(addr, path, token string) {
+		t.Helper()
+		target := "http://" + addr + path
+		if token != "" {
+			target += "?" + DeliveryTokenParam + "=" + token
+		}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("get %s: %v", target, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+
+	get(f.Addr(), "/response/c1", "token-one")
+	if got := f.RequestsFor("/response/c1", "token-one"); got != 1 {
+		t.Errorf("trusted delivery of c1/token-one = %d, want 1", got)
+	}
+
+	// Another route never requested.
+	if got := f.RequestsFor("/response/c2", "token-one"); got != 0 {
+		t.Errorf("c2 = %d, want 0: it was never requested", got)
+	}
+
+	// The same route under a different token. This is the case-sharing-an-
+	// endpoint hole: one case's real fetch must not prove another's.
+	if got := f.RequestsFor("/response/c1", "token-two"); got != 0 {
+		t.Errorf("c1/token-two = %d, want 0: a different interaction", got)
+	}
+
+	// The untrusted sink serves the same route table. A request there says
+	// nothing about trusted content being fetched, so it must not count.
+	if f.UntrustedAddr() == "" {
+		t.Fatal("untrusted listener missing; the listener-scoping assertion cannot run")
+	}
+	get(f.UntrustedAddr(), "/response/c1", "token-untrusted")
+	if got := f.RequestsFor("/response/c1", "token-untrusted"); got != 0 {
+		t.Errorf("untrusted request credited trusted delivery: got %d, want 0", got)
+	}
+
+	// An unregistered path 404s, which is not delivery of any case content.
+	get(f.Addr(), "/response/never-registered", "token-404")
+	if got := f.RequestsFor("/response/never-registered", "token-404"); got != 0 {
+		t.Errorf("unregistered path = %d, want 0", got)
+	}
+
+	// The whole-fixture total counts every request above, which is exactly
+	// why it is the wrong signal for per-case delivery proof.
+	if got := f.Requests(); got != 3 {
+		t.Errorf("Requests() = %d, want 3 (two listeners plus one 404)", got)
 	}
 }

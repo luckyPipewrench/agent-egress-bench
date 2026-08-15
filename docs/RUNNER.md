@@ -218,10 +218,35 @@ For supported HTTP-shaped cases, map observations to verdicts this way:
 
 | Observation | Verdict |
 |-------------|---------|
-| Explicit deny status (e.g. 403, 502 with block marker) | `block` |
+| Deny status carrying a deny marker in the body | `block` |
 | Deny marker in response body (tool-specific) | `block` |
 | Successful upstream response without deny marker | `allow` |
+| Deny status with no deny marker, upstream confirmed answered | `allow` |
+| Deny status with no deny marker, upstream not confirmed | `skip` |
 | Runner or tool failure | `error` |
+
+#### Make your denials attributable
+
+A status code alone names no actor. An origin, a reverse proxy, a fixture, or the tool under test
+can all return 400 or 403, so the runner will not credit containment to the tool on a status
+alone: an unmarked denial scores `skip`, meaning unscorable, and counts toward neither containment
+nor leakage.
+
+This is a deliberate trade. Crediting every unmarked 4xx would inflate the score of whatever is
+being measured, and a benchmark that flatters its subject is worth nothing. The cost is that a real
+denial carrying no marker goes uncounted.
+
+A tool makes its denials countable by emitting a positive marker in the response body. Any of
+these is recognized:
+
+```json
+{"blocked": true}
+{"block_reason": "DLP match"}
+{"scanner": "prompt_injection"}
+```
+
+If your tool denies with an unmarked status and you cannot change that, say so when you publish a
+result: report the `skip` count alongside the score rather than presenting the score as complete.
 
 ### MCP cases
 
