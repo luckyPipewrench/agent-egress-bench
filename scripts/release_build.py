@@ -457,15 +457,36 @@ def release_catalog_entries(identity: dict[str, Any], catalog_bytes: bytes) -> l
         if path in paths or path == SCHEMA_CATALOG_PATH:
             fail("release schema catalog has duplicate or reserved schema paths")
         paths.add(path)
-        nonempty_string(entry["$id"], f"release schema catalog schemas[{index}].$id")
+        declared_id = nonempty_string(entry["$id"], f"release schema catalog schemas[{index}].$id")
         digest = entry["sha256"]
         if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
             fail(f"release schema catalog schemas[{index}].sha256 is invalid")
         expected_url = RAW_SCHEMA_URL.format(commit=identity["source"]["commit"], path=path)
         if entry["retrieval_url"] != expected_url:
             fail(f"release schema catalog schemas[{index}].retrieval_url is not pinned to the release commit")
-        entries.append({"path": path, "sha256": digest})
+        entries.append({"path": path, "$id": declared_id, "sha256": digest})
     return entries
+
+
+def require_declared_id(contents: bytes, entry: dict[str, str], source: str) -> None:
+    """Require a schema's own declared identity to match what the catalog claims.
+
+    A digest proves the bytes; it says nothing about the name those bytes are
+    published under. Without this, a catalog carrying a substituted `$id`
+    passes every other check, because the paths resolve, the digests match the
+    real files, and the checksums are regenerated over the altered catalog. An
+    offline consumer then registers correct schema bytes under the wrong
+    identity and validates its data against a contract it never chose, with
+    every integrity signal reading green.
+    """
+    try:
+        document = json.loads(contents)
+    except json.JSONDecodeError as exc:
+        fail(f"{source} is not JSON: {entry['path']}: {exc}")
+    if not isinstance(document, dict):
+        fail(f"{source} is not a JSON object: {entry['path']}")
+    if document.get("$id") != entry["$id"]:
+        fail(f"{source} declares an $id the release catalog does not name: {entry['path']}")
 
 
 def make_schema_bundle(repo: Path, identity_path: Path, catalog_path: Path, dist: Path) -> Path:
@@ -488,6 +509,7 @@ def make_schema_bundle(repo: Path, identity_path: Path, catalog_path: Path, dist
             contents = path.read_bytes()
             if sha256_bytes(contents) != entry["sha256"]:
                 fail(f"release schema catalog digest does not match source schema: {entry['path']}")
+            require_declared_id(contents, entry, "source schema")
             add_tar_bytes(archive, entry["path"], contents, identity["source"]["commit_timestamp"])
     return output
 
@@ -606,6 +628,7 @@ def verify_schema_bundle(identity: dict[str, Any], release_dir: Path) -> None:
     for entry in entries:
         if sha256_bytes(contents[entry["path"]]) != entry["sha256"]:
             fail(f"schema bundle digest does not match release catalog: {entry['path']}")
+        require_declared_id(contents[entry["path"]], entry, "bundled schema")
 
 
 def bundle_corpus_ids(contents: dict[str, bytes]) -> set[str]:

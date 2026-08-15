@@ -464,6 +464,50 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("schema bundle digest does not match release catalog", result.stderr)
 
+    def test_download_verifier_rejects_a_substituted_schema_identity(self) -> None:
+        # A digest proves the bytes and says nothing about the name they are
+        # published under. With the catalog $id substituted, every other signal
+        # still reads green: the paths resolve, the digests match the real
+        # schemas, and the checksums are regenerated over the altered catalog.
+        # An offline consumer would register correct bytes under the wrong
+        # identity and validate against a contract it never chose.
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+
+        catalog_path = next(dist.glob("*_schema-catalog.json"))
+        bundle_path = next(dist.glob("*_schemas.tar.gz"))
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog["schemas"][0]["$id"] = "https://example.invalid/schemas/substituted-v1.schema.json"
+        catalog_bytes = (json.dumps(catalog, indent=2) + "\n").encode("utf-8")
+        catalog_path.write_bytes(catalog_bytes)
+
+        # Repack the bundle so its embedded catalog copy agrees with the asset,
+        # leaving the digest and file-list checks satisfied.
+        with tarfile.open(bundle_path, "r:gz") as archive:
+            contents = {
+                entry.name: archive.extractfile(entry).read()
+                for entry in archive.getmembers()
+                if entry.isfile()
+            }
+        contents["schemas/index.json"] = catalog_bytes
+        with tarfile.open(bundle_path, "w:gz") as archive:
+            for name, data in sorted(contents.items()):
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0, "a substituted schema identity verified clean")
+        self.assertIn("declares an $id the release catalog does not name", result.stderr)
+
     def test_download_verifier_runs_from_the_documented_extract_layout(self) -> None:
         self.prepare()
         dist = self.root / "dist"
