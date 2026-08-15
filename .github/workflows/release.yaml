@@ -141,6 +141,8 @@ jobs:
           PY
           reported_version="$(docker run --rm --platform linux/amd64 "$pinned_image" --version)"
           [[ "$reported_version" == "aeb-gauntlet $version $GITHUB_SHA" ]]
+          docker logout ghcr.io
+          docker pull "$pinned_image"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "Runner image: $pinned_image" >> "$GITHUB_STEP_SUMMARY"
           echo "Installed runner: $reported_version" >> "$GITHUB_STEP_SUMMARY"

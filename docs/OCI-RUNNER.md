@@ -24,6 +24,8 @@ docker buildx build --platform linux/amd64,linux/arm64 --build-arg AEB_VERSION=l
 
 The tagged release workflow publishes the multi-architecture index to `ghcr.io/luckypipewrench/agent-egress-bench-runner`, verifies that the index contains both required platforms, runs the amd64 image, and prints the immutable `sha256` index digest in the job summary.
 
+The workflow logs out of GHCR and pulls the digest again before the GitHub Release can be created. GitHub documents that a newly published container package can start private, so the first publication must be made public in the package settings and rerun if that anonymous pull fails; a public package can then be pulled by an outside lab without credentials. See [Configuring a package's access control and visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+
 No published runner-image digest exists for this unreleased change, so this document does not invent one. After the first tagged publication, use the exact `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` value printed by the release job and never replace it with a tag in a reproducibility record.
 
 ## Reusable GitHub Action

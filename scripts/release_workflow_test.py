@@ -80,6 +80,8 @@ def check_workflow(path: Path) -> None:
         "--sbom=true",
         "--push",
         "reported_version=",
+        "docker logout ghcr.io",
+        'docker pull "$pinned_image"',
     )
     if any(value not in image for value in image_required):
         raise AssertionError("runner image publication is not pinned, multi-architecture, or tag-gated")
@@ -138,6 +140,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("--platform linux/amd64,linux/arm64", "--platform linux/amd64", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_anonymous_image_pull_guard_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("docker logout ghcr.io", "true", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 
