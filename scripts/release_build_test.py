@@ -179,6 +179,31 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("checksum mismatch", result.stderr)
 
+    def test_download_verifier_runs_from_the_documented_extract_layout(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+
+        downloaded = Path(self.temp.name) / "aeb-release"
+        downloaded.mkdir()
+        for asset in dist.iterdir():
+            shutil.copyfile(asset, downloaded / asset.name)
+        data_bundle = next(downloaded.glob("*_data.tar.gz"))
+        extracted = downloaded / "extracted"
+        extracted.mkdir()
+        subprocess.run(["tar", "-xzf", str(data_bundle), "-C", str(extracted)], check=True)
+
+        result = subprocess.run(
+            [sys.executable, str(extracted / "scripts/release_build.py"), "verify", "--release-dir", ".."],
+            cwd=extracted,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+
     def test_download_verifier_rejects_archive_without_runner_binary(self) -> None:
         self.prepare()
         dist = self.root / "dist"

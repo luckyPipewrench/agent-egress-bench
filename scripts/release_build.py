@@ -17,8 +17,6 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from check_contracts import read_go_constant
-
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
@@ -120,6 +118,10 @@ def runner_metadata(repo: Path) -> dict[str, str]:
 
 
 def contract_families(repo: Path) -> list[dict[str, Any]]:
+    # Downloaded-release verification has no source checkout and ships only
+    # this module. Keep the source-contract helper out of that path.
+    from check_contracts import read_go_constant
+
     contracts_path = repo / "contracts/artifacts.json"
     contracts = load_json(contracts_path)
     if contracts.get("manifest_version") != 1:

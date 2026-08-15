@@ -17,8 +17,9 @@ Pick the immutable release tag that a result cites and use that same tag in ever
 ```bash
 mkdir aeb-release
 gh release download v0.1.0 --repo luckyPipewrench/agent-egress-bench --dir aeb-release
-tar -xzf aeb-release/agent-egress-bench_0.1.0_data.tar.gz -C aeb-release
-(cd aeb-release && python3 scripts/release_build.py verify --release-dir .)
+mkdir aeb-release/extracted
+tar -xzf aeb-release/agent-egress-bench_0.1.0_data.tar.gz -C aeb-release/extracted
+(cd aeb-release/extracted && python3 scripts/release_build.py verify --release-dir ..)
 ```
 
 The verifier rejects a missing asset, a checksum mismatch, an archive whose embedded identity differs from the release identity, a changed corpus or schema file, or a data bundle whose file list differs from the recorded tree.
