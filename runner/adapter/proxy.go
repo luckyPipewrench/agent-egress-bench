@@ -201,16 +201,30 @@ func (p *ProxyAdapter) beginHTTPFixtureDelivery(path string) (deliveryProof, err
 	return proof, nil
 }
 
-// annotate adds the delivery token to a fixture URL without disturbing any
-// query the case declared.
+// annotate appends the delivery token to a fixture URL, leaving the query the
+// case declared byte-for-byte intact.
+//
+// It appends to RawQuery rather than going through url.Values, because
+// Values.Encode sorts parameters and rewrites their encoding: a bare key gains
+// an "=", a space may flip between "%20" and "+", and the order changes. For a
+// query-sensitive or signed endpoint that is a different request than the case
+// declared, so the runner would be scoring input it altered.
+//
+// Known compatibility cost, stated rather than hidden: a target that strips
+// unknown query parameters while forwarding will not carry the token, and the
+// case scores unproven instead of allowed. That is the safe direction and it
+// is loud, since the evidence names the token that never arrived.
 func (d deliveryProof) annotate(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
-	query := parsed.Query()
-	query.Set(fixture.DeliveryTokenParam, d.token)
-	parsed.RawQuery = query.Encode()
+	appended := fixture.DeliveryTokenParam + "=" + url.QueryEscape(d.token)
+	if parsed.RawQuery == "" {
+		parsed.RawQuery = appended
+	} else {
+		parsed.RawQuery += "&" + appended
+	}
 	return parsed.String(), nil
 }
 
@@ -2789,6 +2803,9 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 	upstreamBefore, _ := p.mcpHTTPUpstreamCallCount()
 	for _, rawMessage := range msgList {
 		msg, requestID, err := correlateMCPHTTPRequest(rawMessage)
+		if errors.Is(err, errUnsupportedMCPMessage) {
+			return unsupportedTransport(c, "MCP HTTP scoring supports one JSON-RPC object per message, not a batch")
+		}
 		if err != nil {
 			return Result{Err: fmt.Errorf("case %s: correlate MCP HTTP request: %w", c.ID, err)}
 		}
@@ -2830,6 +2847,28 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 				}}
 			}
 			continue
+		}
+		// An HTTP-level denial carrying a positive deny marker is scored
+		// before correlation is required. HTTP already binds a response to
+		// the request that produced it, so a 4xx on this exchange is this
+		// case's answer whether or not it wraps a JSON-RPC envelope. Demanding
+		// an echoed id here made every gateway that enforces at the HTTP layer
+		// unscorable, which is the failure direction that gets a benchmark
+		// dismissed rather than the one that inflates a score.
+		//
+		// Fresh-id correlation still governs 2xx JSON-RPC bodies below, which
+		// is where a canned response echoing a well-known corpus id would
+		// otherwise earn credit.
+		if resp.StatusCode >= 400 && hasDenyMarker(string(body)) {
+			if verdict := classifyMCPHTTPBlock(body); verdict != nil {
+				verdict.Evidence["request_identity"] = requestID
+				verdict.Evidence["correlation"] = "http_status"
+				return *verdict
+			}
+			result := classifyResponse(resp.StatusCode, string(body))
+			result.Evidence["request_identity"] = requestID
+			result.Evidence["correlation"] = "http_status"
+			return result
 		}
 		decoded, decodeErr := decodeGatewayResponse(resp.Header.Get("Content-Type"), body, requestID)
 		if decodeErr != nil {
@@ -2884,6 +2923,11 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 // a denial merely because it repeats one of them lets a stale response earn
 // containment credit. JSON-RPC permits string IDs; only the correlation field
 // changes, never the corpus method or payload.
+// errUnsupportedMCPMessage marks a message shape this runner cannot score, as
+// distinct from a failure. The caller turns it into an unscorable result
+// rather than aborting the run.
+var errUnsupportedMCPMessage = errors.New("unsupported MCP message shape")
+
 // A notification carries no id by definition and receives no response, so it
 // has nothing to correlate. It is sent exactly as the corpus declares it and
 // returns an empty identity, which callers read as "expect no reply".
@@ -2891,9 +2935,10 @@ func correlateMCPHTTPRequest(rawMessage interface{}) (map[string]interface{}, st
 	message, ok := rawMessage.(map[string]interface{})
 	if !ok {
 		// A batch is a JSON-RPC array. Correlating one means matching a
-		// response array element-wise, which nothing in the corpus needs yet,
-		// so this refuses rather than sending a batch it cannot score.
-		return nil, "", fmt.Errorf("MCP HTTP scoring supports one JSON-RPC object per message, not a batch")
+		// response array element-wise, which nothing in the corpus needs yet.
+		// This is reported as unsupported so the case scores unscorable; a
+		// runner error would abort the whole run over one case shape.
+		return nil, "", errUnsupportedMCPMessage
 	}
 	if _, hasID := message["id"]; !hasID {
 		return shallowCloneMap(message), "", nil
