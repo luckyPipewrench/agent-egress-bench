@@ -67,13 +67,10 @@ jobs:
           name: agent-egress-bench-release-${{ github.sha }}
           path: dist/release
 
-      - name: Attest runner archives
+      - name: Attest release assets
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: |
-            dist/release/agent-egress-bench_*_linux_*.tar.gz
-            dist/release/agent-egress-bench_*_darwin_*.tar.gz
-            dist/release/agent-egress-bench_*_windows_*.zip
+          subject-path: dist/release/*
 
   publish:
     needs: [release, attest]

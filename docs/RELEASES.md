@@ -8,7 +8,7 @@ Each release contains:
 - `aeb-gauntlet` archives for Linux, macOS, and Windows on amd64 and arm64.
 - `checksums.txt` covering every release asset.
 - `release-identity.json` with the corpus version, active schema versions, source commit, and supported archive matrix.
-- GitHub Artifact Attestations for the runner archives.
+- GitHub Artifact Attestations for every release asset.
 
 ## Verify a downloaded release
 
@@ -23,7 +23,7 @@ tar -xzf aeb-release/agent-egress-bench_0.1.0_data.tar.gz -C aeb-release
 
 The verifier rejects a missing asset, a checksum mismatch, an archive whose embedded identity differs from the release identity, a changed corpus or schema file, or a data bundle whose file list differs from the recorded tree.
 
-An operator can also check the GitHub provenance attached to a runner archive:
+An operator can also check the GitHub provenance attached to any release asset:
 
 ```bash
 gh attestation verify aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz --repo luckyPipewrench/agent-egress-bench

@@ -40,9 +40,6 @@ def check_workflow(path: Path) -> None:
         "install-only: true",
         "./scripts/release-build.sh --tag snapshot --commit \"$GITHUB_SHA\" --snapshot",
         "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
-        "dist/release/agent-egress-bench_*_linux_*.tar.gz",
-        "dist/release/agent-egress-bench_*_darwin_*.tar.gz",
-        "dist/release/agent-egress-bench_*_windows_*.zip",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "path: dist/release/",
         "retention-days: 14",
@@ -58,6 +55,8 @@ def check_workflow(path: Path) -> None:
         raise AssertionError("attestation write permission is not confined to tag pushes")
     if "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c" not in attest or "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8" not in attest:
         raise AssertionError("tag-only attestation does not consume the built release artifacts")
+    if "subject-path: dist/release/*\n" not in attest:
+        raise AssertionError("all release assets are not attested")
     if "needs: [release, attest]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "gh release create \"$GITHUB_REF_NAME\" dist/release/* --title \"$GITHUB_REF_NAME\" --verify-tag" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
 
@@ -81,6 +80,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("permissions:\n  contents: read\n", "permissions:\n  contents: read\n  attestations: write\n", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "manual workflow token"):
+                check_workflow(candidate)
+
+    def test_all_release_assets_are_attested(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("subject-path: dist/release/*", "subject-path: dist/release/*.tar.gz", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "all release assets"):
                 check_workflow(candidate)
 
 
