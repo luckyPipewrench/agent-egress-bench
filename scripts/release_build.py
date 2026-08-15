@@ -23,7 +23,7 @@ SNAPSHOT_VERSION_RE = re.compile(r"^1\.0\.0-SNAPSHOT-[0-9a-f]{7}$")
 IDENTITY_NAME = "release-identity.json"
 CHECKSUM_NAME = "checksums.txt"
 DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities")
-DATA_FILES = ("README.md", "LICENSE", "NOTICE", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md")
+DATA_FILES = ("README.md", "LICENSE", "NOTICE", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md", "scripts/release_build.py")
 PLATFORMS = tuple((goos, arch) for goos in ("linux", "darwin", "windows") for arch in ("amd64", "arm64"))
 
 
