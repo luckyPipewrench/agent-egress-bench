@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import re
@@ -11,6 +12,15 @@ import sys
 import urllib.parse
 from copy import deepcopy
 from pathlib import Path
+
+try:
+    import artifact_schema
+except ModuleNotFoundError:
+    _artifact_schema_spec = importlib.util.spec_from_file_location(
+        "artifact_schema", Path(__file__).with_name("artifact_schema.py")
+    )
+    artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
+    _artifact_schema_spec.loader.exec_module(artifact_schema)
 
 
 V1_REQUIRED_SCOPE_PATHS = (
@@ -59,6 +69,10 @@ SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA1_HEX = re.compile(r"^[0-9a-f]{40}$")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PROVENANCE_SCHEMAS = {
+    version: REPO_ROOT / "schemas" / f"provenance-candidate-v{version}.schema.json"
+    for version in (1, 2, 4, 5)
+}
 MANIFEST_PATH = REPO_ROOT / "cases" / "MANIFEST.txt"
 ARCHIVE_RECORD_MANIFEST = "record-manifest.json"
 ARCHIVE_CANDIDATE = "continuous-gauntlet-pipelock.json"
@@ -290,17 +304,17 @@ def validate_scope(document, manifest_identity, manifest_label):
     version = path_value(document, ("schema_version",))
     if version == 1:
         validate_scope_v1(document, manifest_identity, manifest_label)
-        return
-    if version == 2:
+    elif version == 2:
         validate_scope_v2(document, manifest_identity, manifest_label)
-        return
-    if version == 4:
+    elif version == 4:
         validate_scope_v4(document, manifest_identity, manifest_label)
-        return
-    if version == 5:
+    elif version == 5:
         validate_scope_v5(document, manifest_identity, manifest_label)
-        return
-    raise ValueError(f"unsupported schema_version: {version!r}")
+    else:
+        raise ValueError(f"unsupported schema_version: {version!r}")
+    artifact_schema.validate_file(
+        document, PROVENANCE_SCHEMAS[version], f"provenance candidate v{version}"
+    )
 
 
 def validate_scope_v1(document, manifest_identity, manifest_label):

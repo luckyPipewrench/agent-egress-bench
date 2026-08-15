@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -14,6 +15,15 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    import artifact_schema
+except ModuleNotFoundError:
+    _artifact_schema_spec = importlib.util.spec_from_file_location(
+        "artifact_schema", Path(__file__).with_name("artifact_schema.py")
+    )
+    artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
+    _artifact_schema_spec.loader.exec_module(artifact_schema)
+
 
 # Scoring versions belonging to retained, frozen published records. Those
 # summaries predate schema_version and keep their original byte shape, so they
@@ -21,6 +31,12 @@ from urllib.parse import urlparse
 # output and must carry its schema marker. Add a version here only when a record
 # scored under it has actually been published and frozen.
 FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
+PROVENANCE_SCHEMAS = {
+    version: Path(__file__).resolve().parents[1]
+    / "schemas"
+    / f"provenance-candidate-v{version}.schema.json"
+    for version in (1, 2, 4, 5)
+}
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -1036,6 +1052,11 @@ def finalize_command(args):
             "canonical_url": canonical_url,
             "portable_bundle_sha256": file_sha256(bundle_path),
         }
+    )
+    artifact_schema.validate_file(
+        candidate,
+        PROVENANCE_SCHEMAS[candidate["schema_version"]],
+        "provenance candidate",
     )
     atomic_json_write(output_path, candidate)
 

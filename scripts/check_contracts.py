@@ -569,7 +569,15 @@ def check(root, manifest_path):
             # have to be declared frozen and no schema could be active.
             # Immutability for that version is carried by frozen_versions; this
             # field records what the writer emits.
-            expected_status = "active" if version == active else "frozen" if version in frozen else None
+            expected_status = (
+                "active"
+                if version == active
+                else "frozen"
+                if version in frozen
+                else "supported"
+                if version in accepted
+                else None
+            )
             if expected_status is None or status != expected_status:
                 fail(f"{name}: schema v{version} has status {status!r}, expected {expected_status!r}")
             relative = schema.get("path")

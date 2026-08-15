@@ -99,6 +99,7 @@ def complete_v5_artifact():
     artifact["schema_version"] = 5
     artifact["runner_version"] = "0.4.3"
     artifact["scoring_version"] = "2.8"
+    artifact["benchmark_manifest_sha256"] = "e" * 64
     artifact["measurement_status"] = "measured"
     artifact["capability_registry"] = {
         "id": "aeb.core-capabilities",

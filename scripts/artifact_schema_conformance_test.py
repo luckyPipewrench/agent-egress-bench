@@ -29,6 +29,17 @@ def apply_mutation(instance, mutation):
     return value
 
 
+def materialize(vector, vector_path):
+    if "instance" in vector:
+        value = copy.deepcopy(vector["instance"])
+    else:
+        source = (vector_path.parent / vector["source"]).resolve()
+        value = json.loads(source.read_text(encoding="utf-8"))
+    for mutation in vector.get("mutations", []):
+        value = apply_mutation(value, mutation)
+    return value
+
+
 class ArtifactSchemaConformanceTest(unittest.TestCase):
     def test_vectors(self):
         vectors = sorted(VECTOR_ROOT.glob("*.json"))
@@ -40,10 +51,10 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
             self.assertTrue(accepted, path)
             for vector in accepted:
                 with self.subTest(vector=path.name, case=vector["description"]):
-                    artifact_schema.validate(vector["instance"], schema, vector["description"])
-            base = accepted[0]["instance"]
+                    artifact_schema.validate(materialize(vector, path), schema, vector["description"])
             for vector in document["rejected"]:
                 with self.subTest(vector=path.name, case=vector["description"]):
+                    base = materialize(accepted[vector.get("accepted_index", 0)], path)
                     corrupted = apply_mutation(base, vector["mutation"])
                     with self.assertRaises(ValueError):
                         artifact_schema.validate(corrupted, schema, vector["description"])

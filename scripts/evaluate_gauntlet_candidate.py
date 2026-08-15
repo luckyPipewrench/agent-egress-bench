@@ -48,6 +48,12 @@ SCOPE_IDENTITIES = {
 }
 SHA256_HEX = set("0123456789abcdef")
 PROMOTION_BASELINE_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promotion-baseline-v1.schema.json"
+PROVENANCE_SCHEMAS = {
+    version: Path(__file__).resolve().parents[1]
+    / "schemas"
+    / f"provenance-candidate-v{version}.schema.json"
+    for version in (1, 2, 4, 5)
+}
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
 V5_DIAGNOSTIC_FIELDS = frozenset(
@@ -469,6 +475,11 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 )
 
         artifact_schema.validate_file(baseline, PROMOTION_BASELINE_SCHEMA, "baseline")
+        artifact_schema.validate_file(
+            candidate,
+            PROVENANCE_SCHEMAS[candidate_schema_version],
+            f"provenance candidate v{candidate_schema_version}",
+        )
 
         if not decision["failures"] and scope_changed:
             decision["promotion_status"] = "scope_changed_requires_review"
