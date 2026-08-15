@@ -108,7 +108,7 @@ var (
 		"domain_blocklist": true, "entropy_scanning": true,
 		"shell_analysis":      true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
-		"dns_rebinding_fixture": true, "budget_enforcement": true,
+		"dns_rebinding_fixture": true,
 	}
 
 	validActualVerdicts = map[string]bool{
@@ -188,6 +188,26 @@ type Case struct {
 	Source          string                 `json:"source"`
 	Supersedes      string                 `json:"supersedes,omitempty"`
 }
+
+var (
+	caseRequiredFields = []string{
+		"schema_version", "id", "category", "title", "description", "input_type", "transport", "payload",
+		"expected_verdict", "severity", "capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source",
+	}
+	resultRequiredFields = []string{
+		"schema_version", "case_id", "tool", "tool_version", "capability_registry", "expected_verdict", "actual_verdict", "score", "evidence", "notes",
+	}
+	profileRequiredFields = []string{
+		"schema_version", "tool", "tool_version", "runner_version", "claims", "capability_registry",
+	}
+	// The schema's required list for receipt_evidence. This lived only in the
+	// authority test, so the test asserted the schema matched a list the test
+	// itself declared while the validator enforced no presence at all: an
+	// omitted required field decoded to its zero value and passed.
+	receiptEvidenceRequiredFields = []string{
+		"evidence_dir", "file_glob", "detail_json_pointer", "detail_encoding", "verify_command", "valid_exit_codes",
+	}
+)
 
 const usageText = `usage: validate <command> <target>
 
@@ -464,7 +484,7 @@ func validateFile(path string, ids map[string]string) []string {
 		addErr(fmt.Sprintf("JSON field inventory error: %v", err))
 		return errors
 	}
-	for _, field := range []string{"schema_version", "id", "category", "title", "description", "input_type", "transport", "payload", "expected_verdict", "severity", "capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source"} {
+	for _, field := range caseRequiredFields {
 		if _, present := fields[field]; !present {
 			addErr(fmt.Sprintf("missing required field %q", field))
 		}
@@ -1245,6 +1265,31 @@ type Profile struct {
 	RunnerVersion      string                       `json:"runner_version"`
 	Claims             []string                     `json:"claims"`
 	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
+	// Kept raw so an omitted declaration stays distinguishable from an explicit
+	// null. Decoding straight into a pointer collapses both to nil, which let a
+	// schema-invalid null skip validation entirely.
+	ReceiptEvidence json.RawMessage `json:"receipt_evidence,omitempty"`
+}
+
+// ReceiptEvidence is the optional receipt-evidence declaration in the active
+// tool-profile schema. The validator does not execute it, but it must accept
+// and structurally validate the same declaration the runner consumes.
+type ReceiptEvidence struct {
+	EvidenceDir                 string   `json:"evidence_dir"`
+	FileGlob                    string   `json:"file_glob"`
+	JSONLRecordType             string   `json:"jsonl_record_type"`
+	DetailJSONPointer           string   `json:"detail_json_pointer"`
+	DetailEncoding              string   `json:"detail_encoding"`
+	RecordCaseIDJSONPointer     string   `json:"record_case_id_json_pointer"`
+	RecordIdentifierJSONPointer string   `json:"record_identifier_json_pointer"`
+	CaseIdentifierJSONPointer   string   `json:"case_identifier_json_pointer"`
+	VerifyCommand               []string `json:"verify_command"`
+	// Optional in the schema, so absence must stay distinguishable from a
+	// supplied zero. Decoding into a plain int made an omitted value look like
+	// 0 and rejected profiles the schema accepts.
+	VerifyTimeoutSeconds *int  `json:"verify_timeout_seconds"`
+	ValidExitCodes       []int `json:"valid_exit_codes"`
+	PartialExitCodes     []int `json:"partial_exit_codes"`
 }
 
 func validateProfile(p Profile) []string {
@@ -1278,7 +1323,141 @@ func validateProfile(p Profile) []string {
 	if err := validateRegistryReference(p.CapabilityRegistry); err != nil {
 		errors = append(errors, fmt.Sprintf("invalid capability_registry: %v", err))
 	}
+	if p.ReceiptEvidence != nil {
+		for _, issue := range validateReceiptEvidenceRaw(p.ReceiptEvidence) {
+			errors = append(errors, "invalid receipt_evidence: "+issue)
+		}
+	}
 
+	return errors
+}
+
+// validateReceiptEvidenceRaw checks the declaration before it is decoded, because
+// the schema types every receipt_evidence field as an object, string, or array and
+// none of them accept null. Go decodes a null into the zero value, so a null would
+// otherwise be indistinguishable from a legitimately empty or omitted field and
+// would pass a check the schema fails.
+func validateReceiptEvidenceRaw(raw json.RawMessage) []string {
+	if strings.TrimSpace(string(raw)) == "null" {
+		return []string{"must be an object, not null"}
+	}
+	var generic interface{}
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return []string{fmt.Sprintf("must be an object: %v", err)}
+	}
+	fields, isObject := generic.(map[string]interface{})
+	if !isObject {
+		return []string{"must be an object"}
+	}
+
+	// Nulls are checked at every depth, not just on the top-level properties.
+	// A null inside valid_exit_codes decodes into []int as 0, which is the
+	// success exit code, so a schema-invalid declaration would otherwise become
+	// a silently different and more permissive verifier contract.
+	errors := jsonNullPaths(fields, "")
+	var missing []string
+	for _, name := range receiptEvidenceRequiredFields {
+		if _, present := fields[name]; !present {
+			missing = append(missing, name+" is required")
+		}
+	}
+	sort.Strings(missing)
+	errors = append(errors, missing...)
+	if len(errors) > 0 {
+		return errors
+	}
+
+	// Strict, matching how this validator decodes every other artifact. A
+	// tolerant decode would accept tool-specific keys the runner never reads
+	// while the schema forbids them.
+	var e ReceiptEvidence
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&e); err != nil {
+		return []string{fmt.Sprintf("is malformed: %v", err)}
+	}
+	return validateReceiptEvidence(e)
+}
+
+// jsonNullPaths reports every null reachable inside a decoded JSON value, named
+// by its dotted path. No receipt_evidence field is nullable in the schema, and
+// Go turns each null into a zero value that is indistinguishable from a
+// legitimately empty one, so the null has to be caught before decoding.
+func jsonNullPaths(value interface{}, path string) []string {
+	switch typed := value.(type) {
+	case nil:
+		if path == "" {
+			return []string{"must not be null"}
+		}
+		return []string{path + " must not be null"}
+	case map[string]interface{}:
+		names := make([]string, 0, len(typed))
+		for name := range typed {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		var found []string
+		for _, name := range names {
+			child := name
+			if path != "" {
+				child = path + "." + name
+			}
+			found = append(found, jsonNullPaths(typed[name], child)...)
+		}
+		return found
+	case []interface{}:
+		var found []string
+		for index, item := range typed {
+			found = append(found, jsonNullPaths(item, fmt.Sprintf("%s[%d]", path, index))...)
+		}
+		return found
+	}
+	return nil
+}
+
+func validateReceiptEvidence(e ReceiptEvidence) []string {
+	var errors []string
+	if strings.TrimSpace(e.EvidenceDir) == "" {
+		errors = append(errors, "evidence_dir must be non-empty")
+	}
+	if strings.TrimSpace(e.FileGlob) == "" {
+		errors = append(errors, "file_glob must be non-empty")
+	}
+	if e.DetailJSONPointer != "" && !strings.HasPrefix(e.DetailJSONPointer, "/") {
+		errors = append(errors, "detail_json_pointer must be empty or start with /")
+	}
+	switch e.DetailEncoding {
+	case "object", "json_string", "object_or_json_string":
+	default:
+		errors = append(errors, "detail_encoding must be object, json_string, or object_or_json_string")
+	}
+	for _, pointer := range []struct {
+		name  string
+		value string
+	}{
+		{"record_case_id_json_pointer", e.RecordCaseIDJSONPointer},
+		{"record_identifier_json_pointer", e.RecordIdentifierJSONPointer},
+		{"case_identifier_json_pointer", e.CaseIdentifierJSONPointer},
+	} {
+		if pointer.value != "" && !strings.HasPrefix(pointer.value, "/") {
+			errors = append(errors, pointer.name+" must be empty or start with /")
+		}
+	}
+	if len(e.VerifyCommand) == 0 {
+		errors = append(errors, "verify_command must not be empty")
+	}
+	for _, value := range e.VerifyCommand {
+		if strings.TrimSpace(value) == "" {
+			errors = append(errors, "verify_command entries must be non-empty")
+			break
+		}
+	}
+	if e.VerifyTimeoutSeconds != nil && *e.VerifyTimeoutSeconds < 1 {
+		errors = append(errors, "verify_timeout_seconds must be positive")
+	}
+	if len(e.ValidExitCodes) == 0 {
+		errors = append(errors, "valid_exit_codes must not be empty")
+	}
 	return errors
 }
 

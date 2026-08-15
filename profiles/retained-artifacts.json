@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "artifacts": [
+    {
+      "path": "pipelock.json",
+      "status": "historical",
+      "schema_version": 1,
+      "tool": "pipelock",
+      "tool_version": "3.1.0",
+      "corpus_version": "v2.0.0",
+      "per_case_count": 196,
+      "blocked_yes_count": 148,
+      "sha256": "8bcc70b2f2232fb32e73ba0d2d4ab26b5462e1e5199693be276f14238f54f9b4"
+    }
+  ]
+}
