@@ -61,7 +61,10 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def git(repo: Path, *args: str) -> str:
-    result = subprocess.run(["git", "-C", str(repo), *args], text=True, capture_output=True, check=False)
+    try:
+        result = subprocess.run(["git", "-C", str(repo), *args], text=True, capture_output=True, check=False)
+    except OSError as exc:
+        fail(f"git {' '.join(args)} failed: {exc}")
     if result.returncode:
         fail(f"git {' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout.strip()

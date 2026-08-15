@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -151,6 +152,17 @@ class ReleaseBuildTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("release data differs from the tracked source tree", result.stderr)
+
+    def test_identity_reports_absent_git(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", self.snapshot_version, "--commit", self.commit, "--snapshot", "--output", str(self.identity)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PATH": "/nonexistent"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release verification failed: git rev-parse HEAD failed", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_download_verifier_rejects_tampered_checksum_artifact(self) -> None:
         self.prepare()
