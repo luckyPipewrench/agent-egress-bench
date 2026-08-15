@@ -1258,7 +1258,10 @@ type Profile struct {
 	RunnerVersion      string                       `json:"runner_version"`
 	Claims             []string                     `json:"claims"`
 	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
-	ReceiptEvidence    *ReceiptEvidence             `json:"receipt_evidence,omitempty"`
+	// Kept raw so an omitted declaration stays distinguishable from an explicit
+	// null. Decoding straight into a pointer collapses both to nil, which let a
+	// schema-invalid null skip validation entirely.
+	ReceiptEvidence json.RawMessage `json:"receipt_evidence,omitempty"`
 }
 
 // ReceiptEvidence is the optional receipt-evidence declaration in the active
@@ -1274,9 +1277,12 @@ type ReceiptEvidence struct {
 	RecordIdentifierJSONPointer string   `json:"record_identifier_json_pointer"`
 	CaseIdentifierJSONPointer   string   `json:"case_identifier_json_pointer"`
 	VerifyCommand               []string `json:"verify_command"`
-	VerifyTimeoutSeconds        int      `json:"verify_timeout_seconds"`
-	ValidExitCodes              []int    `json:"valid_exit_codes"`
-	PartialExitCodes            []int    `json:"partial_exit_codes"`
+	// Optional in the schema, so absence must stay distinguishable from a
+	// supplied zero. Decoding into a plain int made an omitted value look like
+	// 0 and rejected profiles the schema accepts.
+	VerifyTimeoutSeconds *int  `json:"verify_timeout_seconds"`
+	ValidExitCodes       []int `json:"valid_exit_codes"`
+	PartialExitCodes     []int `json:"partial_exit_codes"`
 }
 
 func validateProfile(p Profile) []string {
@@ -1311,12 +1317,46 @@ func validateProfile(p Profile) []string {
 		errors = append(errors, fmt.Sprintf("invalid capability_registry: %v", err))
 	}
 	if p.ReceiptEvidence != nil {
-		for _, issue := range validateReceiptEvidence(*p.ReceiptEvidence) {
+		for _, issue := range validateReceiptEvidenceRaw(p.ReceiptEvidence) {
 			errors = append(errors, "invalid receipt_evidence: "+issue)
 		}
 	}
 
 	return errors
+}
+
+// validateReceiptEvidenceRaw checks the declaration before it is decoded, because
+// the schema types every receipt_evidence field as an object, string, or array and
+// none of them accept null. Go decodes a null into the zero value, so a null would
+// otherwise be indistinguishable from a legitimately empty or omitted field and
+// would pass a check the schema fails.
+func validateReceiptEvidenceRaw(raw json.RawMessage) []string {
+	if strings.TrimSpace(string(raw)) == "null" {
+		return []string{"must be an object, not null"}
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return []string{fmt.Sprintf("must be an object: %v", err)}
+	}
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var errors []string
+	for _, name := range names {
+		if strings.TrimSpace(string(fields[name])) == "null" {
+			errors = append(errors, name+" must not be null")
+		}
+	}
+	if len(errors) > 0 {
+		return errors
+	}
+	var e ReceiptEvidence
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return []string{fmt.Sprintf("is malformed: %v", err)}
+	}
+	return validateReceiptEvidence(e)
 }
 
 func validateReceiptEvidence(e ReceiptEvidence) []string {
@@ -1356,7 +1396,7 @@ func validateReceiptEvidence(e ReceiptEvidence) []string {
 			break
 		}
 	}
-	if e.VerifyTimeoutSeconds < 1 {
+	if e.VerifyTimeoutSeconds != nil && *e.VerifyTimeoutSeconds < 1 {
 		errors = append(errors, "verify_timeout_seconds must be positive")
 	}
 	if len(e.ValidExitCodes) == 0 {

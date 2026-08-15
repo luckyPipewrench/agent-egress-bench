@@ -150,3 +150,45 @@ func TestToolProfileSchemaMatchesValidator(t *testing.T) {
 		t.Fatalf("validator rejected the shipped schema-valid profile: %v", issues)
 	}
 }
+
+// The schema types every receipt_evidence field as an object, string, array, or
+// integer, and none of them accept null. Go decodes a null into the zero value,
+// so without an explicit presence check a schema-invalid null is
+// indistinguishable from an omitted or empty field and passes a validator the
+// schema would fail. verify_timeout_seconds runs the same risk in the opposite
+// direction: it is optional, so decoding an absent value as 0 rejected profiles
+// the schema accepts.
+func TestReceiptEvidenceNullAndOptionalHandling(t *testing.T) {
+	valid := `{"evidence_dir":"receipts","file_glob":"*.jsonl","detail_json_pointer":"/detail","detail_encoding":"object","verify_command":["true"],"valid_exit_codes":[0]}`
+	nullPointer := `{"evidence_dir":"receipts","file_glob":"*.jsonl","detail_json_pointer":null,"detail_encoding":"object","verify_command":["true"],"valid_exit_codes":[0]}`
+	nullTimeout := `{"evidence_dir":"receipts","file_glob":"*.jsonl","detail_json_pointer":"/detail","detail_encoding":"object","verify_command":["true"],"valid_exit_codes":[0],"verify_timeout_seconds":null}`
+	zeroTimeout := `{"evidence_dir":"receipts","file_glob":"*.jsonl","detail_json_pointer":"/detail","detail_encoding":"object","verify_command":["true"],"valid_exit_codes":[0],"verify_timeout_seconds":0}`
+
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{"explicit null declaration is rejected", "null", "must be an object, not null"},
+		{"null in a required string is rejected", nullPointer, "detail_json_pointer must not be null"},
+		{"null in an optional integer is rejected", nullTimeout, "verify_timeout_seconds must not be null"},
+		{"supplied non-positive timeout is still rejected", zeroTimeout, "verify_timeout_seconds must be positive"},
+		{"omitted optional timeout is accepted", valid, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issues := validateReceiptEvidenceRaw([]byte(tc.raw))
+			if tc.wantErr == "" {
+				if len(issues) != 0 {
+					t.Fatalf("schema-valid declaration rejected: %v", issues)
+				}
+				return
+			}
+			for _, issue := range issues {
+				if issue == tc.wantErr {
+					return
+				}
+			}
+			t.Fatalf("issues = %v, want one equal to %q", issues, tc.wantErr)
+		})
+	}
+}
