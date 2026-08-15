@@ -19,7 +19,7 @@ from typing import Any
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-SNAPSHOT_VERSION = "0.0.0-SNAPSHOT"
+SNAPSHOT_VERSION_RE = re.compile(r"^1\.0\.0-SNAPSHOT-[0-9a-f]{7}$")
 IDENTITY_NAME = "release-identity.json"
 CHECKSUM_NAME = "checksums.txt"
 DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities")
@@ -162,8 +162,8 @@ def corpus(repo: Path) -> dict[str, Any]:
 
 def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bool) -> dict[str, Any]:
     if snapshot:
-        if tag != "snapshot" or version != SNAPSHOT_VERSION:
-            fail(f"snapshot identity must use tag snapshot and version {SNAPSHOT_VERSION}")
+        if tag != "snapshot" or not SNAPSHOT_VERSION_RE.fullmatch(version):
+            fail("snapshot identity must use tag snapshot and the GoReleaser snapshot version")
     elif not VERSION_RE.fullmatch(version) or tag != f"v{version}":
         fail("release tag must be a v-prefixed semantic version that matches the release version")
     if not COMMIT_RE.fullmatch(commit):

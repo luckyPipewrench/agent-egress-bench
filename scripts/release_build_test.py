@@ -38,6 +38,7 @@ class ReleaseBuildTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "test fixture"], check=True)
         self.commit = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
         self.identity = self.root / ".release/release-identity.json"
+        self.snapshot_version = f"1.0.0-SNAPSHOT-{self.commit[:7]}"
 
     def tearDown(self) -> None:
         try:
@@ -52,7 +53,7 @@ class ReleaseBuildTest(unittest.TestCase):
 
     def prepare(self) -> None:
         self.invoke(
-            "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", "0.0.0-SNAPSHOT",
+            "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", self.snapshot_version,
             "--commit", self.commit, "--snapshot", "--output", str(self.identity),
         )
 
@@ -65,7 +66,7 @@ class ReleaseBuildTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "broken contract"], check=True)
         broken_commit = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", "0.0.0-SNAPSHOT", "--commit", broken_commit, "--snapshot", "--output", str(self.identity)],
+            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{broken_commit[:7]}", "--commit", broken_commit, "--snapshot", "--output", str(self.identity)],
             text=True, capture_output=True,
         )
         self.assertNotEqual(result.returncode, 0)
@@ -88,7 +89,7 @@ class ReleaseBuildTest(unittest.TestCase):
         identity = self.identity.read_bytes()
         release = json.loads(identity)
         for platform in release["runner"]["platforms"]:
-            name = f"agent-egress-bench_0.0.0-SNAPSHOT_{platform['goos']}_{platform['goarch']}"
+            name = f"agent-egress-bench_{self.snapshot_version}_{platform['goos']}_{platform['goarch']}"
             if platform["goos"] == "windows":
                 with zipfile.ZipFile(dist / f"{name}.zip", "w") as archive:
                     archive.writestr("release-identity.json", identity)

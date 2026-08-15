@@ -23,7 +23,7 @@ done
 
 if [[ "$snapshot" == true ]]; then
   [[ "$tag" == snapshot ]] || usage
-  version=0.0.0-SNAPSHOT
+  version="1.0.0-SNAPSHOT-${commit:0:7}"
   snapshot_args=(--snapshot)
 else
   [[ "$tag" == v* ]] || usage

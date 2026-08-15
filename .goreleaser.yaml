@@ -4,7 +4,8 @@ project_name: agent-egress-bench
 
 builds:
   - id: aeb-gauntlet
-    main: ./runner
+    dir: runner
+    main: .
     binary: aeb-gauntlet
     env:
       - CGO_ENABLED=0
