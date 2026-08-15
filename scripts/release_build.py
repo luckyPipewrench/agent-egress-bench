@@ -580,7 +580,13 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
         if not executable.is_file() or executable.stat().st_mode & 0o111 == 0:
             fail("runner executable is absent or is not marked executable")
         try:
-            result = subprocess.run([str(executable), "--version"], text=True, capture_output=True, check=False)
+            # Bounded: this runs a binary out of a downloaded release, so a hung
+            # or wedged executable must fail verification rather than hang it.
+            result = subprocess.run(
+                [str(executable), "--version"], text=True, capture_output=True, check=False, timeout=60
+            )
+        except subprocess.TimeoutExpired:
+            fail("runner executable did not report its version within 60 seconds")
         except OSError as exc:
             fail(f"runner executable cannot run: {exc}")
         expected = f"aeb-gauntlet {identity['release']['version']} {identity['source']['commit']}"

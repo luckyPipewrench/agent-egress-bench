@@ -70,7 +70,19 @@ mkdir -p "$release_dir"
 find "$dist" -maxdepth 1 -type f \( -name 'agent-egress-bench_*.tar.gz' -o -name 'agent-egress-bench_*.zip' \) -exec mv {} "$release_dir" \;
 python3 scripts/release_build.py data-bundle --identity "$identity" --dist "$release_dir"
 python3 scripts/release_build.py checksums --identity "$identity" --dist "$release_dir"
-native_dir="$(mktemp -d "$TMPDIR/aeb-linux-amd64.XXXXXX")"
-trap 'rm -rf "$native_dir"' EXIT
-tar -xzf "$release_dir/agent-egress-bench_${version}_linux_amd64.tar.gz" -C "$native_dir"
-python3 scripts/release_build.py verify --release-dir "$release_dir" --executable "$native_dir/aeb-gauntlet"
+# Run the binary this host can actually execute. Hardcoding linux/amd64 works on
+# CI and silently breaks a macOS or arm64 developer running a snapshot. When no
+# archive matches the host, verify without the executable check and SAY so, so a
+# skipped check is never mistaken for a passed one.
+host_os="$(go env GOOS)"
+host_arch="$(go env GOARCH)"
+host_archive="$release_dir/agent-egress-bench_${version}_${host_os}_${host_arch}.tar.gz"
+if [[ -f "$host_archive" ]]; then
+  native_dir="$(mktemp -d "$TMPDIR/aeb-${host_os}-${host_arch}.XXXXXX")"
+  trap 'rm -rf "$native_dir"' EXIT
+  tar -xzf "$host_archive" -C "$native_dir"
+  python3 scripts/release_build.py verify --release-dir "$release_dir" --executable "$native_dir/aeb-gauntlet"
+else
+  echo "release-build: no archive for ${host_os}/${host_arch}; verifying without the executable check" >&2
+  python3 scripts/release_build.py verify --release-dir "$release_dir"
+fi
