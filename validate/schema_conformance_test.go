@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -195,6 +196,33 @@ func TestResultV4WithoutResultStateRemainsReadable(t *testing.T) {
 	}
 	if issues := validateResultLine(1, row); len(issues) != 0 {
 		t.Fatalf("v4 row without evidence.result_state was rejected: %v", issues)
+	}
+}
+
+func TestResultV4AndV5RowsCanShareFile(t *testing.T) {
+	v4 := ResultLine{
+		SchemaVersion: legacyResultSchemaVersion, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass", Evidence: map[string]interface{}{}, Notes: strPtr(""),
+	}
+	v5 := ResultLine{
+		SchemaVersion: activeResultSchemaVersion, CaseID: "active-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "block", ActualVerdict: "block", Score: "pass", Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	var rows bytes.Buffer
+	for _, row := range []ResultLine{v4, v5} {
+		if err := json.NewEncoder(&rows).Encode(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "mixed-results.jsonl")
+	if err := os.WriteFile(path, rows.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
+	if issues := validateResultsFile(path); len(issues) != 0 {
+		t.Fatalf("mixed v4/v5 result file was rejected: %v", issues)
 	}
 }
 
