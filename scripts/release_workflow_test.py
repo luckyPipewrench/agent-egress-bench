@@ -34,6 +34,8 @@ def check_workflow(path: Path) -> None:
         "path: dist/release/",
         "retention-days: 14",
         "if: github.event_name == 'push'",
+        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+        "contents: write",
         "gh release create \"$GITHUB_REF_NAME\" dist/release/* --title \"$GITHUB_REF_NAME\" --verify-tag",
     )
     for value in required:
@@ -43,6 +45,8 @@ def check_workflow(path: Path) -> None:
     conditional_index = workflow.rfind("if: github.event_name == 'push'", 0, create_index)
     if conditional_index < 0:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
+    if "contents: write" in workflow[:conditional_index]:
+        raise AssertionError("release build or manual dry run receives contents-write permission")
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
