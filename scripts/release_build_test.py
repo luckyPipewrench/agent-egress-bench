@@ -434,6 +434,36 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing its data bundle, schema artifacts, or declared runner platforms", result.stderr)
 
+    def test_download_verifier_rejects_schema_bytes_changed_after_rechecksum(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        bundle_path = next(dist.glob("*_schemas.tar.gz"))
+        catalog = json.loads(next(dist.glob("*_schema-catalog.json")).read_text(encoding="utf-8"))
+        changed_path = catalog["schemas"][0]["path"]
+        with tarfile.open(bundle_path, "r:gz") as archive:
+            contents = {
+                entry.name: archive.extractfile(entry).read()
+                for entry in archive.getmembers()
+                if entry.isfile()
+            }
+        contents[changed_path] += b"\n"
+        with tarfile.open(bundle_path, "w:gz") as archive:
+            for name, data in sorted(contents.items()):
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schema bundle digest does not match release catalog", result.stderr)
+
     def test_download_verifier_runs_from_the_documented_extract_layout(self) -> None:
         self.prepare()
         dist = self.root / "dist"
