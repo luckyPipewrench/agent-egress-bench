@@ -56,11 +56,7 @@ Current counts belong in [`cases/STATS.md`](../cases/STATS.md), not in this docu
 
 ## Per-case results
 
-An active v4 result row records an expected verdict, the verdict the runner
-observed, and the resulting score. The exhaustive public contract is
-[`contracts/result-states-v4.json`](../contracts/result-states-v4.json).
-`make check-public-contracts` compares every row with the result schema, Go
-scorer, and Go validator.
+An active v5 result row records an expected verdict, the verdict the runner observed, the resulting score, and a required `evidence.result_state`. The exhaustive public contract is [`contracts/result-states-v5.json`](../contracts/result-states-v5.json). `make check-public-contracts` compares every row with the result schema, Go scorer, and Go validator.
 
 | Expected verdict | Actual verdict | Score | Meaning |
 | --- | --- | --- | --- |
@@ -77,10 +73,7 @@ Budget cases add one evidence-bound override. A block on the first forbidden
 call, recorded as `budget_block_timing: at_over_budget`, passes. A block before
 or after that call fails even though `actual_verdict` is `block`.
 
-`skip` is an adapter-only state. An active runner converts it to
-`actual_verdict: error` and `score: error`; it never writes `skip` into a v4
-result row. `not_applicable` belongs only to frozen historical evidence. Active
-v4 runners do not emit it or reinterpret it.
+`skip` is an adapter-only state. An active runner converts it to `actual_verdict: error` and `score: error`; it never writes `skip` into a v5 result row. `not_applicable` belongs only to frozen historical evidence. Active v5 runners do not emit it or reinterpret it.
 
 ## How Scoring Works
 
@@ -161,7 +154,7 @@ The Gauntlet produces two outputs:
 
 ### Per-case results (JSONL)
 
-One JSON object per line goes to stdout, using the current v4 result format in [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json). Every active result line carries the exact capability-registry reference from its profile. [`RUNNER.md`](RUNNER.md) owns the delivery and output protocol.
+One JSON object per line goes to stdout, using the current v5 result format in [`schemas/result-v5.schema.json`](../schemas/result-v5.schema.json). Every active result line carries the exact capability-registry reference from its profile and one of the six published result states. The frozen [`result-v4.schema.json`](../schemas/result-v4.schema.json) remains available for historical rows. [`RUNNER.md`](RUNNER.md) owns the delivery and output protocol.
 
 ### Gauntlet summary (JSON file)
 

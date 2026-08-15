@@ -121,15 +121,15 @@ func TestRootJSONSchemasCompileAndValidateFixtures(t *testing.T) {
 		t.Fatalf("case-v4 rejected published fixture: %v", err)
 	}
 
-	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v4.schema.json"))
+	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v5.schema.json"))
 	result := map[string]interface{}{
-		"schema_version": float64(4), "case_id": caseDocument["id"], "tool": "tool",
+		"schema_version": float64(5), "case_id": caseDocument["id"], "tool": "tool",
 		"tool_version": "1.0.0", "expected_verdict": "allow", "actual_verdict": "allow",
-		"score": "pass", "evidence": map[string]interface{}{}, "notes": "",
+		"score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": "",
 		"capability_registry": map[string]interface{}{"id": "registry", "format": float64(1), "revision": float64(1), "sha256": strings.Repeat("a", 64)},
 	}
 	if err := resultSchema.Validate(result); err != nil {
-		t.Fatalf("result-v4 rejected valid result fixture: %v", err)
+		t.Fatalf("result-v5 rejected valid result fixture: %v", err)
 	}
 }
 

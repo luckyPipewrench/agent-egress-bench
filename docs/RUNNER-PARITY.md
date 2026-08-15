@@ -6,6 +6,8 @@ first, then reveal and compare it.
 
 ## Protocol
 
+The prepare step accepts active v5 result rows. Historical v4 rows remain readable through the Go validator but are not normalized into the v5 parity protocol.
+
 1. Both sides agree on a unique comparison ID and pin the same corpus,
    benchmark manifest, tool binary version, and tool profile digest. The
    prepare step reads the manifest itself, commits its digest, and requires

@@ -24,6 +24,7 @@ command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; exit 1; }
 # Read tool identity from profile
 TOOL=$(jq -r '.tool' "$PROFILE")
 TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
+CAPABILITY_REGISTRY=$(jq -c '.capability_registry' "$PROFILE")
 # --- Emit a single JSONL result line to stdout ---
 # This function is complete. Copy it as-is.
 emit_result() {
@@ -32,12 +33,14 @@ emit_result() {
         --arg case_id "$case_id" \
         --arg tool "$TOOL" \
         --arg tool_version "$TOOL_VERSION" \
+        --argjson capability_registry "$CAPABILITY_REGISTRY" \
         --arg expected "$expected" \
         --arg actual "$actual" \
         --arg score "$score" \
         --argjson evidence "$evidence" \
         --arg notes "$notes" \
-        '{case_id: $case_id, tool: $tool, tool_version: $tool_version,
+        '{schema_version: 5, case_id: $case_id, tool: $tool, tool_version: $tool_version,
+          capability_registry: $capability_registry,
           expected_verdict: $expected, actual_verdict: $actual, score: $score,
           evidence: $evidence, notes: $notes}'
 }
@@ -143,7 +146,7 @@ while read -r case_file; do
     # ============================================================
 
     actual_verdict="error"
-    evidence='{"reason": "TODO: implement tool-specific verdict observation"}'
+    evidence='{"result_state": "adapter_error", "reason": "TODO: implement tool-specific verdict observation"}'
 
     # --- Score the result ---
     if [ "$actual_verdict" = "error" ]; then

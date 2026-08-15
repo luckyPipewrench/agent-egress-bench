@@ -81,6 +81,16 @@ func mapKeys[V any](values map[string]V) []string {
 	return sortedCopy(keys)
 }
 
+func resultStateForContractRow(row resultMatrixRow) string {
+	if row.ActualVerdict == "unreachable" {
+		return "unreachable"
+	}
+	if row.ActualVerdict == "error" {
+		return "delivery_unavailable"
+	}
+	return "observed"
+}
+
 func TestPublicCaseShapesMatchValidator(t *testing.T) {
 	contract := readPublicContract[caseShapesContract](t, "case-shapes-v4.json")
 	if contract.Contract != "aeb.case-shapes" || contract.Format != 1 || contract.CaseSchemaVersion != activeCaseSchemaVersion {
@@ -111,7 +121,7 @@ func TestPublicCaseShapesMatchValidator(t *testing.T) {
 }
 
 func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
-	contract := readPublicContract[resultStatesContract](t, "result-states-v4.json")
+	contract := readPublicContract[resultStatesContract](t, "result-states-v5.json")
 	if contract.Contract != "aeb.result-states" || contract.Format != 1 || contract.ResultSchemaVersion != activeResultSchemaVersion {
 		t.Fatalf("result-states identity/version = %q/%d/%d", contract.Contract, contract.Format, contract.ResultSchemaVersion)
 	}
@@ -121,10 +131,10 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 	for _, row := range contract.Matrix {
 		t.Run(row.ExpectedVerdict+"/"+row.ActualVerdict, func(t *testing.T) {
 			result := ResultLine{
-				SchemaVersion: 4, CaseID: "contract-case", Tool: "contract-tool", ToolVersion: "1",
+				SchemaVersion: 5, CaseID: "contract-case", Tool: "contract-tool", ToolVersion: "1",
 				CapabilityRegistry: testRegistryReference,
 				ExpectedVerdict:    row.ExpectedVerdict, ActualVerdict: row.ActualVerdict, Score: row.Score,
-				Evidence: map[string]interface{}{}, Notes: strPtr(""),
+				Evidence: map[string]interface{}{"result_state": resultStateForContractRow(row)}, Notes: strPtr(""),
 			}
 			if errs := validateResultLine(1, result); len(errs) != 0 {
 				t.Fatalf("public matrix row rejected: %v", errs)
@@ -152,10 +162,10 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 	budgetCase := &resultCaseMetadata{ExpectedVerdict: "block", BudgetTimingRequired: true}
 	for timing, score := range override.ScoresByBudgetBlockTiming {
 		result := ResultLine{
-			SchemaVersion: 4, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
+			SchemaVersion: 5, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
 			CapabilityRegistry: testRegistryReference,
 			ExpectedVerdict:    "block", ActualVerdict: "block", Score: score,
-			Evidence: map[string]interface{}{"over_budget_call_id": float64(4), "budget_block_timing": timing}, Notes: strPtr(""),
+			Evidence: map[string]interface{}{"result_state": "observed", "over_budget_call_id": float64(4), "budget_block_timing": timing}, Notes: strPtr(""),
 		}
 		if errs := validateResultLineAgainstCase(1, result, budgetCase); len(errs) != 0 {
 			t.Errorf("budget timing %q with score %q rejected: %v", timing, score, errs)
@@ -171,11 +181,11 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 		}
 	}
 	for name, evidence := range map[string]map[string]interface{}{
-		"missing": {},
-		"unknown": {"budget_block_timing": "unknown"},
+		"missing": {"result_state": "observed"},
+		"unknown": {"result_state": "observed", "budget_block_timing": "unknown"},
 	} {
 		result := ResultLine{
-			SchemaVersion: 4, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
+			SchemaVersion: 5, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
 			CapabilityRegistry: testRegistryReference,
 			ExpectedVerdict:    "block", ActualVerdict: "block", Score: "pass",
 			Evidence: evidence, Notes: strPtr(""),
@@ -186,10 +196,10 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 	}
 	nonBudgetCase := &resultCaseMetadata{ExpectedVerdict: "block"}
 	nonBudgetResult := ResultLine{
-		SchemaVersion: 4, CaseID: "ordinary-case", Tool: "contract-tool", ToolVersion: "1",
+		SchemaVersion: 5, CaseID: "ordinary-case", Tool: "contract-tool", ToolVersion: "1",
 		CapabilityRegistry: testRegistryReference,
 		ExpectedVerdict:    "block", ActualVerdict: "block", Score: "fail",
-		Evidence: map[string]interface{}{"over_budget_call_id": float64(4), "budget_block_timing": "before_over_budget"}, Notes: strPtr(""),
+		Evidence: map[string]interface{}{"result_state": "observed", "over_budget_call_id": float64(4), "budget_block_timing": "before_over_budget"}, Notes: strPtr(""),
 	}
 	if errs := validateResultLineAgainstCase(1, nonBudgetResult, nonBudgetCase); len(errs) == 0 {
 		t.Error("non-budget case accepted budget timing override")
@@ -200,19 +210,19 @@ func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 	}{
 		"allow case": {
 			result: ResultLine{
-				SchemaVersion: 4, CaseID: "allow-case", Tool: "contract-tool", ToolVersion: "1",
+				SchemaVersion: 5, CaseID: "allow-case", Tool: "contract-tool", ToolVersion: "1",
 				CapabilityRegistry: testRegistryReference,
 				ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass",
-				Evidence: map[string]interface{}{"budget_block_timing": "at_over_budget"}, Notes: strPtr(""),
+				Evidence: map[string]interface{}{"result_state": "observed", "budget_block_timing": "at_over_budget"}, Notes: strPtr(""),
 			},
 			metadata: &resultCaseMetadata{ExpectedVerdict: "allow"},
 		},
 		"budget case without block verdict": {
 			result: ResultLine{
-				SchemaVersion: 4, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
+				SchemaVersion: 5, CaseID: "budget-case", Tool: "contract-tool", ToolVersion: "1",
 				CapabilityRegistry: testRegistryReference,
 				ExpectedVerdict:    "block", ActualVerdict: "allow", Score: "fail",
-				Evidence: map[string]interface{}{"budget_block_timing": "at_over_budget"}, Notes: strPtr(""),
+				Evidence: map[string]interface{}{"result_state": "observed", "budget_block_timing": "at_over_budget"}, Notes: strPtr(""),
 			},
 			metadata: budgetCase,
 		},

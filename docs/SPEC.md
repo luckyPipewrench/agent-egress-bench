@@ -127,7 +127,7 @@ sufficiency, change a score, or gate publication.
 
 Delivery, fixture, and base-observation prerequisites only. `requires` must never encode attack difficulty, evasion resistance, or an enforcement claim (for example `encoding_evasion_scanning`, `ssrf_bypass_scanning`, or `budget_enforcement`); those belong in `capability_tags` or result evidence. The validator rejects those tokens for both single-file and multi-file cases.
 
-Live case, profile, result-row, and receipt artifacts use schema v4 together. The scorer rejects a mixed-version input set. The generated summary and its candidate provenance use schema v5 because their published metric contract changed, while the v4 inputs remain unchanged. Each active profile and result names the exact capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Historical artifacts are readable only through their frozen readers and are never normalized into active semantics. See [Capability Vocabulary and Profile Evolution](CAPABILITY-VOCABULARY.md).
+Live cases, profiles, and receipt artifacts use schema v4. Result rows and generated summaries use schema v5. The scorer rejects input that doesn't match the active version for its own family. Each active profile and result names the exact capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Historical v4 result rows remain readable through the frozen v4 schema and reader and are never normalized into v5 semantics. See [Capability Vocabulary and Profile Evolution](CAPABILITY-VOCABULARY.md).
 
 ## Payload Formats
 
@@ -260,7 +260,8 @@ JSON Schema files for programmatic validation:
 - [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json): case file schema
 - [`schemas/multi-file-case-v4.schema.json`](../schemas/multi-file-case-v4.schema.json): temporal MCP drift `case.yaml` schema
 - [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json): tool profile schema
-- [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json): runner result line schema
+- [`schemas/result-v5.schema.json`](../schemas/result-v5.schema.json): active runner result line schema
+- [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json): frozen result line schema
 
 ## Governance
 

@@ -1,0 +1,72 @@
+{
+  "accepted": [
+    {
+      "name": "observed",
+      "row": {"schema_version": 5, "case_id": "accepted-observed", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}, "notes": ""}
+    },
+    {
+      "name": "unreachable",
+      "row": {"schema_version": 5, "case_id": "accepted-unreachable", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "unreachable", "score": "error", "evidence": {"result_state": "unreachable"}, "notes": ""}
+    },
+    {
+      "name": "adapter_error",
+      "row": {"schema_version": 5, "case_id": "accepted-adapter-error", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "adapter_error"}, "notes": ""}
+    },
+    {
+      "name": "delivery_unavailable",
+      "row": {"schema_version": 5, "case_id": "accepted-delivery-unavailable", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "delivery_unavailable"}, "notes": ""}
+    },
+    {
+      "name": "verdict_unobservable",
+      "row": {"schema_version": 5, "case_id": "accepted-verdict-unobservable", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "verdict_unobservable"}, "notes": ""}
+    },
+    {
+      "name": "invalid_verdict",
+      "row": {"schema_version": 5, "case_id": "accepted-invalid-verdict", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "invalid_verdict"}, "notes": ""}
+    }
+  ],
+  "rejected": [
+    {
+      "name": "missing_result_state",
+      "failure_mode": "required field missing",
+      "schema_rejects": true,
+      "row": {"schema_version": 5, "case_id": "rejected-missing", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {}, "notes": ""}
+    },
+    {
+      "name": "null_result_state",
+      "failure_mode": "required field is null",
+      "schema_rejects": true,
+      "row": {"schema_version": 5, "case_id": "rejected-null", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": null}, "notes": ""}
+    },
+    {
+      "name": "non_string_result_state",
+      "failure_mode": "required field has the wrong type",
+      "schema_rejects": true,
+      "row": {"schema_version": 5, "case_id": "rejected-type", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": 5}, "notes": ""}
+    },
+    {
+      "name": "unknown_result_state",
+      "failure_mode": "required field is outside the closed vocabulary",
+      "schema_rejects": true,
+      "row": {"schema_version": 5, "case_id": "rejected-unknown", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "not_applicable"}, "notes": ""}
+    },
+    {
+      "name": "observed_without_measurement",
+      "failure_mode": "observed state is paired with an unmeasured result",
+      "schema_rejects": false,
+      "row": {"schema_version": 5, "case_id": "rejected-observed", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "observed"}, "notes": ""}
+    },
+    {
+      "name": "unreachable_with_error_verdict",
+      "failure_mode": "unreachable state is paired with the generic error verdict",
+      "schema_rejects": false,
+      "row": {"schema_version": 5, "case_id": "rejected-unreachable", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "unreachable"}, "notes": ""}
+    },
+    {
+      "name": "failure_state_with_measured_verdict",
+      "failure_mode": "unobserved failure state is paired with a measured verdict",
+      "schema_rejects": false,
+      "row": {"schema_version": 5, "case_id": "rejected-failure", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "block", "score": "pass", "evidence": {"result_state": "adapter_error"}, "notes": ""}
+    }
+  ]
+}

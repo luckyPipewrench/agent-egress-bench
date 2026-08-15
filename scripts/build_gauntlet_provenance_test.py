@@ -37,7 +37,7 @@ PIN_TAG = PIN["PIPELOCK_TAG"]
 
 class ProvenanceBuilderTest(unittest.TestCase):
     def test_active_result_score_enforces_budget_timing(self):
-        contract = json.loads((REPO_ROOT / "contracts" / "result-states-v4.json").read_text())
+        contract = json.loads((REPO_ROOT / "contracts" / "result-states-v5.json").read_text())
         scores = contract["case_specific_overrides"][0]["scores_by_budget_block_timing"]
         for timing, expected_score in scores.items():
             with self.subTest(timing=timing):
