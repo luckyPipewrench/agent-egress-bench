@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -14,19 +15,55 @@ import (
 // validator-level comparison matters because it owns the vocabulary maps that
 // reject invalid case, result, and profile inputs before a runner sees them.
 type authoritySchema struct {
-	Required             []string                        `json:"required"`
-	AdditionalProperties bool                            `json:"additionalProperties"`
+	Required []string `json:"required"`
+	// A pointer because an omitted additionalProperties and an explicit false
+	// both decode to false, and in JSON Schema an omitted one PERMITS unknown
+	// properties. Decoding into a plain bool made this assertion vacuous:
+	// deleting the keyword left the schema permissive while the validator kept
+	// rejecting unknown fields, and the drift test still passed.
+	AdditionalProperties *bool                           `json:"additionalProperties"`
 	Properties           map[string]authoritySchemaField `json:"properties"`
 }
 
 type authoritySchemaField struct {
-	Const      any                             `json:"const"`
-	Enum       []string                        `json:"enum"`
-	Required   []string                        `json:"required"`
-	Properties map[string]authoritySchemaField `json:"properties"`
-	Items      struct {
+	Const                any                             `json:"const"`
+	Enum                 []string                        `json:"enum"`
+	Required             []string                        `json:"required"`
+	AdditionalProperties *bool                           `json:"additionalProperties"`
+	Properties           map[string]authoritySchemaField `json:"properties"`
+	Items                struct {
 		Enum []string `json:"enum"`
 	} `json:"items"`
+}
+
+// jsonFieldNames returns the JSON property names a struct decodes, which is the
+// exact surface DisallowUnknownFields accepts.
+func jsonFieldNames(structType reflect.Type) []string {
+	names := make([]string, 0, structType.NumField())
+	for i := 0; i < structType.NumField(); i++ {
+		tag := structType.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name, _, _ := strings.Cut(tag, ",")
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// requireClosedObject fails unless the scope explicitly forbids unknown
+// properties, which is what the validator's strict decoding enforces.
+func requireClosedObject(t *testing.T, additionalProperties *bool, scope string) {
+	t.Helper()
+	if additionalProperties == nil {
+		t.Errorf("%s omits additionalProperties, so the schema permits unknown fields the validator rejects", scope)
+		return
+	}
+	if *additionalProperties {
+		t.Errorf("%s permits unknown fields but the validator rejects them", scope)
+	}
 }
 
 func readAuthoritySchema(t *testing.T, name string) authoritySchema {
@@ -85,9 +122,7 @@ func assertSchemaVersion(t *testing.T, schema authoritySchema, want int) {
 func TestCaseSchemaMatchesValidator(t *testing.T) {
 	schema := readAuthoritySchema(t, "case-v4.schema.json")
 	assertSchemaVersion(t, schema, activeCaseSchemaVersion)
-	if schema.AdditionalProperties {
-		t.Error("case schema permits unknown fields but the validator rejects them")
-	}
+	requireClosedObject(t, schema.AdditionalProperties, "case schema")
 	if got := sortedSchemaStrings(schema.Required); !reflect.DeepEqual(got, sortedSchemaStrings(caseRequiredFields)) {
 		t.Errorf("case schema required fields = %v, validator requires %v", got, sortedSchemaStrings(caseRequiredFields))
 	}
@@ -106,9 +141,7 @@ func TestCaseSchemaMatchesValidator(t *testing.T) {
 func TestResultSchemaMatchesValidator(t *testing.T) {
 	schema := readAuthoritySchema(t, "result-v4.schema.json")
 	assertSchemaVersion(t, schema, activeResultSchemaVersion)
-	if schema.AdditionalProperties {
-		t.Error("result schema permits unknown fields but the validator rejects them")
-	}
+	requireClosedObject(t, schema.AdditionalProperties, "result schema")
 	if got := sortedSchemaStrings(schema.Required); !reflect.DeepEqual(got, sortedSchemaStrings(resultRequiredFields)) {
 		t.Errorf("result schema required fields = %v, validator requires %v", got, sortedSchemaStrings(resultRequiredFields))
 	}
@@ -120,9 +153,7 @@ func TestResultSchemaMatchesValidator(t *testing.T) {
 func TestToolProfileSchemaMatchesValidator(t *testing.T) {
 	schema := readAuthoritySchema(t, "tool-profile-v4.schema.json")
 	assertSchemaVersion(t, schema, activeToolProfileSchemaVersion)
-	if schema.AdditionalProperties {
-		t.Error("tool-profile schema permits unknown fields but the validator rejects them")
-	}
+	requireClosedObject(t, schema.AdditionalProperties, "tool-profile schema")
 	if got := sortedSchemaStrings(schema.Required); !reflect.DeepEqual(got, sortedSchemaStrings(profileRequiredFields)) {
 		t.Errorf("tool-profile schema required fields = %v, validator requires %v", got, sortedSchemaStrings(profileRequiredFields))
 	}
@@ -130,11 +161,14 @@ func TestToolProfileSchemaMatchesValidator(t *testing.T) {
 		t.Fatal("tool-profile schema no longer declares receipt_evidence")
 	}
 	receipt := schema.Properties["receipt_evidence"]
-	wantReceiptFields := []string{
-		"evidence_dir", "file_glob", "jsonl_record_type", "detail_json_pointer", "detail_encoding",
-		"record_case_id_json_pointer", "record_identifier_json_pointer", "case_identifier_json_pointer",
-		"verify_command", "verify_timeout_seconds", "valid_exit_codes", "partial_exit_codes",
-	}
+	// The nested object is closed too, because validateReceiptEvidenceRaw
+	// decodes it strictly. This scope was never asserted at all.
+	requireClosedObject(t, receipt.AdditionalProperties, "receipt_evidence schema")
+	// Derived from the struct the validator strictly decodes into, not from a
+	// hand-written copy. A copy only catches a schema-side change: adding a
+	// field to the struct alone would make the validator accept a property the
+	// schema forbids, while a copy that still matched the schema passed.
+	wantReceiptFields := jsonFieldNames(reflect.TypeOf(ReceiptEvidence{}))
 	gotReceiptFields := make([]string, 0, len(receipt.Properties))
 	for name := range receipt.Properties {
 		gotReceiptFields = append(gotReceiptFields, name)

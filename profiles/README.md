@@ -117,9 +117,19 @@ per-case row records.
 
 ## Reproducing a published profile
 
-Any relying party can reproduce a profile by cloning the tool source,
-building or installing the recorded tool version, running the matching
-corpus version, and comparing the output with the committed profile via
-`sha256sum`. A byte mismatch is informative: the corpus, tool, or artifact
-changed. Reproduce historical records against their pinned inputs. Publish a
-new active measurement through the current Gauntlet result flow.
+A relying party reproduces a profile by cloning the tool source, building or
+installing the recorded tool version, running the matching corpus version, and
+comparing the output with the committed profile via `sha256sum`. A byte
+mismatch is informative: the corpus, tool, or artifact changed. Publish a new
+active measurement through the current Gauntlet result flow.
+
+How far that goes depends on the provenance a given artifact actually carries,
+and a version label is not a revision. `pipelock.json` is the retained
+historical case: `retained-artifacts.json` pins its SHA-256, tool version, and
+corpus version, but no corpus or runner source revision and no tool binary
+digest. It is therefore **digest-verifiable but not byte-for-byte reproducible
+from repository contents**, and its recorded digest is the check to run against
+it. See the provenance limitation in
+[`../docs/RUNNER.md`](../docs/RUNNER.md). Recording immutable corpus and runner
+revisions plus a binary digest is what would make a retained profile
+reproducible rather than only verifiable.
