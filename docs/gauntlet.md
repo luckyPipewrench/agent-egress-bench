@@ -115,10 +115,7 @@ authorizes an attempt; it does not create scope.
 | Delivery happened but verdict is unobservable | `verdict_unobservable` (`error`) |
 | Exact delivery and observed `allow`/`block` | scoreable |
 
-`claims`, `requires`, and `capability_tags` do not select cases. Claims and
-tags are registry-backed reporting labels. Frozen v1-v3 rows remain frozen
-evidence and retain their original meaning; active v4 runs do not create N/A
-from profile labels.
+`claims`, `requires`, and `capability_tags` do not select cases. Claims and tags are registry-backed reporting labels. Frozen v1-v4 rows remain frozen evidence and retain their original meaning; active v5 runs do not create N/A from profile labels.
 
 `requires` names only what the runner needs to deliver the input and observe a trustworthy verdict: transport, runtime fixtures, and the base surface the tool must inspect. It must not carry attack-difficulty, evasion-technique, or enforcement-claim flags. Those belong in registry-backed reporting labels. This applies to malicious and benign cases alike.
 

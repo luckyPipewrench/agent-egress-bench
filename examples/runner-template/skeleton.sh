@@ -142,7 +142,9 @@ while read -r case_file; do
     #   2. Fetch through your proxy
     #   3. Check if the response was flagged
     #
-    # Replace the placeholder below with your implementation.
+    # Replace both placeholder values below with your implementation. Measured
+    # allow/block verdicts require result_state=observed; other outcomes must use
+    # the matching state from contracts/result-states-v5.json.
     # ============================================================
 
     actual_verdict="error"
