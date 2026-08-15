@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-requirement-v0.schema.json",
+  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-requirement-v0.schema.json",
   "title": "Control Evidence v0 requirement payload",
   "type": "object", "additionalProperties": false,
   "required": ["profile", "requirement_id", "challenge_nonce", "issued_at", "not_before", "expires_at", "buyer_id", "deployment_archetype", "enforcement_point", "required_transports", "required_case_ids", "required_case_expectations", "required_positive_canaries", "required_negative_canaries", "approved_observer", "approved_tool_profile", "approved_policy", "token_material", "health_control_material", "minimum_trials_per_case", "allowed_not_applicable", "maximum_errors", "maximum_age_seconds", "allowed_future_skew_seconds", "required_artifacts", "trust_policy_id", "trust_policy_sha256", "required_signer_policy", "authorized_run_signers", "approved_runner", "approved_adapter", "approved_tool_identity"],

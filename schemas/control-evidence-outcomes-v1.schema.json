@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-outcomes-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-outcomes-v1.schema.json",
   "title": "Control Evidence v1 outcomes ledger",
   "type": "object", "additionalProperties": false,
   "required": ["profile", "capability_registry", "requirement_sha256", "run_id", "rows"],

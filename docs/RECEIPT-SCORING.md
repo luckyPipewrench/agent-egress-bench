@@ -45,7 +45,7 @@ A tool can publish a receipt profile as a JSON file in the `profiles/`
 directory. The shape is defined by
 [`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json)
 (`$id`:
-`https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json`).
+`https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/receipt-scoring-profile-v4.schema.json`).
 This is separate from the runner capability profile described in
 [`docs/RUNNER.md`](RUNNER.md) and
 [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json).

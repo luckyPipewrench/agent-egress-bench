@@ -2,10 +2,16 @@
 """Check the artifact compatibility manifest against repository contracts."""
 
 import argparse
+import hashlib
 import json
 import re
 import sys
 from pathlib import Path
+
+try:
+    from schema_catalog import PUBLIC_SCHEMA_ID_PREFIX
+except ModuleNotFoundError:  # Imported as scripts.check_contracts in unit tests.
+    from scripts.schema_catalog import PUBLIC_SCHEMA_ID_PREFIX
 
 
 REQUIRED_CONSTANTS = {
@@ -57,7 +63,6 @@ REQUIRED_RETAINED_SCHEMA_ASSETS = {
     "schemas/control-evidence-token-material-v1.schema.json",
     "schemas/control-evidence-trust-policy-dsse-v1.schema.json",
 }
-PUBLIC_SCHEMA_ID_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/schemas/"
 VERSIONED_SCHEMA_FILENAME = re.compile(r"^.+-v([0-9]+)\.schema\.json$")
 TITLE_VERSION = re.compile(r"\bv([0-9]+)\b", re.IGNORECASE)
 
@@ -77,6 +82,18 @@ def load_object(path, label):
         fail(f"cannot read {label} {path}: {exc}")
     if not isinstance(value, dict) or not value:
         fail(f"{label} must be a non-empty JSON object: {path}")
+    return value
+
+
+def sha256_file(path, label):
+    if not path.is_file():
+        fail(f"missing {label}: {path}")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def require_sha256(value, label):
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        fail(f"{label} must be a lowercase SHA-256 digest")
     return value
 
 
@@ -380,6 +397,9 @@ def retained_schema_assets(root, assets):
         document = load_object(root / relative, "retained schema asset")
         if document.get("$id") != expected_id:
             fail(f"{relative}: $id does not match retained schema asset manifest entry")
+        expected_sha256 = require_sha256(asset.get("sha256"), f"{relative}: retained schema asset sha256")
+        if sha256_file(root / relative, "retained schema asset") != expected_sha256:
+            fail(f"{relative}: bytes do not match retained schema asset digest")
         by_path[relative] = asset
     actual_paths = set(by_path)
     if actual_paths != REQUIRED_RETAINED_SCHEMA_ASSETS:
@@ -505,6 +525,12 @@ def check(root, manifest_path):
             document = load_object(root / relative, "schema")
             if document.get("$id") != expected_id:
                 fail(f"{relative}: $id does not match compatibility manifest")
+            if status == "frozen":
+                expected_sha256 = require_sha256(schema.get("sha256"), f"{relative}: frozen schema sha256")
+                if sha256_file(root / relative, "schema") != expected_sha256:
+                    fail(f"{relative}: bytes do not match frozen schema digest")
+            elif "sha256" in schema:
+                fail(f"{relative}: active schema must not pin a frozen schema digest")
             declared = declared_schema_version(document, relative)
             if declared != version:
                 fail(f"{relative}: declares schema_version {declared!r}, manifest says {version}")

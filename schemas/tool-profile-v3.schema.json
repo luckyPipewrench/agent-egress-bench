@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/tool-profile-v3.schema.json",
+  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/tool-profile-v3.schema.json",
   "title": "agent-egress-bench Tool Profile",
   "description": "Declares a tool's claimed capabilities and supported transports/features. Retained as publication metadata; active runners determine applicability from adapter-proven delivery and verdict observation.",
   "type": "object",

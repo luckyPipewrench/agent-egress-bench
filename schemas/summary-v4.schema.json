@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v4.schema.json",
+  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/summary-v4.schema.json",
   "title": "agent-egress-bench Gauntlet Summary",
   "description": "Frozen v4 summary. Reporting labels are registry-bound metadata and cannot affect measured scope or score.",
   "type": "object",

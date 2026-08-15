@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-clock-evidence-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/main/schemas/control-evidence-clock-evidence-v1.schema.json",
   "title": "Control Evidence v1 completion clock evidence",
   "type": "object", "additionalProperties": false,
   "required": ["profile", "observation_kind", "requirement_sha256", "run_id", "observations_sha256", "started_at", "finished_at", "observed_at", "attestor"],

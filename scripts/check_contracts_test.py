@@ -46,6 +46,32 @@ class CheckContractsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "schemas do not cover accepted reader versions"):
                 check_contracts.check(ROOT, path)
 
+    def test_rejects_changed_frozen_schema_bytes(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        frozen = next(
+            schema
+            for family in manifest["artifact_families"]
+            for schema in family["schemas"]
+            if schema["status"] == "frozen"
+        )
+        frozen["sha256"] = "0" * 64
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "bytes do not match frozen schema digest"):
+                check_contracts.check(ROOT, path)
+
+    def test_rejects_changed_retained_schema_bytes(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        manifest["retained_schema_assets"][0]["sha256"] = "0" * 64
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "bytes do not match retained schema asset digest"):
+                check_contracts.check(ROOT, path)
+
     def test_main_reports_filesystem_errors_as_gate_failures(self):
         stderr = io.StringIO()
         with (
