@@ -97,13 +97,18 @@ class ReleaseWorkflowTest(unittest.TestCase):
         check_validate_release_integration(VALIDATE_WORKFLOW)
 
     def test_release_build_runs_repo_backed_verification_with_or_without_a_native_runner(self) -> None:
-        release_build = RELEASE_BUILD.read_text(encoding="utf-8")
-        required = (
-            'verify --release-dir "$release_dir" --repo-root . --executable "$native_dir/aeb-gauntlet"',
-            'verify --release-dir "$release_dir" --repo-root .\n',
+        commands = {
+            line.strip()
+            for line in RELEASE_BUILD.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith("python3 scripts/release_build.py verify ")
+        }
+        self.assertEqual(
+            {
+                'python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root . --executable "$native_dir/aeb-gauntlet"',
+                'python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root .',
+            },
+            commands,
         )
-        for command in required:
-            self.assertIn(command, release_build)
 
     def test_release_creation_guard_is_load_bearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
