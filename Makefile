@@ -217,6 +217,7 @@ test-release-build:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_build_test.py
 
 # Snapshot mode builds the exact archive layout without creating a tag or a
-# GitHub release. goreleaser must already be installed and pinned by the caller.
+# GitHub release. Release assets are written to dist/release. goreleaser must
+# already be installed and pinned by the caller.
 release-snapshot:
 	@./scripts/release-build.sh --tag snapshot --commit "$$(git rev-parse HEAD)" --snapshot

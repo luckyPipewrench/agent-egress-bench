@@ -42,6 +42,9 @@ python3 scripts/release_build.py prepare \
   --output "$identity"
 
 goreleaser release --clean "${snapshot_args[@]}"
-python3 scripts/release_build.py data-bundle --identity "$identity" --dist "$dist"
-python3 scripts/release_build.py checksums --identity "$identity" --dist "$dist"
-python3 scripts/release_build.py verify --release-dir "$dist"
+release_dir="$dist/release"
+mkdir -p "$release_dir"
+find "$dist" -maxdepth 1 -type f \( -name 'agent-egress-bench_*.tar.gz' -o -name 'agent-egress-bench_*.zip' \) -exec mv {} "$release_dir" \;
+python3 scripts/release_build.py data-bundle --identity "$identity" --dist "$release_dir"
+python3 scripts/release_build.py checksums --identity "$identity" --dist "$release_dir"
+python3 scripts/release_build.py verify --release-dir "$release_dir"
