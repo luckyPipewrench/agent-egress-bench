@@ -37,6 +37,7 @@ PROVENANCE_SCHEMAS = {
     / f"provenance-candidate-v{version}.schema.json"
     for version in (1, 2, 4, 5)
 }
+CASE_INDEX_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "case-index-v1.schema.json"
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -297,6 +298,7 @@ def load_manifest(repo_root, run_dir):
 def load_case_index(path, manifest_ids, require_categories=False):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
+    artifact_schema.validate_file(case_index, CASE_INDEX_SCHEMA, "loader case index")
     if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
         raise ValueError("loader case index must be a schema_version 1 object")
     rows = case_index.get("cases")
