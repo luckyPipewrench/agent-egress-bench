@@ -23,6 +23,7 @@
     {"description": "unknown field", "mutation": {"replace": ["unexpected"], "value": true}},
     {"description": "malformed digest", "mutation": {"replace": ["candidate_sha256"], "value": "bad"}},
     {"description": "empty file inventory", "mutation": {"replace": ["files"], "value": {}}},
-    {"description": "timezone-free timestamp", "mutation": {"replace": ["generated_at"], "value": "2026-08-05T10:33:23"}}
+    {"description": "timezone-free timestamp", "mutation": {"replace": ["generated_at"], "value": "2026-08-05T10:33:23"}},
+    {"description": "space-separated timestamp", "mutation": {"replace": ["generated_at"], "value": "2026-08-05 10:33:23Z"}}
   ]
 }

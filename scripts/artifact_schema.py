@@ -98,13 +98,21 @@ def _validate(value, schema, root, path):
         if schema.get("pattern") is not None and re.search(schema["pattern"], value) is None:
             raise ValueError(f"{path} does not match {schema['pattern']!r}")
         if schema.get("format") == "date":
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None:
+                raise ValueError(f"{path} must be an RFC 3339 date")
             try:
                 date.fromisoformat(value)
             except ValueError as exc:
                 raise ValueError(f"{path} must be an RFC 3339 date") from exc
         if schema.get("format") == "date-time":
+            if re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})",
+                value,
+            ) is None:
+                raise ValueError(f"{path} must be an RFC 3339 timestamp")
             try:
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                normalized = value.replace("t", "T").replace("z", "Z").replace("Z", "+00:00")
+                parsed = datetime.fromisoformat(normalized)
             except ValueError as exc:
                 raise ValueError(f"{path} must be an RFC 3339 timestamp") from exc
             if parsed.tzinfo is None or parsed.utcoffset() is None:

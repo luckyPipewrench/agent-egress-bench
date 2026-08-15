@@ -26,6 +26,7 @@
     {"description": "malformed commit", "mutation": {"replace": ["corpus_git_sha"], "value": "bad"}},
     {"description": "out-of-range floor", "mutation": {"replace": ["score_floors", "full", "containment"], "value": 2}},
     {"description": "zero total cases", "mutation": {"replace": ["observed_case_count", "total"], "value": 0}},
-    {"description": "malformed date", "mutation": {"replace": ["recorded_on"], "value": "August 5"}}
+    {"description": "malformed date", "mutation": {"replace": ["recorded_on"], "value": "August 5"}},
+    {"description": "compact non-RFC date", "mutation": {"replace": ["recorded_on"], "value": "20260805"}}
   ]
 }
