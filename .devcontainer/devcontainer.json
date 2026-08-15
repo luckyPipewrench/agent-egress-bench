@@ -1,0 +1,13 @@
+{
+  "name": "Agent Egress Bench runner",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "..",
+    "args": {
+      "AEB_VERSION": "devcontainer",
+      "AEB_COMMIT": "local"
+    }
+  },
+  "overrideCommand": true,
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
+}

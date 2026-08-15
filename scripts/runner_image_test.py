@@ -34,6 +34,13 @@ class RunnerImageContractTest(unittest.TestCase):
         result = subprocess.run(["bash", "-n", str(ROOT / "scripts" / "run-oci-action.sh")], capture_output=True, text=True)
         self.assertEqual(0, result.returncode, msg=result.stderr)
 
+    def test_devcontainer_builds_the_same_pinned_runner_image(self) -> None:
+        text = (ROOT / ".devcontainer" / "devcontainer.json").read_text(encoding="utf-8")
+        self.assertIn('"dockerfile": "../Dockerfile"', text)
+        self.assertIn('"context": ".."', text)
+        self.assertIn('"overrideCommand": true', text)
+        self.assertNotIn('"image":', text)
+
     def test_release_build_publishes_and_checks_both_required_architectures(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yaml").read_text(encoding="utf-8")
         self.assertIn("docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c", workflow)
