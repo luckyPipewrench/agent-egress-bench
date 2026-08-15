@@ -219,6 +219,20 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("tracked or untracked changes", result.stderr)
 
+    def test_identity_rejects_ignored_runner_build_input(self) -> None:
+        path = self.root / "runner/ignored_release_override.go"
+        path.write_text("package main\n\nfunc init() { releaseVersion += \"\" }\n", encoding="utf-8")
+        exclude = self.root / ".git/info/exclude"
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        exclude.write_text((exclude.read_text(encoding="utf-8") if exclude.exists() else "") + "runner/ignored_release_override.go\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", self.snapshot_version, "--commit", self.commit, "--snapshot", "--output", str(self.identity)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ignored runner build inputs", result.stderr)
+
     def test_identity_rejects_ignored_untracked_release_data(self) -> None:
         (self.root / "cases/untracked-release-input.pyc").write_bytes(b"not in the commit\n")
         result = subprocess.run(

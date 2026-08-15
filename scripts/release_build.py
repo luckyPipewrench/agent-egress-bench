@@ -140,6 +140,11 @@ def data_paths(repo: Path) -> list[str]:
     return result
 
 
+def ignored_runner_build_inputs(repo: Path) -> list[str]:
+    paths = git(repo, "ls-files", "--others", "--ignored", "--exclude-standard", "--", "runner").splitlines()
+    return sorted(path for path in paths if path.endswith(".go") and not path.endswith("_test.go"))
+
+
 def runner_metadata(repo: Path) -> dict[str, str]:
     result = subprocess.run(
         ["go", "run", ".", "--release-identity-metadata"],
@@ -246,6 +251,9 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
         fail(f"release tag {tag} does not resolve to requested commit")
     if git(repo, "status", "--porcelain", "--untracked-files=all"):
         fail("release tree has tracked or untracked changes")
+    ignored_inputs = ignored_runner_build_inputs(repo)
+    if ignored_inputs:
+        fail(f"release tree has ignored runner build inputs: {ignored_inputs}")
     timestamp = git(repo, "show", "-s", "--format=%ct", commit)
     if not timestamp.isdigit():
         fail("release commit timestamp is invalid")
