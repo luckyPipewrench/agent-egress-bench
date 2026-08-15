@@ -33,6 +33,31 @@ class CheckContractsTest(unittest.TestCase):
                 ),
             )
 
+    def test_rejects_source_version_shared_by_two_families(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        summary = next(f for f in manifest["artifact_families"] if f["family"] == "summary")
+        provenance = next(
+            f for f in manifest["artifact_families"] if f["family"] == "provenance_candidate"
+        )
+        provenance["source_versions"] = summary["source_versions"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(
+                ValueError, "source version .* is shared by families summary and provenance_candidate"
+            ):
+                check_contracts.check(ROOT, path)
+
+    def test_accepts_families_without_source_versions(self):
+        manifest = ROOT / "contracts" / "artifacts.json"
+        families = json.loads(manifest.read_text(encoding="utf-8"))["artifact_families"]
+        self.assertEqual(
+            {"case_index", "promoted_record", "promotion_baseline"},
+            {family["family"] for family in families if not family["source_versions"]},
+        )
+        check_contracts.check(ROOT, manifest)
+
     def test_rejects_schema_inventory_missing_accepted_version(self):
         manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
         receipt = next(
@@ -258,6 +283,33 @@ class ReadGoConstantTest(unittest.TestCase):
                 "package main\n\nconst (\n\tactiveSchemaVersion = 4\n)\n\n"
                 "const activeSchemaVersion = 5\n"
             )
+
+
+class ReadPythonConstantTest(unittest.TestCase):
+    def read(self, source):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contract.py"
+            path.write_text(source, encoding="utf-8")
+            return check_contracts.read_python_constant(
+                Path(directory), {"path": "contract.py", "symbol": "ACTIVE_SCHEMA_VERSION"}
+            )
+
+    def test_accepts_module_level_integer_literal(self):
+        self.assertEqual(5, self.read("ACTIVE_SCHEMA_VERSION = 5\n"))
+        self.assertEqual(5, self.read("ACTIVE_SCHEMA_VERSION: int = 5\n"))
+
+    def test_rejects_an_alias_to_another_family(self):
+        with self.assertRaisesRegex(ValueError, "must be an integer literal"):
+            self.read("SUMMARY_SCHEMA_VERSION = 5\nACTIVE_SCHEMA_VERSION = SUMMARY_SCHEMA_VERSION\n")
+
+    def test_rejects_non_module_assignments_and_strings(self):
+        for source in (
+            "def configure():\n    ACTIVE_SCHEMA_VERSION = 5\n",
+            'text = "ACTIVE_SCHEMA_VERSION = 5"\n',
+        ):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ValueError, "cannot find integer constant"):
+                    self.read(source)
 
 
 if __name__ == "__main__":

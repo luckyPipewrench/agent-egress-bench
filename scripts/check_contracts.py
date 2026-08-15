@@ -2,6 +2,7 @@
 """Check the artifact compatibility manifest against repository contracts."""
 
 import argparse
+import ast
 import hashlib
 import json
 import re
@@ -9,7 +10,7 @@ import sys
 from pathlib import Path
 
 
-REQUIRED_CONSTANTS = {
+REQUIRED_SOURCE_VERSIONS = {
     ("runner/case.go", "activeCaseSchemaVersion"),
     ("runner/case.go", "activeMultiFileCaseSchemaVersion"),
     ("runner/case.go", "activeResultSchemaVersion"),
@@ -20,6 +21,7 @@ REQUIRED_CONSTANTS = {
     ("validate/main.go", "activeResultSchemaVersion"),
     ("validate/main.go", "activeToolProfileSchemaVersion"),
     ("runner/summary.go", "activeSummarySchemaVersion"),
+    ("scripts/build_gauntlet_provenance.py", "ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION"),
 }
 REQUIRED_RETAINED_RECORD_PATHS = {
     "ci/gauntlet-baseline.json",
@@ -225,6 +227,56 @@ def read_go_constant(root, source):
     if len(set(matches)) > 1:
         fail(f"{symbol} in {relative} has conflicting values: {sorted(set(matches))}")
     return int(matches[0])
+
+
+def read_python_constant(root, source):
+    relative = source.get("path")
+    symbol = source.get("symbol")
+    if not isinstance(relative, str) or not isinstance(symbol, str):
+        fail("source_versions entries require path and symbol strings")
+    path = root / relative
+    if not path.is_file() or path.stat().st_size == 0:
+        fail(f"governing source is missing or empty: {relative}")
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
+    except (OSError, SyntaxError) as exc:
+        fail(f"cannot parse governing source {relative}: {exc}")
+
+    values = []
+    for statement in tree.body:
+        value = None
+        if isinstance(statement, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == symbol for target in statement.targets
+        ):
+            value = statement.value
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.target.id == symbol
+        ):
+            value = statement.value
+        if value is not None:
+            if (
+                not isinstance(value, ast.Constant)
+                or isinstance(value.value, bool)
+                or not isinstance(value.value, int)
+            ):
+                fail(f"{symbol} in {relative} must be an integer literal")
+            values.append(value.value)
+    if not values:
+        fail(f"cannot find integer constant {symbol} in {relative}")
+    if len(set(values)) > 1:
+        fail(f"{symbol} in {relative} has conflicting values: {sorted(set(values))}")
+    return values[0]
+
+
+def read_source_version(root, source):
+    relative = source.get("path")
+    if isinstance(relative, str) and relative.endswith(".go"):
+        return read_go_constant(root, source)
+    if isinstance(relative, str) and relative.endswith(".py"):
+        return read_python_constant(root, source)
+    fail(f"unsupported governing source type: {relative!r}")
 
 
 def declared_schema_version(document, label):
@@ -467,6 +519,7 @@ def check(root, manifest_path):
     listed_schemas = set()
     listed_constants = set()
     constant_values = {}
+    source_owners = {}
     for family in families:
         if not isinstance(family, dict):
             fail("artifact family entries must be objects")
@@ -554,7 +607,14 @@ def check(root, manifest_path):
             if not isinstance(source, dict):
                 fail(f"{name}.source_versions entries must be objects")
             coordinate = (source.get("path"), source.get("symbol"))
-            value = read_go_constant(root, source)
+            previous_owner = source_owners.get(coordinate)
+            if previous_owner is not None and previous_owner != name:
+                fail(
+                    f"source version {coordinate[0]}:{coordinate[1]} is shared by families "
+                    f"{previous_owner} and {name}"
+                )
+            source_owners[coordinate] = name
+            value = read_source_version(root, source)
             listed_constants.add(coordinate)
             constant_values[coordinate] = value
             if value != active:
@@ -565,8 +625,11 @@ def check(root, manifest_path):
         missing = sorted(discovered_schemas - listed_schemas)
         extra = sorted(listed_schemas - discovered_schemas)
         fail(f"versioned schema inventory mismatch; unlisted={missing}, nonexistent={extra}")
-    if not REQUIRED_CONSTANTS.issubset(listed_constants):
-        fail(f"governing constants missing from manifest: {sorted(REQUIRED_CONSTANTS - listed_constants)}")
+    if not REQUIRED_SOURCE_VERSIONS.issubset(listed_constants):
+        fail(
+            "governing source versions missing from manifest: "
+            f"{sorted(REQUIRED_SOURCE_VERSIONS - listed_constants)}"
+        )
     # Every source constant a family declares must equal that family's active
     # writer version. Checked generically rather than as named pairs: the
     # per-family split was landed three times because each round only bound the

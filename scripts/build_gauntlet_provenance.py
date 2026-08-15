@@ -43,6 +43,7 @@ V4_RAW_EVIDENCE = {
 }
 ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 ACTIVE_SUMMARY_SCHEMA_VERSION = 5
+ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = 5
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
@@ -100,6 +101,14 @@ def raw_evidence_for_summary(summary):
     if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         return {**RAW_EVIDENCE, **V4_RAW_EVIDENCE}
     return RAW_EVIDENCE
+
+
+def provenance_candidate_schema_version(summary_schema_version):
+    if summary_schema_version == ACTIVE_SUMMARY_SCHEMA_VERSION:
+        return ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
+        return summary_schema_version
+    return 2
 
 
 def atomic_json_write(path, value):
@@ -871,11 +880,7 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
 
     candidate_scope = {
-        "schema_version": (
-            summary.get("schema_version")
-            if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS
-            else 2
-        ),
+        "schema_version": provenance_candidate_schema_version(summary.get("schema_version")),
         "local_run_id": metadata["local_run_id"],
         "generated_at": metadata["generated_at"],
         "corpus_ref_kind": metadata["corpus_ref_kind"],

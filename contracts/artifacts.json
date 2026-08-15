@@ -279,8 +279,8 @@
       ],
       "source_versions": [
         {
-          "path": "runner/summary.go",
-          "symbol": "activeSummarySchemaVersion"
+          "path": "scripts/build_gauntlet_provenance.py",
+          "symbol": "ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION"
         }
       ],
       "gate": "make check-contracts"
