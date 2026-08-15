@@ -3,67 +3,65 @@ name: AI PR Review
 on:
   issue_comment:
     types: [created]
+  # A comment-triggered workflow only ever executes the copy on the default
+  # branch, so a change to it cannot run on the pull request that introduces
+  # it. This manual trigger runs the same path from a branch against a real
+  # pull request, which is the only way to exercise a change here first.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request to review with the workflow on this branch.
+        required: true
+        type: string
+      review_mode:
+        description: default or deep.
+        required: true
+        default: default
+        type: choice
+        options: [default, deep]
 
 permissions:
   contents: read
+  issues: write
+  # Both are required. Posting a comment on a PULL REQUEST needs
+  # pull-requests: write even though the call goes to the issue-comments
+  # endpoint; issues: write alone covers issues only, and the comment-create
+  # call returns 403. Do not narrow either without running a real /review
+  # against a pull request first.
   pull-requests: write
-
-concurrency:
-  group: pr-review-${{ github.repository }}-${{ github.event.issue.number }}
-  cancel-in-progress: true
 
 jobs:
   review:
+    # The dispatch path carries the same identity requirement as the comment
+    # path, of the account re-running a workflow as well as the one that
+    # started it, so authorization cannot be widened by a rerun.
     if: >-
-      github.event.comment.user.login == 'luckyPipewrench' &&
-      github.event.comment.author_association == 'OWNER' &&
-      github.event.issue.pull_request &&
-      (github.event.comment.body == '/review' ||
-       github.event.comment.body == '/review deep')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check out trusted review runner
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install --require-hashes -r .github/requirements-pr-review.txt
-
-      - name: Test trusted review runner
-        run: python -m unittest scripts/pr_review_test.py
-
-      - name: Determine review mode
-        id: mode
-        env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
-        run: |
-          if [ "$COMMENT_BODY" = "/review deep" ]; then
-            echo "mode=deep" >> "$GITHUB_OUTPUT"
-          else
-            echo "mode=default" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run PR review
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
-          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          # Optional repository variables. Empty values fall back to the
-          # reviewed constants in scripts/pr-review.py, the single source of
-          # truth for model defaults.
-          PR_REVIEW_MODEL_FAST: ${{ vars.PR_REVIEW_MODEL_FAST }}
-          PR_REVIEW_MODEL_DEEP: ${{ vars.PR_REVIEW_MODEL_DEEP }}
-          REVIEW_MODE: ${{ steps.mode.outputs.mode }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: python scripts/pr-review.py
+      github.actor == 'luckyPipewrench' &&
+      github.triggering_actor == 'luckyPipewrench' &&
+      ((github.event_name == 'issue_comment' &&
+        github.event.comment.user.login == 'luckyPipewrench' &&
+        github.event.comment.author_association == 'OWNER' &&
+        github.event.issue.pull_request &&
+        (github.event.comment.body == '/review' ||
+         github.event.comment.body == '/review deep')) ||
+       github.event_name == 'workflow_dispatch')
+    # Pinned to an immutable Pipelock commit in both positions. A branch or tag
+    # here would run reviewer code that can change under the pin.
+    uses: luckyPipewrench/pipelock/.github/workflows/pr-review-reusable.yaml@3ff24b5885df799a034f61713e8ffb7a4f06b009
+    with:
+      pr_number: >-
+        ${{ github.event_name == 'issue_comment' &&
+        github.event.issue.number || inputs.pr_number }}
+      review_mode: >-
+        ${{ github.event_name == 'issue_comment' &&
+        (github.event.comment.body == '/review deep' && 'deep' ||
+         'default') ||
+        inputs.review_mode }}
+      reviewer_sha: 3ff24b5885df799a034f61713e8ffb7a4f06b009
+    # Personal-account repositories cannot use secrets: inherit with a reusable
+    # workflow, so every secret the reviewer needs is mapped by name.
+    secrets:
+      review_token: ${{ secrets.GITHUB_TOKEN }}
+      litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
+      litellm_api_key: ${{ secrets.LITELLM_API_KEY }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
