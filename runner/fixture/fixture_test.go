@@ -318,3 +318,63 @@ func TestDNSFixture_ResolverIntegration(t *testing.T) {
 		t.Errorf("resolved = %v, want [93.184.216.34]", ips)
 	}
 }
+
+// A whole-fixture counter is satisfied by any request to any route, so it
+// cannot prove that one case's own content was delivered. RequestsFor must
+// count the exact path and nothing else.
+func TestHTTPFixture_RequestsForIsRouteScoped(t *testing.T) {
+	f, err := StartHTTP()
+	if err != nil {
+		t.Fatalf("StartHTTP: %v", err)
+	}
+	defer f.Close()
+
+	f.SetRoute("/response/c1", "case one body")
+	f.SetRoute("/response/c2", "case two body")
+
+	get := func(addr, path string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+addr+path, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("get %s: %v", path, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+
+	get(f.Addr(), "/response/c1")
+
+	if got := f.RequestsFor("/response/c1"); got != 1 {
+		t.Errorf("RequestsFor(/response/c1) = %d, want 1", got)
+	}
+	// The defect this guards: c2 was never requested, so it must not inherit
+	// c1's delivery and score as observed.
+	if got := f.RequestsFor("/response/c2"); got != 0 {
+		t.Errorf("RequestsFor(/response/c2) = %d, want 0", got)
+	}
+
+	// The untrusted sink listener shares the counter surface. A request there
+	// must not satisfy delivery proof for a trusted-listener route.
+	if f.UntrustedAddr() != "" {
+		get(f.UntrustedAddr(), "/response/c1")
+		if got := f.RequestsFor("/response/c2"); got != 0 {
+			t.Errorf("after untrusted request, RequestsFor(/response/c2) = %d, want 0", got)
+		}
+	}
+
+	// An unregistered path 404s, which is not delivery of any case content.
+	get(f.Addr(), "/response/never-registered")
+	if got := f.RequestsFor("/response/never-registered"); got != 0 {
+		t.Errorf("RequestsFor(unregistered) = %d, want 0", got)
+	}
+
+	// The whole-fixture total counts every one of the above, which is exactly
+	// why it is the wrong signal for per-case delivery proof.
+	if got := f.Requests(); got < 3 {
+		t.Errorf("Requests() = %d, want at least 3", got)
+	}
+}

@@ -1048,7 +1048,7 @@ func TestRunA2AAgentCardUsesCanonicalForwardProxyEndpoint(t *testing.T) {
 	defer proxy.Close()
 
 	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), proxy.Listener.Addr().String(), "", "")
-	a.SetHTTPFixtureRequestCounter(fixtureRequests.Load)
+	a.SetHTTPFixtureRequestCounter(func(string) int64 { return fixtureRequests.Load() })
 	a.SetHTTPFixtureWithContentType("127.0.0.1:34567", func(path, _, contentType string) {
 		gotRoutePath = path
 		if contentType != "application/a2a+json" {
@@ -1094,7 +1094,7 @@ func TestRunA2AMessageAllowRequiresFixtureDelivery(t *testing.T) {
 
 	var fixtureRequests atomic.Int64
 	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
-	a.SetHTTPFixtureRequestCounter(fixtureRequests.Load)
+	a.SetHTTPFixtureRequestCounter(func(string) int64 { return fixtureRequests.Load() })
 	a.SetHTTPFixture("127.0.0.1:34567", func(string, string) {})
 	result := a.Run(Case{
 		ID: "a2a-message-fixture-missing", Transport: "a2a", InputType: "a2a_message",
@@ -1117,7 +1117,7 @@ func TestRunA2AAgentCardRequiresFixtureDelivery(t *testing.T) {
 
 	var fixtureRequests atomic.Int64
 	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
-	a.SetHTTPFixtureRequestCounter(fixtureRequests.Load)
+	a.SetHTTPFixtureRequestCounter(func(string) int64 { return fixtureRequests.Load() })
 	a.SetHTTPFixture("127.0.0.1:34567", func(string, string) {})
 	result := a.Run(Case{
 		ID: "a2a-card-fixture-missing", Transport: "a2a", InputType: "a2a_agent_card",
@@ -1169,7 +1169,7 @@ func TestRunResponseContentUsesFetchFixture(t *testing.T) {
 
 	var gotPath, gotBody string
 	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
-	a.SetHTTPFixtureRequestCounter(fixtureRequests.Load)
+	a.SetHTTPFixtureRequestCounter(func(string) int64 { return fixtureRequests.Load() })
 	a.SetHTTPFixture("127.0.0.1:34567", func(path, body string) {
 		gotPath, gotBody = path, body
 	})
@@ -1202,7 +1202,7 @@ func TestRunResponseContentViaFetchProxyRequiresFixtureDelivery(t *testing.T) {
 
 	var fixtureRequests atomic.Int64
 	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
-	a.SetHTTPFixtureRequestCounter(fixtureRequests.Load)
+	a.SetHTTPFixtureRequestCounter(func(string) int64 { return fixtureRequests.Load() })
 	a.SetHTTPFixture("127.0.0.1:34567", func(string, string) {})
 	result := a.Run(Case{
 		ID: "response-fetch-fixture-missing", Transport: "fetch_proxy", InputType: "response_content",
@@ -5291,4 +5291,53 @@ func TestRunWebSocketFrameViaProxy_ChattyPeerCannotOutlastRunDeadline(t *testing
 	case <-time.After(5 * runTimeout):
 		t.Fatalf("run outlived %s under a %s case timeout, so a talking peer controls the run length", 5*runTimeout, runTimeout)
 	}
+}
+
+// A request gets a fresh id so a response repeating a corpus id cannot earn
+// credit, a notification is sent exactly as declared because it has no id and
+// receives no reply, and a batch is refused rather than scored unsafely.
+func TestCorrelateMCPHTTPRequest(t *testing.T) {
+	t.Run("request gets a fresh identity", func(t *testing.T) {
+		msg, id, err := correlateMCPHTTPRequest(map[string]interface{}{
+			"jsonrpc": "2.0", "id": float64(1), "method": "tools/call",
+		})
+		if err != nil {
+			t.Fatalf("correlate: %v", err)
+		}
+		if id == "" {
+			t.Fatal("request identity is empty, so no response can be correlated")
+		}
+		if msg["id"] == float64(1) {
+			t.Error("corpus id survived; a replayed response would score")
+		}
+		if msg["method"] != "tools/call" {
+			t.Errorf("method = %v, want tools/call unchanged", msg["method"])
+		}
+	})
+
+	t.Run("notification passes through uncorrelated", func(t *testing.T) {
+		msg, id, err := correlateMCPHTTPRequest(map[string]interface{}{
+			"jsonrpc": "2.0", "method": "notifications/initialized",
+		})
+		if err != nil {
+			t.Fatalf("a notification is valid JSON-RPC and must not error: %v", err)
+		}
+		if id != "" {
+			t.Errorf("identity = %q, want empty: a notification receives no reply", id)
+		}
+		if _, hasID := msg["id"]; hasID {
+			t.Error("an id was invented for a notification, changing its protocol meaning")
+		}
+		if msg["method"] != "notifications/initialized" {
+			t.Errorf("method = %v, want notifications/initialized", msg["method"])
+		}
+	})
+
+	t.Run("batch is refused, not silently mis-scored", func(t *testing.T) {
+		if _, _, err := correlateMCPHTTPRequest([]interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "id": float64(1), "method": "tools/list"},
+		}); err == nil {
+			t.Fatal("a batch was accepted; its response cannot be correlated element-wise")
+		}
+	})
 }

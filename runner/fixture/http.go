@@ -21,15 +21,33 @@ type HTTPFixture struct {
 	requests          atomic.Int64
 	mu                sync.Mutex
 	routes            map[string]HTTPRoute // path -> response metadata
+	servedPaths       map[string]int64     // path -> requests observed for that exact path
 }
 
 // Addr returns the listener address (host:port).
 func (f *HTTPFixture) Addr() string { return f.listener.Addr().String() }
 
 // Requests returns the number of requests that reached either fixture listener.
-// Adapters snapshot it before a response-shaped case and require it to advance
-// before treating a response as evidence about fixture-provided content.
+// This is a whole-fixture total and is NOT delivery evidence for a particular
+// case: any route on either listener advances it. Use RequestsFor.
 func (f *HTTPFixture) Requests() int64 { return f.requests.Load() }
+
+// RequestsFor returns the number of requests observed for one exact path.
+// Delivery proof scopes to the route because a whole-fixture counter is
+// satisfied by a request the case never made: another route, the untrusted
+// sink listener, or a concurrently executing case. Callers give each case a
+// per-run unique path, so a route counter identifies the case that owns it.
+//
+// The key is the path alone rather than host plus path on purpose. The runner
+// reaches the fixture through the target proxy, so the Host header arrives
+// however that proxy chose to write it, and keying on a normalized-away host
+// would fail delivery proof for a request that did arrive. That direction is
+// the damaging one: it scores a real result as unproven.
+func (f *HTTPFixture) RequestsFor(path string) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.servedPaths[path]
+}
 
 // UntrustedAddr returns the paired loopback listener used by reserved
 // untrusted sink hostnames.
@@ -69,6 +87,7 @@ func StartHTTP() (*HTTPFixture, error) {
 		listener:          ln,
 		untrustedListener: untrustedLn,
 		routes:            make(map[string]HTTPRoute),
+		servedPaths:       make(map[string]int64),
 	}
 
 	mux := http.NewServeMux()
@@ -76,6 +95,11 @@ func StartHTTP() (*HTTPFixture, error) {
 		f.requests.Add(1)
 		f.mu.Lock()
 		route, ok := f.routes[r.URL.Path]
+		if ok {
+			// Counted only on a served route. A 404 means the fixture never
+			// handed this case's content to the target, so it is not delivery.
+			f.servedPaths[r.URL.Path]++
+		}
 		f.mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)
