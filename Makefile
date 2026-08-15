@@ -56,9 +56,10 @@ check-case-immutability:
 	fi; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_immutability.py --base "$$base"
 
-# Frozen schemas are immutable. The only allowed legacy transition replaces the
-# previous non-resolving browser URL with the raw-document URL and changes no
-# other schema byte.
+# Frozen schemas are immutable, byte for byte, with no permitted transition.
+# A reformat or key reorder that leaves the parsed document identical still
+# fails, because a consumer pinning a digest sees a different document.
+# Changing a frozen contract means publishing a new version.
 check-frozen-schema-immutability:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_frozen_schema_immutability_test.py
 	@base="$$(git merge-base "$(AEB_IMMUTABILITY_BASE)" HEAD 2>/dev/null)"; \

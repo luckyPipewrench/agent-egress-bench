@@ -76,19 +76,23 @@ def schema_entries(root: Path, roots=SCHEMA_ROOTS):
             declared = document.get("$id")
             if not isinstance(declared, str) or not declared:
                 raise ValueError(f"{relative}: no $id to catalog")
-            # Two files sharing one identity make the catalog ambiguous: a
-            # consumer resolving that identity cannot tell which bytes are
-            # meant. The verifier copies are byte-identical duplicates of
-            # their canonical schema by design, so record every path that
-            # carries an identity rather than dropping one silently.
-            seen_ids.setdefault(declared, []).append(relative)
-            entries.append(
-                {
-                    "path": relative,
-                    "$id": declared,
-                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                }
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            # Two files may share one identity only when their bytes are
+            # identical, which is what the governed verifier copies are. If
+            # they differ, a consumer resolving that identity cannot tell
+            # which contract applies, so refuse to publish a catalog that
+            # cannot answer its own lookup.
+            seen_ids.setdefault(declared, []).append((relative, digest))
+            entries.append({"path": relative, "$id": declared, "sha256": digest})
+
+    for declared, occurrences in sorted(seen_ids.items()):
+        digests = {digest for _, digest in occurrences}
+        if len(digests) > 1:
+            paths = ", ".join(sorted(path for path, _ in occurrences))
+            raise ValueError(
+                f"{declared} is declared by files with different bytes: {paths}"
             )
+
     if not entries:
         raise ValueError("no versioned schemas discovered")
     return entries

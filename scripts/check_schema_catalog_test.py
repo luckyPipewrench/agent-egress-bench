@@ -71,6 +71,28 @@ class SchemaCatalogTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "is stale"):
             check_schema_catalog.check(self.root, roots=TEST_ROOTS)
 
+    def test_rejects_one_identifier_declared_by_differing_bytes(self):
+        # A catalog cannot answer a lookup for an identity that two different
+        # documents claim. Governed copies are byte-identical, so only a real
+        # collision reaches this.
+        twin = self.root / "schemas" / "twin-v1.schema.json"
+        twin.write_text(
+            json.dumps({"$id": FIXTURE_ID, "title": "Different bytes"}) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "different bytes"):
+            schema_catalog.schema_entries(self.root, roots=TEST_ROOTS)
+
+    def test_accepts_one_identifier_declared_by_identical_bytes(self):
+        # The governed verifier copies are exactly this shape and must not be
+        # rejected: an over-strict rule here blocks legitimate publication.
+        original = (self.schema).read_text(encoding="utf-8")
+        copy = self.root / "schemas" / "copy-v1.schema.json"
+        copy.write_text(original, encoding="utf-8")
+        entries = schema_catalog.schema_entries(self.root, roots=TEST_ROOTS)
+        self.assertEqual(2, len(entries))
+        self.assertEqual({FIXTURE_ID}, {entry["$id"] for entry in entries})
+
     def test_rejects_catalog_entry_that_does_not_name_its_schema(self):
         catalog = self.root / "schemas" / "index.json"
         content = json.loads(catalog.read_text(encoding="utf-8"))
