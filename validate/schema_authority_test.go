@@ -142,9 +142,11 @@ func TestToolProfileSchemaMatchesValidator(t *testing.T) {
 	if got := sortedSchemaStrings(gotReceiptFields); !reflect.DeepEqual(got, sortedSchemaStrings(wantReceiptFields)) {
 		t.Errorf("receipt_evidence fields = %v, validator accepts %v", got, sortedSchemaStrings(wantReceiptFields))
 	}
-	wantReceiptRequired := []string{"evidence_dir", "file_glob", "detail_json_pointer", "detail_encoding", "verify_command", "valid_exit_codes"}
-	if got := sortedSchemaStrings(receipt.Required); !reflect.DeepEqual(got, sortedSchemaStrings(wantReceiptRequired)) {
-		t.Errorf("receipt_evidence required fields = %v, validator requires %v", got, sortedSchemaStrings(wantReceiptRequired))
+	// Compared against the list the validator actually enforces, not a copy
+	// declared here. A local copy made this assertion self-satisfying: it agreed
+	// with the schema while the validator enforced no presence at all.
+	if got := sortedSchemaStrings(receipt.Required); !reflect.DeepEqual(got, sortedSchemaStrings(receiptEvidenceRequiredFields)) {
+		t.Errorf("receipt_evidence required fields = %v, validator requires %v", got, sortedSchemaStrings(receiptEvidenceRequiredFields))
 	}
 	if issues := validateProfileFile(filepath.Join("..", "examples", "pipelock", "tool-profile.json")); len(issues) != 0 {
 		t.Fatalf("validator rejected the shipped schema-valid profile: %v", issues)
@@ -170,6 +172,11 @@ func TestReceiptEvidenceNullAndOptionalHandling(t *testing.T) {
 		wantErr string
 	}{
 		{"explicit null declaration is rejected", "null", "must be an object, not null"},
+		{"omitted required field is rejected", `{"evidence_dir":"receipts","file_glob":"*.jsonl","detail_encoding":"object","verify_command":["true"],"valid_exit_codes":[0]}`, "detail_json_pointer is required"},
+		// A null here decodes into []int as 0, which is the success exit code, so
+		// the invalid declaration would otherwise become a more permissive one.
+		{"null inside an exit-code array is rejected", `{"evidence_dir":"receipts","file_glob":"*.jsonl","detail_json_pointer":"/detail","detail_encoding":"object","verify_command":["true"],"valid_exit_codes":[null]}`, "valid_exit_codes[0] must not be null"},
+		{"unknown field is rejected", `{"evidence_dir":"receipts","file_glob":"*.jsonl","detail_json_pointer":"/detail","detail_encoding":"object","verify_command":["true"],"valid_exit_codes":[0],"made_up":"x"}`, `is malformed: json: unknown field "made_up"`},
 		{"null in a required string is rejected", nullPointer, "detail_json_pointer must not be null"},
 		{"null in an optional integer is rejected", nullTimeout, "verify_timeout_seconds must not be null"},
 		{"supplied non-positive timeout is still rejected", zeroTimeout, "verify_timeout_seconds must be positive"},

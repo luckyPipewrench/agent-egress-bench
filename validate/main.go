@@ -200,6 +200,13 @@ var (
 	profileRequiredFields = []string{
 		"schema_version", "tool", "tool_version", "runner_version", "claims", "capability_registry",
 	}
+	// The schema's required list for receipt_evidence. This lived only in the
+	// authority test, so the test asserted the schema matched a list the test
+	// itself declared while the validator enforced no presence at all: an
+	// omitted required field decoded to its zero value and passed.
+	receiptEvidenceRequiredFields = []string{
+		"evidence_dir", "file_glob", "detail_json_pointer", "detail_encoding", "verify_command", "valid_exit_codes",
+	}
 )
 
 const usageText = `usage: validate <command> <target>
@@ -1334,29 +1341,78 @@ func validateReceiptEvidenceRaw(raw json.RawMessage) []string {
 	if strings.TrimSpace(string(raw)) == "null" {
 		return []string{"must be an object, not null"}
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	var generic interface{}
+	if err := json.Unmarshal(raw, &generic); err != nil {
 		return []string{fmt.Sprintf("must be an object: %v", err)}
 	}
-	names := make([]string, 0, len(fields))
-	for name := range fields {
-		names = append(names, name)
+	fields, isObject := generic.(map[string]interface{})
+	if !isObject {
+		return []string{"must be an object"}
 	}
-	sort.Strings(names)
-	var errors []string
-	for _, name := range names {
-		if strings.TrimSpace(string(fields[name])) == "null" {
-			errors = append(errors, name+" must not be null")
+
+	// Nulls are checked at every depth, not just on the top-level properties.
+	// A null inside valid_exit_codes decodes into []int as 0, which is the
+	// success exit code, so a schema-invalid declaration would otherwise become
+	// a silently different and more permissive verifier contract.
+	errors := jsonNullPaths(fields, "")
+	var missing []string
+	for _, name := range receiptEvidenceRequiredFields {
+		if _, present := fields[name]; !present {
+			missing = append(missing, name+" is required")
 		}
 	}
+	sort.Strings(missing)
+	errors = append(errors, missing...)
 	if len(errors) > 0 {
 		return errors
 	}
+
+	// Strict, matching how this validator decodes every other artifact. A
+	// tolerant decode would accept tool-specific keys the runner never reads
+	// while the schema forbids them.
 	var e ReceiptEvidence
-	if err := json.Unmarshal(raw, &e); err != nil {
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&e); err != nil {
 		return []string{fmt.Sprintf("is malformed: %v", err)}
 	}
 	return validateReceiptEvidence(e)
+}
+
+// jsonNullPaths reports every null reachable inside a decoded JSON value, named
+// by its dotted path. No receipt_evidence field is nullable in the schema, and
+// Go turns each null into a zero value that is indistinguishable from a
+// legitimately empty one, so the null has to be caught before decoding.
+func jsonNullPaths(value interface{}, path string) []string {
+	switch typed := value.(type) {
+	case nil:
+		if path == "" {
+			return []string{"must not be null"}
+		}
+		return []string{path + " must not be null"}
+	case map[string]interface{}:
+		names := make([]string, 0, len(typed))
+		for name := range typed {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		var found []string
+		for _, name := range names {
+			child := name
+			if path != "" {
+				child = path + "." + name
+			}
+			found = append(found, jsonNullPaths(typed[name], child)...)
+		}
+		return found
+	case []interface{}:
+		var found []string
+		for index, item := range typed {
+			found = append(found, jsonNullPaths(item, fmt.Sprintf("%s[%d]", path, index))...)
+		}
+		return found
+	}
+	return nil
 }
 
 func validateReceiptEvidence(e ReceiptEvidence) []string {
