@@ -274,7 +274,24 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
 
     def test_runner_and_artifacts_are_pinned_to_one_attempt(self):
         self.assertRegex(self.workflow, r"(?m)^    runs-on: ubuntu-24\.04$")
-        self.assertIn('go-version: "1.25.12"', self.workflow)
+        # Pinned to an exact patch for reproducibility. Asserting the literal
+        # version here is what let the pin fall behind a security patch without
+        # anything objecting, so require the exact-patch SHAPE and require it to
+        # equal the toolchain the govulncheck job scans. A bump then moves both.
+        pins = re.findall(r'go-version: "(\d+\.\d+\.\d+)"', self.workflow)
+        self.assertEqual(len(pins), 1, f"expected exactly one exact-patch Go pin, found {pins}")
+        validate_workflow = (
+            Path(__file__).resolve().parent.parent / ".github" / "workflows" / "validate.yaml"
+        ).read_text(encoding="utf-8")
+        scanned = re.findall(r'go-version: "(\d+\.\d+\.\d+)"', validate_workflow)
+        self.assertEqual(
+            len(scanned), 1, f"expected exactly one exact-patch Go pin in validate.yaml, found {scanned}"
+        )
+        self.assertEqual(
+            pins[0],
+            scanned[0],
+            "the benchmark toolchain and the vulnerability-scanned toolchain must match",
+        )
         upload = step_block(self.workflow, "Upload provenance artifact")
         owner_upload = step_block(self.workflow, "Upload owner review artifact")
         self.assertIn("continuous-gauntlet-pipelock-${{ github.run_attempt }}", upload)
