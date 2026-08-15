@@ -9,17 +9,17 @@ The image is based on Alpine 3.24.1 and built with Go 1.25.12. Both base images 
 Run these commands from the repository root to build the native image without downloading Go modules during the build:
 
 ```bash
-docker build --network none --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=9abe271 -t aeb-gauntlet:local .
+docker build --network none --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=f8078cb -t aeb-gauntlet:local .
 docker run --rm aeb-gauntlet:local --version
 docker run --rm --entrypoint /bin/cat aeb-gauntlet:local /etc/alpine-release
 ```
 
-The expected version lines for that exact build are `aeb-gauntlet local 9abe271` and `3.24.1`.
+The expected version lines for that exact build are `aeb-gauntlet local f8078cb` and `3.24.1`.
 
 Build both release architectures with the same Dockerfile:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=9abe271 --output type=oci,dest=/tmp/aeb-gauntlet-local.oci.tar .
+docker buildx build --platform linux/amd64,linux/arm64 --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=f8078cb --output type=oci,dest=/tmp/aeb-gauntlet-local.oci.tar .
 ```
 
 The tagged release workflow publishes the multi-architecture index to `ghcr.io/luckypipewrench/agent-egress-bench-runner`, verifies that the index contains both required platforms, runs the amd64 image, and prints the immutable `sha256` index digest in the job summary.
@@ -28,7 +28,7 @@ No published runner-image digest exists for this unreleased change, so this docu
 
 ## Reusable GitHub Action
 
-The Action runs the benchmark in the OCI image, retains `results.jsonl`, `summary.json`, and `run-metadata.json`, and fails the job unless the summary reports `measurement_status: measured`.
+The Action runs the benchmark in the OCI image, replaces its own `results.jsonl`, `summary.json`, and `run-metadata.json` files on each invocation, and fails the job unless the new summary reports `measurement_status: measured`.
 
 This smoke-test workflow uses the exact Action commit and intentionally produces an incomplete measurement with the synthetic `dryrun` adapter, so a correct run ends red while preserving all case rows:
 
@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - id: aeb
-        uses: luckyPipewrench/agent-egress-bench@9abe271c716b04bdf6b9a4a4960ecb53df7058a8
+        uses: luckyPipewrench/agent-egress-bench@f8078cb2a8812f2ac3200a9ad429d21780c673fd
         with:
           profile: examples/pipelock/tool-profile.json
           adapter: dryrun
@@ -78,8 +78,8 @@ The connected staging machine must obtain the image and save it before the lab l
 
 ```bash
 git clone https://github.com/luckyPipewrench/agent-egress-bench.git aeb-offline-source
-git -C aeb-offline-source checkout 9abe271c716b04bdf6b9a4a4960ecb53df7058a8
-docker build --network none --build-arg AEB_VERSION=action-9abe271 --build-arg AEB_COMMIT=9abe271c716b04bdf6b9a4a4960ecb53df7058a8 --tag aeb-gauntlet:offline-source aeb-offline-source
+git -C aeb-offline-source checkout f8078cb2a8812f2ac3200a9ad429d21780c673fd
+docker build --network none --build-arg AEB_VERSION=action-f8078cb --build-arg AEB_COMMIT=f8078cb2a8812f2ac3200a9ad429d21780c673fd --tag aeb-gauntlet:offline-source aeb-offline-source
 docker image inspect --format '{{index .RepoDigests 0}}' aeb-gauntlet:offline-source > aeb-gauntlet-image.ref
 docker image save --output aeb-gauntlet-image.tar "$(cat aeb-gauntlet-image.ref)"
 sha256sum aeb-gauntlet-image.tar > aeb-gauntlet-image.tar.sha256
@@ -102,7 +102,7 @@ Set the Action inputs `image` to that full digest reference and `offline` to `tr
         shell: bash
         run: echo "ref=$(cat aeb-gauntlet-image.ref)" >> "$GITHUB_OUTPUT"
       - id: aeb
-        uses: luckyPipewrench/agent-egress-bench@9abe271c716b04bdf6b9a4a4960ecb53df7058a8
+        uses: luckyPipewrench/agent-egress-bench@f8078cb2a8812f2ac3200a9ad429d21780c673fd
         with:
           profile: benchmark/tool-profile.json
           adapter: proxy
