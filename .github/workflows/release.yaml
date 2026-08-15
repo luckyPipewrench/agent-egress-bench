@@ -86,19 +86,10 @@ jobs:
           name: agent-egress-bench-release-${{ github.sha }}
           path: dist/release
 
-      - name: Create a draft release or resume one on workflow retry
+      - name: Create an owned draft release or resume one on workflow retry
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if existing="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
-            if [[ "$existing" != true ]]; then
-              echo "refusing to overwrite published release $GITHUB_REF_NAME" >&2
-              exit 1
-            fi
-            gh release upload "$GITHUB_REF_NAME" dist/release/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/release/* --title "$GITHUB_REF_NAME" --verify-tag --draft
-          fi
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          python3 scripts/release_publish.py --tag "$GITHUB_REF_NAME" --dist dist/release

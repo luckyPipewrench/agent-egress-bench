@@ -217,7 +217,7 @@ test-release-build:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_build_test.py
 
 test-release-workflow:
-	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_workflow_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_workflow_test.py scripts/release_publish_test.py
 
 # This integration test is deliberately separate from preflight because it
 # requires the pinned GoReleaser binary installed by the validation workflow.
