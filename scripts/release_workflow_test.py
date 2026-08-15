@@ -22,8 +22,12 @@ def job_block(workflow: str, name: str) -> str:
     return workflow[match.start(): match.end() + next_job.start() if next_job else len(workflow)]
 
 
+def without_comments(workflow: str) -> str:
+    return "\n".join("" if line.lstrip().startswith("#") else line.split(" #", 1)[0] for line in workflow.splitlines()) + "\n"
+
+
 def check_workflow(path: Path) -> None:
-    workflow = path.read_text(encoding="utf-8")
+    workflow = without_comments(path.read_text(encoding="utf-8"))
     preamble = workflow[:workflow.index("jobs:\n")]
     release = job_block(workflow, "release")
     attest = job_block(workflow, "attest")
@@ -31,6 +35,8 @@ def check_workflow(path: Path) -> None:
     required = (
         "tags:\n      - 'v*'",
         "workflow_dispatch:",
+    )
+    release_required = (
         "fetch-depth: 0",
         "persist-credentials: false",
         "go-version: '1.25.13'",
@@ -39,7 +45,6 @@ def check_workflow(path: Path) -> None:
         "version: v2.17.1",
         "install-only: true",
         "./scripts/release-build.sh --tag snapshot --commit \"$GITHUB_SHA\" --snapshot",
-        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "path: dist/release/",
         "retention-days: 14",
@@ -47,6 +52,9 @@ def check_workflow(path: Path) -> None:
     for value in required:
         if value not in workflow:
             raise AssertionError(f"release workflow is missing required release guard: {value!r}")
+    for value in release_required:
+        if value not in release:
+            raise AssertionError(f"release build is missing required release guard: {value!r}")
     if "permissions:\n  contents: read" not in preamble or "attestations: write" in preamble or "id-token: write" in preamble:
         raise AssertionError("manual workflow token is not read-only")
     if "permissions:" in release:
@@ -96,6 +104,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("--verify-tag --draft", "--verify-tag", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "GitHub release creation"):
+                check_workflow(candidate)
+
+    def test_commented_release_guard_does_not_count(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("run: make preflight", "# run: make preflight", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "release build is missing"):
                 check_workflow(candidate)
 
 
