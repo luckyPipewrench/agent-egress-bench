@@ -61,14 +61,47 @@ class ReleaseBuildTest(unittest.TestCase):
             "--commit", self.commit, "--snapshot", "--output", str(self.identity),
         )
 
-    def write_runner_archives(self, dist: Path, identity: bytes, release: dict, include_binaries: bool = True) -> None:
+    @staticmethod
+    def fixture_runner_binary(goos: str, goarch: str) -> bytes:
+        if goos == "linux":
+            machines = {"amd64": 62, "arm64": 183}
+            result = bytearray(20)
+            result[:6] = b"\x7fELF\x02\x01"
+            result[18:20] = machines[goarch].to_bytes(2, "little")
+            return bytes(result)
+        if goos == "darwin":
+            cpus = {"amd64": 0x01000007, "arm64": 0x0100000C}
+            return b"\xcf\xfa\xed\xfe" + cpus[goarch].to_bytes(4, "little")
+        if goos == "windows":
+            machines = {"amd64": 0x8664, "arm64": 0xAA64}
+            result = bytearray(70)
+            result[:2] = b"MZ"
+            result[60:64] = (64).to_bytes(4, "little")
+            result[64:68] = b"PE\0\0"
+            result[68:70] = machines[goarch].to_bytes(2, "little")
+            return bytes(result)
+        raise AssertionError(f"unsupported fixture platform: {goos} {goarch}")
+
+    def write_runner_archives(
+        self,
+        dist: Path,
+        identity: bytes,
+        release: dict,
+        include_binaries: bool = True,
+        binary_overrides: dict[tuple[str, str], bytes] | None = None,
+        mode_overrides: dict[tuple[str, str], int] | None = None,
+    ) -> None:
+        binary_overrides = binary_overrides or {}
+        mode_overrides = mode_overrides or {}
         for platform in release["runner"]["platforms"]:
-            name = f"agent-egress-bench_{self.snapshot_version}_{platform['goos']}_{platform['goarch']}"
-            if platform["goos"] == "windows":
+            goos, goarch = platform["goos"], platform["goarch"]
+            name = f"agent-egress-bench_{self.snapshot_version}_{goos}_{goarch}"
+            runner = binary_overrides.get((goos, goarch), self.fixture_runner_binary(goos, goarch))
+            if goos == "windows":
                 with zipfile.ZipFile(dist / f"{name}.zip", "w") as archive:
                     archive.writestr(".release/release-identity.json", identity)
                     if include_binaries:
-                        archive.writestr("aeb-gauntlet.exe", b"fixture runner")
+                        archive.writestr("aeb-gauntlet.exe", runner)
             else:
                 with tarfile.open(dist / f"{name}.tar.gz", "w:gz") as archive:
                     info = tarfile.TarInfo(".release/release-identity.json")
@@ -76,9 +109,8 @@ class ReleaseBuildTest(unittest.TestCase):
                     archive.addfile(info, __import__("io").BytesIO(identity))
                     if include_binaries:
                         info = tarfile.TarInfo("aeb-gauntlet")
-                        runner = b"fixture runner"
                         info.size = len(runner)
-                        info.mode = 0o755
+                        info.mode = mode_overrides.get((goos, goarch), 0o755)
                         archive.addfile(info, __import__("io").BytesIO(runner))
 
     def forge_release(self, identity: dict) -> Path:
@@ -352,6 +384,56 @@ class ReleaseBuildTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must contain exactly one aeb-gauntlet", result.stderr)
+
+    def test_download_verifier_rejects_a_text_runner_binary(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        release = json.loads(identity)
+        self.write_runner_archives(dist, identity, release, binary_overrides={("linux", "amd64"): b"fixture runner"})
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must contain a 64-bit Linux amd64 ELF runner", result.stderr)
+
+    def test_download_verifier_rejects_a_non_executable_runner_binary(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        release = json.loads(identity)
+        self.write_runner_archives(dist, identity, release, mode_overrides={("linux", "amd64"): 0o644})
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must mark its linux amd64 runner executable", result.stderr)
+
+    def test_download_verifier_rejects_a_wrong_platform_runner_binary(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        release = json.loads(identity)
+        self.write_runner_archives(dist, identity, release, binary_overrides={("linux", "amd64"): self.fixture_runner_binary("linux", "arm64")})
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must contain a 64-bit Linux amd64 ELF runner", result.stderr)
+
+    def test_download_verifier_rejects_an_unstamped_executable(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        executable = Path(self.temp.name) / "aeb-gauntlet"
+        executable.write_text("#!/usr/bin/env bash\nprintf 'aeb-gauntlet devel unknown\\n'\n", encoding="utf-8")
+        executable.chmod(0o755)
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist), "--executable", str(executable)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner version output does not match release identity", result.stderr)
 
     def test_checksums_reports_an_absent_distribution_directory(self) -> None:
         self.prepare()

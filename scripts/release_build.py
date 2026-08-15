@@ -439,8 +439,33 @@ def parse_checksums(path: Path) -> dict[str, str]:
     return result
 
 
-def archive_identity(path: Path) -> bytes:
-    expected_binary = "aeb-gauntlet.exe" if path.suffix == ".zip" else "aeb-gauntlet"
+def verify_runner_binary(data: bytes, mode: int, goos: str, goarch: str, path: Path) -> None:
+    platform = f"{goos} {goarch}"
+    if goos != "windows" and mode & 0o111 == 0:
+        fail(f"{path.name} must mark its {platform} runner executable")
+    if goos == "linux":
+        machines = {"amd64": 62, "arm64": 183}
+        if len(data) < 20 or data[:4] != b"\x7fELF" or data[4:6] != b"\x02\x01" or data[18:20] != machines[goarch].to_bytes(2, "little"):
+            fail(f"{path.name} must contain a 64-bit Linux {goarch} ELF runner")
+        return
+    if goos == "darwin":
+        cpus = {"amd64": 0x01000007, "arm64": 0x0100000C}
+        if len(data) < 8 or data[:4] != b"\xcf\xfa\xed\xfe" or data[4:8] != cpus[goarch].to_bytes(4, "little"):
+            fail(f"{path.name} must contain a 64-bit Darwin {goarch} Mach-O runner")
+        return
+    if goos == "windows":
+        machines = {"amd64": 0x8664, "arm64": 0xAA64}
+        if len(data) < 64 or data[:2] != b"MZ":
+            fail(f"{path.name} must contain a Windows {goarch} PE runner")
+        offset = int.from_bytes(data[60:64], "little")
+        if offset + 6 > len(data) or data[offset:offset + 4] != b"PE\0\0" or data[offset + 4:offset + 6] != machines[goarch].to_bytes(2, "little"):
+            fail(f"{path.name} must contain a Windows {goarch} PE runner")
+        return
+    fail(f"unsupported runner platform: {platform}")
+
+
+def archive_identity(path: Path, goos: str, goarch: str) -> bytes:
+    expected_binary = "aeb-gauntlet.exe" if goos == "windows" else "aeb-gauntlet"
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as archive:
             entries = [item for item in archive.infolist() if item.filename == f".release/{IDENTITY_NAME}" and not item.is_dir()]
@@ -449,6 +474,7 @@ def archive_identity(path: Path) -> bytes:
                 fail(f"{path.name} must contain exactly one regular {IDENTITY_NAME}")
             if len(binaries) != 1:
                 fail(f"{path.name} must contain exactly one {expected_binary}")
+            verify_runner_binary(archive.read(binaries[0]), binaries[0].external_attr >> 16, goos, goarch, path)
             return archive.read(entries[0])
     with tarfile.open(path, "r:*") as archive:
         entries = [item for item in archive.getmembers() if item.name == f".release/{IDENTITY_NAME}" and item.isfile()]
@@ -457,6 +483,10 @@ def archive_identity(path: Path) -> bytes:
             fail(f"{path.name} must contain exactly one regular {IDENTITY_NAME}")
         if len(binaries) != 1:
             fail(f"{path.name} must contain exactly one {expected_binary}")
+        binary = archive.extractfile(binaries[0])
+        if binary is None:
+            fail(f"{path.name} has unreadable {expected_binary}")
+        verify_runner_binary(binary.read(), binaries[0].mode, goos, goarch, path)
         handle = archive.extractfile(entries[0])
         if handle is None:
             fail(f"{path.name} has unreadable {IDENTITY_NAME}")
@@ -506,9 +536,12 @@ def verify_bundle_corpus(identity: dict[str, Any], contents: dict[str, bytes]) -
         fail("data bundle does not contain every case named by its corpus manifest")
 
 
-def binary_names(identity: dict[str, Any]) -> set[str]:
+def binary_archives(identity: dict[str, Any]) -> dict[str, tuple[str, str]]:
     version = identity["release"]["version"]
-    return {f"agent-egress-bench_{version}_{item['goos']}_{item['goarch']}.{'zip' if item['goos'] == 'windows' else 'tar.gz'}" for item in identity["runner"]["platforms"]}
+    return {
+        f"agent-egress-bench_{version}_{item['goos']}_{item['goarch']}.{'zip' if item['goos'] == 'windows' else 'tar.gz'}": (item["goos"], item["goarch"])
+        for item in identity["runner"]["platforms"]
+    }
 
 
 def verify_release(release_dir: Path, repo: Path | None, executable: Path | None) -> None:
@@ -523,13 +556,13 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
     for name, digest in checksums.items():
         if sha256_file(release_dir / name) != digest:
             fail(f"checksum mismatch: {name}")
-    binaries = binary_names(identity)
+    binaries = binary_archives(identity)
     data_name = f"agent-egress-bench_{identity['release']['version']}_data.tar.gz"
-    if data_name not in checksums or not binaries.issubset(checksums):
+    if data_name not in checksums or not set(binaries).issubset(checksums):
         fail("release is missing its data bundle or declared runner platforms")
     expected_identity = identity_path.read_bytes()
-    for name in binaries:
-        if archive_identity(release_dir / name) != expected_identity:
+    for name, (goos, goarch) in binaries.items():
+        if archive_identity(release_dir / name, goos, goarch) != expected_identity:
             fail(f"binary archive identity does not match release identity: {name}")
     contents = bundle_contents(release_dir / data_name)
     data_files = identity.get("data_files")
@@ -544,7 +577,12 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
         if canonical_json(expected) != canonical_json(identity):
             fail("release identity does not match the supplied source tree")
     if executable is not None:
-        result = subprocess.run([str(executable), "--version"], text=True, capture_output=True, check=False)
+        if not executable.is_file() or executable.stat().st_mode & 0o111 == 0:
+            fail("runner executable is absent or is not marked executable")
+        try:
+            result = subprocess.run([str(executable), "--version"], text=True, capture_output=True, check=False)
+        except OSError as exc:
+            fail(f"runner executable cannot run: {exc}")
         expected = f"aeb-gauntlet {identity['release']['version']} {identity['source']['commit']}"
         if result.returncode or result.stdout.strip() != expected:
             fail("runner version output does not match release identity")
