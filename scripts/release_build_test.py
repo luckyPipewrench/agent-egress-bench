@@ -199,6 +199,35 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertEqual(result.returncode, 23, msg=result.stderr)
         self.assertIn("snapshot identity version came from GoReleaser configuration", result.stderr)
 
+    def test_release_shell_peels_an_annotated_tag_object_for_a_tagged_build(self) -> None:
+        tag_object = subprocess.run(["git", "-C", str(self.root), "rev-parse", "v1.0.0"], check=True, text=True, capture_output=True).stdout.strip()
+        fake_bin = Path(self.temp.name) / "bin"
+        fake_bin.mkdir()
+        fake = fake_bin / "goreleaser"
+        fake.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import sys\n"
+            "identity = json.load(open('.release/release-identity.json', encoding='utf-8'))\n"
+            f"expected = {self.commit!r}\n"
+            "if identity['release']['tag'] != 'v1.0.0' or identity['source']['commit'] != expected:\n"
+            "    print('tag object was not peeled to the tagged commit', file=sys.stderr)\n"
+            "    raise SystemExit(64)\n"
+            "print('tag object was peeled to the tagged commit', file=sys.stderr)\n"
+            "raise SystemExit(23)\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        result = subprocess.run(
+            ["bash", str(self.root / "scripts/release-build.sh"), "--tag", "v1.0.0", "--commit", tag_object],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        )
+        self.assertEqual(result.returncode, 23, msg=result.stderr)
+        self.assertIn("tag object was peeled to the tagged commit", result.stderr)
+
     def test_identity_rejects_untracked_release_input(self) -> None:
         (self.root / "cases/untracked-release-input.txt").write_text("not in the commit\n", encoding="utf-8")
         result = subprocess.run(

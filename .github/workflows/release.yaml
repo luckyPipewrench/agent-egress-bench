@@ -39,7 +39,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == push ]]; then
-            ./scripts/release-build.sh --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+            release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+            ./scripts/release-build.sh --tag "$GITHUB_REF_NAME" --commit "$release_commit"
           else
             ./scripts/release-build.sh --tag snapshot --commit "$GITHUB_SHA" --snapshot
           fi

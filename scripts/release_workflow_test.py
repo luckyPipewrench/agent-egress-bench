@@ -55,6 +55,8 @@ def check_workflow(path: Path) -> None:
     for value in release_required:
         if value not in release:
             raise AssertionError(f"release build is missing required release guard: {value!r}")
+    if 'release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"' not in release or './scripts/release-build.sh --tag "$GITHUB_REF_NAME" --commit "$release_commit"' not in release:
+        raise AssertionError("release build does not resolve the pushed tag to its commit")
     if "permissions:\n  contents: read" not in preamble or "attestations: write" in preamble or "id-token: write" in preamble:
         raise AssertionError("manual workflow token is not read-only")
     if "permissions:" in release:
@@ -118,6 +120,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("run: make preflight", "# run: make preflight", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "release build is missing"):
+                check_workflow(candidate)
+
+    def test_tag_commit_resolution_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace('release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"', 'release_commit="$GITHUB_SHA"', 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "does not resolve the pushed tag"):
                 check_workflow(candidate)
 
 

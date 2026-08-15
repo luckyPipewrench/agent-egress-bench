@@ -40,6 +40,13 @@ if [[ "$snapshot" == true ]]; then
   snapshot_args=(--snapshot)
 else
   [[ "$tag" == v* ]] || usage
+  tag_commit="$(git rev-parse "${tag}^{commit}")"
+  supplied_commit="$(git rev-parse "${commit}^{commit}")"
+  if [[ "$supplied_commit" != "$tag_commit" ]]; then
+    echo "release-build: --commit does not resolve to tag $tag" >&2
+    exit 1
+  fi
+  commit=$tag_commit
   version=${tag#v}
   snapshot_args=()
 fi
