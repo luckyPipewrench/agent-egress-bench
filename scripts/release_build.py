@@ -20,7 +20,7 @@ from typing import Any
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-SNAPSHOT_VERSION_RE = re.compile(r"^1\.0\.0-SNAPSHOT-[0-9a-f]{7}$")
+SNAPSHOT_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-SNAPSHOT-[0-9a-f]{7}$")
 IDENTITY_NAME = "release-identity.json"
 CHECKSUM_NAME = "checksums.txt"
 DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities")
@@ -66,6 +66,49 @@ def git(repo: Path, *args: str) -> str:
     if result.returncode:
         fail(f"git {' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout.strip()
+
+
+def configured_snapshot_template(repo: Path) -> str:
+    path = repo / ".goreleaser.yaml"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        fail(f"cannot read GoReleaser configuration: {exc}")
+    for index, line in enumerate(lines):
+        if line.strip() != "snapshot:":
+            continue
+        section_indent = len(line) - len(line.lstrip())
+        for child in lines[index + 1:]:
+            if child.strip() and len(child) - len(child.lstrip()) <= section_indent:
+                break
+            match = re.fullmatch(r"\s+version_template:\s*(.+?)\s*", child)
+            if match is None:
+                continue
+            value = match.group(1)
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            if value:
+                return value
+    fail("GoReleaser snapshot.version_template is required")
+
+
+def snapshot_version(repo: Path, commit: str) -> str:
+    if not COMMIT_RE.fullmatch(commit):
+        fail("snapshot commit must be a 40-character lower-case Git SHA")
+    tags = git(repo, "tag", "--merged", commit, "--sort=-v:refname").splitlines()
+    tag = next((candidate for candidate in tags if candidate.startswith("v") and VERSION_RE.fullmatch(candidate[1:])), "")
+    if not tag:
+        fail("GoReleaser snapshot source tag must be a v-prefixed semantic version")
+    template = configured_snapshot_template(repo)
+    values = {"{{ .Version }}": tag[1:], "{{ .ShortCommit }}": commit[:7]}
+    if any(token not in values for token in re.findall(r"{{[^}]+}}", template)):
+        fail("GoReleaser snapshot.version_template uses an unsupported value")
+    rendered = template
+    for token, value in values.items():
+        rendered = rendered.replace(token, value)
+    if "{{" in rendered or "}}" in rendered or not SNAPSHOT_VERSION_RE.fullmatch(rendered):
+        fail("GoReleaser snapshot.version_template produced an invalid snapshot version")
+    return rendered
 
 
 def safe_name(value: str) -> str:
@@ -507,6 +550,9 @@ def main() -> int:
     prepare.add_argument("--commit", required=True)
     prepare.add_argument("--snapshot", action="store_true")
     prepare.add_argument("--output", type=Path, required=True)
+    snapshot_version_command = commands.add_parser("snapshot-version")
+    snapshot_version_command.add_argument("--repo-root", type=Path, default=Path("."))
+    snapshot_version_command.add_argument("--commit", required=True)
     check = commands.add_parser("check-identity")
     check.add_argument("--repo-root", type=Path, default=Path("."))
     check.add_argument("--identity", type=Path, required=True)
@@ -526,6 +572,8 @@ def main() -> int:
         if args.command == "prepare":
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_bytes(canonical_json(build_identity(args.repo_root.resolve(), args.tag, args.version, args.commit, args.snapshot)))
+        elif args.command == "snapshot-version":
+            print(snapshot_version(args.repo_root.resolve(), args.commit))
         elif args.command == "check-identity":
             verify_identity(args.repo_root.resolve(), args.identity)
         elif args.command == "data-bundle":

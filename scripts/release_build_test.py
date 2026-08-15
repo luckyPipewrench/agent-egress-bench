@@ -40,6 +40,7 @@ class ReleaseBuildTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "test fixture"], check=True)
         self.commit = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
+        subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.0.0", "-m", "baseline", self.commit], check=True)
         self.identity = self.root / ".release/release-identity.json"
         self.snapshot_version = f"1.0.0-SNAPSHOT-{self.commit[:7]}"
 
@@ -151,6 +152,52 @@ class ReleaseBuildTest(unittest.TestCase):
         version = f"1.0.0-SNAPSHOT-{commit[:7]}"
         self.invoke("prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", version, "--commit", commit, "--snapshot", "--output", str(identity))
         self.assertEqual("v2.4.0", json.loads(identity.read_text(encoding="utf-8"))["corpus"]["version"])
+
+    def test_snapshot_version_uses_the_configured_goreleaser_template(self) -> None:
+        subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.1.0-snaptest", "-m", "snapshot base", self.commit], check=True)
+        result = self.invoke("snapshot-version", "--repo-root", str(self.root), "--commit", self.commit)
+        self.assertEqual(f"1.1.0-snaptest-SNAPSHOT-{self.commit[:7]}", result.stdout.strip())
+
+    def test_snapshot_version_rejects_an_unsupported_goreleaser_template(self) -> None:
+        config = self.root / ".goreleaser.yaml"
+        config.write_text(config.read_text(encoding="utf-8").replace("{{ .ShortCommit }}", "{{ .Tag }}", 1), encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "snapshot-version", "--repo-root", str(self.root), "--commit", self.commit],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("snapshot.version_template uses an unsupported value", result.stderr)
+
+    def test_release_shell_uses_goreleaser_snapshot_version(self) -> None:
+        subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.1.0-snaptest", "-m", "snapshot base", self.commit], check=True)
+        expected = f"1.1.0-snaptest-SNAPSHOT-{self.commit[:7]}"
+        fake_bin = Path(self.temp.name) / "bin"
+        fake_bin.mkdir()
+        fake = fake_bin / "goreleaser"
+        fake.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import sys\n"
+            "identity = json.load(open('.release/release-identity.json', encoding='utf-8'))\n"
+            f"expected = {expected!r}\n"
+            "if identity['release']['version'] != expected:\n"
+            "    print('snapshot identity version did not come from GoReleaser configuration', file=sys.stderr)\n"
+            "    raise SystemExit(64)\n"
+            "print('snapshot identity version came from GoReleaser configuration', file=sys.stderr)\n"
+            "raise SystemExit(23)\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        result = subprocess.run(
+            ["bash", str(self.root / "scripts/release-build.sh"), "--tag", "snapshot", "--commit", self.commit, "--snapshot"],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        )
+        self.assertEqual(result.returncode, 23, msg=result.stderr)
+        self.assertIn("snapshot identity version came from GoReleaser configuration", result.stderr)
 
     def test_identity_rejects_untracked_release_input(self) -> None:
         (self.root / "cases/untracked-release-input.txt").write_text("not in the commit\n", encoding="utf-8")

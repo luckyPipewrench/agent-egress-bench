@@ -2,6 +2,9 @@ version: 2
 
 project_name: agent-egress-bench
 
+snapshot:
+  version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"
+
 builds:
   - id: aeb-gauntlet
     dir: runner

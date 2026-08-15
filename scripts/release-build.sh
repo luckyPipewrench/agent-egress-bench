@@ -27,7 +27,7 @@ fi
 
 if [[ "$snapshot" == true ]]; then
   [[ "$tag" == snapshot ]] || usage
-  version="1.0.0-SNAPSHOT-${commit:0:7}"
+  version="$(python3 scripts/release_build.py snapshot-version --repo-root . --commit "$commit")"
   snapshot_args=(--snapshot)
 else
   [[ "$tag" == v* ]] || usage
