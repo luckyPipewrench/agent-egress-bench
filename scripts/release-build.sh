@@ -6,15 +6,24 @@ usage() {
   exit 2
 }
 
+require_option_value() {
+  local option=$1
+  local value=${2-}
+  if [[ -z "$value" || "$value" == --* ]]; then
+    echo "release-build: $option requires a value" >&2
+    usage
+  fi
+}
+
 tag=""
 commit=""
 dist="dist"
 snapshot=false
 while (($#)); do
   case "$1" in
-    --tag) tag=${2:-}; shift 2 ;;
-    --commit) commit=${2:-}; shift 2 ;;
-    --dist) dist=${2:-}; shift 2 ;;
+    --tag) require_option_value "$1" "${2-}"; tag=$2; shift 2 ;;
+    --commit) require_option_value "$1" "${2-}"; commit=$2; shift 2 ;;
+    --dist) require_option_value "$1" "${2-}"; dist=$2; shift 2 ;;
     --snapshot) snapshot=true; shift ;;
     *) usage ;;
   esac
@@ -38,6 +47,9 @@ fi
 identity=.release/release-identity.json
 rm -rf "$dist" .release
 mkdir -p .release
+export TMPDIR="$HOME/.cache/pipelock-tmp"
+export GOCACHE="$HOME/.cache/go-build"
+mkdir -p "$TMPDIR" "$GOCACHE"
 python3 scripts/release_build.py prepare \
   --tag "$tag" \
   --version "$version" \

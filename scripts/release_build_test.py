@@ -359,6 +359,43 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertTrue(sentinel.is_dir())
         self.assertIn("only the configured dist directory", result.stderr)
 
+    def test_release_shell_reports_missing_option_values(self) -> None:
+        for option in ("--tag", "--commit", "--dist"):
+            with self.subTest(option=option):
+                result = subprocess.run(
+                    ["bash", str(self.root / "scripts/release-build.sh"), option],
+                    cwd=self.root,
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f"release-build: {option} requires a value", result.stderr)
+
+    def test_release_shell_sets_shared_go_caches(self) -> None:
+        fake_bin = Path(self.temp.name) / "bin"
+        fake_bin.mkdir()
+        fake_go = fake_bin / "go"
+        fake_go.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${TMPDIR:-}\" == \"$HOME/.cache/pipelock-tmp\" && \"${GOCACHE:-}\" == \"$HOME/.cache/go-build\" ]]; then\n"
+            "  echo 'shared Go caches configured' >&2\n"
+            "else\n"
+            "  echo 'shared Go caches missing' >&2\n"
+            "fi\n"
+            "exit 71\n",
+            encoding="utf-8",
+        )
+        fake_go.chmod(0o755)
+        result = subprocess.run(
+            ["bash", str(self.root / "scripts/release-build.sh"), "--tag", "snapshot", "--commit", self.commit, "--snapshot"],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shared Go caches configured", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
