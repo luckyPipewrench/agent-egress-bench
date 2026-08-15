@@ -14,7 +14,16 @@ import (
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
 
+// releaseVersion and releaseCommit are set by the tagged release build. They
+// stay usable in local builds so an operator never mistakes an unpinned binary
+// for a release artifact.
+var (
+	releaseVersion = "devel"
+	releaseCommit  = "unknown"
+)
+
 func main() {
+	version := flag.Bool("version", false, "print the runner release version and commit")
 	casesDir := flag.String("cases", "", "directory of case JSON files (required)")
 	profilePath := flag.String("profile", "", "tool profile JSON file (required)")
 	outputPath := flag.String("output", "gauntlet-summary.json", "path for Gauntlet summary JSON")
@@ -53,6 +62,10 @@ func main() {
 	flag.BoolVar(&debug, "v", false, "alias for --debug")
 
 	flag.Parse()
+	if *version {
+		_, _ = fmt.Fprintf(os.Stdout, "aeb-gauntlet %s %s\n", releaseVersion, releaseCommit)
+		return
+	}
 	if *reportDir != "" {
 		if err := generateBuyerReport(*reportDir, *reportOutput); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)

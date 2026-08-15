@@ -1,0 +1,54 @@
+version: 2
+
+project_name: agent-egress-bench
+
+builds:
+  - id: aeb-gauntlet
+    main: ./runner
+    binary: aeb-gauntlet
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.releaseVersion={{ .Version }}
+      - -X main.releaseCommit={{ .FullCommit }}
+
+archives:
+  - id: aeb-gauntlet
+    ids: [aeb-gauntlet]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - LICENSE*
+      - NOTICE*
+      - .release/release-identity.json
+
+# scripts/release_build.py writes a single checksum file after it adds the
+# corpus and schema bundle. Keeping the checksum ownership there means no
+# release artifact can be omitted because GoReleaser ran before that bundle
+# existed.
+checksum:
+  disable: true
+
+# The workflow creates a GitHub Artifact Attestation for every binary archive.
+# Disable GoReleaser publication so a workflow dry run cannot create a release.
+release:
+  disable: true

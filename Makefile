@@ -1,4 +1,4 @@
-.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example validate-cases validate
+.PHONY: preflight check-case-immutability check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -210,3 +210,13 @@ check-gauntlet-site:
 	@node gauntlet-site/latest-result_test.js
 	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }
 	@python3 scripts/validate_gauntlet_scope.py "$(GAUNTLET_SCOPE_ARTIFACT)"
+
+# The release contract tests break source declarations and downloaded artifacts
+# on purpose. They prove the release guards stop an inconsistent package.
+test-release-build:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_build_test.py
+
+# Snapshot mode builds the exact archive layout without creating a tag or a
+# GitHub release. goreleaser must already be installed and pinned by the caller.
+release-snapshot:
+	@./scripts/release-build.sh --tag snapshot --commit "$$(git rev-parse HEAD)" --snapshot
