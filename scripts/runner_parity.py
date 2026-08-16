@@ -12,7 +12,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from result_states_generated import RESULT_SCHEMA_VERSION, RESULT_STATES, SCORES
+try:
+    from scripts.result_states_generated import RESULT_SCHEMA_VERSION, RESULT_STATES, SCORES
+except ModuleNotFoundError:
+    from result_states_generated import RESULT_SCHEMA_VERSION, RESULT_STATES, SCORES
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 NONCE = re.compile(r"^[0-9a-f]{32,}$")
