@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -14,6 +15,15 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    import artifact_schema
+except ModuleNotFoundError:
+    _artifact_schema_spec = importlib.util.spec_from_file_location(
+        "artifact_schema", Path(__file__).with_name("artifact_schema.py")
+    )
+    artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
+    _artifact_schema_spec.loader.exec_module(artifact_schema)
+
 
 # Scoring versions belonging to retained, frozen published records. Those
 # summaries predate schema_version and keep their original byte shape, so they
@@ -21,6 +31,13 @@ from urllib.parse import urlparse
 # output and must carry its schema marker. Add a version here only when a record
 # scored under it has actually been published and frozen.
 FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
+PROVENANCE_SCHEMAS = {
+    version: Path(__file__).resolve().parents[1]
+    / "schemas"
+    / f"provenance-candidate-v{version}.schema.json"
+    for version in (1, 2, 4, 5)
+}
+CASE_INDEX_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "case-index-v1.schema.json"
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -43,6 +60,7 @@ V4_RAW_EVIDENCE = {
 }
 ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 ACTIVE_SUMMARY_SCHEMA_VERSION = 5
+ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = 5
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
@@ -100,6 +118,14 @@ def raw_evidence_for_summary(summary):
     if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         return {**RAW_EVIDENCE, **V4_RAW_EVIDENCE}
     return RAW_EVIDENCE
+
+
+def provenance_candidate_schema_version(summary_schema_version):
+    if summary_schema_version == ACTIVE_SUMMARY_SCHEMA_VERSION:
+        return ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
+        return summary_schema_version
+    return 2
 
 
 def atomic_json_write(path, value):
@@ -272,6 +298,9 @@ def load_manifest(repo_root, run_dir):
 def load_case_index(path, manifest_ids, require_categories=False):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
+    case_index = artifact_schema.validate_file(
+        case_index, CASE_INDEX_SCHEMA, "loader case index"
+    )
     if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
         raise ValueError("loader case index must be a schema_version 1 object")
     rows = case_index.get("cases")
@@ -871,11 +900,7 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
 
     candidate_scope = {
-        "schema_version": (
-            summary.get("schema_version")
-            if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS
-            else 2
-        ),
+        "schema_version": provenance_candidate_schema_version(summary.get("schema_version")),
         "local_run_id": metadata["local_run_id"],
         "generated_at": metadata["generated_at"],
         "corpus_ref_kind": metadata["corpus_ref_kind"],
@@ -1031,6 +1056,11 @@ def finalize_command(args):
             "canonical_url": canonical_url,
             "portable_bundle_sha256": file_sha256(bundle_path),
         }
+    )
+    candidate = artifact_schema.validate_file(
+        candidate,
+        PROVENANCE_SCHEMAS[candidate["schema_version"]],
+        "provenance candidate",
     )
     atomic_json_write(output_path, candidate)
 

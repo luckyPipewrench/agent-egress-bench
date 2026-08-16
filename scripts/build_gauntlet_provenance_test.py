@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts import build_gauntlet_provenance
 
@@ -36,6 +37,16 @@ PIN_TAG = PIN["PIPELOCK_TAG"]
 
 
 class ProvenanceBuilderTest(unittest.TestCase):
+    def test_active_candidate_version_does_not_follow_summary_version(self):
+        with (
+            mock.patch.object(build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSION", 6),
+            mock.patch.object(
+                build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSIONS", frozenset({4, 5, 6})
+            ),
+        ):
+            self.assertEqual(5, build_gauntlet_provenance.provenance_candidate_schema_version(6))
+            self.assertEqual(4, build_gauntlet_provenance.provenance_candidate_schema_version(4))
+
     def test_active_result_score_enforces_budget_timing(self):
         contract = json.loads((REPO_ROOT / "contracts" / "result-states-v4.json").read_text())
         scores = contract["case_specific_overrides"][0]["scores_by_budget_block_timing"]

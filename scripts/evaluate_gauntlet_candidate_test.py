@@ -35,11 +35,13 @@ def candidate():
         "pipelock_version": PIPELOCK_VERSION,
         "corpus_git_sha": "b" * 40,
         "corpus_sha256": "c" * 64,
+        "corpus_manifest_sha256": "f" * 64,
         "case_index_sha256": hashlib.sha256(CASE_INDEX_BYTES).hexdigest(),
         "portable_bundle_sha256": hashlib.sha256(RUN_BUNDLE_BYTES).hexdigest(),
         "corpus_version": "v2.3.0",
         "scoring_version": "2.4",
         "runner_version": "0.4.2",
+        "logical_case_count": 213,
         "case_count": {
             "total": 213,
             "applicable": 212,
@@ -56,6 +58,7 @@ def candidate():
                 "false_positive_rate": 0.0,
             },
         },
+        "metric_counts": {},
         "sufficient": True,
     }
 
@@ -104,12 +107,23 @@ def v5_candidate():
             "false_positive_rate": {"numerator": 0, "denominator": 55},
         },
     }
+    value["diagnostic_counts"] = {
+        scope: {
+            "classification_present_rate": {"numerator": 157, "denominator": 157},
+            "structured_evidence_present_rate": {"numerator": 157, "denominator": 157},
+        }
+        for scope in ("full", "applicable")
+    }
     return value
 
 
 def baseline():
     return {
+        "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
         "schema_version": 1,
+        "recorded_on": "2026-08-01",
+        "verified_candidate_sha256": "a" * 64,
+        "verified_artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:122",
         "pipelock_version": PIPELOCK_VERSION,
         "corpus_git_sha": "b" * 40,
         "corpus_sha256": "c" * 64,

@@ -1,0 +1,22 @@
+{
+  "schema": "../provenance-candidate-v5.schema.json",
+  "accepted": [{
+    "description": "active v5 writer candidate",
+    "source": "../../gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json",
+    "mutations": [
+      {"replace": ["schema_version"], "value": 5}, {"remove": ["sufficient"]},
+      {"replace": ["measurement_status"], "value": "measured"}, {"replace": ["benchmark_manifest_sha256"], "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      {"replace": ["capability_registry"], "value": {"id": "aeb.capabilities", "format": 1, "revision": 1, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+      {"replace": ["reported_claims"], "value": []}, {"replace": ["exercised"], "value": {"capability_tags": []}},
+      {"replace": ["diagnostics"], "value": {"applicable": {"classification_present_rate": 1, "structured_evidence_present_rate": 1}, "full": {"classification_present_rate": 1, "structured_evidence_present_rate": 1}}},
+      {"replace": ["diagnostic_counts"], "value": {"applicable": {"classification_present_rate": {"numerator": 1, "denominator": 1}, "structured_evidence_present_rate": {"numerator": 1, "denominator": 1}}, "full": {"classification_present_rate": {"numerator": 1, "denominator": 1}, "structured_evidence_present_rate": {"numerator": 1, "denominator": 1}}}}
+    ]
+  }],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 4}},
+    {"description": "missing benchmark manifest identity", "mutation": {"remove": ["benchmark_manifest_sha256"]}},
+    {"description": "unknown field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "malformed benchmark digest", "mutation": {"replace": ["benchmark_manifest_sha256"], "value": "bad"}},
+    {"description": "wrong diagnostics type", "mutation": {"replace": ["diagnostics"], "value": []}}
+  ]
+}

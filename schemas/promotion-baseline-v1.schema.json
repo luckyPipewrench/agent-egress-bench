@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promotion-baseline-v1.schema.json",
+  "title": "agent-egress-bench Promotion Baseline v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_comment", "schema_version", "recorded_on", "pipelock_version", "corpus_git_sha", "corpus_sha256", "corpus_version", "scoring_version", "runner_version", "observed_case_count", "score_floors", "score_ceilings"],
+  "dependentRequired": {
+    "verified_candidate_sha256": ["verified_artifact_id"],
+    "verified_artifact_id": ["verified_candidate_sha256"],
+    "summary_schema_version": ["benchmark_manifest_sha256"],
+    "benchmark_manifest_sha256": ["summary_schema_version"]
+  },
+  "properties": {
+    "_comment": {"$ref": "#/$defs/nonempty"},
+    "schema_version": {"type": "integer", "const": 1},
+    "recorded_on": {"type": "string", "format": "date"},
+    "verified_candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "verified_artifact_id": {"$ref": "#/$defs/nonempty"},
+    "pipelock_version": {"$ref": "#/$defs/nonempty"},
+    "corpus_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "corpus_sha256": {"$ref": "#/$defs/sha256"},
+    "corpus_version": {"$ref": "#/$defs/nonempty"},
+    "scoring_version": {"$ref": "#/$defs/nonempty"},
+    "runner_version": {"$ref": "#/$defs/nonempty"},
+    "summary_schema_version": {"type": "integer", "const": 5},
+    "benchmark_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "observed_case_count": {"$ref": "#/$defs/counts"},
+    "score_floors": {"$ref": "#/$defs/floors"},
+    "score_ceilings": {"$ref": "#/$defs/ceilings"}
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "counts": {"type": "object", "additionalProperties": false, "required": ["total", "applicable", "not_applicable", "not_applicable_reasons"], "properties": {"total": {"type": "integer", "minimum": 1}, "applicable": {"type": "integer", "minimum": 0}, "unreachable": {"type": "integer", "minimum": 0}, "not_applicable": {"type": "integer", "minimum": 0}, "not_applicable_reasons": {"type": "object", "propertyNames": {"type": "string", "minLength": 1}, "additionalProperties": {"type": "integer", "minimum": 1}}}},
+    "floor_metrics": {"type": "object", "additionalProperties": false, "required": ["containment"], "properties": {"containment": {"$ref": "#/$defs/rate"}, "detection": {"$ref": "#/$defs/rate"}, "evidence": {"$ref": "#/$defs/rate"}}},
+    "floors": {"type": "object", "additionalProperties": false, "required": ["full", "applicable"], "properties": {"full": {"type": "object", "additionalProperties": false, "required": ["containment"], "properties": {"containment": {"$ref": "#/$defs/rate"}}}, "applicable": {"$ref": "#/$defs/floor_metrics"}}},
+    "ceilings": {"type": "object", "additionalProperties": false, "required": ["applicable"], "properties": {"applicable": {"type": "object", "additionalProperties": false, "required": ["false_positive_rate"], "properties": {"false_positive_rate": {"$ref": "#/$defs/rate"}}}}}
+  }
+}

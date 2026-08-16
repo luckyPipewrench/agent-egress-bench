@@ -112,7 +112,7 @@ func TestPublicCaseShapesMatchValidator(t *testing.T) {
 
 func TestPublicResultStateMatrixMatchesValidator(t *testing.T) {
 	contract := readPublicContract[resultStatesContract](t, "result-states-v4.json")
-	if contract.Contract != "aeb.result-states" || contract.Format != 1 || contract.ResultSchemaVersion != activeCaseSchemaVersion {
+	if contract.Contract != "aeb.result-states" || contract.Format != 1 || contract.ResultSchemaVersion != activeResultSchemaVersion {
 		t.Fatalf("result-states identity/version = %q/%d/%d", contract.Contract, contract.Format, contract.ResultSchemaVersion)
 	}
 	if len(contract.Matrix) != len(contract.ExpectedVerdicts)*len(contract.ActualVerdicts) {

@@ -1,0 +1,29 @@
+{
+  "schema": "../promoted-record-v1.schema.json",
+  "accepted": [
+    {
+      "description": "first promoted record emitted by the writer",
+      "instance": {
+        "schema_version": 1,
+        "tool": "pipelock",
+        "tool_version": "3.3.0",
+        "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:30997880917",
+        "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/30997880917",
+        "generated_at": "2026-08-05T10:33:23Z",
+        "candidate_sha256": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+        "previous_candidate_sha256": null,
+        "previous_record_manifest_sha256": null,
+        "files": {"continuous-gauntlet-pipelock.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"}
+      }
+    }
+  ],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
+    {"description": "missing required field", "mutation": {"remove": ["tool"]}},
+    {"description": "unknown field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "malformed digest", "mutation": {"replace": ["candidate_sha256"], "value": "bad"}},
+    {"description": "empty file inventory", "mutation": {"replace": ["files"], "value": {}}},
+    {"description": "timezone-free timestamp", "mutation": {"replace": ["generated_at"], "value": "2026-08-05T10:33:23"}},
+    {"description": "space-separated timestamp", "mutation": {"replace": ["generated_at"], "value": "2026-08-05 10:33:23Z"}}
+  ]
+}
