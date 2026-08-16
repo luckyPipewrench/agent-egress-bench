@@ -59,6 +59,17 @@ for name in "${env_names[@]}"; do
   env_args+=(--env "$name")
 done
 
+stage_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+trusted_stage="$(mktemp -d "$stage_parent/aeb-action-trusted.XXXXXX")"
+container_stage="$(mktemp -d "$stage_parent/aeb-action-container.XXXXXX")"
+cleanup() {
+  rm -rf -- "$trusted_stage" "$container_stage"
+}
+trap cleanup EXIT
+results_stage="$trusted_stage/results.jsonl"
+metadata_stage="$trusted_stage/run-metadata.json"
+summary_stage="$container_stage/summary.json"
+
 image="${INPUT_IMAGE:-}"
 offline="${INPUT_OFFLINE:-false}"
 case "$offline" in
@@ -76,10 +87,11 @@ workspace_file() {
   local input_value=$2
   [[ -n "$input_value" ]] || fail "$input_name is required"
   [[ "$input_value" != /* && "$input_value" != *".."* ]] || fail "$input_name must be a relative path without '..'"
-  local resolved
-  resolved="$(realpath "$GITHUB_WORKSPACE/$input_value")" || fail "$input_name does not exist: $input_value"
-  [[ "$resolved" == "$workspace_real/"* && -f "$resolved" && ! -L "$GITHUB_WORKSPACE/$input_value" ]] || fail "$input_name must be a regular file inside GITHUB_WORKSPACE"
-  printf '%s\n' "$resolved"
+  local staged="$trusted_stage/$input_name"
+  python3 "$GITHUB_ACTION_PATH/scripts/action_artifacts.py" stage-input \
+    --workspace "$workspace_real" \
+    --path "$input_value" \
+    --destination "$staged" || fail "$input_name must be a no-follow regular file inside GITHUB_WORKSPACE"
 }
 
 verify_image_identity() {
@@ -168,17 +180,6 @@ if [[ "$docker_security_options" == *'name=selinux'* ]]; then
 else
   echo "agent-egress-bench Action: Docker SELinux labeling is unavailable; read-only mounts and process restrictions remain active" >&2
 fi
-
-stage_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-trusted_stage="$(mktemp -d "$stage_parent/aeb-action-trusted.XXXXXX")"
-container_stage="$(mktemp -d "$stage_parent/aeb-action-container.XXXXXX")"
-cleanup() {
-  rm -rf -- "$trusted_stage" "$container_stage"
-}
-trap cleanup EXIT
-results_stage="$trusted_stage/results.jsonl"
-metadata_stage="$trusted_stage/run-metadata.json"
-summary_stage="$container_stage/summary.json"
 
 set +e
 docker run --rm --init \

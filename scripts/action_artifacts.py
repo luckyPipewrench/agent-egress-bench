@@ -65,6 +65,43 @@ def regular_source(path: Path) -> tuple[int, os.stat_result]:
     return descriptor, info
 
 
+def workspace_source(workspace: Path, source_path: str) -> int:
+    parts = Path(source_path).parts
+    if not parts or Path(source_path).is_absolute() or any(part in ("", ".", "..") for part in parts):
+        raise ArtifactError("workspace input must be a non-empty relative path without '.' or '..'")
+    current = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in parts[:-1]:
+            next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current)
+            os.close(current)
+            current = next_fd
+        descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=current)
+    finally:
+        os.close(current)
+    info = os.fstat(descriptor)
+    if not stat.S_ISREG(info.st_mode):
+        os.close(descriptor)
+        raise ArtifactError(f"workspace input is not a regular file: {source_path}")
+    return descriptor
+
+
+def stage_input(workspace: Path, source_path: str, destination: Path) -> None:
+    source_fd = workspace_source(workspace, source_path)
+    destination_fd = -1
+    try:
+        destination_fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        while chunk := os.read(source_fd, 1024 * 1024):
+            remaining = memoryview(chunk)
+            while remaining:
+                remaining = remaining[os.write(destination_fd, remaining):]
+        os.fsync(destination_fd)
+    finally:
+        os.close(source_fd)
+        if destination_fd >= 0:
+            os.close(destination_fd)
+    print(destination)
+
+
 def copy_regular(source: Path, output_fd: int, destination_name: str) -> None:
     source_fd, _ = regular_source(source)
     temporary_name = f".aeb-{destination_name}.{os.getpid()}.{secrets.token_hex(8)}"
@@ -148,14 +185,20 @@ def main() -> int:
     publish_parser.add_argument("--metadata", type=Path, required=True)
     inspect_parser = subparsers.add_parser("inspect-summary")
     inspect_parser.add_argument("--path", type=Path, required=True)
+    stage_parser = subparsers.add_parser("stage-input")
+    stage_parser.add_argument("--workspace", type=Path, required=True)
+    stage_parser.add_argument("--path", required=True)
+    stage_parser.add_argument("--destination", type=Path, required=True)
     args = parser.parse_args()
     try:
         if args.command == "prepare":
             prepare(args.workspace.resolve(), args.output_dir)
         elif args.command == "publish":
             publish(args.workspace.resolve(), args.output_dir, args.results, args.metadata, args.summary)
-        else:
+        elif args.command == "inspect-summary":
             return inspect_summary(args.path)
+        else:
+            stage_input(args.workspace.resolve(), args.path, args.destination)
     except (ArtifactError, OSError) as exc:
         print(f"Action artifact handling failed: {exc}", file=sys.stderr)
         return 1
