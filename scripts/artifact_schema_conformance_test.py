@@ -4,6 +4,7 @@
 import copy
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -48,19 +49,68 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
             document = json.loads(path.read_text(encoding="utf-8"))
             schema = artifact_schema.load_schema(path.parent / document["schema"])
             accepted = document["accepted"]
+            rejected = document["rejected"]
             self.assertTrue(accepted, path)
+            self.assertTrue(rejected, path)
             for vector in accepted:
                 with self.subTest(vector=path.name, case=vector["description"]):
                     validated = artifact_schema.validate(
                         materialize(vector, path), schema, vector["description"]
                     )
                     self.assertIsNotNone(validated)
-            for vector in document["rejected"]:
+            for vector in rejected:
                 with self.subTest(vector=path.name, case=vector["description"]):
                     base = materialize(accepted[vector.get("accepted_index", 0)], path)
                     corrupted = apply_mutation(base, vector["mutation"])
                     with self.assertRaises(ValueError):
                         artifact_schema.validate(corrupted, schema, vector["description"])
+
+    def test_non_finite_numbers_are_rejected(self):
+        schema = artifact_schema.load_schema(ROOT / "schemas" / "promotion-baseline-v1.schema.json")
+        source = (
+            ROOT
+            / "gauntlet-site"
+            / "results"
+            / "pipelock"
+            / "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"
+            / "reviewed-baseline.json"
+        )
+        baseline = json.loads(source.read_text(encoding="utf-8"))
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(value=value):
+                corrupted = copy.deepcopy(baseline)
+                corrupted["score_floors"]["full"]["containment"] = value
+                with self.assertRaisesRegex(ValueError, "finite JSON number"):
+                    artifact_schema.validate(corrupted, schema, "promotion baseline")
+
+    def test_vector_corpora_require_both_directions(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            temporary_root = Path(directory)
+            vector_root = temporary_root / "vectors"
+            vector_root.mkdir()
+            (temporary_root / "schema.json").write_text(
+                json.dumps({"type": "object"}), encoding="utf-8"
+            )
+            (vector_root / "accepted-only.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "../schema.json",
+                        "accepted": [{"description": "empty object", "instance": {}}],
+                        "rejected": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            global VECTOR_ROOT
+            original_root = VECTOR_ROOT
+            VECTOR_ROOT = vector_root
+            try:
+                result = unittest.TestResult()
+                ArtifactSchemaConformanceTest("test_vectors").run(result)
+            finally:
+                VECTOR_ROOT = original_root
+            self.assertEqual(1, len(result.failures))
+            self.assertIn("is not true", result.failures[0][1])
 
     def test_existing_promoted_records(self):
         schema = ROOT / "schemas" / "promoted-record-v1.schema.json"

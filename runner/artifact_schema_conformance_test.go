@@ -33,6 +33,13 @@ type artifactVectorMutation struct {
 	Value   any   `json:"value"`
 }
 
+func validateArtifactVectorDirections(vectors artifactVectorFile) error {
+	if len(vectors.Accepted) == 0 || len(vectors.Rejected) == 0 {
+		return fmt.Errorf("artifact conformance corpus must contain accepted and rejected vectors")
+	}
+	return nil
+}
+
 func TestArtifactSchemaConformanceVectors(t *testing.T) {
 	paths, err := filepath.Glob(filepath.Join("..", "schemas", "conformance", "*.json"))
 	if err != nil || len(paths) == 0 {
@@ -43,6 +50,9 @@ func TestArtifactSchemaConformanceVectors(t *testing.T) {
 		path := path
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			vectors := readArtifactVectors(t, path)
+			if err := validateArtifactVectorDirections(vectors); err != nil {
+				t.Fatal(err)
+			}
 			schema := compileArtifactSchema(t, filepath.Join(filepath.Dir(path), vectors.Schema))
 			accepted := make([]any, len(vectors.Accepted))
 			for index, vector := range vectors.Accepted {
@@ -62,6 +72,13 @@ func TestArtifactSchemaConformanceVectors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestArtifactSchemaConformanceVectorsRequireBothDirections(t *testing.T) {
+	vectors := artifactVectorFile{Accepted: []artifactVector{{Description: "valid"}}}
+	if err := validateArtifactVectorDirections(vectors); err == nil {
+		t.Fatal("accepted-only artifact conformance corpus passed")
 	}
 }
 

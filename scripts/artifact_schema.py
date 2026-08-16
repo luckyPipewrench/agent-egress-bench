@@ -1,6 +1,7 @@
 """Dependency-free JSON Schema validation for governed artifacts."""
 
 import json
+import math
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -48,6 +49,8 @@ def _type_matches(value, expected):
 
 
 def _validate(value, schema, root, path):
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{path} must be a finite JSON number")
     if "$ref" in schema:
         _validate(value, _resolve(root, schema["$ref"]), root, path)
         return
