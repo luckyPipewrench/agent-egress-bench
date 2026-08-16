@@ -6,10 +6,10 @@ The image is based on Alpine 3.24.1 and built with Go 1.25.12. Both base images 
 
 ## Build and inspect the image
 
-Run these commands from the repository root to build the native image without downloading Go modules during the build:
+Run these commands from the repository root on a connected machine. The build downloads Go modules and verifies them against `runner/go.sum`:
 
 ```bash
-docker build --network none --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=f8078cb -t aeb-gauntlet:local .
+docker build --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=f8078cb -t aeb-gauntlet:local .
 docker run --rm aeb-gauntlet:local --version
 docker run --rm --entrypoint /bin/cat aeb-gauntlet:local /etc/alpine-release
 ```
@@ -56,7 +56,7 @@ jobs:
 
 A real tool workflow selects `proxy` or `mcp-gateway` and supplies its endpoints, managed start commands, fixture switch, and other adapter settings as a JSON string array in `runner-args`; the adapter contract and complete command are documented in [RUNNER.md](RUNNER.md).
 
-When `image` is omitted, the Action builds the image from its own pinned Action checkout and therefore needs network access only for the two pinned base images if they are not already cached. When `image` is set, the Action rejects tags and accepts only a reference ending in `@sha256:` followed by the 64-character digest.
+When `image` is omitted, the Action builds the image from its own pinned Action checkout and needs network access for uncached base images and Go modules. When `image` is set, the Action rejects tags and accepts only a reference ending in `@sha256:` followed by the 64-character digest.
 
 The Action works on GitHub's amd64 runners and on arm64 self-hosted runners because Docker selects the matching manifest and the Dockerfile cross-builds the runner for the selected target architecture.
 
@@ -76,18 +76,16 @@ On an Apple Silicon laptop, Docker builds the native `linux/arm64` target. The r
 
 ## Prepare an air-gapped run
 
-The connected staging machine must obtain the image and save it before the lab loses network access. These commands build the image for the staging machine's native architecture from the exact Action implementation commit, derive Docker's immutable digest reference, and record the transfer checksum without a guessed value:
+The connected staging machine must pull the image by the exact multi-architecture digest printed by the release job and save it before the lab loses network access. Copy that full `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` reference into `aeb-gauntlet-image.ref`, then record the transferred bytes without replacing the digest with a tag:
 
 ```bash
-git clone https://github.com/luckyPipewrench/agent-egress-bench.git aeb-offline-source
-git -C aeb-offline-source checkout f8078cb2a8812f2ac3200a9ad429d21780c673fd
-docker build --network none --build-arg AEB_VERSION=action-f8078cb --build-arg AEB_COMMIT=f8078cb2a8812f2ac3200a9ad429d21780c673fd --tag aeb-gauntlet:offline-source aeb-offline-source
-docker image inspect --format '{{index .RepoDigests 0}}' aeb-gauntlet:offline-source > aeb-gauntlet-image.ref
+docker pull "$(cat aeb-gauntlet-image.ref)"
+docker image inspect "$(cat aeb-gauntlet-image.ref)"
 docker image save --output aeb-gauntlet-image.tar "$(cat aeb-gauntlet-image.ref)"
 sha256sum aeb-gauntlet-image.tar > aeb-gauntlet-image.tar.sha256
 ```
 
-For a tagged release, pull the release job's printed `ghcr.io` digest reference instead of building locally, then run the same `docker image save` and checksum steps. Record `aeb-gauntlet-image.ref` and the tarball checksum on the transfer manifest.
+This transfer path doesn't need the source checkout, a Go compiler, or a vendor tree. Record `aeb-gauntlet-image.ref` and the tarball checksum on the transfer manifest.
 
 Inside the air-gapped lab, verify and load the exact transfer:
 

@@ -20,6 +20,9 @@ class RunnerImageContractTest(unittest.TestCase):
             self.assertRegex(line, r"@sha256:[0-9a-f]{64}(?: AS build)?$")
         self.assertIn("FROM --platform=$BUILDPLATFORM", from_lines[0])
         self.assertIn('GOOS="$TARGETOS" GOARCH="$TARGETARCH"', text)
+        self.assertIn("COPY capability-registry ./capability-registry", text)
+        self.assertNotIn("-mod=vendor", text)
+        self.assertFalse((ROOT / "runner" / "vendor").exists())
         self.assertIn('ENTRYPOINT ["/usr/local/bin/aeb-gauntlet"]', text)
 
     def test_action_enforces_digest_and_strict_offline_execution(self) -> None:

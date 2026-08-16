@@ -7,7 +7,8 @@ ARG AEB_COMMIT=unknown
 
 WORKDIR /src
 COPY runner ./runner
-RUN cd runner && CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build -mod=vendor -trimpath -buildvcs=false -ldflags="-s -w -X main.releaseVersion=$AEB_VERSION -X main.releaseCommit=$AEB_COMMIT" -o /out/aeb-gauntlet .
+COPY capability-registry ./capability-registry
+RUN cd runner && CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build -trimpath -buildvcs=false -ldflags="-s -w -X main.releaseVersion=$AEB_VERSION -X main.releaseCommit=$AEB_COMMIT" -o /out/aeb-gauntlet .
 
 FROM docker.io/library/alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
