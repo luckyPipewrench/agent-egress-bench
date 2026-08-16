@@ -110,3 +110,38 @@ func TestCalibrationCannotEmitAReceiptProfile(t *testing.T) {
 		})
 	}
 }
+
+func TestReceiptProfileRefusalFailsClosedOnMissingProvenance(t *testing.T) {
+	// The first version of this guard asked the synthetic question in its own
+	// words instead of using the rule that already decides measurement_status,
+	// and the copy diverged at once: a row whose evidence was nil was skipped,
+	// so an adapter returning a verdict and no evidence could emit a receipt
+	// profile. The comment above it claimed the opposite, which is worse than
+	// the hole, because it told the next reader the check was stricter than it
+	// was.
+	cases := []struct {
+		name string
+		rows []CaseResult
+		want bool
+	}{
+		{name: "nil evidence", rows: []CaseResult{{CaseID: "x", Evidence: nil}}, want: true},
+		{name: "empty evidence", rows: []CaseResult{{CaseID: "x", Evidence: map[string]interface{}{}}}, want: true},
+		{name: "declared synthetic", rows: []CaseResult{{CaseID: "x", Evidence: map[string]interface{}{"synthetic": true}}}, want: true},
+		{name: "malformed marker", rows: []CaseResult{{CaseID: "x", Evidence: map[string]interface{}{"synthetic": "calibration"}}}, want: true},
+		{name: "honest negative", rows: []CaseResult{{CaseID: "x", Evidence: map[string]interface{}{"synthetic": false, "proof": "observed"}}}, want: false},
+		{name: "real row with no marker", rows: []CaseResult{{CaseID: "x", Evidence: map[string]interface{}{"proof": "observed"}}}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			refused := receiptProfileRefusal(tc.rows, nil) != ""
+			if refused != tc.want {
+				t.Errorf("refused = %v, want %v", refused, tc.want)
+			}
+			// An unreachable row reaches the profile too, so the same rule has
+			// to hold when the row arrives through that list instead.
+			if refusedUnreachable := receiptProfileRefusal(nil, tc.rows) != ""; refusedUnreachable != tc.want {
+				t.Errorf("unreachable refused = %v, want %v", refusedUnreachable, tc.want)
+			}
+		})
+	}
+}

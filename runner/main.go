@@ -318,8 +318,8 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		// a publishable bundle. This is the same refusal on the other path out
 		// of the runner, using the same rule: only an explicit false means a
 		// row is not synthetic, so a missing or malformed marker still counts.
-		if synthetic := countSyntheticRows(applicableResults, unreachableResults); synthetic > 0 {
-			return fmt.Errorf("refusing to write a receipt profile from %d synthetic calibration row(s): a calibration run asserts its verdicts and cannot evidence a block", synthetic)
+		if reason := receiptProfileRefusal(applicableResults, unreachableResults); reason != "" {
+			return fmt.Errorf("refusing to write a receipt profile: %s", reason)
 		}
 		// Load receipt verifier only when profile emission is requested.
 		// An empty path yields a "no verifier" block; a malformed path fails
