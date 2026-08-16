@@ -222,8 +222,8 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn("subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner", workflow)
         self.assertIn("subject-digest: ${{ steps.publish.outputs.digest }}", workflow)
         self.assertIn("runner-image.json", workflow)
-        self.assertIn("runner-image.attestation.jsonl", workflow)
-        self.assertIn("runner-image.trusted-root.jsonl", workflow)
+        self.assertIn("release_build.py checksums", workflow)
+        self.assertIn("agent-egress-bench-release-final-${{ github.sha }}", workflow)
 
 if __name__ == "__main__":
     unittest.main()

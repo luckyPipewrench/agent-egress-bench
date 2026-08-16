@@ -174,30 +174,32 @@ jobs:
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
 
-      - name: Attest the durable runner image identity
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      - name: Download verified release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          subject-path: ${{ runner.temp }}/aeb-runner-image/runner-image.json
+          name: agent-egress-bench-release-${{ github.sha }}
+          path: dist/release
 
-      - name: Package offline image identity verification material
+      - name: Bind the runner image identity into the release checksums
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           identity_dir="$RUNNER_TEMP/aeb-runner-image"
-          cd "$identity_dir"
-          gh attestation download runner-image.json --repo luckyPipewrench/agent-egress-bench --limit 1
-          mapfile -d '' bundles < <(find . -maxdepth 1 -type f -name 'sha256*.jsonl' -print0)
-          [[ "${#bundles[@]}" -eq 1 ]]
-          mv "${bundles[0]}" runner-image.attestation.jsonl
-          gh attestation trusted-root > runner-image.trusted-root.jsonl
+          cp "$identity_dir/runner-image.json" dist/release/runner-image.json
+          cp dist/release/release-identity.json "$RUNNER_TEMP/release-identity.json"
+          python3 scripts/release_build.py checksums --identity "$RUNNER_TEMP/release-identity.json" --dist dist/release
+          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .
 
-      - name: Upload the signed runner image identity
+      - name: Attest the final release assets
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/release/*
+
+      - name: Upload the final verified release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: agent-egress-bench-runner-image-${{ github.sha }}
-          path: ${{ runner.temp }}/aeb-runner-image/
+          name: agent-egress-bench-release-final-${{ github.sha }}
+          path: dist/release/
           if-no-files-found: error
           retention-days: 14
 
@@ -211,13 +213,7 @@ jobs:
       - name: Download verified release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: agent-egress-bench-release-${{ github.sha }}
-          path: dist/release
-
-      - name: Download signed runner image identity
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: agent-egress-bench-runner-image-${{ github.sha }}
+          name: agent-egress-bench-release-final-${{ github.sha }}
           path: dist/release
 
       - name: Create an owned draft release or resume one on workflow retry

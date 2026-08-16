@@ -26,7 +26,7 @@ The tagged release workflow publishes the multi-architecture index to `ghcr.io/l
 
 The workflow logs out of GHCR and pulls the digest again before the GitHub Release can be created. GitHub documents that a newly published container package can start private, so the first publication must be made public in the package settings and rerun if that anonymous pull fails; a public package can then be pulled by an outside lab without credentials. See [Configuring a package's access control and visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 
-No published runner-image digest exists for this unreleased change, so this document doesn't invent one. After the first tagged publication, use the exact `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` value in `runner-image.json` and never replace it with a tag in a reproducibility record. The release also includes `runner-image.attestation.jsonl` and `runner-image.trusted-root.jsonl` for offline publisher verification.
+No published runner-image digest exists for this unreleased change, so this document doesn't invent one. After the first tagged publication, use the exact `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` value in `runner-image.json` and never replace it with a tag in a reproducibility record. The release checksums and GitHub attestation cover that identity file.
 
 ## Reusable GitHub Action
 
@@ -78,7 +78,17 @@ On an Apple Silicon laptop, Docker builds the native `linux/arm64` target. The r
 
 ## Prepare an air-gapped run
 
-The connected staging machine must download `runner-image.json`, `runner-image.attestation.jsonl`, and `runner-image.trusted-root.jsonl` from the same release, read the exact multi-architecture digest from `runner-image.json`, and save the image before the lab loses network access. Copy that full `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` reference into `aeb-gauntlet-image.ref`, then record the transferred bytes without replacing the digest with a tag:
+The connected staging machine must download `runner-image.json`, its GitHub attestation bundle, and the current trusted root before the lab loses network access. This example uses `v0.1.0` only as a command shape:
+
+```bash
+mkdir -p benchmark/release
+gh release download v0.1.0 --repo luckyPipewrench/agent-egress-bench --pattern runner-image.json --dir benchmark/release
+(cd benchmark/release && gh attestation download runner-image.json --repo luckyPipewrench/agent-egress-bench --limit 1)
+mv benchmark/release/sha256:*.jsonl benchmark/release/runner-image.attestation.jsonl
+gh attestation trusted-root > benchmark/release/runner-image.trusted-root.jsonl
+```
+
+Read the exact multi-architecture digest from `runner-image.json`, copy that full `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` reference into `aeb-gauntlet-image.ref`, and record the transferred bytes without replacing the digest with a tag:
 
 ```bash
 docker pull "$(cat aeb-gauntlet-image.ref)"

@@ -89,13 +89,14 @@ def check_workflow(path: Path) -> None:
         "subject-digest: ${{ steps.publish.outputs.digest }}",
         "push-to-registry: true",
         "runner-image.json",
-        "runner-image.attestation.jsonl",
-        "runner-image.trusted-root.jsonl",
-        "name: agent-egress-bench-runner-image-${{ github.sha }}",
+        "release_build.py checksums",
+        "release_build.py verify --release-dir dist/release --repo-root .",
+        "subject-path: dist/release/*",
+        "name: agent-egress-bench-release-final-${{ github.sha }}",
     )
     if any(value not in image for value in image_required):
         raise AssertionError("runner image publication is not pinned, multi-architecture, or tag-gated")
-    if "needs: [release, attest, image]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish or "name: agent-egress-bench-runner-image-${{ github.sha }}" not in publish:
+    if "needs: [release, attest, image]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish or "name: agent-egress-bench-release-final-${{ github.sha }}" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
     if "Create an owned draft release or resume one on workflow retry" not in publish or "release_publish.py" not in publish:
         raise AssertionError("draft release retry is not safe")
@@ -178,6 +179,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("runner-image.json", "discarded-image.json"), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_image_identity_checksum_binding_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("python3 scripts/release_build.py checksums", "true # removed checksum binding", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 
