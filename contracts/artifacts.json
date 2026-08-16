@@ -392,7 +392,8 @@
         "scripts/promote_gauntlet_candidate.py"
       ],
       "reader": [
-        "scripts/validate_gauntlet_records.py"
+        "scripts/validate_gauntlet_records.py",
+        "scripts/validate_gauntlet_scope.py"
       ],
       "source_versions": [
         {
