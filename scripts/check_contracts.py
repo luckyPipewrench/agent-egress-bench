@@ -21,7 +21,6 @@ REQUIRED_SOURCE_VERSIONS = {
     ("validate/main.go", "activeResultSchemaVersion"),
     ("validate/main.go", "activeToolProfileSchemaVersion"),
     ("runner/summary.go", "activeSummarySchemaVersion"),
-    ("scripts/build_gauntlet_provenance.py", "ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION"),
 }
 REQUIRED_RETAINED_RECORD_PATHS = {
     "ci/gauntlet-baseline.json",

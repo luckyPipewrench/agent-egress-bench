@@ -22,6 +22,10 @@ except ModuleNotFoundError:
     )
     artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
     _artifact_schema_spec.loader.exec_module(artifact_schema)
+try:
+    from scripts import artifact_contracts
+except ModuleNotFoundError:
+    import artifact_contracts
 
 
 CANDIDATE_FILENAME = "continuous-gauntlet-pipelock.json"
@@ -37,12 +41,9 @@ SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
 DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
 DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
-ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION = 2
-PROMOTED_RECORD_SCHEMAS = {
-    version: Path(__file__).resolve().parents[1] / "schemas" / f"promoted-record-v{version}.schema.json"
-    for version in (1, 2)
-}
-PROMOTION_BASELINE_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promotion-baseline-v1.schema.json"
+ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION = artifact_contracts.active_version("promoted_record")
+PROMOTED_RECORD_SCHEMAS = artifact_contracts.schema_paths("promoted_record")
+PROMOTION_BASELINE_SCHEMA = artifact_contracts.canonical_schema_path("promotion_baseline")
 REVIEWABLE_SCORE_FAILURE = re.compile(
     r"^scores\.(?:full|applicable)\.[a-z_]+=.+, "
     r"(?:below baseline floor|above baseline ceiling) .+$"

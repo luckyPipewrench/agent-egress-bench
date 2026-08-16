@@ -19,12 +19,14 @@ PROFILE="$SCRIPT_DIR/tool-profile.json"
 
 # --- Prerequisites ---
 command -v jq >/dev/null 2>&1 || { echo "error: jq required" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "error: python3 required" >&2; exit 1; }
 [ -f "$PROFILE" ] || { echo "error: tool profile not found: $PROFILE" >&2; exit 1; }
 
 # Read tool identity from profile
 TOOL=$(jq -r '.tool' "$PROFILE")
 TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
 CAPABILITY_REGISTRY=$(jq -c '.capability_registry' "$PROFILE")
+RESULT_SCHEMA_VERSION=$(python3 "$SCRIPT_DIR/../../scripts/artifact_contracts.py" active-version result_row)
 # --- Emit a single JSONL result line to stdout ---
 # This function is complete. Copy it as-is.
 emit_result() {
@@ -37,9 +39,10 @@ emit_result() {
         --arg expected "$expected" \
         --arg actual "$actual" \
         --arg score "$score" \
+        --argjson schema_version "$RESULT_SCHEMA_VERSION" \
         --argjson evidence "$evidence" \
         --arg notes "$notes" \
-        '{schema_version: 5, case_id: $case_id, tool: $tool, tool_version: $tool_version,
+        '{schema_version: $schema_version, case_id: $case_id, tool: $tool, tool_version: $tool_version,
           capability_registry: $capability_registry,
           expected_verdict: $expected, actual_verdict: $actual, score: $score,
           evidence: $evidence, notes: $notes}'

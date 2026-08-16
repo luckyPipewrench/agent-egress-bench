@@ -21,6 +21,10 @@ except ModuleNotFoundError:
     )
     artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
     _artifact_schema_spec.loader.exec_module(artifact_schema)
+try:
+    from scripts import artifact_contracts
+except ModuleNotFoundError:
+    import artifact_contracts
 
 
 V1_REQUIRED_SCOPE_PATHS = (
@@ -69,14 +73,8 @@ SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA1_HEX = re.compile(r"^[0-9a-f]{40}$")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PROVENANCE_SCHEMAS = {
-    version: REPO_ROOT / "schemas" / f"provenance-candidate-v{version}.schema.json"
-    for version in (1, 2, 4, 5)
-}
-PROMOTED_RECORD_SCHEMAS = {
-    version: REPO_ROOT / "schemas" / f"promoted-record-v{version}.schema.json"
-    for version in (1, 2)
-}
+PROVENANCE_SCHEMAS = artifact_contracts.schema_paths("provenance_candidate")
+PROMOTED_RECORD_SCHEMAS = artifact_contracts.schema_paths("promoted_record")
 MANIFEST_PATH = REPO_ROOT / "cases" / "MANIFEST.txt"
 ARCHIVE_RECORD_MANIFEST = "record-manifest.json"
 ARCHIVE_CANDIDATE = "continuous-gauntlet-pipelock.json"

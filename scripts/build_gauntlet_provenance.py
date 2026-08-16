@@ -23,6 +23,10 @@ except ModuleNotFoundError:
     )
     artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
     _artifact_schema_spec.loader.exec_module(artifact_schema)
+try:
+    from scripts import artifact_contracts
+except ModuleNotFoundError:
+    import artifact_contracts
 
 
 # Scoring versions belonging to retained, frozen published records. Those
@@ -31,17 +35,9 @@ except ModuleNotFoundError:
 # output and must carry its schema marker. Add a version here only when a record
 # scored under it has actually been published and frozen.
 FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
-PROVENANCE_SCHEMAS = {
-    version: Path(__file__).resolve().parents[1]
-    / "schemas"
-    / f"provenance-candidate-v{version}.schema.json"
-    for version in (1, 2, 4, 5)
-}
-CASE_INDEX_SCHEMAS = {
-    version: Path(__file__).resolve().parents[1] / "schemas" / f"case-index-v{version}.schema.json"
-    for version in (1, 2)
-}
-ACTIVE_CASE_INDEX_SCHEMA_VERSION = 2
+PROVENANCE_SCHEMAS = artifact_contracts.schema_paths("provenance_candidate")
+CASE_INDEX_SCHEMAS = artifact_contracts.schema_paths("case_index")
+ACTIVE_CASE_INDEX_SCHEMA_VERSION = artifact_contracts.active_version("case_index")
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -64,7 +60,7 @@ V4_RAW_EVIDENCE = {
 }
 ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 ACTIVE_SUMMARY_SCHEMA_VERSION = 5
-ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = 5
+ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = artifact_contracts.active_version("provenance_candidate")
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})

@@ -314,12 +314,7 @@
         "scripts/validate_gauntlet_scope.py",
         "scripts/evaluate_gauntlet_candidate.py"
       ],
-      "source_versions": [
-        {
-          "path": "scripts/build_gauntlet_provenance.py",
-          "symbol": "ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION"
-        }
-      ],
+      "source_versions": [],
       "gate": "make check-contracts"
     },
     {
@@ -395,12 +390,7 @@
         "scripts/validate_gauntlet_records.py",
         "scripts/validate_gauntlet_scope.py"
       ],
-      "source_versions": [
-        {
-          "path": "scripts/promote_gauntlet_candidate.py",
-          "symbol": "ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION"
-        }
-      ],
+      "source_versions": [],
       "gate": "make check-contracts"
     },
     {

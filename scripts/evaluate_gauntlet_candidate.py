@@ -18,6 +18,10 @@ except ModuleNotFoundError:
     )
     artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
     _artifact_schema_spec.loader.exec_module(artifact_schema)
+try:
+    from scripts import artifact_contracts
+except ModuleNotFoundError:
+    import artifact_contracts
 
 
 LEGACY_REQUIRED_FLOORS = {
@@ -47,13 +51,8 @@ SCOPE_IDENTITIES = {
     "runner_version",
 }
 SHA256_HEX = set("0123456789abcdef")
-PROMOTION_BASELINE_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promotion-baseline-v1.schema.json"
-PROVENANCE_SCHEMAS = {
-    version: Path(__file__).resolve().parents[1]
-    / "schemas"
-    / f"provenance-candidate-v{version}.schema.json"
-    for version in (1, 2, 4, 5)
-}
+PROMOTION_BASELINE_SCHEMA = artifact_contracts.canonical_schema_path("promotion_baseline")
+PROVENANCE_SCHEMAS = artifact_contracts.schema_paths("provenance_candidate")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
 V5_DIAGNOSTIC_FIELDS = frozenset(

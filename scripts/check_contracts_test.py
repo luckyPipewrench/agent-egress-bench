@@ -5,6 +5,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,29 @@ SPEC.loader.exec_module(check_contracts)
 
 
 class CheckContractsTest(unittest.TestCase):
+    def test_governed_schema_consumers_use_the_manifest_resolver(self):
+        consumers = (
+            "scripts/build_gauntlet_provenance.py",
+            "scripts/evaluate_gauntlet_candidate.py",
+            "scripts/promote_gauntlet_candidate.py",
+            "scripts/validate_gauntlet_scope.py",
+        )
+        copied_path = re.compile(
+            r"schemas/(?:provenance-candidate|case-index|promoted-record|promotion-baseline)-v"
+        )
+        copied_active_version = re.compile(
+            r"(?m)^ACTIVE_(?:CASE_INDEX|PROVENANCE_CANDIDATE|PROMOTED_RECORD)_SCHEMA_VERSION\s*=\s*[0-9]+\s*$"
+        )
+        for relative in consumers:
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(path=relative):
+                self.assertIn("artifact_contracts", source)
+                self.assertIsNone(copied_path.search(source))
+                self.assertIsNone(copied_active_version.search(source))
+        skeleton = (ROOT / "examples/runner-template/skeleton.sh").read_text(encoding="utf-8")
+        self.assertIn("artifact_contracts.py", skeleton)
+        self.assertIsNone(re.search(r"schema_version:\s*[0-9]+", skeleton))
+
     def test_reads_typed_grouped_go_constant(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -53,7 +77,7 @@ class CheckContractsTest(unittest.TestCase):
         manifest = ROOT / "contracts" / "artifacts.json"
         families = json.loads(manifest.read_text(encoding="utf-8"))["artifact_families"]
         self.assertEqual(
-            {"promotion_baseline"},
+            {"promoted_record", "promotion_baseline", "provenance_candidate"},
             {family["family"] for family in families if not family["source_versions"]},
         )
         check_contracts.check(ROOT, manifest)
