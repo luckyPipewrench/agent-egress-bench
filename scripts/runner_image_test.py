@@ -47,6 +47,12 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn('"overrideCommand": true', text)
         self.assertNotIn('"image":', text)
 
+    def test_removed_vendor_tree_is_not_excluded_from_review_or_self_scan(self) -> None:
+        coderabbit = (ROOT / ".coderabbit.yaml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github" / "workflows" / "pipelock.yaml").read_text(encoding="utf-8")
+        self.assertNotIn("runner/vendor", coderabbit)
+        self.assertNotIn("runner/vendor", workflow)
+
     def test_release_build_publishes_and_checks_both_required_architectures(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yaml").read_text(encoding="utf-8")
         self.assertIn("docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c", workflow)
