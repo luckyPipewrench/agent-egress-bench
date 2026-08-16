@@ -56,6 +56,9 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 	if strings.TrimSpace(c.ID) == "" {
 		add("id must be non-empty")
 	} else {
+		if !caseIDPattern.MatchString(c.ID) {
+			add(fmt.Sprintf("id must match %s", caseIDPattern.String()))
+		}
 		if c.ID != filepath.Base(filepath.Dir(path)) {
 			add(fmt.Sprintf("id %q must match directory name %q", c.ID, filepath.Base(filepath.Dir(path))))
 		}
