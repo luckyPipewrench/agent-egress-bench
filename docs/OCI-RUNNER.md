@@ -22,11 +22,11 @@ Build both release architectures with the same Dockerfile:
 docker buildx build --platform linux/amd64,linux/arm64 --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=f8078cb --output type=oci,dest=/tmp/aeb-gauntlet-local.oci.tar .
 ```
 
-The tagged release workflow publishes the multi-architecture index to `ghcr.io/luckypipewrench/agent-egress-bench-runner`, verifies that the index contains both required platforms, runs the amd64 image, and prints the immutable `sha256` index digest in the job summary.
+The tagged release workflow publishes the multi-architecture index to `ghcr.io/luckypipewrench/agent-egress-bench-runner`, verifies that the index contains both required platforms, runs the amd64 image, and records the full digest-pinned reference in the signed `runner-image.json` release asset.
 
 The workflow logs out of GHCR and pulls the digest again before the GitHub Release can be created. GitHub documents that a newly published container package can start private, so the first publication must be made public in the package settings and rerun if that anonymous pull fails; a public package can then be pulled by an outside lab without credentials. See [Configuring a package's access control and visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 
-No published runner-image digest exists for this unreleased change, so this document does not invent one. After the first tagged publication, use the exact `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` value printed by the release job and never replace it with a tag in a reproducibility record.
+No published runner-image digest exists for this unreleased change, so this document doesn't invent one. After the first tagged publication, use the exact `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` value in `runner-image.json` and never replace it with a tag in a reproducibility record. The release also includes `runner-image.attestation.jsonl` and `runner-image.trusted-root.jsonl` for offline publisher verification.
 
 ## Reusable GitHub Action
 
@@ -56,7 +56,9 @@ jobs:
 
 A real tool workflow selects `proxy` or `mcp-gateway` and supplies its endpoints, managed start commands, fixture switch, and other adapter settings as a JSON string array in `runner-args`; the adapter contract and complete command are documented in [RUNNER.md](RUNNER.md).
 
-When `image` is omitted, the Action builds the image from its own pinned Action checkout and needs network access for uncached base images and Go modules. When `image` is set, the Action rejects tags and accepts only a reference ending in `@sha256:` followed by the 64-character digest.
+When `image` is omitted, the Action builds the image from its own pinned Action checkout and needs network access for uncached base images and Go modules. When `image` is set, the Action requires the official `ghcr.io/luckypipewrench/agent-egress-bench-runner` repository, an immutable digest, and the matching signed `runner-image.json` release asset. Digest pinning fixes the bytes while the signed metadata proves which release workflow published them.
+
+A lab using a reviewed mirror or custom image must set `allow-unverified-image: 'true'`. That opt-in keeps mirrors available without letting an arbitrary input silently inherit the official publisher claim.
 
 The Action works on GitHub's amd64 runners and on arm64 self-hosted runners because Docker selects the matching manifest and the Dockerfile cross-builds the runner for the selected target architecture.
 
@@ -76,7 +78,7 @@ On an Apple Silicon laptop, Docker builds the native `linux/arm64` target. The r
 
 ## Prepare an air-gapped run
 
-The connected staging machine must pull the image by the exact multi-architecture digest printed by the release job and save it before the lab loses network access. Copy that full `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` reference into `aeb-gauntlet-image.ref`, then record the transferred bytes without replacing the digest with a tag:
+The connected staging machine must download `runner-image.json`, `runner-image.attestation.jsonl`, and `runner-image.trusted-root.jsonl` from the same release, read the exact multi-architecture digest from `runner-image.json`, and save the image before the lab loses network access. Copy that full `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` reference into `aeb-gauntlet-image.ref`, then record the transferred bytes without replacing the digest with a tag:
 
 ```bash
 docker pull "$(cat aeb-gauntlet-image.ref)"
@@ -85,7 +87,7 @@ docker image save --output aeb-gauntlet-image.tar "$(cat aeb-gauntlet-image.ref)
 sha256sum aeb-gauntlet-image.tar > aeb-gauntlet-image.tar.sha256
 ```
 
-This transfer path doesn't need the source checkout, a Go compiler, or a vendor tree. Record `aeb-gauntlet-image.ref` and the tarball checksum on the transfer manifest.
+This transfer path doesn't need the source checkout, a Go compiler, or a vendor tree. Transfer the three image identity files with `aeb-gauntlet-image.ref` and the tarball checksum.
 
 Inside the air-gapped lab, verify and load the exact transfer:
 
@@ -107,6 +109,9 @@ Set the Action inputs `image` to that full digest reference and `offline` to `tr
           profile: benchmark/tool-profile.json
           adapter: proxy
           image: ${{ steps.image.outputs.ref }}
+          image-metadata: benchmark/release/runner-image.json
+          image-attestation: benchmark/release/runner-image.attestation.jsonl
+          attestation-trusted-root: benchmark/release/runner-image.trusted-root.jsonl
           offline: 'true'
           runner-args: '["--fixtures","--managed-proxy-cmd","/work/benchmark/start-proxy.sh","--proxy-addr","127.0.0.1:18899"]'
 ```

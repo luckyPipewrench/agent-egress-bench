@@ -68,9 +68,75 @@ case "$offline" in
   true|false) ;;
   *) fail "offline must be true or false" ;;
 esac
+allow_unverified_image="${INPUT_ALLOW_UNVERIFIED_IMAGE:-false}"
+case "$allow_unverified_image" in
+  true|false) ;;
+  *) fail "allow-unverified-image must be true or false" ;;
+esac
+
+workspace_file() {
+  local input_name=$1
+  local input_value=$2
+  [[ -n "$input_value" ]] || fail "$input_name is required"
+  [[ "$input_value" != /* && "$input_value" != *".."* ]] || fail "$input_name must be a relative path without '..'"
+  local resolved
+  resolved="$(realpath "$GITHUB_WORKSPACE/$input_value")" || fail "$input_name does not exist: $input_value"
+  [[ "$resolved" == "$workspace_real/"* && -f "$resolved" && ! -L "$GITHUB_WORKSPACE/$input_value" ]] || fail "$input_name must be a regular file inside GITHUB_WORKSPACE"
+  printf '%s\n' "$resolved"
+}
+
+verify_image_identity() {
+  local official_repository="ghcr.io/luckypipewrench/agent-egress-bench-runner"
+  [[ "$image" == "$official_repository"@sha256:* ]] || fail "image must use the approved release repository; set allow-unverified-image to true only for a reviewed mirror or custom image"
+  command -v gh >/dev/null 2>&1 || fail "GitHub CLI is required to verify runner image publisher identity"
+
+  local metadata_path
+  metadata_path="$(workspace_file image-metadata "${INPUT_IMAGE_METADATA:-}")"
+  local verify_args=(
+    attestation verify "$metadata_path"
+    --repo luckyPipewrench/agent-egress-bench
+    --signer-workflow github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml
+  )
+  if [[ "$offline" == true ]]; then
+    local bundle_path trusted_root_path
+    bundle_path="$(workspace_file image-attestation "${INPUT_IMAGE_ATTESTATION:-}")"
+    trusted_root_path="$(workspace_file attestation-trusted-root "${INPUT_ATTESTATION_TRUSTED_ROOT:-}")"
+    verify_args+=(--bundle "$bundle_path" --custom-trusted-root "$trusted_root_path")
+  elif [[ -n "${INPUT_IMAGE_ATTESTATION:-}" || -n "${INPUT_ATTESTATION_TRUSTED_ROOT:-}" ]]; then
+    fail "image-attestation and attestation-trusted-root are used together only in offline mode"
+  fi
+  gh "${verify_args[@]}" >/dev/null || fail "runner image metadata provenance verification failed"
+
+  python3 - "$metadata_path" "$image" <<'PY' || fail "runner image does not match signed release metadata"
+import json
+import re
+import sys
+
+metadata = json.load(open(sys.argv[1], encoding="utf-8"))
+expected_keys = {"schema_version", "image", "digest", "source_repository", "source_commit", "release_tag"}
+if not isinstance(metadata, dict) or set(metadata) != expected_keys:
+    raise SystemExit("runner image metadata has an invalid shape")
+if metadata["schema_version"] != 1:
+    raise SystemExit("runner image metadata has an unsupported schema version")
+if metadata["image"] != sys.argv[2]:
+    raise SystemExit("runner image reference differs from signed metadata")
+digest = sys.argv[2].rsplit("@", 1)[1]
+if metadata["digest"] != digest:
+    raise SystemExit("runner image digest differs from signed metadata")
+if metadata["source_repository"] != "https://github.com/luckyPipewrench/agent-egress-bench":
+    raise SystemExit("runner image metadata names an unexpected source repository")
+if not isinstance(metadata["source_commit"], str) or re.fullmatch(r"[0-9a-f]{40}", metadata["source_commit"]) is None:
+    raise SystemExit("runner image metadata has an invalid source commit")
+if not isinstance(metadata["release_tag"], str) or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", metadata["release_tag"]) is None:
+    raise SystemExit("runner image metadata has an invalid release tag")
+PY
+}
 
 if [[ -n "$image" ]]; then
   [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]] || fail "image must use an immutable @sha256 digest"
+  if [[ "$allow_unverified_image" == false ]]; then
+    verify_image_identity
+  fi
   if [[ "$offline" == true ]]; then
     docker image inspect "$image" >/dev/null 2>&1 || fail "offline image isn't loaded: $image"
   else

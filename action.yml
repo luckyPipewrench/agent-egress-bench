@@ -20,9 +20,25 @@ inputs:
     required: false
     default: aeb-results
   image:
-    description: Digest-pinned published runner image; omit only for an online source build
+    description: Digest-pinned official runner image; omit only for an online source build
     required: false
     default: ''
+  image-metadata:
+    description: Repository-relative path to the signed runner-image.json release asset
+    required: false
+    default: ''
+  image-attestation:
+    description: Repository-relative path to the runner-image.json attestation bundle for offline verification
+    required: false
+    default: ''
+  attestation-trusted-root:
+    description: Repository-relative path to the trusted root used for offline attestation verification
+    required: false
+    default: ''
+  allow-unverified-image:
+    description: Explicitly allow an arbitrary digest-pinned image without publisher verification
+    required: false
+    default: 'false'
   offline:
     description: Require a preloaded image and run it with Docker network mode none
     required: false
@@ -53,6 +69,11 @@ runs:
         INPUT_ENVIRONMENT: ${{ inputs.environment }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_IMAGE_METADATA: ${{ inputs.image-metadata }}
+        INPUT_IMAGE_ATTESTATION: ${{ inputs.image-attestation }}
+        INPUT_ATTESTATION_TRUSTED_ROOT: ${{ inputs.attestation-trusted-root }}
+        INPUT_ALLOW_UNVERIFIED_IMAGE: ${{ inputs.allow-unverified-image }}
         INPUT_OFFLINE: ${{ inputs.offline }}
         AEB_ACTION_REF: ${{ github.action_ref }}
+        GH_TOKEN: ${{ github.token }}
       run: "$GITHUB_ACTION_PATH/scripts/run-oci-action.sh"

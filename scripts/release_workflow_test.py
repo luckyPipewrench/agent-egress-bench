@@ -71,9 +71,11 @@ def check_workflow(path: Path) -> None:
     if "subject-path: dist/release/*\n" not in attest:
         raise AssertionError("all release assets are not attested")
     image_required = (
-        "needs: release",
+        "needs: [release, attest]",
         "if: github.event_name == 'push'",
         "packages: write",
+        "attestations: write",
+        "id-token: write",
         "docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
         "version: v0.36.1",
         "--platform linux/amd64,linux/arm64",
@@ -83,10 +85,17 @@ def check_workflow(path: Path) -> None:
         "reported_version=",
         "docker logout ghcr.io",
         'docker pull "$pinned_image"',
+        "subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner",
+        "subject-digest: ${{ steps.publish.outputs.digest }}",
+        "push-to-registry: true",
+        "runner-image.json",
+        "runner-image.attestation.jsonl",
+        "runner-image.trusted-root.jsonl",
+        "name: agent-egress-bench-runner-image-${{ github.sha }}",
     )
     if any(value not in image for value in image_required):
         raise AssertionError("runner image publication is not pinned, multi-architecture, or tag-gated")
-    if "needs: [release, attest, image]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish:
+    if "needs: [release, attest, image]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish or "name: agent-egress-bench-runner-image-${{ github.sha }}" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
     if "Create an owned draft release or resume one on workflow retry" not in publish or "release_publish.py" not in publish:
         raise AssertionError("draft release retry is not safe")
@@ -155,6 +164,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("--platform linux/amd64,linux/arm64", "--platform linux/amd64", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_image_waits_for_release_asset_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("needs: [release, attest]", "needs: release", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_durable_image_identity_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("runner-image.json", "discarded-image.json"), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 

@@ -74,12 +74,14 @@ jobs:
           subject-path: dist/release/*
 
   image:
-    needs: release
+    needs: [release, attest]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     outputs:
       digest: ${{ steps.publish.outputs.digest }}
     steps:
@@ -144,8 +146,60 @@ jobs:
           docker logout ghcr.io
           docker pull "$pinned_image"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          identity_dir="$RUNNER_TEMP/aeb-runner-image"
+          mkdir -p "$identity_dir"
+          python3 - "$identity_dir/runner-image.json" "$pinned_image" "$digest" "$GITHUB_SHA" "$GITHUB_REF_NAME" <<'PY'
+          import json
+          import sys
+
+          path, image, digest, commit, tag = sys.argv[1:]
+          with open(path, "w", encoding="utf-8") as output:
+              json.dump({
+                  "schema_version": 1,
+                  "image": image,
+                  "digest": digest,
+                  "source_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
+                  "source_commit": commit,
+                  "release_tag": tag,
+              }, output, indent=2, sort_keys=True)
+              output.write("\n")
+          PY
           echo "Runner image: $pinned_image" >> "$GITHUB_STEP_SUMMARY"
           echo "Installed runner: $reported_version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest the published runner image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest the durable runner image identity
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/aeb-runner-image/runner-image.json
+
+      - name: Package offline image identity verification material
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          identity_dir="$RUNNER_TEMP/aeb-runner-image"
+          cd "$identity_dir"
+          gh attestation download runner-image.json --repo luckyPipewrench/agent-egress-bench --limit 1
+          mapfile -d '' bundles < <(find . -maxdepth 1 -type f -name 'sha256*.jsonl' -print0)
+          [[ "${#bundles[@]}" -eq 1 ]]
+          mv "${bundles[0]}" runner-image.attestation.jsonl
+          gh attestation trusted-root > runner-image.trusted-root.jsonl
+
+      - name: Upload the signed runner image identity
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agent-egress-bench-runner-image-${{ github.sha }}
+          path: ${{ runner.temp }}/aeb-runner-image/
+          if-no-files-found: error
+          retention-days: 14
 
   publish:
     needs: [release, attest, image]
@@ -158,6 +212,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: agent-egress-bench-release-${{ github.sha }}
+          path: dist/release
+
+      - name: Download signed runner image identity
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-egress-bench-runner-image-${{ github.sha }}
           path: dist/release
 
       - name: Create an owned draft release or resume one on workflow retry
