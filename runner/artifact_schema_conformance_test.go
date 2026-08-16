@@ -250,7 +250,7 @@ func artifactVectorChild(t *testing.T, value any, part any) any {
 	case []any:
 		return current[int(part.(float64))]
 	default:
-		t.Fatal(fmt.Sprintf("path enters %T", value))
+		t.Fatalf("path enters %T", value)
 		return nil
 	}
 }
