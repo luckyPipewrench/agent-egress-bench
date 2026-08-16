@@ -8,11 +8,14 @@ import gzip
 import hashlib
 import io
 import json
+import os
+import signal
 import re
 import shutil
 import subprocess
 import sys
 import tarfile
+import threading
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -28,9 +31,19 @@ SCHEMA_CATALOG_SUFFIX = "_schema-catalog.json"
 SCHEMA_BUNDLE_SUFFIX = "_schemas.tar.gz"
 REPOSITORY = "luckyPipewrench/agent-egress-bench"
 RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
-DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities")
+# "examples" carries the operator kit: the tool-profile template the runner
+# requires, the gateway plugin template, the runner skeleton, and the reference
+# harness. Without it a downloaded release can report the corpus but cannot run
+# it, because --profile is mandatory and nothing in the release satisfied it.
+DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities", "examples")
 DATA_FILES = ("README.md", "LICENSE", "NOTICE", "CITATION.cff", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md", "scripts/release_build.py", "scripts/schema_catalog.py")
 PLATFORMS = tuple((goos, arch) for goos in ("linux", "darwin", "windows") for arch in ("amd64", "arm64"))
+# Both tools ride in one platform archive. A release that shipped only the
+# runner let a downloader produce a result and gave them nothing to check it
+# with, which leaves the reproduction path depending on this repository.
+RUNNER_BINARY = "aeb-gauntlet"
+VALIDATOR_BINARY = "aeb-validate"
+RELEASE_BINARIES = (RUNNER_BINARY, VALIDATOR_BINARY)
 
 
 class ReleaseError(RuntimeError):
@@ -281,7 +294,7 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
         "schema_version": 1,
         "release": {"tag": tag, "version": version, "snapshot": snapshot},
         "source": {"repository": REPOSITORY, "commit": commit, "commit_timestamp": int(timestamp)},
-        "runner": {"binary": "aeb-gauntlet", "runner_version": metadata["runner_version"], "scoring_version": metadata["scoring_version"], "platforms": [{"goos": goos, "goarch": arch} for goos, arch in PLATFORMS]},
+        "runner": {"binary": RUNNER_BINARY, "validator_binary": VALIDATOR_BINARY, "runner_version": metadata["runner_version"], "scoring_version": metadata["scoring_version"], "platforms": [{"goos": goos, "goarch": arch} for goos, arch in PLATFORMS]},
         "corpus": corpus(repo, metadata["corpus_version"]),
         "schema_contract": {"artifacts_manifest_path": "contracts/artifacts.json", "artifacts_manifest_sha256": sha256_file(repo / "contracts/artifacts.json"), "families": contract_families(repo)},
         "data_files": {name: sha256_file(repo / name) for name in data},
@@ -331,9 +344,11 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
         fail("release identity source.commit is invalid")
     positive_int(source["commit_timestamp"], "release identity source.commit_timestamp")
 
-    runner = exact_object(identity["runner"], "release identity runner", {"binary", "runner_version", "scoring_version", "platforms"})
-    if runner["binary"] != "aeb-gauntlet":
+    runner = exact_object(identity["runner"], "release identity runner", {"binary", "validator_binary", "runner_version", "scoring_version", "platforms"})
+    if runner["binary"] != RUNNER_BINARY:
         fail("release identity runner.binary is invalid")
+    if runner["validator_binary"] != VALIDATOR_BINARY:
+        fail("release identity runner.validator_binary is invalid")
     nonempty_string(runner["runner_version"], "release identity runner.runner_version")
     nonempty_string(runner["scoring_version"], "release identity runner.scoring_version")
     platforms = runner["platforms"]
@@ -381,7 +396,7 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
             fail("release identity data_files has an invalid entry")
         safe_name(name)
     if set(DATA_FILES) - set(data_files) or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
-        fail("release identity data_files does not contain the required corpus, schema, contract, and verifier data")
+        fail("release identity data_files does not contain the required corpus, schema, contract, operator kit, and verifier data")
 
     verification = exact_object(identity["verification"], "release identity verification", {"checksums", "command"})
     checksums = exact_object(verification["checksums"], "release identity verification.checksums", {"algorithm", "path"})
@@ -544,58 +559,97 @@ def parse_checksums(path: Path) -> dict[str, str]:
     return result
 
 
-def verify_runner_binary(data: bytes, mode: int, goos: str, goarch: str, path: Path) -> None:
+def verify_release_binary(data: bytes, mode: int, goos: str, goarch: str, path: Path, binary: str = RUNNER_BINARY) -> None:
     platform = f"{goos} {goarch}"
     if goos != "windows" and mode & 0o111 == 0:
-        fail(f"{path.name} must mark its {platform} runner executable")
+        fail(f"{path.name} must mark its {platform} {binary} executable")
     if goos == "linux":
         machines = {"amd64": 62, "arm64": 183}
         if len(data) < 20 or data[:4] != b"\x7fELF" or data[4:6] != b"\x02\x01" or data[18:20] != machines[goarch].to_bytes(2, "little"):
-            fail(f"{path.name} must contain a 64-bit Linux {goarch} ELF runner")
+            fail(f"{path.name} must contain a 64-bit Linux {goarch} ELF {binary}")
         return
     if goos == "darwin":
         cpus = {"amd64": 0x01000007, "arm64": 0x0100000C}
         if len(data) < 8 or data[:4] != b"\xcf\xfa\xed\xfe" or data[4:8] != cpus[goarch].to_bytes(4, "little"):
-            fail(f"{path.name} must contain a 64-bit Darwin {goarch} Mach-O runner")
+            fail(f"{path.name} must contain a 64-bit Darwin {goarch} Mach-O {binary}")
         return
     if goos == "windows":
         machines = {"amd64": 0x8664, "arm64": 0xAA64}
         if len(data) < 64 or data[:2] != b"MZ":
-            fail(f"{path.name} must contain a Windows {goarch} PE runner")
+            fail(f"{path.name} must contain a Windows {goarch} PE {binary}")
         offset = int.from_bytes(data[60:64], "little")
         if offset + 6 > len(data) or data[offset:offset + 4] != b"PE\0\0" or data[offset + 4:offset + 6] != machines[goarch].to_bytes(2, "little"):
-            fail(f"{path.name} must contain a Windows {goarch} PE runner")
+            fail(f"{path.name} must contain a Windows {goarch} PE {binary}")
         return
-    fail(f"unsupported runner platform: {platform}")
+    fail(f"unsupported release platform: {platform}")
 
 
-def archive_identity(path: Path, goos: str, goarch: str) -> bytes:
-    expected_binary = "aeb-gauntlet.exe" if goos == "windows" else "aeb-gauntlet"
+def archive_binary_name(binary: str, goos: str) -> str:
+    return f"{binary}.exe" if goos == "windows" else binary
+
+
+def archive_identity(path: Path, goos: str, goarch: str, digests_out: dict[str, set[str]] | None = None) -> bytes:
+    # Every binary the release advertises is checked, not only the runner. A
+    # check that stopped at the runner would accept an archive whose validator
+    # was absent, truncated, or built for another platform, and an operator
+    # would discover that only when they tried to check a result.
+    # Each binary's digest is collected so the archive can be required to carry
+    # two DIFFERENT programs. Name, executable mode, and platform are all a
+    # substituted binary satisfies: replacing the validator with a second copy
+    # of the runner passed every other check here, and the released archive then
+    # shipped no way to check a result while reporting itself intact. A build
+    # misconfiguration that pointed both GoReleaser builds at one directory
+    # produces exactly that, which is the likelier way to reach it.
+    digests: dict[str, str] = {}
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as archive:
             entries = [item for item in archive.infolist() if item.filename == f".release/{IDENTITY_NAME}" and not item.is_dir()]
-            binaries = [item for item in archive.infolist() if item.filename == expected_binary and not item.is_dir()]
             if len(entries) != 1:
                 fail(f"{path.name} must contain exactly one regular {IDENTITY_NAME}")
-            if len(binaries) != 1:
-                fail(f"{path.name} must contain exactly one {expected_binary}")
-            verify_runner_binary(archive.read(binaries[0]), binaries[0].external_attr >> 16, goos, goarch, path)
+            for binary in RELEASE_BINARIES:
+                expected_binary = archive_binary_name(binary, goos)
+                found = [item for item in archive.infolist() if item.filename == expected_binary and not item.is_dir()]
+                if len(found) != 1:
+                    fail(f"{path.name} must contain exactly one {expected_binary}")
+                data = archive.read(found[0])
+                verify_release_binary(data, found[0].external_attr >> 16, goos, goarch, path, binary)
+                digests[binary] = sha256_bytes(data)
+            verify_distinct_binaries(digests, path)
+            record_binary_digests(digests, digests_out)
             return archive.read(entries[0])
     with tarfile.open(path, "r:*") as archive:
         entries = [item for item in archive.getmembers() if item.name == f".release/{IDENTITY_NAME}" and item.isfile()]
-        binaries = [item for item in archive.getmembers() if item.name == expected_binary and item.isfile()]
         if len(entries) != 1:
             fail(f"{path.name} must contain exactly one regular {IDENTITY_NAME}")
-        if len(binaries) != 1:
-            fail(f"{path.name} must contain exactly one {expected_binary}")
-        binary = archive.extractfile(binaries[0])
-        if binary is None:
-            fail(f"{path.name} has unreadable {expected_binary}")
-        verify_runner_binary(binary.read(), binaries[0].mode, goos, goarch, path)
+        for binary in RELEASE_BINARIES:
+            expected_binary = archive_binary_name(binary, goos)
+            found = [item for item in archive.getmembers() if item.name == expected_binary and item.isfile()]
+            if len(found) != 1:
+                fail(f"{path.name} must contain exactly one {expected_binary}")
+            member = archive.extractfile(found[0])
+            if member is None:
+                fail(f"{path.name} has unreadable {expected_binary}")
+            data = member.read()
+            verify_release_binary(data, found[0].mode, goos, goarch, path, binary)
+            digests[binary] = sha256_bytes(data)
+        verify_distinct_binaries(digests, path)
+        record_binary_digests(digests, digests_out)
         handle = archive.extractfile(entries[0])
         if handle is None:
             fail(f"{path.name} has unreadable {IDENTITY_NAME}")
         return handle.read()
+
+
+def record_binary_digests(digests: dict[str, str], digests_out: dict[str, set[str]] | None) -> None:
+    if digests_out is None:
+        return
+    for binary, digest in digests.items():
+        digests_out.setdefault(binary, set()).add(digest)
+
+
+def verify_distinct_binaries(digests: dict[str, str], path: Path) -> None:
+    if len(set(digests.values())) != len(digests):
+        fail(f"{path.name} carries the same program under more than one release binary name")
 
 
 def bundle_contents(path: Path) -> dict[str, bytes]:
@@ -701,7 +755,7 @@ def binary_archives(identity: dict[str, Any]) -> dict[str, tuple[str, str]]:
     }
 
 
-def verify_release(release_dir: Path, repo: Path | None, executable: Path | None) -> None:
+def verify_release(release_dir: Path, repo: Path | None, executable: Path | None, validator_executable: Path | None = None) -> None:
     release_dir = release_dir.resolve()
     identity_path, checksums_path = release_dir / IDENTITY_NAME, release_dir / CHECKSUM_NAME
     if not identity_path.is_file() or not checksums_path.is_file():
@@ -726,8 +780,9 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
     if data_name not in checksums or catalog_name not in checksums or bundle_name not in checksums or not set(binaries).issubset(checksums):
         fail("release is missing its data bundle, schema artifacts, or declared runner platforms")
     expected_identity = identity_path.read_bytes()
+    archive_binary_digests: dict[str, set[str]] = {}
     for name, (goos, goarch) in binaries.items():
-        if archive_identity(release_dir / name, goos, goarch) != expected_identity:
+        if archive_identity(release_dir / name, goos, goarch, archive_binary_digests) != expected_identity:
             fail(f"binary archive identity does not match release identity: {name}")
     contents = bundle_contents(release_dir / data_name)
     data_files = identity.get("data_files")
@@ -744,21 +799,121 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
         if canonical_json(expected) != canonical_json(identity):
             fail("release identity does not match the supplied source tree")
     if executable is not None:
-        if not executable.is_file() or executable.stat().st_mode & 0o111 == 0:
-            fail("runner executable is absent or is not marked executable")
-        try:
-            # Bounded: this runs a binary out of a downloaded release, so a hung
-            # or wedged executable must fail verification rather than hang it.
-            result = subprocess.run(
-                [str(executable), "--version"], text=True, capture_output=True, check=False, timeout=60
+        verify_executable_identity(executable, RUNNER_BINARY, identity, archive_binary_digests)
+    if validator_executable is not None:
+        verify_executable_identity(validator_executable, VALIDATOR_BINARY, identity, archive_binary_digests)
+
+
+# An archive check can prove a member's name, mode, and machine type, and those
+# are all satisfied by the wrong program under the right name. Running the
+# binary and reading back what it calls itself is what separates the two, so the
+# validator gets the same treatment the runner already had.
+def verify_executable_identity(
+    executable: Path,
+    binary: str,
+    identity: dict[str, Any],
+    archive_binary_digests: dict[str, set[str]],
+) -> None:
+    if not executable.is_file() or executable.stat().st_mode & 0o111 == 0:
+        fail(f"{binary} executable is absent or is not marked executable")
+    # Bind the file about to be executed to the release before executing it.
+    # Without this the option accepted any binary that printed the expected
+    # line, so pointing it at an unrelated program made an archive appear
+    # verified while establishing nothing about the archive at all.
+    known = archive_binary_digests.get(binary, set())
+    if sha256_file(executable) not in known:
+        fail(f"{binary} executable is not the {binary} in any release archive")
+    version = run_bounded_version(executable, binary)
+    expected = f"{binary} {identity['release']['version']} {identity['source']['commit']}"
+    if version != expected:
+        fail(f"{binary} version output does not match release identity")
+
+
+# The most a released binary prints here is its name, a version, and a
+# 40-character commit. Reading without a bound let a downloaded binary emit
+# output for the whole timeout and grow the verifier's memory until it died,
+# which turns verifying a release into a way to lose the machine doing it.
+VERSION_OUTPUT_LIMIT = 4096
+# Overridable so a test can bound the wait without sitting through the real one.
+VERSION_READ_TIMEOUT_SECONDS = 60
+
+
+def process_group_options() -> dict[str, Any]:
+    if os.name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+# POSIX and Windows do not share a process-group model, and the difference is
+# not cosmetic here. os.killpg does not exist on Windows at all, so calling it
+# there raises AttributeError inside the watchdog thread, the watchdog dies
+# silently, and the read this whole mechanism exists to bound blocks forever.
+# Windows terminates a tree with taskkill instead.
+def kill_process_group(process: subprocess.Popen) -> None:
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=30,
             )
-        except subprocess.TimeoutExpired:
-            fail("runner executable did not report its version within 60 seconds")
-        except OSError as exc:
-            fail(f"runner executable cannot run: {exc}")
-        expected = f"aeb-gauntlet {identity['release']['version']} {identity['source']['commit']}"
-        if result.returncode or result.stdout.strip() != expected:
-            fail("runner version output does not match release identity")
+        else:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except Exception:
+        # Whatever went wrong, the process still has to die: a watchdog that
+        # raises leaves the reader waiting, which is the failure it was added
+        # to prevent.
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def run_bounded_version(executable: Path, binary: str) -> str:
+    try:
+        # stderr is discarded rather than captured: nothing reads it, and an
+        # unread pipe is another unbounded buffer a hostile binary can fill.
+        process = subprocess.Popen(
+            [str(executable), "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            # Its own process group, so the watchdog can end descendants too. A
+            # child of the binary inherits the pipe, so killing only the binary
+            # leaves that pipe open and the read still waiting: measured with a
+            # script that printed a few bytes and then slept, which hung until
+            # killed even with the watchdog in place.
+            #
+            # The two platforms spell this differently. start_new_session is
+            # POSIX-only, and passing it on Windows does nothing for the tree,
+            # so Windows asks for its own process group through creationflags.
+            **process_group_options(),
+        )
+    except OSError as exc:
+        fail(f"{binary} executable cannot run: {exc}")
+    # Both bounds are needed and they fail differently. The size cap alone left
+    # the read blocking: a binary that printed a few bytes and then slept never
+    # reached the limit and never closed the pipe, so the read waited and the
+    # timeout below was never consulted. Measured, that hung until killed. A
+    # watchdog kills the process instead, which closes the pipe and makes the
+    # read return, so a stalled binary ends the same way a talkative one does.
+    watchdog = threading.Timer(VERSION_READ_TIMEOUT_SECONDS, lambda: kill_process_group(process))
+    watchdog.start()
+    try:
+        captured = process.stdout.read(VERSION_OUTPUT_LIMIT) if process.stdout else ""
+        if process.stdout is not None:
+            process.stdout.close()
+        code = process.wait()
+    finally:
+        watchdog.cancel()
+        if process.poll() is None:
+            kill_process_group(process)
+            process.wait()
+    if code:
+        fail(f"{binary} executable did not report its version cleanly")
+    return captured.strip()
 
 
 def main() -> int:
@@ -796,6 +951,7 @@ def main() -> int:
     verify.add_argument("--release-dir", type=Path, required=True)
     verify.add_argument("--repo-root", type=Path)
     verify.add_argument("--executable", type=Path)
+    verify.add_argument("--validator-executable", type=Path)
     args = parser.parse_args()
     try:
         if args.command == "prepare":
@@ -814,7 +970,7 @@ def main() -> int:
         elif args.command == "checksums":
             print(write_checksums(args.dist, args.identity))
         elif args.command == "verify":
-            verify_release(args.release_dir, args.repo_root, args.executable)
+            verify_release(args.release_dir, args.repo_root, args.executable, args.validator_executable)
     except ReleaseError as exc:
         print(f"release verification failed: {exc}", file=sys.stderr)
         return 1

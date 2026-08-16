@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -62,6 +63,13 @@ class ReleaseBuildTest(unittest.TestCase):
         )
 
     @staticmethod
+    def fixture_release_binary(goos: str, goarch: str, binary: str = "aeb-gauntlet") -> bytes:
+        # A real archive carries two different programs. The fixture pads each
+        # one differently so it does too; identical bytes are themselves a
+        # release defect and have their own test.
+        return ReleaseBuildTest.fixture_runner_binary(goos, goarch) + binary.encode("ascii")
+
+    @staticmethod
     def fixture_runner_binary(goos: str, goarch: str) -> bytes:
         if goos == "linux":
             machines = {"amd64": 62, "arm64": 183}
@@ -90,6 +98,7 @@ class ReleaseBuildTest(unittest.TestCase):
         include_binaries: bool = True,
         binary_overrides: dict[tuple[str, str], bytes] | None = None,
         mode_overrides: dict[tuple[str, str], int] | None = None,
+        binaries: tuple[str, ...] = ("aeb-gauntlet", "aeb-validate"),
     ) -> None:
         self.write_schema_assets(dist, identity)
         binary_overrides = binary_overrides or {}
@@ -97,22 +106,26 @@ class ReleaseBuildTest(unittest.TestCase):
         for platform in release["runner"]["platforms"]:
             goos, goarch = platform["goos"], platform["goarch"]
             name = f"agent-egress-bench_{self.snapshot_version}_{goos}_{goarch}"
-            runner = binary_overrides.get((goos, goarch), self.fixture_runner_binary(goos, goarch))
+            override = binary_overrides.get((goos, goarch))
             if goos == "windows":
                 with zipfile.ZipFile(dist / f"{name}.zip", "w") as archive:
                     archive.writestr(".release/release-identity.json", identity)
                     if include_binaries:
-                        archive.writestr("aeb-gauntlet.exe", runner)
+                        for binary in binaries:
+                            body = override if override is not None else self.fixture_release_binary(goos, goarch, binary)
+                            archive.writestr(f"{binary}.exe", body)
             else:
                 with tarfile.open(dist / f"{name}.tar.gz", "w:gz") as archive:
                     info = tarfile.TarInfo(".release/release-identity.json")
                     info.size = len(identity)
                     archive.addfile(info, __import__("io").BytesIO(identity))
                     if include_binaries:
-                        info = tarfile.TarInfo("aeb-gauntlet")
-                        info.size = len(runner)
-                        info.mode = mode_overrides.get((goos, goarch), 0o755)
-                        archive.addfile(info, __import__("io").BytesIO(runner))
+                        for binary in binaries:
+                            body = override if override is not None else self.fixture_release_binary(goos, goarch, binary)
+                            info = tarfile.TarInfo(binary)
+                            info.size = len(body)
+                            info.mode = mode_overrides.get((goos, goarch), 0o755)
+                            archive.addfile(info, __import__("io").BytesIO(body))
 
     def write_schema_assets(self, dist: Path, identity: bytes) -> None:
         release = json.loads(identity)
@@ -410,6 +423,39 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertIn(data_bundle.name, checksums)
         self.assertEqual(hashlib.sha256(data_bundle.read_bytes()).hexdigest(), checksums[data_bundle.name])
         self.invoke("verify", "--release-dir", str(dist))
+
+    def test_data_bundle_alone_can_drive_a_run(self) -> None:
+        # The release advertises a corpus an operator can run. --profile is
+        # mandatory, so a bundle that carries cases but no tool profile ships a
+        # corpus nobody outside this repository can execute. Asserting the file
+        # is present would pass for a template the runner rejects, so this runs
+        # the real runner against the extracted bundle and nothing else.
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        extracted = self.root / "extracted"
+        extracted.mkdir()
+        with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
+            archive.extractall(extracted, filter="data")
+        profile = extracted / "examples/runner-template/tool-profile-template.json"
+        self.assertTrue(profile.is_file(), "the data bundle must carry a tool profile the runner accepts")
+        summary = self.root / "bundle-run-summary.json"
+        # /tmp is quota-constrained on the development hosts, so every Go
+        # command runs against the shared caches rather than filling it.
+        go_env = dict(os.environ)
+        for name, value in (("TMPDIR", Path.home() / ".cache/pipelock-tmp"), ("GOCACHE", Path.home() / ".cache/go-build")):
+            value.mkdir(parents=True, exist_ok=True)
+            go_env[name] = str(value)
+        run = subprocess.run(
+            ["go", "run", ".", "--cases", str(extracted / "cases"), "--profile", str(profile), "--output", str(summary)],
+            cwd=self.root / "runner",
+            text=True,
+            capture_output=True,
+            env=go_env,
+        )
+        self.assertEqual(run.returncode, 0, msg=run.stderr)
+        self.assertTrue(summary.is_file(), "a run driven by the bundle must write its summary")
+        self.assertEqual(json.loads(summary.read_text(encoding="utf-8"))["tool"], json.loads(profile.read_text(encoding="utf-8"))["tool"])
 
     def test_release_binds_a_schema_bundle_to_the_commit_pinned_catalog(self) -> None:
         self.prepare()
@@ -718,6 +764,64 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must contain exactly one aeb-gauntlet", result.stderr)
 
+    def test_download_verifier_rejects_an_executable_that_is_not_in_the_release(self) -> None:
+        # --executable and --validator-executable used to accept any file that
+        # printed the expected identity line, so pointing one at an unrelated
+        # program made an archive report as verified while saying nothing about
+        # the archive. The file handed over must be the same bytes as that
+        # binary inside a release archive, checked before it is run.
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        release = json.loads(identity)
+        self.write_runner_archives(dist, identity, release)
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        stranger = self.root / "stranger"
+        stranger.write_bytes(self.fixture_release_binary("linux", "amd64", "aeb-validate") + b"stranger")
+        stranger.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist), "--validator-executable", str(stranger)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("is not the aeb-validate in any release archive", result.stderr)
+
+    def test_download_verifier_rejects_one_program_under_both_binary_names(self) -> None:
+        # Name, executable mode, and machine type are all satisfied by the wrong
+        # program under the right name. Replacing the validator with a second
+        # copy of the runner passed every one of them, so the release reported
+        # itself intact while shipping no way to check a result. A GoReleaser
+        # build pointed at one directory twice produces the same archive.
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        release = json.loads(identity)
+        same = {(platform["goos"], platform["goarch"]): self.fixture_runner_binary(platform["goos"], platform["goarch"]) for platform in release["runner"]["platforms"]}
+        self.write_runner_archives(dist, identity, release, binary_overrides=same)
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("carries the same program under more than one release binary name", result.stderr)
+
+    def test_download_verifier_rejects_an_archive_without_the_validator(self) -> None:
+        # The release advertises a runner and a result validator in one archive.
+        # A verifier that stopped at the runner would publish a package that
+        # could produce results and could not check them, and the omission would
+        # surface only when an operator tried to check somebody else's run.
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        release = json.loads(identity)
+        self.write_runner_archives(dist, identity, release, binaries=("aeb-gauntlet",))
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must contain exactly one aeb-validate", result.stderr)
+
     def test_download_verifier_rejects_a_text_runner_binary(self) -> None:
         self.prepare()
         dist = self.root / "dist"
@@ -728,7 +832,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
         result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must contain a 64-bit Linux amd64 ELF runner", result.stderr)
+        self.assertIn("must contain a 64-bit Linux amd64 ELF aeb-gauntlet", result.stderr)
 
     def test_download_verifier_rejects_a_non_executable_runner_binary(self) -> None:
         self.prepare()
@@ -740,7 +844,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
         result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must mark its linux amd64 runner executable", result.stderr)
+        self.assertIn("must mark its linux amd64 aeb-gauntlet executable", result.stderr)
 
     def test_download_verifier_rejects_a_wrong_platform_runner_binary(self) -> None:
         self.prepare()
@@ -752,7 +856,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
         result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must contain a 64-bit Linux amd64 ELF runner", result.stderr)
+        self.assertIn("must contain a 64-bit Linux amd64 ELF aeb-gauntlet", result.stderr)
 
     def test_download_verifier_rejects_an_unstamped_executable(self) -> None:
         self.prepare()
@@ -766,7 +870,114 @@ class ReleaseBuildTest(unittest.TestCase):
         executable.chmod(0o755)
         result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist), "--executable", str(executable)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("runner version output does not match release identity", result.stderr)
+        # The digest gate now runs first and rejects this before it is executed,
+        # which is the stronger of the two refusals: a stand-in that printed the
+        # correct version used to pass. The version comparison itself is only
+        # reachable once the bytes match a release archive, so it is exercised
+        # directly below rather than through an archive fixture that would have
+        # to embed a runnable program.
+        self.assertIn("aeb-gauntlet executable is not the aeb-gauntlet in any release archive", result.stderr)
+
+    def test_version_mismatch_is_rejected_once_the_executable_matches_the_release(self) -> None:
+        # Reached when the supplied file IS a release archive member but reports
+        # a different release than the identity records, which is what a binary
+        # built from another commit looks like.
+        module = self.release_build_module()
+        executable = Path(self.temp.name) / "aeb-gauntlet"
+        executable.write_text("#!/usr/bin/env bash\nprintf 'aeb-gauntlet 9.9.9 " + "0" * 40 + "\\n'\n", encoding="utf-8")
+        executable.chmod(0o755)
+        identity = {"release": {"version": "1.2.3"}, "source": {"commit": "a" * 40}}
+        digests = {"aeb-gauntlet": {hashlib.sha256(executable.read_bytes()).hexdigest()}}
+        with self.assertRaises(module.ReleaseError) as caught:
+            module.verify_executable_identity(executable, "aeb-gauntlet", identity, digests)
+        self.assertIn("version output does not match release identity", str(caught.exception))
+
+    def test_version_output_is_read_under_a_bound(self) -> None:
+        # A downloaded binary that never stops printing used to be read without
+        # a limit, so verifying a release could exhaust the memory of the
+        # machine doing the verifying.
+        module = self.release_build_module()
+        executable = Path(self.temp.name) / "aeb-gauntlet"
+        executable.write_text("#!/usr/bin/env bash\nwhile :; do printf 'aaaaaaaaaaaaaaaa'; done\n", encoding="utf-8")
+        executable.chmod(0o755)
+        with self.assertRaises(module.ReleaseError):
+            module.run_bounded_version(executable, "aeb-gauntlet")
+
+    def test_version_read_is_bounded_when_a_descendant_holds_the_pipe(self) -> None:
+        # A size cap alone was not enough. A binary that printed a few bytes and
+        # then slept never reached the cap and never closed the pipe, so the
+        # read waited and the timeout was never consulted. Killing only the
+        # binary did not help either, because its child inherits the pipe and
+        # holds it open. Measured both ways: each hung until killed.
+        module = self.release_build_module()
+        executable = Path(self.temp.name) / "aeb-gauntlet"
+        executable.write_text("#!/usr/bin/env bash\nprintf 'aeb-gauntlet 1.0.0 '\nsleep 600\n", encoding="utf-8")
+        executable.chmod(0o755)
+        original = module.VERSION_READ_TIMEOUT_SECONDS
+        module.VERSION_READ_TIMEOUT_SECONDS = 3
+        try:
+            started = time.monotonic()
+            with self.assertRaises(module.ReleaseError):
+                module.run_bounded_version(executable, "aeb-gauntlet")
+            self.assertLess(time.monotonic() - started, 30, "the read was not bounded in time")
+        finally:
+            module.VERSION_READ_TIMEOUT_SECONDS = original
+
+    def test_process_group_termination_is_defined_for_both_platforms(self) -> None:
+        # The watchdog runs in a thread, so anything it raises is lost and the
+        # read it exists to bound waits forever. os.killpg does not exist on
+        # Windows at all, so the POSIX-only version raised AttributeError there
+        # and left the verifier hanging on exactly the input the bound was
+        # added for. Both spellings are checked here because CI runs on Linux
+        # and would never execute the Windows path.
+        module = self.release_build_module()
+        self.assertIn("start_new_session", module.process_group_options())
+        original = module.os.name
+        try:
+            module.os.name = "nt"
+            self.assertIn("creationflags", module.process_group_options())
+        finally:
+            module.os.name = original
+
+        class NeverDies:
+            pid = -1
+
+            def __init__(self) -> None:
+                self.killed = False
+
+            def kill(self) -> None:
+                self.killed = True
+
+        # A pid that cannot be signalled stands in for every way the platform
+        # call can fail. The contract is that the process still gets killed and
+        # nothing propagates out of the watchdog thread.
+        stand_in = NeverDies()
+        module.kill_process_group(stand_in)
+        self.assertTrue(stand_in.killed, "the fallback kill must still run when the group call fails")
+
+        # The Windows branch never runs on this CI, so assert the call it makes
+        # rather than the effect. Without this the branch could be deleted and
+        # every test here would still pass, which is how the POSIX-only version
+        # shipped in the first place.
+        calls = []
+        original_run = module.subprocess.run
+        module.os.name = "nt"
+        module.subprocess.run = lambda *args, **kwargs: calls.append(args[0])
+        try:
+            module.kill_process_group(NeverDies())
+        finally:
+            module.subprocess.run = original_run
+            module.os.name = original
+        self.assertEqual(len(calls), 1, "the Windows path must terminate the tree")
+        self.assertEqual(calls[0][:4], ["taskkill", "/F", "/T", "/PID"])
+
+    def release_build_module(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("release_build_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     def test_checksums_reports_an_absent_distribution_directory(self) -> None:
         self.prepare()

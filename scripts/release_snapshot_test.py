@@ -39,8 +39,11 @@ class ReleaseSnapshotTest(unittest.TestCase):
         archive = next(release_dir.glob("agent-egress-bench_*_linux_amd64.tar.gz"))
         with tarfile.open(archive, "r:gz") as bundle:
             entries = [entry for entry in bundle.getmembers() if entry.isfile()]
+        # An exact set, not a subset. A membership check would let a stray file
+        # ride into every published archive unnoticed, and it would not notice
+        # either binary going missing.
         self.assertEqual(
-            {".release/release-identity.json", "LICENSE", "NOTICE", "aeb-gauntlet"},
+            {".release/release-identity.json", "LICENSE", "NOTICE", "aeb-gauntlet", "aeb-validate"},
             {entry.name for entry in entries},
         )
 
