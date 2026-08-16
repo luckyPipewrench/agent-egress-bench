@@ -178,8 +178,36 @@ func (r *buyerReport) hasFact() bool {
 // type check sees a pipe, and the artifact is refused. It has no effect on a
 // regular file.
 func openRegularArtifact(dir, name string) (*os.File, error) {
-	handle, err := openNoFollow(filepath.Join(dir, name))
+	root, err := os.OpenRoot(dir)
 	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	return openRootedArtifact(root, name)
+}
+
+// openRootedArtifact opens one artifact beneath an already-open directory and
+// confirms the type of the descriptor it actually opened.
+//
+// os.Root is what makes this safe on every platform. It holds a handle to the
+// artifact directory and refuses any name that resolves outside it, so neither
+// a link nor a swapped ancestor directory can pull a file from elsewhere into
+// the report. An earlier version reached for that with per-platform opens and
+// only ever covered the final path component, and its non-Unix fallback checked
+// the path and then opened it, which is two moments a writer can step between.
+//
+// The platform flags on top are a narrower job: refusing a symlink outright
+// where the kernel can, and not blocking on a named pipe. Checking the type on
+// the returned descriptor rather than on the name is what closes the gap on the
+// platforms that have neither flag.
+func openRootedArtifact(root *os.Root, name string) (*os.File, error) {
+	handle, err := root.OpenFile(name, os.O_RDONLY|extraArtifactOpenFlags, 0)
+	if err != nil {
+		// A refused symlink, a name escaping the root, and a reparse point all
+		// mean the same thing to a report: this is not an artifact of this run.
+		if isRefusedLink(err) || errors.Is(err, os.ErrInvalid) || isOutsideRoot(err) {
+			return nil, errNotRegularArtifact
+		}
 		return nil, err
 	}
 	info, err := handle.Stat()
@@ -192,6 +220,15 @@ func openRegularArtifact(dir, name string) (*os.File, error) {
 		return nil, errNotRegularArtifact
 	}
 	return handle, nil
+}
+
+// isOutsideRoot reports whether os.Root refused a name for escaping the
+// directory. The standard library returns a *PathError whose message names the
+// condition rather than a distinct sentinel, so this matches on that text and
+// stays conservative: an unrecognized error is returned to the caller as an
+// error rather than being reinterpreted as a clean refusal.
+func isOutsideRoot(err error) bool {
+	return strings.Contains(err.Error(), "path escapes from parent")
 }
 
 // readRegularArtifact reads a report input, refusing anything that is not a
