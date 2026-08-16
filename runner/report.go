@@ -38,37 +38,6 @@ var reportArtifactNames = []string{
 	"entrypoint-command.txt",
 }
 
-// containsReportArtifact reports whether dir holds any report input that could
-// carry a fact.
-//
-// Presence is not the test, because an empty file carries nothing. A zero-byte
-// results.jsonl passed an existence check, rendered the same all-absent report,
-// exited zero, and labelled the empty file readable, which states something
-// about nothing. A run that died before writing, or a directory somebody
-// created by hand, both land there.
-//
-// Lstat, not Stat, so a symlink never qualifies. The report reads what it finds
-// here, and Stat follows links, so a link named after an artifact both admitted
-// an otherwise empty directory and pulled the linked file's bytes into the
-// rendered report. A report directory unpacked from somewhere else is exactly
-// where that matters.
-//
-// A present but unreadable file still counts, so a permission fault surfaces as
-// the report's own unreadable status rather than as a claim that the directory
-// was never an artifact directory.
-func containsReportArtifact(dir string) bool {
-	for _, name := range reportArtifactNames {
-		info, err := os.Lstat(filepath.Join(dir, name))
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		if info.Size() > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // reportSelfConsistentPrefix opens every successful validation string. The
 // eligibility predicate matches on it, so the producers and the consumer share
 // one constant: when these were separate literals a rename left the predicate
@@ -138,9 +107,6 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("report input is not a directory: %s", dir)
 	}
-	if !containsReportArtifact(dir) {
-		return nil, fmt.Errorf("no run artifacts in %s: expected at least one of %s", dir, strings.Join(reportArtifactNames, ", "))
-	}
 	r := &buyerReport{dir: dir}
 	r.summary = loadReportDocument(dir, "raw-summary.json")
 	r.metadata = loadReportDocument(dir, "run-metadata.json")
@@ -149,7 +115,46 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	r.results, r.rowCounts, r.resultErr = loadNotApplicable(filepath.Join(dir, "results.jsonl"))
 	r.command = loadReportText(dir, "command.txt")
 	r.entrypoint = loadReportText(dir, "entrypoint-command.txt")
+	if !r.hasFact() {
+		return nil, fmt.Errorf("no run artifacts in %s: expected at least one of %s to carry a fact", dir, strings.Join(reportArtifactNames, ", "))
+	}
 	return r, nil
+}
+
+// hasFact reports whether anything in the directory yielded something to say.
+//
+// This is asked AFTER loading on purpose. Every version of it asked beforehand
+// was a guess about the input that the input then got around: a check for
+// presence let a zero-byte file through, a check for non-zero size let a
+// symlink and then a JSON object of `{}` through, and each fix only moved the
+// boundary. Asking afterwards ends the family, because the question is no
+// longer what the input looks like but whether a single fact came out of it.
+//
+// An empty result is not a report. Rendering one produced a document whose
+// every line read as absent while the command exited zero, so somebody who
+// mistyped a path was handed a report of a run that was never found.
+//
+// One fact is enough, which keeps a genuinely partial run reportable. Refusing
+// those would push an operator toward reconstructing directories by hand to get
+// a report at all, and a guard people work around protects nothing.
+func (r *buyerReport) hasFact() bool {
+	for _, doc := range []reportDocument{r.summary, r.metadata, r.bundle, r.decision} {
+		if len(doc.data) > 0 {
+			return true
+		}
+	}
+	// A results file that parsed cleanly with zero rows read as "Readable" and
+	// said nothing about any case, so the row count is the fact here, not the
+	// parse result.
+	if r.resultErr == "Readable" && r.rowCounts.total > 0 {
+		return true
+	}
+	for _, text := range []string{r.command, r.entrypoint} {
+		if text != absentFact && !strings.HasPrefix(text, "Invalid in run artifacts") && text != "Unreadable run artifact" {
+			return true
+		}
+	}
+	return false
 }
 
 // readRegularArtifact reads a report input, refusing anything that is not a
@@ -788,7 +793,7 @@ func (r *buyerReport) bundleValidation() string {
 			failures = append(failures, key+" has no report filename mapping")
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(r.dir, name))
+		data, err := readRegularArtifact(r.dir, name)
 		if err != nil {
 			failures = append(failures, name+" is absent or unreadable")
 			continue
@@ -824,7 +829,7 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	if err := json.Unmarshal(encoded, &reference); err != nil {
 		return "active capability_registry is malformed"
 	}
-	snapshot, err := os.ReadFile(filepath.Join(r.dir, "capability-registry.json"))
+	snapshot, err := readRegularArtifact(r.dir, "capability-registry.json")
 	if err != nil {
 		return "active capability registry snapshot is absent or unreadable"
 	}
@@ -840,7 +845,7 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	if profile.CapabilityRegistry != reference {
 		return "active tool profile registry reference does not match the result"
 	}
-	profileBytes, err := os.ReadFile(profilePath)
+	profileBytes, err := readRegularArtifact(r.dir, "tool-profile.json")
 	if err != nil || capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
 		return "active tool profile digest does not match the result"
 	}
@@ -863,7 +868,7 @@ func (r *buyerReport) v4RegistryBindingError() string {
 // was retained intact; it cannot establish that the retained profile describes
 // the summary, tool profile, and registry snapshot beside it.
 func (r *buyerReport) v4ReceiptProfileBindingError(reference capabilityregistry.Reference) string {
-	data, err := os.ReadFile(filepath.Join(r.dir, "receipt-profile.json"))
+	data, err := readRegularArtifact(r.dir, "receipt-profile.json")
 	if err != nil {
 		return "v4 receipt profile is absent or unreadable"
 	}
