@@ -116,14 +116,16 @@ def check_case_shapes(root):
 
 
 def check_result_states(root):
-    contract = load_json(root / "contracts/result-states-v4.json")
-    schema = load_json(root / "schemas/result-v4.schema.json")
+    contract = load_json(root / "contracts/result-states-v5.json")
+    schema = load_json(root / "schemas/result-v5.schema.json")
     if (contract.get("contract"), contract.get("format"), contract.get("result_schema_version")) != (
         "aeb.result-states",
         1,
-        4,
+        5,
     ):
         fail("result-states identity or version is invalid")
+    if runner_parity.RESULT_SCHEMA_VERSION != contract["result_schema_version"]:
+        fail("parity reader result schema version differs from result-states")
     for field, schema_field in (
         ("expected_verdicts", "expected_verdict"),
         ("actual_verdicts", "actual_verdict"),
@@ -131,11 +133,10 @@ def check_result_states(root):
     ):
         if set(contract.get(field, [])) != set(schema_property(schema, schema_field).get("enum", [])):
             fail(f"result schema {schema_field} enum differs from result-states {field}")
-    # evidence.result_state is emitted on every row by the runner and required
-    # by scripts/runner_parity.py. The result schema calls evidence freeform and
-    # the validator does not read it, so the published contract is the only
-    # place an outside implementer can learn the field and its vocabulary. Bind
-    # the two so they cannot drift apart silently.
+    # evidence.result_state is emitted on every row and consumed by the schema,
+    # Go validator, and parity reader. Bind the published vocabulary to every
+    # machine-readable surface so one reader cannot silently accept a state
+    # another rejects.
     published_states = contract.get("evidence_result_states")
     if not isinstance(published_states, dict) or not published_states:
         fail("result-states must publish a non-empty evidence_result_states object")
@@ -149,6 +150,11 @@ def check_result_states(root):
             "evidence_result_states differs from the parity reader's RESULT_STATES; "
             f"unpublished={missing}, unenforced={extra}"
         )
+    evidence = schema_property(schema, "evidence")
+    if "result_state" not in evidence.get("required", []):
+        fail("result schema evidence must require result_state")
+    if set(schema_property(evidence, "result_state").get("enum", [])) != set(published_states):
+        fail("result schema evidence.result_state enum differs from result-states")
 
     matrix = contract.get("matrix")
     if not isinstance(matrix, list):
@@ -222,7 +228,7 @@ def check_result_states(root):
             fail(f"gauntlet result-state row has {len(row)} cells: {row}")
         documented.add((backtick_values(row[0])[0], backtick_values(row[1])[0], backtick_values(row[2])[0]))
     if documented != rows:
-        fail("gauntlet result-state table differs from contracts/result-states-v4.json")
+        fail("gauntlet result-state table differs from contracts/result-states-v5.json")
 
 
 def check(root):

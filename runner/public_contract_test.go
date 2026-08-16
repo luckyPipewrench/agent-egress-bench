@@ -36,7 +36,7 @@ type publicResultStatesContract struct {
 
 func loadPublicResultStates(t *testing.T) publicResultStatesContract {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "contracts", "result-states-v4.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "contracts", "result-states-v5.json"))
 	if err != nil {
 		t.Fatalf("read public result-state contract: %v", err)
 	}
@@ -83,11 +83,8 @@ func TestPublicBudgetTimingOverrideMatchesScorer(t *testing.T) {
 // the states this runner actually writes.
 //
 // Every row carries evidence.result_state, added by evidenceWithResultState.
-// The result schema describes evidence as freeform and the validator never
-// reads it, so contracts/result-states-v4.json is the only place an outside
-// implementer can learn that the field exists, what its values mean, and that
-// the parity reader rejects a row without one. A published vocabulary that
-// drifts from the emitter is worse than none, because it is followed.
+// Keep the published vocabulary tied to the emitter so an outside runner can
+// implement the closed v5 result-state contract without guessing.
 func TestPublicResultStatesMatchEmitter(t *testing.T) {
 	contract := loadPublicResultStates(t)
 

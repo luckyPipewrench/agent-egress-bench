@@ -12,15 +12,6 @@ import (
 // scoring.
 type ResultState string
 
-const (
-	ResultStateObserved            ResultState = "observed"
-	ResultStateUnreachable         ResultState = "unreachable"
-	ResultStateAdapterError        ResultState = "adapter_error"
-	ResultStateDeliveryUnavailable ResultState = "delivery_unavailable"
-	ResultStateVerdictUnobservable ResultState = "verdict_unobservable"
-	ResultStateInvalidVerdict      ResultState = "invalid_verdict"
-)
-
 func resultStateFor(result adapter.Result) (ResultState, string) {
 	if result.Err != nil {
 		return ResultStateAdapterError, fmt.Sprintf("adapter error: %v", result.Err)

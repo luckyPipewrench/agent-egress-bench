@@ -1,0 +1,20 @@
+{
+  "schema": "../provenance-candidate-v4.schema.json",
+  "accepted": [{
+    "description": "registry-bound v4 writer candidate",
+    "source": "../../gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json",
+    "mutations": [
+      {"replace": ["schema_version"], "value": 4}, {"remove": ["sufficient"]},
+      {"replace": ["measurement_status"], "value": "measured"},
+      {"replace": ["capability_registry"], "value": {"id": "aeb.capabilities", "format": 1, "revision": 1, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+      {"replace": ["reported_claims"], "value": []}, {"replace": ["exercised"], "value": {"capability_tags": []}}
+    ]
+  }],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
+    {"description": "missing registry", "mutation": {"remove": ["capability_registry"]}},
+    {"description": "unknown field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "unsupported measurement state", "mutation": {"replace": ["measurement_status"], "value": "unknown"}},
+    {"description": "duplicate reported claim", "mutation": {"replace": ["reported_claims"], "value": ["x", "x"]}}
+  ]
+}

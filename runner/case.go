@@ -21,12 +21,12 @@ import (
 // new version they had no reason to leave. That is version churn manufactured
 // by the code rather than required by the contract.
 //
-// These are all 4 today. That is a coincidence of history, not a relationship.
-// Change exactly the one whose format changed, and leave the others alone.
+// Result rows moved to v5 when evidence.result_state became required. The
+// remaining families stay at v4 because their formats did not change.
 const (
 	activeCaseSchemaVersion           = 4
 	activeMultiFileCaseSchemaVersion  = 4
-	activeResultSchemaVersion         = 4
+	activeResultSchemaVersion         = 5
 	activeToolProfileSchemaVersion    = 4
 	activeReceiptProfileSchemaVersion = 4
 

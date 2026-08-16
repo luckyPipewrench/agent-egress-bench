@@ -186,7 +186,7 @@ def runner_metadata(repo: Path) -> dict[str, str]:
 def contract_families(repo: Path) -> list[dict[str, Any]]:
     # Downloaded-release verification has no source checkout and ships only
     # this module. Keep the source-contract helper out of that path.
-    from check_contracts import read_go_constant
+    from check_contracts import read_source_version
 
     contracts_path = repo / "contracts/artifacts.json"
     contracts = load_json(contracts_path)
@@ -211,7 +211,7 @@ def contract_families(repo: Path) -> list[dict[str, Any]]:
             if not isinstance(source, dict) or not isinstance(source.get("path"), str) or not isinstance(source.get("symbol"), str):
                 fail(f"artifact family {name} has invalid source version")
             try:
-                actual = read_go_constant(repo, source)
+                actual = read_source_version(repo, source)
             except ValueError as exc:
                 fail(str(exc))
             if actual != active:

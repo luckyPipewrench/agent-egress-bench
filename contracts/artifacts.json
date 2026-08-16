@@ -68,25 +68,35 @@
         },
         {
           "path": "validate/main.go",
-          "symbol": "activeCaseSchemaVersion"
+          "symbol": "activeMultiFileCaseSchemaVersion"
         }
       ],
       "gate": "make check-contracts"
     },
     {
       "family": "result_row",
-      "active_writer_version": 4,
+      "active_writer_version": 5,
       "accepted_reader_versions": [
+        4,
+        5
+      ],
+      "frozen_versions": [
         4
       ],
-      "frozen_versions": [],
-      "canonical_schema_path": "schemas/result-v4.schema.json",
+      "canonical_schema_path": "schemas/result-v5.schema.json",
       "schemas": [
         {
           "version": 4,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/result-v4.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v4.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v4.schema.json",
+          "sha256": "4b25f171f245b4c9682bc460460a00e061118193dd65b3d14c90573dd1b1b99f"
+        },
+        {
+          "version": 5,
+          "status": "active",
+          "path": "schemas/result-v5.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json"
         }
       ],
       "writer": [
@@ -268,8 +278,35 @@
         1,
         2
       ],
-      "canonical_schema_path": null,
-      "schemas": [],
+      "canonical_schema_path": "schemas/provenance-candidate-v5.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "frozen",
+          "path": "schemas/provenance-candidate-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v1.schema.json",
+          "sha256": "244502327c0d35ae9c0850381480932722c7b9ed7576d067e95cf3f9a6581b47"
+        },
+        {
+          "version": 2,
+          "status": "frozen",
+          "path": "schemas/provenance-candidate-v2.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v2.schema.json",
+          "sha256": "858efffdb537b901680e7d324bea2107b339a5779c1c4f039ded503750cc604b"
+        },
+        {
+          "version": 4,
+          "status": "supported",
+          "path": "schemas/provenance-candidate-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v4.schema.json"
+        },
+        {
+          "version": 5,
+          "status": "active",
+          "path": "schemas/provenance-candidate-v5.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v5.schema.json"
+        }
+      ],
       "writer": [
         "scripts/build_gauntlet_provenance.py"
       ],
@@ -277,50 +314,81 @@
         "scripts/validate_gauntlet_scope.py",
         "scripts/evaluate_gauntlet_candidate.py"
       ],
-      "source_versions": [
-        {
-          "path": "runner/summary.go",
-          "symbol": "activeSummarySchemaVersion"
-        }
-      ],
+      "source_versions": [],
       "gate": "make check-contracts"
     },
     {
       "family": "case_index",
-      "active_writer_version": 1,
+      "active_writer_version": 2,
       "accepted_reader_versions": [
-        1
+        1,
+        2
       ],
       "frozen_versions": [
         1
       ],
-      "canonical_schema_path": null,
-      "schemas": [],
+      "canonical_schema_path": "schemas/case-index-v2.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "frozen",
+          "path": "schemas/case-index-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v1.schema.json",
+          "sha256": "7700a2e79154cfde02b7714f339c84d012155125a22575747932b9272d948433"
+        },
+        {
+          "version": 2,
+          "status": "active",
+          "path": "schemas/case-index-v2.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v2.schema.json"
+        }
+      ],
       "writer": [
         "runner/corpus.go"
       ],
       "reader": [
         "scripts/build_gauntlet_provenance.py"
       ],
-      "source_versions": [],
+      "source_versions": [
+        {
+          "path": "runner/corpus.go",
+          "symbol": "activeCaseIndexSchemaVersion"
+        }
+      ],
       "gate": "make check-contracts"
     },
     {
       "family": "promoted_record",
-      "active_writer_version": 1,
+      "active_writer_version": 2,
       "accepted_reader_versions": [
-        1
+        1,
+        2
       ],
       "frozen_versions": [
         1
       ],
-      "canonical_schema_path": null,
-      "schemas": [],
+      "canonical_schema_path": "schemas/promoted-record-v2.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "frozen",
+          "path": "schemas/promoted-record-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v1.schema.json",
+          "sha256": "3b791eec43f7ddd9a1c8382ae1bba1474044d1429f4f88f192235d7c3c63fa4d"
+        },
+        {
+          "version": 2,
+          "status": "active",
+          "path": "schemas/promoted-record-v2.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v2.schema.json"
+        }
+      ],
       "writer": [
         "scripts/promote_gauntlet_candidate.py"
       ],
       "reader": [
-        "scripts/validate_gauntlet_records.py"
+        "scripts/validate_gauntlet_records.py",
+        "scripts/validate_gauntlet_scope.py"
       ],
       "source_versions": [],
       "gate": "make check-contracts"
@@ -334,8 +402,16 @@
       "frozen_versions": [
         1
       ],
-      "canonical_schema_path": null,
-      "schemas": [],
+      "canonical_schema_path": "schemas/promotion-baseline-v1.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "active",
+          "path": "schemas/promotion-baseline-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promotion-baseline-v1.schema.json",
+          "sha256": "b15fa9c5288caf4f8714989d2b8ed19cfb10ed9cd7951d21c335002c97efc144"
+        }
+      ],
       "writer": [
         "scripts/promote_gauntlet_candidate.py"
       ],

@@ -25,7 +25,7 @@ The [Pipelock reference runner](../examples/pipelock/) is a complete example. Th
 [`contracts/case-shapes-v4.json`](../contracts/case-shapes-v4.json).
 [`gauntlet.md`](gauntlet.md) owns result states and scoreability, with every
 active combination published in
-[`contracts/result-states-v4.json`](../contracts/result-states-v4.json).
+[`contracts/result-states-v5.json`](../contracts/result-states-v5.json).
 [`CAPABILITY-VOCABULARY.md`](CAPABILITY-VOCABULARY.md) owns reporting-label
 semantics.
 

@@ -139,7 +139,7 @@ func TestCaseSchemaMatchesValidator(t *testing.T) {
 }
 
 func TestResultSchemaMatchesValidator(t *testing.T) {
-	schema := readAuthoritySchema(t, "result-v4.schema.json")
+	schema := readAuthoritySchema(t, "result-v5.schema.json")
 	assertSchemaVersion(t, schema, activeResultSchemaVersion)
 	requireClosedObject(t, schema.AdditionalProperties, "result schema")
 	if got := sortedSchemaStrings(schema.Required); !reflect.DeepEqual(got, sortedSchemaStrings(resultRequiredFields)) {
@@ -148,6 +148,21 @@ func TestResultSchemaMatchesValidator(t *testing.T) {
 	assertSchemaStrings(t, schema, "expected_verdict", sortedSchemaKeys(validMeasuredVerdicts))
 	assertSchemaStrings(t, schema, "actual_verdict", sortedSchemaKeys(validActualVerdicts))
 	assertSchemaStrings(t, schema, "score", sortedSchemaKeys(validScores))
+	evidence := schema.Properties["evidence"]
+	if !reflect.DeepEqual(evidence.Required, []string{"result_state"}) {
+		t.Errorf("result schema evidence required fields = %v, want [result_state]", evidence.Required)
+	}
+	if got := sortedSchemaStrings(evidence.Properties["result_state"].Enum); !reflect.DeepEqual(got, sortedSchemaKeys(validResultStates)) {
+		t.Errorf("result schema evidence.result_state enum = %v, validator accepts %v", got, sortedSchemaKeys(validResultStates))
+	}
+}
+
+func TestLegacyResultSchemaRemainsReadable(t *testing.T) {
+	schema := readAuthoritySchema(t, "result-v4.schema.json")
+	assertSchemaVersion(t, schema, legacyResultSchemaVersion)
+	if len(schema.Properties["evidence"].Required) != 0 {
+		t.Fatalf("legacy result schema unexpectedly requires evidence fields: %v", schema.Properties["evidence"].Required)
+	}
 }
 
 func TestToolProfileSchemaMatchesValidator(t *testing.T) {

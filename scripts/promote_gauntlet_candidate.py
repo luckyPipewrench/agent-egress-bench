@@ -2,6 +2,7 @@
 """Prepare an append-only Gauntlet result and latest-verified pointer."""
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -13,6 +14,18 @@ from urllib.parse import urlparse
 
 import build_gauntlet_provenance as provenance
 import evaluate_gauntlet_candidate as evaluator
+try:
+    import artifact_schema
+except ModuleNotFoundError:
+    _artifact_schema_spec = importlib.util.spec_from_file_location(
+        "artifact_schema", Path(__file__).with_name("artifact_schema.py")
+    )
+    artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
+    _artifact_schema_spec.loader.exec_module(artifact_schema)
+try:
+    from scripts import artifact_contracts
+except ModuleNotFoundError:
+    import artifact_contracts
 
 
 CANDIDATE_FILENAME = "continuous-gauntlet-pipelock.json"
@@ -28,6 +41,9 @@ SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
 DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
 DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION = artifact_contracts.active_version("promoted_record")
+PROMOTED_RECORD_SCHEMAS = artifact_contracts.schema_paths("promoted_record")
+PROMOTION_BASELINE_SCHEMA = artifact_contracts.canonical_schema_path("promotion_baseline")
 REVIEWABLE_SCORE_FAILURE = re.compile(
     r"^scores\.(?:full|applicable)\.[a-z_]+=.+, "
     r"(?:below baseline floor|above baseline ceiling) .+$"
@@ -137,8 +153,11 @@ def validate_reference_candidate(candidate):
         raise ValueError("candidate schema_version must be 2, 4, or 5")
     if candidate.get("schema_version") in {4, 5}:
         evaluator.require_capability_registry(candidate)
+    if candidate.get("schema_version") == 5:
+        evaluator.validate_v5_candidate_contract(candidate)
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
+    parse_timestamp(require_non_empty_string(candidate, "generated_at"), "generated_at")
     tool_version = require_non_empty_string(candidate, "tool_version")
     if tool_version != require_non_empty_string(candidate, "pipelock_version"):
         raise ValueError("candidate tool_version and pipelock_version must match")
@@ -210,6 +229,9 @@ def proposed_baseline(candidate, candidate_sha256):
                 "evidence": applicable_scores.get("evidence"),
             }
         )
+    baseline = artifact_schema.validate_file(
+        baseline, PROMOTION_BASELINE_SCHEMA, "proposed baseline"
+    )
     return baseline
 
 
@@ -243,7 +265,7 @@ def manifest_for(
         if path.name != RECORD_MANIFEST_FILENAME:
             files[path.name] = evaluator.file_sha256(path)
     return {
-        "schema_version": 1,
+        "schema_version": ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION,
         "tool": require_non_empty_string(candidate, "tool"),
         "tool_version": require_non_empty_string(candidate, "tool_version"),
         "artifact_id": require_non_empty_string(candidate, "artifact_id"),
@@ -259,8 +281,12 @@ def manifest_for(
 def validate_record(record_dir, candidate_sha256):
     manifest_path = record_dir / RECORD_MANIFEST_FILENAME
     manifest = require_object(manifest_path)
-    if manifest.get("schema_version") != 1:
-        raise ValueError("record manifest schema_version must be 1")
+    schema_version = manifest.get("schema_version")
+    if schema_version not in PROMOTED_RECORD_SCHEMAS:
+        raise ValueError("record manifest schema_version must be 1 or 2")
+    manifest = artifact_schema.validate_file(
+        manifest, PROMOTED_RECORD_SCHEMAS[schema_version], "record manifest"
+    )
     require_sha256(manifest.get("candidate_sha256"), "record candidate_sha256")
     if manifest["candidate_sha256"] != candidate_sha256:
         raise ValueError("existing record candidate digest does not match its directory")
@@ -275,6 +301,8 @@ def validate_record(record_dir, candidate_sha256):
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise ValueError("record manifest files must be a non-empty object")
+    if files.get(CANDIDATE_FILENAME) != manifest["candidate_sha256"]:
+        raise ValueError("record candidate_sha256 must match the candidate file digest")
     entries = list(record_dir.iterdir())
     if any(path.is_symlink() or not path.is_file() for path in entries):
         raise ValueError("existing record contains a non-regular entry")
@@ -555,6 +583,11 @@ def promote(args):
                 candidate,
                 previous_candidate_sha256,
                 previous_record_manifest_sha256,
+            )
+            record_manifest = artifact_schema.validate_file(
+                record_manifest,
+                PROMOTED_RECORD_SCHEMAS[ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION],
+                "record manifest",
             )
             evaluator.atomic_json_write(
                 temporary_record / RECORD_MANIFEST_FILENAME, record_manifest

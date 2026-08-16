@@ -9,10 +9,41 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts import evaluate_gauntlet_candidate as evaluator
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "evaluate_gauntlet_candidate.py"
-CASE_INDEX_BYTES = b'{"schema_version":1,"cases":[]}\n'
+def v5_raw_evidence():
+    cases = {}
+    rows = []
+    for index in range(158):
+        case_id = f"malicious-{index:03d}"
+        cases[case_id] = {"category": "test", "expected_verdict": "block"}
+        actual = "not_applicable" if index == 157 else "block"
+        rows.append({
+            "case_id": case_id,
+            "expected_verdict": "block",
+            "actual_verdict": actual,
+            "score": "not_applicable" if actual == "not_applicable" else "pass",
+            "evidence": {} if actual == "not_applicable" else {"kind": "policy"},
+        })
+    for index in range(55):
+        case_id = f"benign-{index:03d}"
+        cases[case_id] = {"category": "test", "expected_verdict": "allow"}
+        rows.append({
+            "case_id": case_id,
+            "expected_verdict": "allow",
+            "actual_verdict": "allow",
+            "score": "pass",
+            "evidence": {},
+        })
+    case_index = (json.dumps({"schema_version": 2, "cases": cases}, sort_keys=True) + "\n").encode()
+    results = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+    return case_index, results
+
+
+CASE_INDEX_BYTES, V5_RESULTS_BYTES = v5_raw_evidence()
 RUN_BUNDLE_BYTES = b'{"schema_version":1,"bundle_status":"complete"}\n'
 
 
@@ -35,11 +66,13 @@ def candidate():
         "pipelock_version": PIPELOCK_VERSION,
         "corpus_git_sha": "b" * 40,
         "corpus_sha256": "c" * 64,
+        "corpus_manifest_sha256": "f" * 64,
         "case_index_sha256": hashlib.sha256(CASE_INDEX_BYTES).hexdigest(),
         "portable_bundle_sha256": hashlib.sha256(RUN_BUNDLE_BYTES).hexdigest(),
         "corpus_version": "v2.3.0",
         "scoring_version": "2.4",
         "runner_version": "0.4.2",
+        "logical_case_count": 213,
         "case_count": {
             "total": 213,
             "applicable": 212,
@@ -56,6 +89,7 @@ def candidate():
                 "false_positive_rate": 0.0,
             },
         },
+        "metric_counts": {},
         "sufficient": True,
     }
 
@@ -80,10 +114,12 @@ def v5_candidate():
     value["benchmark_manifest_sha256"] = "e" * 64
     value["scoring_version"] = "2.8"
     value["runner_version"] = "0.4.3"
+    value["case_count"]["unreachable"] = 0
     for scope in ("full", "applicable"):
         value["scores"][scope].pop("detection", None)
         value["scores"][scope].pop("evidence", None)
     value["scores"]["full"]["false_positive_rate"] = 0.0
+    value["scores"]["full"]["containment"] = 157 / 158
     value["diagnostics"] = {
         "full": {
             "classification_present_rate": 1.0,
@@ -104,12 +140,53 @@ def v5_candidate():
             "false_positive_rate": {"numerator": 0, "denominator": 55},
         },
     }
+    value["diagnostic_counts"] = {
+        scope: {
+            "classification_present_rate": {"numerator": 157, "denominator": 157},
+            "structured_evidence_present_rate": {"numerator": 157, "denominator": 157},
+        }
+        for scope in ("full", "applicable")
+    }
+    value.update(
+        {
+            "local_run_id": "run-123",
+            "generated_at": "2026-08-05T10:33:23Z",
+            "corpus_ref_kind": "origin/main",
+            "corpus_commit_url": "https://github.com/luckyPipewrench/agent-egress-bench/commit/" + "b" * 40,
+            "dirty": False,
+            "pipelock_tag": "v" + PIPELOCK_VERSION,
+            "pipelock_asset": "pipelock.tar.gz",
+            "pipelock_asset_sha256": "a" * 64,
+            "pipelock_binary_sha256": "a" * 64,
+            "pipelock_release_url": "https://github.com/luckyPipewrench/pipelock/releases/tag/v" + PIPELOCK_VERSION,
+            "gauntlet_version": "0.4.3",
+            "tool": "pipelock",
+            "tool_version": PIPELOCK_VERSION,
+            "tool_profile_sha256": "a" * 64,
+            "fixtures": True,
+            "multifile_cases": True,
+            "command": "aeb-gauntlet",
+            "make_stats": "Total logical cases: 213",
+            "evidence_sha256": {label: "a" * 64 for label in (
+                "capability_registry", "case_index", "command", "corpus_manifest",
+                "entrypoint_command", "pipelock_release", "pipelock_version_output",
+                "raw_summary", "receipt_profile", "release_checksums", "results",
+                "run_metadata", "runner_stderr", "stats", "tool_profile",
+            )},
+            "reported_claims": [],
+            "exercised": {"transports": ["stdio"], "categories": ["prompt-injection"], "capability_tags": []},
+        }
+    )
     return value
 
 
 def baseline():
     return {
+        "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
         "schema_version": 1,
+        "recorded_on": "2026-08-01",
+        "verified_candidate_sha256": "a" * 64,
+        "verified_artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:122",
         "pipelock_version": PIPELOCK_VERSION,
         "corpus_git_sha": "b" * 40,
         "corpus_sha256": "c" * 64,
@@ -165,7 +242,10 @@ class CandidateEvaluationTest(unittest.TestCase):
             candidate_path.write_text(raw_candidate, encoding="utf-8")
         baseline_path.write_text(json.dumps(baseline_value or baseline()), encoding="utf-8")
         evidence_path = root / "results.jsonl"
-        evidence_path.write_text('{"id":"case-1"}\n', encoding="utf-8")
+        if (candidate_value or {}).get("schema_version") == 5:
+            evidence_path.write_bytes(V5_RESULTS_BYTES)
+        else:
+            evidence_path.write_text('{"id":"case-1"}\n', encoding="utf-8")
         case_index_path = root / "case-index.json"
         case_index_path.write_bytes(CASE_INDEX_BYTES)
         run_bundle_path = root / "run-bundle.json"
@@ -257,6 +337,24 @@ class CandidateEvaluationTest(unittest.TestCase):
 
         self.assertFalse(decision["blocked"], decision["failures"])
 
+    def test_v5_self_consistent_lie_is_rejected_by_raw_results(self):
+        value = v5_candidate()
+        for scope in ("full", "applicable"):
+            value["scores"][scope]["containment"] = 1.0
+            value["metric_counts"][scope]["containment"] = {
+                "numerator": 1,
+                "denominator": 1,
+            }
+
+        evaluator.validate_v5_candidate_contract(value)
+        decision, *_ = self.run_evaluate(value, v5_baseline())
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "candidate metric_counts does not match the case index and raw results",
+            decision["failures"],
+        )
+
     def test_v5_candidate_requires_framed_manifest_identity(self):
         missing_candidate_digest = v5_candidate()
         del missing_candidate_digest["benchmark_manifest_sha256"]
@@ -284,16 +382,43 @@ class CandidateEvaluationTest(unittest.TestCase):
             "denominator": 0,
         }
 
-        decision, *_ = self.run_evaluate(value, v5_baseline())
-
-        self.assertFalse(decision["blocked"], decision["failures"])
+        evaluator.validate_v5_candidate_contract(value)
 
         value["metric_counts"]["applicable"]["false_positive_rate"]["denominator"] = 1
-        decision, *_ = self.run_evaluate(value, v5_baseline())
-        self.assertTrue(decision["blocked"])
-        self.assertTrue(
-            any("requires a zero metric denominator" in failure for failure in decision["failures"])
+        with self.assertRaisesRegex(ValueError, "does not match its numerator and denominator"):
+            evaluator.validate_v5_candidate_contract(value)
+
+    def test_v5_candidate_rejects_inconsistent_counts_and_rates(self):
+        mutations = (
+            ("numerator above denominator", lambda value: value["metric_counts"]["full"]["containment"].__setitem__("numerator", 159), "numerator cannot exceed denominator"),
+            ("rate disagrees with counts", lambda value: value["scores"]["full"].__setitem__("containment", 1), "does not match its numerator and denominator"),
+            ("total disagrees with logical count", lambda value: value["case_count"].__setitem__("total", 214), "must equal logical_case_count"),
+            ("case counts do not sum", lambda value: value["case_count"].__setitem__("applicable", 211), "case counts must sum to total"),
+            ("reason counts do not sum", lambda value: value["case_count"]["not_applicable_reasons"].__setitem__("missing_requires", 2), "reasons must sum to not_applicable"),
         )
+        for name, mutate, message in mutations:
+            with self.subTest(name=name):
+                value = v5_candidate()
+                mutate(value)
+                decision, *_ = self.run_evaluate(value, v5_baseline())
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any(message in failure for failure in decision["failures"]))
+
+    def test_v5_cross_field_guards_are_individually_exercised(self):
+        mutations = (
+            (lambda value: value["metric_counts"]["full"]["containment"].__setitem__("numerator", 159), "numerator cannot exceed denominator"),
+            (lambda value: value["scores"]["full"].__setitem__("containment", 1), "does not match its numerator and denominator"),
+            (lambda value: value["case_count"].__setitem__("total", 214), "must equal logical_case_count"),
+            (lambda value: value["case_count"].__setitem__("applicable", 211), "case counts must sum to total"),
+            (lambda value: value["case_count"]["not_applicable_reasons"].__setitem__("missing_requires", 2), "reasons must sum to not_applicable"),
+            (lambda value: value["case_count"].__setitem__("errors", 213), "errors cannot exceed applicable"),
+        )
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                value = v5_candidate()
+                mutate(value)
+                with self.assertRaisesRegex(ValueError, message):
+                    evaluator.validate_v5_candidate_contract(value)
 
     def test_v5_candidate_rejects_retired_or_malformed_metric_fields(self):
         mutations = (

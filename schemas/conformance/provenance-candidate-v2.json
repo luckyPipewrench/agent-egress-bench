@@ -1,0 +1,12 @@
+{
+  "schema": "../provenance-candidate-v2.schema.json",
+  "accepted": [{"description": "retained promoted v2 candidate", "source": "../../gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/continuous-gauntlet-pipelock.json"}],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 5}},
+    {"description": "missing emitted field", "mutation": {"remove": ["case_index_sha256"]}},
+    {"description": "unknown field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "malformed evidence digest", "mutation": {"replace": ["evidence_sha256", "results"], "value": "bad"}},
+    {"description": "wrong boolean type", "mutation": {"replace": ["fixtures"], "value": "true"}},
+    {"description": "timezone-free timestamp", "mutation": {"replace": ["generated_at"], "value": "2026-08-05T10:33:23"}}
+  ]
+}

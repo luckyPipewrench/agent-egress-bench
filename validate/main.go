@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -16,26 +17,20 @@ import (
 // Active schema version per artifact family, mirroring the runner's constants
 // of the same names.
 //
-// There is no multi-file constant here because this validator does not version
-// multi-file cases: it reads `case.yaml` only for the requires vocabulary and
-// never inspects its schema_version. The single-file and multi-file shapes are
-// held together by routing both through requiresTokenProblem, not by a shared
-// version number.
-//
-// The result-row and tool-profile versions are separate because those are
-// separate families in contracts/artifacts.json. This validator previously
-// checked all three against the case constant, which meant a result-row bump
-// would have been enforced as a case bump and rejected every valid artifact of
-// the other two families. A validator that couples families it is supposed to
-// judge independently turns one family's version change into everyone's outage.
+// Each constant belongs to one family in contracts/artifacts.json. Keeping the
+// values separate prevents a version bump in one family from changing another
+// family's reader by accident.
 const (
-	activeCaseSchemaVersion        = 4
-	activeResultSchemaVersion      = 4
-	activeToolProfileSchemaVersion = 4
+	activeCaseSchemaVersion          = 4
+	activeMultiFileCaseSchemaVersion = 4
+	activeResultSchemaVersion        = 5
+	activeToolProfileSchemaVersion   = 4
+	legacyResultSchemaVersion        = 4
 )
 
 // Valid enum values for v1 schema.
 var (
+	caseIDPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`)
 	validCategories = map[string]bool{
 		"url": true, "request_body": true, "headers": true,
 		"response_fetch": true, "response_mitm": true,
@@ -109,14 +104,6 @@ var (
 		"shell_analysis":      true,
 		"crypto_dlp_scanning": true, "hostname_exfil_scanning": true,
 		"dns_rebinding_fixture": true,
-	}
-
-	validActualVerdicts = map[string]bool{
-		"block": true, "allow": true, "unreachable": true, "error": true,
-	}
-
-	validScores = map[string]bool{
-		"pass": true, "fail": true, "error": true,
 	}
 
 	// Valid category → input_type combinations per SPEC.md.
@@ -496,6 +483,8 @@ func validateFile(path string, ids map[string]string) []string {
 	// Required fields
 	if c.ID == "" {
 		addErr("missing id")
+	} else if !caseIDPattern.MatchString(c.ID) {
+		addErr("id must contain only lower-case letters, digits, hyphens, and underscores")
 	}
 	if c.Title == "" {
 		addErr("missing title")
@@ -508,6 +497,9 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 	if c.Payload == nil {
 		addErr("missing payload")
+	}
+	if supersedes, present := rawSupersedes(data); present && !caseIDPattern.MatchString(supersedes) {
+		addErr("supersedes must contain only lower-case letters, digits, hyphens, and underscores")
 	}
 
 	// ID must match filename
@@ -560,7 +552,12 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 
 	// Requires
+	seenRequires := make(map[string]bool, len(c.Requires))
 	for _, req := range c.Requires {
+		if seenRequires[req] {
+			addErr(fmt.Sprintf("duplicate requires value: %q", req))
+		}
+		seenRequires[req] = true
 		if problem := requiresTokenProblem(req); problem != "" {
 			addErr(problem)
 		}
@@ -994,9 +991,11 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 
 	if r.CaseID == "" {
 		addErr("missing case_id")
+	} else if r.SchemaVersion == activeResultSchemaVersion && !caseIDPattern.MatchString(r.CaseID) {
+		addErr("case_id must contain only lower-case letters, digits, hyphens, and underscores")
 	}
-	if r.SchemaVersion != activeResultSchemaVersion {
-		addErr(fmt.Sprintf("schema_version must be %d, got %d", activeResultSchemaVersion, r.SchemaVersion))
+	if r.SchemaVersion != legacyResultSchemaVersion && r.SchemaVersion != activeResultSchemaVersion {
+		addErr(fmt.Sprintf("schema_version must be %d or %d, got %d", legacyResultSchemaVersion, activeResultSchemaVersion, r.SchemaVersion))
 	}
 	if r.Tool == "" {
 		addErr("missing tool")
@@ -1015,6 +1014,10 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 	if r.Evidence == nil {
 		addErr("missing evidence (must be an object)")
+	} else if r.SchemaVersion == activeResultSchemaVersion {
+		for _, issue := range validateResultState(r) {
+			addErr(issue)
+		}
 	}
 	if r.Notes == nil {
 		addErr("missing notes (must be a string, use empty string if no context)")
@@ -1027,7 +1030,7 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 
 	// Score consistency checks. The exhaustive public matrix lives in
-	// contracts/result-states-v4.json and contract tests compare every row to
+	// contracts/result-states-v5.json and contract tests compare every row to
 	// this validator.
 	if validActualVerdicts[r.ActualVerdict] && validMeasuredVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
 		caseSpecificScore, hasCaseSpecificScore, caseSpecificProblem := expectedCaseSpecificScore(r, caseMetadata)
@@ -1053,6 +1056,36 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 
 	return errors
+}
+
+func validateResultState(r ResultLine) []string {
+	raw, present := r.Evidence["result_state"]
+	if !present {
+		return []string{"missing evidence.result_state"}
+	}
+	state, ok := raw.(string)
+	if !ok {
+		return []string{"evidence.result_state must be a string"}
+	}
+	if !validResultStates[state] {
+		return []string{fmt.Sprintf("invalid evidence.result_state: %q", state)}
+	}
+
+	switch state {
+	case "observed":
+		if !validMeasuredVerdicts[r.ActualVerdict] || (r.Score != "pass" && r.Score != "fail") {
+			return []string{"evidence.result_state observed requires an allow or block verdict and a pass or fail score"}
+		}
+	case "unreachable":
+		if r.ActualVerdict != "unreachable" || r.Score != "error" {
+			return []string{"evidence.result_state unreachable requires actual_verdict unreachable and score error"}
+		}
+	default:
+		if r.ActualVerdict != "error" || r.Score != "error" {
+			return []string{fmt.Sprintf("evidence.result_state %s requires actual_verdict error and score error", state)}
+		}
+	}
+	return nil
 }
 
 func expectedCaseSpecificScore(r ResultLine, caseMetadata *resultCaseMetadata) (string, bool, string) {

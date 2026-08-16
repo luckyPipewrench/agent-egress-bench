@@ -23,6 +23,8 @@ check-scorecard-workflow:
 # producer or an empty record tree cannot turn this into a false green.
 check-contracts:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/artifact_schema_conformance_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_schema_closure_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
 
 # The discovery document is generated from the canonical schema files. It pins
@@ -36,6 +38,8 @@ check-schema-catalog:
 # scorer, and validator on one active definition.
 check-public-contracts:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/generate_result_state_bindings_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/generate_result_state_bindings.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_public_contracts_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_contracts.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.build_gauntlet_provenance_test.ProvenanceBuilderTest.test_active_result_score_enforces_budget_timing

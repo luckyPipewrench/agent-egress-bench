@@ -50,12 +50,15 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 
 	var issues []string
 	add := func(message string) { issues = append(issues, fmt.Sprintf("%s: %s", path, message)) }
-	if c.SchemaVersion != activeCaseSchemaVersion {
-		add(fmt.Sprintf("schema_version must be %d, got %d", activeCaseSchemaVersion, c.SchemaVersion))
+	if c.SchemaVersion != activeMultiFileCaseSchemaVersion {
+		add(fmt.Sprintf("schema_version must be %d, got %d", activeMultiFileCaseSchemaVersion, c.SchemaVersion))
 	}
 	if strings.TrimSpace(c.ID) == "" {
 		add("id must be non-empty")
 	} else {
+		if !caseIDPattern.MatchString(c.ID) {
+			add(fmt.Sprintf("id must match %s", caseIDPattern.String()))
+		}
 		if c.ID != filepath.Base(filepath.Dir(path)) {
 			add(fmt.Sprintf("id %q must match directory name %q", c.ID, filepath.Base(filepath.Dir(path))))
 		}
