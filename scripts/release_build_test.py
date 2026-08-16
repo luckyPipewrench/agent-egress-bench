@@ -411,6 +411,32 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256(data_bundle.read_bytes()).hexdigest(), checksums[data_bundle.name])
         self.invoke("verify", "--release-dir", str(dist))
 
+    def test_data_bundle_alone_can_drive_a_run(self) -> None:
+        # The release advertises a corpus an operator can run. --profile is
+        # mandatory, so a bundle that carries cases but no tool profile ships a
+        # corpus nobody outside this repository can execute. Asserting the file
+        # is present would pass for a template the runner rejects, so this runs
+        # the real runner against the extracted bundle and nothing else.
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        extracted = self.root / "extracted"
+        extracted.mkdir()
+        with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
+            archive.extractall(extracted, filter="data")
+        profile = extracted / "examples/runner-template/tool-profile-template.json"
+        self.assertTrue(profile.is_file(), "the data bundle must carry a tool profile the runner accepts")
+        summary = self.root / "bundle-run-summary.json"
+        run = subprocess.run(
+            ["go", "run", ".", "--cases", str(extracted / "cases"), "--profile", str(profile), "--output", str(summary)],
+            cwd=self.root / "runner",
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(run.returncode, 0, msg=run.stderr)
+        self.assertTrue(summary.is_file(), "a run driven by the bundle must write its summary")
+        self.assertEqual(json.loads(summary.read_text(encoding="utf-8"))["tool"], json.loads(profile.read_text(encoding="utf-8"))["tool"])
+
     def test_release_binds_a_schema_bundle_to_the_commit_pinned_catalog(self) -> None:
         self.prepare()
         dist = self.root / "dist"

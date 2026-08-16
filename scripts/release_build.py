@@ -28,7 +28,11 @@ SCHEMA_CATALOG_SUFFIX = "_schema-catalog.json"
 SCHEMA_BUNDLE_SUFFIX = "_schemas.tar.gz"
 REPOSITORY = "luckyPipewrench/agent-egress-bench"
 RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
-DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities")
+# "examples" carries the operator kit: the tool-profile template the runner
+# requires, the gateway plugin template, the runner skeleton, and the reference
+# harness. Without it a downloaded release can report the corpus but cannot run
+# it, because --profile is mandatory and nothing in the release satisfied it.
+DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities", "examples")
 DATA_FILES = ("README.md", "LICENSE", "NOTICE", "CITATION.cff", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md", "scripts/release_build.py", "scripts/schema_catalog.py")
 PLATFORMS = tuple((goos, arch) for goos in ("linux", "darwin", "windows") for arch in ("amd64", "arm64"))
 
@@ -381,7 +385,7 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
             fail("release identity data_files has an invalid entry")
         safe_name(name)
     if set(DATA_FILES) - set(data_files) or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
-        fail("release identity data_files does not contain the required corpus, schema, contract, and verifier data")
+        fail("release identity data_files does not contain the required corpus, schema, contract, operator kit, and verifier data")
 
     verification = exact_object(identity["verification"], "release identity verification", {"checksums", "command"})
     checksums = exact_object(verification["checksums"], "release identity verification.checksums", {"algorithm", "path"})

@@ -4,7 +4,12 @@ A tagged release fixes the corpus, schemas, contracts, runner source revision, a
 
 Each release contains:
 
-- One corpus data bundle.
+- One corpus data bundle. It carries the cases, the schemas, the contracts, the
+  core capability registry, and the operator kit under `examples/`: the tool
+  profile template the runner requires, the MCP gateway plugin template, the
+  runner skeleton, and the reference harness. Bundle members extract with mode
+  `0644` so the bytes stay reproducible, so run a bundled shell script as
+  `bash <script>` rather than executing it directly.
 - One commit-pinned schema catalog and schema bundle. The bundle contains the
   catalog and every schema it names, so a vendor can validate schema bytes
   after download without a network connection.
@@ -44,6 +49,28 @@ gh attestation verify aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz --
 ```
 
 After extracting the platform archive, run `aeb-gauntlet --version`. A tagged binary prints its release version and exact source commit. The release verifier accepts that output with `--executable` when the archive matches the current host.
+
+## Run the corpus from a downloaded release
+
+The platform archive and the data bundle together are enough to inspect and run the corpus. Neither step needs a Go toolchain, a clone, or a network connection.
+
+```bash
+tar -xzf aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz -C aeb-release/extracted
+cd aeb-release/extracted
+mkdir artifacts
+./aeb-gauntlet --stats --cases cases
+./aeb-gauntlet --cases cases --profile examples/runner-template/tool-profile-template.json \
+  --output artifacts/raw-summary.json > artifacts/results.jsonl
+./aeb-gauntlet --report artifacts --report-output artifacts/report.md
+```
+
+The runner writes one JSON result per case to standard output and its human summary to standard error, so redirecting standard output produces `results.jsonl` without mixing the two. `--report` reads a directory rather than a single file, and it reads the summary under the name `raw-summary.json`, so write `--output` to that name when the run is meant to be reported. A summary saved under any other name leaves the report's method, target, and score sections reading as absent even though the file is sitting in the directory.
+
+Every artifact the report reads is individually optional, so a run that produced only some of them still renders, and each missing fact is reported as absent rather than guessed.
+
+The template profile names no real product, so that run exercises the corpus and the artifact path rather than measuring anything. Copy it, set `tool` and `tool_version` to the target under test, and select the adapter that reaches it. `--adapter mcp-gateway --gateway-plugin` drives an MCP gateway from `examples/gateway-plugin-template.json`; `docs/GATEWAY-ADAPTER.md` states that plugin contract.
+
+A run that reaches no target reports `measurement_status: incomplete`, and the score covers only the cases the adapter actually routed. Pass `--require-complete` to exit nonzero on an incomplete measurement instead of reading a partial run as a result.
 
 ## Build without publishing
 
