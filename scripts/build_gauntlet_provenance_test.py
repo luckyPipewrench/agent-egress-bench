@@ -378,7 +378,8 @@ class ProvenanceBuilderTest(unittest.TestCase):
         )
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
         (self.run_dir / "command.txt").write_text(
-            "timeout 10s aeb-gauntlet --adapter proxy --fixtures "
+            "timeout --signal=TERM --kill-after=30s 10s aeb-gauntlet "
+            "--adapter proxy --fixtures "
             "--method-repository luckyPipewrench/agent-egress-bench "
             f"--method-commit {'c' * 40} "
             "--adapter-owner 'Example Maintainers' "
@@ -521,6 +522,36 @@ class ProvenanceBuilderTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("adapter_owner does not match recorded runner command", result.stderr)
+
+    def test_v6_candidate_rejects_provenance_after_argument_terminator(self):
+        self.make_active_fixture(summary_schema_version=5)
+        command_path = self.run_dir / "command.txt"
+        command_path.write_text(
+            command_path.read_text(encoding="utf-8").replace(
+                " --method-repository", " -- --method-repository", 1
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("terminator or shell operator", result.stderr)
+
+    def test_v6_candidate_rejects_follow_on_shell_provenance(self):
+        self.make_active_fixture(summary_schema_version=5)
+        command_path = self.run_dir / "command.txt"
+        command_path.write_text(
+            command_path.read_text(encoding="utf-8").replace(
+                " --method-repository", " ; echo --method-repository", 1
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("terminator or shell operator", result.stderr)
 
     def test_v6_candidate_keeps_target_accommodation_in_hash_bound_command(self):
         self.make_active_fixture(summary_schema_version=5)

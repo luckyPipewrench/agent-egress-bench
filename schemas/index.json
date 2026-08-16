@@ -215,7 +215,7 @@
     {
       "path": "schemas/provenance-candidate-v6.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v6.schema.json",
-      "sha256": "cd288c16b369aced29993961fa6564fadebd6ed48ca32ae1d56c81b9a6d9de42"
+      "sha256": "d0ca5d7abf96f8b89de02c80323dd0b9be234f276f0bd75e7435a4989449fd84"
     },
     {
       "path": "schemas/receipt-scoring-profile-v1.schema.json",

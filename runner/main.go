@@ -165,7 +165,7 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 }
 
 func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, gatewayPluginPath string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string, prov RunProvenance) error {
-	if err := validateTargetAccommodationAdapter(adapterName, prov); err != nil {
+	if err := bindRunProvenanceAdapter(adapterName, &prov); err != nil {
 		return err
 	}
 	profile, err := loadProfile(profilePath)
@@ -356,7 +356,10 @@ func completionError(summary GauntletSummary, required bool) error {
 	return fmt.Errorf("measurement is %s; retained artifacts describe the partial run", summary.MeasurementStatus)
 }
 
-func validateTargetAccommodationAdapter(adapterName string, prov RunProvenance) error {
+func bindRunProvenanceAdapter(adapterName string, prov *RunProvenance) error {
+	if prov.AdapterID != "" && prov.AdapterID != adapterName {
+		return fmt.Errorf("declared adapter %q does not match executed adapter %q", prov.AdapterID, adapterName)
+	}
 	declared := prov.MCPHTTPSessionHeader != "" ||
 		prov.MCPHTTPSessionFormat != "" ||
 		prov.MCPHTTPSessionRefusalHeader != "" ||
@@ -364,6 +367,7 @@ func validateTargetAccommodationAdapter(adapterName string, prov RunProvenance) 
 	if declared && adapterName != "proxy" {
 		return fmt.Errorf("MCP HTTP session accommodation is only consumed by the proxy adapter, got %q", adapterName)
 	}
+	prov.AdapterID = adapterName
 	return nil
 }
 

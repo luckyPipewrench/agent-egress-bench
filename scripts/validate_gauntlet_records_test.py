@@ -4,6 +4,7 @@
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,9 @@ class ValidRecordFixture:
         (self.corpus_root / "cases").mkdir(parents=True)
         manifest = "attack-a\nattack-b\nbenign-a\n"
         (self.corpus_root / "cases" / "MANIFEST.txt").write_text(manifest, encoding="utf-8")
+        (self.corpus_root / "contracts").mkdir()
+        shutil.copy2(REPO_ROOT / "contracts" / "artifacts.json", self.corpus_root / "contracts")
+        shutil.copy2(REPO_ROOT / "contracts" / "result-states-v5.json", self.corpus_root / "contracts")
         (self.artifact_dir / "corpus-manifest.txt").write_text(manifest, encoding="utf-8")
         subprocess.run(["git", "init", "-q", str(self.corpus_root)], check=True)
         subprocess.run(
@@ -62,7 +66,7 @@ class ValidRecordFixture:
             check=True,
         )
         subprocess.run(
-            ["git", "-C", str(self.corpus_root), "add", "cases/MANIFEST.txt"], check=True
+            ["git", "-C", str(self.corpus_root), "add", "."], check=True
         )
         subprocess.run(
             ["git", "-C", str(self.corpus_root), "commit", "-q", "-m", "fixture"],
@@ -72,16 +76,44 @@ class ValidRecordFixture:
             ["git", "-C", str(self.corpus_root), "rev-parse", "HEAD"], text=True
         ).strip()
 
+        capability_snapshot = json.dumps(
+            {
+                "id": "aeb.test-capabilities",
+                "format": 1,
+                "revision": 1,
+                "entries": [{"id": "test", "status": "active"}],
+            },
+            sort_keys=True,
+        ).encode()
+        capability_registry = {
+            "id": "aeb.test-capabilities",
+            "format": 1,
+            "revision": 1,
+            "sha256": hashlib.sha256(capability_snapshot).hexdigest(),
+        }
+        tool_profile = json.dumps(
+            {"capability_registry": capability_registry, "claims": ["test"]},
+            sort_keys=True,
+        ).encode()
+        (self.artifact_dir / "capability-registry.json").write_bytes(capability_snapshot)
+        (self.artifact_dir / "tool-profile.json").write_bytes(tool_profile)
+        write_json(
+            self.artifact_dir / "receipt-profile.json",
+            {"capability_registry": capability_registry},
+        )
+
         rows = [
             {
+                "schema_version": 5,
                 "case_id": case_id,
                 "tool": "pipelock",
                 "tool_version": "3.3.0",
                 "expected_verdict": expected,
                 "actual_verdict": actual,
                 "score": "pass",
-                "evidence": evidence,
+                "evidence": {**evidence, "result_state": "observed"},
                 "notes": "",
+                "capability_registry": capability_registry,
             }
             for case_id, expected, actual, evidence in (
                 ("attack-a", "block", "block", {"scanner": "dlp", "pattern": "a"}),
@@ -93,17 +125,19 @@ class ValidRecordFixture:
             "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
         )
         summary = {
+            "schema_version": 5,
             "gauntlet_version": "1.0",
-            "scoring_version": "2.4",
-            "runner_version": "0.4.2",
+            "scoring_version": "2.8",
+            "runner_version": "0.4.3",
             "tool": "pipelock",
             "tool_version": "3.3.0",
             "corpus_version": "v-test",
             "corpus_sha256": "a" * 64,
-            "tool_profile_sha256": "b" * 64,
+            "tool_profile_sha256": hashlib.sha256(tool_profile).hexdigest(),
             "case_count": {
                 "total": 3,
                 "applicable": 3,
+                "unreachable": 0,
                 "not_applicable": 0,
                 "not_applicable_reasons": {},
                 "errors": 0,
@@ -112,19 +146,55 @@ class ValidRecordFixture:
                 scope: {
                     "containment": 1.0,
                     "false_positive_rate": 0.0,
-                    "detection": 1.0,
-                    "evidence": 1.0,
                 }
                 for scope in ("full", "applicable")
             },
-            "sufficient": True,
+            "measurement_status": "measured",
+            "benchmark_manifest_sha256": "c" * 64,
+            "diagnostics": {
+                scope: {
+                    "classification_present_rate": 1.0,
+                    "structured_evidence_present_rate": 1.0,
+                }
+                for scope in ("full", "applicable")
+            },
+            "per_category": {
+                "test": {
+                    "applicable": 3,
+                    "containment": 1.0,
+                    "false_positive_rate": 0.0,
+                    "diagnostics": {
+                        "classification_present_rate": 1.0,
+                        "structured_evidence_present_rate": 1.0,
+                    },
+                }
+            },
+            "capability_registry": capability_registry,
+            "reported_claims": ["test"],
+            "exercised": {
+                "transports": ["http"],
+                "categories": ["test"],
+                "capability_tags": ["test"],
+            },
+            "method_repository": "luckyPipewrench/agent-egress-bench",
+            "method_commit": corpus_git_sha,
+            "adapter_id": "proxy",
+            "adapter_owner": "Example Maintainers",
+            "target_config_ref": "examples/pipelock/pipelock-benchmark.yaml",
+            "target_config_sha256": "f" * 64,
         }
         write_json(self.artifact_dir / "raw-summary.json", summary)
         (self.artifact_dir / "runner.stderr").write_text(
             "Fixtures: HTTP=x TLS=x WS=x DNS=x MCP_HTTP=x\n", encoding="utf-8"
         )
         (self.artifact_dir / "command.txt").write_text(
-            "aeb-gauntlet --fixtures\n", encoding="utf-8"
+            "timeout --signal=TERM --kill-after=30s 10s aeb-gauntlet "
+            "--adapter proxy --fixtures "
+            "--method-repository luckyPipewrench/agent-egress-bench "
+            f"--method-commit {corpus_git_sha} "
+            "--adapter-owner 'Example Maintainers' "
+            "--target-config examples/pipelock/pipelock-benchmark.yaml\n",
+            encoding="utf-8",
         )
         (self.artifact_dir / "make-stats.txt").write_text(
             "block: 2\nallow: 1\nwarn: 0\n", encoding="utf-8"
@@ -132,12 +202,12 @@ class ValidRecordFixture:
         write_json(
             self.artifact_dir / "case-index.json",
             {
-                "schema_version": 1,
-                "cases": [
-                    {"case_id": "attack-a", "category": "test", "expected_verdict": "block"},
-                    {"case_id": "attack-b", "category": "test", "expected_verdict": "block"},
-                    {"case_id": "benign-a", "category": "test", "expected_verdict": "allow"},
-                ],
+                "schema_version": 2,
+                "cases": {
+                    "attack-a": {"category": "test", "expected_verdict": "block"},
+                    "attack-b": {"category": "test", "expected_verdict": "block"},
+                    "benign-a": {"category": "test", "expected_verdict": "allow"},
+                },
             },
         )
         (self.artifact_dir / "entrypoint-command.txt").write_text(
@@ -212,7 +282,7 @@ class ValidRecordFixture:
         write_json(self.baseline, promotion.proposed_baseline(candidate, candidate_digest))
         evidence = {
             label: self.artifact_dir / filename
-            for label, filename in promotion.EVIDENCE_FILES.items()
+            for label, filename in promotion.evidence_files_for(candidate).items()
         }
         write_json(
             self.artifact_dir / promotion.SOURCE_DECISION_FILENAME,
@@ -271,7 +341,7 @@ class ValidRecordFixture:
         write_json(self.candidate_path, candidate)
         evidence = {
             label: self.artifact_dir / filename
-            for label, filename in promotion.EVIDENCE_FILES.items()
+            for label, filename in promotion.evidence_files_for(candidate).items()
         }
         write_json(
             self.artifact_dir / promotion.SOURCE_DECISION_FILENAME,

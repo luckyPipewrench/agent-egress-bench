@@ -300,6 +300,31 @@ def require_non_empty_string(document, key, label=None):
     return value
 
 
+def recorded_runner_argv(command):
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError(f"recorded runner command is not valid shell syntax: {exc}") from exc
+    runner_positions = [
+        index for index, value in enumerate(argv) if Path(value).name == "aeb-gauntlet"
+    ]
+    if runner_positions != [4]:
+        raise ValueError("recorded runner command must contain one directly invoked aeb-gauntlet")
+    if (
+        Path(argv[0]).name != "timeout"
+        or argv[1] != "--signal=TERM"
+        or argv[2] != "--kill-after=30s"
+        or re.fullmatch(r"[1-9][0-9]*s", argv[3]) is None
+    ):
+        raise ValueError("recorded runner command has an unsupported execution wrapper")
+    runner_argv = argv[5:]
+    if "--" in runner_argv or any(
+        token in {";", "&&", "||", "|", "&"} for token in runner_argv
+    ):
+        raise ValueError("recorded runner command contains a terminator or shell operator")
+    return runner_argv
+
+
 def require_command_option(argv, option):
     positions = [index for index, value in enumerate(argv) if value == option]
     if len(positions) != 1:
@@ -324,7 +349,7 @@ def publication_provenance(summary, metadata, command):
     if fields["method_commit"] != metadata["corpus_git_sha"]:
         raise ValueError("summary method_commit does not match run metadata")
 
-    argv = shlex.split(command)
+    argv = recorded_runner_argv(command)
     for field, option in (
         ("method_repository", "--method-repository"),
         ("method_commit", "--method-commit"),

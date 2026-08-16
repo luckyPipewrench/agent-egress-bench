@@ -494,6 +494,24 @@
       }
     },
     {
+      "description": "parent traversal method repository",
+      "mutation": {
+        "replace": [
+          "method_repository"
+        ],
+        "value": "owner/../repository"
+      }
+    },
+    {
+      "description": "current-directory method repository",
+      "mutation": {
+        "replace": [
+          "method_repository"
+        ],
+        "value": "owner/."
+      }
+    },
+    {
       "description": "missing method commit",
       "mutation": {
         "remove": [

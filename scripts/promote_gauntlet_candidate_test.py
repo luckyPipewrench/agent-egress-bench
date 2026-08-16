@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -38,6 +39,8 @@ def baseline():
     return {
         "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
         "schema_version": 1,
+        "summary_schema_version": 5,
+        "benchmark_manifest_sha256": "3" * 64,
         "recorded_on": "2026-08-01",
         "verified_candidate_sha256": "a" * 64,
         "verified_artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:122",
@@ -48,14 +51,15 @@ def baseline():
         "scoring_version": "2.4",
         "runner_version": "0.4.2",
         "observed_case_count": {
-            "total": 213,
-            "applicable": 212,
-            "not_applicable": 1,
-            "not_applicable_reasons": {"missing_requires": 1},
+            "total": 2,
+            "applicable": 2,
+            "unreachable": 0,
+            "not_applicable": 0,
+            "not_applicable_reasons": {},
         },
         "score_floors": {
-            "full": {"containment": 0.99},
-            "applicable": {"containment": 1.0, "detection": 1.0, "evidence": 1.0},
+            "full": {"containment": 1.0},
+            "applicable": {"containment": 1.0},
         },
         "score_ceilings": {"applicable": {"false_positive_rate": 0.0}},
     }
@@ -119,40 +123,97 @@ def candidate(run_id="123", run_attempt=None, generated_at="2026-08-05T00:10:08Z
     }
 
 
-def v6_candidate():
-    value = candidate()
-    value["schema_version"] = 6
-    value.pop("sufficient")
-    value["benchmark_manifest_sha256"] = "e" * 64
-    value["measurement_status"] = "measured"
-    value["case_count"]["unreachable"] = 0
-    value["capability_registry"] = {
+def v6_candidate(run_id="123", run_attempt=None, generated_at="2026-08-05T00:10:08Z"):
+    artifact_suffix = run_id if run_attempt is None else f"{run_id}:{run_attempt}"
+    value = {
+        "schema_version": 6,
+        "artifact_id": f"github-actions:luckyPipewrench/agent-egress-bench:{artifact_suffix}",
+        "canonical_url": (
+            "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/" + run_id
+        ),
+        "local_run_id": "local:test:1",
+        "generated_at": generated_at,
+        "corpus_ref_kind": "origin/main",
+        "corpus_git_sha": "b" * 40,
+        "corpus_commit_url": "https://github.com/luckyPipewrench/agent-egress-bench/commit/" + "b" * 40,
+        "dirty": False,
+        "pipelock_tag": "v3.3.0",
+        "pipelock_version": "3.3.0",
+        "pipelock_asset": "pipelock_3.3.0_linux_amd64.tar.gz",
+        "pipelock_asset_sha256": "1" * 64,
+        "pipelock_binary_sha256": "2" * 64,
+        "pipelock_release_url": "https://github.com/luckyPipewrench/pipelock/releases/tag/v3.3.0",
+        "gauntlet_version": "1.0",
+        "scoring_version": "2.4",
+        "runner_version": "0.4.2",
+        "tool": "pipelock",
+        "tool_version": "3.3.0",
+        "corpus_version": "v2.3.0",
+        "corpus_sha256": "c" * 64,
+        "corpus_manifest_sha256": "d" * 64,
+        "case_index_sha256": "e" * 64,
+        "logical_case_count": 2,
+        "tool_profile_sha256": "f" * 64,
+        "case_count": {
+            "total": 2,
+            "applicable": 2,
+            "unreachable": 0,
+            "not_applicable": 0,
+            "not_applicable_reasons": {},
+            "errors": 0,
+        },
+        "scores": {
+            scope: {"containment": 1.0, "false_positive_rate": 0.0}
+            for scope in ("full", "applicable")
+        },
+        "metric_counts": {
+            scope: {
+                "containment": {"numerator": 1, "denominator": 1},
+                "false_positive_rate": {"numerator": 0, "denominator": 1},
+            }
+            for scope in ("full", "applicable")
+        },
+        "fixtures": True,
+        "multifile_cases": True,
+        "command": "aeb-gauntlet --fixtures",
+        "make_stats": "block: 1\nallow: 1\nwarn: 0\n",
+        "evidence_sha256": {label: "a" * 64 for label in provenance.RAW_EVIDENCE | provenance.V4_RAW_EVIDENCE},
+        "measurement_status": "measured",
+        "benchmark_manifest_sha256": "3" * 64,
+        "diagnostics": {
+            scope: {
+                "classification_present_rate": 1.0,
+                "structured_evidence_present_rate": 1.0,
+            }
+            for scope in ("full", "applicable")
+        },
+        "diagnostic_counts": {
+            scope: {
+                "classification_present_rate": {"numerator": 1, "denominator": 1},
+                "structured_evidence_present_rate": {"numerator": 1, "denominator": 1},
+            }
+            for scope in ("full", "applicable")
+        },
+        "capability_registry": {
         "id": "aeb.core-capabilities",
         "format": 1,
         "revision": 1,
         "sha256": "f" * 64,
+        },
+        "reported_claims": [],
+        "exercised": {
+            "transports": ["http"],
+            "categories": ["test"],
+            "capability_tags": [],
+        },
+        "portable_bundle_sha256": "4" * 64,
+        "method_repository": "luckyPipewrench/agent-egress-bench",
+        "method_commit": "b" * 40,
+        "adapter_id": "proxy",
+        "adapter_owner": "Example Maintainers",
+        "target_config_ref": "examples/pipelock/pipelock-benchmark.yaml",
+        "target_config_sha256": "9" * 64,
     }
-    value["reported_claims"] = []
-    value["exercised"] = {"capability_tags": []}
-    value["diagnostics"] = {}
-    value["diagnostic_counts"] = {}
-    for scope in ("full", "applicable"):
-        value["diagnostics"][scope] = {
-            "classification_present_rate": value["scores"][scope].pop("detection"),
-            "structured_evidence_present_rate": value["scores"][scope].pop("evidence"),
-        }
-        value["diagnostic_counts"][scope] = {
-            "classification_present_rate": value["metric_counts"][scope].pop("detection"),
-            "structured_evidence_present_rate": value["metric_counts"][scope].pop("evidence"),
-        }
-    value.update(
-        method_repository="luckyPipewrench/agent-egress-bench",
-        method_commit="b" * 40,
-        adapter_id="proxy",
-        adapter_owner="Example Maintainers",
-        target_config_ref="examples/pipelock/pipelock-benchmark.yaml",
-        target_config_sha256="9" * 64,
-    )
     return value
 
 
@@ -167,8 +228,17 @@ class PromotionFixture:
         self.summary = root / "promotion-summary.md"
         write_json(self.baseline_path, baseline_value or baseline())
 
+        value = dict(candidate_value or v6_candidate())
+        publication_fields = (
+            "method_repository",
+            "method_commit",
+            "adapter_id",
+            "adapter_owner",
+            "target_config_ref",
+            "target_config_sha256",
+        )
         self.evidence = {}
-        for label, filename in promotion.EVIDENCE_FILES.items():
+        for label, filename in promotion.evidence_files_for(value).items():
             path = self.artifact_dir / filename
             if label == "execution_decision":
                 write_json(
@@ -181,35 +251,114 @@ class PromotionFixture:
                         "failures": [],
                     },
                 )
-            elif label == "results":
+            elif label == "raw_summary":
+                write_json(
+                    path,
+                    {
+                        "schema_version": 5,
+                        **{field: value[field] for field in publication_fields if field in value},
+                    },
+                )
+            elif label == "run_metadata":
+                write_json(
+                    path,
+                    {
+                        "corpus_repository": value.get("method_repository"),
+                        "corpus_git_sha": value.get("method_commit"),
+                    },
+                )
+            elif label == "command":
                 path.write_text(
-                    json.dumps(
-                        {
-                            "case_id": "case-1",
-                            "expected_verdict": "block",
-                            "actual_verdict": "block",
-                            "score": "pass",
-                            "evidence": {},
-                            "notes": "",
-                        }
-                    )
-                    + "\n",
+                    "timeout --signal=TERM --kill-after=30s 10s aeb-gauntlet "
+                    f"--adapter {value.get('adapter_id', 'proxy')} --fixtures "
+                    f"--method-repository {value.get('method_repository', '')} "
+                    f"--method-commit {value.get('method_commit', '')} "
+                    f"--adapter-owner '{value.get('adapter_owner', '')}' "
+                    f"--target-config {value.get('target_config_ref', '')}\n",
+                    encoding="utf-8",
+                )
+            elif label == "run_bundle":
+                write_json(
+                    path,
+                    {
+                        "schema_version": 1,
+                        "bundle_status": "complete",
+                        "candidate_scope": {
+                            field: value[field] for field in publication_fields if field in value
+                        },
+                    },
+                )
+            elif label == "case_index":
+                write_json(
+                    path,
+                    {
+                        "schema_version": 2,
+                        "cases": {
+                            "attack-1": {"category": "test", "expected_verdict": "block"},
+                            "benign-1": {"category": "test", "expected_verdict": "allow"},
+                        },
+                    },
+                )
+            elif label == "results":
+                containment_passes = (
+                    value.get("metric_counts", {})
+                    .get("applicable", {})
+                    .get("containment", {})
+                    .get("numerator")
+                    == 1
+                )
+                benign_blocked = (
+                    value.get("metric_counts", {})
+                    .get("applicable", {})
+                    .get("false_positive_rate", {})
+                    .get("numerator")
+                    == 1
+                )
+                path.write_text(
+                    "".join(
+                        json.dumps(row) + "\n"
+                        for row in (
+                            {
+                                "case_id": "attack-1",
+                                "expected_verdict": "block",
+                                "actual_verdict": "block" if containment_passes else "allow",
+                                "score": "pass" if containment_passes else "fail",
+                                "evidence": {"scanner": "example"} if containment_passes else {},
+                                "notes": "",
+                            },
+                            {
+                                "case_id": "benign-1",
+                                "expected_verdict": "allow",
+                                "actual_verdict": "block" if benign_blocked else "allow",
+                                "score": "fail" if benign_blocked else "pass",
+                                "evidence": {},
+                                "notes": "",
+                            },
+                        )
+                    ),
                     encoding="utf-8",
                 )
             else:
                 path.write_text(f"{label}\n", encoding="utf-8")
             self.evidence[label] = path
 
-        value = candidate_value or candidate()
-        value["case_index_sha256"] = hashlib.sha256(
-            self.evidence["case_index"].read_bytes()
-        ).hexdigest()
-        value["portable_bundle_sha256"] = hashlib.sha256(
-            self.evidence["run_bundle"].read_bytes()
-        ).hexdigest()
         self.candidate_value = value
         self.candidate_path = self.artifact_dir / promotion.CANDIDATE_FILENAME
-        write_json(self.candidate_path, value)
+        self.refresh_candidate_integrity()
+
+    def refresh_candidate_integrity(self):
+        self.candidate_value["case_index_sha256"] = hashlib.sha256(
+            self.evidence["case_index"].read_bytes()
+        ).hexdigest()
+        self.candidate_value["portable_bundle_sha256"] = hashlib.sha256(
+            self.evidence["run_bundle"].read_bytes()
+        ).hexdigest()
+        if self.candidate_value.get("schema_version") == 6:
+            self.candidate_value["evidence_sha256"] = {
+                label: hashlib.sha256(self.evidence[label].read_bytes()).hexdigest()
+                for label in self.candidate_value["evidence_sha256"]
+            }
+        write_json(self.candidate_path, self.candidate_value)
         self.write_source_decision()
 
     def write_source_decision(self):
@@ -305,8 +454,44 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tool must be pipelock"):
                 promotion.validate_reference_candidate(value)
 
-    def test_legacy_candidate_baseline_round_trips_through_evaluation(self):
+    def test_v6_promotion_rebinds_candidate_to_raw_summary(self):
         fixture = self.fixture()
+        fixture.candidate_value["adapter_owner"] = "Different Maintainers"
+        write_json(fixture.candidate_path, fixture.candidate_value)
+        fixture.write_source_decision()
+
+        result = fixture.run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("candidate adapter_owner does not match retained run evidence", result.stdout)
+
+    def test_v6_promotion_rebinds_every_advertised_evidence_digest(self):
+        fixture = self.fixture()
+        fixture.candidate_value["evidence_sha256"]["command"] = "0" * 64
+        write_json(fixture.candidate_path, fixture.candidate_value)
+        fixture.write_source_decision()
+
+        result = fixture.run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "candidate evidence_sha256.command does not match retained evidence", result.stdout
+        )
+
+    def test_v6_promotion_rebinds_run_bundle_scope(self):
+        fixture = self.fixture()
+        bundle = evaluator.load_object(fixture.evidence["run_bundle"])
+        bundle["candidate_scope"]["adapter_owner"] = "Different Maintainers"
+        write_json(fixture.evidence["run_bundle"], bundle)
+        fixture.refresh_candidate_integrity()
+
+        result = fixture.run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("run bundle adapter_owner does not match retained run evidence", result.stdout)
+
+    def test_legacy_candidate_baseline_round_trips_through_evaluation(self):
+        fixture = self.fixture(candidate())
         generated = promotion.proposed_baseline(
             fixture.candidate_value, evaluator.file_sha256(fixture.candidate_path)
         )
@@ -360,8 +545,41 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         reviewed = evaluator.load_object(record / promotion.PUBLISHED_DECISION_FILENAME)
         self.assertFalse(reviewed["blocked"])
         summary = fixture.summary.read_text(encoding="utf-8")
-        self.assertIn("Scope: `212 / 213` routed", summary)
+        self.assertIn("Scope: `2 / 2` routed", summary)
         self.assertIn("Reviewed policy change proposed: `no`", summary)
+
+    def test_new_legacy_candidate_is_rejected_before_publication(self):
+        fixture = self.fixture(candidate())
+
+        result = fixture.run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("new promotions require active provenance candidate schema_version 6", result.stdout)
+
+    def test_exact_legacy_promotion_repeat_remains_idempotent(self):
+        fixture = self.fixture(candidate())
+        digest = evaluator.file_sha256(fixture.candidate_path)
+        record = fixture.store_root / "pipelock" / digest
+        record.mkdir(parents=True)
+        baseline_snapshot = record / promotion.BASELINE_SNAPSHOT_FILENAME
+        baseline_snapshot.write_bytes(fixture.baseline_path.read_bytes())
+        args = SimpleNamespace(
+            artifact_dir=fixture.artifact_dir,
+            baseline=fixture.baseline_path,
+            store_root=fixture.store_root,
+            latest=fixture.latest,
+            summary=None,
+            artifact_prefix=promotion.DEFAULT_ARTIFACT_PREFIX,
+            url_prefix=promotion.DEFAULT_URL_PREFIX,
+            expected_run_id="123",
+            expected_run_attempt=None,
+            accept_policy_change=False,
+        )
+
+        with mock.patch.object(promotion, "existing_promotion_is_complete", return_value=True):
+            promoted = promotion.promote(args)
+
+        self.assertEqual(promoted, record)
 
     def test_same_promotion_is_idempotent(self):
         fixture = self.fixture()
@@ -374,8 +592,19 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertTrue(fixture.summary.is_file())
 
     def test_score_regression_needs_explicit_policy_change(self):
-        value = candidate()
-        value["scores"]["full"]["containment"] = 0.98
+        value = v6_candidate()
+        for scope in ("full", "applicable"):
+            value["metric_counts"][scope]["containment"]["numerator"] = 0
+            value["scores"][scope]["containment"] = 0.0
+            for diagnostic in (
+                "classification_present_rate",
+                "structured_evidence_present_rate",
+            ):
+                value["diagnostic_counts"][scope][diagnostic] = {
+                    "numerator": 0,
+                    "denominator": 0,
+                }
+                value["diagnostics"][scope][diagnostic] = None
         fixture = self.fixture(value)
         blocked = fixture.run()
         self.assertNotEqual(blocked.returncode, 0)
@@ -384,13 +613,14 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
         self.assertEqual(
             evaluator.load_object(fixture.baseline_path)["score_floors"]["full"]["containment"],
-            0.98,
+            0.0,
         )
 
     def test_false_positive_regression_needs_explicit_policy_change(self):
-        value = candidate()
-        value["metric_counts"]["applicable"]["false_positive_rate"]["numerator"] = 1
-        value["scores"]["applicable"]["false_positive_rate"] = 1 / 54
+        value = v6_candidate()
+        for scope in ("full", "applicable"):
+            value["metric_counts"][scope]["false_positive_rate"]["numerator"] = 1
+            value["scores"][scope]["false_positive_rate"] = 1.0
         fixture = self.fixture(value)
         blocked = fixture.run()
         self.assertNotEqual(blocked.returncode, 0)
@@ -400,7 +630,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("above baseline ceiling", fixture.summary.read_text(encoding="utf-8"))
 
     def test_pinned_version_move_needs_explicit_policy_change(self):
-        value = candidate()
+        value = v6_candidate()
         value["pipelock_version"] = "3.4.0"
         value["tool_version"] = "3.4.0"
         fixture = self.fixture(value)
@@ -412,7 +642,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         )
 
     def test_scope_identity_move_needs_explicit_policy_change(self):
-        value = candidate()
+        value = v6_candidate()
         value["corpus_sha256"] = "a" * 64
         fixture = self.fixture(value)
         blocked = fixture.run()
@@ -424,34 +654,57 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("Reviewed policy change proposed: `yes`", summary)
 
     def test_summary_names_nonpassing_case_and_boundary_timing(self):
-        fixture = self.fixture()
-        fixture.evidence["results"].write_text(
-            json.dumps(
-                {
-                    "case_id": "budget-boundary-1",
-                    "expected_verdict": "block",
-                    "actual_verdict": "allow",
-                    "score": "fail",
-                    "evidence": {
-                        "budget_block_timing": "before_over_budget",
-                        "error_message": "blocked at 4/3",
-                    },
-                    "notes": "",
+        value = v6_candidate()
+        for scope in ("full", "applicable"):
+            value["metric_counts"][scope]["containment"]["numerator"] = 0
+            value["scores"][scope]["containment"] = 0.0
+            for diagnostic in (
+                "classification_present_rate",
+                "structured_evidence_present_rate",
+            ):
+                value["diagnostic_counts"][scope][diagnostic] = {
+                    "numerator": 0,
+                    "denominator": 0,
                 }
-            )
-            + "\n",
+                value["diagnostics"][scope][diagnostic] = None
+        fixture = self.fixture(value)
+        fixture.evidence["results"].write_text(
+            "".join(
+                json.dumps(row) + "\n"
+                for row in (
+                    {
+                        "case_id": "attack-1",
+                        "expected_verdict": "block",
+                        "actual_verdict": "allow",
+                        "score": "fail",
+                        "evidence": {
+                            "budget_block_timing": "before_over_budget",
+                            "error_message": "blocked at 4/3",
+                        },
+                        "notes": "",
+                    },
+                    {
+                        "case_id": "benign-1",
+                        "expected_verdict": "allow",
+                        "actual_verdict": "allow",
+                        "score": "pass",
+                        "evidence": {},
+                        "notes": "",
+                    },
+                )
+            ),
             encoding="utf-8",
         )
-        fixture.write_source_decision()
-        result = fixture.run()
+        fixture.refresh_candidate_integrity()
+        result = fixture.run(accept_policy_change=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = fixture.summary.read_text(encoding="utf-8")
-        self.assertIn("`budget-boundary-1`:", summary)
+        self.assertIn("`attack-1`:", summary)
         self.assertIn("before_over_budget; blocked at 4/3", summary)
 
     def test_structural_failure_cannot_be_overridden(self):
-        value = candidate()
-        value["sufficient"] = False
+        value = v6_candidate()
+        value["measurement_status"] = "incomplete"
         fixture = self.fixture(value)
         result = fixture.run(accept_policy_change=True)
         self.assertNotEqual(result.returncode, 0)
@@ -463,7 +716,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         fixture.evidence["results"].write_text("tampered\n", encoding="utf-8")
         result = fixture.run()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("source decision does not match", result.stdout)
+        self.assertIn("candidate evidence_sha256.results does not match retained evidence", result.stdout)
 
     def test_record_mutation_breaks_idempotent_promotion(self):
         fixture = self.fixture()
@@ -547,7 +800,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("latest pointer and record candidate disagree on artifact_id", second.stdout)
 
     def test_unsafe_artifact_origin_is_rejected(self):
-        value = candidate()
+        value = v6_candidate()
         value["canonical_url"] = "https://attacker.example/run/123"
         fixture = self.fixture(value)
         result = fixture.run()
@@ -555,7 +808,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("canonical_url must start", result.stdout)
 
     def test_non_reference_tool_is_rejected(self):
-        value = candidate()
+        value = v6_candidate()
         value["tool"] = "other-tool"
         fixture = self.fixture(value)
         result = fixture.run()
@@ -563,7 +816,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("candidate tool must be pipelock", result.stdout)
 
     def test_unicode_run_id_is_rejected(self):
-        value = candidate(run_id="١٢٣")
+        value = v6_candidate(run_id="١٢٣")
         fixture = self.fixture(value)
         result = fixture.run()
         self.assertNotEqual(result.returncode, 0)
@@ -587,7 +840,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("does not match the requested source run", result.stdout)
 
     def test_run_attempt_is_bound_when_present(self):
-        fixture = self.fixture(candidate(run_attempt="2"))
+        fixture = self.fixture(v6_candidate(run_attempt="2"))
         accepted = fixture.run()
         self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
         command = fixture.command()
@@ -598,13 +851,13 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("does not match the requested source attempt", rejected.stdout)
 
-    def test_legacy_run_id_only_candidate_is_accepted_without_expected_attempt(self):
-        fixture = self.fixture(candidate())
+    def test_run_id_only_candidate_is_accepted_without_expected_attempt(self):
+        fixture = self.fixture(v6_candidate())
         accepted = fixture.run()
         self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
 
-    def test_legacy_run_id_only_candidate_is_rejected_by_attempt_bound_promotion(self):
-        fixture = self.fixture(candidate())
+    def test_run_id_only_candidate_is_rejected_by_attempt_bound_promotion(self):
+        fixture = self.fixture(v6_candidate())
         command = fixture.command()
         command.extend(["--expected-run-attempt", "1"])
         rejected = subprocess.run(
@@ -614,10 +867,10 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("does not match the requested source attempt", rejected.stdout)
 
     def test_timezone_free_candidate_time_is_rejected(self):
-        fixture = self.fixture(candidate(generated_at="2026-08-05T00:10:08"))
+        fixture = self.fixture(v6_candidate(generated_at="2026-08-05T00:10:08"))
         result = fixture.run()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("timestamp with a timezone", result.stdout)
+        self.assertIn("RFC 3339 timestamp", result.stdout)
 
     def test_missing_evidence_is_rejected(self):
         fixture = self.fixture()
@@ -641,7 +894,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         first = fixture.run()
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
 
-        older = candidate(run_id="124", generated_at="2026-08-04T00:10:08Z")
+        older = v6_candidate(run_id="124", generated_at="2026-08-04T00:10:08Z")
         second_artifact = fixture.root / "older-artifact"
         second_artifact.mkdir()
         for path in fixture.artifact_dir.iterdir():
@@ -653,10 +906,14 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         older["portable_bundle_sha256"] = hashlib.sha256(
             (second_artifact / promotion.EVIDENCE_FILES["run_bundle"]).read_bytes()
         ).hexdigest()
+        older["evidence_sha256"] = {
+            label: hashlib.sha256((second_artifact / filename).read_bytes()).hexdigest()
+            for label, filename in provenance.RAW_EVIDENCE.items() | provenance.V4_RAW_EVIDENCE.items()
+        }
         write_json(second_artifact / promotion.CANDIDATE_FILENAME, older)
         second_paths = {
             label: second_artifact / filename
-            for label, filename in promotion.EVIDENCE_FILES.items()
+            for label, filename in promotion.evidence_files_for(older).items()
         }
         source = evaluator.evaluate(
             second_artifact / promotion.CANDIDATE_FILENAME,
@@ -681,7 +938,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         first_manifest_path = first_record / promotion.RECORD_MANIFEST_FILENAME
         first_manifest_digest = evaluator.file_sha256(first_manifest_path)
 
-        newer = candidate(run_id="124", generated_at="2026-08-06T00:10:08Z")
+        newer = v6_candidate(run_id="124", generated_at="2026-08-06T00:10:08Z")
         second_artifact = fixture.root / "newer-artifact"
         second_artifact.mkdir()
         for path in fixture.artifact_dir.iterdir():
@@ -693,10 +950,17 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         newer["portable_bundle_sha256"] = hashlib.sha256(
             (second_artifact / promotion.EVIDENCE_FILES["run_bundle"]).read_bytes()
         ).hexdigest()
+        newer["evidence_sha256"] = {
+            label: hashlib.sha256((second_artifact / filename).read_bytes()).hexdigest()
+            for label, filename in {
+                **provenance.RAW_EVIDENCE,
+                **provenance.V4_RAW_EVIDENCE,
+            }.items()
+        }
         write_json(second_artifact / promotion.CANDIDATE_FILENAME, newer)
         second_paths = {
             label: second_artifact / filename
-            for label, filename in promotion.EVIDENCE_FILES.items()
+            for label, filename in promotion.evidence_files_for(newer).items()
         }
         write_json(
             second_artifact / promotion.SOURCE_DECISION_FILENAME,
