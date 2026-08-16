@@ -535,9 +535,17 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 	}
 
 	casesDir := filepath.Join("..", "cases")
-	err = run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, receiptPath, "", "", false)
+	// No receipt profile is requested here. Emission refuses a calibration run,
+	// because the profile is a buyer-facing statement that a tool blocked things
+	// and its schema carries no field that would let a reader tell an asserted
+	// run from a measured one. The row mapping this test cares about is still
+	// checked below, built directly rather than through the operator path.
+	err = run(casesDir, profilePath, outputPath, 10*1e9, "dryrun", "", "", "", "", false, "", "", "", false)
 	if err != nil {
 		t.Fatalf("run: %v", err)
+	}
+	if _, statErr := os.Stat(receiptPath); !os.IsNotExist(statErr) {
+		t.Fatalf("run wrote a receipt profile it was not asked for: %v", statErr)
 	}
 
 	expected, err := loadCorpus(casesDir)
@@ -575,14 +583,31 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 		)
 	}
 
-	data, err := os.ReadFile(receiptPath)
-	if err != nil {
-		t.Fatalf("read receipt profile: %v", err)
+	// Calibration semantics, stated once: the dryrun adapter echoes the expected
+	// verdict, so every row scores pass. Building the rows here keeps the
+	// expected-to-blocked mapping under test without asking the runner to write
+	// an artifact it now refuses to write for an asserted run.
+	byID := make(map[string]Case, len(expected))
+	rows := make([]CaseResult, 0, len(expected))
+	for _, c := range expected {
+		byID[c.ID] = c
+		rows = append(rows, CaseResult{
+			CaseID:          c.ID,
+			ExpectedVerdict: c.ExpectedVerdict,
+			ActualVerdict:   c.ExpectedVerdict,
+			Score:           "pass",
+			Evidence:        map[string]interface{}{"synthetic": true, "synthetic_adapter": "dryrun"},
+		})
 	}
-	var rp ReceiptProfile
-	if jsonErr := json.Unmarshal(data, &rp); jsonErr != nil {
-		t.Fatalf("parse receipt profile: %v", jsonErr)
-	}
+	rp := buildReceiptProfile(
+		Profile{Tool: "test-tool", ToolVersion: "0.0.0"},
+		rows,
+		byID,
+		ReceiptVerifier{},
+		summary.CorpusVersion,
+		summary.CorpusSHA256,
+		summary.ToolProfileSHA256,
+	)
 	if len(rp.PerCase) != len(expected) {
 		t.Fatalf("receipt profile rows = %d, want loader-backed %d", len(rp.PerCase), len(expected))
 	}

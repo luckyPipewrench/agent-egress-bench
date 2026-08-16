@@ -306,6 +306,21 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	// tool-profile hashes already computed for the gauntlet summary so
 	// repeated runs are byte-reproducible against the same inputs.
 	if emitReceiptProfile != "" {
+		// A receipt profile is read as a statement that a tool blocked things,
+		// and its renderer maps an expected block plus an actual block to
+		// blocked: yes without consulting the evidence behind the row. A
+		// calibration run asserts both without contacting anything, so it
+		// produced a profile claiming every malicious case was blocked. The
+		// profile schema carries no synthetic or measurement field, so nothing
+		// downstream could tell that artifact from a measured one.
+		//
+		// The provenance builder already refuses a synthetic row when building
+		// a publishable bundle. This is the same refusal on the other path out
+		// of the runner, using the same rule: only an explicit false means a
+		// row is not synthetic, so a missing or malformed marker still counts.
+		if reason := receiptProfileRefusal(applicableResults, unreachableResults); reason != "" {
+			return fmt.Errorf("refusing to write a receipt profile: %s", reason)
+		}
 		// Load receipt verifier only when profile emission is requested.
 		// An empty path yields a "no verifier" block; a malformed path fails
 		// before writing the receipt profile.
