@@ -235,6 +235,17 @@ func openRootedArtifact(root *os.Root, name string) (*os.File, error) {
 		_ = handle.Close()
 		return nil, errNotRegularArtifact
 	}
+	// A zero-byte artifact is refused here rather than in each reader, because
+	// each reader answered it differently and one answered it wrong: the results
+	// scanner read no rows, reported no error, and returned "Readable", so an
+	// empty file was described to the operator as a readable artifact. The digest
+	// path would equally have hashed an empty slice. Refusing once, where the
+	// descriptor is open and its size already known, is the only place all of
+	// them share.
+	if info.Size() == 0 {
+		_ = handle.Close()
+		return nil, errEmptyArtifact
+	}
 	return handle, nil
 }
 
@@ -250,7 +261,10 @@ func readRegularArtifact(dir, name string) ([]byte, error) {
 	return io.ReadAll(handle)
 }
 
-var errNotRegularArtifact = errors.New("run artifact is not a regular file")
+var (
+	errNotRegularArtifact = errors.New("run artifact is not a regular file")
+	errEmptyArtifact      = errors.New("run artifact is empty")
+)
 
 func loadReportDocument(dir, name string) reportDocument {
 	doc := reportDocument{name: name}
@@ -261,6 +275,10 @@ func loadReportDocument(dir, name string) reportDocument {
 	}
 	if errors.Is(err, errNotRegularArtifact) {
 		doc.status = "Invalid in run artifacts: not a regular file"
+		return doc
+	}
+	if errors.Is(err, errEmptyArtifact) {
+		doc.status = "Invalid in run artifacts: empty file"
 		return doc
 	}
 	if err != nil {
@@ -305,6 +323,9 @@ func loadReportText(dir, name string) string {
 	if errors.Is(err, errNotRegularArtifact) {
 		return "Invalid in run artifacts: not a regular file"
 	}
+	if errors.Is(err, errEmptyArtifact) {
+		return "Invalid in run artifacts: empty file"
+	}
 	if err != nil {
 		return "Unreadable run artifact"
 	}
@@ -337,6 +358,9 @@ func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 	}
 	if errors.Is(err, errNotRegularArtifact) {
 		return nil, counts, "Invalid in run artifacts: not a regular file"
+	}
+	if errors.Is(err, errEmptyArtifact) {
+		return nil, counts, "Invalid in run artifacts: empty file"
 	}
 	if err != nil {
 		return nil, counts, "Unreadable run artifact"

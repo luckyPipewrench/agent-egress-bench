@@ -743,3 +743,25 @@ func TestActiveProfileIsReadOnceWithoutFollowingLinks(t *testing.T) {
 		t.Fatalf("readRegularArtifact(symlinked profile) = %v, want it refused as not a regular file", err)
 	}
 }
+
+func TestZeroByteArtifactIsNamedRatherThanCalledReadable(t *testing.T) {
+	// The results reader read no rows from an empty file, reported no error, and
+	// returned "Readable", so an empty artifact beside a valid one was described
+	// to the operator as readable. Each reader answered the empty case its own
+	// way and this one answered it wrong, so the refusal belongs in the shared
+	// opener where all of them pass through.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "raw-summary.json"), []byte(`{"tool":"example-tool"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatalf("loadBuyerReport = %v, want the partial run accepted", err)
+	}
+	if !strings.Contains(report.resultErr, "empty file") {
+		t.Errorf("results.jsonl status = %q, want it named as an empty file", report.resultErr)
+	}
+}
