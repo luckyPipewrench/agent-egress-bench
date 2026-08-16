@@ -178,9 +178,9 @@
       }
     });
     // V2 records predate registry bytes and remain readable as frozen history.
-    // An active v4/v5 result is not rendered until its pinned raw profile and raw
+    // A supported v4/v5/v6 result is not rendered until its pinned raw profile and raw
     // registry snapshot have both been fetched and bound to the candidate.
-    if (artifact.schema_version === 4 || artifact.schema_version === 5) {
+    if (artifact.schema_version === 4 || artifact.schema_version === 5 || artifact.schema_version === 6) {
       var reference = registryReference(artifact.capability_registry);
       if (!artifact.tool_profile_sha256 || !SHA256.test(artifact.tool_profile_sha256)) {
         throw new Error('active result has no valid tool_profile_sha256');
@@ -226,7 +226,7 @@
       Object.defineProperty(artifact, '_capabilityLabels', { value: entries, enumerable: false });
       Object.defineProperty(artifact, '_exercisedCapabilityTags', { value: exercisedTags, enumerable: false });
     } else if (artifact.schema_version !== 2) {
-      throw new Error('result record must be frozen schema v2 or active schema v4/v5');
+      throw new Error('result record must be frozen schema v2 or supported schema v4/v5/v6');
     }
     return artifact;
   }

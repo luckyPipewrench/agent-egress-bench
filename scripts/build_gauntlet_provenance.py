@@ -149,8 +149,8 @@ def validate_result_row_contract(
         )
     if schema_version != expected_version:
         raise ValueError(
-            f"runner JSONL row {row_number} schema_version must match summary schema_version "
-            f"{expected_version}"
+            f"runner JSONL row {row_number} schema_version must match active result "
+            f"schema_version {expected_version}"
         )
     if schema_version != active_version:
         return
@@ -298,6 +298,69 @@ def require_non_empty_string(document, key, label=None):
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label or key} must be a non-empty string")
     return value
+
+
+def recorded_runner_argv(command):
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError(f"recorded runner command is not valid shell syntax: {exc}") from exc
+    runner_positions = [
+        index for index, value in enumerate(argv) if Path(value).name == "aeb-gauntlet"
+    ]
+    if runner_positions != [4]:
+        raise ValueError("recorded runner command must contain one directly invoked aeb-gauntlet")
+    if (
+        Path(argv[0]).name != "timeout"
+        or argv[1] != "--signal=TERM"
+        or argv[2] != "--kill-after=30s"
+        or re.fullmatch(r"[1-9][0-9]*s", argv[3]) is None
+    ):
+        raise ValueError("recorded runner command has an unsupported execution wrapper")
+    runner_argv = argv[5:]
+    if "--" in runner_argv or any(
+        token in {";", "&&", "||", "|", "&"} for token in runner_argv
+    ):
+        raise ValueError("recorded runner command contains a terminator or shell operator")
+    return runner_argv
+
+
+def require_command_option(argv, option):
+    positions = [index for index, value in enumerate(argv) if value == option]
+    if len(positions) != 1:
+        raise ValueError(f"recorded runner command must declare {option} exactly once")
+    index = positions[0]
+    if index + 1 >= len(argv) or not argv[index + 1]:
+        raise ValueError(f"recorded runner command {option} must have a value")
+    return argv[index + 1]
+
+
+def publication_provenance(summary, metadata, command):
+    fields = {
+        "method_repository": require_non_empty_string(summary, "method_repository"),
+        "method_commit": require_non_empty_string(summary, "method_commit"),
+        "adapter_id": require_non_empty_string(summary, "adapter_id"),
+        "adapter_owner": require_non_empty_string(summary, "adapter_owner"),
+        "target_config_ref": require_non_empty_string(summary, "target_config_ref"),
+        "target_config_sha256": require_sha256(summary, "target_config_sha256"),
+    }
+    if fields["method_repository"] != metadata["corpus_repository"]:
+        raise ValueError("summary method_repository does not match run metadata")
+    if fields["method_commit"] != metadata["corpus_git_sha"]:
+        raise ValueError("summary method_commit does not match run metadata")
+
+    argv = recorded_runner_argv(command)
+    for field, option in (
+        ("method_repository", "--method-repository"),
+        ("method_commit", "--method-commit"),
+        ("adapter_id", "--adapter"),
+        ("adapter_owner", "--adapter-owner"),
+        ("target_config_ref", "--target-config"),
+    ):
+        if require_command_option(argv, option) != fields[field]:
+            raise ValueError(f"summary {field} does not match recorded runner command {option}")
+
+    return fields
 
 
 def claims_synthetic(row):
@@ -639,9 +702,7 @@ def measurements(repo_root, run_dir):
         if not isinstance(evidence, dict):
             raise ValueError(f"runner JSONL row {row_number} evidence must be an object")
         if result_contract is not None:
-            validate_result_row_contract(
-                row, row_number, summary_schema_version, *result_contract
-            )
+            validate_result_row_contract(row, row_number, summary_schema_version, *result_contract)
         if not isinstance(row.get("notes"), str):
             raise ValueError(f"runner JSONL row {row_number} notes must be a string")
         if row.get("tool") != summary.get("tool") or row.get("tool_version") != summary.get(
@@ -955,6 +1016,9 @@ def build_complete_bundle(repo_root, run_dir):
         raise ValueError("entrypoint command evidence is empty")
     measured = measurements(repo_root, run_dir)
     summary = measured["summary"]
+    provenance_fields = None
+    if summary.get("schema_version") == ACTIVE_SUMMARY_SCHEMA_VERSION:
+        provenance_fields = publication_provenance(summary, metadata, measured["command"])
     if summary.get("tool_version") != release["version"]:
         raise ValueError(
             "runner summary tool_version does not match the executed Pipelock release: "
@@ -1024,6 +1088,8 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_scope["capability_registry"] = measured["capability_registry"]
         candidate_scope["reported_claims"] = summary["reported_claims"]
         candidate_scope["exercised"] = summary["exercised"]
+    if provenance_fields is not None:
+        candidate_scope.update(provenance_fields)
     return {
         "schema_version": 1,
         "bundle_status": "complete",

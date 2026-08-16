@@ -180,6 +180,20 @@ def v5_candidate():
     return value
 
 
+def v6_candidate():
+    value = v5_candidate()
+    value["schema_version"] = 6
+    value.update(
+        method_repository="luckyPipewrench/agent-egress-bench",
+        method_commit="b" * 40,
+        adapter_id="proxy",
+        adapter_owner="Example Maintainers",
+        target_config_ref="examples/pipelock/pipelock-benchmark.yaml",
+        target_config_sha256="f" * 64,
+    )
+    return value
+
+
 def baseline():
     return {
         "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
@@ -242,7 +256,7 @@ class CandidateEvaluationTest(unittest.TestCase):
             candidate_path.write_text(raw_candidate, encoding="utf-8")
         baseline_path.write_text(json.dumps(baseline_value or baseline()), encoding="utf-8")
         evidence_path = root / "results.jsonl"
-        if (candidate_value or {}).get("schema_version") == 5:
+        if (candidate_value or {}).get("schema_version") in {5, 6}:
             evidence_path.write_bytes(V5_RESULTS_BYTES)
         else:
             evidence_path.write_text('{"id":"case-1"}\n', encoding="utf-8")
@@ -336,6 +350,11 @@ class CandidateEvaluationTest(unittest.TestCase):
         decision, *_ = self.run_evaluate(v5_candidate(), v5_baseline())
 
         self.assertFalse(decision["blocked"], decision["failures"])
+
+    def test_v6_candidate_accepts_the_v5_summary_baseline_identity(self):
+        accepted, *_ = self.run_evaluate(v6_candidate(), v5_baseline())
+
+        self.assertFalse(accepted["blocked"], accepted["failures"])
 
     def test_v5_self_consistent_lie_is_rejected_by_raw_results(self):
         value = v5_candidate()

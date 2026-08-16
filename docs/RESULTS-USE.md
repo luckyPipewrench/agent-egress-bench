@@ -52,8 +52,7 @@ Publish these next to any score, or the number is not reproducible.
 | Containment and false-positive rate, reported separately | There is no composite score in this corpus. V5 field-presence diagnostics are non-scoring observations, not detection or proof claims. |
 | The non-claims that apply | See below. |
 
-The runner writes these into the summary JSON. The corpus-derived facts come from the run itself; repository and commit, adapter owner, and the target configuration are operator declarations, supplied with `--method-repository`, `--method-commit`, `--adapter-owner`, and `--target-config`. A fact you do not declare is omitted rather than guessed, and the buyer report names it as absent. Reproduction instructions belong
-beside a public result too, so a reader can run it rather than believe it.
+The runner writes these into the v5 summary JSON. The corpus-derived facts come from the run itself; repository and commit, adapter owner, and target configuration are operator declarations supplied with `--method-repository`, `--method-commit`, `--adapter-owner`, and `--target-config`. A local summary may omit a declaration rather than guess it. The v6 provenance candidate requires every declaration before promotion, and the buyer report names anything absent from older or local artifacts. Reproduction instructions belong beside a public result too, so a reader can run it rather than believe it.
 
 ## Non-claims
 

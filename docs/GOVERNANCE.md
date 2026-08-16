@@ -62,7 +62,7 @@ Internal code changes still require a bump when they produce one of those effect
 
 A version freezes when the repository commits an immutable public record that declares it. Frozen readers keep that version's exact behavior. A new reader may support a new version, but it must not normalize old bytes into the new definition. Case semantics freeze per case when the case reaches `main`, independent of the artifact-family version.
 
-Retained v1 and v2 evidence records are frozen. The v4 case, profile, and receipt-profile formats remain active. Result rows now write v5 and retain the frozen v4 reader; summaries and provenance also write v5. No promoted record uses the active formats yet. The first promoted record in an active generation freezes the contracts it carries.
+Retained v1 and v2 evidence records are frozen. The v4 case, profile, and receipt-profile formats remain active. Result rows and summaries write v5 and retain their frozen v4 readers. Provenance candidates write v6 while retaining their v5 reader. A local v5 summary may omit publication provenance, but a v6 provenance candidate can't cross the promotion boundary without the method repository and commit, adapter identity and owner, and target configuration reference and digest. Promotion baselines remain on v1 because v6 candidates still carry v5 summary and scoring semantics.
 
 Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not an artifact schema bump.
 
@@ -77,14 +77,14 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Tool profile | 4 | 1, 3, 4 | 1, 3 | [`tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) |
 | Receipt-scoring profile | 4 | 1, 4 | 1 | [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json) |
 | Summary | 5 | 4, 5 | 4 | [`summary-v5.schema.json`](../schemas/summary-v5.schema.json) |
-| Provenance candidate | 5 | 1, 2, 4, 5 | 1, 2 | Python reader, no JSON Schema |
+| Provenance candidate | 6 | 1, 2, 4, 5, 6 | 1, 2, 5 | [`provenance-candidate-v6.schema.json`](../schemas/provenance-candidate-v6.schema.json) |
 | Case index | 2 | 1, 2 | 1 | [`case-index-v2.schema.json`](../schemas/case-index-v2.schema.json) |
 | Promoted record | 2 | 1, 2 | 1 | [`promoted-record-v2.schema.json`](../schemas/promoted-record-v2.schema.json) |
 | Promotion baseline | 1 | 1 | 1 | [`promotion-baseline-v1.schema.json`](../schemas/promotion-baseline-v1.schema.json) |
 
-Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows and summaries retain frozen v4 schemas beside their active v5 schemas, so a path cannot silently retarget a historical contract. The repository provides no unsuffixed compatibility aliases.
+Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows and summaries retain frozen v4 beside active v5. Provenance candidates retain every accepted version beside active v6. A path can't silently retarget a historical contract, and the repository provides no unsuffixed compatibility aliases.
 
-A proposed change to the active v5 summary, including the work tracked in pull request 153, may amend v5 only if every existing v5 artifact keeps the same accepted meaning, score, and verification result. Any change to those outcomes requires a new version. The owner must classify that change before publication; this policy does not decide the facts of that pull request.
+The summary stays on v5 because it already has optional fields for the publication facts. Provenance candidate v6 makes those fields mandatory and verifies them before publication. Keeping the requirement in that artifact family avoids changing the local-run summary or the promotion baseline when their meaning hasn't changed.
 
 ## Contribution acceptance
 

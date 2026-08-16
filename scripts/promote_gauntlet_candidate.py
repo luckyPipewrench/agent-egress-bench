@@ -42,6 +42,9 @@ DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
 DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION = artifact_contracts.active_version("promoted_record")
+ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = artifact_contracts.active_version(
+    "provenance_candidate"
+)
 PROMOTED_RECORD_SCHEMAS = artifact_contracts.schema_paths("promoted_record")
 PROMOTION_BASELINE_SCHEMA = artifact_contracts.canonical_schema_path("promotion_baseline")
 REVIEWABLE_SCORE_FAILURE = re.compile(
@@ -85,7 +88,7 @@ def parse_timestamp(value, label):
 
 def evidence_files_for(candidate):
     files = dict(EVIDENCE_FILES)
-    if candidate.get("schema_version") in {4, 5}:
+    if candidate.get("schema_version") in {4, 5, 6}:
         files.update(provenance.V4_RAW_EVIDENCE)
     return files
 
@@ -149,18 +152,72 @@ def validate_candidate_origin(
 
 
 def validate_reference_candidate(candidate):
-    if candidate.get("schema_version") not in {2, 4, 5}:
-        raise ValueError("candidate schema_version must be 2, 4, or 5")
-    if candidate.get("schema_version") in {4, 5}:
+    if candidate.get("schema_version") not in {2, 4, 5, 6}:
+        raise ValueError("candidate schema_version must be 2, 4, 5, or 6")
+    if candidate.get("schema_version") in {4, 5, 6}:
         evaluator.require_capability_registry(candidate)
-    if candidate.get("schema_version") == 5:
+    if candidate.get("schema_version") in {5, 6}:
         evaluator.validate_v5_candidate_contract(candidate)
+    if candidate.get("schema_version") == 6:
+        for field in (
+            "method_repository",
+            "method_commit",
+            "adapter_id",
+            "adapter_owner",
+            "target_config_ref",
+        ):
+            require_non_empty_string(candidate, field)
+        require_sha256(candidate.get("target_config_sha256"), "target_config_sha256")
+        candidate = artifact_schema.validate_file(
+            candidate,
+            evaluator.PROVENANCE_SCHEMAS[6],
+            "provenance candidate v6",
+        )
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
     parse_timestamp(require_non_empty_string(candidate, "generated_at"), "generated_at")
     tool_version = require_non_empty_string(candidate, "tool_version")
     if tool_version != require_non_empty_string(candidate, "pipelock_version"):
         raise ValueError("candidate tool_version and pipelock_version must match")
+    return candidate
+
+
+def validate_new_candidate_evidence(candidate, paths):
+    if candidate.get("schema_version") != ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION:
+        raise ValueError(
+            "new promotions require active provenance candidate schema_version "
+            f"{ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION}"
+        )
+    summary = require_object(paths["raw_summary"])
+    if summary.get("schema_version") != provenance.ACTIVE_SUMMARY_SCHEMA_VERSION:
+        raise ValueError(
+            f"provenance candidate v{ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION} requires retained "
+            f"summary schema_version {provenance.ACTIVE_SUMMARY_SCHEMA_VERSION}"
+        )
+    metadata = require_object(paths["run_metadata"])
+    command = paths["command"].read_text(encoding="utf-8").strip()
+    bound = provenance.publication_provenance(summary, metadata, command)
+    for field, expected in bound.items():
+        if candidate.get(field) != expected:
+            raise ValueError(f"candidate {field} does not match retained run evidence")
+
+    advertised = candidate.get("evidence_sha256")
+    expected_labels = set(provenance.raw_evidence_for_summary(summary))
+    if not isinstance(advertised, dict) or set(advertised) != expected_labels:
+        raise ValueError("candidate evidence_sha256 does not name the complete retained evidence set")
+    for label in sorted(expected_labels):
+        if evaluator.file_sha256(paths[label]) != advertised.get(label):
+            raise ValueError(f"candidate evidence_sha256.{label} does not match retained evidence")
+
+    bundle = require_object(paths["run_bundle"])
+    if bundle.get("schema_version") != 1 or bundle.get("bundle_status") != "complete":
+        raise ValueError("retained run bundle is not complete")
+    scope = bundle.get("candidate_scope")
+    if not isinstance(scope, dict):
+        raise ValueError("retained run bundle candidate_scope must be an object")
+    for field, expected in bound.items():
+        if scope.get(field) != expected:
+            raise ValueError(f"run bundle {field} does not match retained run evidence")
 
 
 def reviewable_policy_failure(failure):
@@ -169,6 +226,8 @@ def reviewable_policy_failure(failure):
     if REVIEWABLE_SCORE_FAILURE.fullmatch(failure):
         return True
     if failure == "v5 candidate requires a reviewed baseline with summary_schema_version=5":
+        return True
+    if failure == "v6 candidate requires a reviewed baseline with summary_schema_version=5":
         return True
     return failure.startswith("pipelock_version=") and ", baseline is " in failure
 
@@ -217,7 +276,7 @@ def proposed_baseline(candidate, candidate_sha256):
             "applicable": {"false_positive_rate": applicable_scores.get("false_positive_rate")}
         },
     }
-    if candidate.get("schema_version") == 5:
+    if candidate.get("schema_version") in {5, 6}:
         baseline["summary_schema_version"] = 5
         baseline["benchmark_manifest_sha256"] = require_sha256(
             candidate.get("benchmark_manifest_sha256"), "benchmark_manifest_sha256"
@@ -477,7 +536,7 @@ def promote(args):
         raise ValueError("artifact directory is missing the candidate or source decision")
 
     candidate = require_object(candidate_path)
-    validate_reference_candidate(candidate)
+    candidate = validate_reference_candidate(candidate)
     validate_candidate_origin(
         candidate,
         args.artifact_prefix,
@@ -515,6 +574,12 @@ def promote(args):
         print(f"promotion already complete for {candidate_sha256}")
         return record_dir
 
+    if candidate.get("schema_version") != ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION:
+        raise ValueError(
+            "new promotions require active provenance candidate schema_version "
+            f"{ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION}"
+        )
+
     if latest_path.is_file():
         previous = validate_pointer(require_object(latest_path), latest_path)
         previous_candidate_sha256 = previous["candidate_sha256"]
@@ -533,6 +598,7 @@ def promote(args):
 
     paths = evidence_paths(artifact_dir, candidate)
     validate_execution_decision(paths["execution_decision"])
+    validate_new_candidate_evidence(candidate, paths)
 
     source_decision = require_object(source_decision_path)
     fresh_source_decision = evaluator.evaluate(candidate_path, args.baseline, paths)

@@ -320,6 +320,8 @@ def validate_scope(document, manifest_identity, manifest_label):
         validate_scope_v4(document, manifest_identity, manifest_label)
     elif version == 5:
         validate_scope_v5(document, manifest_identity, manifest_label)
+    elif version == 6:
+        validate_scope_v5(document, manifest_identity, manifest_label, expected_version=6)
     else:
         raise ValueError(f"unsupported schema_version: {version!r}")
     return artifact_schema.validate_file(
@@ -502,10 +504,12 @@ def validate_scope_v4(document, manifest_identity, manifest_label):
         raise ValueError("capability_registry.sha256 must be 64 lower-case hex characters")
 
 
-def validate_scope_v5(document, manifest_identity, manifest_label):
+def validate_scope_v5(document, manifest_identity, manifest_label, expected_version=5):
     """Validate the active outcome-score plus presence-diagnostics contract."""
-    if document.get("schema_version") != 5:
-        raise ValueError("schema_version must be 5 for a v5 artifact")
+    if document.get("schema_version") != expected_version:
+        raise ValueError(
+            f"schema_version must be {expected_version} for a v{expected_version} artifact"
+        )
 
     # Reuse the v2 arithmetic and partition checks with an internal projection.
     # V5 deliberately moved the old field-presence values out of scores, so the

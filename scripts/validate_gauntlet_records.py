@@ -18,6 +18,42 @@ import promote_gauntlet_candidate as promotion
 RESULTS_PATH = Path("gauntlet-site/results/pipelock")
 
 
+def file_at_commit(repo_root, corpus_git_sha, path):
+    retained = subprocess.run(
+        ["git", "-C", str(repo_root), "show", f"{corpus_git_sha}:{path}"],
+        check=False,
+        capture_output=True,
+    )
+    if retained.returncode != 0:
+        raise ValueError(f"corpus_git_sha does not retain {path}")
+    return retained.stdout
+
+
+def reconstruct_result_contract(repo_root, corpus_git_sha, root):
+    manifest_bytes = file_at_commit(repo_root, corpus_git_sha, "contracts/artifacts.json")
+    try:
+        manifest = json.loads(manifest_bytes)
+    except json.JSONDecodeError as exc:
+        raise ValueError("retained artifact contract manifest is invalid JSON") from exc
+    families = manifest.get("artifact_families") if isinstance(manifest, dict) else None
+    result_family = next(
+        (
+            family
+            for family in families or []
+            if isinstance(family, dict) and family.get("family") == "result_row"
+        ),
+        None,
+    )
+    active_version = result_family.get("active_writer_version") if result_family else None
+    if isinstance(active_version, bool) or not isinstance(active_version, int):
+        raise ValueError("retained artifact manifest has no active result-row version")
+    contract_path = f"contracts/result-states-v{active_version}.json"
+    contract_bytes = file_at_commit(repo_root, corpus_git_sha, contract_path)
+    (root / "contracts").mkdir()
+    (root / "contracts" / "artifacts.json").write_bytes(manifest_bytes)
+    (root / contract_path).write_bytes(contract_bytes)
+
+
 def reconstruct_candidate(record_dir, candidate, repo_root):
     corpus_git_sha = promotion.require_non_empty_string(candidate, "corpus_git_sha")
     if len(corpus_git_sha) != 40 or any(char not in "0123456789abcdef" for char in corpus_git_sha):
@@ -39,6 +75,9 @@ def reconstruct_candidate(record_dir, candidate, repo_root):
             record_dir / provenance.RAW_EVIDENCE["corpus_manifest"],
             root / "cases" / "MANIFEST.txt",
         )
+        summary = evaluator.load_object(record_dir / provenance.RAW_EVIDENCE["raw_summary"])
+        if summary.get("schema_version") in provenance.ACTIVE_SUMMARY_SCHEMA_VERSIONS:
+            reconstruct_result_contract(repo_root, corpus_git_sha, root)
         rebuilt = root / promotion.CANDIDATE_FILENAME
         provenance.finalize_command(
             SimpleNamespace(
@@ -75,7 +114,7 @@ def validate_record(record_dir, repo_root):
     candidate = evaluator.load_object(candidate_path)
     if evaluator.file_sha256(candidate_path) != digest:
         raise ValueError(f"{record_dir}: candidate digest does not match its directory")
-    promotion.validate_reference_candidate(candidate)
+    candidate = promotion.validate_reference_candidate(candidate)
     promotion.validate_candidate_origin(
         candidate,
         promotion.DEFAULT_ARTIFACT_PREFIX,

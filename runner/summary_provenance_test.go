@@ -72,6 +72,44 @@ func TestBuildSummaryRecordsDeclaredProvenance(t *testing.T) {
 	}
 }
 
+func TestTargetAccommodationRejectsAnAdapterThatDoesNotConsumeIt(t *testing.T) {
+	declarations := map[string]RunProvenance{
+		"header":         {MCPHTTPSessionHeader: "Example-Session"},
+		"format":         {MCPHTTPSessionFormat: "base64url_256"},
+		"refusal header": {MCPHTTPSessionRefusalHeader: "Example-Refusal"},
+		"refusal value":  {MCPHTTPSessionRefusalValue: "missing-session"},
+	}
+	for name, prov := range declarations {
+		t.Run(name, func(t *testing.T) {
+			if err := bindRunProvenanceAdapter("mcp-gateway", &prov); err == nil ||
+				!strings.Contains(err.Error(), "only consumed by the proxy adapter") {
+				t.Fatalf("unexpected validation result: %v", err)
+			}
+			if err := bindRunProvenanceAdapter("proxy", &prov); err != nil {
+				t.Fatalf("proxy declaration rejected: %v", err)
+			}
+			if prov.AdapterID != "proxy" {
+				t.Fatalf("published adapter = %q, want executed adapter proxy", prov.AdapterID)
+			}
+		})
+	}
+	undeclared := RunProvenance{}
+	if err := bindRunProvenanceAdapter("mcp-gateway", &undeclared); err != nil {
+		t.Fatalf("undeclared accommodation rejected: %v", err)
+	}
+	if undeclared.AdapterID != "mcp-gateway" {
+		t.Fatalf("published adapter = %q, want executed adapter mcp-gateway", undeclared.AdapterID)
+	}
+}
+
+func TestTargetAccommodationRejectsMismatchedPublishedAdapter(t *testing.T) {
+	prov := RunProvenance{AdapterID: "proxy"}
+	if err := bindRunProvenanceAdapter("mcp-gateway", &prov); err == nil ||
+		!strings.Contains(err.Error(), "does not match executed adapter") {
+		t.Fatalf("unexpected validation result: %v", err)
+	}
+}
+
 // An undeclared fact is omitted from the JSON entirely rather than serialized as
 // an empty string, so a reader can tell "not declared" from "declared as
 // nothing" and the buyer report can say which.

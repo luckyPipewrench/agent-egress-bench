@@ -307,7 +307,9 @@ The report checks every digest declared by the run bundle, checks the candidate 
 
 Missing facts render as `Absent from run artifacts`. Wrong types and contradictory bindings render as invalid. A malformed JSON or JSONL input leaves the rest of the report readable and marks the affected section. A partial, blocked, errored, or publication-ineligible run still produces a report with that state visible.
 
-The summary carries `target_config_ref`, `target_config_sha256`, and `adapter_owner` when the operator declares them with `--target-config` and `--adapter-owner`, and `adapter_id` for the adapter that was selected. Adapter identity comes from that recorded field rather than from the runner command line. Anything the operator does not declare is omitted from the summary and the report names it absent, so an undeclared fact never reads as a blank the renderer failed to fill.
+A v5 summary carries `method_repository`, `method_commit`, `target_config_ref`, `target_config_sha256`, and `adapter_owner` when the operator declares them with `--method-repository`, `--method-commit`, `--target-config`, and `--adapter-owner`; `adapter_id` records the selected adapter. A local run may omit these fields and still complete. A v6 provenance candidate can't be finalized or promoted without every field, and the gate names each missing declaration.
+
+Target-specific accommodation stays in the retained `command.txt` evidence. The runner rejects accommodation flags when the selected adapter doesn't consume them, and the candidate binds the command by SHA-256. The publication schema doesn't turn one product's session-token behavior into a shared field.
 
 ## Validating Output
 
