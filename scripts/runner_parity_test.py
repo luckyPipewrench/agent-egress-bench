@@ -18,8 +18,8 @@ class RunnerParityTest(unittest.TestCase):
         self.manifest = self.root / "benchmark-manifest.txt"
         self.manifest.write_text("a\nb\n", encoding="utf-8")
         rows = [
-            {"schema_version": 4, "case_id": "b", "tool": "tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}},
-            {"schema_version": 4, "case_id": "a", "tool": "tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "delivery_unavailable"}},
+            {"schema_version": 5, "case_id": "b", "tool": "tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}},
+            {"schema_version": 5, "case_id": "a", "tool": "tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "delivery_unavailable"}},
         ]
         self.results.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
 
@@ -98,6 +98,19 @@ class RunnerParityTest(unittest.TestCase):
         self.results.write_text(json.dumps(row) + "\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "observed result"):
             runner_parity.load_results(self.results)
+
+    def test_result_v5_conformance_vectors(self):
+        path = Path(__file__).resolve().parents[1] / "validate" / "testdata" / "result-v5-conformance.json"
+        corpus = json.loads(path.read_text(encoding="utf-8"))
+        for vector in corpus["accepted"]:
+            with self.subTest(kind="accepted", name=vector["name"]):
+                self.results.write_text(json.dumps(vector["row"]) + "\n", encoding="utf-8")
+                self.assertEqual(1, len(runner_parity.load_results(self.results)))
+        for vector in corpus["rejected"]:
+            with self.subTest(kind="rejected", name=vector["name"]):
+                self.results.write_text(json.dumps(vector["row"]) + "\n", encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    runner_parity.load_results(self.results)
 
     def test_tool_identity_mismatch_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "tool does not match"):

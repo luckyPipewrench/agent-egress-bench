@@ -22,8 +22,9 @@ import (
 const (
 	activeCaseSchemaVersion          = 4
 	activeMultiFileCaseSchemaVersion = 4
-	activeResultSchemaVersion        = 4
+	activeResultSchemaVersion        = 5
 	activeToolProfileSchemaVersion   = 4
+	legacyResultSchemaVersion        = 4
 )
 
 // Valid enum values for v1 schema.
@@ -109,6 +110,12 @@ var (
 
 	validScores = map[string]bool{
 		"pass": true, "fail": true, "error": true,
+	}
+
+	validResultStates = map[string]bool{
+		"observed": true, "unreachable": true, "adapter_error": true,
+		"delivery_unavailable": true, "verdict_unobservable": true,
+		"invalid_verdict": true,
 	}
 
 	// Valid category → input_type combinations per SPEC.md.
@@ -987,8 +994,8 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	if r.CaseID == "" {
 		addErr("missing case_id")
 	}
-	if r.SchemaVersion != activeResultSchemaVersion {
-		addErr(fmt.Sprintf("schema_version must be %d, got %d", activeResultSchemaVersion, r.SchemaVersion))
+	if r.SchemaVersion != legacyResultSchemaVersion && r.SchemaVersion != activeResultSchemaVersion {
+		addErr(fmt.Sprintf("schema_version must be %d or %d, got %d", legacyResultSchemaVersion, activeResultSchemaVersion, r.SchemaVersion))
 	}
 	if r.Tool == "" {
 		addErr("missing tool")
@@ -1007,6 +1014,10 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 	if r.Evidence == nil {
 		addErr("missing evidence (must be an object)")
+	} else if r.SchemaVersion == activeResultSchemaVersion {
+		for _, issue := range validateResultState(r) {
+			addErr(issue)
+		}
 	}
 	if r.Notes == nil {
 		addErr("missing notes (must be a string, use empty string if no context)")
@@ -1019,7 +1030,7 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 
 	// Score consistency checks. The exhaustive public matrix lives in
-	// contracts/result-states-v4.json and contract tests compare every row to
+	// contracts/result-states-v5.json and contract tests compare every row to
 	// this validator.
 	if validActualVerdicts[r.ActualVerdict] && validMeasuredVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
 		caseSpecificScore, hasCaseSpecificScore, caseSpecificProblem := expectedCaseSpecificScore(r, caseMetadata)
@@ -1045,6 +1056,36 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 
 	return errors
+}
+
+func validateResultState(r ResultLine) []string {
+	raw, present := r.Evidence["result_state"]
+	if !present {
+		return []string{"missing evidence.result_state"}
+	}
+	state, ok := raw.(string)
+	if !ok {
+		return []string{"evidence.result_state must be a string"}
+	}
+	if !validResultStates[state] {
+		return []string{fmt.Sprintf("invalid evidence.result_state: %q", state)}
+	}
+
+	switch state {
+	case "observed":
+		if !validMeasuredVerdicts[r.ActualVerdict] || (r.Score != "pass" && r.Score != "fail") {
+			return []string{"evidence.result_state observed requires an allow or block verdict and a pass or fail score"}
+		}
+	case "unreachable":
+		if r.ActualVerdict != "unreachable" || r.Score != "error" {
+			return []string{"evidence.result_state unreachable requires actual_verdict unreachable and score error"}
+		}
+	default:
+		if r.ActualVerdict != "error" || r.Score != "error" {
+			return []string{fmt.Sprintf("evidence.result_state %s requires actual_verdict error and score error", state)}
+		}
+	}
+	return nil
 }
 
 func expectedCaseSpecificScore(r ResultLine, caseMetadata *resultCaseMetadata) (string, bool, string) {

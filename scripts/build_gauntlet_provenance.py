@@ -108,6 +108,60 @@ def active_result_score(expected, actual, evidence, budget_timing_required):
     return "pass" if actual == expected else "fail"
 
 
+def result_reader_contract(repo_root):
+    manifest = load_object(repo_root / "contracts" / "artifacts.json")
+    families = manifest.get("artifact_families")
+    if not isinstance(families, list):
+        raise ValueError("artifact manifest families must be an array")
+    result_family = next(
+        (family for family in families if isinstance(family, dict) and family.get("family") == "result_row"),
+        None,
+    )
+    if result_family is None:
+        raise ValueError("artifact manifest has no result_row family")
+    active_version = result_family.get("active_writer_version")
+    accepted_versions = result_family.get("accepted_reader_versions")
+    if isinstance(active_version, bool) or not isinstance(active_version, int):
+        raise ValueError("result_row active_writer_version must be an integer")
+    if not isinstance(accepted_versions, list) or any(
+        isinstance(version, bool) or not isinstance(version, int) for version in accepted_versions
+    ):
+        raise ValueError("result_row accepted_reader_versions must be an integer array")
+    if active_version not in accepted_versions:
+        raise ValueError("result_row active writer is not accepted by its reader")
+
+    contract = load_object(repo_root / "contracts" / f"result-states-v{active_version}.json")
+    if contract.get("result_schema_version") != active_version:
+        raise ValueError("active result-state contract version differs from the artifact manifest")
+    states = contract.get("evidence_result_states")
+    if not isinstance(states, dict) or not states or any(not isinstance(state, str) for state in states):
+        raise ValueError("active result-state contract has no valid evidence_result_states")
+    return active_version, frozenset(accepted_versions), frozenset(states)
+
+
+def validate_result_row_contract(row, row_number, active_version, accepted_versions, result_states):
+    schema_version = row.get("schema_version")
+    if schema_version not in accepted_versions:
+        raise ValueError(
+            f"runner JSONL row {row_number} schema_version must be one of {sorted(accepted_versions)}"
+        )
+    if schema_version != active_version:
+        return
+
+    evidence = row.get("evidence")
+    state = evidence.get("result_state") if isinstance(evidence, dict) else None
+    if not isinstance(state, str) or state not in result_states:
+        raise ValueError(f"runner JSONL row {row_number} has invalid or missing evidence.result_state")
+    actual = row.get("actual_verdict")
+    score = row.get("score")
+    if state == "observed" and (actual not in {"allow", "block"} or score not in {"pass", "fail"}):
+        raise ValueError(f"runner JSONL row {row_number} observed result is not a measurement")
+    if state == "unreachable" and (actual != "unreachable" or score != "error"):
+        raise ValueError(f"runner JSONL row {row_number} unreachable result is inconsistent")
+    if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
+        raise ValueError(f"runner JSONL row {row_number} unobserved failure result is inconsistent")
+
+
 def raw_evidence_for_summary(summary):
     """Return the immutable evidence members for this artifact generation.
 
@@ -510,6 +564,9 @@ def measurements(repo_root, run_dir):
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
     results = read_results(run_dir / RAW_EVIDENCE["results"])
+    result_contract = None
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
+        result_contract = result_reader_contract(repo_root)
     # An active artifact is uninterpretable without the exact raw registry
     # snapshot it names. Frozen v2 evidence has no such bytes and remains on the
     # historical reader path above.
@@ -566,6 +623,8 @@ def measurements(repo_root, run_dir):
             raise ValueError(f"runner JSONL row {row_number} has invalid score {score!r}")
         if not isinstance(evidence, dict):
             raise ValueError(f"runner JSONL row {row_number} evidence must be an object")
+        if result_contract is not None:
+            validate_result_row_contract(row, row_number, *result_contract)
         if not isinstance(row.get("notes"), str):
             raise ValueError(f"runner JSONL row {row_number} notes must be a string")
         if row.get("tool") != summary.get("tool") or row.get("tool_version") != summary.get(

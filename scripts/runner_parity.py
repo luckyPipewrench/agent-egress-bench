@@ -15,6 +15,7 @@ from pathlib import Path
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 NONCE = re.compile(r"^[0-9a-f]{32,}$")
 RESULT_STATES = {"observed", "unreachable", "adapter_error", "delivery_unavailable", "verdict_unobservable", "invalid_verdict"}
+RESULT_SCHEMA_VERSION = 5
 
 
 def canonical_bytes(value):
@@ -73,8 +74,8 @@ def load_results(path, expected_tool=None, expected_tool_version=None, expected_
                 raise ValueError(f"{path}:{number}: invalid JSON: {exc}") from exc
             if not isinstance(row, dict):
                 raise ValueError(f"{path}:{number}: result must be an object")
-            if row.get("schema_version") != 4:
-                raise ValueError(f"{path}:{number}: schema_version must be 4")
+            if row.get("schema_version") != RESULT_SCHEMA_VERSION:
+                raise ValueError(f"{path}:{number}: schema_version must be {RESULT_SCHEMA_VERSION}")
             if expected_tool is not None and row.get("tool") != expected_tool:
                 raise ValueError(f"{path}:{number}: tool does not match the committed tool identity")
             if expected_tool_version is not None and row.get("tool_version") != expected_tool_version:

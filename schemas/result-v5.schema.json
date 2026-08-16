@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json",
+  "title": "agent-egress-bench Result v5",
+  "description": "A single result line from a benchmark runner (JSONL output). One result per case, recording the expected verdict, actual verdict, score, result state, and tool-specific evidence. Cross-field score and result-state constraints are enforced by the Go validator.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "case_id",
+    "tool",
+    "tool_version",
+    "capability_registry",
+    "expected_verdict",
+    "actual_verdict",
+    "score",
+    "evidence",
+    "notes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 5,
+      "description": "Schema version. Must be 5 for active scoring. Version 4 remains readable through its frozen schema and reader."
+    },
+    "case_id": {
+      "type": "string",
+      "description": "The case ID from the case file."
+    },
+    "tool": {
+      "type": "string",
+      "description": "Tool name from the tool profile."
+    },
+    "tool_version": {
+      "type": "string",
+      "description": "Tool version from the tool profile."
+    },
+    "capability_registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "format", "revision", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "format": {"type": "integer", "minimum": 1},
+        "revision": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "expected_verdict": {
+      "type": "string",
+      "enum": ["block", "allow"],
+      "description": "Expected verdict from the case file."
+    },
+    "actual_verdict": {
+      "type": "string",
+      "enum": ["block", "allow", "unreachable", "error"],
+      "description": "Verdict observed by the runner. unreachable means unreachable by this adapter and configuration, never unsupported by product. error means a declared route failed during startup, fixture setup, delivery, correlation, or observation."
+    },
+    "score": {
+      "type": "string",
+      "enum": ["pass", "fail", "error"],
+      "description": "pass if the observed behavior satisfies the case scoring contract, fail if not, error if runner or tool failure prevented a measurement."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Evidence supporting the verdict. result_state is required; other properties are tool-specific.",
+      "required": ["result_state"],
+      "properties": {
+        "result_state": {
+          "type": "string",
+          "enum": ["observed", "unreachable", "adapter_error", "delivery_unavailable", "verdict_unobservable", "invalid_verdict"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional context about the result."
+    }
+  }
+}

@@ -1,11 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+type resultV5ConformanceVector struct {
+	Name          string          `json:"name"`
+	FailureMode   string          `json:"failure_mode"`
+	SchemaRejects bool            `json:"schema_rejects"`
+	Row           json.RawMessage `json:"row"`
+}
+
+type resultV5ConformanceCorpus struct {
+	Accepted []resultV5ConformanceVector `json:"accepted"`
+	Rejected []resultV5ConformanceVector `json:"rejected"`
+}
 
 // These vectors pin the structural boundary shared by the public root schemas
 // and the stdlib validator. Repository-wide graph and registry checks are
@@ -68,7 +81,7 @@ func TestResultSchemaConformance(t *testing.T) {
 	profile := decodeConformanceObject(t, readConformanceFixture(t, filepath.Join("..", "examples", "pipelock", "tool-profile.json")))
 	caseDoc := decodeConformanceObject(t, readConformanceFixture(t, filepath.Join("..", "cases", "a2a-agent-card", "a2a-card-benign-normal-006.json")))
 	baseline := map[string]any{
-		"schema_version":      4,
+		"schema_version":      5,
 		"case_id":             caseDoc["id"],
 		"tool":                profile["tool"],
 		"tool_version":        profile["tool_version"],
@@ -76,7 +89,7 @@ func TestResultSchemaConformance(t *testing.T) {
 		"expected_verdict":    "allow",
 		"actual_verdict":      "allow",
 		"score":               "pass",
-		"evidence":            map[string]any{},
+		"evidence":            map[string]any{"result_state": "observed"},
 		"notes":               "",
 	}
 	raw := marshalConformanceJSON(t, baseline)
@@ -122,6 +135,95 @@ func TestResultSchemaConformance(t *testing.T) {
 			t.Fatal("Go-only result-set duplicate check accepted duplicate case_id")
 		}
 	})
+}
+
+func TestResultV5ConformanceVectors(t *testing.T) {
+	raw := readConformanceFixture(t, filepath.Join("testdata", "result-v5-conformance.json"))
+	var corpus resultV5ConformanceCorpus
+	if err := json.Unmarshal(raw, &corpus); err != nil {
+		t.Fatal(err)
+	}
+	if len(corpus.Accepted) == 0 || len(corpus.Rejected) == 0 {
+		t.Fatal("result-v5 conformance corpus must contain accepted and rejected vectors")
+	}
+
+	acceptedStates := make(map[string]bool)
+	for _, vector := range corpus.Accepted {
+		t.Run("accepted/"+vector.Name, func(t *testing.T) {
+			var row ResultLine
+			if err := json.Unmarshal(vector.Row, &row); err != nil {
+				t.Fatal(err)
+			}
+			state, _ := row.Evidence["result_state"].(string)
+			acceptedStates[state] = true
+			if issues := validateResultLine(1, row); len(issues) != 0 {
+				t.Fatalf("validator rejected accepted vector: %v", issues)
+			}
+		})
+	}
+	if len(acceptedStates) != len(validResultStates) {
+		t.Fatalf("accepted vectors cover %v, validator accepts %v", acceptedStates, validResultStates)
+	}
+	for state := range validResultStates {
+		if !acceptedStates[state] {
+			t.Errorf("accepted vectors omit result_state %q", state)
+		}
+	}
+
+	failureModes := make(map[string]bool)
+	for _, vector := range corpus.Rejected {
+		t.Run("rejected/"+vector.Name, func(t *testing.T) {
+			if vector.FailureMode == "" || failureModes[vector.FailureMode] {
+				t.Fatalf("rejected vector has missing or duplicate failure mode %q", vector.FailureMode)
+			}
+			failureModes[vector.FailureMode] = true
+			var row ResultLine
+			if err := json.Unmarshal(vector.Row, &row); err != nil {
+				t.Fatal(err)
+			}
+			if issues := validateResultLine(1, row); len(issues) == 0 {
+				t.Fatal("validator accepted rejected vector")
+			}
+		})
+	}
+}
+
+func TestResultV4WithoutResultStateRemainsReadable(t *testing.T) {
+	row := ResultLine{
+		SchemaVersion: legacyResultSchemaVersion, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass", Evidence: map[string]interface{}{}, Notes: strPtr(""),
+	}
+	if issues := validateResultLine(1, row); len(issues) != 0 {
+		t.Fatalf("v4 row without evidence.result_state was rejected: %v", issues)
+	}
+}
+
+func TestResultV4AndV5RowsCanShareFile(t *testing.T) {
+	v4 := ResultLine{
+		SchemaVersion: legacyResultSchemaVersion, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass", Evidence: map[string]interface{}{}, Notes: strPtr(""),
+	}
+	v5 := ResultLine{
+		SchemaVersion: activeResultSchemaVersion, CaseID: "active-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "block", ActualVerdict: "block", Score: "pass", Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	var rows bytes.Buffer
+	for _, row := range []ResultLine{v4, v5} {
+		if err := json.NewEncoder(&rows).Encode(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "mixed-results.jsonl")
+	if err := os.WriteFile(path, rows.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
+	if issues := validateResultsFile(path); len(issues) != 0 {
+		t.Fatalf("mixed v4/v5 result file was rejected: %v", issues)
+	}
 }
 
 func caseValidatorAccepts(t *testing.T) func([]byte) bool {
