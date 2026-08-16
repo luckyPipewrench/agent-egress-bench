@@ -54,7 +54,7 @@ outputs:
     description: Absolute path to execution metadata, including image and network mode
     value: ${{ steps.run.outputs.metadata }}
   measurement-status:
-    description: measured, incomplete, or absent
+    description: measured, incomplete, absent, or invalid
     value: ${{ steps.run.outputs.measurement-status }}
 runs:
   using: composite

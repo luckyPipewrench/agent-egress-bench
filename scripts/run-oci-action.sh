@@ -185,16 +185,23 @@ docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
   --output "/aeb-output/summary.json" \
   --require-complete \
   "${runner_args[@]}" >"$results_stage"
-run_exit=$?
+container_exit=$?
 set -e
+run_exit=$container_exit
 
 measurement_status="absent"
 summary_publish_args=()
 if [[ -e "$summary_stage" || -L "$summary_stage" ]]; then
   if [[ -f "$summary_stage" && ! -L "$summary_stage" ]]; then
     summary_publish_args=(--summary "$summary_stage")
-    if [[ -s "$summary_stage" ]]; then
-      measurement_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["measurement_status"])' "$summary_stage")"
+    set +e
+    measurement_status="$(python3 "$GITHUB_ACTION_PATH/scripts/action_artifacts.py" inspect-summary --path "$summary_stage")"
+    summary_status_exit=$?
+    set -e
+    if [[ "$summary_status_exit" -ne 0 ]]; then
+      measurement_status="invalid"
+      echo "agent-egress-bench Action: summary is malformed or has no valid measurement_status; retaining raw artifacts" >&2
+      [[ "$run_exit" -ne 0 ]] || run_exit=1
     fi
   else
     echo "agent-egress-bench Action: summary artifact isn't a regular file; refusing to follow it" >&2
@@ -211,8 +218,10 @@ export AEB_ACTION_METADATA_PATH="$metadata_stage"
 export AEB_ACTION_IMAGE="$image"
 export AEB_ACTION_IMAGE_ID="$image_id"
 export AEB_ACTION_NETWORK_MODE="$network_mode"
-export AEB_ACTION_RUN_EXIT="$run_exit"
+export AEB_ACTION_RUNNER_EXIT="$container_exit"
+export AEB_ACTION_EXIT="$run_exit"
 export AEB_ACTION_REF_VALUE="${AEB_ACTION_REF:-local}"
+export AEB_ACTION_MEASUREMENT_STATUS="$measurement_status"
 python3 - <<'PY'
 import json
 import os
@@ -224,8 +233,10 @@ path.write_text(json.dumps({
     "image": os.environ["AEB_ACTION_IMAGE"],
     "image_id": os.environ["AEB_ACTION_IMAGE_ID"],
     "network_mode": os.environ["AEB_ACTION_NETWORK_MODE"],
+    "measurement_status": os.environ["AEB_ACTION_MEASUREMENT_STATUS"],
     "require_complete": True,
-    "runner_exit_code": int(os.environ["AEB_ACTION_RUN_EXIT"]),
+    "runner_exit_code": int(os.environ["AEB_ACTION_RUNNER_EXIT"]),
+    "action_exit_code": int(os.environ["AEB_ACTION_EXIT"]),
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 

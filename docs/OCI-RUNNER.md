@@ -30,7 +30,7 @@ No published runner-image digest exists for this unreleased change, so this docu
 
 ## Reusable GitHub Action
 
-The Action runs the benchmark in the OCI image, replaces its own `results.jsonl`, `summary.json`, and `run-metadata.json` files on each invocation, and fails the job unless the new summary reports `measurement_status: measured`.
+The Action runs the benchmark in the OCI image, replaces its own `results.jsonl`, `summary.json`, and `run-metadata.json` files on each invocation, and fails the job unless the new summary reports `measurement_status: measured`. A malformed summary or one without that field is retained as raw evidence, while `run-metadata.json` records `measurement_status: invalid`, the original runner exit code, and the Action's failing exit code.
 
 This smoke-test workflow uses the exact Action commit and intentionally produces an incomplete measurement with the synthetic `dryrun` adapter, so a correct run ends red while preserving all case rows:
 

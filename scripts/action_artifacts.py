@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import secrets
 import stat
@@ -104,6 +105,35 @@ def publish(workspace: Path, output_dir: str, results: Path, metadata: Path, sum
         os.close(output_fd)
 
 
+def inspect_summary(path: Path) -> int:
+    if not os.path.lexists(path):
+        print("absent")
+        return 0
+    try:
+        descriptor, info = regular_source(path)
+    except ArtifactError:
+        print("invalid")
+        return 1
+    try:
+        if info.st_size == 0:
+            print("absent")
+            return 0
+        with os.fdopen(descriptor, encoding="utf-8") as summary_file:
+            descriptor = -1
+            summary = json.load(summary_file)
+        if not isinstance(summary, dict) or summary.get("measurement_status") not in ("measured", "incomplete"):
+            print("invalid")
+            return 1
+        print(summary["measurement_status"])
+        return 0
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        print("invalid")
+        return 1
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -116,12 +146,16 @@ def main() -> int:
     publish_parser.add_argument("--results", type=Path, required=True)
     publish_parser.add_argument("--summary", type=Path)
     publish_parser.add_argument("--metadata", type=Path, required=True)
+    inspect_parser = subparsers.add_parser("inspect-summary")
+    inspect_parser.add_argument("--path", type=Path, required=True)
     args = parser.parse_args()
     try:
         if args.command == "prepare":
             prepare(args.workspace.resolve(), args.output_dir)
-        else:
+        elif args.command == "publish":
             publish(args.workspace.resolve(), args.output_dir, args.results, args.metadata, args.summary)
+        else:
+            return inspect_summary(args.path)
     except (ArtifactError, OSError) as exc:
         print(f"Action artifact handling failed: {exc}", file=sys.stderr)
         return 1

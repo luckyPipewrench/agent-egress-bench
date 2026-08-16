@@ -91,6 +91,32 @@ class ActionArtifactsTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("not a no-follow regular file", result.stderr)
 
+    def test_summary_inspection_distinguishes_absent_and_invalid_evidence(self) -> None:
+        missing = self.command("inspect-summary", "--path", str(self.root / "missing.json"))
+        self.assertEqual(0, missing.returncode)
+        self.assertEqual("absent", missing.stdout.strip())
+
+        malformed_path = self.root / "malformed.json"
+        malformed_path.write_text("{malformed", encoding="utf-8")
+        malformed = self.command("inspect-summary", "--path", str(malformed_path))
+        self.assertNotEqual(0, malformed.returncode)
+        self.assertEqual("invalid", malformed.stdout.strip())
+
+        missing_key_path = self.root / "missing-key.json"
+        missing_key_path.write_text('{"case_count": 1}\n', encoding="utf-8")
+        missing_key = self.command("inspect-summary", "--path", str(missing_key_path))
+        self.assertNotEqual(0, missing_key.returncode)
+        self.assertEqual("invalid", missing_key.stdout.strip())
+
+    def test_summary_inspection_accepts_only_governed_status_values(self) -> None:
+        for status in ("measured", "incomplete"):
+            with self.subTest(status=status):
+                path = self.root / f"{status}.json"
+                path.write_text(f'{{"measurement_status":"{status}"}}\n', encoding="utf-8")
+                result = self.command("inspect-summary", "--path", str(path))
+                self.assertEqual(0, result.returncode, msg=result.stderr)
+                self.assertEqual(status, result.stdout.strip())
+
 
 if __name__ == "__main__":
     unittest.main()
