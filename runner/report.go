@@ -15,7 +15,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
@@ -179,13 +178,8 @@ func (r *buyerReport) hasFact() bool {
 // type check sees a pipe, and the artifact is refused. It has no effect on a
 // regular file.
 func openRegularArtifact(dir, name string) (*os.File, error) {
-	handle, err := os.OpenFile(filepath.Join(dir, name), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	handle, err := openNoFollow(filepath.Join(dir, name))
 	if err != nil {
-		// A symlink surfaces here as ELOOP. Report it as the type refusal it is
-		// rather than as an unreadable file, so the report says what was wrong.
-		if errors.Is(err, syscall.ELOOP) {
-			return nil, errNotRegularArtifact
-		}
 		return nil, err
 	}
 	info, err := handle.Stat()
