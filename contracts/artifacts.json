@@ -267,18 +267,20 @@
     },
     {
       "family": "provenance_candidate",
-      "active_writer_version": 5,
+      "active_writer_version": 6,
       "accepted_reader_versions": [
         1,
         2,
         4,
-        5
+        5,
+        6
       ],
       "frozen_versions": [
         1,
-        2
+        2,
+        5
       ],
-      "canonical_schema_path": "schemas/provenance-candidate-v5.schema.json",
+      "canonical_schema_path": "schemas/provenance-candidate-v6.schema.json",
       "schemas": [
         {
           "version": 1,
@@ -302,9 +304,16 @@
         },
         {
           "version": 5,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/provenance-candidate-v5.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v5.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v5.schema.json",
+          "sha256": "054d5cf603afa2db36747f825b552e20e27ccf4c2796a45dacfffd75d01d9036"
+        },
+        {
+          "version": 6,
+          "status": "active",
+          "path": "schemas/provenance-candidate-v6.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v6.schema.json"
         }
       ],
       "writer": [

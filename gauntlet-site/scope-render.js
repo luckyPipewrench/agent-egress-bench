@@ -107,17 +107,34 @@
     if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
       throw new Error('artifact must be an object');
     }
-    if ((artifact.schema_version === 4 || artifact.schema_version === 5) && (!artifact._capabilityRegistry ||
+    if ((artifact.schema_version === 4 || artifact.schema_version === 5 || artifact.schema_version === 6) && (!artifact._capabilityRegistry ||
         artifact._capabilityRegistry.id !== scopeValue(artifact, ['capability_registry', 'id']))) {
       throw new Error('active artifact is uninterpretable without its verified capability registry snapshot');
     }
 
     nonEmptyString(scopeValue(artifact, ['artifact_id']), 'artifact_id');
     validateManifestDigest(scopeValue(artifact, ['corpus_manifest_sha256']), 'corpus_manifest_sha256');
-    if (artifact.schema_version === 5) {
+    if (artifact.schema_version === 5 || artifact.schema_version === 6) {
       validateManifestDigest(
         scopeValue(artifact, ['benchmark_manifest_sha256']),
         'benchmark_manifest_sha256'
+      );
+    }
+    if (artifact.schema_version === 6) {
+      nonEmptyString(scopeValue(artifact, ['method_repository']), 'method_repository');
+      if (!/^(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+$/.test(artifact.method_repository)) {
+        throw new Error('method_repository must name a slash-separated repository path');
+      }
+      nonEmptyString(scopeValue(artifact, ['method_commit']), 'method_commit');
+      if (!/^[0-9a-f]{40}$/.test(artifact.method_commit)) {
+        throw new Error('method_commit must be a 40-character lower-case commit');
+      }
+      nonEmptyString(scopeValue(artifact, ['adapter_id']), 'adapter_id');
+      nonEmptyString(scopeValue(artifact, ['adapter_owner']), 'adapter_owner');
+      nonEmptyString(scopeValue(artifact, ['target_config_ref']), 'target_config_ref');
+      validateManifestDigest(
+        scopeValue(artifact, ['target_config_sha256']),
+        'target_config_sha256'
       );
     }
     var logicalCaseCount = nonNegativeInteger(scopeValue(artifact, ['logical_case_count']), 'logical_case_count');
@@ -142,7 +159,7 @@
       throw new Error('case_count.applicable, unreachable, and not_applicable must equal case_count.total');
     }
     var measurementStatus;
-    if (artifact.schema_version === 4 || artifact.schema_version === 5) {
+    if (artifact.schema_version === 4 || artifact.schema_version === 5 || artifact.schema_version === 6) {
       measurementStatus = scopeValue(artifact, ['measurement_status']);
       if (measurementStatus !== 'measured' && measurementStatus !== 'incomplete') {
         throw new Error('measurement_status must be measured or incomplete');

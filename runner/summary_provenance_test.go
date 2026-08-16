@@ -72,6 +72,17 @@ func TestBuildSummaryRecordsDeclaredProvenance(t *testing.T) {
 	}
 }
 
+func TestTargetAccommodationRejectsAnAdapterThatDoesNotConsumeIt(t *testing.T) {
+	prov := RunProvenance{MCPHTTPSessionHeader: "Example-Session"}
+	if err := validateTargetAccommodationAdapter("mcp-gateway", prov); err == nil ||
+		!strings.Contains(err.Error(), "only consumed by the proxy adapter") {
+		t.Fatalf("unexpected validation result: %v", err)
+	}
+	if err := validateTargetAccommodationAdapter("proxy", prov); err != nil {
+		t.Fatalf("proxy declaration rejected: %v", err)
+	}
+}
+
 // An undeclared fact is omitted from the JSON entirely rather than serialized as
 // an empty string, so a reader can tell "not declared" from "declared as
 // nothing" and the buyer report can say which.

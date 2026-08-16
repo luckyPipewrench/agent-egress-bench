@@ -213,6 +213,11 @@
       "sha256": "054d5cf603afa2db36747f825b552e20e27ccf4c2796a45dacfffd75d01d9036"
     },
     {
+      "path": "schemas/provenance-candidate-v6.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v6.schema.json",
+      "sha256": "cd288c16b369aced29993961fa6564fadebd6ed48ca32ae1d56c81b9a6d9de42"
+    },
+    {
       "path": "schemas/receipt-scoring-profile-v1.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v1.schema.json",
       "sha256": "bdfe1e53208f98ee07e448d7b6990b3bed2f176fe90574fe7aa8fbfaf115c14d"

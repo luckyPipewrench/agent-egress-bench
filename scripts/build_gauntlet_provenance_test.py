@@ -37,14 +37,14 @@ PIN_TAG = PIN["PIPELOCK_TAG"]
 
 
 class ProvenanceBuilderTest(unittest.TestCase):
-    def test_active_candidate_version_does_not_follow_summary_version(self):
+    def test_active_candidate_version_uses_its_own_version_symbol(self):
         with (
-            mock.patch.object(build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSION", 6),
+            mock.patch.object(build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSION", 7),
             mock.patch.object(
-                build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSIONS", frozenset({4, 5, 6})
+                build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSIONS", frozenset({4, 5, 6, 7})
             ),
         ):
-            self.assertEqual(5, build_gauntlet_provenance.provenance_candidate_schema_version(6))
+            self.assertEqual(6, build_gauntlet_provenance.provenance_candidate_schema_version(7))
             self.assertEqual(4, build_gauntlet_provenance.provenance_candidate_schema_version(4))
 
     def test_active_result_score_enforces_budget_timing(self):
@@ -102,7 +102,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         active_version, accepted_versions, result_states = (
             build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
         )
-        with self.assertRaisesRegex(ValueError, "must match summary schema_version 5"):
+        with self.assertRaisesRegex(ValueError, "must match active result schema_version 5"):
             build_gauntlet_provenance.validate_result_row_contract(
                 {"schema_version": 4},
                 1,
@@ -362,6 +362,33 @@ class ProvenanceBuilderTest(unittest.TestCase):
         (self.run_dir / "results.jsonl").write_text(
             "".join(json.dumps(row) + "\n" for row in self.results), encoding="utf-8"
         )
+        if summary_schema_version == 5:
+            self.add_publication_provenance()
+
+    def add_publication_provenance(self):
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary.update(
+            method_repository="luckyPipewrench/agent-egress-bench",
+            method_commit="c" * 40,
+            adapter_id="proxy",
+            adapter_owner="Example Maintainers",
+            target_config_ref="examples/pipelock/pipelock-benchmark.yaml",
+            target_config_sha256="d" * 64,
+        )
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+        (self.run_dir / "command.txt").write_text(
+            "timeout 10s aeb-gauntlet --adapter proxy --fixtures "
+            "--method-repository luckyPipewrench/agent-egress-bench "
+            f"--method-commit {'c' * 40} "
+            "--adapter-owner 'Example Maintainers' "
+            "--target-config examples/pipelock/pipelock-benchmark.yaml "
+            "--mcp-http-session-header Example-Session "
+            "--mcp-http-session-format base64url_256 "
+            "--mcp-http-session-refusal-header Example-Refusal "
+            "--mcp-http-session-refusal-value session_required\n",
+            encoding="utf-8",
+        )
 
     def run_builder(self, *arguments):
         return subprocess.run(
@@ -433,13 +460,79 @@ class ProvenanceBuilderTest(unittest.TestCase):
         scope = json.loads(
             (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
         )["candidate_scope"]
-        self.assertEqual(scope["schema_version"], 5)
+        self.assertEqual(scope["schema_version"], 6)
         self.assertEqual(scope["benchmark_manifest_sha256"], "c" * 64)
         self.assertEqual(set(scope["scores"]["applicable"]), {"containment", "false_positive_rate"})
         self.assertEqual(
             scope["diagnostic_counts"]["applicable"]["classification_present_rate"],
             {"numerator": 2, "denominator": 2},
         )
+
+    def test_v6_candidate_carries_bound_publication_provenance(self):
+        self.make_active_fixture(summary_schema_version=5)
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads(
+            (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+        )["candidate_scope"]
+        self.assertEqual(scope["schema_version"], 6)
+        for field in (
+            "method_repository",
+            "method_commit",
+            "adapter_id",
+            "adapter_owner",
+            "target_config_ref",
+            "target_config_sha256",
+        ):
+            self.assertIn(field, scope)
+
+    def test_v6_candidate_rejects_each_missing_publication_fact_by_name(self):
+        for field in (
+            "method_repository",
+            "method_commit",
+            "adapter_id",
+            "adapter_owner",
+            "target_config_ref",
+            "target_config_sha256",
+        ):
+            with self.subTest(field=field):
+                self.write_fixture()
+                self.make_active_fixture(summary_schema_version=5)
+                summary_path = self.run_dir / "raw-summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                del summary[field]
+                summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+                result = self.bundle()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(field, result.stderr)
+
+    def test_v6_candidate_rejects_summary_command_identity_disagreement(self):
+        self.make_active_fixture(summary_schema_version=5)
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["adapter_owner"] = "Different Maintainers"
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("adapter_owner does not match recorded runner command", result.stderr)
+
+    def test_v6_candidate_keeps_target_accommodation_in_hash_bound_command(self):
+        self.make_active_fixture(summary_schema_version=5)
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads(
+            (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+        )["candidate_scope"]
+        self.assertNotIn("target_accommodation", scope)
+        self.assertIn("--mcp-http-session-header Example-Session", scope["command"])
 
     def test_v5_bundle_rejects_missing_result_state(self):
         self.make_active_fixture(summary_schema_version=5)

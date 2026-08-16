@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -118,6 +119,43 @@ def candidate(run_id="123", run_attempt=None, generated_at="2026-08-05T00:10:08Z
     }
 
 
+def v6_candidate():
+    value = candidate()
+    value["schema_version"] = 6
+    value.pop("sufficient")
+    value["benchmark_manifest_sha256"] = "e" * 64
+    value["measurement_status"] = "measured"
+    value["case_count"]["unreachable"] = 0
+    value["capability_registry"] = {
+        "id": "aeb.core-capabilities",
+        "format": 1,
+        "revision": 1,
+        "sha256": "f" * 64,
+    }
+    value["reported_claims"] = []
+    value["exercised"] = {"capability_tags": []}
+    value["diagnostics"] = {}
+    value["diagnostic_counts"] = {}
+    for scope in ("full", "applicable"):
+        value["diagnostics"][scope] = {
+            "classification_present_rate": value["scores"][scope].pop("detection"),
+            "structured_evidence_present_rate": value["scores"][scope].pop("evidence"),
+        }
+        value["diagnostic_counts"][scope] = {
+            "classification_present_rate": value["metric_counts"][scope].pop("detection"),
+            "structured_evidence_present_rate": value["metric_counts"][scope].pop("evidence"),
+        }
+    value.update(
+        method_repository="luckyPipewrench/agent-egress-bench",
+        method_commit="b" * 40,
+        adapter_id="proxy",
+        adapter_owner="Example Maintainers",
+        target_config_ref="examples/pipelock/pipelock-benchmark.yaml",
+        target_config_sha256="9" * 64,
+    )
+    return value
+
+
 class PromotionFixture:
     def __init__(self, root, candidate_value=None, baseline_value=None):
         self.root = root
@@ -224,6 +262,48 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
                 "v5 candidate requires a reviewed baseline with summary_schema_version=5"
             )
         )
+        self.assertTrue(
+            promotion.reviewable_policy_failure(
+                "v6 candidate requires a reviewed baseline with summary_schema_version=5"
+            )
+        )
+
+    def test_v6_promotion_rejects_each_missing_publication_fact_by_name(self):
+        for field in (
+            "method_repository",
+            "method_commit",
+            "adapter_id",
+            "adapter_owner",
+            "target_config_ref",
+            "target_config_sha256",
+        ):
+            with self.subTest(field=field):
+                value = v6_candidate()
+                del value[field]
+                fixture = self.fixture(value)
+
+                result = fixture.run()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(field, result.stdout + result.stderr)
+
+    def test_v6_reference_guard_names_missing_adapter_owner(self):
+        value = v6_candidate()
+        del value["adapter_owner"]
+
+        with self.assertRaisesRegex(ValueError, "adapter_owner"):
+            promotion.validate_reference_candidate(value)
+
+    def test_v6_reference_guard_consumes_validated_candidate(self):
+        value = v6_candidate()
+        normalized = dict(value)
+        normalized["tool"] = "unexpected"
+
+        with mock.patch.object(
+            promotion.artifact_schema, "validate_file", return_value=normalized
+        ):
+            with self.assertRaisesRegex(ValueError, "tool must be pipelock"):
+                promotion.validate_reference_candidate(value)
 
     def test_legacy_candidate_baseline_round_trips_through_evaluation(self):
         fixture = self.fixture()
@@ -249,8 +329,17 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
 
         generated = promotion.proposed_baseline(value, "f" * 64)
 
+        self.assertEqual(generated["schema_version"], 1)
         self.assertEqual(generated["summary_schema_version"], 5)
         self.assertEqual(generated["benchmark_manifest_sha256"], "e" * 64)
+
+    def test_v6_candidate_keeps_the_v5_summary_baseline_generation(self):
+        value = v6_candidate()
+
+        generated = promotion.proposed_baseline(value, "f" * 64)
+
+        self.assertEqual(generated["schema_version"], 1)
+        self.assertEqual(generated["summary_schema_version"], 5)
 
     def test_clean_candidate_creates_append_only_record_pointer_and_baseline(self):
         fixture = self.fixture()

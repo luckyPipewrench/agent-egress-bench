@@ -128,7 +128,7 @@ def require_sha256(value, label):
 
 
 def metric_contract_for(schema_version):
-    if schema_version == 5:
+    if schema_version in {5, 6}:
         return ACTIVE_V5_REQUIRED_FLOORS, ACTIVE_V5_REQUIRED_CEILINGS
     return LEGACY_REQUIRED_FLOORS, LEGACY_REQUIRED_CEILINGS
 
@@ -380,11 +380,11 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         baseline = load_object(baseline_path)
 
         candidate_schema_version = candidate.get("schema_version")
-        if candidate_schema_version not in {2, 4, 5}:
-            raise ValueError("candidate schema_version must be 2, 4, or 5")
-        if candidate_schema_version in {4, 5}:
+        if candidate_schema_version not in {2, 4, 5, 6}:
+            raise ValueError("candidate schema_version must be 2, 4, 5, or 6")
+        if candidate_schema_version in {4, 5, 6}:
             require_capability_registry(candidate)
-        if candidate_schema_version == 5:
+        if candidate_schema_version in {5, 6}:
             require_sha256(
                 candidate.get("benchmark_manifest_sha256"),
                 "candidate benchmark_manifest_sha256",
@@ -415,7 +415,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                     f"candidate {candidate_key} does not match {evidence_label} evidence"
                 )
 
-        if candidate_schema_version in {4, 5}:
+        if candidate_schema_version in {4, 5, 6}:
             if candidate.get("measurement_status") != "measured":
                 decision["failures"].append(
                     "measurement_status="
@@ -457,9 +457,10 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             )
 
         required_floors, required_ceilings = metric_contract_for(candidate_schema_version)
-        if candidate_schema_version == 5 and baseline.get("summary_schema_version") != 5:
+        if candidate_schema_version in {5, 6} and baseline.get("summary_schema_version") != 5:
             raise ValueError(
-                "v5 candidate requires a reviewed baseline with summary_schema_version=5"
+                f"v{candidate_schema_version} candidate requires a reviewed baseline with "
+                "summary_schema_version=5"
             )
 
         floors = baseline.get("score_floors")
@@ -630,7 +631,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             )
 
         identity_keys = (
-            V5_REQUIRED_IDENTITIES if candidate_schema_version == 5 else REQUIRED_IDENTITIES
+            V5_REQUIRED_IDENTITIES if candidate_schema_version in {5, 6} else REQUIRED_IDENTITIES
         )
         for identity_key in identity_keys:
             previous = baseline.get(identity_key)
@@ -644,9 +645,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                     f"{identity_key} moved {previous!r} -> {current!r}"
                 )
 
-        baseline = artifact_schema.validate_file(
-            baseline, PROMOTION_BASELINE_SCHEMA, "baseline"
-        )
+        baseline = artifact_schema.validate_file(baseline, PROMOTION_BASELINE_SCHEMA, "baseline")
         candidate = artifact_schema.validate_file(
             candidate,
             PROVENANCE_SCHEMAS[candidate_schema_version],

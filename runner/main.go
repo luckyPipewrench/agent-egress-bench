@@ -165,6 +165,9 @@ func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Durat
 }
 
 func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, gatewayPluginPath string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string, prov RunProvenance) error {
+	if err := validateTargetAccommodationAdapter(adapterName, prov); err != nil {
+		return err
+	}
 	profile, err := loadProfile(profilePath)
 	if err != nil {
 		return err
@@ -351,6 +354,17 @@ func completionError(summary GauntletSummary, required bool) error {
 		return nil
 	}
 	return fmt.Errorf("measurement is %s; retained artifacts describe the partial run", summary.MeasurementStatus)
+}
+
+func validateTargetAccommodationAdapter(adapterName string, prov RunProvenance) error {
+	declared := prov.MCPHTTPSessionHeader != "" ||
+		prov.MCPHTTPSessionFormat != "" ||
+		prov.MCPHTTPSessionRefusalHeader != "" ||
+		prov.MCPHTTPSessionRefusalValue != ""
+	if declared && adapterName != "proxy" {
+		return fmt.Errorf("MCP HTTP session accommodation is only consumed by the proxy adapter, got %q", adapterName)
+	}
+	return nil
 }
 
 // runCases executes the result-state transition for each case. Profile fields

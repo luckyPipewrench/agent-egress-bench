@@ -1,6 +1,6 @@
 # Published schema audit
 
-This audit covers every versioned JSON Schema in the public catalog. The catalog currently contains 52 canonical contracts and 36 verifier copies. `make check-schema-copies` requires each verifier copy to remain byte-identical to its canonical schema, so the canonical row also covers every copied path.
+This audit covers every versioned JSON Schema in the public catalog. The catalog currently contains 55 canonical contracts and 36 verifier copies. `make check-schema-copies` requires each verifier copy to remain byte-identical to its canonical schema, so the canonical row also covers every copied path.
 
 `make check-contracts` scans all published copies. Known object shapes must set `additionalProperties: false`. Typed maps remain open only over constrained values. Every other open object needs an exact schema ID and JSON Pointer entry in `scripts/check_schema_closure.py`, with a reason and a non-stale gate.
 
@@ -15,14 +15,15 @@ The weakest-instance column describes the least informative structurally valid r
 | `result-v4.schema.json` | Closed except frozen adapter evidence | A complete historical scored row; evidence is a frozen extension point | Frozen v4 unchanged |
 | `result-v5.schema.json` | Closed except adapter evidence with required `result_state` | A complete identified scored or explicit unmeasured row; the validator binds state, verdict, and score | In-place amendment; retained v5 rows keep the same result |
 | `summary-v4.schema.json` | Open frozen root | The historical required summary fields can carry unknown siblings | Frozen v4 unchanged |
-| `summary-v5.schema.json` | Closed; category and reason names are typed maps | A non-empty counted run with bounded rates, diagnostics, registry binding, and explicit measurement status | Active v5 unchanged |
+| `summary-v5.schema.json` | Closed; category and reason names are typed maps; publication provenance is optional for local runs | A non-empty counted run with bounded rates, diagnostics, registry binding, and explicit measurement status | Active v5 unchanged; the publication candidate owns the stricter promotion rule |
 | `provenance-candidate-v1.schema.json` | Closed root; three nested historical objects are open | Empty count, score, and metric objects are structurally valid | Frozen v1 unchanged; v5 replaces it |
 | `provenance-candidate-v2.schema.json` | Closed root; historical measurement objects are open | Empty count, score, and metric objects are structurally valid | Frozen v2 unchanged; v5 replaces it |
-| `provenance-candidate-v4.schema.json` | Closed root; legacy measurement, registry, and exercised objects are open | The schema alone permits weak nested records; the promotion evaluator performs the legacy semantic checks | Supported reader version unchanged; active writers use v5 |
-| `provenance-candidate-v5.schema.json` | Closed at every known object; reason names are a typed map | At least one case, complete counts, complete scores and diagnostics, registry binding, exercised surfaces, and all governed evidence digests | In-place v5 amendment because no saved v5 candidate exists |
+| `provenance-candidate-v4.schema.json` | Closed root; legacy measurement, registry, and exercised objects are open | The schema alone permits weak nested records; the promotion evaluator performs the legacy semantic checks | Supported reader version unchanged; active writers use v6 |
+| `provenance-candidate-v5.schema.json` | Closed at every known object; reason names are a typed map | At least one case, complete counts, complete scores and diagnostics, registry binding, exercised surfaces, and all governed evidence digests | Frozen v5 unchanged; v6 replaces it |
+| `provenance-candidate-v6.schema.json` | Closed at every known object | A complete v5 measurement plus the repository and commit, adapter identity and owner, and target configuration reference and digest | New v6 because those publication facts are now required |
 | `promoted-record-v1.schema.json` | Closed root; digest map accepts any non-empty filename | Absolute, traversal, and unrelated inventory keys are structurally valid | Frozen v1 unchanged; v2 replaces it |
 | `promoted-record-v2.schema.json` | Closed root and allowlisted file inventory | A candidate file digest plus record identity; the reader binds the top-level digest to the inventory and actual file | New v2 because tightening v1 would reject retained records |
-| `promotion-baseline-v1.schema.json` | Closed; reason names are a typed map | A reviewed identity, observed counts, bounded score floors, and bounded ceilings | Frozen v1 unchanged |
+| `promotion-baseline-v1.schema.json` | Closed; reason names are a typed map | A reviewed identity, observed counts, bounded score floors, and bounded ceilings | Active v1 unchanged because candidate v6 still uses summary generation 5 |
 | `tool-profile-v1.schema.json` | Closed | A named historical tool and its declared capabilities; optional receipt paths are runtime-contained | Frozen v1 unchanged |
 | `tool-profile-v3.schema.json` | Closed | A named historical tool and its claims; receipt evidence may use absolute directories, while glob results and symlinks are contained by the runner | Frozen v3 unchanged |
 | `tool-profile-v4.schema.json` | Closed | A named tool, runner version, registry reference, and claim set; optional receipt evidence is contained and resolved by the runner | Active v4 unchanged |

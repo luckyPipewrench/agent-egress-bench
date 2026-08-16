@@ -134,6 +134,33 @@ assert.throws(
   /benchmark_manifest_sha256/
 );
 
+const activeV6 = JSON.parse(JSON.stringify(activeV5));
+activeV6.schema_version = 6;
+activeV6.method_repository = 'example/security/agent-egress-bench';
+activeV6.method_commit = 'c'.repeat(40);
+activeV6.adapter_id = 'proxy';
+activeV6.adapter_owner = 'Example Maintainers';
+activeV6.target_config_ref = 'examples/tool/benchmark.yaml';
+activeV6.target_config_sha256 = 'd'.repeat(64);
+assert.match(window.renderGauntletScope(activeV6).children[0].textContent,
+  /Containment 50\.0% of 158 malicious cases/);
+
+[
+  'method_repository',
+  'method_commit',
+  'adapter_id',
+  'adapter_owner',
+  'target_config_ref',
+  'target_config_sha256',
+].forEach((field) => {
+  const incompleteV6 = JSON.parse(JSON.stringify(activeV6));
+  delete incompleteV6[field];
+  assert.throws(
+    () => window.renderGauntletScope(incompleteV6),
+    new RegExp(field)
+  );
+});
+
 ['incomplete', 'complete', undefined].forEach((status) => {
   const artifact = JSON.parse(JSON.stringify(activeMeasured));
   artifact._capabilityRegistry = { id: 'aeb.core-capabilities' };

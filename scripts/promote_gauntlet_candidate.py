@@ -85,7 +85,7 @@ def parse_timestamp(value, label):
 
 def evidence_files_for(candidate):
     files = dict(EVIDENCE_FILES)
-    if candidate.get("schema_version") in {4, 5}:
+    if candidate.get("schema_version") in {4, 5, 6}:
         files.update(provenance.V4_RAW_EVIDENCE)
     return files
 
@@ -149,18 +149,34 @@ def validate_candidate_origin(
 
 
 def validate_reference_candidate(candidate):
-    if candidate.get("schema_version") not in {2, 4, 5}:
-        raise ValueError("candidate schema_version must be 2, 4, or 5")
-    if candidate.get("schema_version") in {4, 5}:
+    if candidate.get("schema_version") not in {2, 4, 5, 6}:
+        raise ValueError("candidate schema_version must be 2, 4, 5, or 6")
+    if candidate.get("schema_version") in {4, 5, 6}:
         evaluator.require_capability_registry(candidate)
-    if candidate.get("schema_version") == 5:
+    if candidate.get("schema_version") in {5, 6}:
         evaluator.validate_v5_candidate_contract(candidate)
+    if candidate.get("schema_version") == 6:
+        for field in (
+            "method_repository",
+            "method_commit",
+            "adapter_id",
+            "adapter_owner",
+            "target_config_ref",
+        ):
+            require_non_empty_string(candidate, field)
+        require_sha256(candidate.get("target_config_sha256"), "target_config_sha256")
+        candidate = artifact_schema.validate_file(
+            candidate,
+            evaluator.PROVENANCE_SCHEMAS[6],
+            "provenance candidate v6",
+        )
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
     parse_timestamp(require_non_empty_string(candidate, "generated_at"), "generated_at")
     tool_version = require_non_empty_string(candidate, "tool_version")
     if tool_version != require_non_empty_string(candidate, "pipelock_version"):
         raise ValueError("candidate tool_version and pipelock_version must match")
+    return candidate
 
 
 def reviewable_policy_failure(failure):
@@ -169,6 +185,8 @@ def reviewable_policy_failure(failure):
     if REVIEWABLE_SCORE_FAILURE.fullmatch(failure):
         return True
     if failure == "v5 candidate requires a reviewed baseline with summary_schema_version=5":
+        return True
+    if failure == "v6 candidate requires a reviewed baseline with summary_schema_version=5":
         return True
     return failure.startswith("pipelock_version=") and ", baseline is " in failure
 
@@ -217,7 +235,7 @@ def proposed_baseline(candidate, candidate_sha256):
             "applicable": {"false_positive_rate": applicable_scores.get("false_positive_rate")}
         },
     }
-    if candidate.get("schema_version") == 5:
+    if candidate.get("schema_version") in {5, 6}:
         baseline["summary_schema_version"] = 5
         baseline["benchmark_manifest_sha256"] = require_sha256(
             candidate.get("benchmark_manifest_sha256"), "benchmark_manifest_sha256"
@@ -477,7 +495,7 @@ def promote(args):
         raise ValueError("artifact directory is missing the candidate or source decision")
 
     candidate = require_object(candidate_path)
-    validate_reference_candidate(candidate)
+    candidate = validate_reference_candidate(candidate)
     validate_candidate_origin(
         candidate,
         args.artifact_prefix,

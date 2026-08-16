@@ -75,7 +75,7 @@ def validate_record(record_dir, repo_root):
     candidate = evaluator.load_object(candidate_path)
     if evaluator.file_sha256(candidate_path) != digest:
         raise ValueError(f"{record_dir}: candidate digest does not match its directory")
-    promotion.validate_reference_candidate(candidate)
+    candidate = promotion.validate_reference_candidate(candidate)
     promotion.validate_candidate_origin(
         candidate,
         promotion.DEFAULT_ARTIFACT_PREFIX,

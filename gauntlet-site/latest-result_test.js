@@ -202,6 +202,45 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   const v4Loaded = await window.loadLatestVerifiedResult('./latest-verified.json', v4Fetch, crypto);
   assert.equal(v4Loaded._capabilityRegistry.id, 'aeb.core-capabilities');
   assert.equal(window.capabilityLabel(v4Loaded, 'url_dlp'), 'URL DLP');
+
+  const v6Artifact = {
+    ...v4Artifact,
+    schema_version: 6,
+    method_repository: 'example/agent-egress-bench',
+    method_commit: 'e'.repeat(40),
+    adapter_id: 'proxy',
+    adapter_owner: 'Example Maintainers',
+    target_config_ref: 'examples/tool/benchmark.yaml',
+    target_config_sha256: 'f'.repeat(64),
+  };
+  const v6ArtifactText = JSON.stringify(v6Artifact) + '\n';
+  const v6Digest = nodeCrypto.createHash('sha256').update(v6ArtifactText).digest('hex');
+  const v6Manifest = {
+    ...v4Manifest,
+    candidate_sha256: v6Digest,
+    files: { ...v4Manifest.files, 'continuous-gauntlet-pipelock.json': v6Digest },
+  };
+  const v6ManifestText = JSON.stringify(v6Manifest) + '\n';
+  const v6Pointer = {
+    ...v4Pointer,
+    candidate_sha256: v6Digest,
+    record_manifest_sha256: nodeCrypto.createHash('sha256').update(v6ManifestText).digest('hex'),
+    record_path: './results/pipelock/' + v6Digest + '/continuous-gauntlet-pipelock.json',
+    record_manifest_path: './results/pipelock/' + v6Digest + '/record-manifest.json',
+  };
+  const v6Fetch = async (url) => {
+    const prefix = './results/pipelock/' + v6Digest + '/';
+    if (url === './latest-verified.json') return response(JSON.stringify(v6Pointer));
+    if (url === v6Pointer.record_manifest_path) return response(v6ManifestText);
+    if (url === v6Pointer.record_path) return response(v6ArtifactText);
+    if (url === prefix + 'capability-registry.json') return response(snapshotText);
+    if (url === prefix + 'tool-profile.json') return response(profileText);
+    return response('', 404);
+  };
+  const v6Loaded = await window.loadLatestVerifiedResult('./latest-verified.json', v6Fetch, crypto);
+  assert.equal(v6Loaded.schema_version, 6);
+  assert.equal(v6Loaded.method_repository, 'example/agent-egress-bench');
+
   await assert.rejects(
     window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
       if (url.endsWith('capability-registry.json')) return response('', 404);

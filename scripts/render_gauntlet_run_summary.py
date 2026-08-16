@@ -157,9 +157,9 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
 
     details = {}
     if candidate is not None:
-        if candidate.get("schema_version") not in {2, 4, 5}:
-            failures.append("candidate schema_version must be 2, 4, or 5")
-        elif candidate.get("schema_version") in {4, 5}:
+        if candidate.get("schema_version") not in {2, 4, 5, 6}:
+            failures.append("candidate schema_version must be 2, 4, 5, or 6")
+        elif candidate.get("schema_version") in {4, 5, 6}:
             try:
                 import evaluate_gauntlet_candidate as evaluator
                 evaluator.require_capability_registry(candidate)
@@ -170,7 +170,7 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
         for key in ("total", "applicable", "not_applicable", "errors"):
             details[key] = count(candidate, key, failures)
         details["unreachable"] = optional_count(candidate, "unreachable", failures)
-        if candidate.get("schema_version") in {4, 5}:
+        if candidate.get("schema_version") in {4, 5, 6}:
             if candidate.get("measurement_status") != "measured":
                 failures.append("candidate measurement_status must be 'measured'")
         elif candidate.get("sufficient") is not True:
