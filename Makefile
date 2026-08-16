@@ -24,6 +24,7 @@ check-scorecard-workflow:
 check-contracts:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/artifact_schema_conformance_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_schema_closure_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
 
 # The discovery document is generated from the canonical schema files. It pins
