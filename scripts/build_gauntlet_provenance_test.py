@@ -339,6 +339,19 @@ class ProvenanceBuilderTest(unittest.TestCase):
                     },
                 }
             }
+            (self.run_dir / "case-index.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "cases": {
+                            "a": {"category": "test", "expected_verdict": "block"},
+                            "b": {"category": "test", "expected_verdict": "allow"},
+                            "c": {"category": "test", "expected_verdict": "block"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
         for row in self.results:
@@ -582,13 +595,34 @@ class ProvenanceBuilderTest(unittest.TestCase):
         )
         case_index_path = self.run_dir / "case-index.json"
         case_index = json.loads(case_index_path.read_text(encoding="utf-8"))
-        case_index["cases"][1]["expected_verdict"] = "block"
+        case_index["cases"]["b"]["expected_verdict"] = "block"
         case_index_path.write_text(json.dumps(case_index), encoding="utf-8")
         (self.run_dir / "make-stats.txt").write_text("block: 3\nallow: 0\nwarn: 0\n", encoding="utf-8")
 
         result = self.bundle()
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_v5_rejects_frozen_v1_case_index(self):
+        self.make_active_fixture(summary_schema_version=5)
+        (self.run_dir / "case-index.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "cases": [
+                        {"case_id": "a", "category": "test", "expected_verdict": "block"},
+                        {"case_id": "b", "category": "test", "expected_verdict": "allow"},
+                        {"case_id": "c", "category": "test", "expected_verdict": "block"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schema_version must be 2", result.stderr)
 
     def test_active_measurement_status_must_match_result_coverage(self):
         self.make_active_fixture("incomplete")

@@ -37,7 +37,11 @@ PROVENANCE_SCHEMAS = {
     / f"provenance-candidate-v{version}.schema.json"
     for version in (1, 2, 4, 5)
 }
-CASE_INDEX_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "case-index-v1.schema.json"
+CASE_INDEX_SCHEMAS = {
+    version: Path(__file__).resolve().parents[1] / "schemas" / f"case-index-v{version}.schema.json"
+    for version in (1, 2)
+}
+ACTIVE_CASE_INDEX_SCHEMA_VERSION = 2
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -356,23 +360,29 @@ def load_manifest(repo_root, run_dir):
     return manifest, ids
 
 
-def load_case_index(path, manifest_ids, require_categories=False):
+def load_case_index(path, manifest_ids, expected_version):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
+    if not isinstance(case_index, dict):
+        raise ValueError("loader case index must be an object")
+    version = case_index.get("schema_version")
+    if version != expected_version:
+        raise ValueError(
+            f"loader case index schema_version must be {expected_version}, got {version!r}"
+        )
     case_index = artifact_schema.validate_file(
-        case_index, CASE_INDEX_SCHEMA, "loader case index"
+        case_index, CASE_INDEX_SCHEMAS[version], "loader case index"
     )
-    if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
-        raise ValueError("loader case index must be a schema_version 1 object")
     rows = case_index.get("cases")
-    if not isinstance(rows, list):
-        raise ValueError("loader case index cases must be an array")
+    if version == 1:
+        indexed_rows = [(row.get("case_id") if isinstance(row, dict) else None, row) for row in rows]
+    else:
+        indexed_rows = list(rows.items())
     expected_by_id = {}
     category_by_id = {}
-    for row_number, row in enumerate(rows, 1):
+    for row_number, (case_id, row) in enumerate(indexed_rows, 1):
         if not isinstance(row, dict):
             raise ValueError(f"loader case index row {row_number} is not an object")
-        case_id = row.get("case_id")
         expected = row.get("expected_verdict")
         category = row.get("category")
         if not isinstance(case_id, str) or not case_id:
@@ -383,7 +393,9 @@ def load_case_index(path, manifest_ids, require_categories=False):
             raise ValueError(
                 f"loader case index row {row_number} has invalid normalized expected_verdict {expected!r}"
             )
-        if require_categories and (not isinstance(category, str) or not category):
+        if version == ACTIVE_CASE_INDEX_SCHEMA_VERSION and (
+            not isinstance(category, str) or not category
+        ):
             raise ValueError(f"loader case index row {row_number} has no category")
         expected_by_id[case_id] = expected
         if isinstance(category, str) and category:
@@ -584,7 +596,7 @@ def measurements(repo_root, run_dir):
     case_index_bytes, expected_by_id, category_by_id = load_case_index(
         run_dir / RAW_EVIDENCE["case_index"],
         manifest_ids,
-        require_categories=summary_schema_version == 5,
+        ACTIVE_CASE_INDEX_SCHEMA_VERSION if summary_schema_version == 5 else 1,
     )
     budget_timing_case_ids = load_budget_timing_case_ids(repo_root)
 

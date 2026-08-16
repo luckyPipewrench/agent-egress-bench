@@ -12,15 +12,16 @@ import (
 )
 
 type caseIndexDocument struct {
-	SchemaVersion int              `json:"schema_version"`
-	Cases         []caseIndexEntry `json:"cases"`
+	SchemaVersion int                       `json:"schema_version"`
+	Cases         map[string]caseIndexEntry `json:"cases"`
 }
 
 type caseIndexEntry struct {
-	CaseID          string `json:"case_id"`
 	Category        string `json:"category"`
 	ExpectedVerdict string `json:"expected_verdict"`
 }
+
+const activeCaseIndexSchemaVersion = 2
 
 type corpusStatCase struct {
 	Category        string
@@ -363,10 +364,12 @@ func writeCorpusStats(w io.Writer, cases []corpusStatCase) error {
 // This is the per-case authority for evidence wrappers: notably, multi-file
 // warn fixtures are normalized to allow exactly as they are during scoring.
 func writeCaseIndex(w io.Writer, cases []Case) error {
-	entries := make([]caseIndexEntry, 0, len(cases))
+	entries := make(map[string]caseIndexEntry, len(cases))
 	for _, c := range cases {
-		entries = append(entries, caseIndexEntry{CaseID: c.ID, Category: c.Category, ExpectedVerdict: c.ExpectedVerdict})
+		if _, exists := entries[c.ID]; exists {
+			return fmt.Errorf("duplicate case ID in case index: %s", c.ID)
+		}
+		entries[c.ID] = caseIndexEntry{Category: c.Category, ExpectedVerdict: c.ExpectedVerdict}
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].CaseID < entries[j].CaseID })
-	return json.NewEncoder(w).Encode(caseIndexDocument{SchemaVersion: 1, Cases: entries})
+	return json.NewEncoder(w).Encode(caseIndexDocument{SchemaVersion: activeCaseIndexSchemaVersion, Cases: entries})
 }

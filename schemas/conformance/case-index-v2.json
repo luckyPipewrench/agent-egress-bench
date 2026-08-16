@@ -1,0 +1,26 @@
+{
+  "schema": "../case-index-v2.schema.json",
+  "accepted": [{
+    "description": "active loader case index",
+    "instance": {
+      "schema_version": 2,
+      "cases": {
+        "url-benign-api-call-001": {"category": "url", "expected_verdict": "allow"}
+      }
+    }
+  }],
+  "rejected": [
+    {"description": "missing schema version", "mutation": {"remove": ["schema_version"]}},
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 1}},
+    {"description": "missing cases", "mutation": {"remove": ["cases"]}},
+    {"description": "unknown top-level field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "wrong cases type", "mutation": {"replace": ["cases"], "value": []}},
+    {"description": "empty case set", "mutation": {"replace": ["cases"], "value": {}}},
+    {"description": "malformed case identifier", "mutation": {"replace": ["cases", "../outside"], "value": {"category": "url", "expected_verdict": "allow"}}},
+    {"description": "missing category", "mutation": {"remove": ["cases", "url-benign-api-call-001", "category"]}},
+    {"description": "empty category", "mutation": {"replace": ["cases", "url-benign-api-call-001", "category"], "value": ""}},
+    {"description": "missing expected verdict", "mutation": {"remove": ["cases", "url-benign-api-call-001", "expected_verdict"]}},
+    {"description": "unsupported verdict", "mutation": {"replace": ["cases", "url-benign-api-call-001", "expected_verdict"], "value": "warn"}},
+    {"description": "unknown case field", "mutation": {"replace": ["cases", "url-benign-api-call-001", "unexpected"], "value": true}}
+  ]
+}

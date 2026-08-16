@@ -324,20 +324,28 @@
     },
     {
       "family": "case_index",
-      "active_writer_version": 1,
+      "active_writer_version": 2,
       "accepted_reader_versions": [
-        1
+        1,
+        2
       ],
       "frozen_versions": [
         1
       ],
-      "canonical_schema_path": "schemas/case-index-v1.schema.json",
+      "canonical_schema_path": "schemas/case-index-v2.schema.json",
       "schemas": [
         {
           "version": 1,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/case-index-v1.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v1.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v1.schema.json",
+          "sha256": "7700a2e79154cfde02b7714f339c84d012155125a22575747932b9272d948433"
+        },
+        {
+          "version": 2,
+          "status": "active",
+          "path": "schemas/case-index-v2.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v2.schema.json"
         }
       ],
       "writer": [
@@ -346,7 +354,12 @@
       "reader": [
         "scripts/build_gauntlet_provenance.py"
       ],
-      "source_versions": [],
+      "source_versions": [
+        {
+          "path": "runner/corpus.go",
+          "symbol": "activeCaseIndexSchemaVersion"
+        }
+      ],
       "gate": "make check-contracts"
     },
     {

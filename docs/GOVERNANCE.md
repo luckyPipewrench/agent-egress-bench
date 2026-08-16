@@ -78,7 +78,8 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Receipt-scoring profile | 4 | 1, 4 | 1 | [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json) |
 | Summary | 5 | 4, 5 | 4 | [`summary-v5.schema.json`](../schemas/summary-v5.schema.json) |
 | Provenance candidate | 5 | 1, 2, 4, 5 | 1, 2 | Python reader, no JSON Schema |
-| Case index, promoted record, baseline | 1 | 1 | 1 | Go or Python reader, no JSON Schema |
+| Case index | 2 | 1, 2 | 1 | [`case-index-v2.schema.json`](../schemas/case-index-v2.schema.json) |
+| Promoted record, baseline | 1 | 1 | 1 | [`promoted-record-v1.schema.json`](../schemas/promoted-record-v1.schema.json), [`promotion-baseline-v1.schema.json`](../schemas/promotion-baseline-v1.schema.json) |
 
 Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows and summaries retain frozen v4 schemas beside their active v5 schemas, so a path cannot silently retarget a historical contract. The repository provides no unsuffixed compatibility aliases.
 
