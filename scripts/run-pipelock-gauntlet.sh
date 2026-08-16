@@ -545,9 +545,13 @@ post_run_dirty="$(git status --porcelain=v1 --untracked-files=all)"
 
 failure_reason="Gauntlet result validation failed"
 results_abs="$(realpath "$results_path")"
+# The cases directory is what turns on the case-bound rules. Without it this
+# call still ran and still passed, checking row shape while every rule that
+# needs the case definition sat idle, which is how a calibration adapter
+# claiming a denial-of-wallet block it could not evidence went unnoticed.
 (
   cd "$repo_root/validate"
-  AEB_CAPABILITY_REGISTRY="$repo_root/capability-registry" go run . results "$results_abs"
+  AEB_CAPABILITY_REGISTRY="$repo_root/capability-registry" go run . results "$results_abs" "$repo_root/cases"
 )
 jq -e '.case_count.errors == 0' "$summary_path" >/dev/null || \
   die "runner summary contains errors"

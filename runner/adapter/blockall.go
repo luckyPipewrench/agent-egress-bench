@@ -15,10 +15,10 @@ func (b BlockAllAdapter) DeliveryTuples() []DeliveryTuple {
 // Run always returns "block" with synthetic evidence. It contacts nothing, so
 // its proof flags are asserted rather than earned; the marker records that so
 // a calibration run cannot read as a measured one.
-func (b BlockAllAdapter) Run(_ Case, _ time.Duration) Result {
+func (b BlockAllAdapter) Run(c Case, _ time.Duration) Result {
 	return Result{
 		Verdict:         "block",
-		Evidence:        syntheticEvidence("blockall"),
+		Evidence:        syntheticEvidence("blockall", "block", c.Payload),
 		DeliveryProven:  true,
 		VerdictObserved: true,
 	}

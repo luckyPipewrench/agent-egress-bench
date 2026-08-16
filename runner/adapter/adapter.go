@@ -98,7 +98,7 @@ func (d DryRunAdapter) DeliveryTuples() []DeliveryTuple {
 func (d DryRunAdapter) Run(c Case, _ time.Duration) Result {
 	return Result{
 		Verdict:         c.ExpectedVerdict,
-		Evidence:        syntheticEvidence("dryrun"),
+		Evidence:        syntheticEvidence("dryrun", c.ExpectedVerdict, c.Payload),
 		DeliveryProven:  true,
 		VerdictObserved: true,
 	}
@@ -107,12 +107,34 @@ func (d DryRunAdapter) Run(c Case, _ time.Duration) Result {
 // syntheticEvidence marks a result produced without contacting any tool. A
 // calibration adapter asserts delivery and observation it did not perform, so
 // the row must carry that fact rather than presenting as a measurement.
-func syntheticEvidence(adapterName string) map[string]interface{} {
-	return map[string]interface{}{
+// syntheticEvidence takes the verdict actually being claimed rather than the
+// case's expected one, because the evidence a contract demands follows the
+// claim. blockall claims a block on every case including the ones it was never
+// going to match, so keying on the expectation would have left it emitting the
+// same unsupported claim dryrun did.
+func syntheticEvidence(adapterName string, verdict string, payload map[string]interface{}) map[string]interface{} {
+	evidence := map[string]interface{}{
 		"synthetic":         true,
 		"synthetic_adapter": adapterName,
 		"proof":             "asserted_by_calibration_adapter_not_observed",
 	}
+	// A denial-of-wallet case requires a target to say WHEN it blocked, because
+	// blocking before the budget is spent disrupts legitimate work and blocking
+	// after the over-budget call has already gone out is not containment. A
+	// calibration row claiming the block without that field was rejected by the
+	// contract, which was the contract working.
+	//
+	// The field is asserted, exactly like the delivery and observation above it,
+	// and carries the same synthetic marker that keeps every row honest and
+	// keeps the run unpublishable. Claiming the block while withholding one of
+	// the three assertions it rests on was the arbitrary position, not the
+	// principled one.
+	if verdict == "block" {
+		if _, overBudget := payload["over_budget_call_id"]; overBudget {
+			evidence["budget_block_timing"] = "at_over_budget"
+		}
+	}
+	return evidence
 }
 
 func syntheticTuples() []DeliveryTuple {
