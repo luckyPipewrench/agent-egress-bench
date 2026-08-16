@@ -37,7 +37,11 @@ SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
 DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
 DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
-PROMOTED_RECORD_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promoted-record-v1.schema.json"
+ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION = 2
+PROMOTED_RECORD_SCHEMAS = {
+    version: Path(__file__).resolve().parents[1] / "schemas" / f"promoted-record-v{version}.schema.json"
+    for version in (1, 2)
+}
 PROMOTION_BASELINE_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "promotion-baseline-v1.schema.json"
 REVIEWABLE_SCORE_FAILURE = re.compile(
     r"^scores\.(?:full|applicable)\.[a-z_]+=.+, "
@@ -258,7 +262,7 @@ def manifest_for(
         if path.name != RECORD_MANIFEST_FILENAME:
             files[path.name] = evaluator.file_sha256(path)
     return {
-        "schema_version": 1,
+        "schema_version": ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION,
         "tool": require_non_empty_string(candidate, "tool"),
         "tool_version": require_non_empty_string(candidate, "tool_version"),
         "artifact_id": require_non_empty_string(candidate, "artifact_id"),
@@ -274,10 +278,11 @@ def manifest_for(
 def validate_record(record_dir, candidate_sha256):
     manifest_path = record_dir / RECORD_MANIFEST_FILENAME
     manifest = require_object(manifest_path)
-    if manifest.get("schema_version") != 1:
-        raise ValueError("record manifest schema_version must be 1")
+    schema_version = manifest.get("schema_version")
+    if schema_version not in PROMOTED_RECORD_SCHEMAS:
+        raise ValueError("record manifest schema_version must be 1 or 2")
     manifest = artifact_schema.validate_file(
-        manifest, PROMOTED_RECORD_SCHEMA, "record manifest"
+        manifest, PROMOTED_RECORD_SCHEMAS[schema_version], "record manifest"
     )
     require_sha256(manifest.get("candidate_sha256"), "record candidate_sha256")
     if manifest["candidate_sha256"] != candidate_sha256:
@@ -293,6 +298,8 @@ def validate_record(record_dir, candidate_sha256):
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise ValueError("record manifest files must be a non-empty object")
+    if files.get(CANDIDATE_FILENAME) != manifest["candidate_sha256"]:
+        raise ValueError("record candidate_sha256 must match the candidate file digest")
     entries = list(record_dir.iterdir())
     if any(path.is_symlink() or not path.is_file() for path in entries):
         raise ValueError("existing record contains a non-regular entry")
@@ -575,7 +582,9 @@ def promote(args):
                 previous_record_manifest_sha256,
             )
             record_manifest = artifact_schema.validate_file(
-                record_manifest, PROMOTED_RECORD_SCHEMA, "record manifest"
+                record_manifest,
+                PROMOTED_RECORD_SCHEMAS[ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION],
+                "record manifest",
             )
             evaluator.atomic_json_write(
                 temporary_record / RECORD_MANIFEST_FILENAME, record_manifest

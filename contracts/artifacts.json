@@ -364,20 +364,28 @@
     },
     {
       "family": "promoted_record",
-      "active_writer_version": 1,
+      "active_writer_version": 2,
       "accepted_reader_versions": [
-        1
+        1,
+        2
       ],
       "frozen_versions": [
         1
       ],
-      "canonical_schema_path": "schemas/promoted-record-v1.schema.json",
+      "canonical_schema_path": "schemas/promoted-record-v2.schema.json",
       "schemas": [
         {
           "version": 1,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/promoted-record-v1.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v1.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v1.schema.json",
+          "sha256": "3b791eec43f7ddd9a1c8382ae1bba1474044d1429f4f88f192235d7c3c63fa4d"
+        },
+        {
+          "version": 2,
+          "status": "active",
+          "path": "schemas/promoted-record-v2.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v2.schema.json"
         }
       ],
       "writer": [
@@ -386,7 +394,12 @@
       "reader": [
         "scripts/validate_gauntlet_records.py"
       ],
-      "source_versions": [],
+      "source_versions": [
+        {
+          "path": "scripts/promote_gauntlet_candidate.py",
+          "symbol": "ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION"
+        }
+      ],
       "gate": "make check-contracts"
     },
     {

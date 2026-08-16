@@ -183,6 +183,11 @@
       "sha256": "3b791eec43f7ddd9a1c8382ae1bba1474044d1429f4f88f192235d7c3c63fa4d"
     },
     {
+      "path": "schemas/promoted-record-v2.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v2.schema.json",
+      "sha256": "23f0cbb916a596a5bd871055771d637cfe059b21f9d7d53d82787eb5bcd193bc"
+    },
+    {
       "path": "schemas/promotion-baseline-v1.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promotion-baseline-v1.schema.json",
       "sha256": "b15fa9c5288caf4f8714989d2b8ed19cfb10ed9cd7951d21c335002c97efc144"
