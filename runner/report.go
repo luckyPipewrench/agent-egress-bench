@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
@@ -157,20 +158,58 @@ func (r *buyerReport) hasFact() bool {
 	return false
 }
 
-// readRegularArtifact reads a report input, refusing anything that is not a
-// regular file. os.ReadFile follows a symlink, so without this a link named
-// after an artifact renders whatever it points at into the report. The report
-// states facts about a run, and a file outside the run directory is not one.
-func readRegularArtifact(dir, name string) ([]byte, error) {
-	path := filepath.Join(dir, name)
-	info, err := os.Lstat(path)
+// openRegularArtifact opens a report input without following a symlink and
+// confirms the type of the descriptor it actually opened.
+//
+// Checking the path and then opening it are two different questions about two
+// different moments. An earlier version called Lstat and then read the path, so
+// anything able to write the directory could swap a regular file for a symlink
+// between the two calls and put a file from outside the run into the report, or
+// swap in a FIFO and hang the read forever. A report directory that arrived in
+// an archive is exactly where that matters.
+//
+// O_NOFOLLOW makes the open itself refuse a symlink, and Stat on the open file
+// describes that descriptor rather than whatever the name points at now, so
+// there is no window between the check and the use.
+//
+// O_NONBLOCK is the other half and is not optional. Opening a FIFO read-only
+// waits for a writer, so a named pipe left in the directory hung the report
+// indefinitely at the open, before any type check could run. Measured: the
+// command sat until killed. With O_NONBLOCK the open returns immediately, the
+// type check sees a pipe, and the artifact is refused. It has no effect on a
+// regular file.
+func openRegularArtifact(dir, name string) (*os.File, error) {
+	handle, err := os.OpenFile(filepath.Join(dir, name), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
+		// A symlink surfaces here as ELOOP. Report it as the type refusal it is
+		// rather than as an unreadable file, so the report says what was wrong.
+		if errors.Is(err, syscall.ELOOP) {
+			return nil, errNotRegularArtifact
+		}
+		return nil, err
+	}
+	info, err := handle.Stat()
+	if err != nil {
+		_ = handle.Close()
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
+		_ = handle.Close()
 		return nil, errNotRegularArtifact
 	}
-	return os.ReadFile(path)
+	return handle, nil
+}
+
+// readRegularArtifact reads a report input, refusing anything that is not a
+// regular file. The report states facts about a run, and a file outside the run
+// directory is not one.
+func readRegularArtifact(dir, name string) ([]byte, error) {
+	handle, err := openRegularArtifact(dir, name)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = handle.Close() }()
+	return io.ReadAll(handle)
 }
 
 var errNotRegularArtifact = errors.New("run artifact is not a regular file")
@@ -251,15 +290,15 @@ type reportRowCounts struct {
 
 func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 	var counts reportRowCounts
-	// Same no-follow rule as the other artifact readers. This one opens by path
-	// rather than going through readRegularArtifact because it streams the file
-	// instead of reading it whole, so the check has to happen here too.
-	if info, statErr := os.Lstat(path); statErr == nil && !info.Mode().IsRegular() {
-		return nil, counts, "Invalid in run artifacts: not a regular file"
-	}
-	f, err := os.Open(path)
+	// Streams rather than reading whole, so it opens the descriptor itself, and
+	// it uses the same no-follow open as the other readers: the type is checked
+	// on the descriptor that will actually be read, never on the path.
+	f, err := openRegularArtifact(filepath.Dir(path), filepath.Base(path))
 	if os.IsNotExist(err) {
 		return nil, counts, absentFact
+	}
+	if errors.Is(err, errNotRegularArtifact) {
+		return nil, counts, "Invalid in run artifacts: not a regular file"
 	}
 	if err != nil {
 		return nil, counts, "Unreadable run artifact"
