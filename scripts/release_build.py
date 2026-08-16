@@ -838,11 +838,37 @@ VERSION_OUTPUT_LIMIT = 4096
 VERSION_READ_TIMEOUT_SECONDS = 60
 
 
+def process_group_options() -> dict[str, Any]:
+    if os.name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+# POSIX and Windows do not share a process-group model, and the difference is
+# not cosmetic here. os.killpg does not exist on Windows at all, so calling it
+# there raises AttributeError inside the watchdog thread, the watchdog dies
+# silently, and the read this whole mechanism exists to bound blocks forever.
+# Windows terminates a tree with taskkill instead.
 def kill_process_group(process: subprocess.Popen) -> None:
     try:
-        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
-        process.kill()
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=30,
+            )
+        else:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except Exception:
+        # Whatever went wrong, the process still has to die: a watchdog that
+        # raises leaves the reader waiting, which is the failure it was added
+        # to prevent.
+        try:
+            process.kill()
+        except Exception:
+            pass
 
 
 def run_bounded_version(executable: Path, binary: str) -> str:
@@ -859,7 +885,11 @@ def run_bounded_version(executable: Path, binary: str) -> str:
             # leaves that pipe open and the read still waiting: measured with a
             # script that printed a few bytes and then slept, which hung until
             # killed even with the watchdog in place.
-            start_new_session=True,
+            #
+            # The two platforms spell this differently. start_new_session is
+            # POSIX-only, and passing it on Windows does nothing for the tree,
+            # so Windows asks for its own process group through creationflags.
+            **process_group_options(),
         )
     except OSError as exc:
         fail(f"{binary} executable cannot run: {exc}")

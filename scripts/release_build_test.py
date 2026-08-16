@@ -923,6 +923,54 @@ class ReleaseBuildTest(unittest.TestCase):
         finally:
             module.VERSION_READ_TIMEOUT_SECONDS = original
 
+    def test_process_group_termination_is_defined_for_both_platforms(self) -> None:
+        # The watchdog runs in a thread, so anything it raises is lost and the
+        # read it exists to bound waits forever. os.killpg does not exist on
+        # Windows at all, so the POSIX-only version raised AttributeError there
+        # and left the verifier hanging on exactly the input the bound was
+        # added for. Both spellings are checked here because CI runs on Linux
+        # and would never execute the Windows path.
+        module = self.release_build_module()
+        self.assertIn("start_new_session", module.process_group_options())
+        original = module.os.name
+        try:
+            module.os.name = "nt"
+            self.assertIn("creationflags", module.process_group_options())
+        finally:
+            module.os.name = original
+
+        class NeverDies:
+            pid = -1
+
+            def __init__(self) -> None:
+                self.killed = False
+
+            def kill(self) -> None:
+                self.killed = True
+
+        # A pid that cannot be signalled stands in for every way the platform
+        # call can fail. The contract is that the process still gets killed and
+        # nothing propagates out of the watchdog thread.
+        stand_in = NeverDies()
+        module.kill_process_group(stand_in)
+        self.assertTrue(stand_in.killed, "the fallback kill must still run when the group call fails")
+
+        # The Windows branch never runs on this CI, so assert the call it makes
+        # rather than the effect. Without this the branch could be deleted and
+        # every test here would still pass, which is how the POSIX-only version
+        # shipped in the first place.
+        calls = []
+        original_run = module.subprocess.run
+        module.os.name = "nt"
+        module.subprocess.run = lambda *args, **kwargs: calls.append(args[0])
+        try:
+            module.kill_process_group(NeverDies())
+        finally:
+            module.subprocess.run = original_run
+            module.os.name = original
+        self.assertEqual(len(calls), 1, "the Windows path must terminate the tree")
+        self.assertEqual(calls[0][:4], ["taskkill", "/F", "/T", "/PID"])
+
     def release_build_module(self):
         import importlib.util
 

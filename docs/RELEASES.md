@@ -63,6 +63,13 @@ python3 scripts/release_build.py verify --release-dir .. \
   --executable ./aeb-gauntlet --validator-executable ./aeb-validate
 ```
 
+The Windows archives carry `aeb-gauntlet.exe` and `aeb-validate.exe`, so name those instead:
+
+```powershell
+python3 scripts/release_build.py verify --release-dir .. `
+  --executable .\aeb-gauntlet.exe --validator-executable .\aeb-validate.exe
+```
+
 Be precise about what that establishes. Without those two options the verifier checks each binary's name, executable bit, machine type, and that the two archive members are different programs. Supplying them adds two things: the file you point at must be the same bytes as that binary inside a release archive, and running it must print the identity this release records. Pointing the option at some other program is refused before it runs, so the option reports on the release rather than on whatever happens to be on your path.
 
 What none of it establishes is what a program does. A binary carrying the release's own bytes and reporting its version could still behave differently from the source it claims, and the release identity naming the validator is a label rather than a proof of role. These checks catch the mistake and the swap: a build configured to produce one program twice, a member replaced with another, an archive assembled for the wrong platform.
