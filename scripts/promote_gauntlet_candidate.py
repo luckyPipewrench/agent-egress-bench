@@ -189,8 +189,11 @@ def validate_new_candidate_evidence(candidate, paths):
             f"{ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION}"
         )
     summary = require_object(paths["raw_summary"])
-    if summary.get("schema_version") != 5:
-        raise ValueError("provenance candidate v6 requires retained summary schema_version 5")
+    if summary.get("schema_version") != provenance.ACTIVE_SUMMARY_SCHEMA_VERSION:
+        raise ValueError(
+            f"provenance candidate v{ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION} requires retained "
+            f"summary schema_version {provenance.ACTIVE_SUMMARY_SCHEMA_VERSION}"
+        )
     metadata = require_object(paths["run_metadata"])
     command = paths["command"].read_text(encoding="utf-8").strip()
     bound = provenance.publication_provenance(summary, metadata, command)

@@ -76,7 +76,7 @@ def reconstruct_candidate(record_dir, candidate, repo_root):
             root / "cases" / "MANIFEST.txt",
         )
         summary = evaluator.load_object(record_dir / provenance.RAW_EVIDENCE["raw_summary"])
-        if summary.get("schema_version") == provenance.ACTIVE_SUMMARY_SCHEMA_VERSION:
+        if summary.get("schema_version") in provenance.ACTIVE_SUMMARY_SCHEMA_VERSIONS:
             reconstruct_result_contract(repo_root, corpus_git_sha, root)
         rebuilt = root / promotion.CANDIDATE_FILENAME
         provenance.finalize_command(

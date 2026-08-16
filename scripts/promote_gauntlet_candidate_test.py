@@ -908,7 +908,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         ).hexdigest()
         older["evidence_sha256"] = {
             label: hashlib.sha256((second_artifact / filename).read_bytes()).hexdigest()
-            for label, filename in provenance.RAW_EVIDENCE.items() | provenance.V4_RAW_EVIDENCE.items()
+            for label, filename in (provenance.RAW_EVIDENCE | provenance.V4_RAW_EVIDENCE).items()
         }
         write_json(second_artifact / promotion.CANDIDATE_FILENAME, older)
         second_paths = {

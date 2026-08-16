@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -420,6 +421,24 @@ class ValidateGauntletRecordsTest(unittest.TestCase):
     def test_complete_promoted_record_reconstructs_from_retained_evidence(self):
         fixture = ValidRecordFixture(self.root())
         validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
+
+    def test_retained_v4_summary_reconstructs_result_contract(self):
+        fixture = ValidRecordFixture(self.root())
+        pointer = evaluator.load_object(fixture.site / promotion.LATEST_POINTER_FILENAME)
+        record = fixture.site / "results" / "pipelock" / pointer["candidate_sha256"]
+        summary_path = record / provenance.RAW_EVIDENCE["raw_summary"]
+        summary = evaluator.load_object(summary_path)
+        summary["schema_version"] = 4
+        write_json(summary_path, summary)
+        candidate_path = record / promotion.CANDIDATE_FILENAME
+        candidate = evaluator.load_object(candidate_path)
+
+        def prove_contract_reconstructed(args):
+            self.assertTrue((args.repo_root / "contracts" / "artifacts.json").is_file())
+            args.output.write_bytes(candidate_path.read_bytes())
+
+        with mock.patch.object(provenance, "finalize_command", side_effect=prove_contract_reconstructed):
+            validator.reconstruct_candidate(record, candidate, fixture.corpus_root)
 
     def test_evidence_tamper_fails_even_if_record_manifest_is_rewritten(self):
         fixture = ValidRecordFixture(self.root())
