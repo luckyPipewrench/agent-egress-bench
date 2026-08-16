@@ -7,21 +7,37 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SECURITY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "security.yaml"
-RETIRED_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "scorecard.yaml"
+SCORECARD_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "scorecard.yaml"
 
 
 class ScorecardWorkflowTest(unittest.TestCase):
     def setUp(self):
-        self.workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        self.workflow = SCORECARD_WORKFLOW.read_text(encoding="utf-8")
+        self.security = SECURITY_WORKFLOW.read_text(encoding="utf-8")
         self.triggers = self.workflow.split("concurrency:", 1)[0]
 
-    def test_scorecard_stays_in_the_trusted_security_workflow(self):
-        # These three are the reason the job was moved here: a standalone
-        # workflow triggered by workflow_run runs privileged and then checks out
-        # the triggering run's code, which is a privilege-escalation shape.
-        self.assertFalse(RETIRED_WORKFLOW.exists())
+    def test_scorecard_never_runs_against_pull_request_code(self):
+        # The invariant, and it survived a move. Scorecard holds id-token: write
+        # so it can authenticate a published result, so pull request code must
+        # never reach it.
+        #
+        # It used to be enforced by an `if:` on a job inside the
+        # pull-request-triggered Security workflow, which rendered a permanent
+        # skipped check on every pull request. It is now enforced by this
+        # workflow not listening for pull requests at all, which is the shape
+        # the action documents and the shape ossf/scorecard uses itself. An
+        # absent trigger is stronger than a condition, because there is no
+        # branch left to get wrong.
+        #
+        # workflow_run stays banned for the original reason: it runs privileged
+        # and can then check out the triggering run's code, which is a
+        # privilege-escalation shape.
         self.assertNotIn("workflow_run", self.workflow)
+        self.assertNotRegex(self.triggers, r"(?m)^\s*pull_request:")
         self.assertRegex(self.workflow, r"(?m)^permissions: read-all$")
+        # And it must not have crept back into the pull-request-triggered
+        # workflow, where it would need the condition again.
+        self.assertNotRegex(self.security, r"(?m)^  scorecard:")
 
     def test_scorecard_does_not_upload_sarif_or_wait_on_codeql(self):
         # This replaces an assertion that required `needs: codeql`. That
@@ -35,8 +51,7 @@ class ScorecardWorkflowTest(unittest.TestCase):
         # without restoring the ordering must fail here.
         self.assertNotIn("upload-sarif", self.workflow)
 
-        jobs = self.workflow.split("jobs:\n", 1)[1]
-        _, scorecard = jobs.split("\n  scorecard:\n", 1)
+        scorecard = self.workflow.split("\n  scorecard:\n", 1)[1]
 
         # Search the whole job body, not the line right after `scorecard:`.
         # YAML does not fix key order, so `needs` placed after `if` or
@@ -65,30 +80,33 @@ class ScorecardWorkflowTest(unittest.TestCase):
         self.assertRegex(scorecard, r"(?m)^\s+uses: actions/upload-artifact@")
         self.assertRegex(scorecard, r"(?m)^\s+path:\s*results\.sarif\s*$")
 
-    def test_pull_request_code_never_reaches_scorecard(self):
-        self.assertRegex(
-            self.workflow,
-            r"(?m)^    if: github\.event_name != 'pull_request'$",
-        )
-
-    def test_security_workflow_scans_main_pushes(self):
-        self.assertRegex(self.workflow, r"(?m)^name: Security$")
+    def test_scorecard_runs_on_the_documented_triggers(self):
+        # push to the default branch plus a schedule are what the action
+        # documents as supported, and what ossf/scorecard uses itself.
+        self.assertRegex(self.workflow, r"(?m)^name: Scorecard$")
         self.assertRegex(
             self.triggers,
             r"(?m)^  push:\n    branches: \[main\]$",
         )
+        self.assertRegex(self.triggers, r"(?m)^  schedule:$")
+
+    def test_security_workflow_still_scans_main_pushes(self):
+        self.assertRegex(self.security, r"(?m)^name: Security$")
         self.assertRegex(
-            self.workflow,
+            self.security.split("concurrency:", 1)[0],
+            r"(?m)^  push:\n    branches: \[main\]$",
+        )
+        self.assertRegex(
+            self.security,
             r"uses: github/codeql-action/analyze@[0-9a-f]{40}",
         )
 
-    def test_scorecard_uses_the_same_event_commit(self):
-        jobs = self.workflow.split("jobs:\n", 1)[1]
-        codeql, scorecard = jobs.split("\n  scorecard:\n", 1)
-        for name, job in (("codeql", codeql), ("scorecard", scorecard)):
-            with self.subTest(job=name):
-                self.assertNotRegex(job, r"(?m)^\s+ref:")
-        self.assertIn("persist-credentials: false", scorecard)
+    def test_neither_job_checks_out_a_named_ref(self):
+        self.assertNotRegex(self.workflow, r"(?m)^\s+ref:")
+        self.assertNotRegex(self.security, r"(?m)^\s+ref:")
+        # Scorecard checks out with the token withheld, so a compromised step
+        # cannot reuse it against the repository.
+        self.assertIn("persist-credentials: false", self.workflow)
 
     def test_trusted_scorecard_triggers_remain(self):
         for trigger in ("branch_protection_rule:", "workflow_dispatch:", "schedule:"):
@@ -96,13 +114,24 @@ class ScorecardWorkflowTest(unittest.TestCase):
                 self.assertIn(trigger, self.triggers)
 
     def test_only_pull_request_runs_are_cancelled(self):
+        # This belongs to the Security workflow, which still serves pull
+        # requests through CodeQL. Cancelling a superseded pull request run is
+        # right there and wrong for Scorecard, whose runs publish a graded
+        # result and must finish.
         self.assertRegex(
-            self.workflow,
+            self.security,
             r"(?m)^concurrency:\n"
             r"  group: security-\$\{\{ github\.ref \}\}\n"
             r"  cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$",
         )
-        self.assertEqual(self.workflow.count("timeout-minutes: 10"), 2)
+        self.assertRegex(
+            self.workflow,
+            r"(?m)^concurrency:\n"
+            r"  group: scorecard-\$\{\{ github\.ref \}\}\n"
+            r"  cancel-in-progress: false$",
+        )
+        self.assertEqual(self.security.count("timeout-minutes: 10"), 1)
+        self.assertEqual(self.workflow.count("timeout-minutes: 10"), 1)
 
 
 if __name__ == "__main__":
