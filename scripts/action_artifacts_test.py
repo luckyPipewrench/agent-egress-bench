@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Regression tests for no-follow Action artifact publication."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "action_artifacts.py"
+
+
+class ActionArtifactsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.workspace = self.root / "workspace"
+        self.workspace.mkdir()
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def command(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), *args], text=True, capture_output=True)
+
+    def prepare(self) -> subprocess.CompletedProcess[str]:
+        return self.command("prepare", "--workspace", str(self.workspace), "--output-dir", "aeb-results")
+
+    def test_prepare_refuses_a_symlinked_output_directory(self) -> None:
+        outside = self.root / "outside"
+        outside.mkdir()
+        (self.workspace / "aeb-results").symlink_to(outside, target_is_directory=True)
+        result = self.prepare()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Action artifact handling failed", result.stderr)
+        self.assertEqual([], list(outside.iterdir()))
+
+    def test_publish_replaces_a_container_created_metadata_symlink_without_following_it(self) -> None:
+        self.assertEqual(0, self.prepare().returncode)
+        stage = self.root / "stage"
+        stage.mkdir()
+        results = stage / "results.jsonl"
+        summary = stage / "summary.json"
+        metadata = stage / "run-metadata.json"
+        results.write_text('{"case":"AEB-0001"}\n', encoding="utf-8")
+        summary.write_text('{"measurement_status":"measured"}\n', encoding="utf-8")
+        metadata.write_text('{"runner_exit_code":0}\n', encoding="utf-8")
+        outside = self.root / "outside.json"
+        outside.write_text("SAFE\n", encoding="utf-8")
+        (self.workspace / "aeb-results" / "run-metadata.json").symlink_to(outside)
+
+        result = self.command(
+            "publish",
+            "--workspace", str(self.workspace),
+            "--output-dir", "aeb-results",
+            "--results", str(results),
+            "--summary", str(summary),
+            "--metadata", str(metadata),
+        )
+        self.assertEqual(0, result.returncode, msg=result.stderr)
+        self.assertEqual("SAFE\n", outside.read_text(encoding="utf-8"))
+        published = self.workspace / "aeb-results" / "run-metadata.json"
+        self.assertFalse(published.is_symlink())
+        self.assertEqual(metadata.read_text(encoding="utf-8"), published.read_text(encoding="utf-8"))
+
+    def test_publish_refuses_a_symlinked_container_artifact(self) -> None:
+        self.assertEqual(0, self.prepare().returncode)
+        stage = self.root / "stage"
+        stage.mkdir()
+        results = stage / "results.jsonl"
+        metadata = stage / "run-metadata.json"
+        outside = self.root / "outside.json"
+        results.write_text("{}\n", encoding="utf-8")
+        metadata.write_text("{}\n", encoding="utf-8")
+        outside.write_text('{"measurement_status":"measured"}\n', encoding="utf-8")
+        summary = stage / "summary.json"
+        summary.symlink_to(outside)
+
+        result = self.command(
+            "publish",
+            "--workspace", str(self.workspace),
+            "--output-dir", "aeb-results",
+            "--results", str(results),
+            "--summary", str(summary),
+            "--metadata", str(metadata),
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("not a no-follow regular file", result.stderr)
+
+    def test_summary_inspection_distinguishes_absent_and_invalid_evidence(self) -> None:
+        missing = self.command("inspect-summary", "--path", str(self.root / "missing.json"))
+        self.assertEqual(0, missing.returncode)
+        self.assertEqual("absent", missing.stdout.strip())
+
+        malformed_path = self.root / "malformed.json"
+        malformed_path.write_text("{malformed", encoding="utf-8")
+        malformed = self.command("inspect-summary", "--path", str(malformed_path))
+        self.assertNotEqual(0, malformed.returncode)
+        self.assertEqual("invalid", malformed.stdout.strip())
+
+        missing_key_path = self.root / "missing-key.json"
+        missing_key_path.write_text('{"case_count": 1}\n', encoding="utf-8")
+        missing_key = self.command("inspect-summary", "--path", str(missing_key_path))
+        self.assertNotEqual(0, missing_key.returncode)
+        self.assertEqual("invalid", missing_key.stdout.strip())
+
+    def test_summary_inspection_accepts_only_governed_status_values(self) -> None:
+        for status in ("measured", "incomplete"):
+            with self.subTest(status=status):
+                path = self.root / f"{status}.json"
+                path.write_text(f'{{"measurement_status":"{status}"}}\n', encoding="utf-8")
+                result = self.command("inspect-summary", "--path", str(path))
+                self.assertEqual(0, result.returncode, msg=result.stderr)
+                self.assertEqual(status, result.stdout.strip())
+
+    def test_stage_input_refuses_symlinked_workspace_components(self) -> None:
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "runner-image.ref").write_text("image\n", encoding="utf-8")
+        (self.workspace / "release").symlink_to(outside, target_is_directory=True)
+        destination = self.root / "staged.json"
+        result = self.command(
+            "stage-input",
+            "--workspace", str(self.workspace),
+            "--path", "release/runner-image.ref",
+            "--destination", str(destination),
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse(destination.exists())
+
+    def test_stage_input_keeps_one_immutable_copy_for_verification_and_parsing(self) -> None:
+        source = self.workspace / "runner-image.ref"
+        source.write_text("trusted\n", encoding="utf-8")
+        destination = self.root / "staged.ref"
+        result = self.command(
+            "stage-input",
+            "--workspace", str(self.workspace),
+            "--path", "runner-image.ref",
+            "--destination", str(destination),
+        )
+        self.assertEqual(0, result.returncode, msg=result.stderr)
+        source.write_text("swapped\n", encoding="utf-8")
+        self.assertEqual("trusted\n", destination.read_text(encoding="utf-8"))
+
+
+if __name__ == "__main__":
+    unittest.main()

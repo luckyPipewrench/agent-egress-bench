@@ -1,0 +1,12 @@
+.git
+.github
+.devcontainer
+dist
+control-evidence
+gauntlet-site
+profiles
+receipts
+validate
+continuous-gauntlet-runs
+**/__pycache__
+**/*.pyc

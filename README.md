@@ -174,6 +174,7 @@ Core contracts:
 - [gauntlet.md](docs/gauntlet.md): result states, scoring, scope, and publication methodology
 - [GOVERNANCE.md](docs/GOVERNANCE.md): neutrality, case immutability, versioning, and compatibility
 - [RELEASES.md](docs/RELEASES.md): pinned runner, corpus, and schema release verification
+- [OCI-RUNNER.md](docs/OCI-RUNNER.md): pinned runner image, reusable Action, devcontainer, and offline operation
 - [contracts/artifacts.json](contracts/artifacts.json): machine-readable artifact compatibility inventory
 
 Evidence and publication:

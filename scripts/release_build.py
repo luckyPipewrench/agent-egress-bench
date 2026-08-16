@@ -29,7 +29,7 @@ SCHEMA_BUNDLE_SUFFIX = "_schemas.tar.gz"
 REPOSITORY = "luckyPipewrench/agent-egress-bench"
 RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
 DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities")
-DATA_FILES = ("README.md", "LICENSE", "NOTICE", "CITATION.cff", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md", "scripts/release_build.py")
+DATA_FILES = ("README.md", "LICENSE", "NOTICE", "CITATION.cff", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md", "scripts/release_build.py", "scripts/schema_catalog.py")
 PLATFORMS = tuple((goos, arch) for goos in ("linux", "darwin", "windows") for arch in ("amd64", "arm64"))
 
 
@@ -612,7 +612,7 @@ def bundle_contents(path: Path) -> dict[str, bytes]:
     return result
 
 
-def verify_schema_bundle(identity: dict[str, Any], release_dir: Path) -> None:
+def verify_schema_bundle(identity: dict[str, Any], release_dir: Path) -> tuple[list[dict[str, str]], dict[str, bytes]]:
     catalog_name, bundle_name = schema_asset_names(identity)
     catalog_path, bundle_path = release_dir / catalog_name, release_dir / bundle_name
     if not catalog_path.is_file() or not bundle_path.is_file():
@@ -629,6 +629,39 @@ def verify_schema_bundle(identity: dict[str, Any], release_dir: Path) -> None:
         if sha256_bytes(contents[entry["path"]]) != entry["sha256"]:
             fail(f"schema bundle digest does not match release catalog: {entry['path']}")
         require_declared_id(contents[entry["path"]], entry, "bundled schema")
+    return entries, contents
+
+
+def verify_repo_schema_surface(repo: Path, entries: list[dict[str, str]], contents: dict[str, bytes]) -> None:
+    """Compare released schema identities and bytes with a fresh repository derivation.
+
+    Catalog JSON formatting and tar metadata are intentionally outside this
+    comparison. They don't change a schema's path, identity, or bytes. Schema
+    formatting remains significant because the catalog publishes byte digests.
+    """
+    from schema_catalog import schema_entries
+
+    try:
+        expected_entries = schema_entries(repo)
+    except (OSError, ValueError) as exc:
+        fail(f"cannot re-derive the supplied source tree schema catalog: {exc}")
+    expected = {entry["path"]: entry for entry in expected_entries}
+    released = {entry["path"]: entry for entry in entries}
+    if set(released) != set(expected):
+        missing = sorted(set(expected) - set(released))
+        extra = sorted(set(released) - set(expected))
+        fail(f"release schema paths do not match the supplied source tree: missing={missing}, extra={extra}")
+    for path in sorted(expected):
+        if released[path]["$id"] != expected[path]["$id"]:
+            fail(f"release schema identity does not match the supplied source tree: {path}")
+        if released[path]["sha256"] != expected[path]["sha256"]:
+            fail(f"release schema content does not match the supplied source tree: {path}")
+        try:
+            source_bytes = (repo / path).read_bytes()
+        except OSError as exc:
+            fail(f"cannot read supplied source tree schema {path}: {exc}")
+        if contents[path] != source_bytes:
+            fail(f"bundled schema bytes do not match the supplied source tree: {path}")
 
 
 def bundle_corpus_ids(contents: dict[str, bytes]) -> set[str]:
@@ -680,6 +713,13 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
     for name, digest in checksums.items():
         if sha256_file(release_dir / name) != digest:
             fail(f"checksum mismatch: {name}")
+    image_reference = release_dir / "runner-image.ref"
+    if image_reference.is_file():
+        expected_prefix = b"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:"
+        value = image_reference.read_bytes()
+        digest = value.removeprefix(expected_prefix).removesuffix(b"\n")
+        if not value.startswith(expected_prefix) or value != expected_prefix + digest + b"\n" or re.fullmatch(rb"[0-9a-f]{64}", digest) is None:
+            fail("runner-image.ref is not the canonical published image reference")
     binaries = binary_archives(identity)
     data_name = f"agent-egress-bench_{identity['release']['version']}_data.tar.gz"
     catalog_name, bundle_name = schema_asset_names(identity)
@@ -697,8 +737,9 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
         if not isinstance(name, str) or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) or sha256_bytes(contents[name]) != digest:
             fail(f"data bundle digest does not match release identity: {name}")
     verify_bundle_corpus(identity, contents)
-    verify_schema_bundle(identity, release_dir)
+    schema_entries, schema_contents = verify_schema_bundle(identity, release_dir)
     if repo is not None:
+        verify_repo_schema_surface(repo.resolve(), schema_entries, schema_contents)
         expected = build_identity(repo.resolve(), identity["release"]["tag"], identity["release"]["version"], identity["source"]["commit"], identity["release"]["snapshot"])
         if canonical_json(expected) != canonical_json(identity):
             fail("release identity does not match the supplied source tree")

@@ -13,6 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO / ".github/workflows/release.yaml"
 VALIDATE_WORKFLOW = REPO / ".github/workflows/validate.yaml"
+RELEASE_BUILD = REPO / "scripts/release-build.sh"
 
 
 def job_block(workflow: str, name: str) -> str:
@@ -32,6 +33,7 @@ def check_workflow(path: Path) -> None:
     preamble = workflow[:workflow.index("jobs:\n")]
     release = job_block(workflow, "release")
     attest = job_block(workflow, "attest")
+    image = job_block(workflow, "image")
     publish = job_block(workflow, "publish")
     required = (
         "tags:\n      - 'v*'",
@@ -68,7 +70,38 @@ def check_workflow(path: Path) -> None:
         raise AssertionError("tag-only attestation does not consume the built release artifacts")
     if "subject-path: dist/release/*\n" not in attest:
         raise AssertionError("all release assets are not attested")
-    if "needs: [release, attest]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish:
+    image_required = (
+        "needs: [release, attest]",
+        "if: github.event_name == 'push'",
+        "fetch-depth: 0",
+        "packages: write",
+        "attestations: write",
+        "id-token: write",
+        "docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
+        "version: v0.36.1",
+        "--platform linux/amd64,linux/arm64",
+        "--provenance=mode=max",
+        "--sbom=true",
+        "--push",
+        'release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"',
+        '--build-arg "AEB_COMMIT=$release_commit"',
+        '--label "org.opencontainers.image.revision=$release_commit"',
+        "reported_version=",
+        "docker logout ghcr.io",
+        'docker pull "$pinned_image"',
+        "subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner",
+        "subject-digest: ${{ steps.publish.outputs.digest }}",
+        "push-to-registry: true",
+        "runner-image.ref",
+        'cp "$identity_dir/runner-image.ref" dist/release/runner-image.ref',
+        "release_build.py checksums",
+        "release_build.py verify --release-dir dist/release --repo-root .",
+        "subject-path: dist/release/*",
+        "name: agent-egress-bench-release-final-${{ github.sha }}",
+    )
+    if any(value not in image for value in image_required):
+        raise AssertionError("runner image publication is not pinned, multi-architecture, or tag-gated")
+    if "needs: [release, attest, image]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish or "name: agent-egress-bench-release-final-${{ github.sha }}" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
     if "Create an owned draft release or resume one on workflow retry" not in publish or "release_publish.py" not in publish:
         raise AssertionError("draft release retry is not safe")
@@ -95,6 +128,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_validation_workflow_runs_the_pinned_release_archive_integration(self) -> None:
         check_validate_release_integration(VALIDATE_WORKFLOW)
 
+    def test_release_build_runs_repo_backed_verification_with_or_without_a_native_runner(self) -> None:
+        commands = {
+            line.strip()
+            for line in RELEASE_BUILD.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith("python3 scripts/release_build.py verify ")
+        }
+        self.assertEqual(
+            {
+                'python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root . --executable "$native_dir/aeb-gauntlet"',
+                'python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root .',
+            },
+            commands,
+        )
+
     def test_release_creation_guard_is_load_bearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "release.yaml"
@@ -117,6 +164,41 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("subject-path: dist/release/*", "subject-path: dist/release/*.tar.gz", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "all release assets"):
+                check_workflow(candidate)
+
+    def test_multi_architecture_image_guard_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("--platform linux/amd64,linux/arm64", "--platform linux/amd64", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_image_waits_for_release_asset_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("needs: [release, attest]", "needs: release", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_durable_image_identity_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("runner-image.ref", "discarded-image.ref"), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_image_identity_checksum_binding_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("python3 scripts/release_build.py checksums", "true # removed checksum binding", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_anonymous_image_pull_guard_is_load_bearing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("docker logout ghcr.io", "true", 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 
     def test_publication_uses_the_owned_draft_guard(self) -> None:
@@ -145,6 +227,17 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace('release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"', 'release_commit="$GITHUB_SHA"', 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "does not resolve the pushed tag"):
+                check_workflow(candidate)
+
+    def test_runner_image_uses_the_resolved_tag_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            workflow = WORKFLOW.read_text(encoding="utf-8")
+            image_start = workflow.index("  image:\n")
+            target = 'release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"'
+            target_start = workflow.index(target, image_start)
+            candidate.write_text(workflow[:target_start] + 'release_commit="$GITHUB_SHA"' + workflow[target_start + len(target):], encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 
     def test_release_archive_integration_is_load_bearing(self) -> None:

@@ -123,6 +123,10 @@ type RunProvenance struct {
 	// without knowing any particular vendor's refusal shape.
 	MCPHTTPSessionRefusalHeader string
 	MCPHTTPSessionRefusalValue  string
+	// RequireComplete changes the process result after every run artifact has
+	// been written. It is an execution policy rather than summary provenance,
+	// so it must not enter the closed summary schema.
+	RequireComplete bool
 }
 
 // CaseCount tracks routed, historical N/A, and adapter-unreachable rows. The

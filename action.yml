@@ -1,0 +1,79 @@
+name: Agent Egress Bench
+description: Run the Agent Egress Bench corpus through a digest-pinned OCI runner
+inputs:
+  profile:
+    description: Repository-relative path to the tool profile
+    required: true
+  adapter:
+    description: Runner adapter name
+    required: true
+  runner-args:
+    description: JSON array of additional runner arguments
+    required: false
+    default: '[]'
+  environment:
+    description: JSON array naming job environment variables to pass into the container
+    required: false
+    default: '[]'
+  output-dir:
+    description: Repository-relative directory for results, summary, and run metadata
+    required: false
+    default: aeb-results
+  image:
+    description: Digest-pinned official runner image; omit only for an online source build
+    required: false
+    default: ''
+  image-metadata:
+    description: Repository-relative path to the signed runner-image.ref release asset
+    required: false
+    default: ''
+  image-attestation:
+    description: Repository-relative path to the runner-image.ref attestation bundle for offline verification
+    required: false
+    default: ''
+  attestation-trusted-root:
+    description: Repository-relative path to the trusted root used for offline attestation verification
+    required: false
+    default: ''
+  allow-unverified-image:
+    description: Explicitly allow an arbitrary digest-pinned image without publisher verification
+    required: false
+    default: 'false'
+  offline:
+    description: Require a preloaded image and run it with Docker network mode none
+    required: false
+    default: 'false'
+outputs:
+  results:
+    description: Absolute path to per-case JSONL results
+    value: ${{ steps.run.outputs.results }}
+  summary:
+    description: Absolute path to the Gauntlet summary JSON
+    value: ${{ steps.run.outputs.summary }}
+  metadata:
+    description: Absolute path to execution metadata, including image and network mode
+    value: ${{ steps.run.outputs.metadata }}
+  measurement-status:
+    description: measured, incomplete, absent, or invalid
+    value: ${{ steps.run.outputs.measurement-status }}
+runs:
+  using: composite
+  steps:
+    - id: run
+      name: Run digest-pinned benchmark container
+      shell: bash
+      env:
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_ADAPTER: ${{ inputs.adapter }}
+        INPUT_RUNNER_ARGS: ${{ inputs.runner-args }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_IMAGE_METADATA: ${{ inputs.image-metadata }}
+        INPUT_IMAGE_ATTESTATION: ${{ inputs.image-attestation }}
+        INPUT_ATTESTATION_TRUSTED_ROOT: ${{ inputs.attestation-trusted-root }}
+        INPUT_ALLOW_UNVERIFIED_IMAGE: ${{ inputs.allow-unverified-image }}
+        INPUT_OFFLINE: ${{ inputs.offline }}
+        AEB_ACTION_REF: ${{ github.action_ref }}
+        GH_TOKEN: ${{ github.token }}
+      run: "$GITHUB_ACTION_PATH/scripts/run-oci-action.sh"

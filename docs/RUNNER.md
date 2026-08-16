@@ -40,6 +40,8 @@ One JSON object per case, written to stdout (one per line, JSONL):
 
 > `--stats` and `--report` are the exceptions to this contract. It reports the loaded corpus rather than running it, so it writes a human-readable Markdown snapshot to stdout and exits without producing JSONL or a summary. It requires `--cases` and ignores the tool-profile and adapter flags. `make stats`, `make stats-update` and `make check-stats` are its only intended callers. `--report` likewise runs no cases: it reads an artifact directory an earlier run left behind and writes Markdown to the path given by `--report-output`, or to stdout when that is `-`.
 
+`--require-complete` keeps the JSONL rows, summary, and optional receipt profile, then exits nonzero when `measurement_status` is `incomplete`. Use it in automation and offline runs so a partial measurement can't produce a green job. A complete measurement can still contain ordinary pass and fail outcomes; the flag rejects missing measurement, not an unfavorable score.
+
 ```json
 {
   "schema_version": 5,
