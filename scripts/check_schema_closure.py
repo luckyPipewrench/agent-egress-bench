@@ -43,18 +43,43 @@ OPEN_OBJECTS = {
 def open_objects(document):
     found = set()
 
-    def walk(value, pointer=""):
+    object_keywords = {
+        "properties",
+        "required",
+        "propertyNames",
+        "additionalProperties",
+        "dependentRequired",
+        "minProperties",
+        "maxProperties",
+        "patternProperties",
+    }
+
+    same_instance_keywords = {"allOf", "anyOf", "oneOf", "not", "if", "then", "else", "dependentSchemas"}
+
+    def walk(value, pointer="", inherited_closed=False, predicate_context=False):
         if isinstance(value, dict):
-            if value.get("type") == "object":
+            declared_type = value.get("type")
+            object_capable = declared_type == "object" or (
+                isinstance(declared_type, list) and "object" in declared_type
+            ) or bool(object_keywords & value.keys())
+            closes_here = value.get("additionalProperties") is False or isinstance(
+                value.get("additionalProperties"), dict
+            )
+            if object_capable:
                 additional = value.get("additionalProperties", True)
-                if additional is not False and not isinstance(additional, dict):
+                explicit_object = declared_type == "object" or (
+                    isinstance(declared_type, list) and "object" in declared_type
+                )
+                if not inherited_closed and not (predicate_context and not explicit_object) and additional is not False and not isinstance(additional, dict):
                     found.add((document["$id"], pointer))
             for key, child in value.items():
                 escaped = key.replace("~", "~0").replace("/", "~1")
-                walk(child, pointer + "/" + escaped)
+                child_inherits = (inherited_closed or closes_here) if key in same_instance_keywords else False
+                child_predicate = predicate_context or key in {"if", "then", "else", "not", "contains"}
+                walk(child, pointer + "/" + escaped, child_inherits, child_predicate)
         elif isinstance(value, list):
             for index, child in enumerate(value):
-                walk(child, pointer + f"/{index}")
+                walk(child, pointer + f"/{index}", inherited_closed, predicate_context)
 
     walk(document)
     return found
