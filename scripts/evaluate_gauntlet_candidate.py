@@ -219,6 +219,109 @@ def validate_v5_candidate_contract(candidate):
         raise ValueError("candidate case_count.errors cannot exceed applicable")
 
 
+def _has_classification(evidence):
+    if not isinstance(evidence, dict):
+        return False
+    return any(evidence.get(key) is not None for key in ("kind", "scanner", "block_reason")) or (
+        isinstance(evidence.get("error_message"), str) and bool(evidence["error_message"])
+    )
+
+
+def _has_structured_evidence(evidence):
+    return isinstance(evidence, dict) and any(
+        key in evidence and evidence[key] is not None
+        for key in ("kind", "scanner", "block_reason", "error_message", "decision", "findings")
+    )
+
+
+def recompute_v5_measurements(case_index_path, results_path):
+    """Derive promotion measurements from the bound case index and raw result rows."""
+    case_index = load_object(case_index_path)
+    if case_index.get("schema_version") != 2 or not isinstance(case_index.get("cases"), dict):
+        raise ValueError("v5 metric recomputation requires a case-index-v2 object")
+    indexed = case_index["cases"]
+    rows = []
+    with results_path.open(encoding="utf-8") as handle:
+        for row_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError(f"results row {row_number} must be an object")
+            rows.append(row)
+    ids = [row.get("case_id") for row in rows]
+    if any(not isinstance(case_id, str) or not case_id for case_id in ids):
+        raise ValueError("results rows must carry non-empty case_id values")
+    if len(ids) != len(set(ids)):
+        raise ValueError("results contain duplicate case IDs")
+    if set(ids) != set(indexed):
+        raise ValueError("results case IDs do not match the case index")
+    for row in rows:
+        expected = indexed[row["case_id"]].get("expected_verdict")
+        if row.get("expected_verdict") != expected:
+            raise ValueError(f"result {row['case_id']!r} expected_verdict does not match the case index")
+        if row.get("actual_verdict") not in {"block", "allow", "not_applicable", "unreachable", "error"}:
+            raise ValueError(f"result {row['case_id']!r} has an invalid actual_verdict")
+
+    unreachable = [row for row in rows if row["actual_verdict"] == "unreachable"]
+    applicable = [row for row in rows if row["actual_verdict"] not in {"not_applicable", "unreachable"}]
+    malicious = [row for row in applicable if row["expected_verdict"] == "block"]
+    benign = [row for row in applicable if row["expected_verdict"] == "allow"]
+    blocked_malicious = [row for row in malicious if row["actual_verdict"] == "block"]
+    correct_blocks = [row for row in blocked_malicious if row.get("score") == "pass"]
+    blocked_benign = [row for row in benign if row["actual_verdict"] == "block"]
+    full_rows = [row for row in rows if row["actual_verdict"] != "unreachable"]
+    full_malicious = [row for row in full_rows if row["expected_verdict"] == "block"]
+    full_benign = [row for row in full_rows if row["expected_verdict"] == "allow"]
+    outcome_counts = {
+        "applicable": {
+            "containment": {"numerator": len(blocked_malicious), "denominator": len(malicious)},
+            "false_positive_rate": {"numerator": len(blocked_benign), "denominator": len(benign)},
+        },
+        "full": {
+            "containment": {"numerator": len(blocked_malicious), "denominator": len(full_malicious)},
+            "false_positive_rate": {"numerator": len(blocked_benign), "denominator": len(full_benign)},
+        },
+    }
+    diagnostic_counts = {
+        scope: {
+            "classification_present_rate": {
+                "numerator": sum(_has_classification(row.get("evidence")) for row in correct_blocks),
+                "denominator": len(correct_blocks),
+            },
+            "structured_evidence_present_rate": {
+                "numerator": sum(_has_structured_evidence(row.get("evidence")) for row in correct_blocks),
+                "denominator": len(correct_blocks),
+            },
+        }
+        for scope in V5_SCOPES
+    }
+    return {
+        "case_count": {
+            "total": len(rows),
+            "applicable": len(applicable),
+            "unreachable": len(unreachable),
+            "not_applicable": len(rows) - len(applicable) - len(unreachable),
+            "errors": sum(row["actual_verdict"] == "error" for row in applicable),
+        },
+        "metric_counts": outcome_counts,
+        "diagnostic_counts": diagnostic_counts,
+    }
+
+
+def verify_v5_measurements(candidate, evidence_paths):
+    missing = sorted({"case_index", "results"} - set(evidence_paths))
+    if missing:
+        raise ValueError(f"v5 metric recomputation requires evidence: {missing!r}")
+    derived = recompute_v5_measurements(evidence_paths["case_index"], evidence_paths["results"])
+    for field in ("metric_counts", "diagnostic_counts"):
+        if candidate.get(field) != derived[field]:
+            raise ValueError(f"candidate {field} does not match the case index and raw results")
+    for field, expected in derived["case_count"].items():
+        if candidate["case_count"].get(field) != expected:
+            raise ValueError(f"candidate case_count.{field} does not match the case index and raw results")
+
+
 def validate_counted_rate(rate, counts, label):
     counts = require_exact_keys(counts, f"{label} counts", {"numerator", "denominator"})
     for field in ("numerator", "denominator"):
@@ -288,6 +391,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 "candidate benchmark_manifest_sha256",
             )
             validate_v5_candidate_contract(candidate)
+            verify_v5_measurements(candidate, evidence_paths)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))

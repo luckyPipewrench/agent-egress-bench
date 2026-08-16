@@ -14,7 +14,36 @@ from scripts import evaluate_gauntlet_candidate as evaluator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "evaluate_gauntlet_candidate.py"
-CASE_INDEX_BYTES = b'{"schema_version":1,"cases":[]}\n'
+def v5_raw_evidence():
+    cases = {}
+    rows = []
+    for index in range(158):
+        case_id = f"malicious-{index:03d}"
+        cases[case_id] = {"category": "test", "expected_verdict": "block"}
+        actual = "not_applicable" if index == 157 else "block"
+        rows.append({
+            "case_id": case_id,
+            "expected_verdict": "block",
+            "actual_verdict": actual,
+            "score": "not_applicable" if actual == "not_applicable" else "pass",
+            "evidence": {} if actual == "not_applicable" else {"kind": "policy"},
+        })
+    for index in range(55):
+        case_id = f"benign-{index:03d}"
+        cases[case_id] = {"category": "test", "expected_verdict": "allow"}
+        rows.append({
+            "case_id": case_id,
+            "expected_verdict": "allow",
+            "actual_verdict": "allow",
+            "score": "pass",
+            "evidence": {},
+        })
+    case_index = (json.dumps({"schema_version": 2, "cases": cases}, sort_keys=True) + "\n").encode()
+    results = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+    return case_index, results
+
+
+CASE_INDEX_BYTES, V5_RESULTS_BYTES = v5_raw_evidence()
 RUN_BUNDLE_BYTES = b'{"schema_version":1,"bundle_status":"complete"}\n'
 
 
@@ -213,7 +242,10 @@ class CandidateEvaluationTest(unittest.TestCase):
             candidate_path.write_text(raw_candidate, encoding="utf-8")
         baseline_path.write_text(json.dumps(baseline_value or baseline()), encoding="utf-8")
         evidence_path = root / "results.jsonl"
-        evidence_path.write_text('{"id":"case-1"}\n', encoding="utf-8")
+        if (candidate_value or {}).get("schema_version") == 5:
+            evidence_path.write_bytes(V5_RESULTS_BYTES)
+        else:
+            evidence_path.write_text('{"id":"case-1"}\n', encoding="utf-8")
         case_index_path = root / "case-index.json"
         case_index_path.write_bytes(CASE_INDEX_BYTES)
         run_bundle_path = root / "run-bundle.json"
@@ -305,6 +337,24 @@ class CandidateEvaluationTest(unittest.TestCase):
 
         self.assertFalse(decision["blocked"], decision["failures"])
 
+    def test_v5_self_consistent_lie_is_rejected_by_raw_results(self):
+        value = v5_candidate()
+        for scope in ("full", "applicable"):
+            value["scores"][scope]["containment"] = 1.0
+            value["metric_counts"][scope]["containment"] = {
+                "numerator": 1,
+                "denominator": 1,
+            }
+
+        evaluator.validate_v5_candidate_contract(value)
+        decision, *_ = self.run_evaluate(value, v5_baseline())
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "candidate metric_counts does not match the case index and raw results",
+            decision["failures"],
+        )
+
     def test_v5_candidate_requires_framed_manifest_identity(self):
         missing_candidate_digest = v5_candidate()
         del missing_candidate_digest["benchmark_manifest_sha256"]
@@ -332,16 +382,11 @@ class CandidateEvaluationTest(unittest.TestCase):
             "denominator": 0,
         }
 
-        decision, *_ = self.run_evaluate(value, v5_baseline())
-
-        self.assertFalse(decision["blocked"], decision["failures"])
+        evaluator.validate_v5_candidate_contract(value)
 
         value["metric_counts"]["applicable"]["false_positive_rate"]["denominator"] = 1
-        decision, *_ = self.run_evaluate(value, v5_baseline())
-        self.assertTrue(decision["blocked"])
-        self.assertTrue(
-            any("does not match its numerator and denominator" in failure for failure in decision["failures"])
-        )
+        with self.assertRaisesRegex(ValueError, "does not match its numerator and denominator"):
+            evaluator.validate_v5_candidate_contract(value)
 
     def test_v5_candidate_rejects_inconsistent_counts_and_rates(self):
         mutations = (
