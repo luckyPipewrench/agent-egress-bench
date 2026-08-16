@@ -13,6 +13,20 @@ VECTOR_ROOT = ROOT / "schemas" / "conformance"
 SPEC = importlib.util.spec_from_file_location("artifact_schema", ROOT / "scripts" / "artifact_schema.py")
 artifact_schema = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(artifact_schema)
+MAX_CONFORMANCE_INPUT_BYTES = 4 << 20
+
+
+def confined_file(base, source):
+    candidate = (base / source).resolve(strict=True)
+    try:
+        candidate.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError(f"artifact conformance source escapes repository root: {source}") from exc
+    if not candidate.is_file():
+        raise ValueError(f"artifact conformance source is not a regular file: {source}")
+    if candidate.stat().st_size > MAX_CONFORMANCE_INPUT_BYTES:
+        raise ValueError(f"artifact conformance source exceeds {MAX_CONFORMANCE_INPUT_BYTES} bytes: {source}")
+    return candidate
 
 
 def apply_mutation(instance, mutation):
@@ -34,7 +48,7 @@ def materialize(vector, vector_path):
     if "instance" in vector:
         value = copy.deepcopy(vector["instance"])
     else:
-        source = (vector_path.parent / vector["source"]).resolve()
+        source = confined_file(vector_path.parent, vector["source"])
         value = json.loads(source.read_text(encoding="utf-8"))
     for mutation in vector.get("mutations", []):
         value = apply_mutation(value, mutation)
@@ -42,12 +56,27 @@ def materialize(vector, vector_path):
 
 
 class ArtifactSchemaConformanceTest(unittest.TestCase):
+    def test_sources_are_confined_regular_and_bounded(self):
+        with tempfile.TemporaryDirectory() as outside_directory:
+            outside = Path(outside_directory) / "outside.json"
+            outside.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "escapes repository root"):
+                confined_file(VECTOR_ROOT, str(outside))
+        with tempfile.TemporaryDirectory(dir=ROOT) as inside_directory:
+            inside = Path(inside_directory)
+            with self.assertRaisesRegex(ValueError, "not a regular file"):
+                confined_file(inside, ".")
+            oversized = inside / "oversized.json"
+            oversized.write_bytes(b"x" * (MAX_CONFORMANCE_INPUT_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "exceeds"):
+                confined_file(inside, oversized.name)
+
     def test_vectors(self):
         vectors = sorted(VECTOR_ROOT.glob("*.json"))
         self.assertTrue(vectors)
         for path in vectors:
             document = json.loads(path.read_text(encoding="utf-8"))
-            schema = artifact_schema.load_schema(path.parent / document["schema"])
+            schema = artifact_schema.load_schema(confined_file(path.parent, document["schema"]))
             accepted = document["accepted"]
             rejected = document["rejected"]
             self.assertTrue(accepted, path)

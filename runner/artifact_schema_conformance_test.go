@@ -7,10 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
+
+const maxArtifactConformanceInputBytes = 4 << 20
 
 type artifactVectorFile struct {
 	Schema   string           `json:"schema"`
@@ -53,7 +56,7 @@ func TestArtifactSchemaConformanceVectors(t *testing.T) {
 			if err := validateArtifactVectorDirections(vectors); err != nil {
 				t.Fatal(err)
 			}
-			schema := compileArtifactSchema(t, filepath.Join(filepath.Dir(path), vectors.Schema))
+			schema := compileArtifactSchema(t, confinedArtifactFile(t, filepath.Join(filepath.Dir(path), vectors.Schema)))
 			accepted := make([]any, len(vectors.Accepted))
 			for index, vector := range vectors.Accepted {
 				accepted[index] = materializeArtifactVector(t, path, vector)
@@ -95,6 +98,57 @@ func readArtifactVectors(t *testing.T, path string) artifactVectorFile {
 	return vectors
 }
 
+func resolveConfinedArtifactFile(path string) (string, error) {
+	root, err := filepath.Abs("..")
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err = filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(root, resolved)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", fmt.Errorf("artifact conformance source escapes repository root: %s", path)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("artifact conformance source is not a regular file: %s", path)
+	}
+	if info.Size() > maxArtifactConformanceInputBytes {
+		return "", fmt.Errorf("artifact conformance source exceeds %d bytes: %s", maxArtifactConformanceInputBytes, path)
+	}
+	return resolved, nil
+}
+
+func confinedArtifactFile(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := resolveConfinedArtifactFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
+func TestArtifactConformanceSourceCannotEscapeRepository(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{outside, filepath.Join("..", "schemas", "conformance", "..", "..", "..", filepath.Base(outside))} {
+		if _, err := resolveConfinedArtifactFile(path); err == nil {
+			t.Fatalf("accepted out-of-repository source %q", path)
+		}
+	}
+}
+
 func compileArtifactSchema(t *testing.T, path string) *jsonschema.Schema {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -121,7 +175,7 @@ func materializeArtifactVector(t *testing.T, vectorPath string, vector artifactV
 	t.Helper()
 	value := vector.Instance
 	if vector.Source != "" {
-		raw, err := os.ReadFile(filepath.Join(filepath.Dir(vectorPath), vector.Source))
+		raw, err := os.ReadFile(confinedArtifactFile(t, filepath.Join(filepath.Dir(vectorPath), vector.Source)))
 		if err != nil {
 			t.Fatal(err)
 		}
