@@ -87,6 +87,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up pinned Docker Buildx
@@ -110,14 +111,15 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
           image="ghcr.io/luckypipewrench/agent-egress-bench-runner:$GITHUB_REF_NAME"
           metadata_file="$RUNNER_TEMP/aeb-image-metadata.json"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg "AEB_VERSION=$version" \
-            --build-arg "AEB_COMMIT=$GITHUB_SHA" \
+            --build-arg "AEB_COMMIT=$release_commit" \
             --label "org.opencontainers.image.version=$version" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.revision=$release_commit" \
             --provenance=mode=max \
             --sbom=true \
             --tag "$image" \
@@ -142,28 +144,13 @@ jobs:
               raise SystemExit(f"runner image is missing required platforms: {sorted(required - platforms)}")
           PY
           reported_version="$(docker run --rm --platform linux/amd64 "$pinned_image" --version)"
-          [[ "$reported_version" == "aeb-gauntlet $version $GITHUB_SHA" ]]
+          [[ "$reported_version" == "aeb-gauntlet $version $release_commit" ]]
           docker logout ghcr.io
           docker pull "$pinned_image"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           identity_dir="$RUNNER_TEMP/aeb-runner-image"
           mkdir -p "$identity_dir"
-          python3 - "$identity_dir/runner-image.json" "$pinned_image" "$digest" "$GITHUB_SHA" "$GITHUB_REF_NAME" <<'PY'
-          import json
-          import sys
-
-          path, image, digest, commit, tag = sys.argv[1:]
-          with open(path, "w", encoding="utf-8") as output:
-              json.dump({
-                  "schema_version": 1,
-                  "image": image,
-                  "digest": digest,
-                  "source_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
-                  "source_commit": commit,
-                  "release_tag": tag,
-              }, output, indent=2, sort_keys=True)
-              output.write("\n")
-          PY
+          printf '%s\n' "$pinned_image" > "$identity_dir/runner-image.ref"
           echo "Runner image: $pinned_image" >> "$GITHUB_STEP_SUMMARY"
           echo "Installed runner: $reported_version" >> "$GITHUB_STEP_SUMMARY"
 
@@ -185,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           identity_dir="$RUNNER_TEMP/aeb-runner-image"
-          cp "$identity_dir/runner-image.json" dist/release/runner-image.json
+          cp "$identity_dir/runner-image.ref" dist/release/runner-image.ref
           cp dist/release/release-identity.json "$RUNNER_TEMP/release-identity.json"
           python3 scripts/release_build.py checksums --identity "$RUNNER_TEMP/release-identity.json" --dist dist/release
           python3 scripts/release_build.py verify --release-dir dist/release --repo-root .

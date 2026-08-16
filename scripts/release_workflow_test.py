@@ -73,6 +73,7 @@ def check_workflow(path: Path) -> None:
     image_required = (
         "needs: [release, attest]",
         "if: github.event_name == 'push'",
+        "fetch-depth: 0",
         "packages: write",
         "attestations: write",
         "id-token: write",
@@ -82,13 +83,16 @@ def check_workflow(path: Path) -> None:
         "--provenance=mode=max",
         "--sbom=true",
         "--push",
+        'release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"',
+        '--build-arg "AEB_COMMIT=$release_commit"',
+        '--label "org.opencontainers.image.revision=$release_commit"',
         "reported_version=",
         "docker logout ghcr.io",
         'docker pull "$pinned_image"',
         "subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner",
         "subject-digest: ${{ steps.publish.outputs.digest }}",
         "push-to-registry: true",
-        "runner-image.json",
+        "runner-image.ref",
         "release_build.py checksums",
         "release_build.py verify --release-dir dist/release --repo-root .",
         "subject-path: dist/release/*",
@@ -178,7 +182,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_durable_image_identity_is_load_bearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "release.yaml"
-            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("runner-image.json", "discarded-image.json"), encoding="utf-8")
+            candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("runner-image.ref", "discarded-image.ref"), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 
@@ -222,6 +226,17 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace('release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"', 'release_commit="$GITHUB_SHA"', 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "does not resolve the pushed tag"):
+                check_workflow(candidate)
+
+    def test_runner_image_uses_the_resolved_tag_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            workflow = WORKFLOW.read_text(encoding="utf-8")
+            image_start = workflow.index("  image:\n")
+            target = 'release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"'
+            target_start = workflow.index(target, image_start)
+            candidate.write_text(workflow[:target_start] + 'release_commit="$GITHUB_SHA"' + workflow[target_start + len(target):], encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "runner image publication"):
                 check_workflow(candidate)
 
     def test_release_archive_integration_is_load_bearing(self) -> None:

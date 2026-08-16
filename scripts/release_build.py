@@ -713,6 +713,13 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
     for name, digest in checksums.items():
         if sha256_file(release_dir / name) != digest:
             fail(f"checksum mismatch: {name}")
+    image_reference = release_dir / "runner-image.ref"
+    if image_reference.is_file():
+        expected_prefix = b"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:"
+        value = image_reference.read_bytes()
+        digest = value.removeprefix(expected_prefix).removesuffix(b"\n")
+        if not value.startswith(expected_prefix) or value != expected_prefix + digest + b"\n" or re.fullmatch(rb"[0-9a-f]{64}", digest) is None:
+            fail("runner-image.ref is not the canonical published image reference")
     binaries = binary_archives(identity)
     data_name = f"agent-egress-bench_{identity['release']['version']}_data.tar.gz"
     catalog_name, bundle_name = schema_asset_names(identity)

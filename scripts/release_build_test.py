@@ -364,22 +364,24 @@ class ReleaseBuildTest(unittest.TestCase):
         self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
         identity = self.identity.read_bytes()
         self.write_runner_archives(dist, identity, json.loads(identity))
-        image_identity = dist / "runner-image.json"
-        image_identity.write_text(
-            json.dumps({
-                "schema_version": 1,
-                "image": f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'a' * 64}",
-                "digest": f"sha256:{'a' * 64}",
-                "source_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
-                "source_commit": self.commit,
-                "release_tag": "v1.0.0",
-            }) + "\n",
-            encoding="utf-8",
-        )
+        image_identity = dist / "runner-image.ref"
+        image_identity.write_text(f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'a' * 64}\n", encoding="utf-8")
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
         checksums = (dist / "checksums.txt").read_text(encoding="utf-8")
-        self.assertIn(f"{hashlib.sha256(image_identity.read_bytes()).hexdigest()}  runner-image.json", checksums)
+        self.assertIn(f"{hashlib.sha256(image_identity.read_bytes()).hexdigest()}  runner-image.ref", checksums)
         self.invoke("verify", "--release-dir", str(dist))
+
+    def test_release_verifier_rejects_a_noncanonical_runner_image_identity(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        (dist / "runner-image.ref").write_text(f"registry.invalid/runner@sha256:{'a' * 64}\n", encoding="utf-8")
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("runner-image.ref is not the canonical published image reference", result.stderr)
 
     def test_release_binds_citation_metadata_into_the_data_bundle_and_checksums(self) -> None:
         self.prepare()

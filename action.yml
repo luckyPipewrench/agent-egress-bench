@@ -24,11 +24,11 @@ inputs:
     required: false
     default: ''
   image-metadata:
-    description: Repository-relative path to the signed runner-image.json release asset
+    description: Repository-relative path to the signed runner-image.ref release asset
     required: false
     default: ''
   image-attestation:
-    description: Repository-relative path to the runner-image.json attestation bundle for offline verification
+    description: Repository-relative path to the runner-image.ref attestation bundle for offline verification
     required: false
     default: ''
   attestation-trusted-root:

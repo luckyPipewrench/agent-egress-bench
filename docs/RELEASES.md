@@ -11,7 +11,7 @@ Each release contains:
 - `aeb-gauntlet` archives for Linux, macOS, and Windows on amd64 and arm64.
 - `checksums.txt` covering every release asset.
 - `release-identity.json` with the corpus version, active schema versions, source commit, and supported archive matrix.
-- `runner-image.json` with the full digest-pinned OCI image reference, release tag, and source commit.
+- `runner-image.ref` with the full digest-pinned OCI image reference.
 - GitHub Artifact Attestations for every release asset.
 
 ## Verify a downloaded release

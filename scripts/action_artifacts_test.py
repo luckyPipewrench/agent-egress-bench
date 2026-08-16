@@ -120,31 +120,31 @@ class ActionArtifactsTest(unittest.TestCase):
     def test_stage_input_refuses_symlinked_workspace_components(self) -> None:
         outside = self.root / "outside"
         outside.mkdir()
-        (outside / "runner-image.json").write_text("{}\n", encoding="utf-8")
+        (outside / "runner-image.ref").write_text("image\n", encoding="utf-8")
         (self.workspace / "release").symlink_to(outside, target_is_directory=True)
         destination = self.root / "staged.json"
         result = self.command(
             "stage-input",
             "--workspace", str(self.workspace),
-            "--path", "release/runner-image.json",
+            "--path", "release/runner-image.ref",
             "--destination", str(destination),
         )
         self.assertNotEqual(0, result.returncode)
         self.assertFalse(destination.exists())
 
     def test_stage_input_keeps_one_immutable_copy_for_verification_and_parsing(self) -> None:
-        source = self.workspace / "runner-image.json"
-        source.write_text('{"digest":"trusted"}\n', encoding="utf-8")
-        destination = self.root / "staged.json"
+        source = self.workspace / "runner-image.ref"
+        source.write_text("trusted\n", encoding="utf-8")
+        destination = self.root / "staged.ref"
         result = self.command(
             "stage-input",
             "--workspace", str(self.workspace),
-            "--path", "runner-image.json",
+            "--path", "runner-image.ref",
             "--destination", str(destination),
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
-        source.write_text('{"digest":"swapped"}\n', encoding="utf-8")
-        self.assertEqual('{"digest":"trusted"}\n', destination.read_text(encoding="utf-8"))
+        source.write_text("swapped\n", encoding="utf-8")
+        self.assertEqual("trusted\n", destination.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

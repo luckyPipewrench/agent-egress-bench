@@ -15,12 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RunnerImageContractTest(unittest.TestCase):
-    def run_action(self, *, image: str, metadata: dict[str, object] | None = None, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    def run_action(self, *, image: str, metadata: str | None = None, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
             if metadata is not None:
-                (workspace / "runner-image.json").write_text(json.dumps(metadata), encoding="utf-8")
+                (workspace / "runner-image.ref").write_text(metadata, encoding="utf-8")
             bin_dir = workspace / "bin"
             bin_dir.mkdir()
             (bin_dir / "gh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -35,7 +35,7 @@ class RunnerImageContractTest(unittest.TestCase):
                 "INPUT_PROFILE": "profile.json",
                 "INPUT_ADAPTER": "proxy",
                 "INPUT_IMAGE": image,
-                "INPUT_IMAGE_METADATA": "runner-image.json" if metadata is not None else "",
+                "INPUT_IMAGE_METADATA": "runner-image.ref" if metadata is not None else "",
             }
             env.update(extra_env or {})
             return subprocess.run([str(ROOT / "scripts" / "run-oci-action.sh")], text=True, capture_output=True, env=env)
@@ -148,29 +148,15 @@ class RunnerImageContractTest(unittest.TestCase):
 
     def test_signed_metadata_must_bind_the_exact_image_digest(self) -> None:
         image = f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'c' * 64}"
-        metadata = {
-            "schema_version": 1,
-            "image": f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'d' * 64}",
-            "digest": f"sha256:{'d' * 64}",
-            "source_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
-            "source_commit": "1" * 40,
-            "release_tag": "v1.2.3",
-        }
+        metadata = f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'d' * 64}\n"
         result = self.run_action(image=image, metadata=metadata)
         self.assertEqual(2, result.returncode)
-        self.assertIn("runner image does not match signed release metadata", result.stderr)
+        self.assertIn("runner image does not match the signed release reference", result.stderr)
         self.assertNotIn("docker-called", result.stderr)
 
     def test_offline_official_image_requires_local_attestation_material(self) -> None:
         image = f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'e' * 64}"
-        metadata = {
-            "schema_version": 1,
-            "image": image,
-            "digest": f"sha256:{'e' * 64}",
-            "source_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
-            "source_commit": "2" * 40,
-            "release_tag": "v1.2.3",
-        }
+        metadata = image + "\n"
         result = self.run_action(image=image, metadata=metadata, extra_env={"INPUT_OFFLINE": "true"})
         self.assertEqual(2, result.returncode)
         self.assertIn("image-attestation is required", result.stderr)
@@ -221,7 +207,7 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn('{("linux", "amd64"), ("linux", "arm64")}', workflow)
         self.assertIn("subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner", workflow)
         self.assertIn("subject-digest: ${{ steps.publish.outputs.digest }}", workflow)
-        self.assertIn("runner-image.json", workflow)
+        self.assertIn("runner-image.ref", workflow)
         self.assertIn("release_build.py checksums", workflow)
         self.assertIn("agent-egress-bench-release-final-${{ github.sha }}", workflow)
 

@@ -116,28 +116,12 @@ verify_image_identity() {
   fi
   gh "${verify_args[@]}" >/dev/null || fail "runner image metadata provenance verification failed"
 
-  python3 - "$metadata_path" "$image" <<'PY' || fail "runner image does not match signed release metadata"
-import json
-import re
+  python3 - "$metadata_path" "$image" <<'PY' || fail "runner image does not match the signed release reference"
+from pathlib import Path
 import sys
 
-metadata = json.load(open(sys.argv[1], encoding="utf-8"))
-expected_keys = {"schema_version", "image", "digest", "source_repository", "source_commit", "release_tag"}
-if not isinstance(metadata, dict) or set(metadata) != expected_keys:
-    raise SystemExit("runner image metadata has an invalid shape")
-if metadata["schema_version"] != 1:
-    raise SystemExit("runner image metadata has an unsupported schema version")
-if metadata["image"] != sys.argv[2]:
-    raise SystemExit("runner image reference differs from signed metadata")
-digest = sys.argv[2].rsplit("@", 1)[1]
-if metadata["digest"] != digest:
-    raise SystemExit("runner image digest differs from signed metadata")
-if metadata["source_repository"] != "https://github.com/luckyPipewrench/agent-egress-bench":
-    raise SystemExit("runner image metadata names an unexpected source repository")
-if not isinstance(metadata["source_commit"], str) or re.fullmatch(r"[0-9a-f]{40}", metadata["source_commit"]) is None:
-    raise SystemExit("runner image metadata has an invalid source commit")
-if not isinstance(metadata["release_tag"], str) or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", metadata["release_tag"]) is None:
-    raise SystemExit("runner image metadata has an invalid release tag")
+if Path(sys.argv[1]).read_bytes() != (sys.argv[2] + "\n").encode("utf-8"):
+    raise SystemExit("signed runner image reference differs from the requested image")
 PY
 }
 
