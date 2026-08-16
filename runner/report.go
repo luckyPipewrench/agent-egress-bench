@@ -20,6 +20,36 @@ import (
 
 const absentFact = "Absent from run artifacts"
 
+// reportArtifactNames is every file the report reads. Each one is individually
+// optional, because a partial run should still be reported honestly. A
+// directory holding none of them is a different situation: it is not a run
+// artifact directory at all, and rendering it produced a report whose every
+// line said the fact was absent while the command exited zero. An operator who
+// pointed at the wrong path read that as a report of a run rather than as the
+// mistake it was, so an empty directory is refused instead of rendered.
+var reportArtifactNames = []string{
+	"raw-summary.json",
+	"run-metadata.json",
+	"run-bundle.json",
+	"execution-decision.json",
+	"results.jsonl",
+	"command.txt",
+	"entrypoint-command.txt",
+}
+
+// containsReportArtifact reports whether dir holds any readable report input.
+// A present but unreadable file still counts, so a permission fault surfaces as
+// the report's own "Unreadable run artifact" status rather than as a claim that
+// the directory was never an artifact directory.
+func containsReportArtifact(dir string) bool {
+	for _, name := range reportArtifactNames {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
+}
+
 // reportSelfConsistentPrefix opens every successful validation string. The
 // eligibility predicate matches on it, so the producers and the consumer share
 // one constant: when these were separate literals a rename left the predicate
@@ -88,6 +118,9 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("report input is not a directory: %s", dir)
+	}
+	if !containsReportArtifact(dir) {
+		return nil, fmt.Errorf("no run artifacts in %s: expected at least one of %s", dir, strings.Join(reportArtifactNames, ", "))
 	}
 	r := &buyerReport{dir: dir}
 	r.summary = loadReportDocument(dir, "raw-summary.json")

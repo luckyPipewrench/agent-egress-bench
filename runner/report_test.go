@@ -557,3 +557,41 @@ func TestReportRestrictedClaimPatternsStayInSyncWithClaimGate(t *testing.T) {
 		t.Fatalf("report claim pattern count = %d, want 10", len(reportRestrictedClaims))
 	}
 }
+
+func TestBuyerReportRefusesADirectoryWithNoRunArtifacts(t *testing.T) {
+	// An empty but existing directory used to render a full report in which
+	// every fact read "Absent from run artifacts" while the command exited
+	// zero, so an operator who mistyped a path saw a successful report of a run
+	// that was never located. Refusing names the files that were looked for.
+	empty := t.TempDir()
+	if _, err := loadBuyerReport(empty); err == nil {
+		t.Fatal("loadBuyerReport accepted a directory holding no run artifacts")
+	} else if !strings.Contains(err.Error(), "no run artifacts") || !strings.Contains(err.Error(), "results.jsonl") {
+		t.Fatalf("error = %v, want it to say no run artifacts and name the expected files", err)
+	}
+
+	// A directory holding an unrelated file is the same mistake.
+	stray := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stray, "gauntlet-summary.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadBuyerReport(stray); err == nil {
+		t.Fatal("loadBuyerReport accepted a directory holding no recognized run artifact")
+	}
+
+	// One recognized artifact is enough. A partial run must still report, so
+	// this guard must not turn an incomplete artifact set into a refusal.
+	for _, name := range reportArtifactNames {
+		dir := t.TempDir()
+		body := []byte("{}\n")
+		if strings.HasSuffix(name, ".txt") {
+			body = []byte("aeb-gauntlet --cases cases\n")
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err != nil {
+			t.Errorf("loadBuyerReport(dir holding only %s) = %v, want it accepted", name, err)
+		}
+	}
+}
