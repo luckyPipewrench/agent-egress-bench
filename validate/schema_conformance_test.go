@@ -44,7 +44,14 @@ func TestCaseSchemaConformance(t *testing.T) {
 		"severity_enum":         func(v map[string]any) { v["severity"] = "not-a-severity" },
 		"requires_item_enum":    func(v map[string]any) { v["requires"] = []any{"not-a-requirement"} },
 		"false_positive_enum":   func(v map[string]any) { v["false_positive_risk"] = "not-a-risk" },
-		"unknown_property":      func(v map[string]any) { v["unexpected"] = true },
+		"malformed_id":          func(v map[string]any) { v["id"] = "Bad ID" },
+		"malformed_supersedes":  func(v map[string]any) { v["supersedes"] = "../case" },
+		"duplicate_capability": func(v map[string]any) {
+			tags := v["capability_tags"].([]any)
+			v["capability_tags"] = append(tags, tags[0])
+		},
+		"duplicate_requires": func(v map[string]any) { v["requires"] = []any{"mcp_tool_policy", "mcp_tool_policy"} },
+		"unknown_property":   func(v map[string]any) { v["unexpected"] = true },
 	} {
 		t.Run(name, func(t *testing.T) {
 			mutated := cloneConformanceObject(t, baseline)
@@ -108,6 +115,9 @@ func TestResultSchemaConformance(t *testing.T) {
 		"expected_verdict_enum": func(v map[string]any) { v["expected_verdict"] = "warn" },
 		"actual_verdict_enum":   func(v map[string]any) { v["actual_verdict"] = "warn" },
 		"score_enum":            func(v map[string]any) { v["score"] = "not-a-score" },
+		"malformed_case_id":     func(v map[string]any) { v["case_id"] = "../case" },
+		"empty_tool":            func(v map[string]any) { v["tool"] = "" },
+		"empty_tool_version":    func(v map[string]any) { v["tool_version"] = "" },
 		"unknown_property":      func(v map[string]any) { v["unexpected"] = true },
 	} {
 		t.Run(name, func(t *testing.T) {

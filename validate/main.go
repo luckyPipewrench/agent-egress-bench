@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -29,6 +30,7 @@ const (
 
 // Valid enum values for v1 schema.
 var (
+	caseIDPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`)
 	validCategories = map[string]bool{
 		"url": true, "request_body": true, "headers": true,
 		"response_fetch": true, "response_mitm": true,
@@ -481,6 +483,8 @@ func validateFile(path string, ids map[string]string) []string {
 	// Required fields
 	if c.ID == "" {
 		addErr("missing id")
+	} else if !caseIDPattern.MatchString(c.ID) {
+		addErr("id must contain only lower-case letters, digits, hyphens, and underscores")
 	}
 	if c.Title == "" {
 		addErr("missing title")
@@ -493,6 +497,9 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 	if c.Payload == nil {
 		addErr("missing payload")
+	}
+	if supersedes, present := rawSupersedes(data); present && !caseIDPattern.MatchString(supersedes) {
+		addErr("supersedes must contain only lower-case letters, digits, hyphens, and underscores")
 	}
 
 	// ID must match filename
@@ -545,7 +552,12 @@ func validateFile(path string, ids map[string]string) []string {
 	}
 
 	// Requires
+	seenRequires := make(map[string]bool, len(c.Requires))
 	for _, req := range c.Requires {
+		if seenRequires[req] {
+			addErr(fmt.Sprintf("duplicate requires value: %q", req))
+		}
+		seenRequires[req] = true
 		if problem := requiresTokenProblem(req); problem != "" {
 			addErr(problem)
 		}
@@ -979,6 +991,8 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 
 	if r.CaseID == "" {
 		addErr("missing case_id")
+	} else if r.SchemaVersion == activeResultSchemaVersion && !caseIDPattern.MatchString(r.CaseID) {
+		addErr("case_id must contain only lower-case letters, digits, hyphens, and underscores")
 	}
 	if r.SchemaVersion != legacyResultSchemaVersion && r.SchemaVersion != activeResultSchemaVersion {
 		addErr(fmt.Sprintf("schema_version must be %d or %d, got %d", legacyResultSchemaVersion, activeResultSchemaVersion, r.SchemaVersion))

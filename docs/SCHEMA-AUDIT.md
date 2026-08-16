@@ -10,10 +10,10 @@ The weakest-instance column describes the least informative structurally valid r
 | --- | --- | --- | --- |
 | `case-index-v1.schema.json` | Closed root; array items closed | Empty and duplicate-bearing indexes are structurally valid | Frozen v1 unchanged; v2 replaces it |
 | `case-index-v2.schema.json` | Closed root; typed case-ID map | At least one uniquely keyed case with category and expected verdict | New v2 because tightening v1 would reject saved artifacts |
-| `case-v4.schema.json` | Closed except `payload` | A complete identified case; payload varies by `input_type` and the Go validator checks the selected shape | Unchanged extension point |
+| `case-v4.schema.json` | Closed except `payload` | A complete identified case with bounded ID syntax and unique capability and requirement sets; payload varies by `input_type` and the Go validator checks the selected shape | In-place amendment; every published case retains the same meaning |
 | `multi-file-case-v4.schema.json` | Closed, including the file inventory | A complete temporal case with three normalized relative JSON filenames; absolute and parent paths fail | Unchanged |
 | `result-v4.schema.json` | Closed except frozen adapter evidence | A complete historical scored row; evidence is a frozen extension point | Frozen v4 unchanged |
-| `result-v5.schema.json` | Closed except adapter evidence with required `result_state` | A complete scored or explicit unmeasured row; the validator binds state, verdict, and score | Active v5 unchanged |
+| `result-v5.schema.json` | Closed except adapter evidence with required `result_state` | A complete identified scored or explicit unmeasured row; the validator binds state, verdict, and score | In-place amendment; retained v5 rows keep the same result |
 | `summary-v4.schema.json` | Open frozen root | The historical required summary fields can carry unknown siblings | Frozen v4 unchanged |
 | `summary-v5.schema.json` | Closed; category and reason names are typed maps | A non-empty counted run with bounded rates, diagnostics, registry binding, and explicit measurement status | Active v5 unchanged |
 | `provenance-candidate-v1.schema.json` | Closed root; three nested historical objects are open | Empty count, score, and metric objects are structurally valid | Frozen v1 unchanged; v5 replaces it |
@@ -66,6 +66,8 @@ The weakest-instance column describes the least informative structurally valid r
 `multi-file-case-v4` and both Control Evidence manifest schemas constrain archive or fixture paths to normalized relative names and reject parent traversal. `promoted-record-v2` uses an exact filename allowlist. `promoted-record-v1` remains weak because it's frozen.
 
 Tool-profile receipt evidence is deliberately different. `evidence_dir` may be an operator-selected absolute directory, and `file_glob` is an operator pattern. The runner restricts matches to entries physically listed inside that directory, rejects non-regular files, and resolves symlinks before accepting a match. Absolute and traversal glob patterns therefore produce no outside match instead of importing another file.
+
+Counts and rates use non-negative bounds and zero-to-one bounds where those values are portable. Tool-profile verifier exit codes are the exception: process exit status is platform-defined, so the schema constrains the array shape while the runner compares the declared integers to the process result.
 
 ## Long-term source shape
 

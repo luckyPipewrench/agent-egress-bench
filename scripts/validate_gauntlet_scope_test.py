@@ -101,6 +101,7 @@ def complete_v5_artifact():
     artifact["scoring_version"] = "2.8"
     artifact["benchmark_manifest_sha256"] = "e" * 64
     artifact["measurement_status"] = "measured"
+    artifact["case_count"]["unreachable"] = 0
     artifact["capability_registry"] = {
         "id": "aeb.core-capabilities",
         "format": 1,
@@ -120,6 +121,41 @@ def complete_v5_artifact():
             "classification_present_rate": counts.pop("detection"),
             "structured_evidence_present_rate": counts.pop("evidence"),
         }
+    artifact.update(
+        {
+            "local_run_id": "run-123",
+            "generated_at": "2026-08-05T10:33:23Z",
+            "corpus_ref_kind": "origin/main",
+            "corpus_git_sha": "a" * 40,
+            "corpus_commit_url": "https://github.com/luckyPipewrench/agent-egress-bench/commit/" + "a" * 40,
+            "dirty": False,
+            "pipelock_tag": "v3.3.0",
+            "pipelock_version": "3.3.0",
+            "pipelock_asset": "pipelock_3.3.0_linux_amd64.tar.gz",
+            "pipelock_asset_sha256": "a" * 64,
+            "pipelock_binary_sha256": "b" * 64,
+            "pipelock_release_url": "https://github.com/luckyPipewrench/pipelock/releases/tag/v3.3.0",
+            "gauntlet_version": "0.4.3",
+            "tool": "pipelock",
+            "tool_version": "3.3.0",
+            "corpus_version": "v2.3.0",
+            "corpus_sha256": "a" * 64,
+            "tool_profile_sha256": "a" * 64,
+            "fixtures": True,
+            "multifile_cases": True,
+            "command": "aeb-gauntlet",
+            "make_stats": "complete",
+            "evidence_sha256": {label: "a" * 64 for label in (
+                "capability_registry", "case_index", "command", "corpus_manifest",
+                "entrypoint_command", "pipelock_release", "pipelock_version_output",
+                "raw_summary", "receipt_profile", "release_checksums", "results",
+                "run_metadata", "runner_stderr", "stats", "tool_profile",
+            )},
+            "reported_claims": [],
+            "exercised": {"transports": ["stdio"], "categories": ["prompt-injection"], "capability_tags": []},
+            "portable_bundle_sha256": "a" * 64,
+        }
+    )
     return artifact
 
 

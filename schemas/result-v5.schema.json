@@ -25,14 +25,17 @@
     },
     "case_id": {
       "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
       "description": "The case ID from the case file."
     },
     "tool": {
       "type": "string",
+      "minLength": 1,
       "description": "Tool name from the tool profile."
     },
     "tool_version": {
       "type": "string",
+      "minLength": 1,
       "description": "Tool version from the tool profile."
     },
     "capability_registry": {

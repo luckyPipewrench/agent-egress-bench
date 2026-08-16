@@ -15,7 +15,7 @@
     {
       "path": "schemas/case-v4.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-v4.schema.json",
-      "sha256": "f8d4e1b9fe2378992e4cd84d7cc2efa91c5f605fbd217b95c8755a279fda18b8"
+      "sha256": "ee85452d83f84d69998d9eca7e83d608d01d5aab2f3de210740779971aac2505"
     },
     {
       "path": "schemas/control-evidence-assessment-v1.schema.json",
@@ -235,7 +235,7 @@
     {
       "path": "schemas/result-v5.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json",
-      "sha256": "38e44607f6974b7a1da361d0a7261437d04358e01d5b28122f04ea03b472fad8"
+      "sha256": "34883c47b14a35188a8d8b0ef7ccf55b6a3d993c5f9ebbeacd756ef130257956"
     },
     {
       "path": "schemas/summary-v4.schema.json",

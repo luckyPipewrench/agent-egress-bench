@@ -120,6 +120,25 @@ func TestRootJSONSchemasCompileAndValidateFixtures(t *testing.T) {
 	if err := caseSchema.Validate(caseDocument); err != nil {
 		t.Fatalf("case-v4 rejected published fixture: %v", err)
 	}
+	for name, mutate := range map[string]func(map[string]interface{}){
+		"malformed_id":         func(value map[string]interface{}) { value["id"] = "../case" },
+		"malformed_supersedes": func(value map[string]interface{}) { value["supersedes"] = "../case" },
+		"duplicate_capability_tag": func(value map[string]interface{}) {
+			tags := value["capability_tags"].([]interface{})
+			value["capability_tags"] = append(tags, tags[0])
+		},
+		"duplicate_requires": func(value map[string]interface{}) {
+			value["requires"] = []interface{}{"mcp_tool_policy", "mcp_tool_policy"}
+		},
+	} {
+		t.Run("case_rejects_"+name, func(t *testing.T) {
+			mutated := cloneToolProfileObject(t, caseDocument)
+			mutate(mutated)
+			if err := caseSchema.Validate(mutated); err == nil {
+				t.Fatal("case-v4 accepted rejected conformance vector")
+			}
+		})
+	}
 
 	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v5.schema.json"))
 	result := map[string]interface{}{
@@ -130,6 +149,19 @@ func TestRootJSONSchemasCompileAndValidateFixtures(t *testing.T) {
 	}
 	if err := resultSchema.Validate(result); err != nil {
 		t.Fatalf("result-v5 rejected valid result fixture: %v", err)
+	}
+	for name, mutate := range map[string]func(map[string]interface{}){
+		"malformed_case_id":  func(value map[string]interface{}) { value["case_id"] = "../case" },
+		"empty_tool":         func(value map[string]interface{}) { value["tool"] = "" },
+		"empty_tool_version": func(value map[string]interface{}) { value["tool_version"] = "" },
+	} {
+		t.Run("result_rejects_"+name, func(t *testing.T) {
+			mutated := cloneToolProfileObject(t, result)
+			mutate(mutated)
+			if err := resultSchema.Validate(mutated); err == nil {
+				t.Fatal("result-v5 accepted rejected conformance vector")
+			}
+		})
 	}
 }
 
