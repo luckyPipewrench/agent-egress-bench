@@ -13,7 +13,15 @@ Each release contains:
 - One commit-pinned schema catalog and schema bundle. The bundle contains the
   catalog and every schema it names, so a vendor can validate schema bytes
   after download without a network connection.
-- `aeb-gauntlet` archives for Linux, macOS, and Windows on amd64 and arm64.
+- Archives for Linux, macOS, and Windows on amd64 and arm64. Each one carries
+  both `aeb-gauntlet`, which runs the corpus, and `aeb-validate`, which checks a
+  result against the contracts. The release verifier refuses an archive missing
+  either binary, carrying one built for another platform, or carrying the same
+  program under both names. That last check exists because a name, an executable
+  bit, and a machine type are all satisfied by one program copied under two
+  names, which is what a build configured to produce the same binary twice
+  produces. It does not establish which program either binary is; see the note
+  under Verify a downloaded release.
 - `checksums.txt` covering every release asset.
 - `release-identity.json` with the corpus version, active schema versions, source commit, and supported archive matrix.
 - `runner-image.ref` with the full digest-pinned OCI image reference.
@@ -48,7 +56,18 @@ An operator can also check the GitHub provenance attached to any release asset:
 gh attestation verify aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz --repo luckyPipewrench/agent-egress-bench
 ```
 
-After extracting the platform archive, run `aeb-gauntlet --version`. A tagged binary prints its release version and exact source commit. The release verifier accepts that output with `--executable` when the archive matches the current host.
+After extracting the platform archive, run `aeb-gauntlet --version` and `aeb-validate --version`. A tagged binary prints its release version and exact source commit. When the archive matches the current host, hand both back to the verifier so it reads the identity out of the running programs rather than off their filenames:
+
+```bash
+python3 scripts/release_build.py verify --release-dir .. \
+  --executable ./aeb-gauntlet --validator-executable ./aeb-validate
+```
+
+Be precise about what that establishes. Without those two options the verifier checks each binary's name, executable bit, machine type, and that the two archive members are different programs. Supplying them adds two things: the file you point at must be the same bytes as that binary inside a release archive, and running it must print the identity this release records. Pointing the option at some other program is refused before it runs, so the option reports on the release rather than on whatever happens to be on your path.
+
+What none of it establishes is what a program does. A binary carrying the release's own bytes and reporting its version could still behave differently from the source it claims, and the release identity naming the validator is a label rather than a proof of role. These checks catch the mistake and the swap: a build configured to produce one program twice, a member replaced with another, an archive assembled for the wrong platform.
+
+What binds the bytes is `checksums.txt` over every asset, and the GitHub attestation over those assets. Altering a binary inside an archive fails checksum verification immediately, so defeating it means regenerating the checksums, which means controlling the build. At that point a second manifest of binary digests written by the same build would be regenerated too, which is why there isn't one. Verify the attestation when the question is whether the release came from this repository's workflow.
 
 ## Run the corpus from a downloaded release
 
@@ -67,6 +86,15 @@ mkdir artifacts
 The runner writes one JSON result per case to standard output and its human summary to standard error, so redirecting standard output produces `results.jsonl` without mixing the two. `--report` reads a directory rather than a single file, and it reads the summary under the name `raw-summary.json`, so write `--output` to that name when the run is meant to be reported. A summary saved under any other name leaves the report's method, target, and score sections reading as absent even though the file is sitting in the directory.
 
 Every artifact the report reads is individually optional, so a run that produced only some of them still renders, and each missing fact is reported as absent rather than guessed.
+
+Check the corpus and the result with the validator from the same archive. It reads the case directory alongside the results so it can bind each row back to the case it claims to answer:
+
+```bash
+./aeb-validate cases cases
+./aeb-validate results artifacts/results.jsonl cases
+```
+
+Read a validator refusal as a statement about the rows in front of it, and never suppress one to make a run look clean. Two denial-of-wallet cases, for instance, require a target to carry timing evidence for any block it claims, so a target that claims the block without producing the evidence is refused. A real target either supplies the evidence or does not claim the block.
 
 The template profile names no real product, so that run exercises the corpus and the artifact path rather than measuring anything. Copy it, set `tool` and `tool_version` to the target under test, and select the adapter that reaches it. `--adapter mcp-gateway --gateway-plugin` drives an MCP gateway from `examples/gateway-plugin-template.json`; `docs/GATEWAY-ADAPTER.md` states that plugin contract.
 

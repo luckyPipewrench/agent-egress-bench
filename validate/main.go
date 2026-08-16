@@ -196,12 +196,22 @@ var (
 	}
 )
 
+// releaseVersion and releaseCommit are stamped by the release build so this
+// binary can state which release produced it. Source and "go run" builds keep
+// the placeholders, which is why the release verifier only compares this output
+// for an archive built as a release.
+var (
+	releaseVersion = "dev"
+	releaseCommit  = "unknown"
+)
+
 const usageText = `usage: validate <command> <target>
 
 commands:
   cases   <dir>    validate case JSON files in a directory
   results <file> [cases-dir]   validate runner JSONL; cases-dir enables case-bound checks
   profile <file>   validate a tool profile JSON file
+  --version        print the release version and commit this binary was built from
 
 for backwards compatibility, 'validate <dir>' works as 'validate cases <dir>'.
 `
@@ -214,6 +224,12 @@ func main() {
 
 	subcmd := os.Args[1]
 	switch subcmd {
+	case "--version", "-version":
+		// A release records this binary's name in its identity. A name is not
+		// evidence of a program, so the release verifier runs this and compares
+		// the output, the same way it already does for the runner.
+		fmt.Fprintf(os.Stdout, "aeb-validate %s %s\n", releaseVersion, releaseCommit)
+		os.Exit(0)
 	case "cases":
 		if len(os.Args) < 3 {
 			fmt.Fprintf(os.Stderr, "usage: validate cases <cases-directory>\n")

@@ -28,9 +28,34 @@ builds:
       - -X main.releaseVersion={{ .Version }}
       - -X main.releaseCommit={{ .FullCommit }}
 
+  # The result validator ships in the same archive as the runner. A release
+  # that produced results without shipping the tool that checks them would
+  # leave every downloader depending on this repository to verify its own work.
+  - id: aeb-validate
+    dir: validate
+    main: .
+    binary: aeb-validate
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.releaseVersion={{ .Version }}
+      - -X main.releaseCommit={{ .FullCommit }}
+
 archives:
   - id: aeb-gauntlet
-    ids: [aeb-gauntlet]
+    ids: [aeb-gauntlet, aeb-validate]
     formats: [tar.gz]
     format_overrides:
       - goos: windows
