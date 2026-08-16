@@ -139,11 +139,18 @@ def result_reader_contract(repo_root):
     return active_version, frozenset(accepted_versions), frozenset(states)
 
 
-def validate_result_row_contract(row, row_number, active_version, accepted_versions, result_states):
+def validate_result_row_contract(
+    row, row_number, expected_version, active_version, accepted_versions, result_states
+):
     schema_version = row.get("schema_version")
     if schema_version not in accepted_versions:
         raise ValueError(
             f"runner JSONL row {row_number} schema_version must be one of {sorted(accepted_versions)}"
+        )
+    if schema_version != expected_version:
+        raise ValueError(
+            f"runner JSONL row {row_number} schema_version must match summary schema_version "
+            f"{expected_version}"
         )
     if schema_version != active_version:
         return
@@ -624,7 +631,9 @@ def measurements(repo_root, run_dir):
         if not isinstance(evidence, dict):
             raise ValueError(f"runner JSONL row {row_number} evidence must be an object")
         if result_contract is not None:
-            validate_result_row_contract(row, row_number, *result_contract)
+            validate_result_row_contract(
+                row, row_number, summary_schema_version, *result_contract
+            )
         if not isinstance(row.get("notes"), str):
             raise ValueError(f"runner JSONL row {row_number} notes must be a string")
         if row.get("tool") != summary.get("tool") or row.get("tool_version") != summary.get(

@@ -79,14 +79,46 @@ class ProvenanceBuilderTest(unittest.TestCase):
         for vector in corpus["accepted"]:
             with self.subTest(kind="accepted", name=vector["name"]):
                 build_gauntlet_provenance.validate_result_row_contract(
-                    vector["row"], 1, active_version, accepted_versions, result_states
+                    vector["row"],
+                    1,
+                    active_version,
+                    active_version,
+                    accepted_versions,
+                    result_states,
                 )
         for vector in corpus["rejected"]:
             with self.subTest(kind="rejected", name=vector["name"]):
                 with self.assertRaises(ValueError):
                     build_gauntlet_provenance.validate_result_row_contract(
-                        vector["row"], 1, active_version, accepted_versions, result_states
+                        vector["row"],
+                        1,
+                        active_version,
+                        active_version,
+                        accepted_versions,
+                        result_states,
                     )
+
+    def test_current_summary_rejects_legacy_labeled_result_row(self):
+        active_version, accepted_versions, result_states = (
+            build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
+        )
+        with self.assertRaisesRegex(ValueError, "must match summary schema_version 5"):
+            build_gauntlet_provenance.validate_result_row_contract(
+                {"schema_version": 4},
+                1,
+                active_version,
+                active_version,
+                accepted_versions,
+                result_states,
+            )
+
+    def test_v4_summary_accepts_v4_result_row_contract(self):
+        active_version, accepted_versions, result_states = (
+            build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
+        )
+        build_gauntlet_provenance.validate_result_row_contract(
+            {"schema_version": 4}, 1, 4, active_version, accepted_versions, result_states
+        )
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
