@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -37,13 +38,31 @@ var reportArtifactNames = []string{
 	"entrypoint-command.txt",
 }
 
-// containsReportArtifact reports whether dir holds any readable report input.
+// containsReportArtifact reports whether dir holds any report input that could
+// carry a fact.
+//
+// Presence is not the test, because an empty file carries nothing. A zero-byte
+// results.jsonl passed an existence check, rendered the same all-absent report,
+// exited zero, and labelled the empty file readable, which states something
+// about nothing. A run that died before writing, or a directory somebody
+// created by hand, both land there.
+//
+// Lstat, not Stat, so a symlink never qualifies. The report reads what it finds
+// here, and Stat follows links, so a link named after an artifact both admitted
+// an otherwise empty directory and pulled the linked file's bytes into the
+// rendered report. A report directory unpacked from somewhere else is exactly
+// where that matters.
+//
 // A present but unreadable file still counts, so a permission fault surfaces as
-// the report's own "Unreadable run artifact" status rather than as a claim that
-// the directory was never an artifact directory.
+// the report's own unreadable status rather than as a claim that the directory
+// was never an artifact directory.
 func containsReportArtifact(dir string) bool {
 	for _, name := range reportArtifactNames {
-		if info, err := os.Stat(filepath.Join(dir, name)); err == nil && info.Mode().IsRegular() {
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if info.Size() > 0 {
 			return true
 		}
 	}
@@ -133,11 +152,33 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	return r, nil
 }
 
+// readRegularArtifact reads a report input, refusing anything that is not a
+// regular file. os.ReadFile follows a symlink, so without this a link named
+// after an artifact renders whatever it points at into the report. The report
+// states facts about a run, and a file outside the run directory is not one.
+func readRegularArtifact(dir, name string) ([]byte, error) {
+	path := filepath.Join(dir, name)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errNotRegularArtifact
+	}
+	return os.ReadFile(path)
+}
+
+var errNotRegularArtifact = errors.New("run artifact is not a regular file")
+
 func loadReportDocument(dir, name string) reportDocument {
 	doc := reportDocument{name: name}
-	data, err := os.ReadFile(filepath.Join(dir, name))
+	data, err := readRegularArtifact(dir, name)
 	if os.IsNotExist(err) {
 		doc.status = absentFact
+		return doc
+	}
+	if errors.Is(err, errNotRegularArtifact) {
+		doc.status = "Invalid in run artifacts: not a regular file"
 		return doc
 	}
 	if err != nil {
@@ -175,9 +216,12 @@ func ensureJSONEOF(dec *json.Decoder) error {
 }
 
 func loadReportText(dir, name string) string {
-	data, err := os.ReadFile(filepath.Join(dir, name))
+	data, err := readRegularArtifact(dir, name)
 	if os.IsNotExist(err) {
 		return absentFact
+	}
+	if errors.Is(err, errNotRegularArtifact) {
+		return "Invalid in run artifacts: not a regular file"
 	}
 	if err != nil {
 		return "Unreadable run artifact"
@@ -202,6 +246,12 @@ type reportRowCounts struct {
 
 func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 	var counts reportRowCounts
+	// Same no-follow rule as the other artifact readers. This one opens by path
+	// rather than going through readRegularArtifact because it streams the file
+	// instead of reading it whole, so the check has to happen here too.
+	if info, statErr := os.Lstat(path); statErr == nil && !info.Mode().IsRegular() {
+		return nil, counts, "Invalid in run artifacts: not a regular file"
+	}
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return nil, counts, absentFact

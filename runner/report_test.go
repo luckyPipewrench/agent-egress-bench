@@ -595,3 +595,55 @@ func TestBuyerReportRefusesADirectoryWithNoRunArtifacts(t *testing.T) {
 		}
 	}
 }
+
+func TestBuyerReportRejectsEmptyAndNonRegularArtifacts(t *testing.T) {
+	// An existence check is not enough. A zero-byte artifact carried no fact and
+	// still admitted the directory, so the all-absent report came back with exit
+	// zero and labelled the empty file readable. A symlink was worse: it both
+	// admitted the directory and rendered whatever it pointed at into the report.
+	for _, name := range reportArtifactNames {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err == nil {
+			t.Errorf("loadBuyerReport(dir holding only a zero-byte %s) = nil, want refusal", name)
+		}
+	}
+
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("content-from-outside-the-run\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range reportArtifactNames {
+		dir := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err == nil {
+			t.Errorf("loadBuyerReport(dir holding only a symlinked %s) = nil, want refusal", name)
+		}
+	}
+
+	// Availability: a real partial run still reports, and a symlink sitting
+	// beside a valid artifact is named as invalid rather than followed.
+	mixed := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mixed, "results.jsonl"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(mixed, "command.txt")); err != nil {
+		t.Fatal(err)
+	}
+	report, err := loadBuyerReport(mixed)
+	if err != nil {
+		t.Fatalf("loadBuyerReport(partial run) = %v, want it accepted", err)
+	}
+	var out bytes.Buffer
+	report.renderMarkdown(&out)
+	if strings.Contains(out.String(), "content-from-outside-the-run") {
+		t.Error("report rendered the contents of a symlinked artifact")
+	}
+	if !strings.Contains(report.command, "not a regular file") {
+		t.Errorf("command.txt status = %q, want it named as not a regular file", report.command)
+	}
+}
