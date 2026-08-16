@@ -51,6 +51,10 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn("COPY capability-registry ./capability-registry", text)
         self.assertNotIn("-mod=vendor", text)
         self.assertFalse((ROOT / "runner" / "vendor").exists())
+        self.assertIn("adduser -S -D -u 65532 -G aeb aeb", text)
+        self.assertIn("install -d -o aeb -g aeb /work", text)
+        self.assertIn("USER aeb:aeb", text)
+        self.assertLess(text.index("USER aeb:aeb"), text.index('ENTRYPOINT ["/usr/local/bin/aeb-gauntlet"]'))
         self.assertIn('ENTRYPOINT ["/usr/local/bin/aeb-gauntlet"]', text)
 
     def test_action_enforces_digest_and_strict_offline_execution(self) -> None:
@@ -125,6 +129,8 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn('"dockerfile": "../Dockerfile"', text)
         self.assertIn('"context": ".."', text)
         self.assertIn('"overrideCommand": true', text)
+        self.assertIn('"remoteUser": "aeb"', text)
+        self.assertIn('"updateRemoteUserUID": true', text)
         self.assertNotIn('"image":', text)
 
     def test_removed_vendor_tree_is_not_excluded_from_review_or_self_scan(self) -> None:

@@ -22,6 +22,10 @@ LABEL org.opencontainers.image.version="$AEB_VERSION"
 LABEL org.opencontainers.image.revision="$AEB_COMMIT"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
+RUN addgroup -S -g 65532 aeb \
+    && adduser -S -D -u 65532 -G aeb aeb \
+    && install -d -o aeb -g aeb /work
+
 COPY --from=build /out/aeb-gauntlet /usr/local/bin/aeb-gauntlet
 COPY cases /opt/aeb/cases
 COPY schemas /opt/aeb/schemas
@@ -32,4 +36,5 @@ COPY LICENSE NOTICE README.md /opt/aeb/
 
 ENV AEB_CASES_DIR=/opt/aeb/cases
 WORKDIR /work
+USER aeb:aeb
 ENTRYPOINT ["/usr/local/bin/aeb-gauntlet"]

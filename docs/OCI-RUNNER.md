@@ -2,7 +2,7 @@
 
 The runner image packages `aeb-gauntlet`, the corpus, schemas, contracts, capability registry, and examples in one Linux environment that is built for `linux/amd64` and `linux/arm64`.
 
-The image is based on Alpine 3.24.1 and built with Go 1.25.12. Both base images are pinned by OCI index digest in the `Dockerfile`, both indexes contain amd64 and arm64 manifests, and the release workflow checks the installed Buildx and runner versions instead of trusting a tag.
+The image is based on Alpine 3.24.1 and built with Go 1.25.12. Both base images are pinned by OCI index digest in the `Dockerfile`, both indexes contain amd64 and arm64 manifests, and the release workflow checks the installed Buildx and runner versions instead of trusting a tag. The runtime image uses the unprivileged `aeb` user; the Action maps that process to the caller's UID and GID for bind-mounted files.
 
 ## Build and inspect the image
 
@@ -64,7 +64,7 @@ The Action works on GitHub's amd64 runners and on arm64 self-hosted runners beca
 
 ## Devcontainer
 
-Open the repository in a devcontainer-aware editor and choose **Reopen in Container**. `.devcontainer/devcontainer.json` builds the same pinned Dockerfile, opens the checkout under `/workspaces` using its actual directory name, and overrides the image entrypoint so an interactive shell can stay open.
+Open the repository in a devcontainer-aware editor and choose **Reopen in Container**. `.devcontainer/devcontainer.json` builds the same pinned Dockerfile, opens the checkout under `/workspaces` using its actual directory name, updates the unprivileged `aeb` user to the caller's UID, and overrides the image entrypoint so an interactive shell can stay open.
 
 From the devcontainer terminal, confirm the installed artifacts with real commands:
 
