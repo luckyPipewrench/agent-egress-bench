@@ -93,6 +93,7 @@ def check_workflow(path: Path) -> None:
         "subject-digest: ${{ steps.publish.outputs.digest }}",
         "push-to-registry: true",
         "runner-image.ref",
+        'cp "$identity_dir/runner-image.ref" dist/release/runner-image.ref',
         "release_build.py checksums",
         "release_build.py verify --release-dir dist/release --repo-root .",
         "subject-path: dist/release/*",
