@@ -83,6 +83,88 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "finite JSON number"):
                     artifact_schema.validate(corrupted, schema, "promotion baseline")
 
+    def test_active_provenance_required_fields_are_individually_non_vacuous(self):
+        vector_path = VECTOR_ROOT / "provenance-candidate-v5.json"
+        vector = json.loads(vector_path.read_text(encoding="utf-8"))
+        instance = materialize(vector["accepted"][0], vector_path)
+        schema = artifact_schema.load_schema(ROOT / "schemas" / "provenance-candidate-v5.schema.json")
+        checks = []
+
+        def walk(value, node, schema_path, instance_path):
+            if "$ref" in node:
+                reference_path = [part.replace("~1", "/").replace("~0", "~") for part in node["$ref"][2:].split("/")]
+                target = schema
+                for part in reference_path:
+                    target = target[part]
+                walk(value, target, reference_path, instance_path)
+                return
+            if isinstance(value, dict):
+                for field in node.get("required", []):
+                    checks.append((schema_path, instance_path, field))
+                for field, child in node.get("properties", {}).items():
+                    if field in value:
+                        walk(value[field], child, schema_path + ["properties", field], instance_path + [field])
+
+        walk(instance, schema, [], [])
+        self.assertGreater(len(checks), 70)
+        for schema_path, instance_path, field in checks:
+            with self.subTest(path=".".join(instance_path + [field])):
+                weakened = copy.deepcopy(schema)
+                node = weakened
+                for part in schema_path:
+                    node = node[part]
+                node["required"].remove(field)
+                corrupted = copy.deepcopy(instance)
+                parent = corrupted
+                for part in instance_path:
+                    parent = parent[part]
+                del parent[field]
+                validated = artifact_schema.validate(corrupted, weakened, field)
+                self.assertIsNotNone(validated)
+                with self.assertRaises(ValueError):
+                    artifact_schema.validate(corrupted, schema, field)
+
+    def test_active_provenance_object_closures_are_individually_non_vacuous(self):
+        vector_path = VECTOR_ROOT / "provenance-candidate-v5.json"
+        vector = json.loads(vector_path.read_text(encoding="utf-8"))
+        instance = materialize(vector["accepted"][0], vector_path)
+        schema = artifact_schema.load_schema(ROOT / "schemas" / "provenance-candidate-v5.schema.json")
+        checks = []
+
+        def walk(value, node, schema_path, instance_path):
+            if "$ref" in node:
+                reference_path = [part.replace("~1", "/").replace("~0", "~") for part in node["$ref"][2:].split("/")]
+                target = schema
+                for part in reference_path:
+                    target = target[part]
+                walk(value, target, reference_path, instance_path)
+                return
+            if isinstance(value, dict):
+                if node.get("additionalProperties") is False:
+                    checks.append((schema_path, instance_path))
+                for field, child in node.get("properties", {}).items():
+                    if field in value:
+                        walk(value[field], child, schema_path + ["properties", field], instance_path + [field])
+
+        walk(instance, schema, [], [])
+        self.assertGreater(len(checks), 15)
+        for schema_path, instance_path in checks:
+            with self.subTest(path=".".join(instance_path) or "root"):
+                weakened = copy.deepcopy(schema)
+                node = weakened
+                for part in schema_path:
+                    node = node[part]
+                node.pop("additionalProperties")
+                corrupted = copy.deepcopy(instance)
+                parent = corrupted
+                for part in instance_path:
+                    parent = parent[part]
+                parent["unexpected"] = True
+                validated = artifact_schema.validate(corrupted, weakened, "closure")
+                self.assertIsNotNone(validated)
+                with self.assertRaises(ValueError):
+                    artifact_schema.validate(corrupted, schema, "closure")
+
     def test_vector_corpora_require_both_directions(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as directory:
             temporary_root = Path(directory)

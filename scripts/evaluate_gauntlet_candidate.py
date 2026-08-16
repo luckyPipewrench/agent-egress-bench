@@ -147,11 +147,17 @@ def require_exact_keys(value, label, expected):
     return value
 
 
-def validate_v5_candidate_metric_contract(candidate):
-    """Require the same v5 score surface used when a bundle was built."""
+def validate_v5_candidate_contract(candidate):
+    """Validate v5 relationships that JSON Schema cannot express."""
     scores = require_exact_keys(candidate.get("scores"), "candidate scores", V5_SCOPES)
     diagnostics = require_exact_keys(
         candidate.get("diagnostics"), "candidate diagnostics", V5_SCOPES
+    )
+    metric_counts = require_exact_keys(
+        candidate.get("metric_counts"), "candidate metric_counts", V5_SCOPES
+    )
+    diagnostic_counts = require_exact_keys(
+        candidate.get("diagnostic_counts"), "candidate diagnostic_counts", V5_SCOPES
     )
     for scope in V5_SCOPES:
         scope_scores = require_exact_keys(
@@ -160,10 +166,71 @@ def validate_v5_candidate_metric_contract(candidate):
         scope_diagnostics = require_exact_keys(
             diagnostics[scope], f"candidate diagnostics.{scope}", V5_DIAGNOSTIC_FIELDS
         )
-        for metric, value in scope_scores.items():
-            rate_or_null(value, f"candidate scores.{scope}.{metric}")
-        for diagnostic, value in scope_diagnostics.items():
-            rate_or_null(value, f"candidate diagnostics.{scope}.{diagnostic}")
+        scope_metric_counts = require_exact_keys(
+            metric_counts[scope],
+            f"candidate metric_counts.{scope}",
+            V5_OUTCOME_SCORE_FIELDS,
+        )
+        scope_diagnostic_counts = require_exact_keys(
+            diagnostic_counts[scope],
+            f"candidate diagnostic_counts.{scope}",
+            V5_DIAGNOSTIC_FIELDS,
+        )
+        for field, value in scope_scores.items():
+            validate_counted_rate(
+                value,
+                scope_metric_counts[field],
+                f"candidate scores.{scope}.{field}",
+            )
+        for field, value in scope_diagnostics.items():
+            validate_counted_rate(
+                value,
+                scope_diagnostic_counts[field],
+                f"candidate diagnostics.{scope}.{field}",
+            )
+
+    counts = require_exact_keys(
+        candidate.get("case_count"),
+        "candidate case_count",
+        {"total", "applicable", "unreachable", "not_applicable", "not_applicable_reasons", "errors"},
+    )
+    for field in ("total", "applicable", "unreachable", "not_applicable", "errors"):
+        value = counts[field]
+        minimum = 1 if field == "total" else 0
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            raise ValueError(f"candidate case_count.{field} must be an integer >= {minimum}")
+    if counts["total"] != candidate.get("logical_case_count"):
+        raise ValueError("candidate case_count.total must equal logical_case_count")
+    if counts["applicable"] + counts["unreachable"] + counts["not_applicable"] != counts["total"]:
+        raise ValueError("candidate case counts must sum to total")
+    reasons = counts["not_applicable_reasons"]
+    if not isinstance(reasons, dict) or any(
+        not isinstance(name, str)
+        or not name
+        or isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < 1
+        for name, value in reasons.items()
+    ):
+        raise ValueError("candidate case_count.not_applicable_reasons is invalid")
+    if sum(reasons.values()) != counts["not_applicable"]:
+        raise ValueError("candidate not_applicable reasons must sum to not_applicable")
+    if counts["errors"] > counts["applicable"]:
+        raise ValueError("candidate case_count.errors cannot exceed applicable")
+
+
+def validate_counted_rate(rate, counts, label):
+    counts = require_exact_keys(counts, f"{label} counts", {"numerator", "denominator"})
+    for field in ("numerator", "denominator"):
+        value = counts[field]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{label} {field} must be a non-negative integer")
+    if counts["numerator"] > counts["denominator"]:
+        raise ValueError(f"{label} numerator cannot exceed denominator")
+    expected = None if counts["denominator"] == 0 else counts["numerator"] / counts["denominator"]
+    actual = rate_or_null(rate, label)
+    if actual != expected:
+        raise ValueError(f"{label} does not match its numerator and denominator")
 
 
 def atomic_json_write(path, value):
@@ -220,7 +287,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 candidate.get("benchmark_manifest_sha256"),
                 "candidate benchmark_manifest_sha256",
             )
-            validate_v5_candidate_metric_contract(candidate)
+            validate_v5_candidate_contract(candidate)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))

@@ -152,6 +152,8 @@ def validate_reference_candidate(candidate):
         raise ValueError("candidate schema_version must be 2, 4, or 5")
     if candidate.get("schema_version") in {4, 5}:
         evaluator.require_capability_registry(candidate)
+    if candidate.get("schema_version") == 5:
+        evaluator.validate_v5_candidate_contract(candidate)
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
     parse_timestamp(require_non_empty_string(candidate, "generated_at"), "generated_at")

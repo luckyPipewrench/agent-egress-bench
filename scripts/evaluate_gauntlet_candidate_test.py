@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts import evaluate_gauntlet_candidate as evaluator
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "evaluate_gauntlet_candidate.py"
@@ -83,10 +85,12 @@ def v5_candidate():
     value["benchmark_manifest_sha256"] = "e" * 64
     value["scoring_version"] = "2.8"
     value["runner_version"] = "0.4.3"
+    value["case_count"]["unreachable"] = 0
     for scope in ("full", "applicable"):
         value["scores"][scope].pop("detection", None)
         value["scores"][scope].pop("evidence", None)
     value["scores"]["full"]["false_positive_rate"] = 0.0
+    value["scores"]["full"]["containment"] = 157 / 158
     value["diagnostics"] = {
         "full": {
             "classification_present_rate": 1.0,
@@ -114,6 +118,36 @@ def v5_candidate():
         }
         for scope in ("full", "applicable")
     }
+    value.update(
+        {
+            "local_run_id": "run-123",
+            "generated_at": "2026-08-05T10:33:23Z",
+            "corpus_ref_kind": "origin/main",
+            "corpus_commit_url": "https://github.com/luckyPipewrench/agent-egress-bench/commit/" + "b" * 40,
+            "dirty": False,
+            "pipelock_tag": "v" + PIPELOCK_VERSION,
+            "pipelock_asset": "pipelock.tar.gz",
+            "pipelock_asset_sha256": "a" * 64,
+            "pipelock_binary_sha256": "a" * 64,
+            "pipelock_release_url": "https://github.com/luckyPipewrench/pipelock/releases/tag/v" + PIPELOCK_VERSION,
+            "gauntlet_version": "0.4.3",
+            "tool": "pipelock",
+            "tool_version": PIPELOCK_VERSION,
+            "tool_profile_sha256": "a" * 64,
+            "fixtures": True,
+            "multifile_cases": True,
+            "command": "aeb-gauntlet",
+            "make_stats": "Total logical cases: 213",
+            "evidence_sha256": {label: "a" * 64 for label in (
+                "capability_registry", "case_index", "command", "corpus_manifest",
+                "entrypoint_command", "pipelock_release", "pipelock_version_output",
+                "raw_summary", "receipt_profile", "release_checksums", "results",
+                "run_metadata", "runner_stderr", "stats", "tool_profile",
+            )},
+            "reported_claims": [],
+            "exercised": {"transports": ["stdio"], "categories": ["prompt-injection"], "capability_tags": []},
+        }
+    )
     return value
 
 
@@ -306,8 +340,40 @@ class CandidateEvaluationTest(unittest.TestCase):
         decision, *_ = self.run_evaluate(value, v5_baseline())
         self.assertTrue(decision["blocked"])
         self.assertTrue(
-            any("requires a zero metric denominator" in failure for failure in decision["failures"])
+            any("does not match its numerator and denominator" in failure for failure in decision["failures"])
         )
+
+    def test_v5_candidate_rejects_inconsistent_counts_and_rates(self):
+        mutations = (
+            ("numerator above denominator", lambda value: value["metric_counts"]["full"]["containment"].__setitem__("numerator", 159), "numerator cannot exceed denominator"),
+            ("rate disagrees with counts", lambda value: value["scores"]["full"].__setitem__("containment", 1), "does not match its numerator and denominator"),
+            ("total disagrees with logical count", lambda value: value["case_count"].__setitem__("total", 214), "must equal logical_case_count"),
+            ("case counts do not sum", lambda value: value["case_count"].__setitem__("applicable", 211), "case counts must sum to total"),
+            ("reason counts do not sum", lambda value: value["case_count"]["not_applicable_reasons"].__setitem__("missing_requires", 2), "reasons must sum to not_applicable"),
+        )
+        for name, mutate, message in mutations:
+            with self.subTest(name=name):
+                value = v5_candidate()
+                mutate(value)
+                decision, *_ = self.run_evaluate(value, v5_baseline())
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any(message in failure for failure in decision["failures"]))
+
+    def test_v5_cross_field_guards_are_individually_exercised(self):
+        mutations = (
+            (lambda value: value["metric_counts"]["full"]["containment"].__setitem__("numerator", 159), "numerator cannot exceed denominator"),
+            (lambda value: value["scores"]["full"].__setitem__("containment", 1), "does not match its numerator and denominator"),
+            (lambda value: value["case_count"].__setitem__("total", 214), "must equal logical_case_count"),
+            (lambda value: value["case_count"].__setitem__("applicable", 211), "case counts must sum to total"),
+            (lambda value: value["case_count"]["not_applicable_reasons"].__setitem__("missing_requires", 2), "reasons must sum to not_applicable"),
+            (lambda value: value["case_count"].__setitem__("errors", 213), "errors cannot exceed applicable"),
+        )
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                value = v5_candidate()
+                mutate(value)
+                with self.assertRaisesRegex(ValueError, message):
+                    evaluator.validate_v5_candidate_contract(value)
 
     def test_v5_candidate_rejects_retired_or_malformed_metric_fields(self):
         mutations = (
