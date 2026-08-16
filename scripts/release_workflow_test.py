@@ -13,6 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO / ".github/workflows/release.yaml"
 VALIDATE_WORKFLOW = REPO / ".github/workflows/validate.yaml"
+RELEASE_BUILD = REPO / "scripts/release-build.sh"
 
 
 def job_block(workflow: str, name: str) -> str:
@@ -94,6 +95,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_validation_workflow_runs_the_pinned_release_archive_integration(self) -> None:
         check_validate_release_integration(VALIDATE_WORKFLOW)
+
+    def test_release_build_runs_repo_backed_verification_with_or_without_a_native_runner(self) -> None:
+        commands = {
+            line.strip()
+            for line in RELEASE_BUILD.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith("python3 scripts/release_build.py verify ")
+        }
+        self.assertEqual(
+            {
+                'python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root . --executable "$native_dir/aeb-gauntlet"',
+                'python3 scripts/release_build.py verify --release-dir "$release_dir" --repo-root .',
+            },
+            commands,
+        )
 
     def test_release_creation_guard_is_load_bearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
