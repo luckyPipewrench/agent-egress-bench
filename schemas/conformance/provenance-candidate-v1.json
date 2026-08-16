@@ -1,0 +1,11 @@
+{
+  "schema": "../provenance-candidate-v1.schema.json",
+  "accepted": [{"description": "frozen applicable-only candidate", "instance": {"schema_version": 1, "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/123", "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:123", "corpus_manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "logical_case_count": 1, "runner_version": "0.4.0", "scoring_version": "2.2", "case_count": {"total": 1, "applicable": 1, "not_applicable": 0, "not_applicable_reasons": {}}, "scores": {"applicable": {"containment": 1, "false_positive_rate": null}}, "metric_counts": {"applicable": {"containment": {"numerator": 1, "denominator": 1}, "false_positive_rate": {"numerator": 0, "denominator": 0}}}}}],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
+    {"description": "missing required field", "mutation": {"remove": ["artifact_id"]}},
+    {"description": "unknown field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "malformed digest", "mutation": {"replace": ["corpus_manifest_sha256"], "value": "bad"}},
+    {"description": "invalid logical count", "mutation": {"replace": ["logical_case_count"], "value": 0}}
+  ]
+}

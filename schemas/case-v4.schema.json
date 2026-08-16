@@ -31,6 +31,7 @@
     },
     "id": {
       "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
       "description": "Unique identifier. Immutable once published."
     },
     "category": {
@@ -121,11 +122,13 @@
     "capability_tags": {
       "type": "array",
       "minItems": 1,
+      "uniqueItems": true,
       "items": {"type": "string", "minLength": 1},
       "description": "Registry-backed reporting labels only. The pinned registry snapshot validates IDs; tags never determine delivery, applicability, score, sufficiency, publication eligibility, or coverage denominators."
     },
     "requires": {
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "enum": [
@@ -189,6 +192,7 @@
     },
     "supersedes": {
       "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
       "description": "ID of the case whose semantics this case replaces. Relationship metadata only; it does not deactivate either case."
     }
   },

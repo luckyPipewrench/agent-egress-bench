@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v1.schema.json",
+  "title": "agent-egress-bench Provenance Candidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "canonical_url", "artifact_id", "corpus_manifest_sha256", "logical_case_count", "runner_version", "scoring_version", "case_count", "scores", "metric_counts"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "canonical_url": {"$ref": "#/$defs/nonempty"},
+    "artifact_id": {"$ref": "#/$defs/nonempty"},
+    "corpus_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "logical_case_count": {"type": "integer", "minimum": 1},
+    "runner_version": {"$ref": "#/$defs/nonempty"},
+    "scoring_version": {"$ref": "#/$defs/nonempty"},
+    "case_count": {"type": "object", "required": ["total", "applicable", "not_applicable", "not_applicable_reasons"]},
+    "scores": {"type": "object", "required": ["applicable"]},
+    "metric_counts": {"type": "object", "required": ["applicable"]}
+  },
+  "$defs": {"nonempty": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

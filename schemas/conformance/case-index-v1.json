@@ -1,0 +1,12 @@
+{
+  "schema": "../case-index-v1.schema.json",
+  "accepted": [{"description": "retained loader case index", "source": "../../gauntlet-site/results/pipelock/5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886/case-index.json"}],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
+    {"description": "missing cases", "mutation": {"remove": ["cases"]}},
+    {"description": "unknown top-level field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "missing case identifier", "mutation": {"remove": ["cases", 0, "case_id"]}},
+    {"description": "unsupported verdict", "mutation": {"replace": ["cases", 0, "expected_verdict"], "value": "error"}},
+    {"description": "unknown case field", "mutation": {"replace": ["cases", 0, "unexpected"], "value": true}}
+  ]
+}

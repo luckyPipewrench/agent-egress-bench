@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts import build_gauntlet_provenance
 
@@ -36,8 +37,18 @@ PIN_TAG = PIN["PIPELOCK_TAG"]
 
 
 class ProvenanceBuilderTest(unittest.TestCase):
+    def test_active_candidate_version_does_not_follow_summary_version(self):
+        with (
+            mock.patch.object(build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSION", 6),
+            mock.patch.object(
+                build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSIONS", frozenset({4, 5, 6})
+            ),
+        ):
+            self.assertEqual(5, build_gauntlet_provenance.provenance_candidate_schema_version(6))
+            self.assertEqual(4, build_gauntlet_provenance.provenance_candidate_schema_version(4))
+
     def test_active_result_score_enforces_budget_timing(self):
-        contract = json.loads((REPO_ROOT / "contracts" / "result-states-v4.json").read_text())
+        contract = json.loads((REPO_ROOT / "contracts" / "result-states-v5.json").read_text())
         scores = contract["case_specific_overrides"][0]["scores_by_budget_block_timing"]
         for timing, expected_score in scores.items():
             with self.subTest(timing=timing):
@@ -56,12 +67,70 @@ class ProvenanceBuilderTest(unittest.TestCase):
                 "block", "block", {"budget_block_timing": "before_over_budget"}, False
             )
 
+    def test_v5_result_row_contract_conformance_vectors(self):
+        active_version, accepted_versions, result_states = (
+            build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
+        )
+        corpus = json.loads(
+            (REPO_ROOT / "validate" / "testdata" / "result-v5-conformance.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for vector in corpus["accepted"]:
+            with self.subTest(kind="accepted", name=vector["name"]):
+                build_gauntlet_provenance.validate_result_row_contract(
+                    vector["row"],
+                    1,
+                    active_version,
+                    active_version,
+                    accepted_versions,
+                    result_states,
+                )
+        for vector in corpus["rejected"]:
+            with self.subTest(kind="rejected", name=vector["name"]):
+                with self.assertRaises(ValueError):
+                    build_gauntlet_provenance.validate_result_row_contract(
+                        vector["row"],
+                        1,
+                        active_version,
+                        active_version,
+                        accepted_versions,
+                        result_states,
+                    )
+
+    def test_current_summary_rejects_legacy_labeled_result_row(self):
+        active_version, accepted_versions, result_states = (
+            build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
+        )
+        with self.assertRaisesRegex(ValueError, "must match summary schema_version 5"):
+            build_gauntlet_provenance.validate_result_row_contract(
+                {"schema_version": 4},
+                1,
+                active_version,
+                active_version,
+                accepted_versions,
+                result_states,
+            )
+
+    def test_v4_summary_accepts_v4_result_row_contract(self):
+        active_version, accepted_versions, result_states = (
+            build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
+        )
+        build_gauntlet_provenance.validate_result_row_contract(
+            {"schema_version": 4}, 1, 4, active_version, accepted_versions, result_states
+        )
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.run_dir = self.root / "run"
         (self.root / "cases").mkdir()
+        (self.root / "contracts").mkdir()
+        for name in ("artifacts.json", "result-states-v5.json"):
+            (self.root / "contracts" / name).write_bytes(
+                (REPO_ROOT / "contracts" / name).read_bytes()
+            )
         self.run_dir.mkdir()
         (self.root / "cases" / "MANIFEST.txt").write_text("a\nb\nc\n", encoding="utf-8")
         self.results = [
@@ -238,6 +307,17 @@ class ProvenanceBuilderTest(unittest.TestCase):
         summary["measurement_status"] = measurement_status
         summary.pop("sufficient", None)
         if summary_schema_version == 5:
+            self.results[2].update(
+                actual_verdict="block",
+                score="pass",
+                evidence={"scanner": "test", "result_state": "observed"},
+            )
+            summary["case_count"].update(
+                applicable=3,
+                not_applicable=0,
+                not_applicable_reasons={},
+            )
+            summary["scores"]["full"]["containment"] = 1.0
             summary["scoring_version"] = "2.8"
             summary["runner_version"] = "0.4.3"
             summary["benchmark_manifest_sha256"] = "c" * 64
@@ -250,7 +330,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
             }
             summary["per_category"] = {
                 "test": {
-                    "applicable": 2,
+                    "applicable": 3,
                     "containment": 1.0,
                     "false_positive_rate": 0.0,
                     "diagnostics": {
@@ -259,10 +339,26 @@ class ProvenanceBuilderTest(unittest.TestCase):
                     },
                 }
             }
+            (self.run_dir / "case-index.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "cases": {
+                            "a": {"category": "test", "expected_verdict": "block"},
+                            "b": {"category": "test", "expected_verdict": "allow"},
+                            "c": {"category": "test", "expected_verdict": "block"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
         for row in self.results:
+            row["schema_version"] = summary_schema_version
             row["capability_registry"] = reference
+            if summary_schema_version == 5:
+                row["evidence"]["result_state"] = "observed"
         (self.run_dir / "results.jsonl").write_text(
             "".join(json.dumps(row) + "\n" for row in self.results), encoding="utf-8"
         )
@@ -342,8 +438,24 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertEqual(set(scope["scores"]["applicable"]), {"containment", "false_positive_rate"})
         self.assertEqual(
             scope["diagnostic_counts"]["applicable"]["classification_present_rate"],
-            {"numerator": 1, "denominator": 1},
+            {"numerator": 2, "denominator": 2},
         )
+
+    def test_v5_bundle_rejects_missing_result_state(self):
+        self.make_active_fixture(summary_schema_version=5)
+        rows = [
+            json.loads(line)
+            for line in (self.run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        del rows[0]["evidence"]["result_state"]
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid or missing evidence.result_state", result.stderr)
 
     def test_active_summary_without_manifest_digest_is_rejected(self):
         self.make_active_fixture(summary_schema_version=5)
@@ -466,9 +578,9 @@ class ProvenanceBuilderTest(unittest.TestCase):
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
         for scope in ("full", "applicable"):
             summary["scores"][scope]["false_positive_rate"] = None
-        summary["scores"]["full"]["containment"] = 1 / 3
-        summary["scores"]["applicable"]["containment"] = 1 / 2
-        summary["per_category"]["test"]["containment"] = 1 / 2
+        summary["scores"]["full"]["containment"] = 2 / 3
+        summary["scores"]["applicable"]["containment"] = 2 / 3
+        summary["per_category"]["test"]["containment"] = 2 / 3
         summary["per_category"]["test"]["false_positive_rate"] = None
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
@@ -483,13 +595,34 @@ class ProvenanceBuilderTest(unittest.TestCase):
         )
         case_index_path = self.run_dir / "case-index.json"
         case_index = json.loads(case_index_path.read_text(encoding="utf-8"))
-        case_index["cases"][1]["expected_verdict"] = "block"
+        case_index["cases"]["b"]["expected_verdict"] = "block"
         case_index_path.write_text(json.dumps(case_index), encoding="utf-8")
         (self.run_dir / "make-stats.txt").write_text("block: 3\nallow: 0\nwarn: 0\n", encoding="utf-8")
 
         result = self.bundle()
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_v5_rejects_frozen_v1_case_index(self):
+        self.make_active_fixture(summary_schema_version=5)
+        (self.run_dir / "case-index.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "cases": [
+                        {"case_id": "a", "category": "test", "expected_verdict": "block"},
+                        {"case_id": "b", "category": "test", "expected_verdict": "allow"},
+                        {"case_id": "c", "category": "test", "expected_verdict": "block"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schema_version must be 2", result.stderr)
 
     def test_active_measurement_status_must_match_result_coverage(self):
         self.make_active_fixture("incomplete")

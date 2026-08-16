@@ -120,16 +120,48 @@ func TestRootJSONSchemasCompileAndValidateFixtures(t *testing.T) {
 	if err := caseSchema.Validate(caseDocument); err != nil {
 		t.Fatalf("case-v4 rejected published fixture: %v", err)
 	}
+	for name, mutate := range map[string]func(map[string]interface{}){
+		"malformed_id":         func(value map[string]interface{}) { value["id"] = "../case" },
+		"malformed_supersedes": func(value map[string]interface{}) { value["supersedes"] = "../case" },
+		"duplicate_capability_tag": func(value map[string]interface{}) {
+			tags := value["capability_tags"].([]interface{})
+			value["capability_tags"] = append(tags, tags[0])
+		},
+		"duplicate_requires": func(value map[string]interface{}) {
+			value["requires"] = []interface{}{"mcp_tool_policy", "mcp_tool_policy"}
+		},
+	} {
+		t.Run("case_rejects_"+name, func(t *testing.T) {
+			mutated := cloneToolProfileObject(t, caseDocument)
+			mutate(mutated)
+			if err := caseSchema.Validate(mutated); err == nil {
+				t.Fatal("case-v4 accepted rejected conformance vector")
+			}
+		})
+	}
 
-	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v4.schema.json"))
+	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v5.schema.json"))
 	result := map[string]interface{}{
-		"schema_version": float64(4), "case_id": caseDocument["id"], "tool": "tool",
+		"schema_version": float64(5), "case_id": caseDocument["id"], "tool": "tool",
 		"tool_version": "1.0.0", "expected_verdict": "allow", "actual_verdict": "allow",
-		"score": "pass", "evidence": map[string]interface{}{}, "notes": "",
+		"score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": "",
 		"capability_registry": map[string]interface{}{"id": "registry", "format": float64(1), "revision": float64(1), "sha256": strings.Repeat("a", 64)},
 	}
 	if err := resultSchema.Validate(result); err != nil {
-		t.Fatalf("result-v4 rejected valid result fixture: %v", err)
+		t.Fatalf("result-v5 rejected valid result fixture: %v", err)
+	}
+	for name, mutate := range map[string]func(map[string]interface{}){
+		"malformed_case_id":  func(value map[string]interface{}) { value["case_id"] = "../case" },
+		"empty_tool":         func(value map[string]interface{}) { value["tool"] = "" },
+		"empty_tool_version": func(value map[string]interface{}) { value["tool_version"] = "" },
+	} {
+		t.Run("result_rejects_"+name, func(t *testing.T) {
+			mutated := cloneToolProfileObject(t, result)
+			mutate(mutated)
+			if err := resultSchema.Validate(mutated); err == nil {
+				t.Fatal("result-v5 accepted rejected conformance vector")
+			}
+		})
 	}
 }
 

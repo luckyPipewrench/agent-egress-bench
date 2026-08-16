@@ -43,6 +43,8 @@ func TestMultiFileContractMatchesOfficialValidator(t *testing.T) {
 		"transport":      func(v map[string]any) { v["transport"] = "websocket" },
 		"verdict":        func(v map[string]any) { v["expected_verdict"] = "error" },
 		"whitespace_id":  func(v map[string]any) { v["id"] = " " },
+		"uppercase_id":   func(v map[string]any) { v["id"] = "Invalid-ID" },
+		"oversized_id":   func(v map[string]any) { v["id"] = strings.Repeat("a", 129) },
 		"null_source":    func(v map[string]any) { v["source"] = nil },
 		"null_requires":  func(v map[string]any) { v["requires"] = nil },
 		"unknown_field":  func(v map[string]any) { v["unexpected"] = true },

@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -14,6 +15,19 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    import artifact_schema
+except ModuleNotFoundError:
+    _artifact_schema_spec = importlib.util.spec_from_file_location(
+        "artifact_schema", Path(__file__).with_name("artifact_schema.py")
+    )
+    artifact_schema = importlib.util.module_from_spec(_artifact_schema_spec)
+    _artifact_schema_spec.loader.exec_module(artifact_schema)
+try:
+    from scripts import artifact_contracts
+except ModuleNotFoundError:
+    import artifact_contracts
+
 
 # Scoring versions belonging to retained, frozen published records. Those
 # summaries predate schema_version and keep their original byte shape, so they
@@ -21,6 +35,9 @@ from urllib.parse import urlparse
 # output and must carry its schema marker. Add a version here only when a record
 # scored under it has actually been published and frozen.
 FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
+PROVENANCE_SCHEMAS = artifact_contracts.schema_paths("provenance_candidate")
+CASE_INDEX_SCHEMAS = artifact_contracts.schema_paths("case_index")
+ACTIVE_CASE_INDEX_SCHEMA_VERSION = artifact_contracts.active_version("case_index")
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -43,6 +60,7 @@ V4_RAW_EVIDENCE = {
 }
 ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 ACTIVE_SUMMARY_SCHEMA_VERSION = 5
+ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = artifact_contracts.active_version("provenance_candidate")
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
@@ -90,6 +108,67 @@ def active_result_score(expected, actual, evidence, budget_timing_required):
     return "pass" if actual == expected else "fail"
 
 
+def result_reader_contract(repo_root):
+    manifest = load_object(repo_root / "contracts" / "artifacts.json")
+    families = manifest.get("artifact_families")
+    if not isinstance(families, list):
+        raise ValueError("artifact manifest families must be an array")
+    result_family = next(
+        (family for family in families if isinstance(family, dict) and family.get("family") == "result_row"),
+        None,
+    )
+    if result_family is None:
+        raise ValueError("artifact manifest has no result_row family")
+    active_version = result_family.get("active_writer_version")
+    accepted_versions = result_family.get("accepted_reader_versions")
+    if isinstance(active_version, bool) or not isinstance(active_version, int):
+        raise ValueError("result_row active_writer_version must be an integer")
+    if not isinstance(accepted_versions, list) or any(
+        isinstance(version, bool) or not isinstance(version, int) for version in accepted_versions
+    ):
+        raise ValueError("result_row accepted_reader_versions must be an integer array")
+    if active_version not in accepted_versions:
+        raise ValueError("result_row active writer is not accepted by its reader")
+
+    contract = load_object(repo_root / "contracts" / f"result-states-v{active_version}.json")
+    if contract.get("result_schema_version") != active_version:
+        raise ValueError("active result-state contract version differs from the artifact manifest")
+    states = contract.get("evidence_result_states")
+    if not isinstance(states, dict) or not states or any(not isinstance(state, str) for state in states):
+        raise ValueError("active result-state contract has no valid evidence_result_states")
+    return active_version, frozenset(accepted_versions), frozenset(states)
+
+
+def validate_result_row_contract(
+    row, row_number, expected_version, active_version, accepted_versions, result_states
+):
+    schema_version = row.get("schema_version")
+    if schema_version not in accepted_versions:
+        raise ValueError(
+            f"runner JSONL row {row_number} schema_version must be one of {sorted(accepted_versions)}"
+        )
+    if schema_version != expected_version:
+        raise ValueError(
+            f"runner JSONL row {row_number} schema_version must match summary schema_version "
+            f"{expected_version}"
+        )
+    if schema_version != active_version:
+        return
+
+    evidence = row.get("evidence")
+    state = evidence.get("result_state") if isinstance(evidence, dict) else None
+    if not isinstance(state, str) or state not in result_states:
+        raise ValueError(f"runner JSONL row {row_number} has invalid or missing evidence.result_state")
+    actual = row.get("actual_verdict")
+    score = row.get("score")
+    if state == "observed" and (actual not in {"allow", "block"} or score not in {"pass", "fail"}):
+        raise ValueError(f"runner JSONL row {row_number} observed result is not a measurement")
+    if state == "unreachable" and (actual != "unreachable" or score != "error"):
+        raise ValueError(f"runner JSONL row {row_number} unreachable result is inconsistent")
+    if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
+        raise ValueError(f"runner JSONL row {row_number} unobserved failure result is inconsistent")
+
+
 def raw_evidence_for_summary(summary):
     """Return the immutable evidence members for this artifact generation.
 
@@ -100,6 +179,14 @@ def raw_evidence_for_summary(summary):
     if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         return {**RAW_EVIDENCE, **V4_RAW_EVIDENCE}
     return RAW_EVIDENCE
+
+
+def provenance_candidate_schema_version(summary_schema_version):
+    if summary_schema_version == ACTIVE_SUMMARY_SCHEMA_VERSION:
+        return ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
+        return summary_schema_version
+    return 2
 
 
 def atomic_json_write(path, value):
@@ -269,20 +356,29 @@ def load_manifest(repo_root, run_dir):
     return manifest, ids
 
 
-def load_case_index(path, manifest_ids, require_categories=False):
+def load_case_index(path, manifest_ids, expected_version):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
-    if not isinstance(case_index, dict) or case_index.get("schema_version") != 1:
-        raise ValueError("loader case index must be a schema_version 1 object")
+    if not isinstance(case_index, dict):
+        raise ValueError("loader case index must be an object")
+    version = case_index.get("schema_version")
+    if version != expected_version:
+        raise ValueError(
+            f"loader case index schema_version must be {expected_version}, got {version!r}"
+        )
+    case_index = artifact_schema.validate_file(
+        case_index, CASE_INDEX_SCHEMAS[version], "loader case index"
+    )
     rows = case_index.get("cases")
-    if not isinstance(rows, list):
-        raise ValueError("loader case index cases must be an array")
+    if version == 1:
+        indexed_rows = [(row.get("case_id") if isinstance(row, dict) else None, row) for row in rows]
+    else:
+        indexed_rows = list(rows.items())
     expected_by_id = {}
     category_by_id = {}
-    for row_number, row in enumerate(rows, 1):
+    for row_number, (case_id, row) in enumerate(indexed_rows, 1):
         if not isinstance(row, dict):
             raise ValueError(f"loader case index row {row_number} is not an object")
-        case_id = row.get("case_id")
         expected = row.get("expected_verdict")
         category = row.get("category")
         if not isinstance(case_id, str) or not case_id:
@@ -293,7 +389,9 @@ def load_case_index(path, manifest_ids, require_categories=False):
             raise ValueError(
                 f"loader case index row {row_number} has invalid normalized expected_verdict {expected!r}"
             )
-        if require_categories and (not isinstance(category, str) or not category):
+        if version == ACTIVE_CASE_INDEX_SCHEMA_VERSION and (
+            not isinstance(category, str) or not category
+        ):
             raise ValueError(f"loader case index row {row_number} has no category")
         expected_by_id[case_id] = expected
         if isinstance(category, str) and category:
@@ -481,6 +579,9 @@ def measurements(repo_root, run_dir):
     make_stats = (run_dir / RAW_EVIDENCE["stats"]).read_text(encoding="utf-8")
     stderr = (run_dir / RAW_EVIDENCE["runner_stderr"]).read_text(encoding="utf-8")
     results = read_results(run_dir / RAW_EVIDENCE["results"])
+    result_contract = None
+    if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
+        result_contract = result_reader_contract(repo_root)
     # An active artifact is uninterpretable without the exact raw registry
     # snapshot it names. Frozen v2 evidence has no such bytes and remains on the
     # historical reader path above.
@@ -491,7 +592,7 @@ def measurements(repo_root, run_dir):
     case_index_bytes, expected_by_id, category_by_id = load_case_index(
         run_dir / RAW_EVIDENCE["case_index"],
         manifest_ids,
-        require_categories=summary_schema_version == 5,
+        ACTIVE_CASE_INDEX_SCHEMA_VERSION if summary_schema_version == 5 else 1,
     )
     budget_timing_case_ids = load_budget_timing_case_ids(repo_root)
 
@@ -537,6 +638,10 @@ def measurements(repo_root, run_dir):
             raise ValueError(f"runner JSONL row {row_number} has invalid score {score!r}")
         if not isinstance(evidence, dict):
             raise ValueError(f"runner JSONL row {row_number} evidence must be an object")
+        if result_contract is not None:
+            validate_result_row_contract(
+                row, row_number, summary_schema_version, *result_contract
+            )
         if not isinstance(row.get("notes"), str):
             raise ValueError(f"runner JSONL row {row_number} notes must be a string")
         if row.get("tool") != summary.get("tool") or row.get("tool_version") != summary.get(
@@ -871,11 +976,7 @@ def build_complete_bundle(repo_root, run_dir):
         candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
 
     candidate_scope = {
-        "schema_version": (
-            summary.get("schema_version")
-            if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS
-            else 2
-        ),
+        "schema_version": provenance_candidate_schema_version(summary.get("schema_version")),
         "local_run_id": metadata["local_run_id"],
         "generated_at": metadata["generated_at"],
         "corpus_ref_kind": metadata["corpus_ref_kind"],
@@ -1031,6 +1132,11 @@ def finalize_command(args):
             "canonical_url": canonical_url,
             "portable_bundle_sha256": file_sha256(bundle_path),
         }
+    )
+    candidate = artifact_schema.validate_file(
+        candidate,
+        PROVENANCE_SCHEMAS[candidate["schema_version"]],
+        "provenance candidate",
     )
     atomic_json_write(output_path, candidate)
 

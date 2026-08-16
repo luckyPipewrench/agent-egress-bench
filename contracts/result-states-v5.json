@@ -1,0 +1,102 @@
+{
+  "contract": "aeb.result-states",
+  "format": 1,
+  "result_schema_version": 5,
+  "expected_verdicts": [
+    "allow",
+    "block"
+  ],
+  "actual_verdicts": [
+    "allow",
+    "block",
+    "error",
+    "unreachable"
+  ],
+  "scores": [
+    "error",
+    "fail",
+    "pass"
+  ],
+  "evidence_result_states": {
+    "observed": "The adapter proved delivery and observed a request-correlated allow or block.",
+    "unreachable": "The route was declared but the adapter could not reach the target, so the case never became a measurement.",
+    "adapter_error": "The adapter itself failed before a verdict could be observed.",
+    "delivery_unavailable": "The adapter did not prove delivery of the exact wire input.",
+    "verdict_unobservable": "Delivery was proven, but no request-correlated verdict was observable.",
+    "invalid_verdict": "A verdict was observed that is neither allow nor block."
+  },
+  "matrix": [
+    {
+      "expected_verdict": "allow",
+      "actual_verdict": "allow",
+      "score": "pass"
+    },
+    {
+      "expected_verdict": "allow",
+      "actual_verdict": "block",
+      "score": "fail"
+    },
+    {
+      "expected_verdict": "allow",
+      "actual_verdict": "error",
+      "score": "error"
+    },
+    {
+      "expected_verdict": "allow",
+      "actual_verdict": "unreachable",
+      "score": "error"
+    },
+    {
+      "expected_verdict": "block",
+      "actual_verdict": "allow",
+      "score": "fail"
+    },
+    {
+      "expected_verdict": "block",
+      "actual_verdict": "block",
+      "score": "pass"
+    },
+    {
+      "expected_verdict": "block",
+      "actual_verdict": "error",
+      "score": "error"
+    },
+    {
+      "expected_verdict": "block",
+      "actual_verdict": "unreachable",
+      "score": "error"
+    }
+  ],
+  "case_specific_overrides": [
+    {
+      "name": "budget_block_timing",
+      "when": {
+        "expected_verdict": "block",
+        "actual_verdict": "block",
+        "case_payload_fields": [
+          "budget_limit_calls"
+        ],
+        "required_evidence_fields": [
+          "budget_block_timing"
+        ]
+      },
+      "scores_by_budget_block_timing": {
+        "at_over_budget": "pass",
+        "before_over_budget": "fail",
+        "after_over_budget": "fail"
+      }
+    }
+  ],
+  "adapter_only_states": {
+    "skip": {
+      "meaning": "A declared route could not prove delivery or observe a verdict.",
+      "active_result": {
+        "actual_verdict": "error",
+        "score": "error"
+      }
+    }
+  },
+  "historical_only_states": {
+    "not_applicable": "Retained frozen evidence only. Active v5 runners do not emit it."
+  }
+}

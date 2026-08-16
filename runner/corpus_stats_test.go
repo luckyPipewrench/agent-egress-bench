@@ -46,23 +46,22 @@ func TestWriteCaseIndexUsesNormalizedVerdicts(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &index); err != nil {
 		t.Fatalf("decode case index: %v", err)
 	}
-	if index.SchemaVersion != 1 || len(index.Cases) != len(cases) {
-		t.Fatalf("case index scope = schema %d, cases %d; want schema 1, cases %d", index.SchemaVersion, len(index.Cases), len(cases))
+	if index.SchemaVersion != activeCaseIndexSchemaVersion || len(index.Cases) != len(cases) {
+		t.Fatalf("case index scope = schema %d, cases %d; want schema %d, cases %d", index.SchemaVersion, len(index.Cases), activeCaseIndexSchemaVersion, len(cases))
 	}
-	foundNormalizedWarn := false
-	for position, entry := range index.Cases {
-		if position > 0 && index.Cases[position-1].CaseID >= entry.CaseID {
-			t.Fatalf("case index is not strictly sorted at %q then %q", index.Cases[position-1].CaseID, entry.CaseID)
-		}
-		if entry.CaseID == "mcp-drift-benign-001" && entry.ExpectedVerdict != "allow" {
-			t.Fatalf("warn normalization = %q, want allow", entry.ExpectedVerdict)
-		}
-		if entry.CaseID == "mcp-drift-benign-001" {
-			foundNormalizedWarn = true
-		}
-	}
+	entry, foundNormalizedWarn := index.Cases["mcp-drift-benign-001"]
 	if !foundNormalizedWarn {
 		t.Fatal("case index omitted normalized warn fixture")
+	}
+	if entry.ExpectedVerdict != "allow" {
+		t.Fatalf("warn normalization = %q, want allow", entry.ExpectedVerdict)
+	}
+}
+
+func TestWriteCaseIndexRejectsDuplicateIDs(t *testing.T) {
+	cases := []Case{{ID: "duplicate", Category: "url"}, {ID: "duplicate", Category: "mcp_input"}}
+	if err := writeCaseIndex(&bytes.Buffer{}, cases); err == nil {
+		t.Fatal("writeCaseIndex accepted duplicate case IDs")
 	}
 }
 

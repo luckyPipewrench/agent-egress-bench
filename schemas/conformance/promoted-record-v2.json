@@ -1,0 +1,35 @@
+{
+  "schema": "../promoted-record-v2.schema.json",
+  "accepted": [
+    {
+      "description": "closed promoted record emitted by the v2 writer",
+      "instance": {
+        "schema_version": 2,
+        "tool": "pipelock",
+        "tool_version": "3.3.0",
+        "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:30997880917",
+        "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/30997880917",
+        "generated_at": "2026-08-05T10:33:23Z",
+        "candidate_sha256": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+        "previous_candidate_sha256": null,
+        "previous_record_manifest_sha256": null,
+        "files": {"continuous-gauntlet-pipelock.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"}
+      }
+    }
+  ],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 1}},
+    {"description": "missing required field", "mutation": {"remove": ["tool"]}},
+    {"description": "empty tool", "mutation": {"replace": ["tool"], "value": ""}},
+    {"description": "unknown root field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "malformed candidate digest", "mutation": {"replace": ["candidate_sha256"], "value": "bad"}},
+    {"description": "empty file inventory", "mutation": {"replace": ["files"], "value": {}}},
+    {"description": "absolute file path", "mutation": {"replace": ["files", "/tmp/result.json"], "value": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"}},
+    {"description": "parent traversal file path", "mutation": {"replace": ["files", "../result.json"], "value": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"}},
+    {"description": "nested file path", "mutation": {"replace": ["files", "nested/result.json"], "value": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"}},
+    {"description": "unrelated filename", "mutation": {"replace": ["files", "unrelated.bin"], "value": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"}},
+    {"description": "malformed file digest", "mutation": {"replace": ["files", "continuous-gauntlet-pipelock.json"], "value": "bad"}},
+    {"description": "timezone-free timestamp", "mutation": {"replace": ["generated_at"], "value": "2026-08-05T10:33:23"}},
+    {"description": "non-HTTPS canonical URL", "mutation": {"replace": ["canonical_url"], "value": "http://example.test/run"}}
+  ]
+}

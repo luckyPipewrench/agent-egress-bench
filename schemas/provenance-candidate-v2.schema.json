@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v2.schema.json",
+  "title": "agent-egress-bench Provenance Candidate v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_id", "canonical_url", "case_count", "case_index_sha256", "corpus_manifest_sha256", "logical_case_count", "metric_counts", "runner_version", "scores", "scoring_version"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 2},
+    "artifact_id": {"$ref": "#/$defs/nonempty"}, "canonical_url": {"$ref": "#/$defs/nonempty"},
+    "case_count": {"type": "object"}, "command": {"$ref": "#/$defs/nonempty"},
+    "corpus_commit_url": {"$ref": "#/$defs/nonempty"}, "corpus_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "corpus_ref_kind": {"$ref": "#/$defs/nonempty"}, "corpus_version": {"$ref": "#/$defs/nonempty"},
+    "dirty": {"type": "boolean"}, "evidence_sha256": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/sha256"}},
+    "fixtures": {"type": "boolean", "const": true}, "gauntlet_version": {"$ref": "#/$defs/nonempty"},
+    "generated_at": {"type": "string", "format": "date-time"}, "local_run_id": {"$ref": "#/$defs/nonempty"},
+    "logical_case_count": {"type": "integer", "minimum": 1}, "make_stats": {"$ref": "#/$defs/nonempty"},
+    "metric_counts": {"type": "object"}, "multifile_cases": {"type": "boolean", "const": true},
+    "pipelock_asset": {"$ref": "#/$defs/nonempty"}, "pipelock_asset_sha256": {"$ref": "#/$defs/nullable_sha256"},
+    "pipelock_release_url": {"$ref": "#/$defs/nonempty"}, "pipelock_tag": {"$ref": "#/$defs/nonempty"},
+    "pipelock_version": {"$ref": "#/$defs/nonempty"}, "runner_version": {"$ref": "#/$defs/nonempty"},
+    "scores": {"type": "object"}, "scoring_version": {"$ref": "#/$defs/nonempty"},
+    "sufficient": {"type": "boolean"}, "tool": {"$ref": "#/$defs/nonempty"}, "tool_version": {"$ref": "#/$defs/nonempty"},
+    "case_index_sha256": {"$ref": "#/$defs/sha256"}, "corpus_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "corpus_sha256": {"$ref": "#/$defs/sha256"}, "pipelock_binary_sha256": {"$ref": "#/$defs/sha256"},
+    "portable_bundle_sha256": {"$ref": "#/$defs/sha256"}, "tool_profile_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {"nonempty": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "nullable_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}}
+}

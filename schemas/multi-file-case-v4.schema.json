@@ -30,7 +30,8 @@
       "const": 4
     },
     "id": {
-      "$ref": "#/definitions/nonEmptyString"
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
     },
     "category": {
       "const": "mcp_drift"

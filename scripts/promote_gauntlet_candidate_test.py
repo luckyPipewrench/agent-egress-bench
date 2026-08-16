@@ -35,8 +35,11 @@ def write_json(path, value):
 
 def baseline():
     return {
+        "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
         "schema_version": 1,
         "recorded_on": "2026-08-01",
+        "verified_candidate_sha256": "a" * 64,
+        "verified_artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:122",
         "pipelock_version": "3.3.0",
         "corpus_git_sha": "b" * 40,
         "corpus_sha256": "c" * 64,
@@ -412,10 +415,23 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         record = fixture.store_root / "pipelock" / pointer["candidate_sha256"]
         manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
         manifest = evaluator.load_object(manifest_path)
-        manifest["schema_version"] = 2
+        manifest["schema_version"] = 3
         write_json(manifest_path, manifest)
-        with self.assertRaisesRegex(ValueError, "manifest schema_version must be 1"):
+        with self.assertRaisesRegex(ValueError, "manifest schema_version must be 1 or 2"):
             promotion.validate_record(record, pointer["candidate_sha256"])
+
+    def test_record_candidate_digest_is_bound_to_inventory(self):
+        fixture = self.fixture()
+        first = fixture.run()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        pointer = evaluator.load_object(fixture.latest)
+        record = fixture.store_root / "pipelock" / pointer["candidate_sha256"]
+        manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
+        manifest = evaluator.load_object(manifest_path)
+        manifest["candidate_sha256"] = "a" * 64
+        write_json(manifest_path, manifest)
+        with self.assertRaisesRegex(ValueError, "must match the candidate file digest"):
+            promotion.validate_record(record, "a" * 64)
 
     def test_missing_latest_pointer_cannot_recreate_existing_record(self):
         fixture = self.fixture()
