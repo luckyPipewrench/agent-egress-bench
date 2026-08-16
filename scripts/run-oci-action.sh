@@ -17,14 +17,11 @@ profile_rel="${profile_real#"$workspace_real/"}"
 
 output_dir="${INPUT_OUTPUT_DIR:-aeb-results}"
 [[ "$output_dir" != /* && "$output_dir" != *".."* ]] || fail "output-dir must be a relative path without '..'"
-mkdir -p "$GITHUB_WORKSPACE/$output_dir"
-output_real="$(realpath "$GITHUB_WORKSPACE/$output_dir")"
-[[ "$output_real" == "$workspace_real/"* ]] || fail "output-dir must stay inside GITHUB_WORKSPACE"
+output_real="$(python3 "$GITHUB_ACTION_PATH/scripts/action_artifacts.py" prepare --workspace "$workspace_real" --output-dir "$output_dir")" || fail "cannot prepare output-dir without following symlinks"
 output_rel="${output_real#"$workspace_real/"}"
 results_path="$output_real/results.jsonl"
 summary_path="$output_real/summary.json"
 metadata_path="$output_real/run-metadata.json"
-rm -f -- "$results_path" "$summary_path" "$metadata_path"
 
 parse_string_array() {
   python3 -c 'import json, re, sys
@@ -163,32 +160,54 @@ fi
 
 image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 
+stage_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+trusted_stage="$(mktemp -d "$stage_parent/aeb-action-trusted.XXXXXX")"
+container_stage="$(mktemp -d "$stage_parent/aeb-action-container.XXXXXX")"
+cleanup() {
+  rm -rf -- "$trusted_stage" "$container_stage"
+}
+trap cleanup EXIT
+results_stage="$trusted_stage/results.jsonl"
+metadata_stage="$trusted_stage/run-metadata.json"
+summary_stage="$container_stage/summary.json"
+
 set +e
 docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
   "${network_args[@]}" \
   "${env_args[@]}" \
   --volume "$workspace_real:/work" \
+  --volume "$container_stage:/aeb-output" \
   --workdir /work \
   "$image" \
   --cases /opt/aeb/cases \
   --profile "/work/$profile_rel" \
   --adapter "$INPUT_ADAPTER" \
-  --output "/work/$output_rel/summary.json" \
+  --output "/aeb-output/summary.json" \
   --require-complete \
-  "${runner_args[@]}" >"$results_path"
+  "${runner_args[@]}" >"$results_stage"
 run_exit=$?
 set -e
 
 measurement_status="absent"
-if [[ -s "$summary_path" ]]; then
-  measurement_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["measurement_status"])' "$summary_path")"
+summary_publish_args=()
+if [[ -e "$summary_stage" || -L "$summary_stage" ]]; then
+  if [[ -f "$summary_stage" && ! -L "$summary_stage" ]]; then
+    summary_publish_args=(--summary "$summary_stage")
+    if [[ -s "$summary_stage" ]]; then
+      measurement_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["measurement_status"])' "$summary_stage")"
+    fi
+  else
+    echo "agent-egress-bench Action: summary artifact isn't a regular file; refusing to follow it" >&2
+    measurement_status="invalid"
+    [[ "$run_exit" -ne 0 ]] || run_exit=1
+  fi
 fi
 if [[ "$measurement_status" != measured && "$run_exit" -eq 0 ]]; then
   echo "agent-egress-bench Action: measurement status is $measurement_status; retained artifacts describe a partial run" >&2
   run_exit=1
 fi
 
-export AEB_ACTION_METADATA_PATH="$metadata_path"
+export AEB_ACTION_METADATA_PATH="$metadata_stage"
 export AEB_ACTION_IMAGE="$image"
 export AEB_ACTION_IMAGE_ID="$image_id"
 export AEB_ACTION_NETWORK_MODE="$network_mode"
@@ -209,6 +228,13 @@ path.write_text(json.dumps({
     "runner_exit_code": int(os.environ["AEB_ACTION_RUN_EXIT"]),
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
+
+python3 "$GITHUB_ACTION_PATH/scripts/action_artifacts.py" publish \
+  --workspace "$workspace_real" \
+  --output-dir "$output_rel" \
+  --results "$results_stage" \
+  "${summary_publish_args[@]}" \
+  --metadata "$metadata_stage" || fail "cannot publish Action artifacts without following symlinks"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   echo "results=$results_path" >> "$GITHUB_OUTPUT"

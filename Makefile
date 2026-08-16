@@ -105,7 +105,7 @@ test-runner-parity:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/runner_parity_test.py
 
 test-runner-image:
-	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/runner_image_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/runner_image_test.py scripts/action_artifacts_test.py
 
 # Reject documentation that makes a claim the method cannot support, and keep
 # docs/RESULTS-USE.md defining the assurance labels and the adverse-result
