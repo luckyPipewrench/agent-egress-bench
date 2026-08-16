@@ -40,6 +40,51 @@ class RunnerImageContractTest(unittest.TestCase):
             env.update(extra_env or {})
             return subprocess.run([str(ROOT / "scripts" / "run-oci-action.sh")], text=True, capture_output=True, env=env)
 
+    def run_completed_action(self, security_options: str) -> tuple[subprocess.CompletedProcess[str], str]:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
+            bin_dir = workspace / "bin"
+            bin_dir.mkdir()
+            docker_log = workspace / "docker.log"
+            docker = bin_dir / "docker"
+            docker.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "args = sys.argv[1:]\n"
+                "with open(os.environ['MOCK_DOCKER_LOG'], 'a', encoding='utf-8') as log: log.write(json.dumps(args) + '\\n')\n"
+                "if args[:1] == ['pull']: raise SystemExit(0)\n"
+                "if args[:2] == ['image', 'inspect']:\n"
+                "  if '--format' in args: print('sha256:mock-local-image-id')\n"
+                "  raise SystemExit(0)\n"
+                "if args[:1] == ['info']:\n"
+                "  print(os.environ['MOCK_SECURITY_OPTIONS'])\n"
+                "  raise SystemExit(0)\n"
+                "if args[:1] == ['run']:\n"
+                "  volumes = [args[index + 1] for index, value in enumerate(args) if value == '--volume']\n"
+                "  output = next(value.split(':/aeb-output:', 1)[0] for value in volumes if ':/aeb-output:' in value)\n"
+                "  with open(os.path.join(output, 'summary.json'), 'w', encoding='utf-8') as summary: json.dump({'measurement_status': 'measured'}, summary)\n"
+                "  raise SystemExit(0)\n"
+                "raise SystemExit(2)\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            image = f"registry.invalid/reviewed/runner@sha256:{'f' * 64}"
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                "GITHUB_WORKSPACE": str(workspace),
+                "GITHUB_ACTION_PATH": str(ROOT),
+                "INPUT_PROFILE": "profile.json",
+                "INPUT_ADAPTER": "proxy",
+                "INPUT_IMAGE": image,
+                "INPUT_ALLOW_UNVERIFIED_IMAGE": "true",
+                "MOCK_DOCKER_LOG": str(docker_log),
+                "MOCK_SECURITY_OPTIONS": security_options,
+            }
+            result = subprocess.run([str(ROOT / "scripts" / "run-oci-action.sh")], text=True, capture_output=True, env=env)
+            return result, docker_log.read_text(encoding="utf-8")
+
     def test_dockerfile_pins_multi_arch_build_and_runtime_images(self) -> None:
         text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         from_lines = [line for line in text.splitlines() if line.startswith("FROM ")]
@@ -64,13 +109,20 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn("measurement-status:", action)
         self.assertIn("@sha256:[0-9a-f]{64}", script)
         self.assertIn("--network none", script)
+        self.assertIn("--security-opt no-new-privileges=true", script)
+        self.assertIn("--cap-drop ALL", script)
+        self.assertIn("--read-only", script)
+        self.assertIn("--tmpfs /tmp:rw,nosuid,nodev,mode=1777", script)
+        self.assertIn("name=selinux", script)
+        self.assertNotIn("label=disable", script)
         self.assertIn("--require-complete", script)
         self.assertIn("-require-complete=*", script)
         self.assertIn('if [[ "$measurement_status" != measured && "$run_exit" -eq 0 ]]', script)
         self.assertIn("action_artifacts.py\" prepare", script)
         self.assertIn("action_artifacts.py\" publish", script)
         self.assertIn("action_artifacts.py\" inspect-summary", script)
-        self.assertIn('--volume "$container_stage:/aeb-output"', script)
+        self.assertIn('--volume "$workspace_real:/work:ro$volume_label_suffix"', script)
+        self.assertIn('--volume "$container_stage:/aeb-output:rw$volume_label_suffix"', script)
         self.assertIn('"measurement_status": os.environ["AEB_ACTION_MEASUREMENT_STATUS"]', script)
         self.assertIn('"runner_exit_code": int(os.environ["AEB_ACTION_RUNNER_EXIT"])', script)
         self.assertIn('"action_exit_code": int(os.environ["AEB_ACTION_EXIT"])', script)
@@ -123,6 +175,24 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertEqual(2, result.returncode)
         self.assertIn("image-attestation is required", result.stderr)
         self.assertNotIn("docker-called", result.stderr)
+
+    def test_selinux_and_non_selinux_daemons_get_explicit_mount_modes(self) -> None:
+        selinux_result, selinux_log = self.run_completed_action('["name=seccomp", "name=selinux"]')
+        self.assertEqual(0, selinux_result.returncode, msg=selinux_result.stderr)
+        selinux_run = next(call for call in map(json.loads, selinux_log.splitlines()) if call[:1] == ["run"])
+        selinux_volumes = [selinux_run[index + 1] for index, value in enumerate(selinux_run) if value == "--volume"]
+        self.assertTrue(any(value.endswith(":/work:ro,z") for value in selinux_volumes))
+        self.assertTrue(any(value.endswith(":/aeb-output:rw,z") for value in selinux_volumes))
+        self.assertNotIn("SELinux labeling is unavailable", selinux_result.stderr)
+
+        plain_result, plain_log = self.run_completed_action('["name=seccomp"]')
+        self.assertEqual(0, plain_result.returncode, msg=plain_result.stderr)
+        plain_run = next(call for call in map(json.loads, plain_log.splitlines()) if call[:1] == ["run"])
+        plain_volumes = [plain_run[index + 1] for index, value in enumerate(plain_run) if value == "--volume"]
+        self.assertTrue(any(value.endswith(":/work:ro") for value in plain_volumes))
+        self.assertTrue(any(value.endswith(":/aeb-output:rw") for value in plain_volumes))
+        self.assertFalse(any(value.endswith(",z") for value in plain_volumes))
+        self.assertIn("SELinux labeling is unavailable", plain_result.stderr)
 
     def test_devcontainer_builds_the_same_pinned_runner_image(self) -> None:
         text = (ROOT / ".devcontainer" / "devcontainer.json").read_text(encoding="utf-8")

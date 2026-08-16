@@ -159,6 +159,15 @@ if [[ "$offline" == true ]]; then
 fi
 
 image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+docker_security_options="$(docker info --format '{{json .SecurityOptions}}')" || fail "cannot inspect Docker security options"
+volume_label_suffix=""
+selinux_labeling="unavailable"
+if [[ "$docker_security_options" == *'name=selinux'* ]]; then
+  volume_label_suffix=",z"
+  selinux_labeling="enabled"
+else
+  echo "agent-egress-bench Action: Docker SELinux labeling is unavailable; read-only mounts and process restrictions remain active" >&2
+fi
 
 stage_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 trusted_stage="$(mktemp -d "$stage_parent/aeb-action-trusted.XXXXXX")"
@@ -172,11 +181,18 @@ metadata_stage="$trusted_stage/run-metadata.json"
 summary_stage="$container_stage/summary.json"
 
 set +e
-docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
+docker run --rm --init \
+  --security-opt no-new-privileges=true \
+  --cap-drop ALL \
+  --read-only \
+  --tmpfs /tmp:rw,nosuid,nodev,mode=1777 \
+  --user "$(id -u):$(id -g)" \
+  --env HOME=/tmp \
+  --env TMPDIR=/tmp \
   "${network_args[@]}" \
   "${env_args[@]}" \
-  --volume "$workspace_real:/work" \
-  --volume "$container_stage:/aeb-output" \
+  --volume "$workspace_real:/work:ro$volume_label_suffix" \
+  --volume "$container_stage:/aeb-output:rw$volume_label_suffix" \
   --workdir /work \
   "$image" \
   --cases /opt/aeb/cases \
@@ -218,6 +234,7 @@ export AEB_ACTION_METADATA_PATH="$metadata_stage"
 export AEB_ACTION_IMAGE="$image"
 export AEB_ACTION_IMAGE_ID="$image_id"
 export AEB_ACTION_NETWORK_MODE="$network_mode"
+export AEB_ACTION_SELINUX_LABELING="$selinux_labeling"
 export AEB_ACTION_RUNNER_EXIT="$container_exit"
 export AEB_ACTION_EXIT="$run_exit"
 export AEB_ACTION_REF_VALUE="${AEB_ACTION_REF:-local}"
@@ -233,6 +250,7 @@ path.write_text(json.dumps({
     "image": os.environ["AEB_ACTION_IMAGE"],
     "image_id": os.environ["AEB_ACTION_IMAGE_ID"],
     "network_mode": os.environ["AEB_ACTION_NETWORK_MODE"],
+    "selinux_labeling": os.environ["AEB_ACTION_SELINUX_LABELING"],
     "measurement_status": os.environ["AEB_ACTION_MEASUREMENT_STATUS"],
     "require_complete": True,
     "runner_exit_code": int(os.environ["AEB_ACTION_RUNNER_EXIT"]),

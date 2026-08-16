@@ -60,7 +60,7 @@ When `image` is omitted, the Action builds the image from its own pinned Action 
 
 A lab using a reviewed mirror or custom image must set `allow-unverified-image: 'true'`. That opt-in keeps mirrors available without letting an arbitrary input silently inherit the official publisher claim.
 
-The Action works on GitHub's amd64 runners and on arm64 self-hosted runners because Docker selects the matching manifest and the Dockerfile cross-builds the runner for the selected target architecture.
+The Action works on GitHub's amd64 runners and on arm64 self-hosted runners because Docker selects the matching manifest and the Dockerfile cross-builds the runner for the selected target architecture. The container gets a read-only workspace and root filesystem, a writable temporary filesystem and isolated output mount, no Linux capabilities, and no privilege escalation. On a Docker daemon with SELinux support, the wrapper uses shared relabeling for both bind mounts; on a host without SELinux support it reports that labeling is unavailable while keeping the other restrictions active.
 
 ## Devcontainer
 
