@@ -37,6 +37,8 @@ check-schema-catalog:
 # scorer, and validator on one active definition.
 check-public-contracts:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/generate_result_state_bindings_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/generate_result_state_bindings.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_public_contracts_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_contracts.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.build_gauntlet_provenance_test.ProvenanceBuilderTest.test_active_result_score_enforces_budget_timing

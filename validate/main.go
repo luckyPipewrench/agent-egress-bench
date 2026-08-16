@@ -104,20 +104,6 @@ var (
 		"dns_rebinding_fixture": true,
 	}
 
-	validActualVerdicts = map[string]bool{
-		"block": true, "allow": true, "unreachable": true, "error": true,
-	}
-
-	validScores = map[string]bool{
-		"pass": true, "fail": true, "error": true,
-	}
-
-	validResultStates = map[string]bool{
-		"observed": true, "unreachable": true, "adapter_error": true,
-		"delivery_unavailable": true, "verdict_unobservable": true,
-		"invalid_verdict": true,
-	}
-
 	// Valid category → input_type combinations per SPEC.md.
 	validCategoryInputType = map[string][]string{
 		"url":            {"url"},

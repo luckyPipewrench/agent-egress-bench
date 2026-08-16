@@ -12,10 +12,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+from result_states_generated import RESULT_SCHEMA_VERSION, RESULT_STATES, SCORES
+
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 NONCE = re.compile(r"^[0-9a-f]{32,}$")
-RESULT_STATES = {"observed", "unreachable", "adapter_error", "delivery_unavailable", "verdict_unobservable", "invalid_verdict"}
-RESULT_SCHEMA_VERSION = 5
 
 
 def canonical_bytes(value):
@@ -212,7 +212,7 @@ def validate_reveal(value):
         ids.append(require_text(row["case_id"], f"normalized_results[{index}].case_id"))
         if row["expected_verdict"] not in {"block", "allow"} or row["actual_verdict"] not in {"block", "allow", "unreachable", "error"}:
             raise ValueError(f"normalized_results[{index}] has an invalid verdict")
-        if row["score"] not in {"pass", "fail", "error"} or row["result_state"] not in RESULT_STATES:
+        if row["score"] not in SCORES or row["result_state"] not in RESULT_STATES:
             raise ValueError(f"normalized_results[{index}] has an invalid score or result_state")
         state, actual, score = row["result_state"], row["actual_verdict"], row["score"]
         if state == "observed" and (actual not in {"block", "allow"} or score != ("pass" if actual == row["expected_verdict"] else "fail")):
