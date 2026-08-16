@@ -418,7 +418,8 @@
           "version": 1,
           "status": "active",
           "path": "schemas/promotion-baseline-v1.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promotion-baseline-v1.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promotion-baseline-v1.schema.json",
+          "sha256": "b15fa9c5288caf4f8714989d2b8ed19cfb10ed9cd7951d21c335002c97efc144"
         }
       ],
       "writer": [

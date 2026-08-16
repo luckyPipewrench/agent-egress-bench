@@ -590,12 +590,20 @@ def check(root, manifest_path):
             document = load_object(root / relative, "schema")
             if document.get("$id") != expected_id:
                 fail(f"{relative}: $id does not match compatibility manifest")
-            if status == "frozen":
+            # Key the digest requirement on membership in frozen_versions, not on
+            # the derived status. A version can be BOTH active and frozen, and the
+            # status expression above resolves that to "active", so keying on
+            # status skipped the immutability check for exactly the family that
+            # declared its only version frozen. promotion_baseline was in that
+            # state: active v1, frozen [1], schema editable with nothing to catch
+            # it. frozen_versions is what carries the immutability promise, so it
+            # is what the digest check has to read.
+            if version in frozen:
                 expected_sha256 = require_sha256(schema.get("sha256"), f"{relative}: frozen schema sha256")
                 if sha256_file(root / relative, "schema") != expected_sha256:
                     fail(f"{relative}: bytes do not match frozen schema digest")
             elif "sha256" in schema:
-                fail(f"{relative}: active schema must not pin a frozen schema digest")
+                fail(f"{relative}: non-frozen schema must not pin a frozen schema digest")
             declared = declared_schema_version(document, relative)
             if declared != version:
                 fail(f"{relative}: declares schema_version {declared!r}, manifest says {version}")
