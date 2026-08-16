@@ -4,6 +4,7 @@
 import json
 import hashlib
 import importlib.util
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -316,6 +317,32 @@ class ValidateGauntletScopeTest(unittest.TestCase):
             check=False,
         )
 
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_promoted_record_v2_is_accepted_in_archive_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = Path(directory) / FROZEN_RECORD.name
+            shutil.copytree(FROZEN_RECORD, record)
+            manifest_path = record / "record-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 2
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            expected_manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(VALIDATOR),
+                    "--archive-record",
+                    str(record),
+                    "--expected-record-manifest-sha256",
+                    expected_manifest_digest,
+                    str(record / "continuous-gauntlet-pipelock.json"),
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_archive_record_rejects_an_untrusted_record_manifest_digest(self):

@@ -73,6 +73,10 @@ PROVENANCE_SCHEMAS = {
     version: REPO_ROOT / "schemas" / f"provenance-candidate-v{version}.schema.json"
     for version in (1, 2, 4, 5)
 }
+PROMOTED_RECORD_SCHEMAS = {
+    version: REPO_ROOT / "schemas" / f"promoted-record-v{version}.schema.json"
+    for version in (1, 2)
+}
 MANIFEST_PATH = REPO_ROOT / "cases" / "MANIFEST.txt"
 ARCHIVE_RECORD_MANIFEST = "record-manifest.json"
 ARCHIVE_CANDIDATE = "continuous-gauntlet-pipelock.json"
@@ -185,8 +189,16 @@ def archive_manifest_identity(artifact_path, record_dir, expected_record_manifes
         record_manifest = json.loads(manifest_bytes)
     except json.JSONDecodeError as exc:
         raise ValueError("archive record manifest is malformed") from exc
-    if not isinstance(record_manifest, dict) or record_manifest.get("schema_version") != 1:
-        raise ValueError("archive record manifest schema_version must be 1")
+    if not isinstance(record_manifest, dict):
+        raise ValueError("archive record manifest must be an object")
+    record_schema_version = record_manifest.get("schema_version")
+    if record_schema_version not in PROMOTED_RECORD_SCHEMAS:
+        raise ValueError("archive record manifest schema_version must be 1 or 2")
+    artifact_schema.validate_file(
+        record_manifest,
+        PROMOTED_RECORD_SCHEMAS[record_schema_version],
+        "archive record manifest",
+    )
     files = record_manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise ValueError("archive record manifest files must be a non-empty object")
