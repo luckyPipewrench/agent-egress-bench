@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
 
 package main
 
@@ -34,7 +34,11 @@ func TestBuyerReportRefusesSpecialFilesWithoutBlocking(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(15 * time.Second):
-		t.Fatal("loadBuyerReport blocked on a FIFO artifact")
+		// Deliberately not t.Fatal here. The loader goroutine still holds the
+		// shared variables below, and failing from this side would race it
+		// while the test binary tore down around it.
+		t.Error("loadBuyerReport blocked on a FIFO artifact")
+		<-done
 	}
 	if loadErr != nil {
 		t.Fatalf("loadBuyerReport = %v, want the run accepted with the pipe refused", loadErr)

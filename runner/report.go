@@ -870,16 +870,23 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	if err != nil {
 		return "active capability registry snapshot does not match the result"
 	}
-	profilePath := filepath.Join(r.dir, "tool-profile.json")
-	profile, err := loadProfile(profilePath)
+	// One read, one set of bytes. loadProfile takes a path and reads it again
+	// with the symlink-following standard call, so validating through it and
+	// hashing through the no-follow read could describe two different files: a
+	// link could satisfy the registry check from outside the directory while the
+	// digest was computed on something else.
+	profileBytes, err := readRegularArtifact(r.dir, "tool-profile.json")
 	if err != nil {
+		return "active tool profile is invalid"
+	}
+	var profile Profile
+	if decodeErr := decodeStrictJSON(profileBytes, &profile); decodeErr != nil {
 		return "active tool profile is invalid"
 	}
 	if profile.CapabilityRegistry != reference {
 		return "active tool profile registry reference does not match the result"
 	}
-	profileBytes, err := readRegularArtifact(r.dir, "tool-profile.json")
-	if err != nil || capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
+	if capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
 		return "active tool profile digest does not match the result"
 	}
 	reported, err := reportRegistryLabels(r.summary, "reported_claims")

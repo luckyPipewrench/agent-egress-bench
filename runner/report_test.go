@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -603,7 +604,7 @@ func TestBuyerReportRefusesInputThatCarriesNoFact(t *testing.T) {
 		t.Run("symlinked "+name, func(t *testing.T) {
 			dir := t.TempDir()
 			if err := os.Symlink(outside, filepath.Join(dir, name)); err != nil {
-				t.Fatal(err)
+				t.Skipf("cannot create a symlink here: %v", err)
 			}
 			if _, err := loadBuyerReport(dir); err == nil {
 				t.Errorf("loadBuyerReport accepted a directory holding only a symlinked %s", name)
@@ -685,7 +686,7 @@ func TestBuyerReportKeepsPartialRunsReportable(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(outside, filepath.Join(dir, "results.jsonl")); err != nil {
-			t.Fatal(err)
+			t.Skipf("cannot create a symlink here: %v", err)
 		}
 		report, err := loadBuyerReport(dir)
 		if err != nil {
@@ -707,7 +708,7 @@ func TestBuyerReportKeepsPartialRunsReportable(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(outside, filepath.Join(dir, "command.txt")); err != nil {
-			t.Fatal(err)
+			t.Skipf("cannot create a symlink here: %v", err)
 		}
 		report, err := loadBuyerReport(dir)
 		if err != nil {
@@ -722,4 +723,23 @@ func TestBuyerReportKeepsPartialRunsReportable(t *testing.T) {
 			t.Error("report rendered the contents of a symlinked artifact")
 		}
 	})
+}
+
+func TestActiveProfileIsReadOnceWithoutFollowingLinks(t *testing.T) {
+	// loadProfile took a path and read it with the symlink-following standard
+	// call, while the digest came from the no-follow read. A link could satisfy
+	// the registry check from a file outside the directory while the digest was
+	// computed on something else, so validation and hashing described two
+	// different files.
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.WriteFile(outside, []byte(`{"schema_version":4}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "tool-profile.json")); err != nil {
+		t.Skipf("cannot create a symlink here: %v", err)
+	}
+	if _, err := readRegularArtifact(dir, "tool-profile.json"); !errors.Is(err, errNotRegularArtifact) {
+		t.Fatalf("readRegularArtifact(symlinked profile) = %v, want it refused as not a regular file", err)
+	}
 }

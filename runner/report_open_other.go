@@ -1,10 +1,18 @@
-//go:build windows
+//go:build !(aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris)
 
 package main
 
 import "os"
 
 // openNoFollow opens a report artifact, refusing a link where it can.
+//
+// This is the fallback for every target that is not one of the Unix systems
+// with the no-follow and non-blocking open flags: Windows, Plan 9, and the wasm
+// targets. It is tagged as the negation of that list rather than as one named
+// platform, because narrowing the Unix file to explicit targets and naming this
+// one after Windows left Plan 9 with no implementation at all and broke its
+// build. The filename carries no platform suffix for the same reason: Go would
+// apply one implicitly and reintroduce the gap.
 //
 // Windows has no O_NOFOLLOW, so the release build refused to compile the POSIX
 // spelling for this platform at all. It also has no FIFO, which is the other
