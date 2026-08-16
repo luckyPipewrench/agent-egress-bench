@@ -40,6 +40,12 @@ reviews:
     # the report tests, so reading them reviews the renderer's output rather
     # than the renderer. The renderer itself stays in review.
     - "!runner/testdata/buyer-report/*.golden.md"
+    # Vendored upstream module sources. `go mod vendor` writes them, runner/go.sum
+    # pins them, and they are reviewed by their own upstream projects rather than
+    # here. They are present so a run reproduces with no network access. Left in
+    # review they are 853 of 872 changed files, which put a 19-file change over
+    # the 100-file limit and bought no review at all on the 19.
+    - "!runner/vendor/**"
     # Embedded schema copies inside a versioned control-evidence verifier. Each
     # is proven byte-identical to its canonical original under schemas/ by
     # TestEmbeddedSchemasMatchCanonicalCopies, and the canonical original IS
