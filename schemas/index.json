@@ -10,7 +10,7 @@
     {
       "path": "schemas/case-index-v2.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v2.schema.json",
-      "sha256": "1d671dd8844eed9a3a72d24868ecb4ed2d4db23b21d933413282b622c7d49eee"
+      "sha256": "48a552e15c9e62b3df4c0a9184b396a1a604cd9c3ddddb08dfc3f8dabc3df5fc"
     },
     {
       "path": "schemas/case-v4.schema.json",
@@ -175,7 +175,7 @@
     {
       "path": "schemas/multi-file-case-v4.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/multi-file-case-v4.schema.json",
-      "sha256": "d75e394ee65a42980d7849f570291b4683d73d66b48206311842ee77617fee9c"
+      "sha256": "2ac2090bff1f11b8e718555bd8ff861118f9313cd17d79036c4ad549979d1e50"
     },
     {
       "path": "schemas/promoted-record-v1.schema.json",
