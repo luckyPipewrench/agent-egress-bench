@@ -7,17 +7,47 @@ from datetime import date, datetime
 from pathlib import Path
 
 
+SUPPORTED_SCHEMA_KEYWORDS = {
+    "$schema", "$id", "$ref", "$defs", "title", "description",
+    "x-aeb-nullable-required", "type", "const", "enum", "required",
+    "dependentRequired", "minProperties", "properties", "additionalProperties",
+    "propertyNames", "minItems", "uniqueItems", "items", "minLength", "pattern",
+    "format", "minimum", "maximum",
+}
+
+
 def load_schema(path):
     with Path(path).open(encoding="utf-8") as handle:
         schema = json.load(handle)
     if not isinstance(schema, dict):
         raise ValueError(f"schema must be an object: {path}")
+    validate_schema_keywords(schema, str(path))
     return schema
 
 
 def validate(document, schema, label="artifact"):
+    validate_schema_keywords(schema, label + " schema")
     _validate(document, schema, schema, label)
     return document
+
+
+def validate_schema_keywords(schema, label):
+    def walk(node, path):
+        if not isinstance(node, dict):
+            raise ValueError(f"{path} must be a schema object")
+        unsupported = sorted(set(node) - SUPPORTED_SCHEMA_KEYWORDS)
+        if unsupported:
+            raise ValueError(f"{path} uses unsupported schema keywords: {unsupported}")
+        for name, child in node.get("properties", {}).items():
+            walk(child, f"{path}.properties.{name}")
+        for name, child in node.get("$defs", {}).items():
+            walk(child, f"{path}.$defs.{name}")
+        for keyword in ("additionalProperties", "propertyNames", "items"):
+            child = node.get(keyword)
+            if isinstance(child, dict):
+                walk(child, f"{path}.{keyword}")
+
+    walk(schema, label)
 
 
 def validate_file(document, schema_path, label="artifact"):

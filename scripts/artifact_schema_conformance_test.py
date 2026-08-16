@@ -83,6 +83,14 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "finite JSON number"):
                     artifact_schema.validate(corrupted, schema, "promotion baseline")
 
+    def test_unsupported_schema_keywords_fail_closed(self):
+        schema = {
+            "type": "object",
+            "properties": {"value": {"type": "string", "maxLength": 1}},
+        }
+        with self.assertRaisesRegex(ValueError, "unsupported schema keywords.*maxLength"):
+            artifact_schema.validate({"value": "too long"}, schema, "unsupported keyword")
+
     def test_active_provenance_required_fields_are_individually_non_vacuous(self):
         vector_path = VECTOR_ROOT / "provenance-candidate-v5.json"
         vector = json.loads(vector_path.read_text(encoding="utf-8"))
