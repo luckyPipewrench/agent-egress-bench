@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -62,6 +63,49 @@ func TestCalibrationOutputSatisfiesTheResultContract(t *testing.T) {
 			validate.Env = append(os.Environ(), "AEB_CAPABILITY_REGISTRY="+filepath.Join(repo, "capability-registry"))
 			if out, err := validate.CombinedOutput(); err != nil {
 				t.Fatalf("%s output failed the result contract: %v\n%s", adapter, err, out)
+			}
+		})
+	}
+}
+
+// TestCalibrationCannotEmitAReceiptProfile pins the other way a calibration run
+// could make a claim it never earned.
+//
+// The receipt profile is read as a statement that a tool blocked things, and
+// its renderer maps an expected block plus an actual block to blocked: yes
+// without consulting the evidence behind the row. Measured on the unmodified
+// runner: a dryrun run emitted a profile reporting 174 blocked malicious cases
+// for a tool that was never contacted, and the profile schema carries no field
+// that would let a reader tell it from a measured one.
+func TestCalibrationCannotEmitAReceiptProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("drives the runner over the whole corpus")
+	}
+	repo, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, adapter := range []string{"dryrun", "blockall", "null"} {
+		t.Run(adapter, func(t *testing.T) {
+			dir := t.TempDir()
+			profile := filepath.Join(dir, "receipt-profile.json")
+			run := exec.Command("go", "run", ".",
+				"--cases", filepath.Join(repo, "cases"),
+				"--profile", filepath.Join(repo, "examples/runner-template/tool-profile-template.json"),
+				"--adapter", adapter,
+				"--output", filepath.Join(dir, "summary.json"),
+				"--emit-receipt-profile", profile,
+			)
+			run.Dir = filepath.Join(repo, "runner")
+			out, err := run.CombinedOutput()
+			if err == nil {
+				t.Fatalf("%s emitted a receipt profile from a calibration run", adapter)
+			}
+			if !strings.Contains(string(out), "refusing to write a receipt profile") {
+				t.Fatalf("%s failed for the wrong reason: %s", adapter, out)
+			}
+			if _, statErr := os.Stat(profile); !os.IsNotExist(statErr) {
+				t.Errorf("%s wrote a receipt profile despite refusing", adapter)
 			}
 		})
 	}
