@@ -34,11 +34,13 @@ func TestBuyerReportRefusesSpecialFilesWithoutBlocking(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(15 * time.Second):
-		// Deliberately not t.Fatal here. The loader goroutine still holds the
-		// shared variables below, and failing from this side would race it
-		// while the test binary tore down around it.
+		// Not t.Fatal, because the loader goroutine still holds the shared
+		// variables below and failing from this side would race it. Not a
+		// second wait either: if a blocking open is ever reintroduced that
+		// goroutine never finishes, and waiting for it would hang the test
+		// binary instead of failing it in bounded time.
 		t.Error("loadBuyerReport blocked on a FIFO artifact")
-		<-done
+		return
 	}
 	if loadErr != nil {
 		t.Fatalf("loadBuyerReport = %v, want the run accepted with the pipe refused", loadErr)

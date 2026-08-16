@@ -201,11 +201,27 @@ func openRegularArtifact(dir, name string) (*os.File, error) {
 // the returned descriptor rather than on the name is what closes the gap on the
 // platforms that have neither flag.
 func openRootedArtifact(root *os.Root, name string) (*os.File, error) {
+	// Ask the directory about the entry itself before opening it. os.Root
+	// confines resolution to the directory but still follows a link that stays
+	// inside it, so on the targets without O_NOFOLLOW a link to a sibling file
+	// would be opened and the report would describe the wrong artifact. Lstat is
+	// root-relative and does not follow the final component, so it answers that
+	// question on every platform.
+	if info, statErr := root.Lstat(name); statErr == nil && !info.Mode().IsRegular() {
+		return nil, errNotRegularArtifact
+	} else if statErr != nil {
+		return nil, statErr
+	}
 	handle, err := root.OpenFile(name, os.O_RDONLY|extraArtifactOpenFlags, 0)
 	if err != nil {
-		// A refused symlink, a name escaping the root, and a reparse point all
-		// mean the same thing to a report: this is not an artifact of this run.
-		if isRefusedLink(err) || errors.Is(err, os.ErrInvalid) || isOutsideRoot(err) {
+		// A symlink refused by the kernel is a type refusal rather than a read
+		// failure, and is reported as one. Everything else, including a name
+		// os.Root rejected for escaping the directory, is returned as the error
+		// it is: an earlier version matched the standard library's English
+		// escape message to classify it, which would have gone quietly wrong the
+		// first time that wording changed. Both paths refuse; only the wording
+		// the operator sees differs, so the fragile half is not worth keeping.
+		if isRefusedLink(err) {
 			return nil, errNotRegularArtifact
 		}
 		return nil, err
@@ -220,15 +236,6 @@ func openRootedArtifact(root *os.Root, name string) (*os.File, error) {
 		return nil, errNotRegularArtifact
 	}
 	return handle, nil
-}
-
-// isOutsideRoot reports whether os.Root refused a name for escaping the
-// directory. The standard library returns a *PathError whose message names the
-// condition rather than a distinct sentinel, so this matches on that text and
-// stays conservative: an unrecognized error is returned to the caller as an
-// error rather than being reinterpreted as a clean refusal.
-func isOutsideRoot(err error) bool {
-	return strings.Contains(err.Error(), "path escapes from parent")
 }
 
 // readRegularArtifact reads a report input, refusing anything that is not a
