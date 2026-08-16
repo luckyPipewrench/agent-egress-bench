@@ -34,6 +34,19 @@ func TestResultStateFor(t *testing.T) {
 	}
 }
 
+func TestCompletionError(t *testing.T) {
+	if err := completionError(GauntletSummary{MeasurementStatus: measurementStatusIncomplete}, false); err != nil {
+		t.Fatalf("optional completion gate rejected an incomplete result: %v", err)
+	}
+	if err := completionError(GauntletSummary{MeasurementStatus: measurementStatusMeasured}, true); err != nil {
+		t.Fatalf("completion gate rejected a measured result: %v", err)
+	}
+	err := completionError(GauntletSummary{MeasurementStatus: measurementStatusIncomplete}, true)
+	if err == nil || !strings.Contains(err.Error(), "retained artifacts describe the partial run") {
+		t.Fatalf("completion gate error = %v, want retained-artifact explanation", err)
+	}
+}
+
 func TestRunBadCasesDir(t *testing.T) {
 	err := run("/nonexistent", filepath.Join("..", "examples", "pipelock", "tool-profile.json"),
 		filepath.Join(t.TempDir(), "out.json"), 10*1e9, "dryrun", "", "", "", "", false, "", "", "", false)

@@ -55,6 +55,7 @@ func main() {
 	methodCommit := flag.String("method-commit", "", "exact commit of the corpus under test, recorded in the summary")
 	adapterOwner := flag.String("adapter-owner", "", "who authored the adapter driving the target; a vendor-authored adapter is normal, leaving it unstated is not")
 	targetConfig := flag.String("target-config", "", "path to the target's configuration file; its path and digest are recorded so the score can be repeated")
+	requireComplete := flag.Bool("require-complete", false, "exit nonzero after writing artifacts when the measurement is incomplete")
 
 	// --debug / -v: emit verbose per-case diagnostics to stderr. Both
 	// flag names point at the same variable so either can be used.
@@ -147,6 +148,7 @@ func main() {
 	prov.MCPHTTPSessionFormat = *mcpHTTPSessionFormat
 	prov.MCPHTTPSessionRefusalHeader = *mcpHTTPSessionRefusalHeader
 	prov.MCPHTTPSessionRefusalValue = *mcpHTTPSessionRefusalValue
+	prov.RequireComplete = *requireComplete
 
 	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion, prov); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -337,8 +339,18 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	if emitReceiptProfile != "" {
 		_, _ = fmt.Fprintf(os.Stderr, "Receipt profile:  %s\n", emitReceiptProfile)
 	}
+	if err := completionError(summary, prov.RequireComplete); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func completionError(summary GauntletSummary, required bool) error {
+	if !required || summary.MeasurementStatus == measurementStatusMeasured {
+		return nil
+	}
+	return fmt.Errorf("measurement is %s; retained artifacts describe the partial run", summary.MeasurementStatus)
 }
 
 // runCases executes the result-state transition for each case. Profile fields
