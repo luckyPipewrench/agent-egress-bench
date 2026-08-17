@@ -20,17 +20,17 @@ The copied adapter and profile are starting points. Replace every placeholder be
 
 ## Before execution
 
-Fill in the first section of `evidence-custody-checklist.md`. Record the exact benchmark commit, target version, target configuration digest, adapter owner, profile digest, command, host clock source, and who controls the run directory. The commands below use `aeb-run`; substitute the timestamped packet directory you just created.
+Fill in the first section of `evidence-custody-checklist.md`. Record the exact benchmark commit, target version, target configuration digest, adapter owner, profile digest, command, host clock source, and who controls the run directory.
 
 Run the bundled doctor before execution when using the OCI path:
 
 ```bash
 ./scripts/run-oci-action.sh \
-  --profile aeb-run/tool-profile.json \
+  --profile "$packet_dir/tool-profile.json" \
   --adapter dryrun \
   --image registry.vendor.example/aeb-runner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
   --allow-unverified-image \
-  --doctor-json > aeb-run/doctor.json
+  --doctor-json > "$packet_dir/doctor.json"
 ```
 
 Replace `dryrun` with the adapter that reaches the target and replace the example image with the reviewed digest-pinned image you loaded. This example explicitly waives official publisher verification; `doctor.json` records that check as `waived`, not `ok`. For an official image, omit `--allow-unverified-image` and supply the release's image metadata, attestation, and trusted root as described in [OCI runner](../../docs/OCI-RUNNER.md). A doctor success means every prerequisite passed or was explicitly waived. It doesn't prove that the later run reached the target or produced a complete measurement.

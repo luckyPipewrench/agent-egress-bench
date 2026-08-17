@@ -44,7 +44,7 @@ The [operator kit](../examples/operator-kit/) provides the custody checklist and
 
 ### Suggested format
 
-```
+```text
 results/
   v0.3.6/
     results.jsonl       # Raw JSONL output

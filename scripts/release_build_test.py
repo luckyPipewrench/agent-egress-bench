@@ -506,6 +506,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         doctor_report = json.loads(result.stdout)
         self.assertTrue(doctor_report["ready"])
+        self.assertFalse(doctor_report["publisher_verified"])
         publisher_check = next(check for check in doctor_report["checks"] if check["code"] == "publisher_material")
         self.assertEqual("waived", publisher_check["status"])
         self.assertFalse((extracted / "aeb-results").exists())
