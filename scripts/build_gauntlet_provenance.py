@@ -27,6 +27,10 @@ try:
     from scripts import artifact_contracts
 except ModuleNotFoundError:
     import artifact_contracts
+try:
+    from scripts.result_evidence import claims_synthetic
+except ModuleNotFoundError:
+    from result_evidence import claims_synthetic
 
 
 # Scoring versions belonging to retained, frozen published records. Those
@@ -361,22 +365,6 @@ def publication_provenance(summary, metadata, command):
             raise ValueError(f"summary {field} does not match recorded runner command {option}")
 
     return fields
-
-
-def claims_synthetic(row):
-    """Report whether a result row claims synthetic calibration evidence.
-
-    An explicit boolean false is an honest negative and is honored. Every other
-    present value counts as a claim, including a non-boolean such as
-    "synthetic": "calibration". Requiring the boolean true would let a malformed
-    marker be the reason a run reads as measured and publishes, which inverts the
-    gate. Mirrors hasSyntheticEvidence in runner/summary.go; the two must agree
-    because each cross-checks the other's measurement_status.
-    """
-    evidence = row.get("evidence")
-    if not isinstance(evidence, dict) or "synthetic" not in evidence:
-        return False
-    return evidence["synthetic"] is not False
 
 
 def require_sha256(document, key, allow_null=False):

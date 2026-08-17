@@ -22,6 +22,10 @@ try:
     from scripts import artifact_contracts
 except ModuleNotFoundError:
     import artifact_contracts
+try:
+    from scripts.result_evidence import claims_synthetic
+except ModuleNotFoundError:
+    from result_evidence import claims_synthetic
 
 
 LEGACY_REQUIRED_FLOORS = {
@@ -308,6 +312,41 @@ def recompute_v5_measurements(case_index_path, results_path):
     }
 
 
+def count_synthetic_results(results_path):
+    """Count raw rows that claim synthetic calibration evidence."""
+    synthetic = 0
+    with results_path.open(encoding="utf-8") as handle:
+        for row_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError(f"results row {row_number} must be an object")
+            synthetic += claims_synthetic(row)
+    return synthetic
+
+
+def verify_observed_results(evidence_paths):
+    results_path = evidence_paths.get("results")
+    if results_path is None:
+        raise ValueError("active candidate evaluation requires results evidence")
+    synthetic = count_synthetic_results(results_path)
+    if synthetic:
+        raise ValueError(f"raw results contain {synthetic} synthetic result(s)")
+
+
+def verify_bound_results(candidate, evidence_paths, evidence_sha256):
+    advertised = candidate.get("evidence_sha256")
+    if not isinstance(advertised, dict):
+        raise ValueError("active candidate evidence_sha256 must be an object")
+    if not isinstance(advertised.get("results"), str):
+        raise ValueError("active candidate evidence_sha256.results is required")
+    if "results" not in evidence_paths or not isinstance(evidence_sha256.get("results"), str):
+        raise ValueError("active candidate evaluation requires hashable results evidence")
+    if advertised["results"] != evidence_sha256["results"]:
+        raise ValueError("candidate evidence_sha256.results does not match results evidence")
+
+
 def verify_v5_measurements(candidate, evidence_paths):
     missing = sorted({"case_index", "results"} - set(evidence_paths))
     if missing:
@@ -384,6 +423,8 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             raise ValueError("candidate schema_version must be 2, 4, 5, or 6")
         if candidate_schema_version in {4, 5, 6}:
             require_capability_registry(candidate)
+            verify_bound_results(candidate, evidence_paths, decision["evidence_sha256"])
+            verify_observed_results(evidence_paths)
         if candidate_schema_version in {5, 6}:
             require_sha256(
                 candidate.get("benchmark_manifest_sha256"),

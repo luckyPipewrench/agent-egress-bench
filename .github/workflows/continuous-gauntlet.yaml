@@ -184,6 +184,9 @@ jobs:
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/command.txt
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/make-stats.txt
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/case-index.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/tool-profile.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/capability-registry.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/receipt-profile.json
           retention-days: 14
 
       # Enforce only after upload. A regression must leave the candidate and
@@ -213,6 +216,9 @@ jobs:
             --evidence "release_checksums=$artifact_dir/checksums.txt" \
             --evidence "pipelock_version_output=$artifact_dir/pipelock-version.txt" \
             --evidence "corpus_manifest=$artifact_dir/corpus-manifest.txt" \
+            --evidence "tool_profile=$artifact_dir/tool-profile.json" \
+            --evidence "capability_registry=$artifact_dir/capability-registry.json" \
+            --evidence "receipt_profile=$artifact_dir/receipt-profile.json" \
             --evidence "execution_decision=$artifact_dir/execution-decision.json" \
             --evidence "run_bundle=$artifact_dir/run-bundle.json" || decision_exit=$?
           exit "$decision_exit"

@@ -31,7 +31,11 @@ def load_builder():
     return module
 
 
-EVIDENCE_LABELS = tuple(load_builder().RAW_EVIDENCE) + ("execution_decision", "run_bundle")
+BUILDER = load_builder()
+EVIDENCE_LABELS = tuple(BUILDER.RAW_EVIDENCE | BUILDER.V4_RAW_EVIDENCE) + (
+    "execution_decision",
+    "run_bundle",
+)
 
 
 def step_block(workflow, name):
@@ -333,6 +337,8 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("promotion-decision.json", upload_block)
         self.assertIn("execution-decision.json", upload_block)
         self.assertIn("run-bundle.json", upload_block)
+        for filename in BUILDER.V4_RAW_EVIDENCE.values():
+            self.assertIn(filename, upload_block)
         self.assertIn("enforcement-result.json", review_upload_block)
         self.assertIn("owner-summary.md", review_upload_block)
         self.assertIn("evaluate_gauntlet_candidate.py enforce", enforce_block)
