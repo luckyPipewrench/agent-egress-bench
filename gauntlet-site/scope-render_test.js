@@ -79,6 +79,8 @@ assert.equal(rendered.className, 'denominator');
 assert.match(rendered.children[0].textContent,
   /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic/);
 assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
+assert.equal(rendered.children[5].textContent, 'evidence and verify');
+assert.match(rendered.children[5].href, /docs\/RESULTS-USE\.md#verify-a-public-result$/);
 
 const unboundV4 = completeArtifact();
 unboundV4.schema_version = 4;

@@ -9,7 +9,15 @@ import sys
 from pathlib import Path
 
 
+SCRIPT_ROOT = Path(__file__).resolve().parent
+if str(SCRIPT_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_ROOT))
+
+import promote_gauntlet_candidate as promotion
+
+
 INVENTORY_PATH = Path("migration/pipelock-result-inventory-v1.json")
+PUBLIC_RESULT_CONTRACT_PATH = Path("contracts/public-result-v1.json")
 PUBLIC_POINTERS = (
     Path("gauntlet-site/gauntlet-results.json"),
     Path("gauntlet-site/latest-verified.json"),
@@ -218,6 +226,173 @@ def verify_record_store(repo_root):
         raise ValueError(f"retained record verification failed: {detail}")
 
 
+def validate_public_result_contract(repo_root, inventory, recorded_paths):
+    contract = json.loads((repo_root / PUBLIC_RESULT_CONTRACT_PATH).read_text(encoding="utf-8"))
+    require_exact_keys(
+        contract,
+        (
+            "evidence_index",
+            "record_verification",
+            "required_evidence",
+            "schema_required_evidence",
+            "schema_version",
+        ),
+        "public result contract",
+    )
+    if contract["schema_version"] != 1:
+        raise ValueError("public result contract schema_version must be 1")
+    if contract["evidence_index"] != INVENTORY_PATH.as_posix():
+        raise ValueError("public result contract evidence_index is not canonical")
+    require_exact_keys(
+        contract["record_verification"],
+        ("command", "source_path"),
+        "public result contract record_verification",
+    )
+    if contract["record_verification"]["command"] != inventory["record_verification"]["command"]:
+        raise ValueError("public result contract verification command drifted from inventory")
+    verifier_path = Path(contract["record_verification"]["source_path"])
+    verifier = repo_root / verifier_path
+    if (
+        verifier_path != Path("scripts/validate_gauntlet_records.py")
+        or verifier.is_symlink()
+        or not verifier.is_file()
+    ):
+        raise ValueError("public result contract verifier source is missing or not canonical")
+
+    required_evidence = contract["required_evidence"]
+    require_exact_keys(
+        required_evidence,
+        ("normalized_decisions", "pinned_inputs", "raw_evidence", "reproduction", "score_and_scope"),
+        "public result contract required_evidence",
+    )
+    if any(not isinstance(names, list) or not names for names in required_evidence.values()):
+        raise ValueError("public result contract evidence roles must contain unique filenames")
+    required_files = sorted(name for names in required_evidence.values() for name in names)
+    if (
+        required_files != sorted(set(required_files))
+        or any(not isinstance(name, str) or not name or Path(name).name != name for name in required_files)
+    ):
+        raise ValueError("public result contract evidence roles must contain unique filenames")
+
+    raw_evidence = promotion.provenance.RAW_EVIDENCE
+    expected_roles = {
+        "normalized_decisions": sorted(
+            {
+                promotion.BASELINE_SNAPSHOT_FILENAME,
+                promotion.EXECUTION_DECISION_FILENAME,
+                promotion.PUBLISHED_DECISION_FILENAME,
+                promotion.SOURCE_BASELINE_FILENAME,
+                promotion.SOURCE_PROMOTION_DECISION_FILENAME,
+            }
+        ),
+        "pinned_inputs": sorted(
+            raw_evidence[label]
+            for label in (
+                "case_index",
+                "corpus_manifest",
+                "pipelock_release",
+                "pipelock_version_output",
+                "release_checksums",
+                "run_metadata",
+            )
+        )
+        + [promotion.RUN_BUNDLE_FILENAME],
+        "raw_evidence": sorted(
+            raw_evidence[label]
+            for label in ("raw_summary", "results", "runner_stderr", "stats")
+        ),
+        "reproduction": sorted(
+            raw_evidence[label] for label in ("command", "entrypoint_command")
+        ),
+        "score_and_scope": [promotion.CANDIDATE_FILENAME],
+    }
+    expected_roles["pinned_inputs"] = sorted(expected_roles["pinned_inputs"])
+    if required_evidence != expected_roles:
+        raise ValueError("public result contract evidence role bindings drifted from promotion output")
+
+    schema_evidence = contract["schema_required_evidence"]
+    require_exact_keys(schema_evidence, ("4-6",), "public result contract schema_required_evidence")
+    active_files = schema_evidence["4-6"]
+    if (
+        not isinstance(active_files, list)
+        or not active_files
+        or active_files != sorted(set(active_files))
+        or any(not isinstance(name, str) or not name or Path(name).name != name for name in active_files)
+    ):
+        raise ValueError("public result contract schema evidence must contain unique sorted filenames")
+    if active_files != sorted(promotion.provenance.V4_RAW_EVIDENCE.values()):
+        raise ValueError("public result contract schema evidence drifted from promotion output")
+
+    producer_files = set(promotion.evidence_files_for({"schema_version": 6}).values())
+    producer_files.update(
+        {
+            promotion.BASELINE_SNAPSHOT_FILENAME,
+            promotion.CANDIDATE_FILENAME,
+            promotion.PUBLISHED_DECISION_FILENAME,
+            promotion.SOURCE_BASELINE_FILENAME,
+            promotion.SOURCE_PROMOTION_DECISION_FILENAME,
+        }
+    )
+    contracted_files = set(required_files) | set(active_files)
+    if contracted_files != producer_files:
+        missing = sorted(producer_files - contracted_files)
+        unexpected = sorted(contracted_files - producer_files)
+        raise ValueError(
+            f"public result contract drifted from promotion output: "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+
+    recorded_path_set = set(recorded_paths)
+    manifest_paths = [path for path in recorded_paths if path.name == "record-manifest.json"]
+    if not manifest_paths:
+        raise ValueError("public result contract has no retained record manifests")
+    for manifest_path in manifest_paths:
+        manifest = json.loads(git_file_bytes(repo_root, inventory["source_commit"], manifest_path))
+        files = manifest.get("files") if isinstance(manifest, dict) else None
+        if not isinstance(files, dict):
+            raise ValueError(f"retained record manifest has no file inventory: {manifest_path}")
+        candidate_path = manifest_path.parent / promotion.CANDIDATE_FILENAME
+        candidate = json.loads(git_file_bytes(repo_root, inventory["source_commit"], candidate_path))
+        record_required_files = set(required_files)
+        if isinstance(candidate, dict) and candidate.get("schema_version") in {4, 5, 6}:
+            record_required_files.update(active_files)
+        missing = sorted(record_required_files - set(files))
+        if missing:
+            raise ValueError(f"retained record is missing public-result evidence: {manifest_path}: {missing}")
+        record_root = manifest_path.parent
+        missing_urls = sorted(name for name in record_required_files if record_root / name not in recorded_path_set)
+        if missing_urls:
+            raise ValueError(
+                f"public result evidence is absent from the commit-pinned inventory: "
+                f"{manifest_path}: {missing_urls}"
+            )
+
+    current_paths = public_paths(repo_root)
+    current_path_set = set(current_paths)
+    for manifest_path in (path for path in current_paths if path.name == "record-manifest.json"):
+        manifest = json.loads((repo_root / manifest_path).read_text(encoding="utf-8"))
+        files = manifest.get("files") if isinstance(manifest, dict) else None
+        if not isinstance(files, dict):
+            raise ValueError(f"current record manifest has no file inventory: {manifest_path}")
+        candidate = json.loads(
+            (repo_root / manifest_path.parent / promotion.CANDIDATE_FILENAME).read_text(encoding="utf-8")
+        )
+        record_required_files = set(required_files)
+        if isinstance(candidate, dict) and candidate.get("schema_version") in {4, 5, 6}:
+            record_required_files.update(active_files)
+        missing = sorted(record_required_files - set(files))
+        if missing:
+            raise ValueError(f"current record is missing public-result evidence: {manifest_path}: {missing}")
+        missing_paths = sorted(
+            name for name in record_required_files if manifest_path.parent / name not in current_path_set
+        )
+        if missing_paths:
+            raise ValueError(
+                f"current public result evidence is missing from the repository: "
+                f"{manifest_path}: {missing_paths}"
+            )
+
+
 def validate(repo_root, inventory_path, verify_records=True):
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
     require_exact_keys(
@@ -268,6 +443,7 @@ def validate(repo_root, inventory_path, verify_records=True):
         missing = sorted(set(actual_paths) - set(recorded_paths))
         unexpected = sorted(set(recorded_paths) - set(actual_paths))
         raise ValueError(f"inventory path set differs: missing={missing}, unexpected={unexpected}")
+    validate_public_result_contract(repo_root, inventory, recorded_paths)
     if verify_records:
         verify_record_store(repo_root)
 

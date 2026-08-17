@@ -1,0 +1,46 @@
+{
+  "evidence_index": "migration/pipelock-result-inventory-v1.json",
+  "record_verification": {
+    "command": "python3 scripts/validate_gauntlet_records.py",
+    "source_path": "scripts/validate_gauntlet_records.py"
+  },
+  "required_evidence": {
+    "normalized_decisions": [
+      "execution-decision.json",
+      "reviewed-baseline.json",
+      "reviewed-promotion-decision.json",
+      "source-baseline.json",
+      "source-promotion-decision.json"
+    ],
+    "pinned_inputs": [
+      "case-index.json",
+      "checksums.txt",
+      "corpus-manifest.txt",
+      "pipelock-release.json",
+      "pipelock-version.txt",
+      "run-bundle.json",
+      "run-metadata.json"
+    ],
+    "raw_evidence": [
+      "make-stats.txt",
+      "raw-summary.json",
+      "results.jsonl",
+      "runner.stderr"
+    ],
+    "reproduction": [
+      "command.txt",
+      "entrypoint-command.txt"
+    ],
+    "score_and_scope": [
+      "continuous-gauntlet-pipelock.json"
+    ]
+  },
+  "schema_required_evidence": {
+    "4-6": [
+      "capability-registry.json",
+      "receipt-profile.json",
+      "tool-profile.json"
+    ]
+  },
+  "schema_version": 1
+}
