@@ -15,6 +15,187 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RunnerImageContractTest(unittest.TestCase):
+    def test_local_offline_doctor_reports_ready_without_starting_a_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
+            bin_dir = workspace / "bin"
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                "[ \"$1 $2\" = \"image inspect\" ] || exit 97\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            image = f"registry.invalid/reviewed/runner@sha256:{'a' * 64}"
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts" / "run-oci-action.sh"),
+                    "--profile", "profile.json",
+                    "--adapter", "proxy",
+                    "--image", image,
+                    "--allow-unverified-image",
+                    "--doctor-json",
+                ],
+                cwd=workspace,
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertTrue(report["ready"])
+            self.assertFalse((workspace / "aeb-results").exists())
+
+    def test_local_offline_doctor_accepts_a_root_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            profile = fixture / "profile.json"
+            profile.write_text("{}\n", encoding="utf-8")
+            bin_dir = fixture / "bin"
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            docker.chmod(0o755)
+            image = f"registry.invalid/reviewed/runner@sha256:{'a' * 64}"
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts" / "run-oci-action.sh"),
+                    "--profile", str(profile).removeprefix("/"),
+                    "--adapter", "proxy",
+                    "--image", image,
+                    "--allow-unverified-image",
+                    "--doctor-json",
+                ],
+                cwd="/",
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertTrue(json.loads(result.stdout)["ready"])
+
+    def test_local_offline_doctor_collects_missing_inputs(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "run-oci-action.sh"), "--doctor-json"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(0, result.returncode)
+        report = json.loads(result.stdout)
+        statuses = {check["code"]: check["status"] for check in report["checks"]}
+        self.assertEqual("missing", statuses["profile"])
+        self.assertEqual("missing", statuses["adapter"])
+        self.assertEqual("invalid", statuses["image_digest"])
+
+    def test_local_offline_doctor_rejects_verified_mode_for_a_mirror(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
+            image = f"registry.invalid/reviewed/runner@sha256:{'a' * 64}"
+            (workspace / "image.ref").write_text(f"{image}\n", encoding="utf-8")
+            for name in ("attestation.jsonl", "trusted-root.jsonl"):
+                (workspace / name).write_text("placeholder\n", encoding="utf-8")
+            bin_dir = workspace / "bin"
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            docker.chmod(0o755)
+            gh = bin_dir / "gh"
+            gh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "if args[:2] != ['attestation', 'verify']: raise SystemExit(91)\n"
+                "if pathlib.Path(args[2]).name != 'image.ref': raise SystemExit(92)\n"
+                "pairs = {'--repo': 'luckyPipewrench/agent-egress-bench', '--signer-workflow': 'github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml'}\n"
+                "for flag, value in pairs.items():\n"
+                "  if flag not in args or args[args.index(flag) + 1] != value: raise SystemExit(93)\n"
+                "for flag, name in [('--bundle', 'attestation.jsonl'), ('--custom-trusted-root', 'trusted-root.jsonl')]:\n"
+                "  if flag not in args or pathlib.Path(args[args.index(flag) + 1]).name != name: raise SystemExit(94)\n"
+                "raise SystemExit(0)\n",
+                encoding="utf-8",
+            )
+            gh.chmod(0o755)
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts" / "run-oci-action.sh"),
+                    "--profile", "profile.json",
+                    "--adapter", "proxy",
+                    "--image", image,
+                    "--image-metadata", "image.ref",
+                    "--image-attestation", "attestation.jsonl",
+                    "--attestation-trusted-root", "trusted-root.jsonl",
+                    "--doctor-json",
+                ],
+                cwd=workspace,
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(0, result.returncode)
+            report = json.loads(result.stdout)
+            statuses = {check["code"]: check["status"] for check in report["checks"]}
+            self.assertEqual("invalid", statuses["image_repository"])
+            self.assertEqual("invalid", statuses["publisher_identity"])
+
+    def test_local_offline_doctor_checks_publisher_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            image = f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'a' * 64}"
+            (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
+            (workspace / "image.ref").write_text(f"{image}\n", encoding="utf-8")
+            for name in ("attestation.jsonl", "trusted-root.jsonl"):
+                (workspace / name).write_text("placeholder\n", encoding="utf-8")
+            bin_dir = workspace / "bin"
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            docker.chmod(0o755)
+            gh = bin_dir / "gh"
+            gh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "if args[:2] != ['attestation', 'verify']: raise SystemExit(91)\n"
+                "if pathlib.Path(args[2]).name != 'image.ref': raise SystemExit(92)\n"
+                "pairs = {'--repo': 'luckyPipewrench/agent-egress-bench', '--signer-workflow': 'github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml'}\n"
+                "for flag, value in pairs.items():\n"
+                "  if flag not in args or args[args.index(flag) + 1] != value: raise SystemExit(93)\n"
+                "for flag, name in [('--bundle', 'attestation.jsonl'), ('--custom-trusted-root', 'trusted-root.jsonl')]:\n"
+                "  if flag not in args or pathlib.Path(args[args.index(flag) + 1]).name != name: raise SystemExit(94)\n"
+                "raise SystemExit(0)\n",
+                encoding="utf-8",
+            )
+            gh.chmod(0o755)
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts" / "run-oci-action.sh"),
+                    "--profile", "profile.json",
+                    "--adapter", "proxy",
+                    "--image", image,
+                    "--image-metadata", "image.ref",
+                    "--image-attestation", "attestation.jsonl",
+                    "--attestation-trusted-root", "trusted-root.jsonl",
+                    "--doctor-json",
+                ],
+                cwd=workspace,
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            statuses = {check["code"]: check["status"] for check in json.loads(result.stdout)["checks"]}
+            self.assertEqual("ok", statuses["image_repository"])
+            self.assertEqual("ok", statuses["publisher_identity"])
+
     def test_local_offline_cli_is_read_only_until_required_inputs_exist(self) -> None:
         script = ROOT / "scripts" / "run-oci-action.sh"
         help_result = subprocess.run(

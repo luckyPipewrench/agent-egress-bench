@@ -36,7 +36,20 @@ RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress
 # harness. Without it a downloaded release can report the corpus but cannot run
 # it, because --profile is mandatory and nothing in the release satisfied it.
 DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities", "examples")
-DATA_FILES = ("README.md", "LICENSE", "NOTICE", "CITATION.cff", "docs/SPEC.md", "docs/GOVERNANCE.md", "docs/RUNNER.md", "scripts/release_build.py", "scripts/schema_catalog.py")
+DATA_FILES = (
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CITATION.cff",
+    "docs/SPEC.md",
+    "docs/GOVERNANCE.md",
+    "docs/RUNNER.md",
+    "docs/OCI-RUNNER.md",
+    "scripts/action_artifacts.py",
+    "scripts/release_build.py",
+    "scripts/run-oci-action.sh",
+    "scripts/schema_catalog.py",
+)
 PLATFORMS = tuple((goos, arch) for goos in ("linux", "darwin", "windows") for arch in ("amd64", "arm64"))
 # Both tools ride in one platform archive. A release that shipped only the
 # runner let a downloader produce a result and gave them nothing to check it
@@ -425,9 +438,11 @@ def verify_identity(repo: Path, path: Path) -> dict[str, Any]:
     return identity
 
 
-def add_tar_bytes(archive: tarfile.TarFile, name: str, data: bytes, timestamp: int) -> None:
+def add_tar_bytes(
+    archive: tarfile.TarFile, name: str, data: bytes, timestamp: int, mode: int = 0o644
+) -> None:
     info = tarfile.TarInfo(name)
-    info.size, info.mtime, info.mode = len(data), timestamp, 0o644
+    info.size, info.mtime, info.mode = len(data), timestamp, mode
     archive.addfile(info, io.BytesIO(data))
 
 
@@ -437,7 +452,16 @@ def make_data_bundle(repo: Path, identity_path: Path, dist: Path) -> Path:
     dist.mkdir(parents=True, exist_ok=True)
     with output.open("wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=identity["source"]["commit_timestamp"], filename="") as compressed, tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
         for name in sorted(identity["data_files"]):
-            add_tar_bytes(archive, name, (repo / name).read_bytes(), identity["source"]["commit_timestamp"])
+            source = repo / name
+            tracked_mode = git(repo, "ls-tree", "HEAD", "--", name).split(maxsplit=1)[0]
+            mode = 0o755 if tracked_mode == "100755" else 0o644
+            add_tar_bytes(
+                archive,
+                name,
+                source.read_bytes(),
+                identity["source"]["commit_timestamp"],
+                mode,
+            )
         add_tar_bytes(archive, IDENTITY_NAME, identity_path.read_bytes(), identity["source"]["commit_timestamp"])
     return output
 

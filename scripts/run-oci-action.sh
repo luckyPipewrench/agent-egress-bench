@@ -8,6 +8,7 @@ fail() {
 
 if (($#)); then
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+  doctor_mode=""
   export GITHUB_WORKSPACE="$(pwd -P)"
   export GITHUB_ACTION_PATH="$repo_root"
   export INPUT_OFFLINE=true
@@ -34,6 +35,8 @@ if (($#)); then
       --environment) (($# >= 2)) || fail "--environment requires a value"; export INPUT_ENVIRONMENT="$2"; shift 2 ;;
       --output-dir) (($# >= 2)) || fail "--output-dir requires a value"; export INPUT_OUTPUT_DIR="$2"; shift 2 ;;
       --allow-unverified-image) export INPUT_ALLOW_UNVERIFIED_IMAGE=true; shift ;;
+      --doctor) doctor_mode=text; shift ;;
+      --doctor-json) doctor_mode=json; shift ;;
       -h|--help)
         cat <<'EOF'
 Usage: ./scripts/run-oci-action.sh --profile FILE --adapter NAME --image REF [options]
@@ -56,12 +59,132 @@ Options:
   --output-dir DIR                  Workspace-relative output directory (default: aeb-results).
   --allow-unverified-image          Permit a reviewed mirror or custom digest-pinned image
                                     without publisher-verification inputs.
+  --doctor                          Check offline-run prerequisites without starting a run.
+  --doctor-json                     Emit the prerequisite report as JSON.
 EOF
         exit 0
         ;;
       *) fail "unknown local option: $1" ;;
     esac
   done
+fi
+
+run_doctor() {
+  local failed=0 code status remediation index value material_valid=true
+  local metadata_check="" attestation_check="" trusted_root_check=""
+  local workspace_check
+  local -a codes=() statuses=() remediations=()
+
+  add_check() {
+    codes+=("$1")
+    statuses+=("$2")
+    remediations+=("$3")
+    [[ "$2" == ok ]] || failed=$((failed + 1))
+  }
+
+  workspace_check="$(realpath "$GITHUB_WORKSPACE" 2>/dev/null || true)"
+  inside_workspace() {
+    [[ "$workspace_check" == / && "$1" == /* ]] || [[ "$1" == "$workspace_check/"* ]]
+  }
+
+  if [[ "$(uname -s 2>/dev/null || true)" == Linux ]]; then
+    add_check platform_linux ok ""
+  else
+    add_check platform_linux unsupported "run the offline OCI path on Linux"
+  fi
+  for code in python3 realpath docker; do
+    if command -v "$code" >/dev/null 2>&1; then
+      add_check "command_$code" ok ""
+    else
+      add_check "command_$code" missing "install $code and retry"
+    fi
+  done
+  if [[ -z "${INPUT_PROFILE:-}" ]]; then
+    add_check profile missing "pass --profile with a workspace-relative file"
+  elif profile_check="$(realpath "$GITHUB_WORKSPACE/$INPUT_PROFILE" 2>/dev/null)" &&
+    inside_workspace "$profile_check" && [[ -f "$profile_check" && ! -L "$GITHUB_WORKSPACE/$INPUT_PROFILE" ]]; then
+    add_check profile ok ""
+  else
+    add_check profile invalid "use a regular, non-symlink file inside the workspace"
+  fi
+  if [[ -z "${INPUT_ADAPTER:-}" ]]; then
+    add_check adapter missing "pass --adapter with the target adapter name"
+  else
+    add_check adapter ok ""
+  fi
+  if [[ ! "${INPUT_IMAGE:-}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+    add_check image_digest invalid "pass --image with an immutable sha256 digest"
+  elif command -v docker >/dev/null 2>&1 && docker image inspect "$INPUT_IMAGE" >/dev/null 2>&1; then
+    add_check image_loaded ok ""
+  else
+    add_check image_loaded missing "load the exact digest-pinned image and retry"
+  fi
+  if [[ "${INPUT_ALLOW_UNVERIFIED_IMAGE:-false}" == true ]]; then
+    add_check publisher_material ok ""
+  else
+    if [[ "${INPUT_IMAGE:-}" == ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:* ]]; then
+      add_check image_repository ok ""
+    else
+      add_check image_repository invalid "use the approved release repository or pass --allow-unverified-image for a reviewed mirror"
+    fi
+    if command -v gh >/dev/null 2>&1; then
+      add_check command_gh ok ""
+    else
+      add_check command_gh missing "install GitHub CLI and retry"
+    fi
+    for code in image-metadata image-attestation attestation-trusted-root; do
+      case "$code" in
+        image-metadata) value="${INPUT_IMAGE_METADATA:-}" ;;
+        image-attestation) value="${INPUT_IMAGE_ATTESTATION:-}" ;;
+        attestation-trusted-root) value="${INPUT_ATTESTATION_TRUSTED_ROOT:-}" ;;
+      esac
+      if [[ -n "$value" ]] && material_check="$(realpath "$GITHUB_WORKSPACE/$value" 2>/dev/null)" &&
+        inside_workspace "$material_check" && [[ -f "$material_check" && ! -L "$GITHUB_WORKSPACE/$value" ]]; then
+        add_check "${code//-/_}" ok ""
+        case "$code" in
+          image-metadata) metadata_check="$material_check" ;;
+          image-attestation) attestation_check="$material_check" ;;
+          attestation-trusted-root) trusted_root_check="$material_check" ;;
+        esac
+      else
+        add_check "${code//-/_}" missing "stage a regular, non-symlink $code file inside the workspace"
+        material_valid=false
+      fi
+    done
+    if command -v gh >/dev/null 2>&1 && [[ "$material_valid" == true ]] &&
+      [[ "${INPUT_IMAGE:-}" == ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:* ]] &&
+      gh attestation verify "$metadata_check" \
+        --repo luckyPipewrench/agent-egress-bench \
+        --signer-workflow github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml \
+        --bundle "$attestation_check" \
+        --custom-trusted-root "$trusted_root_check" >/dev/null 2>&1 &&
+      [[ "$(<"$metadata_check")" == "${INPUT_IMAGE:-}" ]]; then
+      add_check publisher_identity ok ""
+    else
+      add_check publisher_identity invalid "stage publisher evidence that verifies and names the requested image"
+    fi
+  fi
+
+  if [[ "$doctor_mode" == json ]]; then
+    printf '{"schema_version":1,"ready":%s,"checks":[' "$([[ "$failed" == 0 ]] && printf true || printf false)"
+    for ((index = 0; index < ${#codes[@]}; index++)); do
+      ((index == 0)) || printf ','
+      printf '{"code":"%s","status":"%s","remediation":"%s"}' "${codes[$index]}" "${statuses[$index]}" "${remediations[$index]}"
+    done
+    printf ']}\n'
+  else
+    for ((index = 0; index < ${#codes[@]}; index++)); do
+      printf '%-28s %s' "${codes[$index]}" "${statuses[$index]}"
+      [[ -z "${remediations[$index]}" ]] || printf ' - %s' "${remediations[$index]}"
+      printf '\n'
+    done
+  fi
+  ((failed == 0))
+}
+
+if [[ -n "${doctor_mode:-}" ]]; then
+  run_doctor
+  exit $?
 fi
 
 [[ -n "${GITHUB_WORKSPACE:-}" ]] || fail "GITHUB_WORKSPACE is required"
