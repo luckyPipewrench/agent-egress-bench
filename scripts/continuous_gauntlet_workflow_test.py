@@ -31,7 +31,11 @@ def load_builder():
     return module
 
 
-EVIDENCE_LABELS = tuple(load_builder().RAW_EVIDENCE) + ("execution_decision", "run_bundle")
+BUILDER = load_builder()
+EVIDENCE_LABELS = tuple(BUILDER.RAW_EVIDENCE | BUILDER.V4_RAW_EVIDENCE) + (
+    "execution_decision",
+    "run_bundle",
+)
 
 
 def step_block(workflow, name):

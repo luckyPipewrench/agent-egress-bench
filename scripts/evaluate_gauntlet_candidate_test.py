@@ -44,6 +44,7 @@ def v5_raw_evidence():
 
 
 CASE_INDEX_BYTES, V5_RESULTS_BYTES = v5_raw_evidence()
+LEGACY_RESULTS_BYTES = b'{"id":"case-1"}\n'
 RUN_BUNDLE_BYTES = b'{"schema_version":1,"bundle_status":"complete"}\n'
 
 
@@ -104,6 +105,9 @@ def active_candidate():
         "format": 1,
         "revision": 1,
         "sha256": "d" * 64,
+    }
+    value["evidence_sha256"] = {
+        "results": hashlib.sha256(LEGACY_RESULTS_BYTES).hexdigest(),
     }
     return value
 
@@ -177,6 +181,7 @@ def v5_candidate():
             "exercised": {"transports": ["stdio"], "categories": ["prompt-injection"], "capability_tags": []},
         }
     )
+    value["evidence_sha256"]["results"] = hashlib.sha256(V5_RESULTS_BYTES).hexdigest()
     return value
 
 
@@ -241,6 +246,7 @@ class CandidateEvaluationTest(unittest.TestCase):
         missing_candidate=False,
         include_case_index_evidence=True,
         include_run_bundle_evidence=True,
+        results_bytes=None,
     ):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -248,18 +254,26 @@ class CandidateEvaluationTest(unittest.TestCase):
         candidate_path = root / "candidate.json"
         baseline_path = root / "baseline.json"
         decision_path = root / "decision.json"
+        candidate_document = candidate_value or candidate()
+        if results_bytes is not None and candidate_document.get("schema_version") in {4, 5, 6}:
+            candidate_document = json.loads(json.dumps(candidate_document))
+            candidate_document.setdefault("evidence_sha256", {})["results"] = hashlib.sha256(
+                results_bytes
+            ).hexdigest()
         if missing_candidate:
             pass
         elif raw_candidate is None:
-            candidate_path.write_text(json.dumps(candidate_value or candidate()), encoding="utf-8")
+            candidate_path.write_text(json.dumps(candidate_document), encoding="utf-8")
         else:
             candidate_path.write_text(raw_candidate, encoding="utf-8")
         baseline_path.write_text(json.dumps(baseline_value or baseline()), encoding="utf-8")
         evidence_path = root / "results.jsonl"
-        if (candidate_value or {}).get("schema_version") in {5, 6}:
+        if results_bytes is not None:
+            evidence_path.write_bytes(results_bytes)
+        elif (candidate_value or {}).get("schema_version") in {5, 6}:
             evidence_path.write_bytes(V5_RESULTS_BYTES)
         else:
-            evidence_path.write_text('{"id":"case-1"}\n', encoding="utf-8")
+            evidence_path.write_bytes(LEGACY_RESULTS_BYTES)
         case_index_path = root / "case-index.json"
         case_index_path.write_bytes(CASE_INDEX_BYTES)
         run_bundle_path = root / "run-bundle.json"
@@ -505,6 +519,53 @@ class CandidateEvaluationTest(unittest.TestCase):
                 decision, _, _, _, _ = self.run_evaluate(value)
                 self.assertTrue(decision["blocked"])
                 self.assertTrue(any("measurement_status" in item for item in decision["failures"]))
+
+    def test_active_candidate_rejects_synthetic_raw_results(self):
+        for name, marker in (("true", True), ("null", None), ("string", "calibration")):
+            with self.subTest(name=name):
+                raw_results = (
+                    json.dumps(
+                        {
+                            "case_id": "case-1",
+                            "evidence": {"synthetic": marker},
+                        }
+                    )
+                    + "\n"
+                ).encode()
+                decision, _, _, _, _ = self.run_evaluate(
+                    active_candidate(),
+                    results_bytes=raw_results,
+                )
+                self.assertTrue(decision["blocked"])
+                self.assertIn("raw results contain 1 synthetic result(s)", decision["failures"])
+
+    def test_active_candidate_rejects_substituted_results_evidence(self):
+        value = active_candidate()
+        value["evidence_sha256"]["results"] = "0" * 64
+        decision, _, _, _, _ = self.run_evaluate(value)
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "candidate evidence_sha256.results does not match results evidence",
+            decision["failures"],
+        )
+
+    def test_active_candidate_honors_an_explicit_non_synthetic_marker(self):
+        raw_results = (
+            json.dumps({"case_id": "case-1", "evidence": {"synthetic": False}}) + "\n"
+        ).encode()
+        decision, _, _, _, _ = self.run_evaluate(
+            active_candidate(),
+            results_bytes=raw_results,
+        )
+        self.assertFalse(decision["blocked"], decision["failures"])
+
+    def test_active_candidate_rejects_a_non_object_raw_row(self):
+        decision, _, _, _, _ = self.run_evaluate(
+            active_candidate(),
+            results_bytes=b'[]\n',
+        )
+        self.assertTrue(decision["blocked"])
+        self.assertIn("results row 1 must be an object", decision["failures"])
 
     def test_active_error_and_unreachable_each_block_publication(self):
         for name, mutate in (
