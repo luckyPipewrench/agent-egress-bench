@@ -440,6 +440,16 @@ class ReleaseBuildTest(unittest.TestCase):
             archive.extractall(extracted, filter="data")
         profile = extracted / "examples/runner-template/tool-profile-template.json"
         self.assertTrue(profile.is_file(), "the data bundle must carry a tool profile the runner accepts")
+        for relative in (
+            "docs/RESULTS-USE.md",
+            "examples/operator-kit/README.md",
+            "examples/operator-kit/evidence-custody-checklist.md",
+            "examples/operator-kit/report-template.md",
+        ):
+            self.assertTrue(
+                (extracted / relative).is_file(),
+                f"the data bundle must carry {relative}",
+            )
         summary = self.root / "bundle-run-summary.json"
         # /tmp is quota-constrained on the development hosts, so every Go
         # command runs against the shared caches rather than filling it.
@@ -494,7 +504,10 @@ class ReleaseBuildTest(unittest.TestCase):
             capture_output=True,
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertTrue(json.loads(result.stdout)["ready"])
+        doctor_report = json.loads(result.stdout)
+        self.assertTrue(doctor_report["ready"])
+        publisher_check = next(check for check in doctor_report["checks"] if check["code"] == "publisher_material")
+        self.assertEqual("waived", publisher_check["status"])
         self.assertFalse((extracted / "aeb-results").exists())
 
     def test_release_binds_a_schema_bundle_to_the_commit_pinned_catalog(self) -> None:

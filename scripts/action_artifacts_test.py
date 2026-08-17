@@ -66,6 +66,7 @@ class ActionArtifactsTest(unittest.TestCase):
         published = self.workspace / "aeb-results" / "run-metadata.json"
         self.assertFalse(published.is_symlink())
         self.assertEqual(metadata.read_text(encoding="utf-8"), published.read_text(encoding="utf-8"))
+        self.assertEqual(summary.read_bytes(), (self.workspace / "aeb-results" / "raw-summary.json").read_bytes())
 
     def test_publish_refuses_a_symlinked_container_artifact(self) -> None:
         self.assertEqual(0, self.prepare().returncode)

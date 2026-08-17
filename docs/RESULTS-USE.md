@@ -89,8 +89,7 @@ It has no veto over execution or publication.
 
 ## Corrections and disputes
 
-Open a GitHub Discussion for a disputed case verdict, a scoring question, or a result that appears
-to misstate the method. Include the case IDs, the exact commit, and the artifacts.
+Open a GitHub Issue for a disputed case verdict or other case-semantics question. Open a GitHub Discussion for a scoring question, adapter or method application, or a result that appears to misstate the method. Include the case IDs when applicable, the exact commit, and the artifacts.
 
 The maintainer answers in the thread. A case that changes semantics becomes a new case, since case
 IDs are immutable. See [GOVERNANCE.md](GOVERNANCE.md) for the case and supersession rules.

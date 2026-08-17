@@ -79,7 +79,7 @@ run_doctor() {
     codes+=("$1")
     statuses+=("$2")
     remediations+=("$3")
-    [[ "$2" == ok ]] || failed=$((failed + 1))
+    [[ "$2" == ok || "$2" == waived ]] || failed=$((failed + 1))
   }
 
   workspace_check="$(realpath "$GITHUB_WORKSPACE" 2>/dev/null || true)"
@@ -120,7 +120,7 @@ run_doctor() {
     add_check image_loaded missing "load the exact digest-pinned image and retry"
   fi
   if [[ "${INPUT_ALLOW_UNVERIFIED_IMAGE:-false}" == true ]]; then
-    add_check publisher_material ok ""
+    add_check publisher_material waived "publisher identity was not verified; retain this waiver in the run packet"
   else
     if [[ "${INPUT_IMAGE:-}" == ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:* ]]; then
       add_check image_repository ok ""
