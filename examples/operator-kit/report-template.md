@@ -50,7 +50,7 @@ State whether `measurement_status` is `measured` or `incomplete`. An incomplete 
 
 ## Exercised-control coverage
 
-List only transports, categories, and capability tags observed in scoreable rows. A declaration in the tool profile is a reporting label and isn't evidence that the run exercised that control.
+List only transports, categories, and capability tags mapped from rows with `evidence.result_state=observed`. Publication checks this mapping against the pinned case index. A tool-profile declaration or framework mapping isn't evidence that the run exercised a control.
 
 | Surface | Observed coverage |
 |---|---|

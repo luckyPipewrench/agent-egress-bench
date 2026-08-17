@@ -81,6 +81,8 @@ assert.match(rendered.children[0].textContent,
 assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
 assert.equal(rendered.children[5].textContent, 'evidence and verify');
 assert.match(rendered.children[5].href, /docs\/RESULTS-USE\.md#verify-a-public-result$/);
+assert.match(window.renderGauntletControlCoverage(completeArtifact()).textContent,
+  /not recorded in this frozen result/);
 
 const unboundV4 = completeArtifact();
 unboundV4.schema_version = 4;
@@ -119,8 +121,25 @@ activeMeasured.metric_counts.applicable.containment = { numerator: 1, denominato
 activeMeasured.scores.applicable.containment = 0.5;
 activeMeasured.metric_counts.full.containment = { numerator: 79, denominator: 158 };
 activeMeasured.scores.full.containment = 0.5;
+activeMeasured.exercised = {
+  transports: ['mcp_http', 'fetch_proxy'],
+  categories: ['url', 'mcp_input'],
+  capability_tags: ['url_dlp', 'mcp_input_scan'],
+};
 assert.match(window.renderGauntletScope(activeMeasured).children[0].textContent,
   /Containment 50\.0% of 158 malicious cases/);
+// A v4 artifact predates the re-derivation, so the card must not claim one.
+assert.equal(
+  window.renderGauntletControlCoverage(activeMeasured).textContent,
+  'Exercised-control coverage as recorded by the runner: transports fetch_proxy, mcp_http; categories mcp_input, url; capability tags mcp_input_scan, url_dlp. These labels describe tested surfaces, not successful outcomes or framework conformance.'
+);
+
+const activeWithForgedCoverage = JSON.parse(JSON.stringify(activeMeasured));
+activeWithForgedCoverage.exercised.capability_tags = ['url_dlp', 'url_dlp'];
+assert.throws(
+  () => window.renderGauntletControlCoverage(activeWithForgedCoverage),
+  /must contain unique strings/
+);
 
 const activeV5 = JSON.parse(JSON.stringify(activeMeasured));
 activeV5.schema_version = 5;
@@ -146,6 +165,20 @@ activeV6.target_config_ref = 'examples/tool/benchmark.yaml';
 activeV6.target_config_sha256 = 'd'.repeat(64);
 assert.match(window.renderGauntletScope(activeV6).children[0].textContent,
   /Containment 50\.0% of 158 malicious cases/);
+
+// v6 is the version whose coverage object is re-derived from raw rows by the
+// builder and re-derived again by the promotion gate, so it is the only version
+// whose card may say so.
+assert.equal(
+  window.renderGauntletControlCoverage(activeV6).textContent,
+  'Exercised-control coverage from observed rows: transports fetch_proxy, mcp_http; categories mcp_input, url; capability tags mcp_input_scan, url_dlp. These labels describe tested surfaces, not successful outcomes or framework conformance.'
+);
+assert.equal(
+  window.renderGauntletControlCoverage(activeV5).textContent.startsWith(
+    'Exercised-control coverage as recorded by the runner:'
+  ),
+  true
+);
 
 [
   'method_repository',

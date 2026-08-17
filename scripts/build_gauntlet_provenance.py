@@ -427,11 +427,15 @@ def load_case_index(path, manifest_ids, expected_version):
         indexed_rows = list(rows.items())
     expected_by_id = {}
     category_by_id = {}
+    transport_by_id = {}
+    capability_tags_by_id = {}
     for row_number, (case_id, row) in enumerate(indexed_rows, 1):
         if not isinstance(row, dict):
             raise ValueError(f"loader case index row {row_number} is not an object")
         expected = row.get("expected_verdict")
         category = row.get("category")
+        transport = row.get("transport")
+        capability_tags = row.get("capability_tags")
         if not isinstance(case_id, str) or not case_id:
             raise ValueError(f"loader case index row {row_number} has no case_id")
         if case_id in expected_by_id:
@@ -444,12 +448,34 @@ def load_case_index(path, manifest_ids, expected_version):
             not isinstance(category, str) or not category
         ):
             raise ValueError(f"loader case index row {row_number} has no category")
+        if version == ACTIVE_CASE_INDEX_SCHEMA_VERSION:
+            if not isinstance(transport, str) or not transport:
+                raise ValueError(f"loader case index row {row_number} has no transport")
+            if (
+                not isinstance(capability_tags, list)
+                or not capability_tags
+                or any(not isinstance(tag, str) or not tag for tag in capability_tags)
+                or len(capability_tags) != len(set(capability_tags))
+            ):
+                raise ValueError(
+                    f"loader case index row {row_number} has invalid capability_tags"
+                )
         expected_by_id[case_id] = expected
         if isinstance(category, str) and category:
             category_by_id[case_id] = category
+        if isinstance(transport, str) and transport:
+            transport_by_id[case_id] = transport
+        if isinstance(capability_tags, list):
+            capability_tags_by_id[case_id] = capability_tags
     if set(expected_by_id) != manifest_ids:
         raise ValueError("loader case index IDs do not match cases/MANIFEST.txt")
-    return case_index_bytes, expected_by_id, category_by_id
+    return (
+        case_index_bytes,
+        expected_by_id,
+        category_by_id,
+        transport_by_id,
+        capability_tags_by_id,
+    )
 
 
 def count_stat(make_stats, name):
@@ -640,7 +666,13 @@ def measurements(repo_root, run_dir):
     if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         registry = validate_v4_registry_binding(run_dir, summary, results)
     manifest, manifest_ids = load_manifest(repo_root, run_dir)
-    case_index_bytes, expected_by_id, category_by_id = load_case_index(
+    (
+        case_index_bytes,
+        expected_by_id,
+        category_by_id,
+        transport_by_id,
+        capability_tags_by_id,
+    ) = load_case_index(
         run_dir / RAW_EVIDENCE["case_index"],
         manifest_ids,
         ACTIVE_CASE_INDEX_SCHEMA_VERSION if summary_schema_version == 5 else 1,
@@ -852,6 +884,32 @@ def measurements(repo_root, run_dir):
         for metric, counts in metrics.items():
             verify_score(summary, scope, metric, counts["numerator"], counts["denominator"])
     if summary_schema_version == 5:
+        observed_rows = [
+            row
+            for row in results
+            if row["evidence"].get("result_state") == "observed"
+            and row["actual_verdict"] in {"allow", "block"}
+            and row["score"] in {"pass", "fail"}
+        ]
+        expected_exercised = {
+            "transports": sorted(
+                {transport_by_id[row["case_id"]] for row in observed_rows}
+            ),
+            "categories": sorted(
+                {category_by_id[row["case_id"]] for row in observed_rows}
+            ),
+            "capability_tags": sorted(
+                {
+                    tag
+                    for row in observed_rows
+                    for tag in capability_tags_by_id[row["case_id"]]
+                }
+            ),
+        }
+        if summary.get("exercised") != expected_exercised:
+            raise ValueError(
+                "runner summary exercised coverage does not match observed result evidence"
+            )
         for scope, diagnostics in diagnostic_counts.items():
             for diagnostic, counts in diagnostics.items():
                 verify_diagnostic(

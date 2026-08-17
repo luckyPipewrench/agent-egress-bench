@@ -78,7 +78,7 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Receipt-scoring profile | 4 | 1, 4 | 1 | [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json) |
 | Summary | 5 | 4, 5 | 4 | [`summary-v5.schema.json`](../schemas/summary-v5.schema.json) |
 | Provenance candidate | 6 | 1, 2, 4, 5, 6 | 1, 2, 5 | [`provenance-candidate-v6.schema.json`](../schemas/provenance-candidate-v6.schema.json) |
-| Case index | 2 | 1, 2 | 1 | [`case-index-v2.schema.json`](../schemas/case-index-v2.schema.json) |
+| Case index | 3 | 1, 2, 3 | 1, 2 | [`case-index-v3.schema.json`](../schemas/case-index-v3.schema.json) |
 | Promoted record | 2 | 1, 2 | 1 | [`promoted-record-v2.schema.json`](../schemas/promoted-record-v2.schema.json) |
 | Promotion baseline | 1 | 1 | 1 | [`promotion-baseline-v1.schema.json`](../schemas/promotion-baseline-v1.schema.json) |
 

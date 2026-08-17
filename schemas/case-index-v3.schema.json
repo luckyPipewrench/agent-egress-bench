@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v3.schema.json",
+  "title": "agent-egress-bench Case Index v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "cases"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 3},
+    "cases": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"},
+      "additionalProperties": {"$ref": "#/$defs/case"}
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "expected_verdict", "transport", "capability_tags"],
+      "properties": {
+        "category": {"type": "string", "minLength": 1},
+        "expected_verdict": {"type": "string", "enum": ["allow", "block"]},
+        "transport": {"type": "string", "minLength": 1},
+        "capability_tags": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

@@ -50,7 +50,7 @@ Publish these next to any score, or the number is not reproducible.
 | Method identity: repository and exact commit | The corpus and scoring change over time. |
 | Corpus and scoring version, plus `benchmark_manifest_sha256` | Pins the case surface that ran. Active records carry both digests; frozen legacy records may carry only `corpus_sha256` and cannot carry the newer manifest digest. |
 | Capability profile, `tool_profile_sha256`, and exact registry reference | Preserves the profile's reporting labels and the raw registry snapshot that defined them. |
-| Exercised profile: the transports and categories the run actually drove | The exercised profile is what was tested. Reporting labels do not select rows or limit the result's scope. |
+| Exercised-control coverage: the transports, categories, and capability tags backed by observed result rows | The runner derives this separately from outcome scores. Publication re-derives it from `evidence.result_state=observed` rows and the pinned case index. Profile claims and framework mappings aren't execution evidence. |
 | Adapter identity and owner | A vendor-authored adapter is normal. Hiding who wrote it is not. |
 | Target product, version, and configuration | A score against an unnamed configuration cannot be repeated. |
 | Applicable, unreachable, historical not-applicable, and error counts, with N/A reasons | An N/A case that silently leaves the denominator inflates the score; an unreachable row exposes an adapter coverage gap without pretending it was a measurement. |

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,12 @@ func TestWriteCaseIndexUsesNormalizedVerdicts(t *testing.T) {
 	}
 	if entry.ExpectedVerdict != "allow" {
 		t.Fatalf("warn normalization = %q, want allow", entry.ExpectedVerdict)
+	}
+	if entry.Transport != "mcp_stdio" {
+		t.Fatalf("case index transport = %q, want mcp_stdio", entry.Transport)
+	}
+	if want := []string{"mcp_tool_poison"}; !reflect.DeepEqual(entry.CapabilityTags, want) {
+		t.Fatalf("case index capability_tags = %v, want %v", entry.CapabilityTags, want)
 	}
 }
 

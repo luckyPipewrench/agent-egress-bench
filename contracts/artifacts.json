@@ -328,15 +328,17 @@
     },
     {
       "family": "case_index",
-      "active_writer_version": 2,
+      "active_writer_version": 3,
       "accepted_reader_versions": [
+        1,
+        2,
+        3
+      ],
+      "frozen_versions": [
         1,
         2
       ],
-      "frozen_versions": [
-        1
-      ],
-      "canonical_schema_path": "schemas/case-index-v2.schema.json",
+      "canonical_schema_path": "schemas/case-index-v3.schema.json",
       "schemas": [
         {
           "version": 1,
@@ -347,16 +349,24 @@
         },
         {
           "version": 2,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/case-index-v2.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v2.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v2.schema.json",
+          "sha256": "48a552e15c9e62b3df4c0a9184b396a1a604cd9c3ddddb08dfc3f8dabc3df5fc"
+        },
+        {
+          "version": 3,
+          "status": "active",
+          "path": "schemas/case-index-v3.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v3.schema.json"
         }
       ],
       "writer": [
         "runner/corpus.go"
       ],
       "reader": [
-        "scripts/build_gauntlet_provenance.py"
+        "scripts/build_gauntlet_provenance.py",
+        "scripts/evaluate_gauntlet_candidate.py"
       ],
       "source_versions": [
         {

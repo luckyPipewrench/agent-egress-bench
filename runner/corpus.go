@@ -17,11 +17,13 @@ type caseIndexDocument struct {
 }
 
 type caseIndexEntry struct {
-	Category        string `json:"category"`
-	ExpectedVerdict string `json:"expected_verdict"`
+	Category        string   `json:"category"`
+	ExpectedVerdict string   `json:"expected_verdict"`
+	Transport       string   `json:"transport"`
+	CapabilityTags  []string `json:"capability_tags"`
 }
 
-const activeCaseIndexSchemaVersion = 2
+const activeCaseIndexSchemaVersion = 3
 
 type corpusStatCase struct {
 	Category        string
@@ -369,7 +371,12 @@ func writeCaseIndex(w io.Writer, cases []Case) error {
 		if _, exists := entries[c.ID]; exists {
 			return fmt.Errorf("duplicate case ID in case index: %s", c.ID)
 		}
-		entries[c.ID] = caseIndexEntry{Category: c.Category, ExpectedVerdict: c.ExpectedVerdict}
+		entries[c.ID] = caseIndexEntry{
+			Category:        c.Category,
+			ExpectedVerdict: c.ExpectedVerdict,
+			Transport:       c.Transport,
+			CapabilityTags:  append([]string{}, c.CapabilityTags...),
+		}
 	}
 	return json.NewEncoder(w).Encode(caseIndexDocument{SchemaVersion: activeCaseIndexSchemaVersion, Cases: entries})
 }

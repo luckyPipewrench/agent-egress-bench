@@ -19,26 +19,40 @@ def v5_raw_evidence():
     rows = []
     for index in range(158):
         case_id = f"malicious-{index:03d}"
-        cases[case_id] = {"category": "test", "expected_verdict": "block"}
+        cases[case_id] = {
+            "category": "test",
+            "expected_verdict": "block",
+            "transport": "fetch_proxy",
+            "capability_tags": ["url_dlp"],
+        }
         actual = "not_applicable" if index == 157 else "block"
         rows.append({
             "case_id": case_id,
             "expected_verdict": "block",
             "actual_verdict": actual,
             "score": "not_applicable" if actual == "not_applicable" else "pass",
-            "evidence": {} if actual == "not_applicable" else {"kind": "policy"},
+            "evidence": (
+                {}
+                if actual == "not_applicable"
+                else {"kind": "policy", "result_state": "observed"}
+            ),
         })
     for index in range(55):
         case_id = f"benign-{index:03d}"
-        cases[case_id] = {"category": "test", "expected_verdict": "allow"}
+        cases[case_id] = {
+            "category": "test",
+            "expected_verdict": "allow",
+            "transport": "fetch_proxy",
+            "capability_tags": ["url_dlp"],
+        }
         rows.append({
             "case_id": case_id,
             "expected_verdict": "allow",
             "actual_verdict": "allow",
             "score": "pass",
-            "evidence": {},
+            "evidence": {"result_state": "observed"},
         })
-    case_index = (json.dumps({"schema_version": 2, "cases": cases}, sort_keys=True) + "\n").encode()
+    case_index = (json.dumps({"schema_version": 3, "cases": cases}, sort_keys=True) + "\n").encode()
     results = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
     return case_index, results
 
@@ -178,7 +192,14 @@ def v5_candidate():
                 "run_metadata", "runner_stderr", "stats", "tool_profile",
             )},
             "reported_claims": [],
-            "exercised": {"transports": ["stdio"], "categories": ["prompt-injection"], "capability_tags": []},
+            # Exactly the coverage the pinned case index and raw rows support.
+            # This used to name a transport and a category that appear in
+            # neither, and nothing refused it.
+            "exercised": {
+                "transports": ["fetch_proxy"],
+                "categories": ["test"],
+                "capability_tags": ["url_dlp"],
+            },
         }
     )
     value["evidence_sha256"]["results"] = hashlib.sha256(V5_RESULTS_BYTES).hexdigest()
@@ -247,6 +268,7 @@ class CandidateEvaluationTest(unittest.TestCase):
         include_case_index_evidence=True,
         include_run_bundle_evidence=True,
         results_bytes=None,
+        case_index_bytes=None,
     ):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -275,7 +297,7 @@ class CandidateEvaluationTest(unittest.TestCase):
         else:
             evidence_path.write_bytes(LEGACY_RESULTS_BYTES)
         case_index_path = root / "case-index.json"
-        case_index_path.write_bytes(CASE_INDEX_BYTES)
+        case_index_path.write_bytes(case_index_bytes or CASE_INDEX_BYTES)
         run_bundle_path = root / "run-bundle.json"
         run_bundle_path.write_bytes(RUN_BUNDLE_BYTES)
 
@@ -385,6 +407,64 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertTrue(decision["blocked"])
         self.assertIn(
             "candidate metric_counts does not match the case index and raw results",
+            decision["failures"],
+        )
+
+    def test_inflated_exercised_coverage_is_rejected_by_raw_results(self):
+        value = v6_candidate()
+        value["exercised"]["transports"] = ["fetch_proxy", "mcp_http"]
+
+        decision, *_ = self.run_evaluate(value, v5_baseline())
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "candidate exercised does not match the case index and raw results",
+            decision["failures"],
+        )
+
+    def test_exercised_coverage_cannot_be_claimed_from_unobserved_rows(self):
+        rows = [
+            json.loads(line)
+            for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()
+        ]
+        # Same verdicts and scores, so every count the evaluator recomputes is
+        # unchanged. Only the observation state is withdrawn, which must remove
+        # the coverage claim these rows were carrying.
+        for row in rows:
+            if isinstance(row.get("evidence"), dict) and "result_state" in row["evidence"]:
+                row["evidence"]["result_state"] = "delivery_unavailable"
+        results_bytes = "".join(
+            json.dumps(row, sort_keys=True) + "\n" for row in rows
+        ).encode()
+
+        decision, *_ = self.run_evaluate(
+            v6_candidate(), v5_baseline(), results_bytes=results_bytes
+        )
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "candidate exercised does not match the case index and raw results",
+            decision["failures"],
+        )
+
+    def test_active_candidate_cannot_dodge_coverage_verification_with_a_legacy_index(self):
+        legacy_index = json.loads(CASE_INDEX_BYTES.decode("utf-8"))
+        legacy_index["schema_version"] = 2
+        for entry in legacy_index["cases"].values():
+            entry.pop("transport")
+            entry.pop("capability_tags")
+        legacy_bytes = (json.dumps(legacy_index, sort_keys=True) + "\n").encode()
+        value = v6_candidate()
+        value["case_index_sha256"] = hashlib.sha256(legacy_bytes).hexdigest()
+
+        decision, *_ = self.run_evaluate(
+            value, v5_baseline(), case_index_bytes=legacy_bytes
+        )
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "an active candidate must pin a labelled case index so exercised "
+            "coverage can be re-derived from raw results",
             decision["failures"],
         )
 

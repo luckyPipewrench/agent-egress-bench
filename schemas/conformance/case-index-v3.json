@@ -1,0 +1,37 @@
+{
+  "schema": "../case-index-v3.schema.json",
+  "accepted": [{
+    "description": "active loader case index with exercised-control labels",
+    "instance": {
+      "schema_version": 3,
+      "cases": {
+        "url-benign-api-call-001": {
+          "category": "url",
+          "expected_verdict": "allow",
+          "transport": "fetch_proxy",
+          "capability_tags": ["url_dlp"]
+        }
+      }
+    }
+  }],
+  "rejected": [
+    {"description": "missing schema version", "mutation": {"remove": ["schema_version"]}},
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
+    {"description": "missing cases", "mutation": {"remove": ["cases"]}},
+    {"description": "unknown top-level field", "mutation": {"replace": ["unexpected"], "value": true}},
+    {"description": "wrong cases type", "mutation": {"replace": ["cases"], "value": []}},
+    {"description": "empty case set", "mutation": {"replace": ["cases"], "value": {}}},
+    {"description": "malformed case identifier", "mutation": {"replace": ["cases", "../outside"], "value": {"category": "url", "expected_verdict": "allow", "transport": "fetch_proxy", "capability_tags": ["url_dlp"]}}},
+    {"description": "missing category", "mutation": {"remove": ["cases", "url-benign-api-call-001", "category"]}},
+    {"description": "empty category", "mutation": {"replace": ["cases", "url-benign-api-call-001", "category"], "value": ""}},
+    {"description": "missing expected verdict", "mutation": {"remove": ["cases", "url-benign-api-call-001", "expected_verdict"]}},
+    {"description": "unsupported verdict", "mutation": {"replace": ["cases", "url-benign-api-call-001", "expected_verdict"], "value": "warn"}},
+    {"description": "missing transport", "mutation": {"remove": ["cases", "url-benign-api-call-001", "transport"]}},
+    {"description": "empty transport", "mutation": {"replace": ["cases", "url-benign-api-call-001", "transport"], "value": ""}},
+    {"description": "empty capability tag", "mutation": {"replace": ["cases", "url-benign-api-call-001", "capability_tags"], "value": [""]}},
+    {"description": "missing capability tags", "mutation": {"remove": ["cases", "url-benign-api-call-001", "capability_tags"]}},
+    {"description": "empty capability tags", "mutation": {"replace": ["cases", "url-benign-api-call-001", "capability_tags"], "value": []}},
+    {"description": "duplicate capability tag", "mutation": {"replace": ["cases", "url-benign-api-call-001", "capability_tags"], "value": ["url_dlp", "url_dlp"]}},
+    {"description": "unknown case field", "mutation": {"replace": ["cases", "url-benign-api-call-001", "unexpected"], "value": true}}
+  ]
+}

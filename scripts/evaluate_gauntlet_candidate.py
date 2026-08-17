@@ -237,11 +237,50 @@ def _has_structured_evidence(evidence):
     )
 
 
+def _observed_row(row):
+    """Report whether a raw row is a measurement that establishes coverage.
+
+    This mirrors the builder's observed-row rule exactly, including the
+    evidence.result_state check. A row that carries an allow or block verdict
+    under any other state was never a request-correlated observation, so it must
+    not contribute a transport, category, or tag to a published coverage claim.
+    """
+    evidence = row.get("evidence")
+    return (
+        isinstance(evidence, dict)
+        and evidence.get("result_state") == "observed"
+        and row.get("actual_verdict") in {"block", "allow"}
+        and row.get("score") in {"pass", "fail"}
+    )
+
+
+def _case_labels(entry, case_id):
+    """Return the pinned coverage labels for one case index entry.
+
+    Every failure here is a ValueError rather than a KeyError or an
+    AttributeError, because the evaluator's caller only converts ValueError into
+    a blocked decision. A raised KeyError would exit the gate without recording
+    a refusal.
+    """
+    if not isinstance(entry, dict):
+        raise ValueError(f"case index entry {case_id!r} must be an object")
+    transport = entry.get("transport")
+    category = entry.get("category")
+    tags = entry.get("capability_tags")
+    if not isinstance(transport, str) or not transport:
+        raise ValueError(f"case index entry {case_id!r} has no transport label")
+    if not isinstance(category, str) or not category:
+        raise ValueError(f"case index entry {case_id!r} has no category label")
+    if not isinstance(tags, list) or any(not isinstance(tag, str) or not tag for tag in tags):
+        raise ValueError(f"case index entry {case_id!r} has invalid capability_tags")
+    return transport, category, tags
+
+
 def recompute_v5_measurements(case_index_path, results_path):
     """Derive promotion measurements from the bound case index and raw result rows."""
     case_index = load_object(case_index_path)
-    if case_index.get("schema_version") != 2 or not isinstance(case_index.get("cases"), dict):
-        raise ValueError("v5 metric recomputation requires a case-index-v2 object")
+    if case_index.get("schema_version") not in {2, 3} or not isinstance(case_index.get("cases"), dict):
+        raise ValueError("v5 metric recomputation requires a case-index-v2 or v3 object")
     indexed = case_index["cases"]
     rows = []
     with results_path.open(encoding="utf-8") as handle:
@@ -299,6 +338,21 @@ def recompute_v5_measurements(case_index_path, results_path):
         }
         for scope in V5_SCOPES
     }
+    # Exercised coverage is re-derived here rather than trusted, for the same
+    # reason the metric counts are: the candidate and the artifact that declares
+    # this coverage are written by one script, so accepting its own statement
+    # would make the published claim self-certifying. A case index that predates
+    # the coverage labels cannot support the derivation; that case returns None
+    # and the caller decides whether an unverifiable claim may still promote.
+    exercised = None
+    if case_index["schema_version"] == 3:
+        observed = [row for row in rows if _observed_row(row)]
+        labels = [_case_labels(indexed[row["case_id"]], row["case_id"]) for row in observed]
+        exercised = {
+            "transports": sorted({transport for transport, _, _ in labels}),
+            "categories": sorted({category for _, category, _ in labels}),
+            "capability_tags": sorted({tag for _, _, tags in labels for tag in tags}),
+        }
     return {
         "case_count": {
             "total": len(rows),
@@ -309,6 +363,7 @@ def recompute_v5_measurements(case_index_path, results_path):
         },
         "metric_counts": outcome_counts,
         "diagnostic_counts": diagnostic_counts,
+        "exercised": exercised,
     }
 
 
@@ -347,7 +402,7 @@ def verify_bound_results(candidate, evidence_paths, evidence_sha256):
         raise ValueError("candidate evidence_sha256.results does not match results evidence")
 
 
-def verify_v5_measurements(candidate, evidence_paths):
+def verify_v5_measurements(candidate, evidence_paths, candidate_schema_version):
     missing = sorted({"case_index", "results"} - set(evidence_paths))
     if missing:
         raise ValueError(f"v5 metric recomputation requires evidence: {missing!r}")
@@ -355,6 +410,19 @@ def verify_v5_measurements(candidate, evidence_paths):
     for field in ("metric_counts", "diagnostic_counts"):
         if candidate.get(field) != derived[field]:
             raise ValueError(f"candidate {field} does not match the case index and raw results")
+    # Refusing an unverifiable claim is deliberate. Skipping the comparison when
+    # the pinned index carries no labels would let an active candidate dodge it
+    # by pinning an older index, which is a fail-open dressed as compatibility.
+    # The version test is an inequality so a later candidate version inherits the
+    # requirement instead of silently falling through it.
+    if derived["exercised"] is None:
+        if candidate_schema_version >= 6:
+            raise ValueError(
+                "an active candidate must pin a labelled case index so exercised "
+                "coverage can be re-derived from raw results"
+            )
+    elif candidate.get("exercised") != derived["exercised"]:
+        raise ValueError("candidate exercised does not match the case index and raw results")
     for field, expected in derived["case_count"].items():
         if candidate["case_count"].get(field) != expected:
             raise ValueError(f"candidate case_count.{field} does not match the case index and raw results")
@@ -431,7 +499,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                 "candidate benchmark_manifest_sha256",
             )
             validate_v5_candidate_contract(candidate)
-            verify_v5_measurements(candidate, evidence_paths)
+            verify_v5_measurements(candidate, evidence_paths, candidate_schema_version)
 
         decision["artifact_id"] = nested_value(candidate, ("artifact_id",))
         decision["canonical_url"] = nested_value(candidate, ("canonical_url",))

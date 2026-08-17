@@ -203,11 +203,11 @@ class ValidRecordFixture:
         write_json(
             self.artifact_dir / "case-index.json",
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "cases": {
-                    "attack-a": {"category": "test", "expected_verdict": "block"},
-                    "attack-b": {"category": "test", "expected_verdict": "block"},
-                    "benign-a": {"category": "test", "expected_verdict": "allow"},
+                    "attack-a": {"category": "test", "expected_verdict": "block", "transport": "http", "capability_tags": ["test"]},
+                    "attack-b": {"category": "test", "expected_verdict": "block", "transport": "http", "capability_tags": ["test"]},
+                    "benign-a": {"category": "test", "expected_verdict": "allow", "transport": "http", "capability_tags": ["test"]},
                 },
             },
         )
