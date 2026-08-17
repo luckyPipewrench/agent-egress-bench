@@ -274,6 +274,42 @@ def validate_public_result_contract(repo_root, inventory, recorded_paths):
     ):
         raise ValueError("public result contract evidence roles must contain unique filenames")
 
+    raw_evidence = promotion.provenance.RAW_EVIDENCE
+    expected_roles = {
+        "normalized_decisions": sorted(
+            {
+                promotion.BASELINE_SNAPSHOT_FILENAME,
+                promotion.EXECUTION_DECISION_FILENAME,
+                promotion.PUBLISHED_DECISION_FILENAME,
+                promotion.SOURCE_BASELINE_FILENAME,
+                promotion.SOURCE_PROMOTION_DECISION_FILENAME,
+            }
+        ),
+        "pinned_inputs": sorted(
+            raw_evidence[label]
+            for label in (
+                "case_index",
+                "corpus_manifest",
+                "pipelock_release",
+                "pipelock_version_output",
+                "release_checksums",
+                "run_metadata",
+            )
+        )
+        + [promotion.RUN_BUNDLE_FILENAME],
+        "raw_evidence": sorted(
+            raw_evidence[label]
+            for label in ("raw_summary", "results", "runner_stderr", "stats")
+        ),
+        "reproduction": sorted(
+            raw_evidence[label] for label in ("command", "entrypoint_command")
+        ),
+        "score_and_scope": [promotion.CANDIDATE_FILENAME],
+    }
+    expected_roles["pinned_inputs"] = sorted(expected_roles["pinned_inputs"])
+    if required_evidence != expected_roles:
+        raise ValueError("public result contract evidence role bindings drifted from promotion output")
+
     schema_evidence = contract["schema_required_evidence"]
     require_exact_keys(schema_evidence, ("4-6",), "public result contract schema_required_evidence")
     active_files = schema_evidence["4-6"]
@@ -284,6 +320,8 @@ def validate_public_result_contract(repo_root, inventory, recorded_paths):
         or any(not isinstance(name, str) or not name or Path(name).name != name for name in active_files)
     ):
         raise ValueError("public result contract schema evidence must contain unique sorted filenames")
+    if active_files != sorted(promotion.provenance.V4_RAW_EVIDENCE.values()):
+        raise ValueError("public result contract schema evidence drifted from promotion output")
 
     producer_files = set(promotion.evidence_files_for({"schema_version": 6}).values())
     producer_files.update(

@@ -241,6 +241,16 @@ class InventoryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "drifted from promotion output"):
             self.validate()
 
+    def test_rejects_evidence_moved_to_wrong_role(self):
+        contract_path = self.root / inventory.PUBLIC_RESULT_CONTRACT_PATH
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["required_evidence"]["raw_evidence"].remove("results.jsonl")
+        contract["required_evidence"]["pinned_inputs"].append("results.jsonl")
+        contract["required_evidence"]["pinned_inputs"].sort()
+        contract_path.write_text(json.dumps(contract) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "role bindings drifted"):
+            self.validate()
+
     def test_rejects_required_file_absent_from_commit_pinned_inventory(self):
         source = self.root / "gauntlet-site/results/pipelock/digest/results.jsonl"
         source.unlink()
