@@ -72,6 +72,7 @@ fi
 run_doctor() {
   local failed=0 code status remediation index value material_valid=true
   local metadata_check="" attestation_check="" trusted_root_check=""
+  local workspace_check
   local -a codes=() statuses=() remediations=()
 
   add_check() {
@@ -79,6 +80,11 @@ run_doctor() {
     statuses+=("$2")
     remediations+=("$3")
     [[ "$2" == ok ]] || failed=$((failed + 1))
+  }
+
+  workspace_check="$(realpath "$GITHUB_WORKSPACE" 2>/dev/null || true)"
+  inside_workspace() {
+    [[ "$workspace_check" == / && "$1" == /* ]] || [[ "$1" == "$workspace_check/"* ]]
   }
 
   if [[ "$(uname -s 2>/dev/null || true)" == Linux ]]; then
@@ -96,7 +102,7 @@ run_doctor() {
   if [[ -z "${INPUT_PROFILE:-}" ]]; then
     add_check profile missing "pass --profile with a workspace-relative file"
   elif profile_check="$(realpath "$GITHUB_WORKSPACE/$INPUT_PROFILE" 2>/dev/null)" &&
-    [[ "$profile_check" == "$(realpath "$GITHUB_WORKSPACE")/"* && -f "$profile_check" && ! -L "$GITHUB_WORKSPACE/$INPUT_PROFILE" ]]; then
+    inside_workspace "$profile_check" && [[ -f "$profile_check" && ! -L "$GITHUB_WORKSPACE/$INPUT_PROFILE" ]]; then
     add_check profile ok ""
   else
     add_check profile invalid "use a regular, non-symlink file inside the workspace"
@@ -133,7 +139,7 @@ run_doctor() {
         attestation-trusted-root) value="${INPUT_ATTESTATION_TRUSTED_ROOT:-}" ;;
       esac
       if [[ -n "$value" ]] && material_check="$(realpath "$GITHUB_WORKSPACE/$value" 2>/dev/null)" &&
-        [[ "$material_check" == "$(realpath "$GITHUB_WORKSPACE")/"* && -f "$material_check" && ! -L "$GITHUB_WORKSPACE/$value" ]]; then
+        inside_workspace "$material_check" && [[ -f "$material_check" && ! -L "$GITHUB_WORKSPACE/$value" ]]; then
         add_check "${code//-/_}" ok ""
         case "$code" in
           image-metadata) metadata_check="$material_check" ;;

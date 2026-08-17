@@ -49,6 +49,35 @@ class RunnerImageContractTest(unittest.TestCase):
             self.assertTrue(report["ready"])
             self.assertFalse((workspace / "aeb-results").exists())
 
+    def test_local_offline_doctor_accepts_a_root_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            profile = fixture / "profile.json"
+            profile.write_text("{}\n", encoding="utf-8")
+            bin_dir = fixture / "bin"
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            docker.chmod(0o755)
+            image = f"registry.invalid/reviewed/runner@sha256:{'a' * 64}"
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts" / "run-oci-action.sh"),
+                    "--profile", str(profile).removeprefix("/"),
+                    "--adapter", "proxy",
+                    "--image", image,
+                    "--allow-unverified-image",
+                    "--doctor-json",
+                ],
+                cwd="/",
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertTrue(json.loads(result.stdout)["ready"])
+
     def test_local_offline_doctor_collects_missing_inputs(self) -> None:
         result = subprocess.run(
             [str(ROOT / "scripts" / "run-oci-action.sh"), "--doctor-json"],
@@ -74,10 +103,25 @@ class RunnerImageContractTest(unittest.TestCase):
                 (workspace / name).write_text("placeholder\n", encoding="utf-8")
             bin_dir = workspace / "bin"
             bin_dir.mkdir()
-            for name in ("docker", "gh"):
-                command = bin_dir / name
-                command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-                command.chmod(0o755)
+            docker = bin_dir / "docker"
+            docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            docker.chmod(0o755)
+            gh = bin_dir / "gh"
+            gh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "if args[:2] != ['attestation', 'verify']: raise SystemExit(91)\n"
+                "if pathlib.Path(args[2]).name != 'image.ref': raise SystemExit(92)\n"
+                "pairs = {'--repo': 'luckyPipewrench/agent-egress-bench', '--signer-workflow': 'github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml'}\n"
+                "for flag, value in pairs.items():\n"
+                "  if flag not in args or args[args.index(flag) + 1] != value: raise SystemExit(93)\n"
+                "for flag, name in [('--bundle', 'attestation.jsonl'), ('--custom-trusted-root', 'trusted-root.jsonl')]:\n"
+                "  if flag not in args or pathlib.Path(args[args.index(flag) + 1]).name != name: raise SystemExit(94)\n"
+                "raise SystemExit(0)\n",
+                encoding="utf-8",
+            )
+            gh.chmod(0o755)
             result = subprocess.run(
                 [
                     str(ROOT / "scripts" / "run-oci-action.sh"),
@@ -111,10 +155,25 @@ class RunnerImageContractTest(unittest.TestCase):
                 (workspace / name).write_text("placeholder\n", encoding="utf-8")
             bin_dir = workspace / "bin"
             bin_dir.mkdir()
-            for name in ("docker", "gh"):
-                command = bin_dir / name
-                command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-                command.chmod(0o755)
+            docker = bin_dir / "docker"
+            docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            docker.chmod(0o755)
+            gh = bin_dir / "gh"
+            gh.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "if args[:2] != ['attestation', 'verify']: raise SystemExit(91)\n"
+                "if pathlib.Path(args[2]).name != 'image.ref': raise SystemExit(92)\n"
+                "pairs = {'--repo': 'luckyPipewrench/agent-egress-bench', '--signer-workflow': 'github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml'}\n"
+                "for flag, value in pairs.items():\n"
+                "  if flag not in args or args[args.index(flag) + 1] != value: raise SystemExit(93)\n"
+                "for flag, name in [('--bundle', 'attestation.jsonl'), ('--custom-trusted-root', 'trusted-root.jsonl')]:\n"
+                "  if flag not in args or pathlib.Path(args[args.index(flag) + 1]).name != name: raise SystemExit(94)\n"
+                "raise SystemExit(0)\n",
+                encoding="utf-8",
+            )
+            gh.chmod(0o755)
             result = subprocess.run(
                 [
                     str(ROOT / "scripts" / "run-oci-action.sh"),
