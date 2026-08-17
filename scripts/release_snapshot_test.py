@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -36,6 +37,18 @@ class ReleaseSnapshotTest(unittest.TestCase):
         self.assertEqual(verification.returncode, 0, msg=verification.stderr)
         identity = release_dir / "release-identity.json"
         self.assertTrue(identity.is_file())
+        release_identity = json.loads(identity.read_text(encoding="utf-8"))
+        self.assertEqual(release_identity["method_independence"]["method_owner"], "luckyPipewrench/agent-egress-bench")
+        self.assertFalse(release_identity["method_independence"]["shared_target_vendor_ownership"])
+        self.assertFalse(release_identity["method_independence"]["proprietary_verifier_required"])
+        self.assertIsNone(release_identity["method_independence"]["mandatory_vendor_registry"])
+        self.assertIsNone(release_identity["method_independence"]["mandatory_transparency_chain"])
+        data_archive = next(release_dir.glob("agent-egress-bench_*_data.tar.gz"))
+        with tarfile.open(data_archive, "r:gz") as bundle:
+            contract = bundle.extractfile("contracts/method-independence-v1.json")
+            self.assertIsNotNone(contract)
+            contract_value = json.load(contract)
+        self.assertEqual(contract_value["lab_control"], {"branding": "operator", "scheduling": "operator"})
         archive = next(release_dir.glob("agent-egress-bench_*_linux_amd64.tar.gz"))
         with tarfile.open(archive, "r:gz") as bundle:
             entries = [entry for entry in bundle.getmembers() if entry.isfile()]

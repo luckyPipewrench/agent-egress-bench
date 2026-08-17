@@ -29,6 +29,7 @@ CHECKSUM_NAME = "checksums.txt"
 SCHEMA_CATALOG_PATH = "schemas/index.json"
 SCHEMA_CATALOG_SUFFIX = "_schema-catalog.json"
 SCHEMA_BUNDLE_SUFFIX = "_schemas.tar.gz"
+METHOD_INDEPENDENCE_PATH = "contracts/method-independence-v1.json"
 REPOSITORY = "luckyPipewrench/agent-egress-bench"
 RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
 # "examples" carries the operator kit: the tool-profile template the runner
@@ -311,6 +312,7 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
         "runner": {"binary": RUNNER_BINARY, "validator_binary": VALIDATOR_BINARY, "runner_version": metadata["runner_version"], "scoring_version": metadata["scoring_version"], "platforms": [{"goos": goos, "goarch": arch} for goos, arch in PLATFORMS]},
         "corpus": corpus(repo, metadata["corpus_version"]),
         "schema_contract": {"artifacts_manifest_path": "contracts/artifacts.json", "artifacts_manifest_sha256": sha256_file(repo / "contracts/artifacts.json"), "families": contract_families(repo)},
+        "method_independence": method_independence_identity(repo),
         "data_files": {name: sha256_file(repo / name) for name in data},
         "verification": {"checksums": {"algorithm": "sha256", "path": CHECKSUM_NAME}, "command": "python3 scripts/release_build.py verify --release-dir <downloaded-release-directory>"},
     }
@@ -334,10 +336,58 @@ def positive_int(value: Any, label: str) -> int:
     return value
 
 
+def validate_method_independence_contract(data: bytes) -> dict[str, Any]:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                fail(f"method-independence contract contains duplicate key {key!r}")
+            value[key] = item
+        return value
+
+    try:
+        contract = json.loads(data, object_pairs_hook=unique_object)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"method-independence contract is invalid JSON: {exc}")
+    expected = {
+        "schema_version": 1,
+        "method_owner": REPOSITORY,
+        "shared_target_vendor_ownership": False,
+        "verification": {
+            "bundled_verifier": "scripts/release_build.py",
+            "proprietary_verifier_required": False,
+        },
+        "mandatory_external_services": {
+            "vendor_specific_registry": None,
+            "transparency_chain": None,
+        },
+        "lab_control": {"branding": "operator", "scheduling": "operator"},
+    }
+    if contract != expected:
+        fail("method-independence contract does not preserve the public release invariants")
+    return contract
+
+
+def method_independence_identity(repo: Path) -> dict[str, Any]:
+    contract = validate_method_independence_contract((repo / METHOD_INDEPENDENCE_PATH).read_bytes())
+    return {
+        "contract_path": METHOD_INDEPENDENCE_PATH,
+        "contract_sha256": sha256_file(repo / METHOD_INDEPENDENCE_PATH),
+        "method_owner": contract["method_owner"],
+        "shared_target_vendor_ownership": contract["shared_target_vendor_ownership"],
+        "bundled_verifier": contract["verification"]["bundled_verifier"],
+        "proprietary_verifier_required": contract["verification"]["proprietary_verifier_required"],
+        "mandatory_vendor_registry": contract["mandatory_external_services"]["vendor_specific_registry"],
+        "mandatory_transparency_chain": contract["mandatory_external_services"]["transparency_chain"],
+        "lab_branding_control": contract["lab_control"]["branding"],
+        "lab_scheduling_control": contract["lab_control"]["scheduling"],
+    }
+
+
 def validate_identity_structure(identity: dict[str, Any]) -> None:
     if identity.get("schema_version") != 1:
         fail("release identity schema_version must be 1")
-    exact_object(identity, "release identity", {"schema_version", "release", "source", "runner", "corpus", "schema_contract", "data_files", "verification"})
+    exact_object(identity, "release identity", {"schema_version", "release", "source", "runner", "corpus", "schema_contract", "method_independence", "data_files", "verification"})
 
     release = exact_object(identity["release"], "release identity release", {"tag", "version", "snapshot"})
     tag = nonempty_string(release["tag"], "release identity release.tag")
@@ -402,6 +452,33 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
             fail(f"release identity schema_contract.families[{index}].schema_sha256 is invalid")
         nonempty_string(family["schema_id"], f"release identity schema_contract.families[{index}].schema_id")
 
+    method = exact_object(
+        identity["method_independence"],
+        "release identity method_independence",
+        {
+            "contract_path", "contract_sha256", "method_owner",
+            "shared_target_vendor_ownership", "bundled_verifier",
+            "proprietary_verifier_required", "mandatory_vendor_registry",
+            "mandatory_transparency_chain", "lab_branding_control",
+            "lab_scheduling_control",
+        },
+    )
+    expected_method = {
+        "contract_path": METHOD_INDEPENDENCE_PATH,
+        "method_owner": REPOSITORY,
+        "shared_target_vendor_ownership": False,
+        "bundled_verifier": "scripts/release_build.py",
+        "proprietary_verifier_required": False,
+        "mandatory_vendor_registry": None,
+        "mandatory_transparency_chain": None,
+        "lab_branding_control": "operator",
+        "lab_scheduling_control": "operator",
+    }
+    if any(method.get(key) != value for key, value in expected_method.items()):
+        fail("release identity method-independence invariants are invalid")
+    if not isinstance(method["contract_sha256"], str) or not SHA256_RE.fullmatch(method["contract_sha256"]):
+        fail("release identity method-independence contract digest is invalid")
+
     data_files = identity["data_files"]
     if not isinstance(data_files, dict) or not data_files:
         fail("release identity data_files must be a non-empty object")
@@ -410,8 +487,10 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
             fail("release identity data_files has an invalid entry")
         safe_name(name)
     required_operator_kit = {"examples/operator-kit/README.md", "examples/operator-kit/evidence-custody-checklist.md", "examples/operator-kit/report-template.md"}
-    if set(DATA_FILES) - set(data_files) or required_operator_kit - set(data_files) or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
+    if set(DATA_FILES) - set(data_files) or required_operator_kit - set(data_files) or METHOD_INDEPENDENCE_PATH not in data_files or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
         fail("release identity data_files does not contain the required corpus, schema, contract, operator kit, and verifier data")
+    if data_files[METHOD_INDEPENDENCE_PATH] != method["contract_sha256"]:
+        fail("release identity method-independence contract digest disagrees with data_files")
 
     verification = exact_object(identity["verification"], "release identity verification", {"checksums", "command"})
     checksums = exact_object(verification["checksums"], "release identity verification.checksums", {"algorithm", "path"})
@@ -817,6 +896,7 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
     for name, digest in data_files.items():
         if not isinstance(name, str) or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) or sha256_bytes(contents[name]) != digest:
             fail(f"data bundle digest does not match release identity: {name}")
+    validate_method_independence_contract(contents[METHOD_INDEPENDENCE_PATH])
     verify_bundle_corpus(identity, contents)
     schema_entries, schema_contents = verify_schema_bundle(identity, release_dir)
     if repo is not None:

@@ -8,6 +8,11 @@ Nobody needs approval from the maintainer to run the corpus, publish a result, o
 found. The point of writing the vocabulary down is that two people using the same word should mean
 the same thing.
 
+The released method also has no target-vendor co-owner, proprietary verifier dependency, mandatory
+vendor registry, or mandatory transparency chain. A lab controls its own name and schedule. These
+release invariants are machine-readable in `contracts/method-independence-v1.json`, bound into the
+release identity, shipped in the data bundle, and checked by the downloaded-release verifier.
+
 ## Scope
 
 Agent Egress Bench evaluates products that mediate the outbound traffic this corpus defines and
