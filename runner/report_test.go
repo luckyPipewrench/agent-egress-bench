@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -555,5 +556,212 @@ func TestReportRestrictedClaimPatternsStayInSyncWithClaimGate(t *testing.T) {
 	}
 	if len(reportRestrictedClaims) != 10 {
 		t.Fatalf("report claim pattern count = %d, want 10", len(reportRestrictedClaims))
+	}
+}
+
+func TestBuyerReportRefusesInputThatCarriesNoFact(t *testing.T) {
+	// The question is whether anything came out of the directory, not what the
+	// directory looks like. Every predicate written against the input's shape
+	// was worked around by the next input: presence let a zero-byte file
+	// through, non-zero size let a symlink through, and regular-and-non-empty
+	// let a JSON object of "{}" through. Each of those rendered a full report in
+	// which every fact read as absent, at exit zero, so a mistyped path came
+	// back as a report of a run nobody had found.
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("content-from-outside-the-run\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("empty directory", func(t *testing.T) {
+		if _, err := loadBuyerReport(t.TempDir()); err == nil {
+			t.Fatal("loadBuyerReport accepted a directory holding no run artifacts")
+		} else if !strings.Contains(err.Error(), "no run artifacts") || !strings.Contains(err.Error(), "results.jsonl") {
+			t.Fatalf("error = %v, want it to say no run artifacts and name the expected files", err)
+		}
+	})
+
+	t.Run("unrecognized file only", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "gauntlet-summary.json"), []byte(`{"tool":"x"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err == nil {
+			t.Fatal("loadBuyerReport accepted a directory holding no recognized run artifact")
+		}
+	})
+
+	for _, name := range reportArtifactNames {
+		t.Run("zero byte "+name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadBuyerReport(dir); err == nil {
+				t.Errorf("loadBuyerReport accepted a directory holding only a zero-byte %s", name)
+			}
+		})
+
+		t.Run("symlinked "+name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.Symlink(outside, filepath.Join(dir, name)); err != nil {
+				t.Skipf("cannot create a symlink here: %v", err)
+			}
+			if _, err := loadBuyerReport(dir); err == nil {
+				t.Errorf("loadBuyerReport accepted a directory holding only a symlinked %s", name)
+			}
+		})
+	}
+
+	t.Run("json object carrying no field", func(t *testing.T) {
+		for _, name := range []string{"raw-summary.json", "run-metadata.json", "run-bundle.json", "execution-decision.json"} {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("{}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadBuyerReport(dir); err == nil {
+				t.Errorf("loadBuyerReport accepted a directory whose only %s was an empty object", name)
+			}
+		}
+	})
+
+	t.Run("results file parsing to zero rows", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte("\n\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err == nil {
+			t.Error("loadBuyerReport accepted a results file describing no case")
+		}
+	})
+
+	t.Run("whitespace only text artifact", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "command.txt"), []byte("   \n \n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err == nil {
+			t.Error("loadBuyerReport accepted a whitespace-only command.txt")
+		}
+	})
+}
+
+func TestBuyerReportKeepsPartialRunsReportable(t *testing.T) {
+	// The other direction, and the one that matters more. An over-strict guard
+	// here pushes an operator into hand-assembling directories to get a report
+	// at all, and a guard people work around protects nothing. One real fact is
+	// enough, and each remaining fact is still reported as absent, never guessed.
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("content-from-outside-the-run\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("one document is enough", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "raw-summary.json"), []byte(`{"tool":"example-tool"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err != nil {
+			t.Fatalf("loadBuyerReport(one readable summary) = %v, want it accepted", err)
+		}
+	})
+
+	t.Run("one results row is enough", func(t *testing.T) {
+		dir := t.TempDir()
+		row := `{"case_id":"url-benign-api-call-001","actual_verdict":"allow","notes":""}` + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadBuyerReport(dir); err != nil {
+			t.Fatalf("loadBuyerReport(one results row) = %v, want it accepted", err)
+		}
+	})
+
+	// A symlinked results.jsonl beside a valid artifact is what exercises the
+	// no-follow guard inside the streaming results reader. Without the valid
+	// artifact the directory is refused before that reader ever runs, which is
+	// how an earlier version of this test passed while proving nothing about it.
+	t.Run("symlinked results file beside a valid artifact", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "raw-summary.json"), []byte(`{"tool":"example-tool"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(dir, "results.jsonl")); err != nil {
+			t.Skipf("cannot create a symlink here: %v", err)
+		}
+		report, err := loadBuyerReport(dir)
+		if err != nil {
+			t.Fatalf("loadBuyerReport = %v, want the partial run accepted", err)
+		}
+		if !strings.Contains(report.resultErr, "not a regular file") {
+			t.Errorf("results.jsonl status = %q, want it named as not a regular file", report.resultErr)
+		}
+		var out bytes.Buffer
+		report.renderMarkdown(&out)
+		if strings.Contains(out.String(), "content-from-outside-the-run") {
+			t.Error("report rendered the contents of a symlinked results file")
+		}
+	})
+
+	t.Run("symlinked text artifact beside a valid artifact", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "raw-summary.json"), []byte(`{"tool":"example-tool"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(dir, "command.txt")); err != nil {
+			t.Skipf("cannot create a symlink here: %v", err)
+		}
+		report, err := loadBuyerReport(dir)
+		if err != nil {
+			t.Fatalf("loadBuyerReport = %v, want the partial run accepted", err)
+		}
+		if !strings.Contains(report.command, "not a regular file") {
+			t.Errorf("command.txt status = %q, want it named as not a regular file", report.command)
+		}
+		var out bytes.Buffer
+		report.renderMarkdown(&out)
+		if strings.Contains(out.String(), "content-from-outside-the-run") {
+			t.Error("report rendered the contents of a symlinked artifact")
+		}
+	})
+}
+
+func TestActiveProfileIsReadOnceWithoutFollowingLinks(t *testing.T) {
+	// loadProfile took a path and read it with the symlink-following standard
+	// call, while the digest came from the no-follow read. A link could satisfy
+	// the registry check from a file outside the directory while the digest was
+	// computed on something else, so validation and hashing described two
+	// different files.
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.WriteFile(outside, []byte(`{"schema_version":4}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "tool-profile.json")); err != nil {
+		t.Skipf("cannot create a symlink here: %v", err)
+	}
+	if _, err := readRegularArtifact(dir, "tool-profile.json"); !errors.Is(err, errNotRegularArtifact) {
+		t.Fatalf("readRegularArtifact(symlinked profile) = %v, want it refused as not a regular file", err)
+	}
+}
+
+func TestZeroByteArtifactIsNamedRatherThanCalledReadable(t *testing.T) {
+	// The results reader read no rows from an empty file, reported no error, and
+	// returned "Readable", so an empty artifact beside a valid one was described
+	// to the operator as readable. Each reader answered the empty case its own
+	// way and this one answered it wrong, so the refusal belongs in the shared
+	// opener where all of them pass through.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "raw-summary.json"), []byte(`{"tool":"example-tool"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatalf("loadBuyerReport = %v, want the partial run accepted", err)
+	}
+	if !strings.Contains(report.resultErr, "empty file") {
+		t.Errorf("results.jsonl status = %q, want it named as an empty file", report.resultErr)
 	}
 }

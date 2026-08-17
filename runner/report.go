@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,6 +20,23 @@ import (
 )
 
 const absentFact = "Absent from run artifacts"
+
+// reportArtifactNames is every file the report reads. Each one is individually
+// optional, because a partial run should still be reported honestly. A
+// directory holding none of them is a different situation: it is not a run
+// artifact directory at all, and rendering it produced a report whose every
+// line said the fact was absent while the command exited zero. An operator who
+// pointed at the wrong path read that as a report of a run rather than as the
+// mistake it was, so an empty directory is refused instead of rendered.
+var reportArtifactNames = []string{
+	"raw-summary.json",
+	"run-metadata.json",
+	"run-bundle.json",
+	"execution-decision.json",
+	"results.jsonl",
+	"command.txt",
+	"entrypoint-command.txt",
+}
 
 // reportSelfConsistentPrefix opens every successful validation string. The
 // eligibility predicate matches on it, so the producers and the consumer share
@@ -97,14 +115,170 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	r.results, r.rowCounts, r.resultErr = loadNotApplicable(filepath.Join(dir, "results.jsonl"))
 	r.command = loadReportText(dir, "command.txt")
 	r.entrypoint = loadReportText(dir, "entrypoint-command.txt")
+	if !r.hasFact() {
+		return nil, fmt.Errorf("no run artifacts in %s: expected at least one of %s to carry a fact", dir, strings.Join(reportArtifactNames, ", "))
+	}
 	return r, nil
 }
 
+// hasFact reports whether anything in the directory yielded something to say.
+//
+// This is asked AFTER loading on purpose. Every version of it asked beforehand
+// was a guess about the input that the input then got around: a check for
+// presence let a zero-byte file through, a check for non-zero size let a
+// symlink and then a JSON object of `{}` through, and each fix only moved the
+// boundary. Asking afterwards ends the family, because the question is no
+// longer what the input looks like but whether a single fact came out of it.
+//
+// An empty result is not a report. Rendering one produced a document whose
+// every line read as absent while the command exited zero, so somebody who
+// mistyped a path was handed a report of a run that was never found.
+//
+// One fact is enough, which keeps a genuinely partial run reportable. Refusing
+// those would push an operator toward reconstructing directories by hand to get
+// a report at all, and a guard people work around protects nothing.
+func (r *buyerReport) hasFact() bool {
+	for _, doc := range []reportDocument{r.summary, r.metadata, r.bundle, r.decision} {
+		if len(doc.data) > 0 {
+			return true
+		}
+	}
+	// A results file that parsed cleanly with zero rows read as "Readable" and
+	// said nothing about any case, so the row count is the fact here, not the
+	// parse result.
+	if r.resultErr == "Readable" && r.rowCounts.total > 0 {
+		return true
+	}
+	for _, text := range []string{r.command, r.entrypoint} {
+		if text != absentFact && !strings.HasPrefix(text, "Invalid in run artifacts") && text != "Unreadable run artifact" {
+			return true
+		}
+	}
+	return false
+}
+
+// openRegularArtifact opens a report input without following a symlink and
+// confirms the type of the descriptor it actually opened.
+//
+// Checking the path and then opening it are two different questions about two
+// different moments. An earlier version called Lstat and then read the path, so
+// anything able to write the directory could swap a regular file for a symlink
+// between the two calls and put a file from outside the run into the report, or
+// swap in a FIFO and hang the read forever. A report directory that arrived in
+// an archive is exactly where that matters.
+//
+// O_NOFOLLOW makes the open itself refuse a symlink, and Stat on the open file
+// describes that descriptor rather than whatever the name points at now, so
+// there is no window between the check and the use.
+//
+// O_NONBLOCK is the other half and is not optional. Opening a FIFO read-only
+// waits for a writer, so a named pipe left in the directory hung the report
+// indefinitely at the open, before any type check could run. Measured: the
+// command sat until killed. With O_NONBLOCK the open returns immediately, the
+// type check sees a pipe, and the artifact is refused. It has no effect on a
+// regular file.
+func openRegularArtifact(dir, name string) (*os.File, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	return openRootedArtifact(root, name)
+}
+
+// openRootedArtifact opens one artifact beneath an already-open directory and
+// confirms the type of the descriptor it actually opened.
+//
+// os.Root is what makes this safe on every platform. It holds a handle to the
+// artifact directory and refuses any name that resolves outside it, so neither
+// a link nor a swapped ancestor directory can pull a file from elsewhere into
+// the report. An earlier version reached for that with per-platform opens and
+// only ever covered the final path component, and its non-Unix fallback checked
+// the path and then opened it, which is two moments a writer can step between.
+//
+// The platform flags on top are a narrower job: refusing a symlink outright
+// where the kernel can, and not blocking on a named pipe. Checking the type on
+// the returned descriptor rather than on the name is what closes the gap on the
+// platforms that have neither flag.
+func openRootedArtifact(root *os.Root, name string) (*os.File, error) {
+	// Ask the directory about the entry itself before opening it. os.Root
+	// confines resolution to the directory but still follows a link that stays
+	// inside it, so on the targets without O_NOFOLLOW a link to a sibling file
+	// would be opened and the report would describe the wrong artifact. Lstat is
+	// root-relative and does not follow the final component, so it answers that
+	// question on every platform.
+	if info, statErr := root.Lstat(name); statErr == nil && !info.Mode().IsRegular() {
+		return nil, errNotRegularArtifact
+	} else if statErr != nil {
+		return nil, statErr
+	}
+	handle, err := root.OpenFile(name, os.O_RDONLY|extraArtifactOpenFlags, 0)
+	if err != nil {
+		// A symlink refused by the kernel is a type refusal rather than a read
+		// failure, and is reported as one. Everything else, including a name
+		// os.Root rejected for escaping the directory, is returned as the error
+		// it is: an earlier version matched the standard library's English
+		// escape message to classify it, which would have gone quietly wrong the
+		// first time that wording changed. Both paths refuse; only the wording
+		// the operator sees differs, so the fragile half is not worth keeping.
+		if isRefusedLink(err) {
+			return nil, errNotRegularArtifact
+		}
+		return nil, err
+	}
+	info, err := handle.Stat()
+	if err != nil {
+		_ = handle.Close()
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		_ = handle.Close()
+		return nil, errNotRegularArtifact
+	}
+	// A zero-byte artifact is refused here rather than in each reader, because
+	// each reader answered it differently and one answered it wrong: the results
+	// scanner read no rows, reported no error, and returned "Readable", so an
+	// empty file was described to the operator as a readable artifact. The digest
+	// path would equally have hashed an empty slice. Refusing once, where the
+	// descriptor is open and its size already known, is the only place all of
+	// them share.
+	if info.Size() == 0 {
+		_ = handle.Close()
+		return nil, errEmptyArtifact
+	}
+	return handle, nil
+}
+
+// readRegularArtifact reads a report input, refusing anything that is not a
+// regular file. The report states facts about a run, and a file outside the run
+// directory is not one.
+func readRegularArtifact(dir, name string) ([]byte, error) {
+	handle, err := openRegularArtifact(dir, name)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = handle.Close() }()
+	return io.ReadAll(handle)
+}
+
+var (
+	errNotRegularArtifact = errors.New("run artifact is not a regular file")
+	errEmptyArtifact      = errors.New("run artifact is empty")
+)
+
 func loadReportDocument(dir, name string) reportDocument {
 	doc := reportDocument{name: name}
-	data, err := os.ReadFile(filepath.Join(dir, name))
+	data, err := readRegularArtifact(dir, name)
 	if os.IsNotExist(err) {
 		doc.status = absentFact
+		return doc
+	}
+	if errors.Is(err, errNotRegularArtifact) {
+		doc.status = "Invalid in run artifacts: not a regular file"
+		return doc
+	}
+	if errors.Is(err, errEmptyArtifact) {
+		doc.status = "Invalid in run artifacts: empty file"
 		return doc
 	}
 	if err != nil {
@@ -142,9 +316,15 @@ func ensureJSONEOF(dec *json.Decoder) error {
 }
 
 func loadReportText(dir, name string) string {
-	data, err := os.ReadFile(filepath.Join(dir, name))
+	data, err := readRegularArtifact(dir, name)
 	if os.IsNotExist(err) {
 		return absentFact
+	}
+	if errors.Is(err, errNotRegularArtifact) {
+		return "Invalid in run artifacts: not a regular file"
+	}
+	if errors.Is(err, errEmptyArtifact) {
+		return "Invalid in run artifacts: empty file"
 	}
 	if err != nil {
 		return "Unreadable run artifact"
@@ -169,9 +349,18 @@ type reportRowCounts struct {
 
 func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 	var counts reportRowCounts
-	f, err := os.Open(path)
+	// Streams rather than reading whole, so it opens the descriptor itself, and
+	// it uses the same no-follow open as the other readers: the type is checked
+	// on the descriptor that will actually be read, never on the path.
+	f, err := openRegularArtifact(filepath.Dir(path), filepath.Base(path))
 	if os.IsNotExist(err) {
 		return nil, counts, absentFact
+	}
+	if errors.Is(err, errNotRegularArtifact) {
+		return nil, counts, "Invalid in run artifacts: not a regular file"
+	}
+	if errors.Is(err, errEmptyArtifact) {
+		return nil, counts, "Invalid in run artifacts: empty file"
 	}
 	if err != nil {
 		return nil, counts, "Unreadable run artifact"
@@ -705,7 +894,7 @@ func (r *buyerReport) bundleValidation() string {
 			failures = append(failures, key+" has no report filename mapping")
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(r.dir, name))
+		data, err := readRegularArtifact(r.dir, name)
 		if err != nil {
 			failures = append(failures, name+" is absent or unreadable")
 			continue
@@ -741,7 +930,7 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	if err := json.Unmarshal(encoded, &reference); err != nil {
 		return "active capability_registry is malformed"
 	}
-	snapshot, err := os.ReadFile(filepath.Join(r.dir, "capability-registry.json"))
+	snapshot, err := readRegularArtifact(r.dir, "capability-registry.json")
 	if err != nil {
 		return "active capability registry snapshot is absent or unreadable"
 	}
@@ -749,16 +938,23 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	if err != nil {
 		return "active capability registry snapshot does not match the result"
 	}
-	profilePath := filepath.Join(r.dir, "tool-profile.json")
-	profile, err := loadProfile(profilePath)
+	// One read, one set of bytes. loadProfile takes a path and reads it again
+	// with the symlink-following standard call, so validating through it and
+	// hashing through the no-follow read could describe two different files: a
+	// link could satisfy the registry check from outside the directory while the
+	// digest was computed on something else.
+	profileBytes, err := readRegularArtifact(r.dir, "tool-profile.json")
 	if err != nil {
+		return "active tool profile is invalid"
+	}
+	var profile Profile
+	if decodeErr := decodeStrictJSON(profileBytes, &profile); decodeErr != nil {
 		return "active tool profile is invalid"
 	}
 	if profile.CapabilityRegistry != reference {
 		return "active tool profile registry reference does not match the result"
 	}
-	profileBytes, err := os.ReadFile(profilePath)
-	if err != nil || capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
+	if capabilityregistry.SHA256(profileBytes) != reportString(r.summary, "tool_profile_sha256") {
 		return "active tool profile digest does not match the result"
 	}
 	reported, err := reportRegistryLabels(r.summary, "reported_claims")
@@ -780,7 +976,7 @@ func (r *buyerReport) v4RegistryBindingError() string {
 // was retained intact; it cannot establish that the retained profile describes
 // the summary, tool profile, and registry snapshot beside it.
 func (r *buyerReport) v4ReceiptProfileBindingError(reference capabilityregistry.Reference) string {
-	data, err := os.ReadFile(filepath.Join(r.dir, "receipt-profile.json"))
+	data, err := readRegularArtifact(r.dir, "receipt-profile.json")
 	if err != nil {
 		return "v4 receipt profile is absent or unreadable"
 	}
