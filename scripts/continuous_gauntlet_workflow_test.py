@@ -141,7 +141,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertEqual(release_pin["status"], "invalid")
         self.assertTrue(release_pin["remediation"])
 
-    def test_doctor_keeps_json_contract_when_release_pin_is_not_a_file(self):
+    def test_doctor_keeps_json_contract_when_release_pin_is_unreadable(self):
         with tempfile.TemporaryDirectory() as temporary:
             pin = Path(temporary) / "release.env"
             pin.mkdir()
