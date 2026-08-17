@@ -1,4 +1,4 @@
-.PHONY: preflight check-citation check-case-immutability check-frozen-schema-immutability check-schema-catalog check-schema-copies check-docs check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
+.PHONY: preflight check-citation check-case-immutability check-frozen-schema-immutability check-schema-catalog check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -13,7 +13,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-contracts check-schema-catalog check-public-contracts check-case-immutability check-frozen-schema-immutability check-schema-copies check-docs check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-schema-catalog check-public-contracts check-case-immutability check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
 
 check-scorecard-workflow:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/scorecard_workflow_test.py
@@ -82,6 +82,9 @@ check-citation:
 check-docs:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_docs_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_docs.py
+
+check-operator-kit:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/operator_kit_test.py
 
 # Independent verifier modules embed governed schema copies. Missing, empty,
 # extra, symlinked, or byte-different copies fail before verifier tests.

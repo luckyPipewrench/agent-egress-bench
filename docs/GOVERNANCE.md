@@ -108,13 +108,15 @@ The corpus maintainer also builds a competing tool ([Pipelock](https://github.co
 
 ## Appeals
 
-If you disagree with a case's expected verdict, open a GitHub issue. Include:
+If you disagree with a case's expected verdict, open a GitHub Issue. Include:
 
 - The case ID
 - Your reasoning (why the verdict should be different)
 - Evidence if available (real-world traffic patterns, false positive data, attack feasibility analysis)
 
 Verdict changes require community discussion. They are not made unilaterally.
+
+Use a GitHub Discussion instead when the disagreement is about scoring, adapter or method application, or a published result that appears to misstate the method. [`RESULTS-USE.md`](RESULTS-USE.md) defines that result-correction path.
 
 ## Spec changes
 

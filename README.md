@@ -188,6 +188,7 @@ Evidence and publication:
 - [CAPABILITY-VOCABULARY.md](docs/CAPABILITY-VOCABULARY.md): immutable reporting-label registry and profile evolution policy
 - [ARTIFACT-PROVENANCE.md](docs/ARTIFACT-PROVENANCE.md): opt-in external `schema-valid`, `authenticated-at(T)`, and `buyer-reproduced` provenance assessments
 - [RESULTS-USE.md](docs/RESULTS-USE.md): assurance labels, public-result disclosures, and correction rules
+- [Operator kit](examples/operator-kit/): run setup, evidence custody, report template, retention, and appeal routes
 
 Integration and reference:
 

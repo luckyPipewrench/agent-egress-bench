@@ -45,6 +45,7 @@ DATA_FILES = (
     "docs/GOVERNANCE.md",
     "docs/RUNNER.md",
     "docs/OCI-RUNNER.md",
+    "docs/RESULTS-USE.md",
     "scripts/action_artifacts.py",
     "scripts/release_build.py",
     "scripts/run-oci-action.sh",
@@ -408,7 +409,8 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
         if not isinstance(name, str) or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
             fail("release identity data_files has an invalid entry")
         safe_name(name)
-    if set(DATA_FILES) - set(data_files) or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
+    required_operator_kit = {"examples/operator-kit/README.md", "examples/operator-kit/evidence-custody-checklist.md", "examples/operator-kit/report-template.md"}
+    if set(DATA_FILES) - set(data_files) or required_operator_kit - set(data_files) or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
         fail("release identity data_files does not contain the required corpus, schema, contract, operator kit, and verifier data")
 
     verification = exact_object(identity["verification"], "release identity verification", {"checksums", "command"})

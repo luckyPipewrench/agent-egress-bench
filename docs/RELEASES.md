@@ -7,9 +7,9 @@ Each release contains:
 - One corpus data bundle. It carries the cases, the schemas, the contracts, the
   core capability registry, and the operator kit under `examples/`: the tool
   profile template the runner requires, the MCP gateway plugin template, the
-  runner skeleton, and the reference harness. Bundle members extract with mode
-  `0644` so the bytes stay reproducible, so run a bundled shell script as
-  `bash <script>` rather than executing it directly.
+  runner skeleton, the operator-kit README, the evidence-custody checklist, the
+  report template, and the reference harness. Bundle members preserve their tracked executable bit;
+  other files extract with mode `0644`.
 - One commit-pinned schema catalog and schema bundle. The bundle contains the
   catalog and every schema it names, so a vendor can validate schema bytes
   after download without a network connection.

@@ -70,7 +70,7 @@ EOF
 fi
 
 run_doctor() {
-  local failed=0 code status remediation index value material_valid=true
+  local failed=0 code status remediation index value material_valid=true publisher_verified=false
   local metadata_check="" attestation_check="" trusted_root_check=""
   local workspace_check
   local -a codes=() statuses=() remediations=()
@@ -79,7 +79,7 @@ run_doctor() {
     codes+=("$1")
     statuses+=("$2")
     remediations+=("$3")
-    [[ "$2" == ok ]] || failed=$((failed + 1))
+    [[ "$2" == ok || "$2" == waived ]] || failed=$((failed + 1))
   }
 
   workspace_check="$(realpath "$GITHUB_WORKSPACE" 2>/dev/null || true)"
@@ -120,7 +120,7 @@ run_doctor() {
     add_check image_loaded missing "load the exact digest-pinned image and retry"
   fi
   if [[ "${INPUT_ALLOW_UNVERIFIED_IMAGE:-false}" == true ]]; then
-    add_check publisher_material ok ""
+    add_check publisher_material waived "publisher identity was not verified; retain this waiver in the run packet"
   else
     if [[ "${INPUT_IMAGE:-}" == ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:* ]]; then
       add_check image_repository ok ""
@@ -160,13 +160,15 @@ run_doctor() {
         --custom-trusted-root "$trusted_root_check" >/dev/null 2>&1 &&
       [[ "$(<"$metadata_check")" == "${INPUT_IMAGE:-}" ]]; then
       add_check publisher_identity ok ""
+      publisher_verified=true
     else
       add_check publisher_identity invalid "stage publisher evidence that verifies and names the requested image"
     fi
   fi
 
   if [[ "$doctor_mode" == json ]]; then
-    printf '{"schema_version":1,"ready":%s,"checks":[' "$([[ "$failed" == 0 ]] && printf true || printf false)"
+    printf '{"schema_version":1,"ready":%s,"publisher_verified":%s,"checks":[' \
+      "$([[ "$failed" == 0 ]] && printf true || printf false)" "$publisher_verified"
     for ((index = 0; index < ${#codes[@]}; index++)); do
       ((index == 0)) || printf ','
       printf '{"code":"%s","status":"%s","remediation":"%s"}' "${codes[$index]}" "${statuses[$index]}" "${remediations[$index]}"

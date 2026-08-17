@@ -40,17 +40,24 @@ Run your runner and save the JSONL output. How you share results is up to you. S
 **Do not submit Gauntlet results to this repo.** This repo contains attack cases, scoring methodology, and optional receipt profiles under `profiles/`. There is no in-repo results table and no maintainer-awarded mark. Each vendor publishes and owns its own results.
 
 Label the run and publish every identifying fact required by [RESULTS-USE.md](RESULTS-USE.md).
+The [operator kit](../examples/operator-kit/) provides the custody checklist and report template. Use it before execution so target identity, configuration, clocks, and artifact ownership aren't reconstructed from memory afterward.
 
 ### Suggested format
 
-```
+```text
 results/
   v0.3.6/
     results.jsonl       # Raw JSONL output
-    summary.txt         # Summary line from stderr
+    raw-summary.json    # Structured summary written by the runner
+    summary.json        # OCI-path copy of the same structured summary
+    run-metadata.json   # OCI completion, exit status, image, and verification state
+    doctor.json         # OCI prerequisites, including explicit waivers
+    runner.stderr       # Human summary and diagnostics
+    command.txt         # Exact invocation
     tool-profile.json   # Copy of your tool profile
     capability-registry.json # Exact raw registry snapshot named by the profile
-    README.md           # Verdict mapping, notes, how to reproduce
+    evidence-custody-checklist.md # Run identity, digests, interventions, transfer
+    report.md           # Outcomes, exercised coverage, limits, reproduction
 ```
 
 Tag or date your results directories by tool version so readers can track progress over time.

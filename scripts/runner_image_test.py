@@ -47,6 +47,7 @@ class RunnerImageContractTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             report = json.loads(result.stdout)
             self.assertTrue(report["ready"])
+            self.assertFalse(report["publisher_verified"])
             self.assertFalse((workspace / "aeb-results").exists())
 
     def test_local_offline_doctor_accepts_a_root_workspace(self) -> None:
@@ -192,7 +193,9 @@ class RunnerImageContractTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr)
-            statuses = {check["code"]: check["status"] for check in json.loads(result.stdout)["checks"]}
+            report = json.loads(result.stdout)
+            self.assertTrue(report["publisher_verified"])
+            statuses = {check["code"]: check["status"] for check in report["checks"]}
             self.assertEqual("ok", statuses["image_repository"])
             self.assertEqual("ok", statuses["publisher_identity"])
 

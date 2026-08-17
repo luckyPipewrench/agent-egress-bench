@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 
-ARTIFACT_NAMES = ("results.jsonl", "summary.json", "run-metadata.json")
+ARTIFACT_NAMES = ("results.jsonl", "summary.json", "raw-summary.json", "run-metadata.json")
 
 
 class ArtifactError(RuntimeError):
@@ -137,6 +137,7 @@ def publish(workspace: Path, output_dir: str, results: Path, metadata: Path, sum
         copy_regular(results, output_fd, "results.jsonl")
         if summary is not None:
             copy_regular(summary, output_fd, "summary.json")
+            copy_regular(summary, output_fd, "raw-summary.json")
         copy_regular(metadata, output_fd, "run-metadata.json")
     finally:
         os.close(output_fd)
