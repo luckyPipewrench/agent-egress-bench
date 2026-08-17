@@ -210,6 +210,7 @@ go build -o aeb-gauntlet .
     var cc = r.case_count || {};
     if (verified) {
       card.appendChild(window.renderGauntletScope(r));
+      card.appendChild(window.renderGauntletControlCoverage(r));
     } else {
       var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? (cc.unreachable || 0) + ' unreachable, ' : '';
       card.appendChild(txt('div', 'Routed ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + unreachable + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));

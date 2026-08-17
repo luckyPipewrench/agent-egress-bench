@@ -37,6 +37,15 @@ def apply_mutation(instance, mutation):
             parent = parent[part]
         del parent[mutation["remove"][-1]]
         return value
+    if "add" in mutation:
+        parent = value
+        for part in mutation["add"][:-1]:
+            parent = parent[part]
+        field = mutation["add"][-1]
+        if field in parent:
+            raise ValueError(f"add mutation target already exists: {field}")
+        parent[field] = mutation["value"]
+        return value
     parent = value
     for part in mutation["replace"][:-1]:
         parent = parent[part]

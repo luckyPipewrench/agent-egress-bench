@@ -10,6 +10,7 @@ The weakest-instance column describes the least informative structurally valid r
 | --- | --- | --- | --- |
 | `case-index-v1.schema.json` | Closed root; array items closed | Empty and duplicate-bearing indexes are structurally valid | Frozen v1 unchanged; v2 replaces it |
 | `case-index-v2.schema.json` | Closed root; typed case-ID map | At least one uniquely keyed case with category and expected verdict | New v2 because tightening v1 would reject saved artifacts |
+| `case-index-v3.schema.json` | Closed root and case rows | V2 fields plus the canonical transport and capability tags needed to reconstruct exercised-control coverage | New v3 because adding required evidence labels to v2 would reject saved artifacts |
 | `case-v4.schema.json` | Closed except `payload` | A complete identified case with bounded ID syntax and unique capability and requirement sets; payload varies by `input_type` and the Go validator checks the selected shape | In-place amendment; every published case retains the same meaning |
 | `multi-file-case-v4.schema.json` | Closed, including the file inventory | A complete temporal case with three normalized relative JSON filenames; absolute and parent paths fail | Unchanged |
 | `result-v4.schema.json` | Closed except frozen adapter evidence | A complete historical scored row; evidence is a frozen extension point | Frozen v4 unchanged |

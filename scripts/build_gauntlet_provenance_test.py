@@ -302,7 +302,11 @@ class ProvenanceBuilderTest(unittest.TestCase):
         summary["case_count"]["unreachable"] = 0
         summary["capability_registry"] = reference
         summary["reported_claims"] = ["test"]
-        summary["exercised"] = {"capability_tags": ["test"]}
+        summary["exercised"] = {
+            "transports": ["fetch_proxy"],
+            "categories": ["test"],
+            "capability_tags": ["test"],
+        }
         summary["tool_profile_sha256"] = hashlib.sha256(profile_bytes).hexdigest()
         summary["measurement_status"] = measurement_status
         summary.pop("sufficient", None)
@@ -342,11 +346,11 @@ class ProvenanceBuilderTest(unittest.TestCase):
             (self.run_dir / "case-index.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": 2,
+                        "schema_version": 3,
                         "cases": {
-                            "a": {"category": "test", "expected_verdict": "block"},
-                            "b": {"category": "test", "expected_verdict": "allow"},
-                            "c": {"category": "test", "expected_verdict": "block"},
+                            "a": {"category": "test", "expected_verdict": "block", "transport": "fetch_proxy", "capability_tags": ["test"]},
+                            "b": {"category": "test", "expected_verdict": "allow", "transport": "fetch_proxy", "capability_tags": ["test"]},
+                            "c": {"category": "test", "expected_verdict": "block", "transport": "fetch_proxy", "capability_tags": ["test"]},
                         },
                     }
                 ),
@@ -581,6 +585,37 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("invalid or missing evidence.result_state", result.stderr)
 
+    def test_v5_bundle_rejects_exercised_coverage_not_derived_from_observed_rows(self):
+        self.make_active_fixture(summary_schema_version=5)
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["exercised"]["capability_tags"] = []
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "exercised coverage does not match observed result evidence", result.stderr
+        )
+
+    def test_v5_bundle_rejects_exercised_coverage_wider_than_the_observed_rows(self):
+        # The companion test above shrinks the claim. Inflation is the direction
+        # that matters for a published result: a summary naming a transport no
+        # row drove would advertise a tested surface that was never tested.
+        self.make_active_fixture(summary_schema_version=5)
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["exercised"]["transports"] = ["fetch_proxy", "mcp_http"]
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "exercised coverage does not match observed result evidence", result.stderr
+        )
+
     def test_active_summary_without_manifest_digest_is_rejected(self):
         self.make_active_fixture(summary_schema_version=5)
         summary_path = self.run_dir / "raw-summary.json"
@@ -746,7 +781,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         result = self.bundle()
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("schema_version must be 2", result.stderr)
+        self.assertIn("schema_version must be 3", result.stderr)
 
     def test_active_measurement_status_must_match_result_coverage(self):
         self.make_active_fixture("incomplete")

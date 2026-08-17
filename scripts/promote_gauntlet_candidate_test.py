@@ -201,10 +201,11 @@ def v6_candidate(run_id="123", run_attempt=None, generated_at="2026-08-05T00:10:
         "sha256": "f" * 64,
         },
         "reported_claims": [],
+        # Exactly the coverage the pinned case index and raw rows below support.
         "exercised": {
-            "transports": ["http"],
+            "transports": ["fetch_proxy"],
             "categories": ["test"],
-            "capability_tags": [],
+            "capability_tags": ["url_dlp"],
         },
         "portable_bundle_sha256": "4" * 64,
         "method_repository": "luckyPipewrench/agent-egress-bench",
@@ -292,10 +293,20 @@ class PromotionFixture:
                 write_json(
                     path,
                     {
-                        "schema_version": 2,
+                        "schema_version": 3,
                         "cases": {
-                            "attack-1": {"category": "test", "expected_verdict": "block"},
-                            "benign-1": {"category": "test", "expected_verdict": "allow"},
+                            "attack-1": {
+                                "category": "test",
+                                "expected_verdict": "block",
+                                "transport": "fetch_proxy",
+                                "capability_tags": ["url_dlp"],
+                            },
+                            "benign-1": {
+                                "category": "test",
+                                "expected_verdict": "allow",
+                                "transport": "fetch_proxy",
+                                "capability_tags": ["url_dlp"],
+                            },
                         },
                     },
                 )
@@ -323,7 +334,11 @@ class PromotionFixture:
                                 "expected_verdict": "block",
                                 "actual_verdict": "block" if containment_passes else "allow",
                                 "score": "pass" if containment_passes else "fail",
-                                "evidence": {"scanner": "example"} if containment_passes else {},
+                                "evidence": (
+                                    {"scanner": "example", "result_state": "observed"}
+                                    if containment_passes
+                                    else {"result_state": "observed"}
+                                ),
                                 "notes": "",
                             },
                             {
@@ -331,7 +346,7 @@ class PromotionFixture:
                                 "expected_verdict": "allow",
                                 "actual_verdict": "block" if benign_blocked else "allow",
                                 "score": "fail" if benign_blocked else "pass",
-                                "evidence": {},
+                                "evidence": {"result_state": "observed"},
                                 "notes": "",
                             },
                         )
@@ -680,6 +695,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
                         "evidence": {
                             "budget_block_timing": "before_over_budget",
                             "error_message": "blocked at 4/3",
+                            "result_state": "observed",
                         },
                         "notes": "",
                     },
@@ -688,7 +704,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
                         "expected_verdict": "allow",
                         "actual_verdict": "allow",
                         "score": "pass",
-                        "evidence": {},
+                        "evidence": {"result_state": "observed"},
                         "notes": "",
                     },
                 )

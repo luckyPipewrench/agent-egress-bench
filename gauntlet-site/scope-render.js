@@ -60,6 +60,21 @@
     return value;
   }
 
+  function sortedStringSet(value, path) {
+    if (!Array.isArray(value) || value.some(function(item) {
+      return typeof item !== 'string' || !item.trim();
+    })) {
+      throw new Error(path + ' must be an array of non-empty strings');
+    }
+    var sorted = value.slice().sort();
+    if (sorted.some(function(item, index) {
+      return index > 0 && item === sorted[index - 1];
+    })) {
+      throw new Error(path + ' must contain unique strings');
+    }
+    return sorted;
+  }
+
   // scope is 'applicable' or 'full'. The full-corpus block gets the same
   // numerator/denominator agreement check as the applicable block, because it
   // is the figure the card now leads with and an unvalidated headline is not
@@ -289,5 +304,31 @@
     return block;
   }
 
+  function renderGauntletControlCoverage(artifact) {
+    validateScope(artifact);
+    var block = document.createElement('div');
+    block.className = 'exercised-coverage';
+    if (artifact.schema_version !== 4 && artifact.schema_version !== 5 && artifact.schema_version !== 6) {
+      block.textContent = 'Exercised-control coverage: not recorded in this frozen result.';
+      return block;
+    }
+    var transports = sortedStringSet(scopeValue(artifact, ['exercised', 'transports']), 'exercised.transports');
+    var categories = sortedStringSet(scopeValue(artifact, ['exercised', 'categories']), 'exercised.categories');
+    var tags = sortedStringSet(scopeValue(artifact, ['exercised', 'capability_tags']), 'exercised.capability_tags');
+    // Only a v6 artifact has had this object re-derived from the raw rows and
+    // the pinned case index, by the builder and again by the promotion gate. An
+    // earlier artifact carries whatever its runner recorded, and saying "from
+    // observed rows" there would claim a derivation nothing performed.
+    var origin = artifact.schema_version === 6
+      ? 'Exercised-control coverage from observed rows: transports '
+      : 'Exercised-control coverage as recorded by the runner: transports ';
+    block.textContent = origin +
+      (transports.join(', ') || 'none') + '; categories ' +
+      (categories.join(', ') || 'none') + '; capability tags ' +
+      (tags.join(', ') || 'none') + '. These labels describe tested surfaces, not successful outcomes or framework conformance.';
+    return block;
+  }
+
   root.renderGauntletScope = renderGauntletScope;
+  root.renderGauntletControlCoverage = renderGauntletControlCoverage;
 })(window);

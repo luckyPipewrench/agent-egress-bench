@@ -33,6 +33,7 @@ type artifactVector struct {
 type artifactVectorMutation struct {
 	Replace []any `json:"replace"`
 	Remove  []any `json:"remove"`
+	Add     []any `json:"add"`
 	Value   any   `json:"value"`
 }
 
@@ -207,9 +208,14 @@ func applyArtifactMutation(t *testing.T, value any, mutation artifactVectorMutat
 	t.Helper()
 	path := mutation.Replace
 	remove := false
+	add := false
 	if len(mutation.Remove) > 0 {
 		path = mutation.Remove
 		remove = true
+	}
+	if len(mutation.Add) > 0 {
+		path = mutation.Add
+		add = true
 	}
 	if len(path) == 0 {
 		t.Fatal("mutation has no path")
@@ -225,12 +231,18 @@ func applyArtifactMutation(t *testing.T, value any, mutation artifactVectorMutat
 		if !ok {
 			t.Fatalf("object path component is %T", last)
 		}
+		if _, exists := current[key]; add && exists {
+			t.Fatalf("add mutation target already exists: %s", key)
+		}
 		if remove {
 			delete(current, key)
 		} else {
 			current[key] = mutation.Value
 		}
 	case []any:
+		if add {
+			t.Fatal("add mutation requires an object parent")
+		}
 		index := int(last.(float64))
 		if remove {
 			current[index] = nil
