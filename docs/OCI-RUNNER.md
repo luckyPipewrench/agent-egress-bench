@@ -107,6 +107,21 @@ docker image load --input aeb-gauntlet-image.tar
 docker image inspect "$(cat aeb-gauntlet-image.ref)"
 ```
 
+Run the same offline engine locally without a GitHub Actions runner:
+
+```bash
+./scripts/run-oci-action.sh \
+  --profile examples/pipelock/tool-profile.json \
+  --adapter proxy \
+  --image "$(cat aeb-gauntlet-image.ref)" \
+  --image-metadata benchmark/release/runner-image.ref \
+  --image-attestation benchmark/release/runner-image.attestation.jsonl \
+  --attestation-trusted-root benchmark/release/runner-image.trusted-root.jsonl \
+  --runner-args '["--fixtures","--managed-proxy-cmd","/work/benchmark/start-proxy.sh","--proxy-addr","127.0.0.1:18899"]'
+```
+
+The local command uses the Action's verification and containment path. It requires the image to be loaded already, verifies the release identity with the transferred attestation material, starts Docker with network mode `none`, and writes the same strict result set to `aeb-results/`.
+
 Set the Action inputs `image` to that full digest reference and `offline` to `true`. Offline mode first requires that exact reference to exist locally, then starts the benchmark container with Docker network mode `none` and the same strict completion check used online.
 
 ```yaml

@@ -71,6 +71,98 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn('${original_args[$original_arg_index]}', self.entrypoint)
         self.assertNotRegex(self.entrypoint, r"\$\{original_args\[[@*]\]")
 
+    def test_doctor_reports_every_check_as_json_without_starting_a_run(self):
+        before = set((REPO_ROOT / "continuous-gauntlet-runs").glob("*"))
+        result = subprocess.run(
+            ["bash", str(ENTRYPOINT), "--doctor-json"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["schema_version"], 1)
+        self.assertTrue(report["ready"])
+        codes = {check["code"] for check in report["checks"]}
+        self.assertIn("platform_linux", codes)
+        self.assertIn("command_jq", codes)
+        self.assertIn("mcp_stdio_bridge", codes)
+        self.assertIn("repository_root", codes)
+        self.assertIn("release_pin", codes)
+        self.assertEqual(before, set((REPO_ROOT / "continuous-gauntlet-runs").glob("*")))
+
+    def test_doctor_collects_all_missing_prerequisites_before_failing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fake_path = Path(temporary)
+            for name in (
+                "dirname", "uname", "git", "python3", "go", "curl",
+                "sha256sum", "tar", "timeout", "realpath", "make",
+            ):
+                target = "/usr/bin/uname" if name == "uname" else "/usr/bin/true"
+                if name == "dirname":
+                    target = "/usr/bin/dirname"
+                (fake_path / name).symlink_to(target)
+            result = subprocess.run(
+                ["/bin/bash", str(ENTRYPOINT), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "PATH": str(fake_path)},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        statuses = {check["code"]: check["status"] for check in report["checks"]}
+        self.assertFalse(report["ready"])
+        self.assertEqual(statuses["command_jq"], "missing")
+        self.assertEqual(statuses["mcp_stdio_bridge"], "missing")
+        self.assertIn("release_pin", statuses)
+
+    def test_doctor_rejects_a_malformed_release_pin(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            pin = Path(temporary) / "release.env"
+            pin.write_text(
+                "PIPELOCK_REPO=luckyPipewrench/pipelock\n"
+                "PIPELOCK_TAG=v3.3.0\n"
+                "PIPELOCK_VERSION=3.3.0\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--release-pin", str(pin), "--doctor-json"],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        release_pin = next(check for check in report["checks"] if check["code"] == "release_pin")
+        self.assertEqual(release_pin["status"], "invalid")
+        self.assertTrue(release_pin["remediation"])
+
+    def test_doctor_keeps_json_contract_when_release_pin_is_unreadable(self):
+        if os.geteuid() == 0:
+            self.skipTest("root can read mode-000 files")
+        with tempfile.TemporaryDirectory() as temporary:
+            pin = Path(temporary) / "release.env"
+            pin.write_text("PIPELOCK_REPO=luckyPipewrench/pipelock\n", encoding="utf-8")
+            pin.chmod(0)
+            try:
+                result = subprocess.run(
+                    ["bash", str(ENTRYPOINT), "--release-pin", str(pin), "--doctor-json"],
+                    cwd=REPO_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+            finally:
+                pin.chmod(0o600)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(result.stdout)
+        release_pin = next(check for check in report["checks"] if check["code"] == "release_pin")
+        self.assertEqual(release_pin["status"], "invalid")
+
     def test_canonical_entrypoint_avoids_old_bash_empty_reason_array_expansion(self):
         self.assertIn("noncanonical_reason_count=0", self.entrypoint)
         self.assertIn("reason_index < noncanonical_reason_count", self.entrypoint)
@@ -88,7 +180,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertNotIn(version, self.entrypoint)
         self.assertNotIn('source "$release_pin"', self.entrypoint)
         self.assertIn("--release-pin", self.entrypoint)
-        self.assertIn("release pin contains an invalid line", self.entrypoint)
+        self.assertIn("reviewed release pin is invalid", self.entrypoint)
 
     def test_target_runs_under_a_filesystem_restricted_environment(self):
         self.assertIn("go build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
@@ -105,15 +197,14 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("SECCOMP_RET_ERRNO", sandbox)
 
     def test_release_pin_parser_accepts_only_the_five_data_fields(self):
-        start = self.entrypoint.index('release_pin_input="$release_pin"')
-        end = self.entrypoint.index('started_at="$(date', start)
-        parser_block = self.entrypoint[start:end]
+        start = self.entrypoint.index("parse_release_pin() {")
+        end = self.entrypoint.index("\nrequire_uint()", start)
+        parser_function = self.entrypoint[start:end]
         shell = "\n".join(
             (
                 "set -Eeuo pipefail",
-                'die() { printf "%s\\n" "$*" >&2; exit 1; }',
-                'release_pin="$1"',
-                parser_block,
+                parser_function,
+                'parse_release_pin "$1"',
             )
         )
         digests = (
@@ -195,7 +286,22 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                 check=False,
             )
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("cannot be a symbolic link", result.stderr)
+
+    def test_run_path_rejects_release_pin_symlink_before_resolution(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "target.env"
+            target.write_text(RELEASE_PIN.read_text(encoding="utf-8"), encoding="utf-8")
+            pin = Path(temporary) / "release.env"
+            pin.symlink_to(target)
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--release-pin", str(pin), "--development"],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("reviewed release pin cannot be a symbolic link", result.stderr)
 
     def test_stdio_profile_does_not_claim_unexercised_subject_budget(self):
         profile = json.loads(PIPELOCK_PROFILE.read_text(encoding="utf-8"))

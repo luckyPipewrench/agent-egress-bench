@@ -6,6 +6,61 @@ fail() {
   exit 2
 }
 
+if (($#)); then
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+  export GITHUB_WORKSPACE="$(pwd -P)"
+  export GITHUB_ACTION_PATH="$repo_root"
+  export INPUT_OFFLINE=true
+  export INPUT_RUNNER_ARGS='[]'
+  export INPUT_ENVIRONMENT='[]'
+  export INPUT_OUTPUT_DIR=aeb-results
+  export INPUT_ALLOW_UNVERIFIED_IMAGE=false
+  export INPUT_PROFILE=""
+  export INPUT_ADAPTER=""
+  export INPUT_IMAGE=""
+  export INPUT_IMAGE_METADATA=""
+  export INPUT_IMAGE_ATTESTATION=""
+  export INPUT_ATTESTATION_TRUSTED_ROOT=""
+  export AEB_ACTION_REF=local-offline
+  while (($#)); do
+    case "$1" in
+      --profile) (($# >= 2)) || fail "--profile requires a value"; export INPUT_PROFILE="$2"; shift 2 ;;
+      --adapter) (($# >= 2)) || fail "--adapter requires a value"; export INPUT_ADAPTER="$2"; shift 2 ;;
+      --image) (($# >= 2)) || fail "--image requires a value"; export INPUT_IMAGE="$2"; shift 2 ;;
+      --image-metadata) (($# >= 2)) || fail "--image-metadata requires a value"; export INPUT_IMAGE_METADATA="$2"; shift 2 ;;
+      --image-attestation) (($# >= 2)) || fail "--image-attestation requires a value"; export INPUT_IMAGE_ATTESTATION="$2"; shift 2 ;;
+      --attestation-trusted-root) (($# >= 2)) || fail "--attestation-trusted-root requires a value"; export INPUT_ATTESTATION_TRUSTED_ROOT="$2"; shift 2 ;;
+      --runner-args) (($# >= 2)) || fail "--runner-args requires a value"; export INPUT_RUNNER_ARGS="$2"; shift 2 ;;
+      --environment) (($# >= 2)) || fail "--environment requires a value"; export INPUT_ENVIRONMENT="$2"; shift 2 ;;
+      --output-dir) (($# >= 2)) || fail "--output-dir requires a value"; export INPUT_OUTPUT_DIR="$2"; shift 2 ;;
+      --allow-unverified-image) export INPUT_ALLOW_UNVERIFIED_IMAGE=true; shift ;;
+      -h|--help)
+        cat <<'EOF'
+Usage: ./scripts/run-oci-action.sh --profile FILE --adapter NAME --image REF [options]
+
+Run the pre-staged OCI benchmark locally with network access disabled.
+
+Required:
+  --profile FILE                    Workspace-relative tool profile.
+  --adapter NAME                    Runner adapter name.
+  --image REF                       Preloaded digest-pinned image.
+  --image-metadata FILE             Signed runner-image.ref asset.
+  --image-attestation FILE          Offline attestation bundle.
+  --attestation-trusted-root FILE   Offline GitHub attestation trusted root.
+
+Options:
+  --runner-args JSON                Additional runner arguments as a JSON string array.
+  --environment JSON                Environment variable names as a JSON string array.
+  --output-dir DIR                  Workspace-relative output directory (default: aeb-results).
+  --allow-unverified-image          Permit a reviewed mirror or custom digest-pinned image.
+EOF
+        exit 0
+        ;;
+      *) fail "unknown local option: $1" ;;
+    esac
+  done
+fi
+
 [[ -n "${GITHUB_WORKSPACE:-}" ]] || fail "GITHUB_WORKSPACE is required"
 [[ -n "${INPUT_PROFILE:-}" ]] || fail "profile is required"
 [[ -n "${INPUT_ADAPTER:-}" ]] || fail "adapter is required"
@@ -81,6 +136,7 @@ case "$allow_unverified_image" in
   true|false) ;;
   *) fail "allow-unverified-image must be true or false" ;;
 esac
+publisher_verified=false
 
 workspace_file() {
   local input_name=$1
@@ -129,8 +185,10 @@ if [[ -n "$image" ]]; then
   [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]] || fail "image must use an immutable @sha256 digest"
   if [[ "$allow_unverified_image" == false ]]; then
     verify_image_identity
+    publisher_verified=true
   fi
   if [[ "$offline" == true ]]; then
+    command -v docker >/dev/null 2>&1 || fail "Docker is required for an offline run"
     docker image inspect "$image" >/dev/null 2>&1 || fail "offline image isn't loaded: $image"
   else
     docker pull "$image"
@@ -224,6 +282,7 @@ export AEB_ACTION_RUNNER_EXIT="$container_exit"
 export AEB_ACTION_EXIT="$run_exit"
 export AEB_ACTION_REF_VALUE="${AEB_ACTION_REF:-local}"
 export AEB_ACTION_MEASUREMENT_STATUS="$measurement_status"
+export AEB_ACTION_PUBLISHER_VERIFIED="$publisher_verified"
 python3 - <<'PY'
 import json
 import os
@@ -237,6 +296,7 @@ path.write_text(json.dumps({
     "network_mode": os.environ["AEB_ACTION_NETWORK_MODE"],
     "selinux_labeling": os.environ["AEB_ACTION_SELINUX_LABELING"],
     "measurement_status": os.environ["AEB_ACTION_MEASUREMENT_STATUS"],
+    "publisher_verified": os.environ["AEB_ACTION_PUBLISHER_VERIFIED"] == "true",
     "require_complete": True,
     "runner_exit_code": int(os.environ["AEB_ACTION_RUNNER_EXIT"]),
     "action_exit_code": int(os.environ["AEB_ACTION_EXIT"]),
