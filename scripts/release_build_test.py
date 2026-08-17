@@ -34,6 +34,7 @@ class ReleaseBuildTest(unittest.TestCase):
             source, destination = REPO / name, self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
+            shutil.copymode(source, destination)
         subprocess.run(["git", "-C", str(self.root), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(self.root), "config", "user.email", "release-test@example.invalid"], check=True)
         subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Release Test"], check=True)
@@ -456,6 +457,45 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertEqual(run.returncode, 0, msg=run.stderr)
         self.assertTrue(summary.is_file(), "a run driven by the bundle must write its summary")
         self.assertEqual(json.loads(summary.read_text(encoding="utf-8"))["tool"], json.loads(profile.read_text(encoding="utf-8"))["tool"])
+
+    def test_extracted_data_bundle_carries_a_runnable_offline_doctor(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke(
+            "data-bundle",
+            "--repo-root", str(self.root),
+            "--identity", str(self.identity),
+            "--dist", str(dist),
+        )
+        extracted = self.root / "operator-kit"
+        extracted.mkdir()
+        with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
+            archive.extractall(extracted, filter="data")
+        doctor = extracted / "scripts/run-oci-action.sh"
+        self.assertTrue(doctor.stat().st_mode & 0o111, "the released operator command must be executable")
+        bin_dir = self.root / "doctor-bin"
+        bin_dir.mkdir()
+        docker = bin_dir / "docker"
+        docker.write_text("#!/bin/sh\n[ \"$1 $2\" = \"image inspect\" ]\n", encoding="utf-8")
+        docker.chmod(0o755)
+        image = f"registry.invalid/reviewed/runner@sha256:{'a' * 64}"
+        result = subprocess.run(
+            [
+                str(doctor),
+                "--profile", "examples/runner-template/tool-profile-template.json",
+                "--adapter", "dryrun",
+                "--image", image,
+                "--allow-unverified-image",
+                "--doctor-json",
+            ],
+            cwd=extracted,
+            env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["ready"])
+        self.assertFalse((extracted / "aeb-results").exists())
 
     def test_release_binds_a_schema_bundle_to_the_commit_pinned_catalog(self) -> None:
         self.prepare()

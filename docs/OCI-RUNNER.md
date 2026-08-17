@@ -107,6 +107,21 @@ docker image load --input aeb-gauntlet-image.tar
 docker image inspect "$(cat aeb-gauntlet-image.ref)"
 ```
 
+The release data bundle includes the local runner command and its artifact helper. Extract that bundle as the working directory, copy the image identity files into the paths below, and check the machine before starting a run:
+
+```bash
+./scripts/run-oci-action.sh \
+  --profile examples/pipelock/tool-profile.json \
+  --adapter proxy \
+  --image "$(cat aeb-gauntlet-image.ref)" \
+  --image-metadata benchmark/release/runner-image.ref \
+  --image-attestation benchmark/release/runner-image.attestation.jsonl \
+  --attestation-trusted-root benchmark/release/runner-image.trusted-root.jsonl \
+  --doctor-json
+```
+
+The doctor checks the platform, commands, profile, adapter, loaded image, and publisher material. It reports every failed check in one JSON document, returns nonzero when the machine isn't ready, and doesn't create `aeb-results` or start a container.
+
 Run the same offline engine locally without a GitHub Actions runner:
 
 ```bash
