@@ -91,8 +91,11 @@ cd validate && go build -o aeb-validate .
 For the pinned Pipelock release, use the portable entry point from a clean Linux clone on `origin/main` or a tag:
 
 ```bash
+./scripts/run-pipelock-gauntlet.sh --doctor
 ./scripts/run-pipelock-gauntlet.sh
 ```
+
+Run `--doctor` before the benchmark. It checks the platform, the required commands, an MCP stdio bridge, the working directory, and the reviewed release pin, without starting a run or writing an evidence directory. `--doctor-json` returns the same checks as JSON. Both commands exit nonzero when a check fails. A ready result is not a prediction that the run will succeed: it does not check the installed Go version, the `origin` remote, whether the checkout is clean, or network reachability, and the run itself still fails on each of those.
 
 The command downloads the reviewed Pipelock release, verifies its pinned asset digest, published checksum, and reported version, then confines target writes with Landlock and denies Unix-domain sockets with seccomp. It starts the required local fixtures and managed Pipelock processes, runs the single-file and multi-file cases, and leaves one timestamped directory under `continuous-gauntlet-runs/`. That directory contains the exact internal command, stdout results, stderr, summary, case index, corpus stats, release identity, file digests, and a machine-readable execution decision.
 

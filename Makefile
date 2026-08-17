@@ -161,6 +161,11 @@ test-control-evidence-g2-authentication:
 
 test-pipelock-example:
 	@sh examples/pipelock/mcp-stdio-upstream-bridge_test.sh
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+		scripts.continuous_gauntlet_workflow_test.ContinuousGauntletWorkflowTest.test_doctor_reports_every_check_as_json_without_starting_a_run \
+		scripts.continuous_gauntlet_workflow_test.ContinuousGauntletWorkflowTest.test_doctor_collects_all_missing_prerequisites_before_failing \
+		scripts.continuous_gauntlet_workflow_test.ContinuousGauntletWorkflowTest.test_doctor_rejects_a_malformed_release_pin \
+		scripts.continuous_gauntlet_workflow_test.ContinuousGauntletWorkflowTest.test_doctor_keeps_json_contract_when_release_pin_is_unreadable
 
 # Regenerate cases/MANIFEST.txt after adding or removing a case. The manifest
 # pins the logical corpus so a case cannot leave it without a visible diff;

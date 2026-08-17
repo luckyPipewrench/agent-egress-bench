@@ -15,6 +15,7 @@ corpus_repository="luckyPipewrench/agent-egress-bench"
 output_dir=""
 development_mode=false
 development_binary=""
+doctor_mode=""
 benchmark_timeout_seconds=$((24 * 60))
 deadline_epoch=""
 reserve_seconds=$((6 * 60))
@@ -35,6 +36,8 @@ Options:
   --release-pin FILE               Read the reviewed Pipelock release identity from FILE.
   --development                    Allow a dirty or unreviewed corpus and mark the run noncanonical.
   --development-binary PATH        Use PATH instead of a released binary and mark the run noncanonical.
+  --doctor                         Check local prerequisites without starting a run.
+  --doctor-json                    Check prerequisites and emit machine-readable JSON.
   -h, --help                       Show this help.
 EOF
 }
@@ -43,6 +46,40 @@ die() {
   failure_reason="$*"
   printf 'run-pipelock-gauntlet: %s\n' "$failure_reason" >&2
   exit 1
+}
+
+parse_release_pin() {
+  local pin_path="$1"
+  local pin_contents=""
+  local release_line release_key release_value
+  local release_repo_count=0 release_tag_count=0 release_version_count=0
+  local release_amd64_digest_count=0 release_arm64_digest_count=0
+  unset PIPELOCK_REPO PIPELOCK_TAG PIPELOCK_VERSION PIPELOCK_ASSET_SHA256_AMD64 PIPELOCK_ASSET_SHA256_ARM64
+
+  [[ -f "$pin_path" && ! -L "$pin_path" ]] || return 1
+  if ! pin_contents="$(<"$pin_path")"; then
+    return 1
+  fi
+  while IFS= read -r release_line || [[ -n "$release_line" ]]; do
+    [[ -z "$release_line" || "$release_line" == \#* ]] && continue
+    [[ "$release_line" =~ ^([A-Z0-9_]+)=([A-Za-z0-9._/-]+)$ ]] || return 1
+    release_key="${BASH_REMATCH[1]}"
+    release_value="${BASH_REMATCH[2]}"
+    case "$release_key" in
+      PIPELOCK_REPO) PIPELOCK_REPO="$release_value"; release_repo_count=$((release_repo_count + 1)) ;;
+      PIPELOCK_TAG) PIPELOCK_TAG="$release_value"; release_tag_count=$((release_tag_count + 1)) ;;
+      PIPELOCK_VERSION) PIPELOCK_VERSION="$release_value"; release_version_count=$((release_version_count + 1)) ;;
+      PIPELOCK_ASSET_SHA256_AMD64) PIPELOCK_ASSET_SHA256_AMD64="$release_value"; release_amd64_digest_count=$((release_amd64_digest_count + 1)) ;;
+      PIPELOCK_ASSET_SHA256_ARM64) PIPELOCK_ASSET_SHA256_ARM64="$release_value"; release_arm64_digest_count=$((release_arm64_digest_count + 1)) ;;
+      *) return 1 ;;
+    esac
+  done <<< "$pin_contents"
+  [[ "$release_repo_count" == 1 && "$release_tag_count" == 1 && "$release_version_count" == 1 && \
+    "$release_amd64_digest_count" == 1 && "$release_arm64_digest_count" == 1 && \
+    "${PIPELOCK_REPO:-}" == "luckyPipewrench/pipelock" && \
+    "${PIPELOCK_TAG:-}" == "v${PIPELOCK_VERSION:-}" && \
+    "${PIPELOCK_ASSET_SHA256_AMD64:-}" =~ ^[0-9a-f]{64}$ && \
+    "${PIPELOCK_ASSET_SHA256_ARM64:-}" =~ ^[0-9a-f]{64}$ ]]
 }
 
 require_uint() {
@@ -87,6 +124,14 @@ while (($#)); do
       development_binary="$2"
       shift 2
       ;;
+    --doctor)
+      doctor_mode="text"
+      shift
+      ;;
+    --doctor-json)
+      doctor_mode="json"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -96,6 +141,93 @@ while (($#)); do
       ;;
   esac
 done
+
+run_doctor() {
+  local failed=0
+  local command_name
+  local bridge_found=false
+  local repo_ok=false
+  local pin_ok=false
+  local -a codes=()
+  local -a details=()
+  local -a remediations=()
+
+  add_doctor_result() {
+    codes+=("$1")
+    details+=("$2")
+    remediations+=("$3")
+    [[ "$2" == "ok" ]] || failed=$((failed + 1))
+  }
+
+  if [[ "$(uname -s 2>/dev/null || true)" == "Linux" ]]; then
+    add_doctor_result "platform_linux" "ok" ""
+  else
+    add_doctor_result "platform_linux" "unsupported" "run this reference lane on Linux"
+  fi
+  for command_name in git python3 go curl jq sha256sum tar timeout realpath make; do
+    if command -v "$command_name" >/dev/null 2>&1; then
+      add_doctor_result "command_${command_name//-/_}" "ok" ""
+    else
+      add_doctor_result "command_${command_name//-/_}" "missing" "install $command_name and retry"
+    fi
+  done
+  for command_name in socat ncat nc; do
+    if command -v "$command_name" >/dev/null 2>&1; then
+      bridge_found=true
+      break
+    fi
+  done
+  if [[ "$bridge_found" == true ]]; then
+    add_doctor_result "mcp_stdio_bridge" "ok" ""
+  else
+    add_doctor_result "mcp_stdio_bridge" "missing" "install socat, ncat, or nc and retry"
+  fi
+  if [[ "$(pwd -P)" == "$repo_root" ]]; then
+    repo_ok=true
+  fi
+  if [[ "$repo_ok" == true ]]; then
+    add_doctor_result "repository_root" "ok" ""
+  else
+    add_doctor_result "repository_root" "wrong_directory" "run the command from the benchmark repository root"
+  fi
+  if parse_release_pin "$release_pin"; then
+    pin_ok=true
+  fi
+  if [[ "$pin_ok" == true ]]; then
+    add_doctor_result "release_pin" "ok" ""
+  else
+    add_doctor_result "release_pin" "invalid" "restore the reviewed five-field release pin and retry"
+  fi
+
+  if [[ "$doctor_mode" == "json" ]]; then
+    printf '{"schema_version":1,"ready":%s,"checks":[' "$([[ "$failed" == 0 ]] && printf true || printf false)"
+    for ((doctor_index = 0; doctor_index < ${#codes[@]}; doctor_index++)); do
+      ((doctor_index == 0)) || printf ','
+      printf '{"code":"%s","status":"%s","remediation":"%s"}' \
+        "${codes[$doctor_index]}" "${details[$doctor_index]}" "${remediations[$doctor_index]}"
+    done
+    printf ']}\n'
+  else
+    for ((doctor_index = 0; doctor_index < ${#codes[@]}; doctor_index++)); do
+      printf '%-24s %s' "${codes[$doctor_index]}" "${details[$doctor_index]}"
+      if [[ -n "${remediations[$doctor_index]}" ]]; then
+        printf ' — %s' "${remediations[$doctor_index]}"
+      fi
+      printf '\n'
+    done
+    if [[ "$failed" == 0 ]]; then
+      printf 'ready: local prerequisites are satisfied\n'
+    else
+      printf 'not ready: %d prerequisite check(s) failed\n' "$failed"
+    fi
+  fi
+  ((failed == 0))
+}
+
+if [[ -n "$doctor_mode" ]]; then
+  run_doctor
+  exit $?
+fi
 
 require_uint "--benchmark-timeout-seconds" "$benchmark_timeout_seconds"
 require_uint "--reserve-seconds" "$reserve_seconds"
@@ -109,55 +241,7 @@ release_pin_input="$release_pin"
 [[ ! -L "$release_pin_input" ]] || die "reviewed release pin cannot be a symbolic link: $release_pin_input"
 release_pin="$(realpath -e "$release_pin_input")" || \
   die "reviewed release pin does not resolve: $release_pin_input"
-[[ -f "$release_pin" ]] || die "reviewed release pin must be a regular file: $release_pin_input"
-unset PIPELOCK_REPO PIPELOCK_TAG PIPELOCK_VERSION PIPELOCK_ASSET_SHA256_AMD64 PIPELOCK_ASSET_SHA256_ARM64
-release_repo_count=0
-release_tag_count=0
-release_version_count=0
-release_amd64_digest_count=0
-release_arm64_digest_count=0
-while IFS= read -r release_line || [[ -n "$release_line" ]]; do
-  [[ -z "$release_line" || "$release_line" == \#* ]] && continue
-  [[ "$release_line" =~ ^([A-Z0-9_]+)=([A-Za-z0-9._/-]+)$ ]] || \
-    die "release pin contains an invalid line"
-  release_key="${BASH_REMATCH[1]}"
-  release_value="${BASH_REMATCH[2]}"
-  case "$release_key" in
-    PIPELOCK_REPO)
-      PIPELOCK_REPO="$release_value"
-      release_repo_count=$((release_repo_count + 1))
-      ;;
-    PIPELOCK_TAG)
-      PIPELOCK_TAG="$release_value"
-      release_tag_count=$((release_tag_count + 1))
-      ;;
-    PIPELOCK_VERSION)
-      PIPELOCK_VERSION="$release_value"
-      release_version_count=$((release_version_count + 1))
-      ;;
-    PIPELOCK_ASSET_SHA256_AMD64)
-      PIPELOCK_ASSET_SHA256_AMD64="$release_value"
-      release_amd64_digest_count=$((release_amd64_digest_count + 1))
-      ;;
-    PIPELOCK_ASSET_SHA256_ARM64)
-      PIPELOCK_ASSET_SHA256_ARM64="$release_value"
-      release_arm64_digest_count=$((release_arm64_digest_count + 1))
-      ;;
-    *) die "release pin contains an unknown key: $release_key" ;;
-  esac
-done < "$release_pin"
-[[ "$release_repo_count" == 1 && "$release_tag_count" == 1 && "$release_version_count" == 1 && \
-  "$release_amd64_digest_count" == 1 && "$release_arm64_digest_count" == 1 ]] || \
-  die "release pin must define each required key exactly once"
-: "${PIPELOCK_REPO:?release pin must define PIPELOCK_REPO}"
-: "${PIPELOCK_TAG:?release pin must define PIPELOCK_TAG}"
-: "${PIPELOCK_VERSION:?release pin must define PIPELOCK_VERSION}"
-: "${PIPELOCK_ASSET_SHA256_AMD64:?release pin must define PIPELOCK_ASSET_SHA256_AMD64}"
-: "${PIPELOCK_ASSET_SHA256_ARM64:?release pin must define PIPELOCK_ASSET_SHA256_ARM64}"
-[[ "$PIPELOCK_REPO" == "luckyPipewrench/pipelock" ]] || die "release pin names an unexpected repository"
-[[ "$PIPELOCK_TAG" == "v$PIPELOCK_VERSION" ]] || die "release tag and version do not match"
-[[ "$PIPELOCK_ASSET_SHA256_AMD64" =~ ^[0-9a-f]{64}$ ]] || die "amd64 release digest is invalid"
-[[ "$PIPELOCK_ASSET_SHA256_ARM64" =~ ^[0-9a-f]{64}$ ]] || die "arm64 release digest is invalid"
+parse_release_pin "$release_pin" || die "reviewed release pin is invalid: $release_pin_input"
 
 started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 run_stamp="$(date -u +'%Y%m%dT%H%M%SZ')"

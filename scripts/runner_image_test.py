@@ -15,6 +15,93 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RunnerImageContractTest(unittest.TestCase):
+    def test_local_offline_cli_is_read_only_until_required_inputs_exist(self) -> None:
+        script = ROOT / "scripts" / "run-oci-action.sh"
+        help_result = subprocess.run(
+            [str(script), "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, help_result.returncode, help_result.stderr)
+        self.assertIn("network access disabled", help_result.stdout)
+        self.assertIn("--attestation-trusted-root", help_result.stdout)
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [str(script), "--profile", "missing.json"],
+                cwd=directory,
+                env={**os.environ, "INPUT_ADAPTER": "ambient-adapter", "INPUT_IMAGE": "ambient-image"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(2, result.returncode)
+            self.assertIn("adapter is required", result.stderr)
+            self.assertEqual([], list(Path(directory).iterdir()))
+
+    def test_local_offline_cli_rejects_unknown_options(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "run-oci-action.sh"), "--online"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("unknown local option: --online", result.stderr)
+
+    def test_local_offline_cli_never_pulls_and_records_unverified_image(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
+            bin_dir = workspace / "bin"
+            bin_dir.mkdir()
+            docker_log = workspace / "docker.log"
+            docker = bin_dir / "docker"
+            docker.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "args = sys.argv[1:]\n"
+                "with open(os.environ['MOCK_DOCKER_LOG'], 'a', encoding='utf-8') as log: log.write(json.dumps(args) + '\\n')\n"
+                "if args[:1] == ['pull']: raise SystemExit(97)\n"
+                "if args[:2] == ['image', 'inspect']:\n"
+                "  if '--format' in args: print('sha256:local-offline-image')\n"
+                "  raise SystemExit(0)\n"
+                "if args[:1] == ['info']: print('[]'); raise SystemExit(0)\n"
+                "if args[:1] == ['run']:\n"
+                "  volumes = [args[index + 1] for index, value in enumerate(args) if value == '--volume']\n"
+                "  output = next(value.split(':/aeb-output:', 1)[0] for value in volumes if ':/aeb-output:' in value)\n"
+                "  with open(os.path.join(output, 'summary.json'), 'w', encoding='utf-8') as summary: json.dump({'measurement_status': 'measured'}, summary)\n"
+                "  raise SystemExit(0)\n"
+                "raise SystemExit(2)\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            image = f"registry.invalid/reviewed/runner@sha256:{'a' * 64}"
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts" / "run-oci-action.sh"),
+                    "--profile", "profile.json",
+                    "--adapter", "dryrun",
+                    "--image", image,
+                    "--allow-unverified-image",
+                ],
+                cwd=workspace,
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "MOCK_DOCKER_LOG": str(docker_log)},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            calls = [json.loads(line) for line in docker_log.read_text(encoding="utf-8").splitlines()]
+            self.assertFalse(any(call[:1] == ["pull"] for call in calls))
+            run = next(call for call in calls if call[:1] == ["run"])
+            self.assertIn("none", run)
+            metadata = json.loads((workspace / "aeb-results" / "run-metadata.json").read_text(encoding="utf-8"))
+            self.assertFalse(metadata["publisher_verified"])
+
     def run_action(self, *, image: str, metadata: str | None = None, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
@@ -40,7 +127,9 @@ class RunnerImageContractTest(unittest.TestCase):
             env.update(extra_env or {})
             return subprocess.run([str(ROOT / "scripts" / "run-oci-action.sh")], text=True, capture_output=True, env=env)
 
-    def run_completed_action(self, security_options: str) -> tuple[subprocess.CompletedProcess[str], str]:
+    def run_completed_action(
+        self, security_options: str, *, verified: bool = False, verifier_exit: int = 0
+    ) -> tuple[subprocess.CompletedProcess[str], str, dict[str, object] | None]:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
@@ -69,7 +158,29 @@ class RunnerImageContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
             docker.chmod(0o755)
-            image = f"registry.invalid/reviewed/runner@sha256:{'f' * 64}"
+            if verified:
+                image = f"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:{'f' * 64}"
+                (workspace / "runner-image.ref").write_text(image + "\n", encoding="utf-8")
+                (workspace / "attestation.json").write_text("offline bundle\n", encoding="utf-8")
+                (workspace / "trusted-root.json").write_text("trusted root\n", encoding="utf-8")
+                gh = bin_dir / "gh"
+                gh.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import os, pathlib, sys\n"
+                    "args = sys.argv[1:]\n"
+                    "if args[:2] != ['attestation', 'verify']: raise SystemExit(91)\n"
+                    "if pathlib.Path(args[2]).name != 'image-metadata': raise SystemExit(92)\n"
+                    "pairs = {'--repo': 'luckyPipewrench/agent-egress-bench', '--signer-workflow': 'github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml'}\n"
+                    "for flag, value in pairs.items():\n"
+                    "  if flag not in args or args[args.index(flag) + 1] != value: raise SystemExit(93)\n"
+                    "for flag, name in [('--bundle', 'image-attestation'), ('--custom-trusted-root', 'attestation-trusted-root')]:\n"
+                    "  if flag not in args or pathlib.Path(args[args.index(flag) + 1]).name != name: raise SystemExit(94)\n"
+                    "raise SystemExit(int(os.environ['MOCK_VERIFIER_EXIT']))\n",
+                    encoding="utf-8",
+                )
+                gh.chmod(0o755)
+            else:
+                image = f"registry.invalid/reviewed/runner@sha256:{'f' * 64}"
             env = {
                 **os.environ,
                 "PATH": f"{bin_dir}:{os.environ['PATH']}",
@@ -78,12 +189,20 @@ class RunnerImageContractTest(unittest.TestCase):
                 "INPUT_PROFILE": "profile.json",
                 "INPUT_ADAPTER": "proxy",
                 "INPUT_IMAGE": image,
-                "INPUT_ALLOW_UNVERIFIED_IMAGE": "true",
+                "INPUT_OFFLINE": "true" if verified else "false",
+                "INPUT_ALLOW_UNVERIFIED_IMAGE": "false" if verified else "true",
+                "INPUT_IMAGE_METADATA": "runner-image.ref" if verified else "",
+                "INPUT_IMAGE_ATTESTATION": "attestation.json" if verified else "",
+                "INPUT_ATTESTATION_TRUSTED_ROOT": "trusted-root.json" if verified else "",
                 "MOCK_DOCKER_LOG": str(docker_log),
                 "MOCK_SECURITY_OPTIONS": security_options,
+                "MOCK_VERIFIER_EXIT": str(verifier_exit),
             }
             result = subprocess.run([str(ROOT / "scripts" / "run-oci-action.sh")], text=True, capture_output=True, env=env)
-            return result, docker_log.read_text(encoding="utf-8")
+            metadata_file = workspace / "aeb-results" / "run-metadata.json"
+            metadata = json.loads(metadata_file.read_text(encoding="utf-8")) if metadata_file.exists() else None
+            docker_calls = docker_log.read_text(encoding="utf-8") if docker_log.exists() else ""
+            return result, docker_calls, metadata
 
     def test_dockerfile_pins_multi_arch_build_and_runtime_images(self) -> None:
         text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
@@ -163,15 +282,16 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertNotIn("docker-called", result.stderr)
 
     def test_selinux_and_non_selinux_daemons_get_explicit_mount_modes(self) -> None:
-        selinux_result, selinux_log = self.run_completed_action('["name=seccomp", "name=selinux"]')
+        selinux_result, selinux_log, selinux_metadata = self.run_completed_action('["name=seccomp", "name=selinux"]')
         self.assertEqual(0, selinux_result.returncode, msg=selinux_result.stderr)
         selinux_run = next(call for call in map(json.loads, selinux_log.splitlines()) if call[:1] == ["run"])
         selinux_volumes = [selinux_run[index + 1] for index, value in enumerate(selinux_run) if value == "--volume"]
         self.assertTrue(any(value.endswith(":/work:ro,z") for value in selinux_volumes))
         self.assertTrue(any(value.endswith(":/aeb-output:rw,z") for value in selinux_volumes))
         self.assertNotIn("SELinux labeling is unavailable", selinux_result.stderr)
+        self.assertFalse(selinux_metadata["publisher_verified"])
 
-        plain_result, plain_log = self.run_completed_action('["name=seccomp"]')
+        plain_result, plain_log, _ = self.run_completed_action('["name=seccomp"]')
         self.assertEqual(0, plain_result.returncode, msg=plain_result.stderr)
         plain_run = next(call for call in map(json.loads, plain_log.splitlines()) if call[:1] == ["run"])
         plain_volumes = [plain_run[index + 1] for index, value in enumerate(plain_run) if value == "--volume"]
@@ -179,6 +299,21 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertTrue(any(value.endswith(":/aeb-output:rw") for value in plain_volumes))
         self.assertFalse(any(value.endswith(",z") for value in plain_volumes))
         self.assertIn("SELinux labeling is unavailable", plain_result.stderr)
+
+    def test_successful_publisher_verification_is_recorded(self) -> None:
+        result, _, metadata = self.run_completed_action('["name=seccomp"]', verified=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIsNotNone(metadata)
+        self.assertTrue(metadata["publisher_verified"])
+
+    def test_failed_publisher_verification_stops_before_docker_run(self) -> None:
+        result, docker_log, metadata = self.run_completed_action(
+            '["name=seccomp"]', verified=True, verifier_exit=1
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("metadata provenance verification failed", result.stderr)
+        self.assertFalse(any(call[:1] == ["run"] for call in map(json.loads, docker_log.splitlines())))
+        self.assertIsNone(metadata)
 
     def test_devcontainer_builds_the_same_pinned_runner_image(self) -> None:
         text = (ROOT / ".devcontainer" / "devcontainer.json").read_text(encoding="utf-8")
