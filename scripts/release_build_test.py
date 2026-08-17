@@ -30,6 +30,7 @@ class ReleaseBuildTest(unittest.TestCase):
         files = subprocess.run(
             ["git", "-C", str(REPO), "ls-files", "-z"], check=True, capture_output=True
         ).stdout.decode("utf-8").split("\0")
+        self.assertIn("contracts/method-independence-v1.json", files)
         for name in filter(None, files):
             source, destination = REPO / name, self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -157,6 +158,7 @@ class ReleaseBuildTest(unittest.TestCase):
 
     def forge_release(self, identity: dict) -> Path:
         release = Path(self.temp.name) / "fakerel"
+        shutil.rmtree(release, ignore_errors=True)
         release.mkdir()
         identity_bytes = json.dumps(identity, sort_keys=True).encode("utf-8")
         identity_path = release / "release-identity.json"
@@ -802,6 +804,83 @@ class ReleaseBuildTest(unittest.TestCase):
         identity = json.loads(self.identity.read_text(encoding="utf-8"))
         del identity["corpus"]
         self.assert_forged_release_refused(identity, "release identity must contain exactly")
+
+    def test_download_verifier_rejects_method_independence_downgrades(self) -> None:
+        self.prepare()
+        mutations = {
+            "shared ownership": ("shared_target_vendor_ownership", True),
+            "proprietary verifier": ("proprietary_verifier_required", True),
+            "vendor registry": ("mandatory_vendor_registry", "registry.vendor.example"),
+            "mandatory chain": ("mandatory_transparency_chain", "chain.vendor.example"),
+            "lab branding": ("lab_branding_control", "method-owner"),
+            "lab scheduling": ("lab_scheduling_control", "method-owner"),
+        }
+        original = json.loads(self.identity.read_text(encoding="utf-8"))
+        for label, (field, value) in mutations.items():
+            with self.subTest(label=label):
+                identity = json.loads(json.dumps(original))
+                identity["method_independence"][field] = value
+                self.assert_forged_release_refused(identity, "method-independence invariants are invalid")
+
+    def test_download_verifier_rejects_method_contract_digest_disagreement(self) -> None:
+        self.prepare()
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        identity["method_independence"]["contract_sha256"] = "a" * 64
+        self.assert_forged_release_refused(identity, "contract digest disagrees with data_files")
+
+    def test_identity_rejects_a_vendor_owned_method_contract(self) -> None:
+        contract_path = self.root / "contracts/method-independence-v1.json"
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["shared_target_vendor_ownership"] = True
+        contract_path.write_text(json.dumps(contract), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "contracts/method-independence-v1.json"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "vendor-owned method"], check=True)
+        broken_commit = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+        result = subprocess.run(
+            [
+                sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root),
+                "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{broken_commit[:7]}",
+                "--commit", broken_commit, "--snapshot", "--output", str(self.identity),
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not preserve the public release invariants", result.stderr)
+        self.assertFalse(self.identity.exists())
+
+    def test_identity_rejects_duplicate_method_contract_keys(self) -> None:
+        contract_path = self.root / "contracts/method-independence-v1.json"
+        contract = contract_path.read_text(encoding="utf-8").replace(
+            '  "shared_target_vendor_ownership": false,',
+            '  "shared_target_vendor_ownership": true,\n  "shared_target_vendor_ownership": false,',
+        )
+        contract_path.write_text(contract, encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "contracts/method-independence-v1.json"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "duplicate ownership key"], check=True)
+        broken_commit = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+        result = subprocess.run(
+            [
+                sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root),
+                "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{broken_commit[:7]}",
+                "--commit", broken_commit, "--snapshot", "--output", str(self.identity),
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("contains duplicate key 'shared_target_vendor_ownership'", result.stderr)
+        self.assertFalse(self.identity.exists())
 
     def test_download_verifier_rejects_truncated_identity(self) -> None:
         self.assert_forged_release_refused({"schema_version": 1, "release": {"tag": "v9.9.9", "version": "9.9.9", "snapshot": False}}, "release identity must contain exactly")

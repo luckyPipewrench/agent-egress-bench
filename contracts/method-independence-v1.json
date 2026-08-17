@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "method_owner": "luckyPipewrench/agent-egress-bench",
+  "shared_target_vendor_ownership": false,
+  "verification": {
+    "bundled_verifier": "scripts/release_build.py",
+    "proprietary_verifier_required": false
+  },
+  "mandatory_external_services": {
+    "vendor_specific_registry": null,
+    "transparency_chain": null
+  },
+  "lab_control": {
+    "branding": "operator",
+    "scheduling": "operator"
+  }
+}
