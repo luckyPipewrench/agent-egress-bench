@@ -297,7 +297,9 @@ class CandidateEvaluationTest(unittest.TestCase):
         else:
             evidence_path.write_bytes(LEGACY_RESULTS_BYTES)
         case_index_path = root / "case-index.json"
-        case_index_path.write_bytes(case_index_bytes or CASE_INDEX_BYTES)
+        case_index_path.write_bytes(
+            CASE_INDEX_BYTES if case_index_bytes is None else case_index_bytes
+        )
         run_bundle_path = root / "run-bundle.json"
         run_bundle_path.write_bytes(RUN_BUNDLE_BYTES)
 
@@ -467,6 +469,17 @@ class CandidateEvaluationTest(unittest.TestCase):
             "coverage can be re-derived from raw results",
             decision["failures"],
         )
+
+    def test_empty_case_index_evidence_fails_closed(self):
+        value = v6_candidate()
+        value["case_index_sha256"] = hashlib.sha256(b"").hexdigest()
+
+        decision, *_ = self.run_evaluate(
+            value, v5_baseline(), case_index_bytes=b""
+        )
+
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(any("Expecting value" in failure for failure in decision["failures"]))
 
     def test_v5_candidate_requires_framed_manifest_identity(self):
         missing_candidate_digest = v5_candidate()

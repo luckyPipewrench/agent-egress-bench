@@ -15,7 +15,7 @@
     {
       "path": "schemas/case-index-v3.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v3.schema.json",
-      "sha256": "ca5fdb523f9545185588c7fc251aae2ae3ab8137628799be84cfe19451cd4c38"
+      "sha256": "cbf7d126e4e15ae30709d16ed3e86475b546b1552dc1343f23d2b2b19edcc8f3"
     },
     {
       "path": "schemas/case-v4.schema.json",
