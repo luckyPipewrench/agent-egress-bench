@@ -184,6 +184,9 @@ jobs:
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/command.txt
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/make-stats.txt
             ${{ env.GAUNTLET_ARTIFACT_DIR }}/case-index.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/tool-profile.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/capability-registry.json
+            ${{ env.GAUNTLET_ARTIFACT_DIR }}/receipt-profile.json
           retention-days: 14
 
       # Enforce only after upload. A regression must leave the candidate and
