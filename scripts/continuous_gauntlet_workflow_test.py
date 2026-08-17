@@ -141,23 +141,17 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertEqual(release_pin["status"], "invalid")
         self.assertTrue(release_pin["remediation"])
 
-    def test_doctor_keeps_json_contract_when_release_pin_is_unreadable(self):
-        if os.geteuid() == 0:
-            self.skipTest("root can read mode-000 files")
+    def test_doctor_keeps_json_contract_when_release_pin_is_not_a_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             pin = Path(temporary) / "release.env"
-            pin.write_text("PIPELOCK_REPO=luckyPipewrench/pipelock\n", encoding="utf-8")
-            pin.chmod(0)
-            try:
-                result = subprocess.run(
-                    ["bash", str(ENTRYPOINT), "--release-pin", str(pin), "--doctor-json"],
-                    cwd=REPO_ROOT,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
-            finally:
-                pin.chmod(0o600)
+            pin.mkdir()
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--release-pin", str(pin), "--doctor-json"],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
         self.assertNotEqual(result.returncode, 0)
         report = json.loads(result.stdout)
         release_pin = next(check for check in report["checks"] if check["code"] == "release_pin")

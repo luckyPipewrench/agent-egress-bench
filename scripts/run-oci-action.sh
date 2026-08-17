@@ -44,6 +44,8 @@ Required:
   --profile FILE                    Workspace-relative tool profile.
   --adapter NAME                    Runner adapter name.
   --image REF                       Preloaded digest-pinned image.
+
+Required for publisher verification:
   --image-metadata FILE             Signed runner-image.ref asset.
   --image-attestation FILE          Offline attestation bundle.
   --attestation-trusted-root FILE   Offline GitHub attestation trusted root.
@@ -52,7 +54,8 @@ Options:
   --runner-args JSON                Additional runner arguments as a JSON string array.
   --environment JSON                Environment variable names as a JSON string array.
   --output-dir DIR                  Workspace-relative output directory (default: aeb-results).
-  --allow-unverified-image          Permit a reviewed mirror or custom digest-pinned image.
+  --allow-unverified-image          Permit a reviewed mirror or custom digest-pinned image
+                                    without publisher-verification inputs.
 EOF
         exit 0
         ;;
