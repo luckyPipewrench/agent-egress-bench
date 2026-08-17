@@ -19,15 +19,35 @@ class InventoryTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="pipelock-result-inventory-")
         self.root = Path(self.temporary.name)
+        contract = json.loads(
+            (MODULE_PATH.parents[1] / inventory.PUBLIC_RESULT_CONTRACT_PATH).read_text(encoding="utf-8")
+        )
+        contract_path = self.root / inventory.PUBLIC_RESULT_CONTRACT_PATH
+        contract_path.parent.mkdir(parents=True)
+        contract_path.write_text(json.dumps(contract) + "\n", encoding="utf-8")
+        verifier = self.root / contract["record_verification"]["source_path"]
+        verifier.parent.mkdir(parents=True)
+        verifier.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
         paths = [
             Path("gauntlet-site/gauntlet-results.json"),
             Path("gauntlet-site/latest-verified.json"),
-            Path("gauntlet-site/results/pipelock/digest/record-manifest.json"),
         ]
         for index, path in enumerate(paths):
             absolute = self.root / path
             absolute.parent.mkdir(parents=True, exist_ok=True)
             absolute.write_text(json.dumps({"value": index}) + "\n", encoding="utf-8")
+        record_root = self.root / "gauntlet-site/results/pipelock/digest"
+        record_root.mkdir(parents=True)
+        self.required_files = sorted(
+            name for names in contract["required_evidence"].values() for name in names
+        )
+        for name in self.required_files:
+            (record_root / name).write_text("{}\n", encoding="utf-8")
+        (record_root / "record-manifest.json").write_text(
+            json.dumps({"files": {name: "0" * 64 for name in self.required_files}})
+            + "\n",
+            encoding="utf-8",
+        )
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
         subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
         subprocess.run(
@@ -91,9 +111,14 @@ class InventoryTest(unittest.TestCase):
             self.validate()
 
     def test_allows_newer_records_outside_the_historical_snapshot(self):
-        extra = self.root / "gauntlet-site/results/pipelock/new-digest/record-manifest.json"
-        extra.parent.mkdir()
-        extra.write_text("{}\n", encoding="utf-8")
+        record_root = self.root / "gauntlet-site/results/pipelock/new-digest"
+        record_root.mkdir()
+        for name in self.required_files:
+            (record_root / name).write_text("{}\n", encoding="utf-8")
+        (record_root / "record-manifest.json").write_text(
+            json.dumps({"files": {name: "0" * 64 for name in self.required_files}}) + "\n",
+            encoding="utf-8",
+        )
         self.validate()
 
     def test_allows_live_pointer_to_advance_after_the_snapshot(self):
@@ -129,8 +154,10 @@ class InventoryTest(unittest.TestCase):
 
     def test_rejects_missing_result_tree_at_source_commit(self):
         value = self.load_inventory()
-        record = self.root / "gauntlet-site/results/pipelock/digest/record-manifest.json"
-        record.unlink()
+        record_root = self.root / "gauntlet-site/results/pipelock/digest"
+        for record in record_root.iterdir():
+            record.unlink()
+        record_root.rmdir()
         subprocess.run(["git", "-C", str(self.root), "add", "-u"], check=True)
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "remove records"], check=True)
         value["source_commit"] = subprocess.run(
@@ -179,6 +206,78 @@ class InventoryTest(unittest.TestCase):
         source.unlink()
         source.symlink_to(self.root / "gauntlet-site/latest-verified.json")
         with self.assertRaisesRegex(ValueError, "missing or not a regular file"):
+            self.validate()
+
+    def test_rejects_record_missing_required_public_evidence(self):
+        value = self.load_inventory()
+        manifest_entry = next(
+            entry for entry in value["entries"] if entry["source_path"].endswith("record-manifest.json")
+        )
+        manifest = json.loads(
+            inventory.git_file_bytes(self.root, value["source_commit"], Path(manifest_entry["source_path"]))
+        )
+        manifest["files"].pop("results.jsonl")
+        manifest_path = self.root / manifest_entry["source_path"]
+        manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", manifest_entry["source_path"]], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "remove evidence label"], check=True)
+        self.write_inventory(inventory.build_inventory(self.root))
+        with self.assertRaisesRegex(ValueError, "missing public-result evidence"):
+            self.validate()
+
+    def test_rejects_verification_command_drift(self):
+        contract_path = self.root / inventory.PUBLIC_RESULT_CONTRACT_PATH
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["record_verification"]["command"] = "python3 scripts/not-the-verifier.py"
+        contract_path.write_text(json.dumps(contract) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "verification command drifted"):
+            self.validate()
+
+    def test_rejects_contract_weakened_below_promotion_output(self):
+        contract_path = self.root / inventory.PUBLIC_RESULT_CONTRACT_PATH
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["required_evidence"]["raw_evidence"].remove("results.jsonl")
+        contract_path.write_text(json.dumps(contract) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "drifted from promotion output"):
+            self.validate()
+
+    def test_rejects_required_file_absent_from_commit_pinned_inventory(self):
+        source = self.root / "gauntlet-site/results/pipelock/digest/results.jsonl"
+        source.unlink()
+        subprocess.run(["git", "-C", str(self.root), "add", "-u"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "remove evidence file"], check=True)
+        self.write_inventory(inventory.build_inventory(self.root))
+        with self.assertRaisesRegex(ValueError, "absent from the commit-pinned inventory"):
+            self.validate()
+
+    def test_rejects_incomplete_record_added_after_historical_snapshot(self):
+        record_root = self.root / "gauntlet-site/results/pipelock/new-digest"
+        record_root.mkdir()
+        for name in self.required_files:
+            if name != "results.jsonl":
+                (record_root / name).write_text("{}\n", encoding="utf-8")
+        (record_root / "record-manifest.json").write_text(
+            json.dumps({"files": {name: "0" * 64 for name in self.required_files}}) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "missing from the repository"):
+            self.validate()
+
+    def test_active_record_requires_schema_specific_profiles(self):
+        record_root = self.root / "gauntlet-site/results/pipelock/active-digest"
+        record_root.mkdir()
+        for name in self.required_files:
+            content = (
+                '{"schema_version":6}\n'
+                if name == inventory.promotion.CANDIDATE_FILENAME
+                else "{}\n"
+            )
+            (record_root / name).write_text(content, encoding="utf-8")
+        (record_root / "record-manifest.json").write_text(
+            json.dumps({"files": {name: "0" * 64 for name in self.required_files}}) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "missing public-result evidence"):
             self.validate()
 
 

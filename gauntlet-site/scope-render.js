@@ -280,6 +280,12 @@
     link.href = canonicalURL;
     link.textContent = 'canonical artifact';
     block.appendChild(link);
+    block.appendChild(document.createTextNode(' · '));
+
+    var evidenceLink = document.createElement('a');
+    evidenceLink.href = 'https://github.com/luckyPipewrench/agent-egress-bench/blob/main/docs/RESULTS-USE.md#verify-a-public-result';
+    evidenceLink.textContent = 'evidence and verify';
+    block.appendChild(evidenceLink);
     return block;
   }
 

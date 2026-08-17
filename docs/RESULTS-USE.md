@@ -59,6 +59,12 @@ Publish these next to any score, or the number is not reproducible.
 
 The runner writes these into the v5 summary JSON. The corpus-derived facts come from the run itself; repository and commit, adapter owner, and target configuration are operator declarations supplied with `--method-repository`, `--method-commit`, `--adapter-owner`, and `--target-config`. A local summary may omit a declaration rather than guess it. The v6 provenance candidate requires every declaration before promotion, and the buyer report names anything absent from older or local artifacts. Reproduction instructions belong beside a public result too, so a reader can run it rather than believe it.
 
+## Verify a public result
+
+The public result must include the score, its exact scope and pinned inputs, the reproduction commands, the raw evidence, the normalized decisions, and a verification path. Those categories bind any publisher. The exact filenames do not: they belong to the lane that produced the result. The [public result contract](../contracts/public-result-v1.json) names the files the first-party Pipelock lane retains, and the [Pipelock result inventory](../migration/pipelock-result-inventory-v1.json) gives each of those files a commit-pinned public URL and digest. Run `python3 scripts/validate_gauntlet_records.py` from a checkout of this repository to verify that lane's retained chain and reconstruct its decisions from the raw evidence.
+
+Paid reports may add analysis or convenience. They can't gate the evidence or verification needed to check a public result.
+
 ## Non-claims
 
 A result does not establish any of the following, and no publisher should imply otherwise:
