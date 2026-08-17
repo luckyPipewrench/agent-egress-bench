@@ -207,7 +207,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.identity.write_text(json.dumps(identity), encoding="utf-8")
         result = subprocess.run([sys.executable, str(SCRIPT), "check-identity", "--repo-root", str(self.root), "--identity", str(self.identity)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("disagrees with the checked-out source tree", result.stderr)
+        self.assertIn("schema_contract.families[0] digest disagrees with data_files", result.stderr)
 
     def test_identity_rejects_changed_corpus_version(self) -> None:
         self.prepare()
@@ -827,6 +827,48 @@ class ReleaseBuildTest(unittest.TestCase):
         identity = json.loads(self.identity.read_text(encoding="utf-8"))
         identity["method_independence"]["contract_sha256"] = "a" * 64
         self.assert_forged_release_refused(identity, "contract digest disagrees with data_files")
+
+    def test_download_verifier_rejects_release_contract_digest_disagreements(self) -> None:
+        self.prepare()
+        original = json.loads(self.identity.read_text(encoding="utf-8"))
+        last_family = len(original["schema_contract"]["families"]) - 1
+        mutations = (
+            (
+                "corpus manifest",
+                lambda identity: identity["corpus"].__setitem__("manifest_sha256", "a" * 64),
+                "corpus manifest digest disagrees with data_files",
+            ),
+            (
+                "corpus manifest data file",
+                lambda identity: identity["data_files"].__setitem__(identity["corpus"]["manifest_path"], "a" * 64),
+                "corpus manifest digest disagrees with data_files",
+            ),
+            (
+                "artifacts manifest",
+                lambda identity: identity["schema_contract"].__setitem__("artifacts_manifest_sha256", "a" * 64),
+                "artifacts manifest digest disagrees with data_files",
+            ),
+            (
+                "artifacts manifest data file",
+                lambda identity: identity["data_files"].__setitem__(identity["schema_contract"]["artifacts_manifest_path"], "a" * 64),
+                "artifacts manifest digest disagrees with data_files",
+            ),
+            (
+                "active schema",
+                lambda identity: identity["schema_contract"]["families"][last_family].__setitem__("schema_sha256", "a" * 64),
+                f"schema_contract.families[{last_family}] digest disagrees with data_files",
+            ),
+            (
+                "active schema data file",
+                lambda identity: identity["data_files"].__setitem__(identity["schema_contract"]["families"][last_family]["schema_path"], "a" * 64),
+                f"schema_contract.families[{last_family}] digest disagrees with data_files",
+            ),
+        )
+        for label, mutate, message in mutations:
+            with self.subTest(label=label):
+                identity = json.loads(json.dumps(original))
+                mutate(identity)
+                self.assert_forged_release_refused(identity, message)
 
     def test_identity_rejects_a_vendor_owned_method_contract(self) -> None:
         contract_path = self.root / "contracts/method-independence-v1.json"

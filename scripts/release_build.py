@@ -489,7 +489,14 @@ def validate_identity_structure(identity: dict[str, Any]) -> None:
     required_operator_kit = {"examples/operator-kit/README.md", "examples/operator-kit/evidence-custody-checklist.md", "examples/operator-kit/report-template.md"}
     if set(DATA_FILES) - set(data_files) or required_operator_kit - set(data_files) or METHOD_INDEPENDENCE_PATH not in data_files or corpus_value["manifest_path"] not in data_files or any(not any(name == root or name.startswith(f"{root}/") for name in data_files) for root in DATA_ROOTS):
         fail("release identity data_files does not contain the required corpus, schema, contract, operator kit, and verifier data")
-    if data_files[METHOD_INDEPENDENCE_PATH] != method["contract_sha256"]:
+    if data_files.get(corpus_value["manifest_path"]) != corpus_value["manifest_sha256"]:
+        fail("release identity corpus manifest digest disagrees with data_files")
+    if data_files.get(schema_contract["artifacts_manifest_path"]) != schema_contract["artifacts_manifest_sha256"]:
+        fail("release identity artifacts manifest digest disagrees with data_files")
+    for index, family in enumerate(families):
+        if data_files.get(family["schema_path"]) != family["schema_sha256"]:
+            fail(f"release identity schema_contract.families[{index}] digest disagrees with data_files")
+    if data_files.get(METHOD_INDEPENDENCE_PATH) != method["contract_sha256"]:
         fail("release identity method-independence contract digest disagrees with data_files")
 
     verification = exact_object(identity["verification"], "release identity verification", {"checksums", "command"})
