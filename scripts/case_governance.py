@@ -75,6 +75,11 @@ def load_json_object(path, label):
 
 
 MAX_METADATA_BYTES = 1 << 20
+# Unix-only open flags. Windows has no equivalent, so fall back to a plain read-only open there and
+# rely on the descriptor check below. The symlink refusal is weaker on that platform; the reader is
+# still the thing being validated, not the name.
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 # Case sources are repository files, but an unbounded read is an unbounded read.
 MAX_CASE_SOURCE_BYTES = 1 << 24
 
@@ -87,7 +92,7 @@ def _read_regular_file(path, label):
     descriptor itself what it is.
     """
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
     except OSError as exc:
         fail(f"cannot read {label} {path}: {exc}")
     try:
@@ -111,7 +116,7 @@ def _read_regular_file(path, label):
 def _read_regular_file_bytes(path, label):
     """Return file bytes, proving through the descriptor that a regular file was read."""
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
     except OSError as exc:
         fail(f"cannot read {label} {path}: {exc}")
     try:
