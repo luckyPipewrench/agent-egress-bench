@@ -154,3 +154,136 @@ better candidate than a typical code-only repository. The missing question is
 whether it can honestly maintain the people, coverage, review, and response
 promises. Do not apply for silver or gold as a visibility project.
 
+## Surfaces that are not worth doing now
+
+### Hugging Face datasets
+
+**Fits: no, for the present project shape. Cost if forced: medium to high.
+Permanent obligation: reproduce every canonical release as a complete,
+release-verified dataset revision, retain its upstream tag and commit, and
+support users who fetched the wrong Hub revision.**
+
+Hugging Face can pin a dataset fetch to a commit, tag, or branch revision. That
+technical capability does not make a second dataset repository a good home for
+this corpus. The benchmark needs the cases, schemas, contracts, runner, and
+release identity together. A data-only card would encourage consumers to fetch
+cases without the runner or release verifier. A full release archive would
+duplicate what the canonical GitHub release and a Zenodo archive already
+provide, with another revision history to keep correct. Hugging Face documents
+revision pinning, but its normal dataset interface also makes a moving default
+revision easy to consume. [Hugging Face dataset versioning](https://huggingface.co/docs/datasets/v1.7.0/share_dataset.html)
+
+Do not create a Hub mirror. Reconsider only if researchers demonstrate that
+Hub discovery materially reaches the right users and will accept a
+release-archive-only record. That record would need a tag named for the
+upstream GitHub release, the exact upstream commit and SHA-256 in its card, and
+the unmodified verified release bundle. Its first paragraph would identify
+GitHub as canonical and send users to the release verifier. Without all of
+that, the surface fails the non-negotiable rule.
+
+### Kaggle
+
+**Fits: no. Cost if forced: high. Permanent obligation: publish and describe a
+new Kaggle version for every canonical release, preserve its correspondence to
+the GitHub release, and prevent consumers from treating Kaggle's latest
+version as the benchmark definition.**
+
+Kaggle offers dataset versions, but its workflow is built around creating a
+new version from uploaded files and version notes. That is suitable for data
+analysis, not for a corpus whose result needs to bind runner, contracts, and
+source commit. [Kaggle CLI dataset-version documentation](https://github.com/Kaggle/kaggle-cli/blob/main/docs/datasets.md)
+confirms the per-upload version model.
+
+The maintenance burden would duplicate release publication without adding a
+reproducibility property GitHub releases and Zenodo lack. A Kaggle record
+cannot be an independent canonical corpus. Do not create one. If a future
+competition requires it, upload only an immutable canonical release archive,
+name the Kaggle version after the GitHub tag, record the source commit and
+checksum in the description, and link back to the canonical release. Never
+upload a case directory by itself.
+
+### Security-corpus catalogs
+
+**Fits: metadata-only listings can fit; a hosted duplicate does not. Cost:
+low per listing, but medium if the catalog asks for an ongoing hosted copy.
+Permanent obligation: keep a listing's scope, canonical URL, release policy,
+and contact route accurate.**
+
+There is no obvious broad catalog whose scope exactly matches agent egress
+security. NIST's CFReDS catalog is a digital-forensics dataset collection, and
+NIST SAMATE focuses on known-bug programs and tool effectiveness. They are
+useful precedents, not destinations for this corpus. [CFReDS](https://cfreds.nist.gov/all/)
+and [SAMATE](https://www.nist.gov/itl/csd/secure-systems-and-applications/samate)
+describe their own scopes.
+
+Submit a metadata-only entry to a credible agent-security or security-evaluation
+catalog if one accepts a canonical URL rather than corpus hosting. The entry
+must link to a named GitHub release, state its commit and release identity,
+label GitHub canonical, and say that the catalog has no authority to alter or
+republish cases. Reject any catalog that only offers a mutable uploaded copy.
+This is an inference from the corpus's release and immutability rules, not a
+claim about a particular catalog's policy.
+
+### Package managers
+
+**Fits: no package-manager distribution for the corpus itself. Cost if forced:
+high. Permanent obligation: define and preserve a package API, publishing
+namespace, release semantics, support policy, and security-update path that do
+not exist today.**
+
+The repository is a corpus plus a runner, rather than a library for another
+program to import. It already defines a better installation boundary: tagged
+releases provide a data bundle, platform archives with both executables,
+checksums, a release identity, and a digest-pinned OCI runner image.
+[RELEASES.md](../RELEASES.md) is the contract for that boundary. Publishing a
+thin PyPI, npm, Homebrew, or Go package would make the project look like an API
+dependency and create version-pressure unrelated to corpus releases.
+
+Keep release assets and the digest-pinned runner image as the supported
+delivery methods. If a package manager becomes necessary for a small client in
+the future, ship only a downloader that requires an explicit canonical release
+tag, verifies checksums and release identity, and never embeds a mutable case
+snapshot. That is an inference, not a present recommendation.
+
+### Conference and standards directories
+
+**Fits: a paper or metadata submission that links to a tagged release can fit;
+an evergreen directory or standards listing is not a current priority. Cost:
+medium to high. Permanent obligation: maintain the cited artifact, answer
+review questions, and keep claims inside the corpus's tool-neutral scope.**
+
+Do not treat a conference directory as a distribution channel that needs a
+live appearance. If a venue offers a dataset or benchmark artifact track,
+submit the release DOI, GitHub tag, source commit, and release-verification
+instructions. The artifact itself must say it is a copy of the canonical
+release. Do not submit a moving repository URL as the benchmark definition.
+
+The repository already maps its case categories to the OWASP Agentic Top 10,
+and the README's check keeps that table in sync with the corpus. That is a
+scope mapping, not an OWASP endorsement or standards certification.
+[README.md](../../README.md) is the current source. Avoid directories that
+would turn that mapping into an implied certification, or that require the
+corpus to follow a mutable external taxonomy as its canonical contract.
+
+## Recommended order of work
+
+1. Keep GitHub topics, description, homepage, and Scorecard publishing healthy.
+2. Cut and verify the first release, then connect Zenodo and add a version DOI
+   to the citation path.
+3. Offer that frozen release to a small number of partner labs and
+   metadata-only catalogs that agree to the canonical-source rule.
+4. Assess the OpenSSF Best Practices passing questionnaire with evidence.
+
+Do not start Hugging Face, Kaggle, package-manager, or generic
+conference-directory work unless a named consumer need proves the discovery
+gain. Their maintenance can create enough copies and versions to weaken the
+benchmark's reason for existing.
+
+## Evidence and inference boundary
+
+Claims about repository state in this document were checked against
+`origin/main` at `d537429e3bec0e7e1a35c803db1570af42eae52a` on 2026-08-17,
+the repository metadata, and GitHub's release list. Recommendations about
+future channels are marked as recommendations or inferences. External service
+rules should be rechecked before an implementation decision because they can
+change.
