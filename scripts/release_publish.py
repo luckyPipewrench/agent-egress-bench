@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -89,14 +92,40 @@ def actual_asset_names(release: dict[str, Any]) -> list[str]:
     return sorted(names)
 
 
+def _verified_notes_snapshot(dist: Path, stack: contextlib.ExitStack) -> tuple[Path, str]:
+    """Return a path holding the exact notes bytes that were validated.
+
+    Validating the notes file and then handing its PATHNAME to gh leaves a window: gh re-reads the
+    file later, so a write or a symlink swap in between publishes bytes nobody checked. Read once,
+    validate those bytes, and copy them into a file this process owns, so what gh publishes is
+    exactly what passed validation.
+    """
+    notes = dist / RELEASE_NOTES_NAME
+    try:
+        with open(notes, "rb", opener=lambda path, flags: os.open(path, flags | os.O_NOFOLLOW)) as handle:
+            raw = handle.read()
+    except OSError:
+        fail(f"release distribution is missing {RELEASE_NOTES_NAME}")
+    text = raw.decode("utf-8", errors="strict")
+    if not text.strip():
+        fail(f"release distribution is missing {RELEASE_NOTES_NAME}")
+    if DRAFT_MARKER not in text:
+        fail(f"{RELEASE_NOTES_NAME} is missing the release workflow ownership marker")
+    directory = stack.enter_context(tempfile.TemporaryDirectory())
+    snapshot = Path(directory) / RELEASE_NOTES_NAME
+    snapshot.write_bytes(raw)
+    return snapshot, text
+
+
 def publish(tag: str, dist: Path, gh: str) -> None:
     assets = release_assets(dist)
     expected_names = [asset.name for asset in assets]
-    notes = dist / RELEASE_NOTES_NAME
-    if not notes.is_file() or notes.is_symlink() or not notes.read_text(encoding="utf-8").strip():
-        fail(f"release distribution is missing {RELEASE_NOTES_NAME}")
-    if DRAFT_MARKER not in notes.read_text(encoding="utf-8"):
-        fail(f"{RELEASE_NOTES_NAME} is missing the release workflow ownership marker")
+    with contextlib.ExitStack() as stack:
+        notes, notes_text = _verified_notes_snapshot(dist, stack)
+        _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text)
+
+
+def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text) -> None:
     release = inspect_draft(gh, tag)
     asset_arguments = [str(asset) for asset in assets]
     if release is None:
@@ -119,6 +148,11 @@ def publish(tag: str, dist: Path, gh: str) -> None:
     # attestation set, which is precisely what a consumer's verification refuses.
     if actual_names != sorted(expected_names):
         fail(f"draft {tag} assets do not exactly match dist/release: expected={sorted(expected_names)}, actual={actual_names}")
+    # The snapshot proves what was SENT. This proves what the release actually carries, so a body
+    # replaced between the edit and publication cannot be undrafted.
+    body = release.get("body")
+    if not isinstance(body, str) or body.strip() != notes_text.strip():
+        fail(f"draft {tag} body does not match the verified release notes")
     command(gh, "release", "edit", tag, "--draft=false")
 
 
