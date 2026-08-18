@@ -63,6 +63,17 @@ The [loader-backed statistics](cases/STATS.md) include the block, allow, and war
 
 Most cases are self-contained JSON files with the attack payload, expected verdict (`block` or `allow`), severity, capability tags, and a machine-readable reason for the expected outcome. MCP drift cases under `cases/mcp-drift/` are multi-file before/after fixtures with `case.yaml` metadata.
 
+## Schema discovery and adapter quickstarts
+
+Machine readers can start with the generated [schema discovery feed](schemas/discovery.json). It lists every declared schema identity and its repository path, then points to the [schema catalog](schemas/index.json) for SHA-256 digests. Schema identifiers remain names, not download URLs. Released catalogs add commit-pinned retrieval URLs and an offline schema bundle.
+
+The offline validation walkthrough and copy/paste commands live in [Schema identifiers and discovery](docs/SCHEMAS.md). Pick the adapter that matches the target:
+
+- [Fetch-style forward proxy](docs/SCHEMAS.md#fetch-style-forward-proxy)
+- [CONNECT-capable forward proxy](docs/SCHEMAS.md#connect-capable-forward-proxy)
+- [MCP Streamable HTTP listener](docs/SCHEMAS.md#mcp-streamable-http-listener)
+- [MCP gateway](docs/SCHEMAS.md#mcp-gateway)
+
 ## Quick start
 
 **Prerequisites:** [Go 1.25+](https://go.dev/dl/) for the validator and portable runner. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
@@ -196,7 +207,9 @@ Integration and reference:
 - [ADOPTION.md](docs/ADOPTION.md): guide for vendors adopting the benchmark
 - [GLOSSARY.md](docs/GLOSSARY.md): definitions of key terms (agent firewall, egress security, etc.)
 - [OWASP-MAPPING.md](docs/OWASP-MAPPING.md): case categories mapped to OWASP Agentic Top 10
-- [schemas/](schemas/): JSON Schema files for cases, tool profiles, and results
+- [schemas/discovery.json](schemas/discovery.json): generated schema-identity feed
+- [schemas/index.json](schemas/index.json): schema paths and SHA-256 digests
+- [SCHEMAS.md](docs/SCHEMAS.md): identity policy, released retrieval, offline validation, and adapter quickstarts
 
 ## Contributing
 
