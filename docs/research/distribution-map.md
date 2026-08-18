@@ -126,7 +126,7 @@ truthful self-assessment and policy evidence. Permanent obligation: keep every
 attestation current as the project, maintainers, releases, and security process
 change.**
 
-The Best Practices badge is a separate, self-certified questionnaire. It is
+The Best Practices badge is a separate, self-certified questionnaire. It is <!-- claim-ok: describes the OpenSSF questionnaire, not a Gauntlet claim -->
 not produced by Scorecard. The existing Scorecard workflow helps with some
 evidence but does not establish a Best Practices tier. That distinction is
 documented by OpenSSF. [Best Practices Badge criteria](https://github.com/coreinfrastructure/best-practices-badge)
@@ -260,9 +260,9 @@ release. Do not submit a moving repository URL as the benchmark definition.
 
 The repository already maps its case categories to the OWASP Agentic Top 10,
 and the README's check keeps that table in sync with the corpus. That is a
-scope mapping, not an OWASP endorsement or standards certification.
+scope mapping, not an OWASP endorsement or standards certification. <!-- claim-ok: states the non-claim -->
 [README.md](../../README.md) is the current source. Avoid directories that
-would turn that mapping into an implied certification, or that require the
+would turn that mapping into an implied certification, or that require the <!-- claim-ok: warns against implying one -->
 corpus to follow a mutable external taxonomy as its canonical contract.
 
 ## Recommended order of work
