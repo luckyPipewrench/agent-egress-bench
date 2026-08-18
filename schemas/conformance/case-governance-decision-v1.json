@@ -1,0 +1,47 @@
+{
+  "schema": "../case-governance-decision-v1.schema.json",
+  "accepted": [
+    {
+      "description": "complete decision record",
+      "instance": {
+        "schema_version": 1,
+        "case_id": "fixture-case-001",
+        "case_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "case_description": "Exercises a documented fixture behavior.",
+        "expected_verdict": "block",
+        "why_expected": "fixture_behavior_requires_blocking",
+        "source": "Synthetic fixture pattern",
+        "false_positive_risk": "low",
+        "supersedes": null
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "description": "missing immutable case binding",
+      "mutation": {
+        "remove": [
+          "case_sha256"
+        ]
+      }
+    },
+    {
+      "description": "unknown verdict",
+      "mutation": {
+        "replace": [
+          "expected_verdict"
+        ],
+        "value": "skip"
+      }
+    },
+    {
+      "description": "unknown field",
+      "mutation": {
+        "add": [
+          "invented_rationale"
+        ],
+        "value": "not a governed field"
+      }
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-governance-decision-v1.schema.json",
+  "title": "Case Governance Decision v1",
+  "description": "A machine-checkable record of the existing governance rationale for one immutable benchmark case.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "case_id",
+    "case_sha256",
+    "case_description",
+    "expected_verdict",
+    "why_expected",
+    "source",
+    "false_positive_risk",
+    "supersedes"
+  ],
+  "x-aeb-nullable-required": [
+    "supersedes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Decision-record schema version."
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+      "description": "Immutable case identifier this record governs."
+    },
+    "case_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the framed, sorted source files belonging to this logical case."
+    },
+    "case_description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The case's existing description of the behavior it exercises."
+    },
+    "expected_verdict": {
+      "type": "string",
+      "enum": [
+        "block",
+        "allow",
+        "warn"
+      ],
+      "description": "The case's existing expected verdict."
+    },
+    "why_expected": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The case's existing explanation for its expected verdict."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The case's existing attack-pattern source."
+    },
+    "false_positive_risk": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "description": "The case's existing false-positive assessment."
+    },
+    "supersedes": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+      "description": "The immutable predecessor case ID, or null when this case supersedes none."
+    }
+  }
+}

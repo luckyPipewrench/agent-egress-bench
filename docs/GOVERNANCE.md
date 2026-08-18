@@ -37,6 +37,12 @@ Removing a superseded case from an active score would change the denominator. No
 may do that. A future active-set mechanism must be immutable, versioned, and bound to the release it
 changes before a runner may exclude any case.
 
+## Per-case governance decision records
+
+Each logical case has one decision record at `governance/case-decisions/<case-id>.decision.json`, validated against [`case-governance-decision-v1`](../schemas/case-governance-decision-v1.schema.json). It binds the exact immutable case source files to the case ID and copies the existing description, expected verdict, `why_expected`, source, false-positive assessment, and supersession state. Its contents don't create new rationale or alter a case.
+
+`make check-case-governance` requires one valid record for every logical case and rejects missing, malformed, extra, unreadable, or case-inconsistent records. Generate the deterministic baseline with `python3 scripts/generate_case_governance_records.py`, review the generated records with the case change, and commit both together. A new case therefore receives a decision record from its submitted metadata; a semantic change still requires a new immutable case ID rather than rewriting either artifact.
+
 ## Versioning and compatibility
 
 ### The short version
@@ -73,6 +79,7 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Family | Active writer | Accepted readers | Frozen | Canonical schema |
 | --- | ---: | --- | --- | --- |
 | Case and multi-file case | 4 | 4 | none | [`case-v4.schema.json`](../schemas/case-v4.schema.json), with the multi-file shape enforced in Go |
+| Case governance decision | 1 | 1 | none | [`case-governance-decision-v1.schema.json`](../schemas/case-governance-decision-v1.schema.json) |
 | Result row | 5 | 4, 5 | 4 | [`result-v5.schema.json`](../schemas/result-v5.schema.json) |
 | Tool profile | 4 | 1, 3, 4 | 1, 3 | [`tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) |
 | Receipt-scoring profile | 4 | 1, 4 | 1 | [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json) |
