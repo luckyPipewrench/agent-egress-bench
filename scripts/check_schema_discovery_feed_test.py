@@ -75,6 +75,37 @@ class SchemaDiscoveryFeedTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be a regular file"):
             check_schema_discovery_feed.check(self.root)
 
+    def _catalog_bytes_with_path(self, path):
+        return json.dumps(
+            {
+                "format": 1,
+                "repository": "luckyPipewrench/agent-egress-bench",
+                "schemas": [{"path": path, "$id": "https://example.invalid/x", "sha256": "0" * 64}],
+            }
+        ).encode("utf-8")
+
+    def test_missing_schema_target_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "does not exist"):
+            schema_discovery_feed.catalog_entries(
+                self.root, self._catalog_bytes_with_path("schemas/not-a-real-file.schema.json")
+            )
+
+    def test_directory_schema_target_is_refused(self):
+        (self.root / "schemas" / "subdir").mkdir()
+        with self.assertRaisesRegex(ValueError, "not a regular file"):
+            schema_discovery_feed.catalog_entries(self.root, self._catalog_bytes_with_path("schemas/subdir"))
+
+    def test_symlinked_schema_target_is_refused(self):
+        link = self.root / "schemas" / "linked-probe.schema.json"
+        link.symlink_to("/etc/hostname")
+        try:
+            with self.assertRaisesRegex(ValueError, "is a symlink"):
+                schema_discovery_feed.catalog_entries(
+                    self.root, self._catalog_bytes_with_path("schemas/linked-probe.schema.json")
+                )
+        finally:
+            link.unlink()
+
     def test_feed_keeps_identity_separate_from_retrieval(self):
         feed = json.loads((self.root / "schemas/discovery.json").read_text(encoding="utf-8"))
         self.assertEqual({"format", "catalog", "catalog_sha256", "schemas"}, set(feed))

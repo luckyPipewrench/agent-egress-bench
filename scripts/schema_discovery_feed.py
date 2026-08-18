@@ -73,7 +73,18 @@ def _require_contained_path(root: Path, index: int, path: str) -> None:
             raise ValueError(f"schema catalog entry {index} path component is not portable: {path!r}")
     if not any(path.startswith(f"{allowed}/") for allowed in SCHEMA_ROOTS):
         raise ValueError(f"schema catalog entry {index} path is outside the published schema roots: {path!r}")
-    target = (root / path).resolve()
+    candidate = root / path
+    # Containment says where a path LANDS, not that anything is there. A missing path or a directory
+    # satisfies the root check and still publishes a feed entry a consumer cannot fetch, so require a
+    # real regular file before resolving. Reject a symlink by its own status rather than by where it
+    # points, so a link inside an allowed root cannot pass simply by resolving back inside.
+    if candidate.is_symlink():
+        raise ValueError(f"schema catalog entry {index} path is a symlink: {path!r}")
+    if not candidate.exists():
+        raise ValueError(f"schema catalog entry {index} path does not exist: {path!r}")
+    if not candidate.is_file():
+        raise ValueError(f"schema catalog entry {index} path is not a regular file: {path!r}")
+    target = candidate.resolve()
     for allowed in SCHEMA_ROOTS:
         allowed_root = (root / allowed).resolve()
         if target == allowed_root or allowed_root in target.parents:
