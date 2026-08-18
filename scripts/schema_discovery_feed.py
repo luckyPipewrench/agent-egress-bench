@@ -28,12 +28,21 @@ def catalog_bytes(root: Path) -> bytes:
     # can describe two different objects. Open once and read that descriptor.
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except OSError:
-        raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}")
+    except OSError as exc:
+        raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}") from exc
     try:
         status = os.fstat(descriptor)
         if not stat.S_ISREG(status.st_mode):
             raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}")
+        # Same parent-directory hole the entry reader closes. O_NOFOLLOW covers the final component
+        # only, so a swapped parent could pair the published catalog name with a digest taken from a
+        # different object until the resolved name is bound to the one actually opened.
+        try:
+            resolved = path.resolve().stat()
+        except OSError as exc:
+            raise ValueError(f"schema catalog could not be resolved: {CATALOG_PATH}") from exc
+        if (resolved.st_dev, resolved.st_ino) != (status.st_dev, status.st_ino):
+            raise ValueError(f"schema catalog changed while it was being read: {CATALOG_PATH}")
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             contents = handle.read()
     finally:

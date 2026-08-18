@@ -220,3 +220,36 @@ class SchemaDiscoveryReadBindingTest(SchemaDiscoveryFeedTest):
                 )
         finally:
             Path.resolve = original_resolve
+
+
+class SchemaCatalogIdentityBindingTest(SchemaDiscoveryFeedTest):
+    """The published catalog digest must come from the object that was opened.
+
+    O_NOFOLLOW refuses a symlink at the final component only, so a swapped parent directory can
+    still aim the same pathname at a different file. Winning that race inside a unit test is not
+    possible, so this drives the guard by making resolution disagree with the descriptor, which is
+    the state a real swap produces.
+    """
+
+    def test_resolved_path_bound_to_opened_inode(self):
+        other = self.root / "schemas" / "decoy.json"
+        other.write_text("{}\n", encoding="utf-8")
+        original = Path.resolve
+
+        def resolve_to_decoy(self, strict=False):
+            if self.name == "index.json":
+                return original(other)
+            return original(self, strict) if strict else original(self)
+
+        Path.resolve = resolve_to_decoy
+        try:
+            with self.assertRaisesRegex(ValueError, "changed while it was being read"):
+                schema_discovery_feed.catalog_bytes(self.root)
+        finally:
+            Path.resolve = original
+
+    def test_catalog_bytes_returns_the_opened_content(self):
+        self.assertEqual(
+            (self.root / "schemas" / "index.json").read_bytes(),
+            schema_discovery_feed.catalog_bytes(self.root),
+        )

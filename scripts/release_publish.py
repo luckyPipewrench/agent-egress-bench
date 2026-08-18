@@ -13,7 +13,7 @@ import stat
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 
 # This marker is deliberately stable across job reruns. It proves that a draft
@@ -29,7 +29,7 @@ class PublishError(RuntimeError):
     pass
 
 
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     raise PublishError(message)
 
 
@@ -96,6 +96,22 @@ def actual_asset_names(release: dict[str, Any]) -> list[str]:
     return sorted(names)
 
 
+def _require_opened_identity(source: Path, status: os.stat_result, label: str) -> None:
+    """Refuse a pathname whose resolved target is not the object that was opened.
+
+    O_NOFOLLOW refuses a symlink at the FINAL component only, so a swapped parent directory can
+    still aim the same pathname at a different file. Resolving the name and comparing device and
+    inode against the open descriptor closes that, and a disagreement means the tree moved during
+    the walk rather than anything worth publishing.
+    """
+    try:
+        resolved = source.resolve().stat()
+    except OSError as exc:
+        fail(f"cannot resolve {label}: {exc}")
+    if (resolved.st_dev, resolved.st_ino) != (status.st_dev, status.st_ino):
+        fail(f"{label} changed while it was being read")
+
+
 def _verified_notes_snapshot(dist: Path, stack: contextlib.ExitStack) -> tuple[Path, str]:
     """Return a path holding the exact notes bytes that were validated.
 
@@ -115,6 +131,7 @@ def _verified_notes_snapshot(dist: Path, stack: contextlib.ExitStack) -> tuple[P
         # a read that never returns, and a device file would supply unbounded input.
         if not stat.S_ISREG(status.st_mode):
             fail(f"{RELEASE_NOTES_NAME} is not a regular file")
+        _require_opened_identity(notes, status, RELEASE_NOTES_NAME)
         if status.st_size > MAX_NOTES_BYTES:
             fail(f"{RELEASE_NOTES_NAME} is larger than {MAX_NOTES_BYTES} bytes")
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
@@ -218,6 +235,7 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
         # unbounded input, so refuse anything that is not an ordinary file.
         if not stat.S_ISREG(status.st_mode):
             fail(f"release asset {name} is not a regular file")
+        _require_opened_identity(source, status, f"release asset {name}")
         try:
             with os.fdopen(descriptor, "rb", closefd=False) as handle, open(target, "wb") as out:
                 shutil.copyfileobj(handle, out)

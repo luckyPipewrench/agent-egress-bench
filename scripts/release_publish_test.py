@@ -15,7 +15,11 @@ REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts/release_publish.py"
 
 
-class ReleasePublishTest(unittest.TestCase):
+class ReleasePublishFixture(unittest.TestCase):
+    """Shared fixture only. Carries no test methods, so a subclass inherits the harness
+    without unittest rediscovering and rerunning every parent test under the child's name.
+    """
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -118,6 +122,8 @@ class ReleasePublishTest(unittest.TestCase):
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
         )
 
+
+class ReleasePublishTest(ReleasePublishFixture):
     def test_missing_release_notes_is_refused_before_any_gh_call(self) -> None:
         (self.dist / "release-notes.md").unlink()
         result = self.publish()
@@ -194,11 +200,7 @@ class ReleasePublishTest(unittest.TestCase):
         self.assertIn("extra.bin", [asset["name"] for asset in state["assets"]])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-class ReleaseAssetBindingTest(ReleasePublishTest):
+class ReleaseAssetBindingTest(ReleasePublishFixture):
     """The upload must carry the asset bytes that were validated, not a later replacement.
 
     `release_assets` rejects symlinks and non-files by NAME. Handing those names to gh leaves the
@@ -237,7 +239,7 @@ class ReleaseAssetBindingTest(ReleasePublishTest):
         seen_path = self.root / "seen.json"
         target = self.dist / "archive.tar.gz"
         original = target.read_text(encoding="utf-8")
-        subprocess.run(
+        result = subprocess.run(
             [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(self.tampering_gh())],
             text=True,
             capture_output=True,
@@ -248,6 +250,11 @@ class ReleaseAssetBindingTest(ReleasePublishTest):
                 "MOCK_GH_TAMPER_TARGET": str(target),
             },
         )
+        # Assert the run reached the upload for the reason expected. Without it a regression that
+        # fails earlier, during the snapshot copy for instance, still passes the byte comparison
+        # as long as the stand-in wrote its file, which would leave this test vacuous.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("disappeared before publication", result.stderr)
         self.assertTrue(seen_path.exists(), "the stand-in never reached the upload arguments")
         seen = json.loads(seen_path.read_text(encoding="utf-8"))
         self.assertEqual("tampered", target.read_text(encoding="utf-8"))
@@ -446,3 +453,7 @@ class ReleaseAssetBindingTest(ReleasePublishTest):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("assets do not match dist/release", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
