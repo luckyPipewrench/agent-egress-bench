@@ -24,9 +24,20 @@ FEED_PATH = Path("schemas/discovery.json")
 
 def catalog_bytes(root: Path) -> bytes:
     path = root / CATALOG_PATH
-    if path.is_symlink() or not path.is_file():
+    # Same two-lookup hole the schema entries just closed: is_symlink/is_file then read_bytes
+    # can describe two different objects. Open once and read that descriptor.
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
         raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}")
-    contents = path.read_bytes()
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode):
+            raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            contents = handle.read()
+    finally:
+        os.close(descriptor)
     if not contents:
         raise ValueError(f"schema catalog is empty: {CATALOG_PATH}")
     return contents

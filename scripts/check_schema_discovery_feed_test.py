@@ -168,3 +168,55 @@ class SchemaDiscoveryReadBindingTest(SchemaDiscoveryFeedTest):
         (self.root / "schemas" / "nested").mkdir()
         with self.assertRaisesRegex(ValueError, "not a regular file"):
             schema_discovery_feed._contained_file_bytes(self.root, 0, "schemas/nested")
+
+    def test_catalog_content_is_not_read_back_by_name(self):
+        catalog = self.root / "schemas" / "index.json"
+        original = Path.read_bytes
+        observed = []
+
+        def recording_read_bytes(self):
+            observed.append(Path(self).resolve())
+            return original(self)
+
+        Path.read_bytes = recording_read_bytes
+        try:
+            schema_discovery_feed.catalog_bytes(self.root)
+        finally:
+            Path.read_bytes = original
+
+        self.assertNotIn(
+            catalog.resolve(),
+            observed,
+            "the catalog was reopened by name after its regular-file check",
+        )
+
+    def test_symlinked_catalog_is_refused(self):
+        catalog = self.root / "schemas" / "index.json"
+        contents = catalog.read_bytes()
+        target = self.root / "schemas" / "real-index.json"
+        target.write_bytes(contents)
+        catalog.unlink()
+        catalog.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "must be a regular file"):
+            schema_discovery_feed.catalog_bytes(self.root)
+
+    def test_resolved_path_bound_to_opened_inode(self):
+        other = self.root / "schemas" / "other-v1.schema.json"
+        other.write_text("other-bytes\n", encoding="utf-8")
+        original_resolve = Path.resolve
+        fixture = (self.root / "schemas" / "fixture-v1.schema.json").resolve()
+
+        def redirected_resolve(self, *args, **kwargs):
+            resolved = original_resolve(self, *args, **kwargs)
+            if resolved == fixture:
+                return other.resolve()
+            return resolved
+
+        Path.resolve = redirected_resolve
+        try:
+            with self.assertRaisesRegex(ValueError, "changed while it was being read"):
+                schema_discovery_feed._contained_file_bytes(
+                    self.root, 0, "schemas/fixture-v1.schema.json"
+                )
+        finally:
+            Path.resolve = original_resolve

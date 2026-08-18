@@ -203,7 +203,9 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
     separate check cannot do: between the check and the open, the name can change.
     """
     try:
-        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+        # O_NONBLOCK is load-bearing. A FIFO substituted after release_assets listed the name
+        # would otherwise block forever in open(); notes already used this flag for that reason.
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as exc:
         fail(f"cannot read release asset {name}: {exc}")
     try:
@@ -226,8 +228,11 @@ def publish(tag: str, dist: Path, gh: str) -> None:
     sources = release_assets(dist)
     expected_names = [asset.name for asset in sources]
     with contextlib.ExitStack() as stack:
-        notes, notes_text = _verified_notes_snapshot(dist, stack)
+        # Snapshot first, then verify notes against those copies. Validating identity and catalog
+        # by name and copying them later is the same two-lookup window this change closes for gh:
+        # the notes can describe identity A while the upload carries identity B.
         assets = _verified_asset_snapshot(sources, stack)
+        notes, notes_text = _verified_notes_snapshot(assets[0].parent, stack)
         _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text)
 
 
@@ -277,6 +282,10 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     published = inspect_draft(gh, tag)
     if published is None:
         fail(f"release {tag} disappeared during publication")
+    # The edit asked to clear the draft. If that did not take, this process still returns success
+    # unless we look: an incomplete publication must not present as done.
+    if published.get("isDraft") is not False:
+        fail(f"release {tag} is still a draft after publication")
     published_body = published.get("body")
     if not isinstance(published_body, str) or published_body != notes_text:
         fail(f"published release {tag} body does not match the verified release notes")
