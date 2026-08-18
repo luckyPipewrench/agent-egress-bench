@@ -167,7 +167,7 @@ def _require_notes_match_release(dist: Path, raw: bytes) -> None:
         fail(f"{RELEASE_NOTES_NAME} does not match the notes generated from this release")
 
 
-def _verified_asset_snapshot(assets: list[Path], stack: contextlib.ExitStack) -> list[Path]:
+def _verified_asset_snapshot(assets: list[Path], stack: contextlib.ExitStack) -> tuple[Path, list[Path]]:
     """Return process-owned copies holding the exact asset bytes that were validated.
 
     `release_assets` rejects symlinks and non-files by NAME, then the publish path hands those
@@ -181,6 +181,10 @@ def _verified_asset_snapshot(assets: list[Path], stack: contextlib.ExitStack) ->
     because the stand-in rewrote the file in place.
 
     The read comes from one descriptor, so validation and copy cannot see two different objects.
+
+    Returns the snapshot directory alongside the copies. The notes check regenerates its expected
+    body from the identity and catalog files, which are themselves assets, so it has to read them
+    from this directory rather than from the source tree.
     """
     directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
     bound: list[Path] = []
@@ -193,7 +197,7 @@ def _verified_asset_snapshot(assets: list[Path], stack: contextlib.ExitStack) ->
             fail(f"release distribution has more than one asset named {name}")
         seen.add(name)
         bound.append(_copy_verified_asset(asset, directory / name, name))
-    return bound
+    return directory, bound
 
 
 def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
@@ -231,8 +235,8 @@ def publish(tag: str, dist: Path, gh: str) -> None:
         # Snapshot first, then verify notes against those copies. Validating identity and catalog
         # by name and copying them later is the same two-lookup window this change closes for gh:
         # the notes can describe identity A while the upload carries identity B.
-        assets = _verified_asset_snapshot(sources, stack)
-        notes, notes_text = _verified_notes_snapshot(assets[0].parent, stack)
+        snapshot_dir, assets = _verified_asset_snapshot(sources, stack)
+        notes, notes_text = _verified_notes_snapshot(snapshot_dir, stack)
         _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text)
 
 
