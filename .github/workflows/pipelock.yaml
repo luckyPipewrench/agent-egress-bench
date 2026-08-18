@@ -40,6 +40,11 @@ jobs:
           test-vectors: 'false'
           exclude-paths: |
             cases/
+            # Generated decision records quote each case's own description, and the corpus
+            # documents attacks: one case carries AWS's published example key. `cases/` is
+            # excluded for that reason and a record derived from a case inherits it. Scoped to
+            # the generated directory so hand-written governance material stays scanned.
+            governance/case-decisions/
             README.md
             scripts/
             runner/go.sum
@@ -87,6 +92,7 @@ jobs:
             "$merge_base" "$HEAD_SHA" > "$diff_file"
           scan_args=(
             --exclude cases/
+            --exclude governance/case-decisions/
             --exclude README.md
             --exclude scripts/
             --exclude runner/go.sum
@@ -111,6 +117,7 @@ jobs:
             "origin/$DEFAULT_BRANCH...HEAD" > "$diff_file"
           scan_args=(
             --exclude cases/
+            --exclude governance/case-decisions/
             --exclude README.md
             --exclude scripts/
             --exclude runner/go.sum
