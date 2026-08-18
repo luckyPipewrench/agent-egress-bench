@@ -55,6 +55,45 @@ jobs:
             --reserve-seconds $((6 * 60)) \
             --benchmark-timeout-seconds $((24 * 60))
 
+      - name: Verify the recorded tool version matches the binary that ran
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Both artifacts are already captured as evidence and nothing compared
+          # them. The profile's tool_version reaches every result row and the
+          # signed receipt, so a stale profile publishes a score under a build
+          # that never executed the corpus.
+          artifact_dir="$GAUNTLET_ARTIFACT_DIR"
+          version_file="$artifact_dir/pipelock-version.txt"
+          profile_file="$artifact_dir/tool-profile.json"
+          test -f "$version_file" || { echo "no recorded binary version at $version_file"; exit 1; }
+          test -f "$profile_file" || { echo "no tool profile at $profile_file"; exit 1; }
+          # Exactly one canonical record. Several would mean the file was
+          # appended to, and comparing a multi-line value is not a comparison.
+          records="$(awk '$1 == "pipelock" && $2 == "version" && NF == 3 { print $3 }' "$version_file")"
+          record_count="$(printf '%s\n' "$records" | grep -c . || true)"
+          if [ "$record_count" -ne 1 ]; then
+            echo "expected exactly one 'pipelock version <version>' record in $version_file, found $record_count"
+            exit 1
+          fi
+          binary_version="$(printf '%s' "$records" | sed 's/^v//')"
+          profile_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tool_version"])' "$profile_file")"
+          test -n "$binary_version" || { echo "could not read a version from $version_file"; exit 1; }
+          test -n "$profile_version" || { echo "tool profile carries no tool_version"; exit 1; }
+          # Validate both operands. Comparing without validating lets two
+          # identical nonsense values agree and pass, which reads as a match.
+          semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          printf '%s' "$binary_version" | grep -Eq "$semver" || { echo "binary version is not a version: $binary_version"; exit 1; }
+          printf '%s' "$profile_version" | grep -Eq "$semver" || { echo "profile tool_version is not a version: $profile_version"; exit 1; }
+          if [ "$binary_version" != "$profile_version" ]; then
+            echo "tool_version mismatch"
+            echo "  profile claims: $profile_version"
+            echo "  binary reports: $binary_version"
+            echo "update examples/pipelock/tool-profile.json to $binary_version before publishing this run"
+            exit 1
+          fi
+          echo "tool version agrees: $binary_version"
+
       - name: Finalize GitHub provenance artifact
         shell: bash
         run: |

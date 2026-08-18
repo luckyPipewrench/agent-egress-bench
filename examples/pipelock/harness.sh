@@ -55,6 +55,35 @@ command -v "$PIPELOCK" >/dev/null 2>&1 || { echo "error: pipelock binary not fou
 TOOL=$(jq -r '.tool' "$PROFILE")
 TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
 
+# The profile's tool_version reaches both every result line and the signed receipt,
+# so a stale value attributes a run to a build that never executed it. Ask the
+# binary what it is and refuse to run when the two disagree, rather than recording
+# the profile's claim as fact.
+VERSION_RECORDS=$("$PIPELOCK" --version 2>/dev/null | awk '$1 == "pipelock" && $2 == "version" && NF == 3 { print $3 }') || VERSION_RECORDS=""
+RECORD_COUNT=$(printf '%s\n' "$VERSION_RECORDS" | grep -c . || true)
+if [ "$RECORD_COUNT" -ne 1 ]; then
+    echo "error: expected exactly one 'pipelock version <version>' record from $PIPELOCK --version, found $RECORD_COUNT" >&2
+    exit 1
+fi
+BINARY_VERSION=$(printf '%s' "$VERSION_RECORDS" | sed 's/^v//')
+# Validate both operands. Two identical nonsense values would otherwise agree.
+SEMVER='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+if ! printf '%s' "$BINARY_VERSION" | grep -Eq "$SEMVER"; then
+    echo "error: $PIPELOCK reported something that is not a version: $BINARY_VERSION" >&2
+    exit 1
+fi
+if ! printf '%s' "$TOOL_VERSION" | grep -Eq "$SEMVER"; then
+    echo "error: the profile's tool_version is not a version: $TOOL_VERSION" >&2
+    exit 1
+fi
+if [ "$BINARY_VERSION" != "$TOOL_VERSION" ]; then
+    echo "error: tool_version mismatch" >&2
+    echo "  profile ($PROFILE): $TOOL_VERSION" >&2
+    echo "  binary  ($PIPELOCK): $BINARY_VERSION" >&2
+    echo "  update the profile's tool_version to $BINARY_VERSION before running." >&2
+    exit 1
+fi
+
 # Start pipelock
 echo "starting pipelock on port $PORT..." >&2
 "$PIPELOCK" run --config "$CONFIG" --listen "127.0.0.1:$PORT" &
