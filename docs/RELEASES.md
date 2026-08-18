@@ -13,6 +13,9 @@ Each release contains:
 - One commit-pinned schema catalog and schema bundle. The bundle contains the
   catalog and every schema it names, so a vendor can validate schema bytes
   after download without a network connection.
+- `release-notes.md`, used as the GitHub Release body. It lists every schema
+  identity and version carried by that release and links to the offline
+  validation walkthrough and adapter quickstarts.
 - Archives for Linux, macOS, and Windows on amd64 and arm64. Each one carries
   both `aeb-gauntlet`, which runs the corpus, and `aeb-validate`, which checks a
   result against the contracts. The release verifier refuses an archive missing
