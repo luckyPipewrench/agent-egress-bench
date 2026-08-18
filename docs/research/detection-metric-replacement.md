@@ -56,7 +56,7 @@ This is already how the repository models the data: `measurement_status` is `inc
 
 ## Held-out cases in a public corpus
 
-Holding back corpus cases isn't workable as a public benchmark control. Every merged case is visible in Git history, and the repository promises that its ID, payload, expected verdict, and semantics never silently change [docs/GOVERNANCE.md:12-38]. A vendor can tune to every released case, including a case removed from the current presentation but still present in history. A newly published "holdout" becomes available for the next run. The same visibility also prevents treating an unreviewed vendor supplied label as an independent oracle.
+Holding back corpus cases isn't workable as a public benchmark control. Every merged case is visible in Git history, and the repository promises that its ID, payload, expected verdict, and semantics never silently change [docs/GOVERNANCE.md:12-38]. A vendor can tune to every released case, including a case removed from the current presentation but still present in history. A newly published "holdout" becomes available for the next run. The same visibility also prevents treating an unreviewed vendor-supplied label as an independent oracle.
 
 Two substitutes are useful, but neither creates a corpus-issued detection score:
 
