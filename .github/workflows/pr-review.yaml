@@ -47,7 +47,7 @@ jobs:
        github.event_name == 'workflow_dispatch')
     # Pinned to an immutable Pipelock commit in both positions. A branch or tag
     # here would run reviewer code that can change under the pin.
-    uses: luckyPipewrench/pipelock/.github/workflows/pr-review-reusable.yaml@74b3b3f1099d8d6d8ffeb67407ba7e99d1bd3119
+    uses: luckyPipewrench/pipelock/.github/workflows/pr-review-reusable.yaml@aa5c8dc6661c72632533ef6cee9453614ee4d885
     with:
       pr_number: >-
         ${{ github.event_name == 'issue_comment' &&
@@ -57,7 +57,7 @@ jobs:
         (github.event.comment.body == '/review deep' && 'deep' ||
          'default') ||
         inputs.review_mode }}
-      reviewer_sha: 74b3b3f1099d8d6d8ffeb67407ba7e99d1bd3119
+      reviewer_sha: aa5c8dc6661c72632533ef6cee9453614ee4d885
     # Personal-account repositories cannot use secrets: inherit with a reusable
     # workflow, so every secret the reviewer needs is mapped by name.
     secrets:
