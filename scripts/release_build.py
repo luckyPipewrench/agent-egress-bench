@@ -615,8 +615,10 @@ def rendered_release_notes(identity: dict[str, Any], catalog_bytes: bytes) -> by
     lines.extend(
         [
             "",
+            # The commit, not the tag. A snapshot build has the literal tag "snapshot", which is not a
+            # ref a reader can resolve, and a tag can be moved after the fact while a commit cannot.
             "The release schema catalog contains commit-pinned retrieval URLs and SHA-256 digests. The schema bundle supports offline validation. See [Schema identifiers and discovery](https://github.com/luckyPipewrench/agent-egress-bench/blob/"
-            + tag
+            + commit
             + "/docs/SCHEMAS.md) for the validation walkthrough and adapter quickstarts.",
             "",
         ]

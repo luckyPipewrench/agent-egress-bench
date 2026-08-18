@@ -29,7 +29,7 @@ def catalog_bytes(root: Path) -> bytes:
     return contents
 
 
-def catalog_entries(contents: bytes) -> list[dict[str, str]]:
+def catalog_entries(root: Path, contents: bytes) -> list[dict[str, str]]:
     try:
         catalog = json.loads(contents)
     except json.JSONDecodeError as exc:
@@ -46,25 +46,39 @@ def catalog_entries(contents: bytes) -> list[dict[str, str]]:
         path, schema_id = entry["path"], entry["$id"]
         if not isinstance(path, str) or not path or not isinstance(schema_id, str) or not schema_id:
             raise ValueError(f"schema catalog entry {index} has an invalid identity")
-        _require_contained_path(index, path)
+        _require_contained_path(root, index, path)
         entries.append({"path": path, "$id": schema_id})
     return entries
 
 
-def _require_contained_path(index: int, path: str) -> None:
-    """Refuse any catalog path that would resolve outside the published schema roots.
+def _require_contained_path(root: Path, index: int, path: str) -> None:
+    """Refuse any catalog path that does not RESOLVE inside the published schema roots.
 
-    The feed is consumed by readers that join these values onto a checkout root, so an absolute
-    path or a parent-traversal segment would send them outside the repository. Validate here rather
-    than trusting the catalog, because the feed is the artifact published outward.
+    The feed is published outward and consumers join these values onto their own checkout, so a
+    value that escapes the schema roots escapes on their machine. A lexical check alone cannot
+    establish that: a component such as ``.. `` is normalised to a parent traversal by Win32 path
+    rules, and a symlink inside an allowed root resolves wherever its target points. So this rejects
+    the non-portable spellings first and then resolves the real target and requires it to sit beneath
+    a resolved allowed root.
     """
     if path != PurePosixPath(path).as_posix() or path.startswith("/") or "\\" in path:
         raise ValueError(f"schema catalog entry {index} path is not a normalised relative path: {path!r}")
     parts = PurePosixPath(path).parts
     if not parts or any(part in ("..", ".") for part in parts):
         raise ValueError(f"schema catalog entry {index} path is not a normalised relative path: {path!r}")
+    for part in parts:
+        # Trailing dots and spaces, drive letters, and alternate data stream syntax all mean
+        # something other than a plain name once a consumer resolves them on Windows.
+        if part != part.strip() or part.endswith(".") or ":" in part:
+            raise ValueError(f"schema catalog entry {index} path component is not portable: {path!r}")
     if not any(path.startswith(f"{allowed}/") for allowed in SCHEMA_ROOTS):
         raise ValueError(f"schema catalog entry {index} path is outside the published schema roots: {path!r}")
+    target = (root / path).resolve()
+    for allowed in SCHEMA_ROOTS:
+        allowed_root = (root / allowed).resolve()
+        if target == allowed_root or allowed_root in target.parents:
+            return
+    raise ValueError(f"schema catalog entry {index} path resolves outside the published schema roots: {path!r}")
 
 def rendered_feed(root: Path) -> bytes:
     """Render a deterministic feed that points consumers to the catalog."""
@@ -76,6 +90,6 @@ def rendered_feed(root: Path) -> bytes:
         "format": 1,
         "catalog": CATALOG_PATH.as_posix(),
         "catalog_sha256": hashlib.sha256(catalog).hexdigest(),
-        "schemas": catalog_entries(catalog),
+        "schemas": catalog_entries(root, catalog),
     }
     return (json.dumps(feed, indent=2) + "\n").encode("utf-8")

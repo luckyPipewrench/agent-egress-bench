@@ -8,6 +8,7 @@ import contextlib
 import json
 import os
 import subprocess
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -18,6 +19,8 @@ from typing import Any
 # was made by this workflow rather than being an unrelated draft for the tag.
 DRAFT_OWNER = "agent-egress-bench-release-workflow-v1"
 DRAFT_MARKER = f"<!-- {DRAFT_OWNER} -->"
+# A release notes body is prose. Anything approaching this size is a wrong or hostile file.
+MAX_NOTES_BYTES = 1 << 20
 RELEASE_NOTES_NAME = "release-notes.md"
 
 
@@ -102,11 +105,28 @@ def _verified_notes_snapshot(dist: Path, stack: contextlib.ExitStack) -> tuple[P
     """
     notes = dist / RELEASE_NOTES_NAME
     try:
-        with open(notes, "rb", opener=lambda path, flags: os.open(path, flags | os.O_NOFOLLOW)) as handle:
-            raw = handle.read()
+        descriptor = os.open(notes, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
         fail(f"release distribution is missing {RELEASE_NOTES_NAME}")
-    text = raw.decode("utf-8", errors="strict")
+    try:
+        status = os.fstat(descriptor)
+        # Check the object actually opened, not the name. A FIFO would otherwise block the release on
+        # a read that never returns, and a device file would supply unbounded input.
+        if not stat.S_ISREG(status.st_mode):
+            fail(f"{RELEASE_NOTES_NAME} is not a regular file")
+        if status.st_size > MAX_NOTES_BYTES:
+            fail(f"{RELEASE_NOTES_NAME} is larger than {MAX_NOTES_BYTES} bytes")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            raw = handle.read(MAX_NOTES_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > MAX_NOTES_BYTES:
+        fail(f"{RELEASE_NOTES_NAME} is larger than {MAX_NOTES_BYTES} bytes")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        # A traceback here would be an uncontrolled exit from a publication path; refuse instead.
+        fail(f"{RELEASE_NOTES_NAME} is not valid UTF-8")
     if not text.strip():
         fail(f"release distribution is missing {RELEASE_NOTES_NAME}")
     if DRAFT_MARKER not in text:
@@ -151,9 +171,19 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # The snapshot proves what was SENT. This proves what the release actually carries, so a body
     # replaced between the edit and publication cannot be undrafted.
     body = release.get("body")
-    if not isinstance(body, str) or body.strip() != notes_text.strip():
+    # Exact comparison. Accepting a body that differs only at its boundaries would weaken the check
+    # into "looks close enough", which is not what a published release body needs.
+    if not isinstance(body, str) or body != notes_text:
         fail(f"draft {tag} body does not match the verified release notes")
-    command(gh, "release", "edit", tag, "--draft=false")
+    # One update sets the verified body AND clears the draft. Doing those separately leaves a window
+    # in which another editor can replace the body between the check and publication.
+    command(gh, "release", "edit", tag, "--notes-file", str(notes), "--draft=false")
+    published = inspect_draft(gh, tag)
+    if published is None:
+        fail(f"release {tag} disappeared during publication")
+    published_body = published.get("body")
+    if not isinstance(published_body, str) or published_body != notes_text:
+        fail(f"published release {tag} body does not match the verified release notes")
 
 
 def main() -> int:

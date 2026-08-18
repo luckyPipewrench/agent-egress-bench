@@ -65,7 +65,7 @@ class ReleasePublishTest(unittest.TestCase):
             "elif args[:2] == ['release', 'edit']:\n"
             "  if '--notes-file' in args:\n"
             "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
-            "  else:\n"
+            "  if '--draft=false' in args:\n"
             "    state['isDraft'] = False\n"
             "  save()\n"
             "else:\n"
@@ -145,7 +145,7 @@ class ReleasePublishTest(unittest.TestCase):
         result = self.publish()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("assets do not exactly match", result.stderr)
-        self.assertNotIn(["release", "edit", "v1.0.0", "--draft=false"], self.calls())
+        self.assertFalse([call for call in self.calls() if "--draft=false" in call])
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         self.assertTrue(state["isDraft"])
         self.assertIn("extra.bin", [asset["name"] for asset in state["assets"]])
