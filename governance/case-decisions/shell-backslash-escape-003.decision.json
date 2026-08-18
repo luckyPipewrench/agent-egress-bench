@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-backslash-escape-003",
+  "case_sha256": "4f5adc3ef4a8d7ceb67f05ed79012bfd3a12064cbd83a0c73a614d49b69f286f",
+  "case_description": "Tests detection of a dangerous command with backslash escapes between characters (r\\m resolves to rm in bash).",
+  "expected_verdict": "block",
+  "why_expected": "backslash_escape_rm_command",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

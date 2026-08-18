@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-msg-dlp-github-token-010",
+  "case_sha256": "6593e3c6125244905bc44e15b434fa3d326acd2601565eb6bfac0a7191e0aae6",
+  "case_description": "Tests detection of a GitHub PAT being sent through an A2A message text part.",
+  "expected_verdict": "block",
+  "why_expected": "github_pat_in_a2a_message",
+  "source": "synthetic: GitHub PAT pattern in A2A message",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

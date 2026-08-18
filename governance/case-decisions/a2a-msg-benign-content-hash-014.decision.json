@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-msg-benign-content-hash-014",
+  "case_sha256": "eb7caa0622445a1fc5541941d9c93b3408c1f4a90b18a0ab917b1bc3ba764f27",
+  "case_description": "A normal A2A message carries a git commit SHA and content hash for artifact verification.",
+  "expected_verdict": "allow",
+  "why_expected": "benign_commit_sha_and_content_hash",
+  "source": "synthetic: benign A2A artifact verification message",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

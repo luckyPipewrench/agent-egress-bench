@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-chain-dow-interleaved-budget-exceeded-012",
+  "case_sha256": "50d6238c9787521ae6dcbb4a48adaceb89e72ae841401dd40fd9ccdebb501207",
+  "case_description": "One subject exceeds its call budget while another subject's calls are interleaved; the first over-budget call for the tracked subject should be blocked.",
+  "expected_verdict": "block",
+  "why_expected": "per_subject_call_budget_exceeded_on_interleaved_call_6",
+  "source": "synthetic: OWASP LLM Top 10 Unbounded Consumption interleaved resource-abuse sequence",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

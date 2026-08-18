@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "header-benign-cookies-002",
+  "case_sha256": "f5442fb7d0677de8feeb549aab946a9a7509b830cba52c4fa93bbe50abe5d165",
+  "case_description": "Standard cookie header with typical session and preference values.",
+  "expected_verdict": "allow",
+  "why_expected": "standard_session_cookies",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

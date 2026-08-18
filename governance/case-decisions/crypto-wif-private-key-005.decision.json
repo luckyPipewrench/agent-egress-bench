@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-wif-private-key-005",
+  "case_sha256": "84a877239097e94fd6c3dd42649012ef0f389124b573fa6530ee402f1767626d",
+  "case_description": "Tests detection of a Bitcoin Wallet Import Format private key.",
+  "expected_verdict": "block",
+  "why_expected": "bitcoin_wif_private_key",
+  "source": "synthetic: Bitcoin WIF format (5-prefix, base58)",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

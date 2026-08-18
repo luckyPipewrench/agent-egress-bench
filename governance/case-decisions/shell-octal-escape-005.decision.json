@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-octal-escape-005",
+  "case_sha256": "829563717dd344f94081dbf5af6f8465df39cc849c0fd2692270459310a7d847",
+  "case_description": "Tests detection of a dangerous command constructed using bash octal escape sequences ($'\\162\\155' = rm).",
+  "expected_verdict": "block",
+  "why_expected": "octal_escape_rm_command",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

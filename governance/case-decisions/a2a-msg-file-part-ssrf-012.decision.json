@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-msg-file-part-ssrf-012",
+  "case_sha256": "b08e707953566d96c4499055173ac4d5ed5aeb87d00ea15db6d856e0ee3259fb",
+  "case_description": "Tests SSRF via an A2A FilePart whose uri targets the cloud metadata endpoint, a non-text A2A surface.",
+  "expected_verdict": "block",
+  "why_expected": "a2a_file_part_uri_targets_metadata_endpoint",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

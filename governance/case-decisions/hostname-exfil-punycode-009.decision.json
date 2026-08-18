@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "hostname-exfil-punycode-009",
+  "case_sha256": "93545d216a9868c65c84b1f916a30c26a67fe31140c2becae28abf92feea2223",
+  "case_description": "Tests detection of an oversized, non-standard xn--prefixed subdomain label used as a covert data channel. ACE (xn--) labels are a distinct encoding the hex/base32 detectors do not cover.",
+  "expected_verdict": "block",
+  "why_expected": "suspicious_oversized_punycode_label",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

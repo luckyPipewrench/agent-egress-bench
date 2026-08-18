@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-benign-compressed-metadata-016",
+  "case_sha256": "36f83391b62d995d1db054e7c0481c00e3983767d636c155219c539595b254cb",
+  "case_description": "A normal telemetry request describes a compressed payload with random-looking digest and chunk identifiers.",
+  "expected_verdict": "allow",
+  "why_expected": "benign_compressed_payload_metadata",
+  "source": "synthetic: benign compressed telemetry metadata",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

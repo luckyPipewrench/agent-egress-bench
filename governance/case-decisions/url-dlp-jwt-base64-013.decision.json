@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-dlp-jwt-base64-013",
+  "case_sha256": "2cad5d86771b3ed763fdd54dc114027f36268bc58d1271a3887a5f71c0874827",
+  "case_description": "Tests encoding-evasion applied to a high-entropy secret (a JWT), not the trivial AWS access-key ID that the other encoding cases reuse.",
+  "expected_verdict": "block",
+  "why_expected": "base64_wrapped_jwt_in_query",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

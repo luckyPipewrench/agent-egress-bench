@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-benign-api-call-003",
+  "case_sha256": "dee5e39c13d7337f53c1e716526b04b53b3ae4be032605eda5583745cfdb9736",
+  "case_description": "Standard API call to create a calendar event. Body contains only non-sensitive data.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_calendar_event_creation",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

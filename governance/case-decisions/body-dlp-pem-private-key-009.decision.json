@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-dlp-pem-private-key-009",
+  "case_sha256": "67ade3d431cef5fed865778073b8492875712a9c5fa212803aa8cf8e3dae9fef",
+  "case_description": "Tests DLP detection of a private-key block exfiltrated in a POST body. The key material is obviously synthetic. Distinct surface from the MCP-args SSH-key case: here the key is in an HTTP request body.",
+  "expected_verdict": "block",
+  "why_expected": "private_key_block_in_request_body",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

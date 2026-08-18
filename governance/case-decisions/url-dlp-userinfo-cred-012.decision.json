@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-dlp-userinfo-cred-012",
+  "case_sha256": "e19f7a3c3cffb2b60b69ea90c0a63b6e38cbe21403583fed47fa659ea194b9c1",
+  "case_description": "Tests detection of a high-entropy secret placed in the userinfo component of the URL authority (user:secret@host), a different parse surface than the query or path.",
+  "expected_verdict": "block",
+  "why_expected": "credential_in_url_userinfo",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

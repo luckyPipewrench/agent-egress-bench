@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-msg-dlp-data-part-003",
+  "case_sha256": "8a0cfdf64ec8d193ad1d42475fb5a09fd02e5426006d147c9b5751d5fa5cd265",
+  "case_description": "Tests detection of a secret exfiltrated via an A2A message data kind part rather than text.",
+  "expected_verdict": "block",
+  "why_expected": "api_key_in_a2a_data_part",
+  "source": "synthetic: secret hidden in structured data kind part",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

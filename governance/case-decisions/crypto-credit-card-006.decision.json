@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-credit-card-006",
+  "case_sha256": "3501cf2724342d561f69a9fc186e177ed0ecf5f2d8ae68e7810143972d6b9d0c",
+  "case_description": "Tests detection of a credit card PAN being exfiltrated via a POST request body.",
+  "expected_verdict": "block",
+  "why_expected": "credit_card_pan_exfiltration",
+  "source": "synthetic: Visa test card number",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

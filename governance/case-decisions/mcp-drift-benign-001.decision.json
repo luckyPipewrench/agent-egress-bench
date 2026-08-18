@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-drift-benign-001",
+  "case_sha256": "3a0a58f2f1719b85851f66d41ee858890c3e3ac643bb62cbd66b537553558df1",
+  "case_description": "Between session 1 and session 2, the MCP server's tools/list response gains\na new tool entry. Existing tool definitions are unchanged. This is the\nordinary \"the vendor shipped a release\" drift, not a rug-pull.\n",
+  "expected_verdict": "warn",
+  "why_expected": "baseline_tool_count_increased_without_existing_tool_mutation. A conforming\ndetector emits a warn-level receipt with layer=mcp_tool_baseline so the\noperator can decide whether to re-approve. Config that maps drift action to\nblock would over-trigger here; this case is the FP guardrail.\n",
+  "source": "Real-world pattern. MCP servers ship features behind feature flags and\nrotate tool inventory frequently. Detectors must distinguish addition\n(warn-class) from mutation (block-class).\n",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

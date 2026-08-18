@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-fragment-split-003",
+  "case_sha256": "a0320d3b9f43d594fdbab745da72928e717dbc94353628ac64ec90aaf441e48a",
+  "case_description": "Tests detection of a secret split across multiple WebSocket frame fragments to evade per-frame scanning.",
+  "expected_verdict": "block",
+  "why_expected": "secret_split_across_fragments",
+  "source": "synthetic: fragment reassembly evasion of DLP",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

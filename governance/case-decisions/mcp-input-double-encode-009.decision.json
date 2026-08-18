@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-input-double-encode-009",
+  "case_sha256": "b01d3699f584fd436c7744d5bdaf165e79fbd9f2ef6c61486a88d691b8e6ba4d",
+  "case_description": "Tests multi-layer decode before DLP: an AWS key encoded first as hex, then base64-wrapped, inside a tool argument. Only single-layer encoding was previously covered.",
+  "expected_verdict": "block",
+  "why_expected": "nested_base64_of_hex_secret",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

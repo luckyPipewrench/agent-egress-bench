@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-backtick-substitution-001",
+  "case_sha256": "0505b25f20908221cb330e3637e748ec1ea2000f5775384ab857026343b8f7f6",
+  "case_description": "Tests detection of an rm command reconstructed through backtick command substitution in MCP tool arguments.",
+  "expected_verdict": "block",
+  "why_expected": "backtick_command_substitution_rm",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

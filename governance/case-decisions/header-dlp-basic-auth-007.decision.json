@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "header-dlp-basic-auth-007",
+  "case_sha256": "8afddea62781329f9ad1a12d11555f1edcd7ed63ae6beaffdc5ee09b62c1e6de",
+  "case_description": "Tests base64-decode-then-DLP on an Authorization: Basic header carrying user:secret credentials.",
+  "expected_verdict": "block",
+  "why_expected": "basic_auth_credentials_in_header",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

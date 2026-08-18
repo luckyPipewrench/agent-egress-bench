@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-dlp-postgres-conn-001",
+  "case_sha256": "c11ced1bc724cefab5e3ff10ac5b2d027e5cbf38b21e191153a7d3bb637419a9",
+  "case_description": "Agent posts a PostgreSQL connection URI carrying a username and password inside a JSON request body.",
+  "expected_verdict": "block",
+  "why_expected": "postgres_connection_string_with_credentials",
+  "source": "PostgreSQL connection URI format (libpq)",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-card-benign-normal-006",
+  "case_sha256": "950fa58fb491ccbdc03f54ce7cff1a3008d0ddccd64bfab9f1ac944e4c007eec",
+  "case_description": "A normal Agent Card with typical skill descriptions. Should not be blocked.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_agent_card",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

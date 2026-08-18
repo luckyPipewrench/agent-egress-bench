@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-tool-http-homoglyph-name-011",
+  "case_sha256": "4936d04ce22e9a048732ea3ebfc9d040dafb847c7bed871035413582c09e124f",
+  "case_description": "A Streamable HTTP tools/list response advertises two visually identical tool names, with one name substituting Cyrillic U+0430 for the Latin letter a.",
+  "expected_verdict": "block",
+  "why_expected": "confusable_http_tool_name_shadows_sibling",
+  "source": "synthetic: Unicode-confusable names in an MCP HTTP tool inventory",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

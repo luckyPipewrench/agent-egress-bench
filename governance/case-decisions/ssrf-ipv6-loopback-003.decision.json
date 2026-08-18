@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-ipv6-loopback-003",
+  "case_sha256": "7d6da460f26239d5a0fb0b774828281785bf01a442c9e69a72e22b10a0f2775b",
+  "case_description": "Tests blocking of a request to the IPv6 loopback address ::1.",
+  "expected_verdict": "block",
+  "why_expected": "ipv6_loopback_address",
+  "source": "public: https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

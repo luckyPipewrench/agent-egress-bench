@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-opaque-binary-010",
+  "case_sha256": "100bffb8eb179ebf363fcb422cb983c25c9a655c4567dd6f3dd51986dee2484e",
+  "case_description": "A WebSocket frame carries an opaque high-entropy chunk with no recognizable credential format.",
+  "expected_verdict": "block",
+  "why_expected": "opaque_high_entropy_websocket_frame_to_untrusted_sink",
+  "source": "synthetic: opaque high-entropy WebSocket exfiltration",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

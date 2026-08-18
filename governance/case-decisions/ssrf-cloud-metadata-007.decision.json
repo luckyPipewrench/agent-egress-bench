@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-cloud-metadata-007",
+  "case_sha256": "c5c3f8433ddb629d17d908c521a3be9a740f3edbb9b1f1bc61595416928b79fc",
+  "case_description": "Tests blocking of a request to the AWS EC2 instance metadata service (169.254.169.254).",
+  "expected_verdict": "block",
+  "why_expected": "cloud_metadata_endpoint",
+  "source": "public: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

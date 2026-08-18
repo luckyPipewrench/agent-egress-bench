@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-gitlab-lookalike-word-014",
+  "case_sha256": "7dd9f85a0037ccd06f379023e8eeae3b951e1a526a4b2c3f96fab42a517988a4",
+  "case_description": "A hyphenated English phrase beginning with 'gl' (e.g. glance-) must not match the GitLab token-family patterns, which require a documented gl<type>- prefix.",
+  "expected_verdict": "allow",
+  "why_expected": "english_word_not_a_gitlab_token_prefix",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

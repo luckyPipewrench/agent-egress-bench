@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-brace-expansion-004",
+  "case_sha256": "86bdd8dc7a2c572dd2c9c9a2d0765013aaf52c9469a00c3179e04eca932f26dc",
+  "case_description": "Tests detection of a dangerous command constructed using bash brace expansion ({r,m} expands to r m, but {rm,} expands to rm).",
+  "expected_verdict": "block",
+  "why_expected": "brace_expansion_rm_command",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-base64-image-data-uri-010",
+  "case_sha256": "a69869b165ab84599005cd5f2c2ee8bc0e7af7498c2a92c1519faa1a814bd01e",
+  "case_description": "A legitimate data URI containing a base64-encoded PNG image. Should not trigger encoding evasion detection.",
+  "expected_verdict": "allow",
+  "why_expected": "legitimate_base64_image_data",
+  "source": "original",
+  "false_positive_risk": "high",
+  "supersedes": null
+}

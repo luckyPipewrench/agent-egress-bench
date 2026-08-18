@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-compressed-frame-004",
+  "case_sha256": "78e9f36025a9e6d81fc7fdc08dc31d82b4aca7bbe7b05cd4b50a5855aa4184fa",
+  "case_description": "Tests handling of a compressed WebSocket frame (RSV1 bit set). Tools should either decompress and scan or reject compressed frames.",
+  "expected_verdict": "block",
+  "why_expected": "compressed_frame_must_be_handled",
+  "source": "synthetic: RSV1 compressed frame testing decompression or rejection",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-dollar-paren-008",
+  "case_sha256": "fd12804b485e6ff8c5953951e17ba1719d1ef36c75e96e1e3c65ec8d84843663",
+  "case_description": "Tests detection of an rm command reconstructed through $() command substitution in MCP tool arguments. Only backtick substitution was previously covered.",
+  "expected_verdict": "block",
+  "why_expected": "dollar_paren_command_substitution_rm",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

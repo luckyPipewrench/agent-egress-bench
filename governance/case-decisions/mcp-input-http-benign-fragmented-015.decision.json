@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-input-http-benign-fragmented-015",
+  "case_sha256": "fc886f64dceb6252e6b0f2afc6ecb77d68e5a1a641542d4eb51625d548950895",
+  "case_description": "A Streamable HTTP tools/call request carries benign, non-sensitive identifiers split across arguments. No credential pattern is completed.",
+  "expected_verdict": "allow",
+  "why_expected": "benign_non_secret_fragments_do_not_complete_any_credential_pattern",
+  "source": "synthetic: benign fragmented non-secret identifiers in MCP HTTP tool call",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

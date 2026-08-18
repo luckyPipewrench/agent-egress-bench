@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-command-help-text-004",
+  "case_sha256": "d232e61caca5e477351c9d286fe465a677ec73c2279e9c4bc37f0339189b957f",
+  "case_description": "The help text output of the rm command returned as an MCP tool result. Help text should not trigger shell obfuscation detection.",
+  "expected_verdict": "allow",
+  "why_expected": "command_help_text_not_attack",
+  "source": "original",
+  "false_positive_risk": "high",
+  "supersedes": null
+}

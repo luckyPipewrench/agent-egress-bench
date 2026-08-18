@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-xpub-extended-key-010",
+  "case_sha256": "1f26ed3392a32740474e16d942078e49912e6f8c108a98fcf4e2df926d6b8f1b",
+  "case_description": "Tests detection of a BIP-32 extended public key (xpub prefix), which exposes the whole-wallet derivation path and address history.",
+  "expected_verdict": "block",
+  "why_expected": "extended_public_key_exfiltration",
+  "source": "public: BIP-32 test vector xpub",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

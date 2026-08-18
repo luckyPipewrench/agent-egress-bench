@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-binary-evasion-002",
+  "case_sha256": "534c1e58fa7ff4a8b089b18fb5e5e370e493027110a3250f6aeba47f3dc1e691",
+  "case_description": "Tests detection of a secret sent via a binary WebSocket frame to bypass text-only DLP scanning.",
+  "expected_verdict": "block",
+  "why_expected": "secret_in_binary_frame_evasion",
+  "source": "synthetic: binary frame used to evade text-only DLP",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-msg-dlp-api-key-001",
+  "case_sha256": "db2b7bb6ef269ca2da7d1ec4b96a0ecc1dc93f8fb94eb983f9bd2ae58503e90c",
+  "case_description": "Tests detection of an AWS access key exfiltrated via an A2A message text part.",
+  "expected_verdict": "block",
+  "why_expected": "aws_access_key_in_a2a_text_part",
+  "source": "synthetic: AWS access key pattern in A2A message/send text part",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

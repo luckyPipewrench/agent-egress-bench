@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-seed-24word-011",
+  "case_sha256": "a338bb4e57481aa7c3d7de800274e85e08e7c4a5090682485817d7e0bf735660",
+  "case_description": "Tests detection of a 24-word BIP-39 mnemonic seed phrase exfiltrated in a URL query parameter (only a 12-word phrase, in MCP args, was previously covered).",
+  "expected_verdict": "block",
+  "why_expected": "bip39_seed_phrase_24_words_in_url",
+  "source": "public: BIP-39 all-zero 24-word test vector",
+  "false_positive_risk": "low",
+  "supersedes": null
+}
