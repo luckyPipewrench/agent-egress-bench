@@ -171,7 +171,7 @@ cases without the runner or release verifier. A full release archive would
 duplicate what the canonical GitHub release and a Zenodo archive already
 provide, with another revision history to keep correct. Hugging Face documents
 revision pinning, but its normal dataset interface also makes a moving default
-revision easy to consume. [Hugging Face dataset versioning](https://huggingface.co/docs/datasets/v1.7.0/share_dataset.html)
+revision easy to consume. [Hugging Face Hub CLI revision pinning](https://huggingface.co/docs/huggingface_hub/en/guides/cli)
 
 Do not create a Hub mirror. Reconsider only if researchers demonstrate that
 Hub discovery materially reaches the right users and will accept a
