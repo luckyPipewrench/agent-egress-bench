@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-msg-dlp-bearer-token-002",
+  "case_sha256": "3218a306411317da50a8491b200437616d9dc43d36bfe4659b51a2008019258f",
+  "case_description": "Tests detection of a bearer token being sent through an A2A message text part.",
+  "expected_verdict": "block",
+  "why_expected": "bearer_token_in_a2a_text_part",
+  "source": "synthetic: JWT bearer token in A2A message",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

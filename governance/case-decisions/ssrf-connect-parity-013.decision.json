@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-connect-parity-013",
+  "case_sha256": "4c718b47f253d29a5853971c39044ee596a402e482cf89183b72bc648aeab6f8",
+  "case_description": "Tests that SSRF blocking holds on the forward-proxy (absolute-URI) transport, not only the fetch proxy. Every other SSRF case uses fetch_proxy.",
+  "expected_verdict": "block",
+  "why_expected": "ssrf_block_must_hold_on_forward_proxy_transport",
+  "source": "original: transport-parity check",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

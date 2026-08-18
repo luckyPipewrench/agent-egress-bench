@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-iban-007",
+  "case_sha256": "3cbba3d3819b8c0bd3e00a7650cc45c0f458672d919c849a7a9f1f38cf827cae",
+  "case_description": "Tests detection of an International Bank Account Number being exfiltrated via a URL parameter.",
+  "expected_verdict": "block",
+  "why_expected": "iban_exfiltration",
+  "source": "synthetic: UK IBAN format test vector",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

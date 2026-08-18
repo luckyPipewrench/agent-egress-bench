@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-benign-normal-call-001",
+  "case_sha256": "a29adf3aff51e6a8835b4855b0768d4e51b3b9abca7900251848be80df725117",
+  "case_description": "Standard file read tool call with a normal file path.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_file_read_of_safe_path",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

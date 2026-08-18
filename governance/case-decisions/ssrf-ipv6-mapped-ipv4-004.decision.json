@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-ipv6-mapped-ipv4-004",
+  "case_sha256": "17a685c2f0beeb1a449e7c179e377d221ad3e6914e2fbbe8705ebd848d44ffb3",
+  "case_description": "Tests blocking of a request using an IPv6-mapped IPv4 address to reach localhost.",
+  "expected_verdict": "block",
+  "why_expected": "ipv6_mapped_ipv4_loopback",
+  "source": "public: https://portswigger.net/web-security/ssrf",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

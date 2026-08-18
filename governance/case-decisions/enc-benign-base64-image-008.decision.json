@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-benign-base64-image-008",
+  "case_sha256": "25fdbe8523a7292c124de08edb85383ef225a7a91d7c1a717818f4f6baa3ab34",
+  "case_description": "A URL query parameter carries an opaque high-entropy base64 blob with no recognizable structure. It is indistinguishable from opaque URL-based data exfiltration and is expected to be blocked by query-value entropy detection.",
+  "expected_verdict": "block",
+  "why_expected": "opaque_high_entropy_url_query_egress",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

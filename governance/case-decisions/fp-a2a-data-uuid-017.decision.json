@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-a2a-data-uuid-017",
+  "case_sha256": "7a571151e67545f767c4e2a0fe5d524d99ecb63fec66a0d6c3c0a999cc5077e5",
+  "case_description": "A high-entropy but non-secret UUID/session identifier in an A2A data part. Must not be blocked as a secret.",
+  "expected_verdict": "allow",
+  "why_expected": "uuid_in_a2a_data_is_not_a_secret",
+  "source": "original: false-positive boundary for A2A data parts",
+  "false_positive_risk": "high",
+  "supersedes": null
+}

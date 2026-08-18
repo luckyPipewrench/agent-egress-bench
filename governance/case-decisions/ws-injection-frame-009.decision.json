@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-injection-frame-009",
+  "case_sha256": "8c9bd6f11e39c2532eddcd9b35e4d8b05d94f7bc822a98385363308fd79edd38",
+  "case_description": "Tests injection scanning over WebSocket. Every existing WS case is DLP; none covers prompt injection arriving in a frame.",
+  "expected_verdict": "block",
+  "why_expected": "prompt_injection_in_websocket_frame",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

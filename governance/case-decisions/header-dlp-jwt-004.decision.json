@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "header-dlp-jwt-004",
+  "case_sha256": "63eeee8338b7ceaded39ca3517d166cbf59a7c9a32d1e4dc98e4094068bdb697",
+  "case_description": "Agent sends a complete JWT with header, payload, and signature in the Authorization header.",
+  "expected_verdict": "block",
+  "why_expected": "jwt_token_in_auth_header",
+  "source": "OWASP Agentic Top 10 ASI02; JSON Web Token format (RFC 7519); Bearer scheme (RFC 6750)",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

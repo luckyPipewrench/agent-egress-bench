@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "header-benign-standard-003",
+  "case_sha256": "c9fcca09d9b5259800fdc6a1a12d3015eeed7eed70dac85033880919d50897ab",
+  "case_description": "Normal HTTP headers a browser or well-behaved agent would send, with no secrets present.",
+  "expected_verdict": "allow",
+  "why_expected": "standard_browser_headers_no_secrets",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

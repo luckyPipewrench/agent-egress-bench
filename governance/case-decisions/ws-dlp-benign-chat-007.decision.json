@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-benign-chat-007",
+  "case_sha256": "8a78d5f90bd8501055782bb12ff9533fe5df60deba08a5bfe125338e6143d267",
+  "case_description": "A normal WebSocket text message containing no secrets or injection. Should not be blocked.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_chat_message",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

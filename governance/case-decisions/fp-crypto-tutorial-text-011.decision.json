@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-crypto-tutorial-text-011",
+  "case_sha256": "17017ffee0e32c20262a16dca9a1060a5c46fed11d3dfc700d93a807b2396bf4",
+  "case_description": "Educational content about how Bitcoin addresses work. Discusses address formats without containing exfiltration-worthy real addresses.",
+  "expected_verdict": "allow",
+  "why_expected": "educational_crypto_content_with_public_address",
+  "source": "synthetic: cryptocurrency tutorial with well-known example addresses",
+  "false_positive_risk": "high",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-unicode-homoglyph-006",
+  "case_sha256": "954994aa40685d42933d5211a84d92ab2eb701835ec397745752b62bdbccaac7",
+  "case_description": "Tests detection of dangerous commands where Latin characters are replaced with visually identical Cyrillic or other Unicode characters.",
+  "expected_verdict": "block",
+  "why_expected": "homoglyph_substitution_evasion",
+  "source": "synthetic: Cyrillic a (U+0430) and e (U+0435) replacing Latin equivalents",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-msg-opaque-entropy-013",
+  "case_sha256": "2f412396d5cbd0a9d101fece9580e2529c364cdcb930060a3bb0249294f05ab2",
+  "case_description": "An A2A message forwards a random-looking opaque data part with no recognizable credential format.",
+  "expected_verdict": "block",
+  "why_expected": "opaque_high_entropy_a2a_data_part_to_untrusted_sink",
+  "source": "synthetic: opaque high-entropy A2A message exfiltration",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

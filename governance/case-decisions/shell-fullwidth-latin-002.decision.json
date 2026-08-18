@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-fullwidth-latin-002",
+  "case_sha256": "38dd51af103b61cedc565dbdf57186c8784274aa9aeba3c4d3c100b30cb82d57",
+  "case_description": "Tests detection of the rm command written with fullwidth Unicode characters (Ｒｍ) to evade ASCII pattern matching.",
+  "expected_verdict": "block",
+  "why_expected": "fullwidth_unicode_rm_command",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

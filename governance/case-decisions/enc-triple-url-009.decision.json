@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-triple-url-009",
+  "case_sha256": "c56faad7ccb14895b704992309d285143d70eed208a3f3c78309170429e8c572",
+  "case_description": "Tests detection of a secret that has been triple URL-encoded, requiring three decoding rounds.",
+  "expected_verdict": "block",
+  "why_expected": "triple_url_encoded_aws_key",
+  "source": "synthetic: triple URL encoding evasion depth test",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-octal-ip-005",
+  "case_sha256": "b2b22cb573790ccef81ca8c9b08871a4f1b45189e80fd8d31b27570da3145f76",
+  "case_description": "Tests blocking of localhost access using octal IP representation (0177.0.0.1 = 127.0.0.1).",
+  "expected_verdict": "block",
+  "why_expected": "octal_encoded_localhost",
+  "source": "public: https://portswigger.net/web-security/ssrf",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

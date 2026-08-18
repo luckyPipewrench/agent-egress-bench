@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-chain-dow-under-budget-011",
+  "case_sha256": "f14d64b73347398fb4beffef8022f470d947b0a97842f43e969ab81a5f64b851",
+  "case_description": "A subject makes exactly the declared per-subject call-count budget and should not be blocked for frequency alone.",
+  "expected_verdict": "allow",
+  "why_expected": "call_sequence_within_per_subject_budget",
+  "source": "synthetic: benign within-budget call-count sequence",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

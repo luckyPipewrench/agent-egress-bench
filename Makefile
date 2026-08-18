@@ -69,6 +69,7 @@ check-case-immutability:
 # repository. The change that adds the records enables the production check and this entry together.
 check-case-governance:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_case_governance_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_governance.py
 
 # Frozen schemas are immutable, byte for byte, with no permitted transition.
 # A reformat or key reorder that leaves the parsed document identical still

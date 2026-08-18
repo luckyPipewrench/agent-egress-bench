@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-localhost-001",
+  "case_sha256": "441ef26ce0676c1ec75b363c4879e572dbcee97c7ddad1fa44419842a4c877dd",
+  "case_description": "Tests blocking of a direct request to localhost (127.0.0.1).",
+  "expected_verdict": "block",
+  "why_expected": "direct_localhost_access",
+  "source": "public: https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

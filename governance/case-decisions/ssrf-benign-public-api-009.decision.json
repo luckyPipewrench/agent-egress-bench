@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-benign-public-api-009",
+  "case_sha256": "a74ca6aa9590a276ce5c2c4393da042c0136a9b057fff50c01f593afd64e9aa3",
+  "case_description": "A normal request to a public API endpoint. Should not be blocked by SSRF protection.",
+  "expected_verdict": "allow",
+  "why_expected": "legitimate_public_api_request",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

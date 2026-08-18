@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-dlp-html-entity-008",
+  "case_sha256": "38b5d8bbd60fc4ac1a19e2477c8a9043383e37f77e3064cde79bef88f7ee2aba",
+  "case_description": "Tests whether body DLP HTML-entity-decodes content before matching. The AWS key is encoded as decimal HTML entities.",
+  "expected_verdict": "block",
+  "why_expected": "html_entity_encoded_secret_in_body",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}
