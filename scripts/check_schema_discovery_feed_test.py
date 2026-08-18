@@ -48,11 +48,21 @@ class SchemaDiscoveryFeedTest(unittest.TestCase):
         self.assertEqual(1, check_schema_discovery_feed.check(self.root))
 
     def test_rejects_feed_when_catalog_changes(self):
+        # Change the identity, not the digest. A forged digest is refused earlier by the file-hash
+        # check below, so mutating it here would test that guard instead of staleness.
+        catalog_path = self.root / "schemas/index.json"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog["schemas"][0]["$id"] = "https://example.invalid/renamed-v1.schema.json"
+        catalog_path.write_text(json.dumps(catalog) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "is stale"):
+            check_schema_discovery_feed.check(self.root)
+
+    def test_forged_catalog_digest_is_refused(self):
         catalog_path = self.root / "schemas/index.json"
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
         catalog["schemas"][0]["sha256"] = "0" * 64
         catalog_path.write_text(json.dumps(catalog) + "\n", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "is stale"):
+        with self.assertRaisesRegex(ValueError, "digest does not match"):
             check_schema_discovery_feed.check(self.root)
 
     def test_missing_feed_is_refused(self):

@@ -41,6 +41,7 @@ def catalog_entries(root: Path, contents: bytes) -> list[dict[str, str]]:
         raise ValueError("schema catalog has no schema entries")
     entries: list[dict[str, str]] = []
     digests: dict[str, str] = {}
+    seen_paths: set[str] = set()
     copies: dict[str, list[str]] = {}
     canonical: dict[str, str] = {}
     for index, entry in enumerate(schemas):
@@ -53,11 +54,21 @@ def catalog_entries(root: Path, contents: bytes) -> list[dict[str, str]]:
         digest = entry["sha256"]
         if not isinstance(digest, str) or not digest:
             raise ValueError(f"schema catalog entry {index} has an invalid digest")
+        # Hash the FILE. Comparing the catalog's own digest strings only proves the catalog agrees
+        # with itself, so a manipulated catalog could declare two divergent files equivalent and this
+        # feed would publish that claim. The bytes on disk are the only thing worth trusting here.
+        actual = hashlib.sha256((root / path).read_bytes()).hexdigest()
+        if actual != digest:
+            raise ValueError(f"schema catalog entry {index} digest does not match {path!r}")
         # An identity that names two DIFFERENT files is a contradiction, not a duplicate. Refuse it
         # rather than silently picking one, because either choice publishes a wrong answer.
         if schema_id in digests and digests[schema_id] != digest:
             raise ValueError(f"schema catalog lists identity {schema_id!r} with differing content")
         digests[schema_id] = digest
+        # A repeated path is a contradiction in the catalog, not something to emit twice.
+        if path in seen_paths:
+            raise ValueError(f"schema catalog lists path {path!r} more than once")
+        seen_paths.add(path)
         if path.startswith("schemas/"):
             if schema_id in canonical:
                 raise ValueError(f"schema catalog lists two canonical paths for identity {schema_id!r}")
