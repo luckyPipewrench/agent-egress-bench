@@ -155,6 +155,15 @@ class ReleaseBuildTest(unittest.TestCase):
             "--dist",
             str(dist),
         )
+        self.invoke(
+            "release-notes",
+            "--identity",
+            str(self.identity),
+            "--catalog",
+            str(catalog),
+            "--output",
+            str(dist / "release-notes.md"),
+        )
 
     def forge_release(self, identity: dict) -> Path:
         release = Path(self.temp.name) / "fakerel"
