@@ -52,7 +52,7 @@ That last row is the one honest step beyond presence, and it needs no external t
 
 It stays a diagnostic because it fails its own gaming test. A tool emitting a unique string per case scores homogeneity 1.000 and beats the honest labeler on V-measure, 0.702 against 0.678. Bounded label cardinality would be a precondition for any scored version, and this corpus cannot enforce one. Any such diagnostic also inherits the existing denominator caveat: it is computed over correctly-blocked malicious rows only, so it says nothing about what escaped.
 
-This is already how the repository models the data: `measurement_status` is `incomplete` for errors, unreachable cases, or synthetic evidence, and it doesn't judge containment [docs/gauntlet.md:95-101]. A single number would also contradict the current public result policy, which doesn't rank or certify tools [docs/GOVERNANCE.md:5-10].
+This is already how the repository models the data: `measurement_status` is `incomplete` for errors, unreachable cases, or synthetic evidence, and it doesn't judge containment [docs/gauntlet.md:95-101]. A single number would also contradict the current public result policy, which doesn't rank tools or issue any form of approval for them [docs/GOVERNANCE.md:5-10].
 
 ## Held-out cases in a public corpus
 
