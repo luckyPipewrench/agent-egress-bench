@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -16,6 +17,11 @@ def write_record(path, content):
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(content)
+        # mkstemp creates 0o600 and os.replace keeps it, so without this every generated record would
+        # be committed owner-read-only while the rest of the repository is world-readable.
+        umask = os.umask(0)
+        os.umask(umask)
+        os.chmod(temporary, 0o666 & ~umask)
         os.replace(temporary, path)
     except BaseException:
         try:
@@ -33,8 +39,6 @@ def _require_contained_output(root: Path, output: Path) -> None:
     generator into a way to write and remove files anywhere the invoking user can reach.
     """
     root = root.resolve()
-    if output.resolve() != output.absolute().resolve(strict=False):
-        raise ValueError(f"decision-record directory is not a plain path: {output}")
     current = output if output.is_absolute() else (root / output)
     seen = current
     while True:
@@ -86,7 +90,7 @@ def main():
     try:
         count = generate(args.repo_root, args.output)
     except (OSError, ValueError) as exc:
-        print(f"generate-case-governance-records: FAIL - {exc}")
+        print(f"generate-case-governance-records: FAIL - {exc}", file=sys.stderr)
         return 1
     print(f"generate-case-governance-records: OK ({count} records written)")
     return 0

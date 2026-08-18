@@ -75,6 +75,8 @@ def load_json_object(path, label):
 
 
 MAX_METADATA_BYTES = 1 << 20
+# Case sources are repository files, but an unbounded read is an unbounded read.
+MAX_CASE_SOURCE_BYTES = 1 << 24
 
 
 def _read_regular_file(path, label):
@@ -116,7 +118,10 @@ def _read_regular_file_bytes(path, label):
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             fail(f"{label} is not a regular file: {path}")
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
-            return handle.read()
+            raw = handle.read(MAX_CASE_SOURCE_BYTES + 1)
+        if len(raw) > MAX_CASE_SOURCE_BYTES:
+            fail(f"{label} is larger than {MAX_CASE_SOURCE_BYTES} bytes: {path}")
+        return raw
     finally:
         os.close(descriptor)
 

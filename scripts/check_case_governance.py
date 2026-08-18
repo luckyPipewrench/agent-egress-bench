@@ -92,12 +92,10 @@ def check(root):
         current = supersedes[start]
         while current in supersedes:
             if current in seen:
-                cycle = " -> ".join(seen[seen.index(current):] + [current])
+                cycle = " -> ".join([*seen[seen.index(current):], current])
                 fail(f"supersession cycle: {cycle}")
             seen.append(current)
             current = supersedes[current]
-        if current in seen and current != seen[-1]:
-            fail(f"supersession cycle involving {current}")
     return len(cases)
 
 
