@@ -40,6 +40,9 @@ def catalog_entries(root: Path, contents: bytes) -> list[dict[str, str]]:
     if not isinstance(schemas, list) or not schemas:
         raise ValueError("schema catalog has no schema entries")
     entries: list[dict[str, str]] = []
+    digests: dict[str, str] = {}
+    copies: dict[str, list[str]] = {}
+    canonical: dict[str, str] = {}
     for index, entry in enumerate(schemas):
         if not isinstance(entry, dict) or set(entry) != {"path", "$id", "sha256"}:
             raise ValueError(f"schema catalog entry {index} has invalid fields")
@@ -47,7 +50,30 @@ def catalog_entries(root: Path, contents: bytes) -> list[dict[str, str]]:
         if not isinstance(path, str) or not path or not isinstance(schema_id, str) or not schema_id:
             raise ValueError(f"schema catalog entry {index} has an invalid identity")
         _require_contained_path(root, index, path)
-        entries.append({"path": path, "$id": schema_id})
+        digest = entry["sha256"]
+        if not isinstance(digest, str) or not digest:
+            raise ValueError(f"schema catalog entry {index} has an invalid digest")
+        # An identity that names two DIFFERENT files is a contradiction, not a duplicate. Refuse it
+        # rather than silently picking one, because either choice publishes a wrong answer.
+        if schema_id in digests and digests[schema_id] != digest:
+            raise ValueError(f"schema catalog lists identity {schema_id!r} with differing content")
+        digests[schema_id] = digest
+        if path.startswith("schemas/"):
+            if schema_id in canonical:
+                raise ValueError(f"schema catalog lists two canonical paths for identity {schema_id!r}")
+            canonical[schema_id] = path
+        else:
+            copies.setdefault(schema_id, []).append(path)
+    for schema_id in sorted(digests):
+        if schema_id not in canonical:
+            raise ValueError(f"schema catalog has no canonical schemas/ path for identity {schema_id!r}")
+        record = {"$id": schema_id, "path": canonical[schema_id]}
+        duplicates = sorted(copies.get(schema_id, ()))
+        if duplicates:
+            # Named, not dropped. These are byte-identical vendored copies; a consumer resolving by
+            # identity uses `path`, and anyone auditing the tree can still see where the copies live.
+            record["copies"] = duplicates
+        entries.append(record)
     return entries
 
 

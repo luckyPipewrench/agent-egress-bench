@@ -21,11 +21,37 @@ class ReleasePublishTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.dist = self.root / "dist"
         self.dist.mkdir()
-        for name in ("archive.tar.gz", "checksums.txt", "release-identity.json"):
+        for name in ("archive.tar.gz", "checksums.txt"):
             (self.dist / name).write_text(name, encoding="utf-8")
-        (self.dist / "release-notes.md").write_text(
-            "<!-- agent-egress-bench-release-workflow-v1 -->\n\n## Schema contracts\n",
-            encoding="utf-8",
+        sys.path.insert(0, str(SCRIPT.parent))
+        import release_build
+
+        identity = {
+            "release": {"version": "1.0.0", "tag": "v1.0.0"},
+            "source": {"commit": "0" * 40},
+        }
+        catalog = {
+            "format": 1,
+            "repository": f"https://github.com/{release_build.REPOSITORY}",
+            "source_commit": "0" * 40,
+            "release": "v1.0.0",
+            "schemas": [
+                {
+                    "path": "schemas/fixture-v1.schema.json",
+                    "$id": "https://example.invalid/fixture-v1.schema.json",
+                    "sha256": "0" * 64,
+                    "retrieval_url": release_build.RAW_SCHEMA_URL.format(
+                        commit="0" * 40, path="schemas/fixture-v1.schema.json"
+                    ),
+                }
+            ],
+        }
+        catalog_name, _ = release_build.schema_asset_names(identity)
+        catalog_bytes = json.dumps(catalog).encode("utf-8")
+        (self.dist / "release-identity.json").write_text(json.dumps(identity), encoding="utf-8")
+        (self.dist / catalog_name).write_bytes(catalog_bytes)
+        (self.dist / "release-notes.md").write_bytes(
+            release_build.rendered_release_notes(identity, catalog_bytes)
         )
         self.state_path = self.root / "release.json"
         self.calls_path = self.root / "calls.json"
@@ -122,13 +148,30 @@ class ReleasePublishTest(unittest.TestCase):
 
         self.assertEqual(release_build.RELEASE_NOTES_MARKER, release_publish.DRAFT_MARKER)
 
+    def test_edited_release_notes_are_refused_despite_the_marker(self) -> None:
+        notes = self.dist / "release-notes.md"
+        notes.write_text(notes.read_text(encoding="utf-8") + "\nan added claim\n", encoding="utf-8")
+        result = self.publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match the notes generated", result.stderr)
+        self.assertEqual([], self.calls())
+
     def test_creates_marked_draft_with_exact_assets_before_publication(self) -> None:
         result = self.publish()
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         self.assertFalse(state["isDraft"])
         self.assertIn("agent-egress-bench-release-workflow-v1", state["body"])
-        self.assertEqual(["archive.tar.gz", "checksums.txt", "release-identity.json", "release-notes.md"], sorted(asset["name"] for asset in state["assets"]))
+        self.assertEqual(
+            [
+                "agent-egress-bench_1.0.0_schema-catalog.json",
+                "archive.tar.gz",
+                "checksums.txt",
+                "release-identity.json",
+                "release-notes.md",
+            ],
+            sorted(asset["name"] for asset in state["assets"]),
+        )
 
     def test_unrelated_draft_is_refused_before_upload_or_publication(self) -> None:
         self.write_state(body="draft written elsewhere", assets=["extra.bin"])

@@ -131,10 +131,39 @@ def _verified_notes_snapshot(dist: Path, stack: contextlib.ExitStack) -> tuple[P
         fail(f"release distribution is missing {RELEASE_NOTES_NAME}")
     if DRAFT_MARKER not in text:
         fail(f"{RELEASE_NOTES_NAME} is missing the release workflow ownership marker")
+    _require_notes_match_release(dist, raw)
     directory = stack.enter_context(tempfile.TemporaryDirectory())
     snapshot = Path(directory) / RELEASE_NOTES_NAME
     snapshot.write_bytes(raw)
     return snapshot, text
+
+
+def _require_notes_match_release(dist: Path, raw: bytes) -> None:
+    """Require the notes to be exactly what this release's identity and catalog generate.
+
+    The ownership marker only says the workflow wrote a notes file at some point. It cannot say the
+    bytes are still the generated ones, so on its own it accepts an edited body carrying arbitrary
+    release metadata. Regenerating from the identity and catalog and comparing byte for byte is what
+    makes the published body a property of the release rather than of whoever last wrote the file.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import release_build
+    except ImportError as exc:  # pragma: no cover - a broken checkout, not a release condition
+        fail(f"cannot load the release builder to verify {RELEASE_NOTES_NAME}: {exc}")
+    identity_path = dist / release_build.IDENTITY_NAME
+    try:
+        identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        fail(f"cannot read {release_build.IDENTITY_NAME} to verify {RELEASE_NOTES_NAME}: {exc}")
+    try:
+        catalog_name, _ = release_build.schema_asset_names(identity)
+        catalog_bytes = (dist / catalog_name).read_bytes()
+        expected = release_build.rendered_release_notes(identity, catalog_bytes)
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        fail(f"cannot regenerate {RELEASE_NOTES_NAME} from the release catalog: {exc}")
+    if raw != expected:
+        fail(f"{RELEASE_NOTES_NAME} does not match the notes generated from this release")
 
 
 def publish(tag: str, dist: Path, gh: str) -> None:
