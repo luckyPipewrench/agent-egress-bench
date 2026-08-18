@@ -610,7 +610,7 @@ def rendered_release_notes(identity: dict[str, Any], catalog_bytes: bytes) -> by
         f"{tag} carries these schema identities and versions from `{commit}`:",
         "",
     ]
-    for entry in entries:
+    for entry in sorted(entries, key=lambda entry: entry["path"]):
         lines.append(f"- `{entry['$id']}` (`{entry['path']}`)")
     lines.extend(
         [
