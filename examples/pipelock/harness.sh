@@ -59,7 +59,7 @@ TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
 # so a stale value attributes a run to a build that never executed it. Ask the
 # binary what it is and refuse to run when the two disagree, rather than recording
 # the profile's claim as fact.
-VERSION_RECORDS=$("$PIPELOCK" --version 2>/dev/null | awk '$1 == "pipelock" && $2 == "version" { print $3 }') || VERSION_RECORDS=""
+VERSION_RECORDS=$("$PIPELOCK" --version 2>/dev/null | awk '$1 == "pipelock" && $2 == "version" && NF == 3 { print $3 }') || VERSION_RECORDS=""
 RECORD_COUNT=$(printf '%s\n' "$VERSION_RECORDS" | grep -c . || true)
 if [ "$RECORD_COUNT" -ne 1 ]; then
     echo "error: expected exactly one 'pipelock version <version>' record from $PIPELOCK --version, found $RECORD_COUNT" >&2

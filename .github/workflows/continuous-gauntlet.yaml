@@ -70,7 +70,7 @@ jobs:
           test -f "$profile_file" || { echo "no tool profile at $profile_file"; exit 1; }
           # Exactly one canonical record. Several would mean the file was
           # appended to, and comparing a multi-line value is not a comparison.
-          records="$(awk '$1 == "pipelock" && $2 == "version" { print $3 }' "$version_file")"
+          records="$(awk '$1 == "pipelock" && $2 == "version" && NF == 3 { print $3 }' "$version_file")"
           record_count="$(printf '%s\n' "$records" | grep -c . || true)"
           if [ "$record_count" -ne 1 ]; then
             echo "expected exactly one 'pipelock version <version>' record in $version_file, found $record_count"
