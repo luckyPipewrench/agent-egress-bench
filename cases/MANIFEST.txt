@@ -93,7 +93,9 @@ header-dlp-allowed-extra-secret-009
 header-dlp-aws-headers-005
 header-dlp-basic-auth-007
 header-dlp-bearer-001
+header-dlp-bearer-audience-010
 header-dlp-cookie-003
+header-dlp-cookie-foreign-origin-011
 header-dlp-custom-002
 header-dlp-jwt-004
 header-dlp-multi-secret-006
@@ -176,6 +178,7 @@ response-injection-authority-004
 response-injection-comment-001
 response-injection-encoded-005
 response-injection-ignore-002
+response-injection-quoted-006
 response-injection-system-003
 response-mitm-authority-006
 response-mitm-benign-api-001

