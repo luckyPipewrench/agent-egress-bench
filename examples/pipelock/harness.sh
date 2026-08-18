@@ -55,6 +55,23 @@ command -v "$PIPELOCK" >/dev/null 2>&1 || { echo "error: pipelock binary not fou
 TOOL=$(jq -r '.tool' "$PROFILE")
 TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
 
+# The profile's tool_version reaches both every result line and the signed receipt,
+# so a stale value attributes a run to a build that never executed it. Ask the
+# binary what it is and refuse to run when the two disagree, rather than recording
+# the profile's claim as fact.
+BINARY_VERSION=$("$PIPELOCK" --version 2>/dev/null | awk '{print $NF}' | sed 's/^v//') || BINARY_VERSION=""
+if [ -z "$BINARY_VERSION" ]; then
+    echo "error: could not read a version from $PIPELOCK --version" >&2
+    exit 1
+fi
+if [ "$BINARY_VERSION" != "$TOOL_VERSION" ]; then
+    echo "error: tool_version mismatch" >&2
+    echo "  profile ($PROFILE): $TOOL_VERSION" >&2
+    echo "  binary  ($PIPELOCK): $BINARY_VERSION" >&2
+    echo "  update the profile's tool_version to $BINARY_VERSION before running." >&2
+    exit 1
+fi
+
 # Start pipelock
 echo "starting pipelock on port $PORT..." >&2
 "$PIPELOCK" run --config "$CONFIG" --listen "127.0.0.1:$PORT" &
