@@ -31,30 +31,27 @@ class CaseGovernanceGateTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def write_single_case(self, case_id="fixture-case-001"):
+    def write_single_case(self, case_id="fixture-case-001", supersedes=None):
         path = self.root / "cases" / "url" / f"{case_id}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {
-                    "id": case_id,
-                    "description": "Exercises a fixture request.",
-                    "expected_verdict": "block",
-                    "why_expected": "fixture_requires_blocking",
-                    "source": "Synthetic fixture",
-                    "false_positive_risk": "low",
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        body = {
+            "id": case_id,
+            "description": "Exercises a fixture request.",
+            "expected_verdict": "block",
+            "why_expected": "fixture_requires_blocking",
+            "source": "Synthetic fixture",
+            "false_positive_risk": "low",
+        }
+        if supersedes is not None:
+            body["supersedes"] = supersedes
+        path.write_text(json.dumps(body) + "\n", encoding="utf-8")
         return case_id
 
     def write_multifile_case(self, case_id="fixture-drift-001"):
         directory = self.root / "cases" / "mcp-drift" / case_id
         directory.mkdir(parents=True)
         (directory / "case.yaml").write_text(
-            """id: fixture-drift-001
+            f"""id: {case_id}
 description: |
   Exercises a fixture description change.
 expected_verdict: warn
@@ -79,6 +76,37 @@ source: |
         )
         path.write_bytes(case_governance.rendered_record(record))
         return path
+
+    def write_all_expected_records(self):
+        for case_id in case_governance.load_cases(self.root):
+            self.write_record(self.expected_record(case_id))
+
+    def test_self_supersession_is_refused(self):
+        self.write_single_case("alpha-001", supersedes="alpha-001")
+        self.write_all_expected_records()
+        with self.assertRaisesRegex(ValueError, "supersedes itself"):
+            check_case_governance.check(self.root)
+
+    def test_unknown_supersession_target_is_refused(self):
+        self.write_single_case("alpha-001", supersedes="absent-999")
+        self.write_all_expected_records()
+        with self.assertRaisesRegex(ValueError, "supersedes unknown case"):
+            check_case_governance.check(self.root)
+
+    def test_supersession_cycle_is_refused(self):
+        self.write_single_case("alpha-001", supersedes="beta-002")
+        self.write_single_case("beta-002", supersedes="alpha-001")
+        self.write_all_expected_records()
+        with self.assertRaisesRegex(ValueError, "supersession cycle"):
+            check_case_governance.check(self.root)
+
+    def test_record_filename_must_match_its_case_id(self):
+        case_id = self.write_single_case("alpha-001")
+        written = self.write_record(self.expected_record(case_id))
+        written.rename(written.parent / ("renamed-001" + case_governance.DECISION_SUFFIX))
+        with self.assertRaisesRegex(ValueError, "filename must be"):
+            check_case_governance.check(self.root)
+
 
     def test_accepts_a_complete_single_file_record(self):
         case_id = self.write_single_case()

@@ -41,7 +41,7 @@ changes before a runner may exclude any case.
 
 Each logical case has one decision record at `governance/case-decisions/<case-id>.decision.json`, validated against [`case-governance-decision-v1`](../schemas/case-governance-decision-v1.schema.json). It binds the exact immutable case source files to the case ID and copies the existing description, expected verdict, `why_expected`, source, false-positive assessment, and supersession state. Its contents don't create new rationale or alter a case.
 
-`make check-case-governance` requires one valid record for every logical case and rejects missing, malformed, extra, unreadable, or case-inconsistent records. Generate the deterministic baseline with `python3 scripts/generate_case_governance_records.py`, review the generated records with the case change, and commit both together. A new case therefore receives a decision record from its submitted metadata; a semantic change still requires a new immutable case ID rather than rewriting either artifact.
+`make check-case-governance` requires one valid record for every logical case and rejects missing, malformed, extra, unreadable, or case-inconsistent records, along with a case that supersedes itself, supersedes an unknown case, or takes part in a supersession cycle.
 
 ## Versioning and compatibility
 

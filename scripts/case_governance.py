@@ -19,6 +19,30 @@ DECISION_SUFFIX = ".decision.json"
 _YAML_FIELD = re.compile(r"^([a-z_]+):(?:[ \t]*(.*))?$")
 
 
+class _StrictSafeLoader(yaml.SafeLoader):
+    """A safe loader that refuses duplicate mapping keys.
+
+    yaml.safe_load keeps the last value for a duplicated key, so a case declaring a field twice would
+    be read one way here and possibly another way by a different parser, while the record claims to
+    bind the case's metadata exactly. The JSON path already refuses duplicates; this matches it.
+    """
+
+
+def _no_duplicate_keys(loader, node, deep=False):
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping", node.start_mark, f"duplicate key {key!r}", key_node.start_mark
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_StrictSafeLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_duplicate_keys)
+
+
 def fail(message):
     raise ValueError(message)
 
@@ -51,6 +75,13 @@ def load_json_object(path, label):
 
 
 MAX_METADATA_BYTES = 1 << 20
+# Unix-only open flags. Windows has no equivalent, so fall back to a plain read-only open there and
+# rely on the descriptor check below. The symlink refusal is weaker on that platform; the reader is
+# still the thing being validated, not the name.
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+# Case sources are repository files, but an unbounded read is an unbounded read.
+MAX_CASE_SOURCE_BYTES = 1 << 24
 
 
 def _read_regular_file(path, label):
@@ -61,7 +92,7 @@ def _read_regular_file(path, label):
     descriptor itself what it is.
     """
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
     except OSError as exc:
         fail(f"cannot read {label} {path}: {exc}")
     try:
@@ -82,6 +113,24 @@ def _read_regular_file(path, label):
         fail(f"{label} is not valid UTF-8: {path} ({exc})")
 
 
+def _read_regular_file_bytes(path, label):
+    """Return file bytes, proving through the descriptor that a regular file was read."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
+    except OSError as exc:
+        fail(f"cannot read {label} {path}: {exc}")
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            fail(f"{label} is not a regular file: {path}")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            raw = handle.read(MAX_CASE_SOURCE_BYTES + 1)
+        if len(raw) > MAX_CASE_SOURCE_BYTES:
+            fail(f"{label} is larger than {MAX_CASE_SOURCE_BYTES} bytes: {path}")
+        return raw
+    finally:
+        os.close(descriptor)
+
+
 def load_multifile_metadata(path):
     """Parse case.yaml with the same safe YAML parser the multifile case consumer uses.
 
@@ -92,8 +141,10 @@ def load_multifile_metadata(path):
     prevent.
     """
     text = _read_regular_file(path, "multi-file case metadata")
+    # yaml.load with a SafeLoader SUBCLASS, which constructs no arbitrary Python. It is not
+    # yaml.load with the default loader, and it is not unsafe_load.
     try:
-        document = yaml.safe_load(text)
+        document = yaml.load(text, Loader=_StrictSafeLoader)
     except yaml.YAMLError as exc:
         fail(f"cannot parse multi-file case metadata {path}: {exc}")
     if not isinstance(document, dict):
@@ -147,13 +198,11 @@ def _case_digest(root, paths):
     digest = hashlib.sha256()
     digest.update(b"agent-egress-bench/case-governance-decision-v1\x00")
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
-        if path.is_symlink() or not path.is_file():
-            fail(f"case source is not a regular file: {path}")
         relative = path.relative_to(root).as_posix().encode("utf-8")
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            fail(f"cannot read case source {path}: {exc}")
+        # Verify and read through ONE descriptor. Checking the path and then reading it separately
+        # lets a replacement in between bind this record to bytes nothing ever checked, which is the
+        # exact claim the record is supposed to make trustworthy.
+        content = _read_regular_file_bytes(path, "case source")
         digest.update(relative)
         digest.update(b"\x00")
         digest.update(str(len(content)).encode("ascii"))
