@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import stat
 import sys
@@ -166,11 +167,67 @@ def _require_notes_match_release(dist: Path, raw: bytes) -> None:
         fail(f"{RELEASE_NOTES_NAME} does not match the notes generated from this release")
 
 
+def _verified_asset_snapshot(assets: list[Path], stack: contextlib.ExitStack) -> list[Path]:
+    """Return process-owned copies holding the exact asset bytes that were validated.
+
+    `release_assets` rejects symlinks and non-files by NAME, then the publish path hands those
+    pathnames to gh, which opens them again later. A replacement in that window uploads bytes
+    nothing checked.
+
+    This copies rather than hard-links on purpose. A hard link binds the inode, which defeats a
+    rename or a symlink swap, and does NOT defeat an in-place rewrite of the same inode: both names
+    then see the new bytes. Only bytes this process already holds are safe to publish. Verified by
+    reproduction: the link version failed `test_upload_carries_validated_bytes_after_a_source_swap`
+    because the stand-in rewrote the file in place.
+
+    The read comes from one descriptor, so validation and copy cannot see two different objects.
+    """
+    directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+    bound: list[Path] = []
+    seen: set[str] = set()
+    for asset in assets:
+        name = asset.name
+        # gh derives the uploaded asset name from the basename, so two sources collapsing to one
+        # name would silently publish whichever landed last.
+        if name in seen:
+            fail(f"release distribution has more than one asset named {name}")
+        seen.add(name)
+        bound.append(_copy_verified_asset(asset, directory / name, name))
+    return bound
+
+
+def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
+    """Copy one asset out of a single opened descriptor.
+
+    O_NOFOLLOW refuses a final-component symlink in the same operation that opens the file, which a
+    separate check cannot do: between the check and the open, the name can change.
+    """
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        fail(f"cannot read release asset {name}: {exc}")
+    try:
+        status = os.fstat(descriptor)
+        # A FIFO would hang publication on a read that never returns and a device file would supply
+        # unbounded input, so refuse anything that is not an ordinary file.
+        if not stat.S_ISREG(status.st_mode):
+            fail(f"release asset {name} is not a regular file")
+        try:
+            with os.fdopen(descriptor, "rb", closefd=False) as handle, open(target, "wb") as out:
+                shutil.copyfileobj(handle, out)
+        except OSError as exc:
+            fail(f"cannot copy release asset {name}: {exc}")
+    finally:
+        os.close(descriptor)
+    return target
+
+
 def publish(tag: str, dist: Path, gh: str) -> None:
-    assets = release_assets(dist)
-    expected_names = [asset.name for asset in assets]
+    sources = release_assets(dist)
+    expected_names = [asset.name for asset in sources]
     with contextlib.ExitStack() as stack:
         notes, notes_text = _verified_notes_snapshot(dist, stack)
+        assets = _verified_asset_snapshot(sources, stack)
         _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text)
 
 
@@ -207,12 +264,25 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # One update sets the verified body AND clears the draft. Doing those separately leaves a window
     # in which another editor can replace the body between the check and publication.
     command(gh, "release", "edit", tag, "--notes-file", str(notes), "--draft=false")
+    # DETECTION, NOT PREVENTION. By the time this runs the release is already public, so a failure
+    # here reports a bad state that readers may already have seen. It is worth keeping because a
+    # silent divergence is worse than a loud one, and it must not be read as a guarantee that the
+    # published release always matched.
+    #
+    # Residual, stated rather than implied: GitHub offers no compare-and-set on a release, so the
+    # asset set is verified and then undrafted as two operations. Another editor with write access
+    # can change assets in that window. The body is not exposed: one command sets the verified body
+    # and clears the draft together. Closing the asset window needs an API primitive that does not
+    # exist today; pretending otherwise would be the actual defect.
     published = inspect_draft(gh, tag)
     if published is None:
         fail(f"release {tag} disappeared during publication")
     published_body = published.get("body")
     if not isinstance(published_body, str) or published_body != notes_text:
         fail(f"published release {tag} body does not match the verified release notes")
+    published_names = actual_asset_names(published)
+    if published_names != sorted(expected_names):
+        fail(f"published release {tag} assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}")
 
 
 def main() -> int:

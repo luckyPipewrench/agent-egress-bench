@@ -124,3 +124,47 @@ class SchemaDiscoveryFeedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SchemaDiscoveryReadBindingTest(SchemaDiscoveryFeedTest):
+    """The digest must come from the descriptor containment was checked against.
+
+    Validating a path and then reading it back by NAME is two lookups of one name, so the check and
+    the hash can describe different objects. This asserts the second lookup is gone rather than
+    trying to win a race, which a unit test cannot do reliably.
+    """
+
+    def test_schema_content_is_not_read_back_by_name(self):
+        schema = self.root / "schemas" / "fixture-v1.schema.json"
+        catalog = (self.root / "schemas" / "index.json").read_bytes()
+        original = Path.read_bytes
+        observed = []
+
+        def recording_read_bytes(self):
+            observed.append(Path(self).resolve())
+            return original(self)
+
+        Path.read_bytes = recording_read_bytes
+        try:
+            schema_discovery_feed.catalog_entries(self.root, catalog)
+        finally:
+            Path.read_bytes = original
+
+        self.assertNotIn(
+            schema.resolve(),
+            observed,
+            "the schema file was reopened by name after its containment check",
+        )
+
+    def test_contained_file_bytes_returns_the_opened_content(self):
+        contents = schema_discovery_feed._contained_file_bytes(
+            self.root, 0, "schemas/fixture-v1.schema.json"
+        )
+        self.assertEqual(
+            (self.root / "schemas" / "fixture-v1.schema.json").read_bytes(), contents
+        )
+
+    def test_directory_in_the_catalog_is_refused(self):
+        (self.root / "schemas" / "nested").mkdir()
+        with self.assertRaisesRegex(ValueError, "not a regular file"):
+            schema_discovery_feed._contained_file_bytes(self.root, 0, "schemas/nested")

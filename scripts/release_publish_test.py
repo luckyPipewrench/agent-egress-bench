@@ -196,3 +196,76 @@ class ReleasePublishTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReleaseAssetBindingTest(ReleasePublishTest):
+    """The upload must carry the asset bytes that were validated, not a later replacement.
+
+    `release_assets` rejects symlinks and non-files by NAME. Handing those names to gh leaves the
+    real read until later, so this drives the exact window: the gh stand-in replaces the source file
+    on disk and only then reads the paths it was handed.
+    """
+
+    def tampering_gh(self) -> Path:
+        gh = self.root / "gh-tamper"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "seen_path = Path(os.environ['MOCK_GH_SEEN'])\n"
+            "target = Path(os.environ['MOCK_GH_TAMPER_TARGET'])\n"
+            "args = sys.argv[1:]\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  print('release not found', file=sys.stderr)\n"
+            "  raise SystemExit(1)\n"
+            "if args[:2] == ['release', 'create']:\n"
+            # Replace the source AFTER validation ran and BEFORE this process reads what it was
+            # given. A pathname argument reads the replacement; a bound descriptor does not.
+            "  target.write_text('tampered', encoding='utf-8')\n"
+            "  paths = args[3:args.index('--title')]\n"
+            "  seen = {Path(item).name: Path(item).read_text(encoding='utf-8') for item in paths}\n"
+            "  seen_path.write_text(json.dumps(seen))\n"
+            "raise SystemExit(0)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        return gh
+
+    def test_upload_carries_validated_bytes_after_a_source_swap(self) -> None:
+        seen_path = self.root / "seen.json"
+        target = self.dist / "archive.tar.gz"
+        original = target.read_text(encoding="utf-8")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(self.tampering_gh())],
+            text=True,
+            capture_output=True,
+            env={
+                "MOCK_GH_STATE": str(self.state_path),
+                "MOCK_GH_CALLS": str(self.calls_path),
+                "MOCK_GH_SEEN": str(seen_path),
+                "MOCK_GH_TAMPER_TARGET": str(target),
+            },
+        )
+        self.assertTrue(seen_path.exists(), "the stand-in never reached the upload arguments")
+        seen = json.loads(seen_path.read_text(encoding="utf-8"))
+        self.assertEqual("tampered", target.read_text(encoding="utf-8"))
+        self.assertEqual(original, seen["archive.tar.gz"])
+
+    def test_duplicate_asset_names_are_refused(self) -> None:
+        nested = self.dist / "nested"
+        nested.mkdir()
+        # Only regular files in the top level become assets, so build the collision by pointing the
+        # binder at two sources that share a basename.
+        (nested / "archive.tar.gz").write_text("second", encoding="utf-8")
+        sys.path.insert(0, str(SCRIPT.parent))
+        import contextlib as _contextlib
+
+        import release_publish
+
+        with _contextlib.ExitStack() as stack:
+            with self.assertRaisesRegex(release_publish.PublishError, "more than one asset named"):
+                release_publish._verified_asset_snapshot(
+                    [self.dist / "archive.tar.gz", nested / "archive.tar.gz"], stack
+                )
