@@ -23,6 +23,10 @@ class ReleasePublishTest(unittest.TestCase):
         self.dist.mkdir()
         for name in ("archive.tar.gz", "checksums.txt", "release-identity.json"):
             (self.dist / name).write_text(name, encoding="utf-8")
+        (self.dist / "release-notes.md").write_text(
+            "<!-- agent-egress-bench-release-workflow-v1 -->\n\n## Schema contracts\n",
+            encoding="utf-8",
+        )
         self.state_path = self.root / "release.json"
         self.calls_path = self.root / "calls.json"
         self.gh = self.root / "gh"
@@ -49,8 +53,8 @@ class ReleasePublishTest(unittest.TestCase):
             "  print(json.dumps(state))\n"
             "elif args[:2] == ['release', 'create']:\n"
             "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
-            "  marker = args[args.index('--notes') + 1]\n"
-            "  state = {'isDraft': True, 'body': marker, 'assets': [{'name': name} for name in files]}\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
             "  save()\n"
             "elif args[:2] == ['release', 'upload']:\n"
             "  files = [Path(item).name for item in args[3:args.index('--clobber')]]\n"
@@ -59,7 +63,10 @@ class ReleasePublishTest(unittest.TestCase):
             "  state['assets'] = list(by_name.values())\n"
             "  save()\n"
             "elif args[:2] == ['release', 'edit']:\n"
-            "  state['isDraft'] = False\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  else:\n"
+            "    state['isDraft'] = False\n"
             "  save()\n"
             "else:\n"
             "  print('unsupported mock gh call', args, file=sys.stderr)\n"
@@ -91,7 +98,7 @@ class ReleasePublishTest(unittest.TestCase):
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         self.assertFalse(state["isDraft"])
         self.assertIn("agent-egress-bench-release-workflow-v1", state["body"])
-        self.assertEqual(["archive.tar.gz", "checksums.txt", "release-identity.json"], sorted(asset["name"] for asset in state["assets"]))
+        self.assertEqual(["archive.tar.gz", "checksums.txt", "release-identity.json", "release-notes.md"], sorted(asset["name"] for asset in state["assets"]))
 
     def test_unrelated_draft_is_refused_before_upload_or_publication(self) -> None:
         self.write_state(body="draft written elsewhere", assets=["extra.bin"])

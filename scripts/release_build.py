@@ -29,6 +29,8 @@ CHECKSUM_NAME = "checksums.txt"
 SCHEMA_CATALOG_PATH = "schemas/index.json"
 SCHEMA_CATALOG_SUFFIX = "_schema-catalog.json"
 SCHEMA_BUNDLE_SUFFIX = "_schemas.tar.gz"
+RELEASE_NOTES_NAME = "release-notes.md"
+RELEASE_NOTES_MARKER = "<!-- agent-egress-bench-release-workflow-v1 -->"
 METHOD_INDEPENDENCE_PATH = "contracts/method-independence-v1.json"
 REPOSITORY = "luckyPipewrench/agent-egress-bench"
 RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
@@ -595,6 +597,41 @@ def release_catalog_entries(identity: dict[str, Any], catalog_bytes: bytes) -> l
     return entries
 
 
+def rendered_release_notes(identity: dict[str, Any], catalog_bytes: bytes) -> bytes:
+    """Render the GitHub release body from its checked release catalog."""
+    entries = release_catalog_entries(identity, catalog_bytes)
+    tag = identity["release"]["tag"]
+    commit = identity["source"]["commit"]
+    lines = [
+        RELEASE_NOTES_MARKER,
+        "",
+        "## Schema contracts",
+        "",
+        f"{tag} carries these schema identities and versions from `{commit}`:",
+        "",
+    ]
+    for entry in entries:
+        lines.append(f"- `{entry['$id']}` (`{entry['path']}`)")
+    lines.extend(
+        [
+            "",
+            "The release schema catalog contains commit-pinned retrieval URLs and SHA-256 digests. The schema bundle supports offline validation. See [Schema identifiers and discovery](https://github.com/luckyPipewrench/agent-egress-bench/blob/"
+            + tag
+            + "/docs/SCHEMAS.md) for the validation walkthrough and adapter quickstarts.",
+            "",
+        ]
+    )
+    return "\n".join(lines).encode("utf-8")
+
+
+def write_release_notes(identity_path: Path, catalog_path: Path, output: Path) -> Path:
+    identity = read_identity(identity_path)
+    if not catalog_path.is_file() or catalog_path.is_symlink():
+        fail(f"release schema catalog is absent or unsafe: {catalog_path}")
+    output.write_bytes(rendered_release_notes(identity, catalog_path.read_bytes()))
+    return output
+
+
 def require_declared_id(contents: bytes, entry: dict[str, str], source: str) -> None:
     """Require a schema's own declared identity to match what the catalog claims.
 
@@ -906,6 +943,11 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
     validate_method_independence_contract(contents[METHOD_INDEPENDENCE_PATH])
     verify_bundle_corpus(identity, contents)
     schema_entries, schema_contents = verify_schema_bundle(identity, release_dir)
+    if RELEASE_NOTES_NAME not in checksums:
+        fail("release is missing generated release notes")
+    notes = release_dir / RELEASE_NOTES_NAME
+    if notes.read_bytes() != rendered_release_notes(identity, (release_dir / catalog_name).read_bytes()):
+        fail("release notes do not match the release schema catalog")
     if repo is not None:
         verify_repo_schema_surface(repo.resolve(), schema_entries, schema_contents)
         expected = build_identity(repo.resolve(), identity["release"]["tag"], identity["release"]["version"], identity["source"]["commit"], identity["release"]["snapshot"])
@@ -1057,6 +1099,10 @@ def main() -> int:
     schema_bundle.add_argument("--identity", type=Path, required=True)
     schema_bundle.add_argument("--catalog", type=Path, required=True)
     schema_bundle.add_argument("--dist", type=Path, required=True)
+    release_notes = commands.add_parser("release-notes")
+    release_notes.add_argument("--identity", type=Path, required=True)
+    release_notes.add_argument("--catalog", type=Path, required=True)
+    release_notes.add_argument("--output", type=Path, required=True)
     sums = commands.add_parser("checksums")
     sums.add_argument("--identity", type=Path, required=True)
     sums.add_argument("--dist", type=Path, required=True)
@@ -1080,6 +1126,8 @@ def main() -> int:
             print(make_data_bundle(args.repo_root.resolve(), args.identity, args.dist))
         elif args.command == "schema-bundle":
             print(make_schema_bundle(args.repo_root.resolve(), args.identity, args.catalog, args.dist))
+        elif args.command == "release-notes":
+            print(write_release_notes(args.identity, args.catalog, args.output))
         elif args.command == "checksums":
             print(write_checksums(args.dist, args.identity))
         elif args.command == "verify":

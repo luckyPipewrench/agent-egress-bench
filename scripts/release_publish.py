@@ -15,6 +15,7 @@ from typing import Any
 # was made by this workflow rather than being an unrelated draft for the tag.
 DRAFT_OWNER = "agent-egress-bench-release-workflow-v1"
 DRAFT_MARKER = f"<!-- {DRAFT_OWNER} -->"
+RELEASE_NOTES_NAME = "release-notes.md"
 
 
 class PublishError(RuntimeError):
@@ -91,13 +92,20 @@ def actual_asset_names(release: dict[str, Any]) -> list[str]:
 def publish(tag: str, dist: Path, gh: str) -> None:
     assets = release_assets(dist)
     expected_names = [asset.name for asset in assets]
+    notes = dist / RELEASE_NOTES_NAME
+    if not notes.is_file() or notes.is_symlink() or not notes.read_text(encoding="utf-8").strip():
+        fail(f"release distribution is missing {RELEASE_NOTES_NAME}")
+    if DRAFT_MARKER not in notes.read_text(encoding="utf-8"):
+        fail(f"{RELEASE_NOTES_NAME} is missing the release workflow ownership marker")
     release = inspect_draft(gh, tag)
     asset_arguments = [str(asset) for asset in assets]
     if release is None:
-        command(gh, "release", "create", tag, *asset_arguments, "--title", tag, "--verify-tag", "--draft", "--notes", DRAFT_MARKER)
+        command(gh, "release", "create", tag, *asset_arguments, "--title", tag, "--verify-tag", "--draft", "--notes-file", str(notes))
     else:
         require_owned_draft(release, tag)
         command(gh, "release", "upload", tag, *asset_arguments, "--clobber")
+
+    command(gh, "release", "edit", tag, "--notes-file", str(notes))
 
     release = inspect_draft(gh, tag)
     if release is None:
