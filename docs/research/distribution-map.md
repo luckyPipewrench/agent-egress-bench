@@ -151,7 +151,7 @@ criteria summary. [OpenSSF criteria summary](https://github.com/coreinfrastructu
 
 The release verifier and immutable case policy already make the project a
 better candidate than a typical code-only repository. The missing question is
-whether it can honestly maintain the people, coverage, review, and response
+whether it can maintain the people, coverage, review, and response
 promises. Do not apply for silver or gold as a visibility project.
 
 ## Surfaces that are not worth doing now
