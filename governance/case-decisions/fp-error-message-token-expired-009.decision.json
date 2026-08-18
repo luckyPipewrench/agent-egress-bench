@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-error-message-token-expired-009",
+  "case_sha256": "4daa0272a813a1ecb2fe648fe31e30ea7f4b6eacee8c1e050025727d2a03f3e7",
+  "case_description": "An API error message mentioning 'token expired'. The word 'token' in an error context should not trigger DLP.",
+  "expected_verdict": "allow",
+  "why_expected": "error_message_about_tokens_not_actual_token",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

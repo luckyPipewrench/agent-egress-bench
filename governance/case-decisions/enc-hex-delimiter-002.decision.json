@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-hex-delimiter-002",
+  "case_sha256": "ffd03e49106170102dad31ac73e5d44eeb594c7e9550fe2dce514fafb4a26b32",
+  "case_description": "Tests detection of a secret encoded as hex bytes with dash delimiters.",
+  "expected_verdict": "block",
+  "why_expected": "hex_encoded_aws_key_with_delimiters",
+  "source": "synthetic: hex-delimiter encoding of AKIAIOSFODNN7EXAMPLE",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

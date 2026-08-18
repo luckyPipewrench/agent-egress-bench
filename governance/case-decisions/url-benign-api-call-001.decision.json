@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-benign-api-call-001",
+  "case_sha256": "db5c8ea8c590f7825c5697f09a2ca9f6aabda10f0d2c761bb92a0d22062347a9",
+  "case_description": "Standard API request with typical query parameters.",
+  "expected_verdict": "allow",
+  "why_expected": "standard_api_query_parameters",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-nested-config-lookalike-018",
+  "case_sha256": "82fd55151efda2b8e19398e78a0cbb7f27a9c6b27c1eafc55257a408004255f8",
+  "case_description": "A nested configuration object whose high-entropy-looking values (etag, content hash, build id) are benign. Must not be flagged as a scattered/nested secret.",
+  "expected_verdict": "allow",
+  "why_expected": "nested_config_values_are_not_a_split_secret",
+  "source": "original: false-positive boundary for nested-traversal DLP",
+  "false_positive_risk": "high",
+  "supersedes": null
+}

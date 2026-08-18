@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-ws-clean-multiframe-016",
+  "case_sha256": "82ba613432fa55bbab2d8d341c2a99254eb997a2257f0279ddf18cdcfde2f2c3",
+  "case_description": "Benign text split across three WebSocket fragments that reassemble to ordinary content. Fragment reassembly must not introduce a false positive.",
+  "expected_verdict": "allow",
+  "why_expected": "reassembled_benign_text_must_not_block",
+  "source": "original: false-positive boundary for WS fragment reassembly",
+  "false_positive_risk": "high",
+  "supersedes": null
+}

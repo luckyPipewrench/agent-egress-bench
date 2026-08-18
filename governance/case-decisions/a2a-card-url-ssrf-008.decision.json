@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "a2a-card-url-ssrf-008",
+  "case_sha256": "8e0de76f54f9946debb8e95af4d5f258f3dcbd506b90c3a545e53fa2fd485cf1",
+  "case_description": "Tests detection of an Agent Card whose url field targets an internal/metadata host, an SSRF surface. securitySchemes is empty in every existing case; the url field was untested.",
+  "expected_verdict": "block",
+  "why_expected": "agent_card_url_targets_internal_metadata_host",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

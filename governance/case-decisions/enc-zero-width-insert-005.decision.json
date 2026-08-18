@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-zero-width-insert-005",
+  "case_sha256": "e69530e1a1302c4b43952f91a9d0ae7489813c3b6dfcbf7eddabaa22efaaee48",
+  "case_description": "Tests detection of a secret with zero-width space characters (U+200B) inserted between characters to break pattern matching.",
+  "expected_verdict": "block",
+  "why_expected": "zero_width_char_insertion_evasion",
+  "source": "synthetic: zero-width space insertion to break regex patterns",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

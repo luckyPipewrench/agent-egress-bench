@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-input-nested-deep-011",
+  "case_sha256": "51e6089d195e80aa7feb8bfdc6a4db9418e334455f500a4356cf7d8d45c77a50",
+  "case_description": "Tests recursive argument traversal: an AWS key buried four object levels deep in a structured tool argument.",
+  "expected_verdict": "block",
+  "why_expected": "secret_in_deeply_nested_tool_argument",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-bearer-header-006",
+  "case_sha256": "2fe7a3065b0140061a5fbcae65c607fcdc5c9a6fdcaa553675c4a90cd1e2c9ff",
+  "case_description": "Tests detection of an authorization bearer token being exfiltrated via a WebSocket text frame.",
+  "expected_verdict": "block",
+  "why_expected": "bearer_token_in_websocket_frame",
+  "source": "synthetic: JWT bearer token exfiltration via WebSocket",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

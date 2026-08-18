@@ -38,8 +38,14 @@ jobs:
           scan-diff: 'false'
           fail-on-findings: 'true'
           test-vectors: 'false'
+          # governance/case-decisions/ holds generated records that quote each case's own
+          # description, and this corpus documents attacks: one case carries AWS's published
+          # example key, which is a real AWS Access ID shape. cases/ is excluded for that same
+          # reason and a record derived from a case inherits it. Scoped to the generated
+          # directory so hand-written governance material stays scanned.
           exclude-paths: |
             cases/
+            governance/case-decisions/
             README.md
             scripts/
             runner/go.sum
@@ -87,6 +93,7 @@ jobs:
             "$merge_base" "$HEAD_SHA" > "$diff_file"
           scan_args=(
             --exclude cases/
+            --exclude governance/case-decisions/
             --exclude README.md
             --exclude scripts/
             --exclude runner/go.sum
@@ -111,6 +118,7 @@ jobs:
             "origin/$DEFAULT_BRANCH...HEAD" > "$diff_file"
           scan_args=(
             --exclude cases/
+            --exclude governance/case-decisions/
             --exclude README.md
             --exclude scripts/
             --exclude runner/go.sum

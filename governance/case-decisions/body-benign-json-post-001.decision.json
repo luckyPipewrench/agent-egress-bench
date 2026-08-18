@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-benign-json-post-001",
+  "case_sha256": "707ae92ac63d4df55eb70932f7dcf9ddc92f34dc5ba0c68d2cb26d7368a0b3e5",
+  "case_description": "Standard JSON POST body with normal user profile data.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_user_profile_data",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

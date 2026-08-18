@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-multi-layer-chain-004",
+  "case_sha256": "275b839131e653b8e281a3600110dd9a8e02222bd21afee2d68dcf877008872b",
+  "case_description": "Tests detection of a secret encoded with URL encoding applied on top of base64 encoding.",
+  "expected_verdict": "block",
+  "why_expected": "url_encoded_base64_aws_key",
+  "source": "synthetic: URL(base64(secret)) multi-layer evasion",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

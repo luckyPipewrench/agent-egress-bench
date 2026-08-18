@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-eth-address-003",
+  "case_sha256": "c35d623e684f6070f51c412c3c8d0f41323ed61c06ee515b1222731c4cc940ce",
+  "case_description": "Tests detection of an Ethereum address being passed through an MCP tool call argument.",
+  "expected_verdict": "block",
+  "why_expected": "ethereum_address_exfiltration",
+  "source": "synthetic: Ethereum address in MCP tool argument",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

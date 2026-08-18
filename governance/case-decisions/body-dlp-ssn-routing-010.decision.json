@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-dlp-ssn-routing-010",
+  "case_sha256": "8c8d1af72bcbd7dbbb8011842f9a7a4271db06d64baa78474f082029c8b0c98a",
+  "case_description": "Tests detection of non-card financial PII (US Social Security Number plus bank routing and account numbers) in a POST body. Only credit-card PAN was previously covered.",
+  "expected_verdict": "block",
+  "why_expected": "financial_pii_ssn_routing_in_body",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

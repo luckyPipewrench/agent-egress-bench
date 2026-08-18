@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-dlp-aws-key-001",
+  "case_sha256": "2b8e2893e2a09c2c761734fa607300c5248f1d962915eeb8b528c07743d10524",
+  "case_description": "Agent attempts to send an AWS access key via URL query string.",
+  "expected_verdict": "block",
+  "why_expected": "aws_access_key_pattern",
+  "source": "AWS credential format documentation",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

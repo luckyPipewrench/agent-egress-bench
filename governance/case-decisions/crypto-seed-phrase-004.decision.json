@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-seed-phrase-004",
+  "case_sha256": "9d071fdecc26c00aee708dc30913f6cfdb3cd9ab7aa7cc287cc35f5f0adc4c74",
+  "case_description": "Tests detection of a BIP-39 mnemonic seed phrase being exfiltrated.",
+  "expected_verdict": "block",
+  "why_expected": "bip39_seed_phrase_12_words",
+  "source": "public: https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

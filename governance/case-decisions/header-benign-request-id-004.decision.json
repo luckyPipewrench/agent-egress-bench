@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "header-benign-request-id-004",
+  "case_sha256": "a0f575d54c35d09fce0447bd97c987eaeea7599cc241b801489985cc2c44c01c",
+  "case_description": "A request to a benchmark-owned host standing in for a commonly-allowed code-hosting API carrying an ordinary correlation header. Same host and shape as the header exfil case but with no credential content. Measures false positives on benign custom headers.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_correlation_header_no_secret",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

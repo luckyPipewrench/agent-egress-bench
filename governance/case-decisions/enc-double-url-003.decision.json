@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-double-url-003",
+  "case_sha256": "7ba7f6f4f322712837faf7ff9b48267f980c6fe3bf94ca1b15863d5220e28635",
+  "case_description": "Tests detection of a secret that has been double URL-encoded (%2541 decodes to %41 then to A).",
+  "expected_verdict": "block",
+  "why_expected": "double_url_encoded_aws_key",
+  "source": "synthetic: double URL encoding to evade single-decode DLP",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

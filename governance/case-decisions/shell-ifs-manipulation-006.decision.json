@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-ifs-manipulation-006",
+  "case_sha256": "d20bc19706f18772895ad41a8212a54f69275f546f06e05fbdeeae0673a3af35",
+  "case_description": "Tests detection of IFS (Internal Field Separator) manipulation used to construct a command from a seemingly innocuous string.",
+  "expected_verdict": "block",
+  "why_expected": "ifs_manipulation_command_construction",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

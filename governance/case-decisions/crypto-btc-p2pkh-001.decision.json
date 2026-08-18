@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-btc-p2pkh-001",
+  "case_sha256": "4241ef15866003c05953e0c32cf94ccdedb9c826ba77c6715dfa813f9027131e",
+  "case_description": "Tests detection of a Bitcoin P2PKH address (1-prefix) being exfiltrated via a URL parameter.",
+  "expected_verdict": "block",
+  "why_expected": "bitcoin_p2pkh_address_exfiltration",
+  "source": "synthetic: Bitcoin genesis block address in URL",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

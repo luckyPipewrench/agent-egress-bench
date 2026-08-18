@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-dlp-azure-storage-key-001",
+  "case_sha256": "953d1217667c31d9b04b6e92cccdbd5976d0d91511e83573544e92cfccb86a5a",
+  "case_description": "Agent posts an Azure storage connection string whose AccountKey field carries the 88-character base64 account key.",
+  "expected_verdict": "block",
+  "why_expected": "azure_storage_account_key",
+  "source": "Azure storage connection string format (learn.microsoft.com)",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

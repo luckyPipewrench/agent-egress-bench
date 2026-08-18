@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "header-benign-auth-001",
+  "case_sha256": "4ada85fb3a4dc59a682534b9ab701a30f0111eac4de7a5359d8bf911ebcd0327",
+  "case_description": "Normal short opaque bearer token that does not match API key formats.",
+  "expected_verdict": "allow",
+  "why_expected": "short_opaque_bearer_token",
+  "source": "RFC 6750",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

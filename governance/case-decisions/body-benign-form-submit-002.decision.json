@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-benign-form-submit-002",
+  "case_sha256": "e41657685259cccd3e5f4e9dc9306cb56a35a82db0b16db6750bf86605f2be4a",
+  "case_description": "Normal search form POST body.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_form_submission",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

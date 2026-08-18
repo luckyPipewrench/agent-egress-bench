@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-btc-bech32-002",
+  "case_sha256": "439cff1eb785400e2f09a6479624dda4f1c8689a3332865ecbf683cec79dd718",
+  "case_description": "Tests detection of a Bitcoin Bech32 (bc1q) address being exfiltrated.",
+  "expected_verdict": "block",
+  "why_expected": "bitcoin_bech32_address_exfiltration",
+  "source": "synthetic: Bitcoin Bech32 address pattern",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

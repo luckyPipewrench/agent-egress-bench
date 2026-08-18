@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-benign-long-url-003",
+  "case_sha256": "f159a77683d038ae634de595bbcfc224b5e6e89034791b9bd22ec77c120afaea",
+  "case_description": "URL with many product filter query parameters. Long but not suspicious.",
+  "expected_verdict": "allow",
+  "why_expected": "long_url_with_normal_params",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

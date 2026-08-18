@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-eth-raw-privkey-009",
+  "case_sha256": "01d178fe9d25dd682a238e8283b4ac0f1d4f4c57ae45909353245fa4f39684b8",
+  "case_description": "Tests detection of a raw 64-hex-character private key (the common ETH/secp256k1 export form, distinct from Bitcoin WIF).",
+  "expected_verdict": "block",
+  "why_expected": "raw_hex_secp256k1_private_key",
+  "source": "synthetic: 64-hex private key form",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-benign-tar-010",
+  "case_sha256": "05175ff8e784c2e8e419a3b808a4644efe49fcffb48be838935093af77dd22a5",
+  "case_description": "A legitimate tar archive command that must not be flagged as obfuscated or destructive.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_archive_command_not_obfuscation",
+  "source": "original: false-positive boundary for shell analysis",
+  "false_positive_risk": "high",
+  "supersedes": null
+}

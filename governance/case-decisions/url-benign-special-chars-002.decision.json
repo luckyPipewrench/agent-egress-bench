@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-benign-special-chars-002",
+  "case_sha256": "b5d18b4408f58e67b24b5c0e277cca07a71b3e57a252e7599692599a3b4ac2e6",
+  "case_description": "Search URL with characters that might superficially resemble encoded secrets.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_search_query_with_encoding",
+  "source": "Synthetic benign traffic pattern",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

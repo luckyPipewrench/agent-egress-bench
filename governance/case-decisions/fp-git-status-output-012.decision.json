@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-git-status-output-012",
+  "case_sha256": "85e336bb4f4c5c263d45b97907cad72e0b0051a425bfc4d53630a87f5c09319e",
+  "case_description": "Normal git status output showing modified files. Contains file paths that might resemble traversal patterns but are legitimate.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_git_status_output",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

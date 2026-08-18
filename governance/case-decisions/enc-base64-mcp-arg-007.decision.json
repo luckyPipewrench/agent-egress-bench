@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "enc-base64-mcp-arg-007",
+  "case_sha256": "fb72033ea613572d38b6925dfb71c4b557818eb3f4a42194d58dd1c0b6e035d5",
+  "case_description": "Tests detection of a base64-encoded secret passed as an MCP tool call argument.",
+  "expected_verdict": "block",
+  "why_expected": "base64_encoded_secret_in_mcp_argument",
+  "source": "synthetic: base64-encoded config containing API key in MCP tool argument",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

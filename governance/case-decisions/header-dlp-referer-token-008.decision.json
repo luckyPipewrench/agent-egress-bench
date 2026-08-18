@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "header-dlp-referer-token-008",
+  "case_sha256": "6330855bfd3b50cd8491b874cabfb9860df7e9f62a847475f3a2a48677f89f38",
+  "case_description": "Tests DLP on a non-authorization standard header (Referer) that scanners often skip, carrying a reset token in its URL.",
+  "expected_verdict": "block",
+  "why_expected": "secret_token_in_referer_header",
+  "source": "original",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

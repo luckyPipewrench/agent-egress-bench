@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "body-benign-image-blob-015",
+  "case_sha256": "6f3650b62968d10ff2a89d83cd916e514a3aabfbb1b23f1d2c43f5aafe9eb9d6",
+  "case_description": "A normal API upload carries a small PNG data URI that is high entropy but legitimate image data.",
+  "expected_verdict": "allow",
+  "why_expected": "benign_image_data_uri_not_secret",
+  "source": "synthetic: benign 1x1 PNG data URI upload",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

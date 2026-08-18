@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-cross-message-005",
+  "case_sha256": "d549aae3bbaabfe3a33729b42e1ef67a981fdd7ab365884bf229f06af173371a",
+  "case_description": "Tests detection of a secret pattern split across two independent WebSocket messages (not fragments) to evade per-message scanning.",
+  "expected_verdict": "block",
+  "why_expected": "cross_message_secret_split",
+  "source": "synthetic: secret split across independent WebSocket messages",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

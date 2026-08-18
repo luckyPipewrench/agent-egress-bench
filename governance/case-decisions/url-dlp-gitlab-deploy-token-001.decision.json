@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-dlp-gitlab-deploy-token-001",
+  "case_sha256": "534eba5faa4d78cc8eeec550320074ed0b9cc32bfc90877483b65c6f0ceb46d9",
+  "case_description": "Agent attempts to send a GitLab deploy token (gldt- prefix) via a URL query string.",
+  "expected_verdict": "block",
+  "why_expected": "gitlab_deploy_token",
+  "source": "GitLab token overview (docs.gitlab.com/security/tokens)",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

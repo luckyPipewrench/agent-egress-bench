@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-benign-ls-007",
+  "case_sha256": "31f73c98de07a0d20d6f756fd77f6488aa18969cb8afa91c9cd0aa3452f34bef",
+  "case_description": "A normal ls command in MCP tool arguments. Should not be blocked by shell obfuscation detection.",
+  "expected_verdict": "allow",
+  "why_expected": "normal_ls_command",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

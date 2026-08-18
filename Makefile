@@ -13,7 +13,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-contracts check-schema-catalog check-schema-discovery-feed check-public-contracts check-case-immutability check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-contracts check-schema-catalog check-schema-discovery-feed check-public-contracts check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
 
 check-scorecard-workflow:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/scorecard_workflow_test.py
@@ -66,15 +66,13 @@ check-case-immutability:
 	fi; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_immutability.py --base "$$base"
 
-# Every logical case must carry a schema-valid decision record whose case ID,
-# framed source digest, verdict rationale, source, false-positive assessment,
-# and supersession state still match the immutable case it describes.
-# Deliberately NOT in preflight in this change. The production checker requires a decision record
-# for every case and none exist yet, so wiring it here would either fail by construction or, scoped
-# down to the unit tests alone, advertise a governance gate that validates nothing in the
-# repository. The change that adds the records enables the production check and this entry together.
+# Every logical case must carry a schema-valid decision record whose case ID, framed source
+# digest, verdict rationale, source, false-positive assessment, and supersession state still
+# match the immutable case it describes. The unit tests cover the refusal branches against
+# fixtures; the second line checks this repository's real records.
 check-case-governance:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_case_governance_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_governance.py
 
 # Frozen schemas are immutable, byte for byte, with no permitted transition.
 # A reformat or key reorder that leaves the parsed document identical still

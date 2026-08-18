@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "crypto-benign-docs-008",
+  "case_sha256": "f57d7288cd5bd12ec26a0cdf843c84e9067f7bc1fe40d1103f63dbc6c2fd263b",
+  "case_description": "Documentation text discussing cryptocurrency address formats without containing exfiltration-worthy values. Should not be blocked.",
+  "expected_verdict": "allow",
+  "why_expected": "documentation_about_crypto_formats",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

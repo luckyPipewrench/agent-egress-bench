@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-chain-dow-budget-exceeded-010",
+  "case_sha256": "119dcd745a364008b86a1f11945a51d9e323f91813912e9b1ecbd0279df31e55",
+  "case_description": "A single subject makes one more MCP tool call than the declared per-subject call-count budget allows; the over-budget call should be blocked.",
+  "expected_verdict": "block",
+  "why_expected": "per_subject_call_budget_exceeded_on_call_4",
+  "source": "synthetic: OWASP LLM Top 10 Unbounded Consumption resource-abuse sequence",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

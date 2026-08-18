@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ws-dlp-benign-uuid-011",
+  "case_sha256": "5ad3ae7524940fabc857a33730cf2a880580d5edfa95c1bfc4fee61bf8d3631d",
+  "case_description": "A normal WebSocket event includes UUID and GUID-style identifiers that look random but are routine correlation data.",
+  "expected_verdict": "allow",
+  "why_expected": "benign_uuid_guid_identifiers",
+  "source": "synthetic: benign WebSocket event identifiers",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

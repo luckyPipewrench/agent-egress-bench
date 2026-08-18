@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "shell-base64-pipe-009",
+  "case_sha256": "0104449c75c02432102a9553c722b5bd7b6f7687fd742791bd1c5a48b11d92fa",
+  "case_description": "Tests detection of the decode-and-execute pattern: a base64 blob piped through base64 -d into bash. A marquee real-world obfuscation technique.",
+  "expected_verdict": "block",
+  "why_expected": "base64_decode_piped_to_shell",
+  "source": "original",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-zero-ip-008",
+  "case_sha256": "087c06db7eeaaf15d559f559f719a3bc57caa690d79b6f8e8d33f4991f5db1d5",
+  "case_description": "Tests blocking of a request to 0.0.0.0, which on many systems resolves to localhost.",
+  "expected_verdict": "block",
+  "why_expected": "zero_ip_resolves_to_localhost",
+  "source": "public: https://portswigger.net/web-security/ssrf",
+  "false_positive_risk": "low",
+  "supersedes": null
+}
