@@ -3,6 +3,11 @@
   "repository": "https://github.com/luckyPipewrench/agent-egress-bench",
   "schemas": [
     {
+      "path": "schemas/case-governance-decision-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-governance-decision-v1.schema.json",
+      "sha256": "71955389a058662ef8f86974e5b7b4cf64db04a0901eae3d4b5cceea56f07189"
+    },
+    {
       "path": "schemas/case-index-v1.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-index-v1.schema.json",
       "sha256": "7700a2e79154cfde02b7714f339c84d012155125a22575747932b9272d948433"

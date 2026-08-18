@@ -1,4 +1,4 @@
-.PHONY: preflight check-citation check-case-immutability check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
+.PHONY: preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -65,6 +65,16 @@ check-case-immutability:
 		exit 1; \
 	fi; \
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_case_immutability.py --base "$$base"
+
+# Every logical case must carry a schema-valid decision record whose case ID,
+# framed source digest, verdict rationale, source, false-positive assessment,
+# and supersession state still match the immutable case it describes.
+# Deliberately NOT in preflight in this change. The production checker requires a decision record
+# for every case and none exist yet, so wiring it here would either fail by construction or, scoped
+# down to the unit tests alone, advertise a governance gate that validates nothing in the
+# repository. The change that adds the records enables the production check and this entry together.
+check-case-governance:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_case_governance_test.py
 
 # Frozen schemas are immutable, byte for byte, with no permitted transition.
 # A reformat or key reorder that leaves the parsed document identical still

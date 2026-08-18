@@ -74,6 +74,36 @@
       "gate": "make check-contracts"
     },
     {
+      "family": "case_governance_decision",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/case-governance-decision-v1.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "active",
+          "path": "schemas/case-governance-decision-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-governance-decision-v1.schema.json"
+        }
+      ],
+      "writer": [
+        "scripts/generate_case_governance_records.py"
+      ],
+      "reader": [
+        "scripts/check_case_governance.py"
+      ],
+      "source_versions": [
+        {
+          "path": "scripts/case_governance.py",
+          "symbol": "ACTIVE_CASE_GOVERNANCE_DECISION_SCHEMA_VERSION"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
       "family": "result_row",
       "active_writer_version": 5,
       "accepted_reader_versions": [
