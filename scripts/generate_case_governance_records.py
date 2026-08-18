@@ -25,13 +25,37 @@ def write_record(path, content):
         raise
 
 
+def _require_contained_output(root: Path, output: Path) -> None:
+    """Refuse an output directory that is not plainly inside the repository.
+
+    Checking only the final component misses a symlink at any ancestor, and this function then
+    creates directories, writes records, and DELETES stale ones through it. That turns a documented
+    generator into a way to write and remove files anywhere the invoking user can reach.
+    """
+    root = root.resolve()
+    if output.resolve() != output.absolute().resolve(strict=False):
+        raise ValueError(f"decision-record directory is not a plain path: {output}")
+    current = output if output.is_absolute() else (root / output)
+    seen = current
+    while True:
+        if seen.is_symlink():
+            raise ValueError(f"decision-record path component is a symlink: {seen}")
+        if seen == seen.parent:
+            break
+        if seen == root:
+            break
+        seen = seen.parent
+    resolved = current.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(f"decision-record directory is outside the repository: {output}")
+
+
 def generate(root, output):
     root = Path(root).resolve()
     output = Path(output)
     if not output.is_absolute():
         output = root / output
-    if output.is_symlink():
-        raise ValueError(f"decision-record directory is a symlink: {output}")
+    _require_contained_output(root, output)
     output.mkdir(parents=True, exist_ok=True)
     if not output.is_dir():
         raise ValueError(f"decision-record path is not a directory: {output}")

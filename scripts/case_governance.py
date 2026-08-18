@@ -3,6 +3,9 @@
 
 import hashlib
 import json
+import yaml
+import stat
+import os
 import re
 from pathlib import Path
 
@@ -47,57 +50,54 @@ def load_json_object(path, label):
     return value
 
 
-def _decode_scalar(value, path, key):
-    value = value.strip()
-    if not value:
-        fail(f"{path}: {key} must have a scalar value")
-    if value.startswith('"'):
-        try:
-            decoded = json.loads(value)
-        except json.JSONDecodeError as exc:
-            fail(f"{path}: {key} has an invalid quoted scalar: {exc}")
-        if not isinstance(decoded, str):
-            fail(f"{path}: {key} must decode to a string")
-        return decoded
-    if value.startswith("'"):
-        if len(value) < 2 or not value.endswith("'"):
-            fail(f"{path}: {key} has an unterminated quoted scalar")
-        return value[1:-1].replace("''", "'")
-    return value
+MAX_METADATA_BYTES = 1 << 20
 
 
-def _decode_block(lines, start, style, path, key):
-    body = []
-    index = start
-    while index < len(lines):
-        line = lines[index]
-        if line and not line[0].isspace() and _YAML_FIELD.match(line.rstrip("\n\r")):
-            break
-        body.append(line.rstrip("\n\r"))
-        index += 1
-    nonempty = [line for line in body if line.strip()]
-    if not nonempty:
-        fail(f"{path}: {key} block scalar is empty")
-    indentation = min(len(line) - len(line.lstrip(" ")) for line in nonempty)
-    if indentation == 0:
-        fail(f"{path}: {key} block scalar is not indented")
-    normalized = [line[indentation:] if line.strip() else "" for line in body]
-    if style.startswith(">"):
-        value = " ".join(line for line in normalized if line)
-    else:
-        value = "\n".join(normalized)
-    if style != "|-":
-        value += "\n"
-    return value, index
+def _read_regular_file(path, label):
+    """Read a file only after proving the object opened is a regular file.
+
+    Checking a path and then opening it are two operations. A symlink to a FIFO blocks the read
+    forever, and a device supplies unbounded input, so open with no-follow first and then ask the
+    descriptor itself what it is.
+    """
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        fail(f"cannot read {label} {path}: {exc}")
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode):
+            fail(f"{label} is not a regular file: {path}")
+        if status.st_size > MAX_METADATA_BYTES:
+            fail(f"{label} is larger than {MAX_METADATA_BYTES} bytes: {path}")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            raw = handle.read(MAX_METADATA_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > MAX_METADATA_BYTES:
+        fail(f"{label} is larger than {MAX_METADATA_BYTES} bytes: {path}")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fail(f"{label} is not valid UTF-8: {path} ({exc})")
 
 
 def load_multifile_metadata(path):
+    """Parse case.yaml with the same safe YAML parser the multifile case consumer uses.
+
+    A hand-written line parser is not YAML. It keeps a trailing comment inside a plain scalar, it
+    handles folded and chomped block scalars differently, and it ends a block on recognised field
+    names rather than on indentation. A record built from it can therefore bind a value that differs
+    from the case metadata it claims to describe, which is the single thing these records exist to
+    prevent.
+    """
+    text = _read_regular_file(path, "multi-file case metadata")
     try:
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-    except (OSError, UnicodeDecodeError) as exc:
-        fail(f"cannot read multi-file case metadata {path}: {exc}")
-    fields = {}
-    index = 0
+        document = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        fail(f"cannot parse multi-file case metadata {path}: {exc}")
+    if not isinstance(document, dict):
+        fail(f"multi-file case metadata must be a mapping: {path}")
     required = {
         "id",
         "description",
@@ -106,29 +106,22 @@ def load_multifile_metadata(path):
         "source",
         "false_positive_risk",
     }
-    # supersedes is optional, but it must be PARSED, or a multifile case that declares one silently
+    # supersedes is optional, but it must be READ, or a multifile case that declares one silently
     # produces a record claiming it supersedes nothing.
     optional = {"supersedes"}
-    wanted = required | optional
-    while index < len(lines):
-        line = lines[index]
-        if line and not line[0].isspace():
-            match = _YAML_FIELD.match(line.rstrip("\n\r"))
-            if match is not None and match.group(1) in wanted:
-                key, raw = match.groups()
-                if key in fields:
-                    fail(f"{path}: duplicate {key} field")
-                raw = raw or ""
-                if raw.startswith("|") or raw.startswith(">"):
-                    value, index = _decode_block(lines, index + 1, raw, path, key)
-                    fields[key] = value
-                    continue
-                fields[key] = _decode_scalar(raw, path, key)
-        index += 1
+    fields = {}
+    for key in sorted((required | optional) & set(document)):
+        value = document[key]
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            fail(f"{path}: {key} must be a string scalar")
+        fields[key] = value if isinstance(value, str) else str(value)
     missing = sorted(required - set(fields))
     if missing:
         fail(f"{path}: missing required governance metadata: {missing}")
     return fields
+
 
 
 def _require_case_metadata(metadata, label):

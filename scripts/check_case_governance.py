@@ -75,6 +75,7 @@ def check(root):
     # A supersedes value that merely LOOKS like a case ID is not an audit trail. Verify the target
     # exists and that nothing supersedes itself, so governance history cannot record a relationship
     # that never existed.
+    supersedes = {}
     for case_id in sorted(cases):
         target = case_governance.record_for_case(cases[case_id]).get("supersedes")
         if target is None:
@@ -83,6 +84,20 @@ def check(root):
             fail(f"case {case_id} supersedes itself")
         if target not in cases:
             fail(f"case {case_id} supersedes unknown case {target}")
+        supersedes[case_id] = target
+    # A cycle is an impossible predecessor history that every individual record validates against, so
+    # rejecting self-reference alone leaves the audit trail claiming something that cannot be true.
+    for start in sorted(supersedes):
+        seen = [start]
+        current = supersedes[start]
+        while current in supersedes:
+            if current in seen:
+                cycle = " -> ".join(seen[seen.index(current):] + [current])
+                fail(f"supersession cycle: {cycle}")
+            seen.append(current)
+            current = supersedes[current]
+        if current in seen and current != seen[-1]:
+            fail(f"supersession cycle involving {current}")
     return len(cases)
 
 
