@@ -55,6 +55,26 @@ class SchemaDiscoveryFeedTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "is stale"):
             check_schema_discovery_feed.check(self.root)
 
+    def test_missing_feed_is_refused(self):
+        (self.root / "schemas/discovery.json").unlink()
+        with self.assertRaisesRegex(ValueError, "must be a regular file"):
+            check_schema_discovery_feed.check(self.root)
+
+    def test_empty_feed_is_refused(self):
+        (self.root / "schemas/discovery.json").write_bytes(b"")
+        with self.assertRaisesRegex(ValueError, "is empty"):
+            check_schema_discovery_feed.check(self.root)
+
+    def test_symlinked_feed_is_refused(self):
+        feed = self.root / "schemas/discovery.json"
+        contents = feed.read_bytes()
+        target = self.root / "schemas/real-discovery.json"
+        target.write_bytes(contents)
+        feed.unlink()
+        feed.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "must be a regular file"):
+            check_schema_discovery_feed.check(self.root)
+
     def test_feed_keeps_identity_separate_from_retrieval(self):
         feed = json.loads((self.root / "schemas/discovery.json").read_text(encoding="utf-8"))
         self.assertEqual({"format", "catalog", "catalog_sha256", "schemas"}, set(feed))

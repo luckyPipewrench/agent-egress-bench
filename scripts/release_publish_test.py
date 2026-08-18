@@ -92,6 +92,36 @@ class ReleasePublishTest(unittest.TestCase):
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
         )
 
+    def test_missing_release_notes_is_refused_before_any_gh_call(self) -> None:
+        (self.dist / "release-notes.md").unlink()
+        result = self.publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing release-notes.md", result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_empty_release_notes_is_refused_before_any_gh_call(self) -> None:
+        (self.dist / "release-notes.md").write_text("   \n", encoding="utf-8")
+        result = self.publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing release-notes.md", result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_release_notes_without_ownership_marker_is_refused(self) -> None:
+        (self.dist / "release-notes.md").write_text("## Schema contracts\n", encoding="utf-8")
+        result = self.publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ownership marker", result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_release_notes_marker_matches_the_generator(self) -> None:
+        # The build and publish modules each hardcode the marker. If they drift, publish refuses
+        # every generated notes file, and nothing else would catch it until release day.
+        sys.path.insert(0, str(SCRIPT.parent))
+        import release_build
+        import release_publish
+
+        self.assertEqual(release_build.RELEASE_NOTES_MARKER, release_publish.DRAFT_MARKER)
+
     def test_creates_marked_draft_with_exact_assets_before_publication(self) -> None:
         result = self.publish()
         self.assertEqual(result.returncode, 0, msg=result.stderr)
