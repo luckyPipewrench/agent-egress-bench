@@ -59,7 +59,7 @@ TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
 # so a stale value attributes a run to a build that never executed it. Ask the
 # binary what it is and refuse to run when the two disagree, rather than recording
 # the profile's claim as fact.
-BINARY_VERSION=$("$PIPELOCK" --version 2>/dev/null | awk '{print $NF}' | sed 's/^v//') || BINARY_VERSION=""
+BINARY_VERSION=$("$PIPELOCK" --version 2>/dev/null | awk '$1 == "pipelock" && $2 == "version" { print $3 }' | sed 's/^v//') || BINARY_VERSION=""
 if [ -z "$BINARY_VERSION" ]; then
     echo "error: could not read a version from $PIPELOCK --version" >&2
     exit 1

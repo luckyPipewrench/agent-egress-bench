@@ -68,7 +68,7 @@ jobs:
           profile_file="$artifact_dir/tool-profile.json"
           test -f "$version_file" || { echo "no recorded binary version at $version_file"; exit 1; }
           test -f "$profile_file" || { echo "no tool profile at $profile_file"; exit 1; }
-          binary_version="$(head -1 "$version_file" | awk '{print $NF}' | sed 's/^v//')"
+          binary_version="$(awk '$1 == "pipelock" && $2 == "version" { print $3 }' "$version_file" | sed 's/^v//')"
           profile_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tool_version"])' "$profile_file")"
           test -n "$binary_version" || { echo "could not read a version from $version_file"; exit 1; }
           test -n "$profile_version" || { echo "tool profile carries no tool_version"; exit 1; }
