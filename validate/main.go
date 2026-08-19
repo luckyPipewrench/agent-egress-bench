@@ -1072,31 +1072,6 @@ func extractPayloadURLHosts(payload map[string]interface{}) []string {
 	return hosts
 }
 
-func extractPayloadURLHost(payload map[string]interface{}) string {
-	if payload == nil {
-		return ""
-	}
-	for _, key := range []string{"url", "target_url"} {
-		raw, ok := payload[key].(string)
-		if !ok {
-			continue
-		}
-		u, err := url.Parse(raw)
-		if err != nil {
-			continue
-		}
-		if u.Host == "" {
-			continue
-		}
-		// Hostnames are case-insensitive, and the runner lowercases before it
-		// looks a prerequisite up. Returning the raw spelling here would reject a
-		// correctly-cased declaration and disagree with what the runner does with
-		// the same value.
-		return strings.ToLower(u.Hostname())
-	}
-	return ""
-}
-
 func contains(slice []string, val string) bool {
 	for _, s := range slice {
 		if s == val {
