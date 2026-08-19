@@ -15,7 +15,11 @@ REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts/release_publish.py"
 
 
-class ReleasePublishTest(unittest.TestCase):
+class ReleasePublishFixture(unittest.TestCase):
+    """Shared fixture only. Carries no test methods, so a subclass inherits the harness
+    without unittest rediscovering and rerunning every parent test under the child's name.
+    """
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -118,6 +122,8 @@ class ReleasePublishTest(unittest.TestCase):
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
         )
 
+
+class ReleasePublishTest(ReleasePublishFixture):
     def test_missing_release_notes_is_refused_before_any_gh_call(self) -> None:
         (self.dist / "release-notes.md").unlink()
         result = self.publish()
@@ -192,6 +198,261 @@ class ReleasePublishTest(unittest.TestCase):
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         self.assertTrue(state["isDraft"])
         self.assertIn("extra.bin", [asset["name"] for asset in state["assets"]])
+
+
+class ReleaseAssetBindingTest(ReleasePublishFixture):
+    """The upload must carry the asset bytes that were validated, not a later replacement.
+
+    `release_assets` rejects symlinks and non-files by NAME. Handing those names to gh leaves the
+    real read until later, so this drives the exact window: the gh stand-in replaces the source file
+    on disk and only then reads the paths it was handed.
+    """
+
+    def tampering_gh(self) -> Path:
+        gh = self.root / "gh-tamper"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "seen_path = Path(os.environ['MOCK_GH_SEEN'])\n"
+            "target = Path(os.environ['MOCK_GH_TAMPER_TARGET'])\n"
+            "args = sys.argv[1:]\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  print('release not found', file=sys.stderr)\n"
+            "  raise SystemExit(1)\n"
+            "if args[:2] == ['release', 'create']:\n"
+            # Replace the source AFTER validation ran and BEFORE this process reads what it was
+            # given. A pathname argument reads the replacement; a bound descriptor does not.
+            "  target.write_text('tampered', encoding='utf-8')\n"
+            "  paths = args[3:args.index('--title')]\n"
+            "  seen = {Path(item).name: Path(item).read_text(encoding='utf-8') for item in paths}\n"
+            "  seen_path.write_text(json.dumps(seen))\n"
+            "raise SystemExit(0)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        return gh
+
+    def test_upload_carries_validated_bytes_after_a_source_swap(self) -> None:
+        seen_path = self.root / "seen.json"
+        target = self.dist / "archive.tar.gz"
+        original = target.read_text(encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(self.tampering_gh())],
+            text=True,
+            capture_output=True,
+            env={
+                "MOCK_GH_STATE": str(self.state_path),
+                "MOCK_GH_CALLS": str(self.calls_path),
+                "MOCK_GH_SEEN": str(seen_path),
+                "MOCK_GH_TAMPER_TARGET": str(target),
+            },
+        )
+        # Assert the run reached the upload for the reason expected. Without it a regression that
+        # fails earlier, during the snapshot copy for instance, still passes the byte comparison
+        # as long as the stand-in wrote its file, which would leave this test vacuous.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("disappeared before publication", result.stderr)
+        self.assertTrue(seen_path.exists(), "the stand-in never reached the upload arguments")
+        seen = json.loads(seen_path.read_text(encoding="utf-8"))
+        self.assertEqual("tampered", target.read_text(encoding="utf-8"))
+        self.assertEqual(original, seen["archive.tar.gz"])
+
+    def test_duplicate_asset_names_are_refused(self) -> None:
+        nested = self.dist / "nested"
+        nested.mkdir()
+        # Only regular files in the top level become assets, so build the collision by pointing the
+        # binder at two sources that share a basename.
+        (nested / "archive.tar.gz").write_text("second", encoding="utf-8")
+        sys.path.insert(0, str(SCRIPT.parent))
+        import contextlib as _contextlib
+
+        import release_publish
+
+        with _contextlib.ExitStack() as stack:
+            with self.assertRaisesRegex(release_publish.PublishError, "more than one asset named"):
+                release_publish._verified_asset_snapshot(
+                    [self.dist / "archive.tar.gz", nested / "archive.tar.gz"], stack
+                )
+
+    def test_fifo_asset_is_refused_without_hanging(self) -> None:
+        import os
+        import signal
+
+        import release_publish
+
+        fifo = self.root / "pipe.bin"
+        os.mkfifo(fifo)
+        out = self.root / "copied.bin"
+
+        class _Blocked(Exception):
+            pass
+
+        def _alarm(_signum, _frame):
+            raise _Blocked("open blocked on a FIFO")
+
+        signal.signal(signal.SIGALRM, _alarm)
+        signal.alarm(2)
+        try:
+            with self.assertRaisesRegex(release_publish.PublishError, "not a regular file"):
+                release_publish._copy_verified_asset(fifo, out, "pipe.bin")
+        finally:
+            signal.alarm(0)
+
+    def test_notes_and_uploaded_identity_stay_paired_after_a_source_swap(self) -> None:
+        # Swap identity on disk after the first of (notes check, asset snapshot) returns. If notes
+        # are checked against dist and assets are copied later, the upload carries identity B under
+        # notes generated from identity A. Snapshot-then-verify keeps the pair.
+        sys.path.insert(0, str(SCRIPT.parent))
+        import release_publish
+
+        identity = self.dist / "release-identity.json"
+        seen_path = self.root / "seen-pair.json"
+        swapped = {"done": False}
+        original_notes = release_publish._verified_notes_snapshot
+        original_assets = release_publish._verified_asset_snapshot
+
+        def swap_after(fn):
+            def wrapped(*args, **kwargs):
+                result = fn(*args, **kwargs)
+                if not swapped["done"]:
+                    identity.write_text(
+                        json.dumps(
+                            {
+                                "release": {"version": "9.9.9", "tag": "v9.9.9"},
+                                "source": {"commit": "1" * 40},
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    swapped["done"] = True
+                return result
+
+            return wrapped
+
+        gh = self.root / "gh-pair"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            f"seen = Path({str(seen_path)!r})\n"
+            "args = sys.argv[1:]\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  print('release not found', file=sys.stderr)\n"
+            "  raise SystemExit(1)\n"
+            "if args[:2] == ['release', 'create']:\n"
+            "  paths = args[3:args.index('--title')]\n"
+            "  payload = {}\n"
+            "  for item in paths:\n"
+            "    path = Path(item)\n"
+            "    if path.name == 'release-identity.json':\n"
+            "      payload['identity'] = path.read_text(encoding='utf-8')\n"
+            "    if path.name == 'release-notes.md':\n"
+            "      payload['notes'] = path.read_text(encoding='utf-8')\n"
+            "  seen.write_text(json.dumps(payload))\n"
+            "raise SystemExit(0)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        release_publish._verified_notes_snapshot = swap_after(original_notes)
+        release_publish._verified_asset_snapshot = swap_after(original_assets)
+        try:
+            with self.assertRaises(release_publish.PublishError):
+                release_publish.publish("v1.0.0", self.dist, str(gh))
+        finally:
+            release_publish._verified_notes_snapshot = original_notes
+            release_publish._verified_asset_snapshot = original_assets
+        self.assertTrue(seen_path.exists(), "the stand-in never reached the upload arguments")
+        payload = json.loads(seen_path.read_text(encoding="utf-8"))
+        uploaded = json.loads(payload["identity"])
+        self.assertEqual("1.0.0", uploaded["release"]["version"])
+        self.assertIn("1.0.0", payload["notes"])
+        self.assertNotIn("9.9.9", payload["notes"])
+
+    def test_still_a_draft_after_publication_is_refused(self) -> None:
+        gh = self.root / "gh-keep-draft"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  # Ignore --draft=false so an incomplete publication can be observed.\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("still a draft after publication", result.stderr)
+
+    def test_published_asset_set_mismatch_is_refused(self) -> None:
+        gh = self.root / "gh-swap-assets"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  if '--draft=false' in args:\n"
+            "    state['isDraft'] = False\n"
+            "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("assets do not match dist/release", result.stderr)
 
 
 if __name__ == "__main__":

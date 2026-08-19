@@ -124,3 +124,132 @@ class SchemaDiscoveryFeedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SchemaDiscoveryReadBindingTest(SchemaDiscoveryFeedTest):
+    """The digest must come from the descriptor containment was checked against.
+
+    Validating a path and then reading it back by NAME is two lookups of one name, so the check and
+    the hash can describe different objects. This asserts the second lookup is gone rather than
+    trying to win a race, which a unit test cannot do reliably.
+    """
+
+    def test_schema_content_is_not_read_back_by_name(self):
+        schema = self.root / "schemas" / "fixture-v1.schema.json"
+        catalog = (self.root / "schemas" / "index.json").read_bytes()
+        original = Path.read_bytes
+        observed = []
+
+        def recording_read_bytes(self):
+            observed.append(Path(self).resolve())
+            return original(self)
+
+        Path.read_bytes = recording_read_bytes
+        try:
+            schema_discovery_feed.catalog_entries(self.root, catalog)
+        finally:
+            Path.read_bytes = original
+
+        self.assertNotIn(
+            schema.resolve(),
+            observed,
+            "the schema file was reopened by name after its containment check",
+        )
+
+    def test_contained_file_bytes_returns_the_opened_content(self):
+        contents = schema_discovery_feed._contained_file_bytes(
+            self.root, 0, "schemas/fixture-v1.schema.json"
+        )
+        self.assertEqual(
+            (self.root / "schemas" / "fixture-v1.schema.json").read_bytes(), contents
+        )
+
+    def test_directory_in_the_catalog_is_refused(self):
+        (self.root / "schemas" / "nested").mkdir()
+        with self.assertRaisesRegex(ValueError, "not a regular file"):
+            schema_discovery_feed._contained_file_bytes(self.root, 0, "schemas/nested")
+
+    def test_catalog_content_is_not_read_back_by_name(self):
+        catalog = self.root / "schemas" / "index.json"
+        original = Path.read_bytes
+        observed = []
+
+        def recording_read_bytes(self):
+            observed.append(Path(self).resolve())
+            return original(self)
+
+        Path.read_bytes = recording_read_bytes
+        try:
+            schema_discovery_feed.catalog_bytes(self.root)
+        finally:
+            Path.read_bytes = original
+
+        self.assertNotIn(
+            catalog.resolve(),
+            observed,
+            "the catalog was reopened by name after its regular-file check",
+        )
+
+    def test_symlinked_catalog_is_refused(self):
+        catalog = self.root / "schemas" / "index.json"
+        contents = catalog.read_bytes()
+        target = self.root / "schemas" / "real-index.json"
+        target.write_bytes(contents)
+        catalog.unlink()
+        catalog.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "must be a regular file"):
+            schema_discovery_feed.catalog_bytes(self.root)
+
+    def test_resolved_path_bound_to_opened_inode(self):
+        other = self.root / "schemas" / "other-v1.schema.json"
+        other.write_text("other-bytes\n", encoding="utf-8")
+        original_resolve = Path.resolve
+        fixture = (self.root / "schemas" / "fixture-v1.schema.json").resolve()
+
+        def redirected_resolve(self, *args, **kwargs):
+            resolved = original_resolve(self, *args, **kwargs)
+            if resolved == fixture:
+                return other.resolve()
+            return resolved
+
+        Path.resolve = redirected_resolve
+        try:
+            with self.assertRaisesRegex(ValueError, "changed while it was being read"):
+                schema_discovery_feed._contained_file_bytes(
+                    self.root, 0, "schemas/fixture-v1.schema.json"
+                )
+        finally:
+            Path.resolve = original_resolve
+
+
+class SchemaCatalogIdentityBindingTest(SchemaDiscoveryFeedTest):
+    """The published catalog digest must come from the object that was opened.
+
+    O_NOFOLLOW refuses a symlink at the final component only, so a swapped parent directory can
+    still aim the same pathname at a different file. Winning that race inside a unit test is not
+    possible, so this drives the guard by making resolution disagree with the descriptor, which is
+    the state a real swap produces.
+    """
+
+    def test_resolved_path_bound_to_opened_inode(self):
+        other = self.root / "schemas" / "decoy.json"
+        other.write_text("{}\n", encoding="utf-8")
+        original = Path.resolve
+
+        def resolve_to_decoy(self, strict=False):
+            if self.name == "index.json":
+                return original(other)
+            return original(self, strict) if strict else original(self)
+
+        Path.resolve = resolve_to_decoy
+        try:
+            with self.assertRaisesRegex(ValueError, "changed while it was being read"):
+                schema_discovery_feed.catalog_bytes(self.root)
+        finally:
+            Path.resolve = original
+
+    def test_catalog_bytes_returns_the_opened_content(self):
+        self.assertEqual(
+            (self.root / "schemas" / "index.json").read_bytes(),
+            schema_discovery_feed.catalog_bytes(self.root),
+        )

@@ -7,8 +7,11 @@ an ``$id`` remains an identifier, while a release catalog supplies immutable
 commit-pinned retrieval locations.
 """
 
+import errno
 import hashlib
 import json
+import os
+import stat
 from pathlib import Path
 
 from pathlib import PurePosixPath
@@ -21,9 +24,29 @@ FEED_PATH = Path("schemas/discovery.json")
 
 def catalog_bytes(root: Path) -> bytes:
     path = root / CATALOG_PATH
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}")
-    contents = path.read_bytes()
+    # Same two-lookup hole the schema entries just closed: is_symlink/is_file then read_bytes
+    # can describe two different objects. Open once and read that descriptor.
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}") from exc
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode):
+            raise ValueError(f"schema catalog must be a regular file: {CATALOG_PATH}")
+        # Same parent-directory hole the entry reader closes. O_NOFOLLOW covers the final component
+        # only, so a swapped parent could pair the published catalog name with a digest taken from a
+        # different object until the resolved name is bound to the one actually opened.
+        try:
+            resolved = path.resolve().stat()
+        except OSError as exc:
+            raise ValueError(f"schema catalog could not be resolved: {CATALOG_PATH}") from exc
+        if (resolved.st_dev, resolved.st_ino) != (status.st_dev, status.st_ino):
+            raise ValueError(f"schema catalog changed while it was being read: {CATALOG_PATH}")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            contents = handle.read()
+    finally:
+        os.close(descriptor)
     if not contents:
         raise ValueError(f"schema catalog is empty: {CATALOG_PATH}")
     return contents
@@ -50,14 +73,16 @@ def catalog_entries(root: Path, contents: bytes) -> list[dict[str, str]]:
         path, schema_id = entry["path"], entry["$id"]
         if not isinstance(path, str) or not path or not isinstance(schema_id, str) or not schema_id:
             raise ValueError(f"schema catalog entry {index} has an invalid identity")
-        _require_contained_path(root, index, path)
+        contents = _contained_file_bytes(root, index, path)
         digest = entry["sha256"]
         if not isinstance(digest, str) or not digest:
             raise ValueError(f"schema catalog entry {index} has an invalid digest")
         # Hash the FILE. Comparing the catalog's own digest strings only proves the catalog agrees
         # with itself, so a manipulated catalog could declare two divergent files equivalent and this
         # feed would publish that claim. The bytes on disk are the only thing worth trusting here.
-        actual = hashlib.sha256((root / path).read_bytes()).hexdigest()
+        # These bytes come from the descriptor containment was checked against, so the check and the
+        # hash cannot describe two different objects.
+        actual = hashlib.sha256(contents).hexdigest()
         if actual != digest:
             raise ValueError(f"schema catalog entry {index} digest does not match {path!r}")
         # An identity that names two DIFFERENT files is a contradiction, not a duplicate. Refuse it
@@ -88,8 +113,13 @@ def catalog_entries(root: Path, contents: bytes) -> list[dict[str, str]]:
     return entries
 
 
-def _require_contained_path(root: Path, index: int, path: str) -> None:
-    """Refuse any catalog path that does not RESOLVE inside the published schema roots.
+def _contained_file_bytes(root: Path, index: int, path: str) -> bytes:
+    """Return the bytes of a catalog entry, refusing any path that does not RESOLVE inside the
+    published schema roots.
+
+    Containment and content come from ONE open descriptor on purpose. Validating a path and then
+    reading it back by name is two separate lookups of the same name, so a replacement in between
+    would let the check and the hash describe different objects.
 
     The feed is published outward and consumers join these values onto their own checkout, so a
     value that escapes the schema roots escapes on their machine. A lexical check alone cannot
@@ -111,22 +141,48 @@ def _require_contained_path(root: Path, index: int, path: str) -> None:
     if not any(path.startswith(f"{allowed}/") for allowed in SCHEMA_ROOTS):
         raise ValueError(f"schema catalog entry {index} path is outside the published schema roots: {path!r}")
     candidate = root / path
-    # Containment says where a path LANDS, not that anything is there. A missing path or a directory
-    # satisfies the root check and still publishes a feed entry a consumer cannot fetch, so require a
-    # real regular file before resolving. Reject a symlink by its own status rather than by where it
-    # points, so a link inside an allowed root cannot pass simply by resolving back inside.
-    if candidate.is_symlink():
-        raise ValueError(f"schema catalog entry {index} path is a symlink: {path!r}")
-    if not candidate.exists():
-        raise ValueError(f"schema catalog entry {index} path does not exist: {path!r}")
-    if not candidate.is_file():
-        raise ValueError(f"schema catalog entry {index} path is not a regular file: {path!r}")
-    target = candidate.resolve()
-    for allowed in SCHEMA_ROOTS:
-        allowed_root = (root / allowed).resolve()
-        if target == allowed_root or allowed_root in target.parents:
-            return
-    raise ValueError(f"schema catalog entry {index} path resolves outside the published schema roots: {path!r}")
+    # O_NOFOLLOW rejects a final-component symlink in the same operation that opens the file, which
+    # a separate is_symlink() check cannot do: between the check and the open, the name can change.
+    try:
+        descriptor = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        # Keep the refusals distinguishable. The open reports one failure where the previous
+        # separate checks reported three, and collapsing them would hide which one a catalog hit.
+        if exc.errno in (errno.ELOOP, errno.EMLINK):
+            raise ValueError(f"schema catalog entry {index} path is a symlink: {path!r}") from exc
+        if exc.errno == errno.ENOENT:
+            raise ValueError(f"schema catalog entry {index} path does not exist: {path!r}") from exc
+        if exc.errno == errno.EISDIR:
+            raise ValueError(f"schema catalog entry {index} path is not a regular file: {path!r}") from exc
+        raise ValueError(f"schema catalog entry {index} path is not a readable regular file: {path!r}") from exc
+    try:
+        status = os.fstat(descriptor)
+        # Containment says where a path LANDS, not that anything is there. A directory satisfies the
+        # root check and still publishes a feed entry a consumer cannot fetch.
+        if not stat.S_ISREG(status.st_mode):
+            raise ValueError(f"schema catalog entry {index} path is not a regular file: {path!r}")
+        target = candidate.resolve()
+        # Bind the resolved NAME to the OPENED inode. A symlinked parent directory is the one escape
+        # O_NOFOLLOW does not cover, and resolving alone would answer for a different object than the
+        # one being read. Disagreement means the tree changed underneath this walk, so refuse.
+        try:
+            resolved = target.stat()
+        except OSError as exc:
+            raise ValueError(f"schema catalog entry {index} path could not be resolved: {path!r}") from exc
+        if (resolved.st_dev, resolved.st_ino) != (status.st_dev, status.st_ino):
+            raise ValueError(f"schema catalog entry {index} path changed while it was being read: {path!r}")
+        contained = False
+        for allowed in SCHEMA_ROOTS:
+            allowed_root = (root / allowed).resolve()
+            if target == allowed_root or allowed_root in target.parents:
+                contained = True
+                break
+        if not contained:
+            raise ValueError(f"schema catalog entry {index} path resolves outside the published schema roots: {path!r}")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            return handle.read()
+    finally:
+        os.close(descriptor)
 
 def rendered_feed(root: Path) -> bytes:
     """Render a deterministic feed that points consumers to the catalog."""
