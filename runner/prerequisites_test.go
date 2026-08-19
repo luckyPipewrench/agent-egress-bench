@@ -327,3 +327,48 @@ func TestSingleEndpointCaseIsUnaffected(t *testing.T) {
 		t.Fatalf("single-endpoint case was refused: %s", reason)
 	}
 }
+
+// The list of asserted domains being computed correctly proves nothing about the
+// artifact: a value that never reaches a result row cannot explain a score to
+// anyone reading it later. This drives the real run path and reads the row.
+func TestOperatorAssertedSetupReachesTheResultRow(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{"url": "https://exfil-collector.example.net/beacon"}
+	c.Requires = []string{"domain_blocklist"}
+	c.ExpectedVerdict = "block"
+	adapt := &stateTestAdapter{
+		routes: []adapter.DeliveryTuple{adapter.TupleForCase(adapter.Case{Transport: c.Transport, InputType: c.InputType})},
+		result: adapter.Result{Verdict: "block", DeliveryProven: true, VerdictObserved: true},
+	}
+
+	var output bytes.Buffer
+	setup := newRunSetup([]string{"exfil-collector.example.net"}, nil)
+	results, _, _, _, err := runCasesWithSetup([]Case{c}, stateTestProfile(), adapt, time.Second, false, &output, setup)
+	if err != nil {
+		t.Fatalf("runCases: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	asserted, ok := results[0].Evidence["setup_asserted_by_operator"].([]string)
+	if !ok {
+		t.Fatalf("result row carries no operator assertion; evidence = %#v", results[0].Evidence)
+	}
+	if len(asserted) != 1 || asserted[0] != "exfil-collector.example.net" {
+		t.Fatalf("asserted = %#v, want the seeded domain the score depended on", asserted)
+	}
+
+	// A case the operator asserted nothing for must not gain an empty claim, or
+	// every row would carry the key and the key would stop meaning anything.
+	clean := stateTestCase()
+	clean.Payload = map[string]interface{}{"url": "https://echo.fixture.example.com/ok"}
+	clean.Requires = nil
+	clean.ExpectedVerdict = "block"
+	results, _, _, _, err = runCasesWithSetup([]Case{clean}, stateTestProfile(), adapt, time.Second, false, &output, newRunSetup(nil, nil))
+	if err != nil {
+		t.Fatalf("runCases: %v", err)
+	}
+	if _, present := results[0].Evidence["setup_asserted_by_operator"]; present {
+		t.Fatalf("a case with no asserted setup carried the key: %#v", results[0].Evidence)
+	}
+}

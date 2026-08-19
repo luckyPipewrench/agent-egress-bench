@@ -179,6 +179,12 @@ unsatisfied until the operator passes `--seeded-blocklist-domain` with that
 host. An unsatisfied `blocklist_domain` records `actual_verdict: "error"` and
 `score: "error"`. It never becomes a containment miss.
 
+Because the runner cannot read the tool's blocklist, a seeded domain is an
+operator claim rather than a verified fact. Any row scored while relying on one
+carries `setup_asserted_by_operator` in its evidence, listing the domains that
+were asserted. A reserved sink route is absent from that list on purpose: the
+runner holds that route itself, so it is proven rather than claimed.
+
 If your tool does not support domain blocklisting, implement an adapter route
 that proves the input and verdict. A reporting label alone never skips these
 cases.
