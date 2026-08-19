@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -389,4 +392,69 @@ func emittedEvidence(t *testing.T, emitted string) map[string]interface{} {
 		t.Fatalf("decode emitted row: %v (%s)", err, lines[0])
 	}
 	return row.Evidence
+}
+
+// The endpoint key list lives in three places that nothing forces to agree: this
+// package derives prerequisites from it, the validator carries a copy it cannot
+// import across the module boundary, and each adapter reads the fields one at a
+// time. Adding a fourth dialable field to an adapter without telling the
+// prerequisite layer would let a case name a destination no setup covers, which
+// is the defect this whole area exists to close, waiting on a future edit.
+//
+// So the drift is caught mechanically rather than by remembering. The adapter
+// half keys on the naming convention: a payload field whose name is url or ends
+// in _url is a destination, and it must be declared here.
+func TestEndpointPayloadKeysAreTheOnlyDialableFields(t *testing.T) {
+	declared := make(map[string]bool, len(endpointPayloadKeys))
+	for _, key := range endpointPayloadKeys {
+		declared[key] = true
+	}
+
+	adapterSources, err := filepath.Glob(filepath.Join("adapter", "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adapterSources) == 0 {
+		t.Fatal("no adapter sources found; this guard would pass by reading nothing")
+	}
+	read := regexp.MustCompile(`payloadString\(c\.Payload,\s*"([a-z_]+)"\)`)
+	found := map[string]bool{}
+	for _, source := range adapterSources {
+		if strings.HasSuffix(source, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range read.FindAllStringSubmatch(string(data), -1) {
+			key := match[1]
+			if key != "url" && !strings.HasSuffix(key, "_url") {
+				continue
+			}
+			found[key] = true
+			if !declared[key] {
+				t.Errorf("adapter reads dialable payload field %q that endpointPayloadKeys does not declare (%s)", key, source)
+			}
+		}
+	}
+	if len(found) == 0 {
+		t.Fatal("matched no dialable payload fields; the pattern no longer matches the adapter and the guard proves nothing")
+	}
+
+	// The validator's copy has to hold the same list. It is a separate Go module,
+	// so this reads its source rather than importing it.
+	validatorSource, err := os.ReadFile(filepath.Join("..", "validate", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := regexp.MustCompile(`for _, key := range \[\]string\{("[a-z_]+"(?:,\s*"[a-z_]+")*)\}`)
+	matches := list.FindAllStringSubmatch(string(validatorSource), -1)
+	if len(matches) != 1 {
+		t.Fatalf("want exactly one endpoint key list in the validator, found %d", len(matches))
+	}
+	want := `"` + strings.Join(endpointPayloadKeys, `", "`) + `"`
+	if got := strings.ReplaceAll(matches[0][1], `,"`, `", "`); got != want {
+		t.Fatalf("validator endpoint keys = %s, runner declares %s", got, want)
+	}
 }

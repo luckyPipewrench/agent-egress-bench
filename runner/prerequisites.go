@@ -60,6 +60,15 @@ func proxyRoutableSinks(fixturesStarted bool) []string {
 	return []string{adapter.WSUntrustedSinkHostname, adapter.A2AUntrustedSinkHostname}
 }
 
+// endpointPayloadKeys are the payload fields a transport can dial. Every one of
+// them has to be covered by setup, because the transport picks one and setup
+// bound to a different one guards a destination the run never uses.
+//
+// This is the single list. The validator carries a copy it cannot import across
+// the module boundary, and the adapters read each field individually, so
+// TestEndpointPayloadKeysAreTheOnlyDialableFields fails when the three drift.
+var endpointPayloadKeys = []string{"url", "target_url"}
+
 // casePayloadHosts returns every endpoint host a case payload names.
 //
 // It returns all of them rather than the first. Taking only the first meant a
@@ -70,8 +79,8 @@ func proxyRoutableSinks(fixturesStarted bool) []string {
 // requirement instead of hiding one.
 func casePayloadHosts(c Case) []string {
 	var hosts []string
-	seen := make(map[string]struct{}, 2)
-	for _, key := range []string{"url", "target_url"} {
+	seen := make(map[string]struct{}, len(endpointPayloadKeys))
+	for _, key := range endpointPayloadKeys {
 		raw, ok := c.Payload[key].(string)
 		if !ok || strings.TrimSpace(raw) == "" {
 			continue
