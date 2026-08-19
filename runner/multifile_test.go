@@ -77,6 +77,90 @@ func TestLoadMultiFileCases_ValidFixtures(t *testing.T) {
 	}
 }
 
+// The runner has its own multi-file loader, so validation in the separate
+// validate module cannot protect a direct runner invocation. The runner must
+// reject every malformed prerequisite shape before the case can enter a run.
+func TestLoadMultiFileCaseValidatesPrerequisites(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(string) string
+		wantErr string
+	}{
+		{
+			name: "unknown_kind",
+			mutate: func(raw string) string {
+				return raw + "prerequisites:\n  - kind: unrecognized_setup\n    value: example.test\n"
+			},
+			wantErr: "invalid prerequisite kind",
+		},
+		{
+			name:    "empty_value",
+			mutate:  func(raw string) string { return raw + "prerequisites:\n  - kind: blocklist_domain\n    value:\n" },
+			wantErr: "prerequisite value at index 0 must be non-empty",
+		},
+		{
+			name: "unknown_reserved_sink",
+			mutate: func(raw string) string {
+				return raw + "prerequisites:\n  - kind: reserved_sink_route\n    value: attacker.example.test\n"
+			},
+			wantErr: "is not a corpus-reserved sink host",
+		},
+		{
+			name: "duplicate",
+			mutate: func(raw string) string {
+				return raw + "prerequisites:\n  - kind: blocklist_domain\n    value: exfil.example.test\n  - kind: blocklist_domain\n    value: exfil.example.test\n"
+			},
+			wantErr: "duplicate prerequisite",
+		},
+		{
+			name: "domain_blocklist_without_prerequisite",
+			mutate: func(raw string) string {
+				return strings.Replace(raw, "  - mcp_tool_baseline", "  - domain_blocklist", 1)
+			},
+			wantErr: "requires contains \"domain_blocklist\" but no \"blocklist_domain\" prerequisite",
+		},
+		{
+			name: "dns_rebinding_without_reserved_sink",
+			mutate: func(raw string) string {
+				return strings.Replace(raw, "  - mcp_tool_baseline", "  - dns_rebinding_fixture", 1)
+			},
+			wantErr: "requires contains \"dns_rebinding_fixture\" but no \"reserved_sink_route\" prerequisite",
+		},
+		{
+			name: "reserved_sink_is_case_insensitive",
+			mutate: func(raw string) string {
+				return raw + "prerequisites:\n  - kind: reserved_sink_route\n    value: WS-EXFIL-SINK.TEST\n"
+			},
+			wantErr: "",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			copyMultiFileCases(t, filepath.Join("..", "cases", "mcp-drift"), dir, "mcp-drift-benign-001")
+			path := filepath.Join(dir, "mcp-drift-benign-001", "case.yaml")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(test.mutate(string(data))), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = loadMultiFileCases(dir)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("loadMultiFileCases: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("loadMultiFileCases error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 // TestLoadMultiFileCases_MissingCaseYAML makes a partial case directory a
 // loader error. Silently skipping it would shrink the Gauntlet denominator
 // while leaving a clean-looking score over the remaining cases.

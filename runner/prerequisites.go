@@ -193,6 +193,48 @@ var endpointBoundKinds = map[string]struct{}{
 	"reserved_sink_route": {},
 }
 
+// validateMultiFilePrerequisites closes the runner's own loader boundary. The
+// separate validate module checks corpus contributions, but this loader also
+// accepts caller-provided multi-file case directories before it turns them into
+// scoreable Cases.
+func validateMultiFilePrerequisites(prerequisites []Prerequisite, requires []string, caseYAMLPath string) error {
+	seen := make(map[string]struct{}, len(prerequisites))
+	kinds := make(map[string]struct{}, len(prerequisites))
+	for index, prerequisite := range prerequisites {
+		key := prerequisite.Kind + "\x00" + prerequisite.Value
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("%s: duplicate prerequisite at index %d: kind=%q value=%q", caseYAMLPath, index, prerequisite.Kind, prerequisite.Value)
+		}
+		seen[key] = struct{}{}
+
+		if _, ok := endpointBoundKinds[prerequisite.Kind]; !ok {
+			return fmt.Errorf("%s: invalid prerequisite kind at index %d: %q", caseYAMLPath, index, prerequisite.Kind)
+		}
+		if strings.TrimSpace(prerequisite.Value) == "" {
+			return fmt.Errorf("%s: prerequisite value at index %d must be non-empty", caseYAMLPath, index)
+		}
+		value := strings.ToLower(strings.TrimSpace(prerequisite.Value))
+		if prerequisite.Kind == "reserved_sink_route" && value != adapter.WSUntrustedSinkHostname && value != adapter.A2AUntrustedSinkHostname {
+			return fmt.Errorf("%s: prerequisite reserved_sink_route value %q at index %d is not a corpus-reserved sink host", caseYAMLPath, prerequisite.Value, index)
+		}
+		kinds[prerequisite.Kind] = struct{}{}
+	}
+
+	for _, requirement := range requires {
+		switch requirement {
+		case "domain_blocklist":
+			if _, ok := kinds["blocklist_domain"]; !ok {
+				return fmt.Errorf("%s: requires contains %q but no %q prerequisite; add the exact domain the runner must blocklist", caseYAMLPath, "domain_blocklist", "blocklist_domain")
+			}
+		case "dns_rebinding_fixture":
+			if _, ok := kinds["reserved_sink_route"]; !ok {
+				return fmt.Errorf("%s: requires contains %q but no %q prerequisite", caseYAMLPath, "dns_rebinding_fixture", "reserved_sink_route")
+			}
+		}
+	}
+	return nil
+}
+
 // uncoveredEndpoint reports a payload endpoint that no endpoint-bound
 // prerequisite covers, once the case covers at least one.
 //

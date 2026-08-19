@@ -432,6 +432,9 @@ func validateMultiFileCaseMetadata(c MultiFileCase, caseYAMLPath string) error {
 			return fmt.Errorf("%s: invalid requires value %q", caseYAMLPath, requirement)
 		}
 	}
+	if err := validateMultiFilePrerequisites(c.Prerequisites, c.Requires, caseYAMLPath); err != nil {
+		return err
+	}
 	if c.Files.Before == "" || c.Files.After == "" || c.Files.Expected == "" {
 		return fmt.Errorf("%s: files block must name before, after, and expected", caseYAMLPath)
 	}
