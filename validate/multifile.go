@@ -386,11 +386,21 @@ func parseRestrictedYAMLStringList(raw string) ([]string, error) {
 // assignMultiFilePrerequisiteField reads one "key: value" pair of a prerequisite
 // object. It is shared by the inline-mapping and block-object spellings so the
 // two cannot drift into accepting different field sets.
-func assignMultiFilePrerequisiteField(prereq *multiFilePrerequisite, field string) error {
+//
+// A repeated field is refused rather than overwritten. The runner reads the same
+// file through a YAML decoder that rejects a duplicate mapping key, so silently
+// keeping the last one here would accept a case the runner cannot load, which is
+// the same validator-accepts-runner-refuses split this parser already had.
+// The seen set belongs to one object and is rebuilt for the next.
+func assignMultiFilePrerequisiteField(prereq *multiFilePrerequisite, seen map[string]bool, field string) error {
 	key, raw, found := strings.Cut(field, ":")
 	if !found || (key != "kind" && key != "value" && key != "description") {
 		return fmt.Errorf("prerequisite object has unknown or malformed field %q", key)
 	}
+	if seen[key] {
+		return fmt.Errorf("prerequisite object repeats field %q", key)
+	}
+	seen[key] = true
 	value, err := parseRestrictedYAMLScalar(strings.TrimSpace(raw))
 	if err != nil {
 		return fmt.Errorf("prerequisite.%s: %w", key, err)
@@ -442,11 +452,12 @@ func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePre
 			return nil, i, fmt.Errorf("prerequisites entries must use exactly two spaces and '-'")
 		}
 		prereq := multiFilePrerequisite{}
+		seen := make(map[string]bool, 3)
 		// Everything after the marker on the SAME line is the standard inline
 		// mapping form. Accepting only the bare marker rejected what every YAML
 		// emitter writes, and what the runner's own parser reads back.
 		if inline := strings.TrimSpace(strings.TrimPrefix(trimmed, "-")); inline != "" {
-			if err := assignMultiFilePrerequisiteField(&prereq, inline); err != nil {
+			if err := assignMultiFilePrerequisiteField(&prereq, seen, inline); err != nil {
 				return nil, i, err
 			}
 		}
@@ -463,7 +474,7 @@ func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePre
 			if !isExactIndent(lines[i-1], 4) {
 				break
 			}
-			if err := assignMultiFilePrerequisiteField(&prereq, innerTrimmed); err != nil {
+			if err := assignMultiFilePrerequisiteField(&prereq, seen, innerTrimmed); err != nil {
 				return nil, i, err
 			}
 		}

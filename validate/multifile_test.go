@@ -476,3 +476,37 @@ func multiFileFixtureCopy(t *testing.T, appended string) string {
 	}
 	return filepath.Join(target, "case.yaml")
 }
+
+// The runner reads the same case.yaml through a YAML decoder that rejects a
+// duplicate mapping key. A validator that kept the last value would accept a
+// case the runner cannot load, which is the split this parser already had once.
+func TestMultiFilePrerequisiteRepeatedFieldIsRefused(t *testing.T) {
+	raw := multiFileFixtureYAML(t)
+	for name, block := range map[string]string{
+		"repeated_across_lines": "prerequisites:\n  - kind: reserved_sink_route\n    kind: blocklist_domain\n    value: a2a-exfil-sink.test\n",
+		"repeated_after_inline": "prerequisites:\n  - value: a2a-exfil-sink.test\n    value: ws-exfil-sink.test\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseMultiFileCaseYAML(append(append([]byte{}, raw...), []byte(block)...))
+			if err == nil {
+				t.Fatal("a repeated prerequisite field was accepted")
+			}
+			if !strings.Contains(err.Error(), "repeats field") {
+				t.Fatalf("err = %v, want a repeated-field refusal", err)
+			}
+		})
+	}
+
+	// Each object gets its own field set, so a second entry may reuse the names.
+	twoEntries := "prerequisites:\n  - kind: reserved_sink_route\n    value: a2a-exfil-sink.test\n  - kind: reserved_sink_route\n    value: ws-exfil-sink.test\n"
+	parsed, err := parseMultiFileCaseYAML(append(append([]byte{}, raw...), []byte(twoEntries)...))
+	if err != nil {
+		t.Fatalf("two entries reusing field names must parse: %v", err)
+	}
+	if len(parsed.Prerequisites) != 2 {
+		t.Fatalf("prerequisites = %d, want 2", len(parsed.Prerequisites))
+	}
+	if parsed.Prerequisites[1].Value != "ws-exfil-sink.test" {
+		t.Fatalf("second entry value = %q", parsed.Prerequisites[1].Value)
+	}
+}

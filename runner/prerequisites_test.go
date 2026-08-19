@@ -341,34 +341,52 @@ func TestOperatorAssertedSetupReachesTheResultRow(t *testing.T) {
 		result: adapter.Result{Verdict: "block", DeliveryProven: true, VerdictObserved: true},
 	}
 
+	// The EMITTED row is what a reader inspects later, and an in-memory struct can
+	// carry a field the serialized row drops. Reading only results[0] would repeat
+	// the exact mistake this test exists to close.
 	var output bytes.Buffer
 	setup := newRunSetup([]string{"exfil-collector.example.net"}, nil)
-	results, _, _, _, err := runCasesWithSetup([]Case{c}, stateTestProfile(), adapt, time.Second, false, &output, setup)
-	if err != nil {
+	if _, _, _, _, err := runCasesWithSetup([]Case{c}, stateTestProfile(), adapt, time.Second, false, &output, setup); err != nil {
 		t.Fatalf("runCases: %v", err)
 	}
-	if len(results) != 1 {
-		t.Fatalf("results = %d, want 1", len(results))
-	}
-	asserted, ok := results[0].Evidence["setup_asserted_by_operator"].([]string)
+	asserted, ok := emittedEvidence(t, output.String())["setup_asserted_by_operator"]
 	if !ok {
-		t.Fatalf("result row carries no operator assertion; evidence = %#v", results[0].Evidence)
+		t.Fatalf("emitted row carries no operator assertion: %s", output.String())
 	}
-	if len(asserted) != 1 || asserted[0] != "exfil-collector.example.net" {
+	values, ok := asserted.([]interface{})
+	if !ok || len(values) != 1 || values[0] != "exfil-collector.example.net" {
 		t.Fatalf("asserted = %#v, want the seeded domain the score depended on", asserted)
 	}
 
 	// A case the operator asserted nothing for must not gain an empty claim, or
-	// every row would carry the key and the key would stop meaning anything.
+	// every row would carry the key and the key would stop meaning anything. The
+	// buffer is reset so this assertion cannot read the previous run's row.
 	clean := stateTestCase()
 	clean.Payload = map[string]interface{}{"url": "https://echo.fixture.example.com/ok"}
 	clean.Requires = nil
 	clean.ExpectedVerdict = "block"
-	results, _, _, _, err = runCasesWithSetup([]Case{clean}, stateTestProfile(), adapt, time.Second, false, &output, newRunSetup(nil, nil))
-	if err != nil {
+	output.Reset()
+	if _, _, _, _, err := runCasesWithSetup([]Case{clean}, stateTestProfile(), adapt, time.Second, false, &output, newRunSetup(nil, nil)); err != nil {
 		t.Fatalf("runCases: %v", err)
 	}
-	if _, present := results[0].Evidence["setup_asserted_by_operator"]; present {
-		t.Fatalf("a case with no asserted setup carried the key: %#v", results[0].Evidence)
+	if _, present := emittedEvidence(t, output.String())["setup_asserted_by_operator"]; present {
+		t.Fatalf("a case with no asserted setup carried the key: %s", output.String())
 	}
+}
+
+// emittedEvidence decodes the evidence of the single result row written to the
+// run output, so a test reads what a consumer reads.
+func emittedEvidence(t *testing.T, emitted string) map[string]interface{} {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(emitted), "\n")
+	if len(lines) != 1 || lines[0] == "" {
+		t.Fatalf("want exactly one emitted row, got %d: %s", len(lines), emitted)
+	}
+	var row struct {
+		Evidence map[string]interface{} `json:"evidence"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &row); err != nil {
+		t.Fatalf("decode emitted row: %v (%s)", err, lines[0])
+	}
+	return row.Evidence
 }
