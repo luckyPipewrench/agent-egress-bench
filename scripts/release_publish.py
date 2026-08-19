@@ -408,11 +408,21 @@ def _withdraw(gh: str, tag: str, reason: str) -> NoReturn:
     Re-drafting is best effort by construction, since whoever changed the release can change it back.
     A failed withdrawal is reported alongside the divergence rather than replacing it, because the
     divergence is the finding and the failed withdrawal is how much worse the state is.
+
+    A zero exit from the edit is not the withdrawal. It says the command was accepted, not that the
+    release is a draft, and a no-op or a concurrent re-publication leaves it public while this
+    reports the opposite. So the state is read back and only `isDraft` being true earns the message
+    that says the release came down. Anything else, including a read that fails, says the withdrawal
+    could not be confirmed, because an operator acting on "it has been returned to draft" will not go
+    and look.
     """
     try:
         command(gh, "release", "edit", tag, "--draft=true")
     except PublishError as exc:
-        fail(f"published release {tag} {reason}; it could NOT be returned to draft and is still public: {exc}")
+        fail(f"published release {tag} {reason}; withdrawal could not be confirmed and it may still be public: {exc}")
+    withdrawn = inspect_draft(gh, tag)
+    if withdrawn is None or withdrawn.get("isDraft") is not True:
+        fail(f"published release {tag} {reason}; withdrawal could not be confirmed and it may still be public")
     fail(f"published release {tag} {reason}; it has been returned to draft")
 
 

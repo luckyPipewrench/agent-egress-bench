@@ -317,7 +317,10 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         # GitHub has already made the release public, but its response lacks the asset list the
         # verifier needs. Previously actual_asset_names raised directly and skipped _withdraw.
         malformed_public = {"isDraft": False, "body": notes}
-        releases = iter((None, draft, malformed_public))
+        # The fourth read is the withdrawal confirmation. A zero exit from the edit says the
+        # command was accepted, not that the release came down, so the state is read back.
+        withdrawn = {"isDraft": True, "body": notes, "assets": [{"name": "archive.tar.gz"}]}
+        releases = iter((None, draft, malformed_public, withdrawn))
         calls = []
         original_inspect = release_publish.inspect_draft
         original_command = release_publish.command
@@ -492,6 +495,60 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         self.assertIn("returned to draft", result.stderr)
         self.assertIs(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"], True)
 
+    def test_a_withdrawal_that_does_not_take_is_not_reported_as_success(self) -> None:
+        """The edit is accepted and the release stays public.
+
+        A zero exit says the command was accepted, not that the release came down. A no-op
+        response or a concurrent re-publication leaves it public, and an operator reading
+        "it has been returned to draft" will not go and look.
+        """
+        gh = self.root / "gh-withdraw-noop"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            # Accepts the withdrawal and does nothing, which is the whole point.
+            "  if '--draft=true' in args:\n"
+            "    raise SystemExit(0)\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  if '--draft=false' in args:\n"
+            "    state['isDraft'] = False\n"
+            "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("assets do not match dist/release", result.stderr)
+        self.assertIn("withdrawal could not be confirmed", result.stderr)
+        self.assertNotIn("has been returned to draft", result.stderr)
+        self.assertIs(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"], False)
+
     def test_a_failed_withdrawal_is_reported_rather_than_hidden(self) -> None:
         gh = self.root / "gh-swap-assets-nowithdraw"
         gh.write_text(
@@ -538,7 +595,7 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         # The divergence is the finding; the failed withdrawal is how much worse the state is.
         # Replacing one message with the other would hide which of the two happened.
         self.assertIn("assets do not match dist/release", result.stderr)
-        self.assertIn("still public", result.stderr)
+        self.assertIn("may still be public", result.stderr)
 
 
 class AssetSnapshotCoherenceTest(unittest.TestCase):
