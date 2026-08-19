@@ -549,6 +549,64 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         self.assertNotIn("has been returned to draft", result.stderr)
         self.assertIs(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"], False)
 
+    def test_an_unreadable_withdrawal_state_is_reported_as_unconfirmed(self) -> None:
+        """The edit succeeds and the confirmation read fails.
+
+        The read raises its own error about inspecting the release, which never says the
+        divergent release may still be public. An operator reading a diagnostic instead of
+        the state they have to act on will not go and take it down.
+        """
+        gh = self.root / "gh-withdraw-unreadable"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "flag = state_path.with_suffix('.withdrawn')\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            # Only the read AFTER the withdrawal fails, so the run gets that far.
+            "  if flag.exists():\n"
+            "    print('upstream is unavailable', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            "  if '--draft=true' in args:\n"
+            "    flag.write_text('1')\n"
+            "    raise SystemExit(0)\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  if '--draft=false' in args:\n"
+            "    state['isDraft'] = False\n"
+            "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("withdrawal could not be confirmed", result.stderr)
+        self.assertIn("may still be public", result.stderr)
+        self.assertNotIn("has been returned to draft", result.stderr)
+
     def test_a_failed_withdrawal_is_reported_rather_than_hidden(self) -> None:
         gh = self.root / "gh-swap-assets-nowithdraw"
         gh.write_text(

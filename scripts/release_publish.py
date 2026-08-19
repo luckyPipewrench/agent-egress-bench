@@ -418,9 +418,12 @@ def _withdraw(gh: str, tag: str, reason: str) -> NoReturn:
     """
     try:
         command(gh, "release", "edit", tag, "--draft=true")
+        # Inside the try on purpose. A failing confirmation read raises its own error about
+        # inspecting the release, which never says the divergent release may still be public,
+        # so the operator reads a diagnostic instead of the state they have to act on.
+        withdrawn = inspect_draft(gh, tag)
     except PublishError as exc:
         fail(f"published release {tag} {reason}; withdrawal could not be confirmed and it may still be public: {exc}")
-    withdrawn = inspect_draft(gh, tag)
     if withdrawn is None or withdrawn.get("isDraft") is not True:
         fail(f"published release {tag} {reason}; withdrawal could not be confirmed and it may still be public")
     fail(f"published release {tag} {reason}; it has been returned to draft")

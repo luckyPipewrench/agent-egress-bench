@@ -86,6 +86,12 @@ def _runner_call_line(
             pending.extend(_definition_header_nodes(descendant))
             continue
         if isinstance(descendant, ast.Lambda):
+            # The BODY is deferred until the lambda is called, so it cannot end collection while
+            # the module loads. The DEFAULTS are not: they are evaluated where the lambda is
+            # written, so a module-level `lambda value=unittest.main(): value` runs the runner
+            # right there. Skipping the whole node missed that.
+            pending.extend(descendant.args.defaults)
+            pending.extend(default for default in descendant.args.kw_defaults if default is not None)
             continue
         if isinstance(descendant, ast.Call):
             function = descendant.func
@@ -148,6 +154,26 @@ class TestLayoutTest(unittest.TestCase):
             "    pass\n"
         )
         self.assertEqual(["Late"], _definitions_after_the_runner(aliased))
+
+    def test_a_runner_in_a_lambda_default_counts(self) -> None:
+        """A lambda default runs where the lambda is written, not when it is called."""
+        in_default = (
+            "import unittest\n"
+            "handler = lambda value=unittest.main(): value\n"
+            "class Late(unittest.TestCase):\n"
+            "    pass\n"
+        )
+        self.assertEqual(["Late"], _definitions_after_the_runner(in_default))
+
+    def test_a_runner_in_a_lambda_body_does_not_count(self) -> None:
+        """The body is deferred, so it cannot end collection while the module loads."""
+        in_body = (
+            "import unittest\n"
+            "handler = lambda: unittest.main()\n"
+            "class Late(unittest.TestCase):\n"
+            "    pass\n"
+        )
+        self.assertEqual([], _definitions_after_the_runner(in_body))
 
     def test_an_unguarded_runner_call_also_counts(self) -> None:
         unguarded = (
