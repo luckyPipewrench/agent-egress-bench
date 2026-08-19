@@ -155,9 +155,21 @@ rely on runner-side command rewriting.
 
 ### Domain blocklist seeding
 
-Cases that declare a `blocklist_domain` prerequisite require the runner to
-configure the tool's blocklist with that exact host before running. The current
-corpus host is:
+A case requiring a blocklist needs the runner to configure the tool with that
+exact host before running. The case does not have to declare the host, and the
+current corpus ones do not, because case bytes are fixed once a case ships. A
+runner resolves the requirement from both sources and acts on their union:
+
+- Declared: a `blocklist_domain` prerequisite naming the host.
+- Derived: `requires` containing `domain_blocklist`, with the host taken from
+  `payload.url` or `payload.target_url`.
+
+Acting on the union matters. Preferring declarations would let a case that
+declares some other prerequisite suppress a derived blocklist requirement and
+score a detection result with nothing seeded. A declared value must equal the
+payload host, so the two describe one requirement rather than two.
+
+The current corpus host is:
 
 - `exfil-collector.example.net` (IANA-reserved, no real DNS resolution)
 
@@ -192,8 +204,9 @@ that purpose:
 - `ws-exfil-sink.test` for WebSocket frame cases
 - `a2a-exfil-sink.test` for A2A message cases using `payload.target_url`
 
-Cases that need this routing declare a `reserved_sink_route` prerequisite with
-that host. The built-in proxy adapter satisfies it when `--fixtures` is on,
+A case needing this routing may declare a `reserved_sink_route` prerequisite
+with that host, and a runner derives the same requirement when the payload host
+is one of the two reserved names above, so an undeclared case is covered. The built-in proxy adapter satisfies it when `--fixtures` is on,
 because the fixture manager then has a reachable route that keeps the reserved
 hostname. Without that route the runner records `actual_verdict: "error"` and
 `score: "error"` instead of a miss.

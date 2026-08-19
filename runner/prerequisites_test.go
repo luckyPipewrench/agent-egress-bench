@@ -162,17 +162,32 @@ func TestCorpusSetupCasesResolveTheirPrerequisites(t *testing.T) {
 	}
 }
 
-// A declared prerequisite wins over the derived one, which is what lets a future
-// case whose required domain is not its payload host say so.
-func TestDeclaredPrerequisiteOverridesDerivation(t *testing.T) {
+// An unrelated declared prerequisite must not suppress the derived one. Before
+// this was a union, a case declaring a sink route while requiring a blocklist
+// ran with nothing seeded and scored a detection result it never earned.
+func TestPartialDeclarationDoesNotSuppressDerived(t *testing.T) {
 	c := stateTestCase()
 	c.Payload = map[string]interface{}{"url": "https://exfil-collector.example.net/beacon"}
 	c.Requires = []string{"domain_blocklist"}
-	c.Prerequisites = []Prerequisite{{Kind: "blocklist_domain", Value: "declared.example.net"}}
+	c.Prerequisites = []Prerequisite{{Kind: "reserved_sink_route", Value: adapter.WSUntrustedSinkHostname}}
 
-	effective := effectivePrerequisites(c)
-	if len(effective) != 1 || effective[0].Value != "declared.example.net" {
-		t.Fatalf("effective = %#v, want the declared value rather than the derived host", effective)
+	setup := newRunSetup(nil, []string{adapter.WSUntrustedSinkHostname})
+	if reason := setup.unsatisfied(c); reason == "" {
+		t.Fatal("unrelated declaration suppressed the derived blocklist requirement; the case would score without setup")
+	}
+}
+
+// Declaring the same requirement derivation produces must not double it. The
+// validator binds a declared value to the payload host, so the two describe one
+// requirement rather than two.
+func TestDeclaredAndDerivedPrerequisitesDeduplicate(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{"url": "https://exfil-collector.example.net/beacon"}
+	c.Requires = []string{"domain_blocklist"}
+	c.Prerequisites = []Prerequisite{{Kind: "blocklist_domain", Value: "exfil-collector.example.net"}}
+
+	if effective := effectivePrerequisites(c); len(effective) != 1 {
+		t.Fatalf("effective = %#v, want one deduplicated requirement", effective)
 	}
 }
 

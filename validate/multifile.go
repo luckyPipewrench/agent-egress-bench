@@ -375,10 +375,24 @@ func parseRestrictedYAMLStringList(raw string) ([]string, error) {
 // parseRestrictedYAMLPrerequisites parses a block sequence of prerequisite
 // objects using exactly two spaces of indentation and the same restricted
 // scalar grammar used elsewhere in case.yaml.
+// isExactIndent reports whether a line begins with exactly n spaces, so a
+// deeper line is refused rather than parsed as if it sat at n.
+func isExactIndent(line string, n int) bool {
+	if len(line) <= n {
+		return false
+	}
+	for i := 0; i < n; i++ {
+		if line[i] != ' ' {
+			return false
+		}
+	}
+	return line[n] != ' '
+}
+
 func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePrerequisite, error, int) {
 	var prereqs []multiFilePrerequisite
 	i := start
-	for i < len(lines) && (strings.HasPrefix(lines[i], "  ") || strings.TrimSpace(lines[i]) == "") {
+	for i < len(lines) && (isExactIndent(lines[i], 2) || isExactIndent(lines[i], 4) || strings.TrimSpace(lines[i]) == "") {
 		trimmed := strings.TrimSpace(lines[i])
 		i++
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -391,13 +405,17 @@ func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePre
 			return nil, fmt.Errorf("prerequisites entries must use the block object form, not an inline scalar"), i
 		}
 		prereq := multiFilePrerequisite{}
-		for i < len(lines) && (strings.HasPrefix(lines[i], "    ") || strings.TrimSpace(lines[i]) == "") {
+		for i < len(lines) && (isExactIndent(lines[i], 4) || strings.TrimSpace(lines[i]) == "") {
 			innerTrimmed := strings.TrimSpace(lines[i])
 			i++
 			if innerTrimmed == "" || strings.HasPrefix(innerTrimmed, "#") {
 				continue
 			}
-			if !strings.HasPrefix(lines[i-1], "    ") {
+			// HasPrefix alone accepted deeper indentation, so a five- or
+			// six-space line parsed as a field of this object rather than being
+			// refused. A restricted grammar that silently accepts a shape it does
+			// not document is not restricted.
+			if !isExactIndent(lines[i-1], 4) {
 				break
 			}
 			key, raw, found := strings.Cut(innerTrimmed, ":")

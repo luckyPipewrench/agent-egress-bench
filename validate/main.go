@@ -626,7 +626,7 @@ func validateFile(path string, ids map[string]string) []string {
 		if prereq.Kind == "blocklist_domain" || prereq.Kind == "reserved_sink_route" {
 			if payloadHost == "" {
 				addErr(fmt.Sprintf("prerequisite kind %q at index %d requires a payload url or target_url host to bind against", prereq.Kind, i))
-			} else if prereq.Value != payloadHost {
+			} else if strings.ToLower(strings.TrimSpace(prereq.Value)) != payloadHost {
 				addErr(fmt.Sprintf("prerequisite kind %q value %q does not match payload host %q", prereq.Kind, prereq.Value, payloadHost))
 			}
 		}
@@ -1004,7 +1004,11 @@ func extractPayloadURLHost(payload map[string]interface{}) string {
 		if u.Host == "" {
 			continue
 		}
-		return u.Hostname()
+		// Hostnames are case-insensitive, and the runner lowercases before it
+		// looks a prerequisite up. Returning the raw spelling here would reject a
+		// correctly-cased declaration and disagree with what the runner does with
+		// the same value.
+		return strings.ToLower(u.Hostname())
 	}
 	return ""
 }

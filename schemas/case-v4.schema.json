@@ -166,9 +166,9 @@
     },
     "prerequisites": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "uniqueItems": true,
-      "description": "Machine-readable external setup prerequisites a runner must satisfy before executing this case. Required whenever the case needs tool-specific configuration beyond declaring a capability (for example, seeding a blocklist with a benchmark domain or routing a reserved sink host).",
+      "description": "Optional machine-readable external setup a runner must satisfy before executing this case, for example seeding a blocklist with a benchmark domain or routing a reserved sink host. Declaring nothing is normal and is not an absence of setup: a runner derives the requirement from requires and the payload host, and a declared value must equal that host. An empty array is permitted and means the same as omitting the field.",
       "items": {
         "type": "object",
         "required": ["kind", "value"],

@@ -98,15 +98,40 @@ func derivedPrerequisites(c Case) []Prerequisite {
 	return derived
 }
 
-// effectivePrerequisites prefers what the case declares. A declared entry is
-// bound to the payload host by the validator, so the two agree wherever both
-// exist, and a future case whose required domain is not its payload host can
-// still state it explicitly.
+// effectivePrerequisites is the UNION of what a case declares and what its
+// payload implies, deduplicated.
+//
+// It is deliberately not "declared wins". Preferring declarations wholesale let
+// an unrelated declared entry suppress a derived one, so a case declaring a sink
+// route while requiring a blocklist would run with no blocklist seeded and score
+// a detection result it never earned. A union cannot do that: adding a
+// declaration can only ever add setup.
+//
+// The two agree where they overlap rather than competing, because the validator
+// requires a declared value to equal the payload host, which is the same value
+// derivation produces.
 func effectivePrerequisites(c Case) []Prerequisite {
-	if len(c.Prerequisites) > 0 {
-		return c.Prerequisites
+	derived := derivedPrerequisites(c)
+	if len(c.Prerequisites) == 0 {
+		return derived
 	}
-	return derivedPrerequisites(c)
+	seen := make(map[string]struct{}, len(c.Prerequisites)+len(derived))
+	effective := make([]Prerequisite, 0, len(c.Prerequisites)+len(derived))
+	add := func(prereq Prerequisite) {
+		key := strings.ToLower(strings.TrimSpace(prereq.Kind)) + "\x00" + strings.ToLower(strings.TrimSpace(prereq.Value))
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		effective = append(effective, prereq)
+	}
+	for _, prereq := range c.Prerequisites {
+		add(prereq)
+	}
+	for _, prereq := range derived {
+		add(prereq)
+	}
+	return effective
 }
 
 func (s runSetup) unsatisfied(c Case) string {
