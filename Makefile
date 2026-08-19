@@ -7,6 +7,12 @@ export TMPDIR GOCACHE
 # Default fixture for local validator/renderer contract tests. A workflow that
 # generates a real artifact must override this with that exact output path.
 GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.json
+# The scope fixture is a fixed example artifact, so it is checked against the corpus it
+# describes rather than whatever is checked out. Pinning it to the live corpus made every
+# case addition fail this target with a digest mismatch, while proving nothing: a real
+# published record carries its own retained corpus-manifest.txt and is verified against
+# that by validate_gauntlet_records.py.
+GAUNTLET_SCOPE_MANIFEST ?= gauntlet-site/testdata/complete-provenance-corpus-manifest.txt
 AEB_IMMUTABILITY_BASE ?= origin/main
 
 # Pre-push gate. Race coverage remains here because the Go modules exercised
@@ -261,8 +267,16 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_pipelock_result_inventory.py
 	@node gauntlet-site/scope-render_test.js
 	@node gauntlet-site/latest-result_test.js
+	@# An artifact and the manifest it was measured against are one pair. Overriding only
+	@# the artifact validates it against the fixture's manifest and fails on a digest or
+	@# count mismatch that names neither, so refuse the invocation instead.
+	@if [ "$(GAUNTLET_SCOPE_ARTIFACT)" != "gauntlet-site/testdata/complete-provenance-artifact.json" ] \
+		&& [ "$(GAUNTLET_SCOPE_MANIFEST)" = "gauntlet-site/testdata/complete-provenance-corpus-manifest.txt" ]; then \
+		echo "check-gauntlet-site: FAIL - GAUNTLET_SCOPE_ARTIFACT was overridden without GAUNTLET_SCOPE_MANIFEST; set both to the artifact and the corpus manifest it was measured against" >&2; \
+		exit 1; \
+	fi
 	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }
-	@python3 scripts/validate_gauntlet_scope.py "$(GAUNTLET_SCOPE_ARTIFACT)"
+	@python3 scripts/validate_gauntlet_scope.py "$(GAUNTLET_SCOPE_ARTIFACT)" --expected-manifest "$(GAUNTLET_SCOPE_MANIFEST)"
 
 # The release contract tests break source declarations and downloaded artifacts
 # on purpose. They prove the release guards stop an inconsistent package.
