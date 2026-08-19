@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -532,35 +533,79 @@ class AssetSnapshotCoherenceTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def test_a_write_during_the_copy_is_refused(self) -> None:
-        original = self.module.shutil.copyfileobj
+    def test_a_write_that_survives_the_metadata_check_is_refused(self) -> None:
+        """An equal-size rewrite whose observed metadata never moved.
 
-        def rewriting_copy(handle, out):
-            original(handle, out)
-            # A writer landing here has already been let through by every check that ran before the
-            # read, which is the whole point: nothing after the open looks at the file again.
+        This is the case metadata cannot catch. The stand-in runs the real metadata comparison,
+        which passes because it sees the pristine file, and only then rewrites the source. A
+        writer restoring st_mtime_ns with utimensat, or a filesystem whose timestamp granularity
+        is coarser than the write, produces the same state.
+        """
+        original = self.module._require_stable_during_read
+
+        def rewrite_after_metadata_passes(descriptor, before, copied, label):
+            original(descriptor, before, copied, label)
             self.source.write_bytes(b"tampered-bytes")
 
-        self.module.shutil.copyfileobj = rewriting_copy
+        self.module._require_stable_during_read = rewrite_after_metadata_passes
         try:
             with self.assertRaises(self.module.PublishError) as caught:
                 self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
         finally:
-            self.module.shutil.copyfileobj = original
+            self.module._require_stable_during_read = original
+        self.assertIn("did not read back as the bytes that were copied", str(caught.exception))
+        self.assertEqual(len(b"original-bytes"), len(b"tampered-bytes"))
+
+    def test_the_metadata_check_still_reports_an_ordinary_racing_write(self) -> None:
+        original = self.module._require_source_still_hashes_to
+        self.module._require_source_still_hashes_to = lambda *_: None
+        try:
+            self.source.write_bytes(b"original-bytes")
+            descriptor = os.open(self.source, os.O_RDONLY)
+            try:
+                before = os.fstat(descriptor)
+                self.source.write_bytes(b"a-longer-set-of-bytes")
+                with self.assertRaises(self.module.PublishError) as caught:
+                    self.module._require_stable_during_read(
+                        descriptor, before, len(b"original-bytes"), "release asset archive.tar.gz"
+                    )
+            finally:
+                os.close(descriptor)
+        finally:
+            self.module._require_source_still_hashes_to = original
         self.assertIn("while it was being read", str(caught.exception))
 
     def test_a_short_copy_is_refused(self) -> None:
-        original = self.module.shutil.copyfileobj
+        original = self.module._require_source_still_hashes_to
+        # Neutralized so the size check is what answers, not the digest that would also catch it.
+        self.module._require_source_still_hashes_to = lambda *_: None
+        real_fdopen = self.module.os.fdopen
 
-        def truncating_copy(handle, out):
-            out.write(handle.read(4))
+        class _Short:
+            def __init__(self, handle):
+                self._handle = handle
+                self._served = False
 
-        self.module.shutil.copyfileobj = truncating_copy
+            def read(self, size):
+                if self._served:
+                    return b""
+                self._served = True
+                return self._handle.read(4)
+
+            def __enter__(self):
+                self._handle.__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                return self._handle.__exit__(*exc)
+
+        self.module.os.fdopen = lambda *a, **k: _Short(real_fdopen(*a, **k))
         try:
             with self.assertRaises(self.module.PublishError) as caught:
                 self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
         finally:
-            self.module.shutil.copyfileobj = original
+            self.module.os.fdopen = real_fdopen
+            self.module._require_source_still_hashes_to = original
         self.assertIn("changed size while it was being read", str(caught.exception))
 
     def test_an_untouched_asset_copies(self) -> None:

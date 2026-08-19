@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
-import shutil
 import subprocess
 import stat
 import sys
@@ -21,6 +21,7 @@ from typing import Any, NoReturn
 DRAFT_OWNER = "agent-egress-bench-release-workflow-v1"
 DRAFT_MARKER = f"<!-- {DRAFT_OWNER} -->"
 # A release notes body is prose. Anything approaching this size is a wrong or hostile file.
+_COPY_CHUNK_BYTES = 1024 * 1024
 MAX_NOTES_BYTES = 1 << 20
 RELEASE_NOTES_NAME = "release-notes.md"
 
@@ -243,25 +244,56 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
         if not stat.S_ISREG(status.st_mode):
             fail(f"release asset {name} is not a regular file")
         _require_opened_identity(source, status, f"release asset {name}")
+        digest = hashlib.sha256()
         copied = 0
         try:
             with os.fdopen(descriptor, "rb", closefd=False) as handle, open(target, "wb") as out:
-                shutil.copyfileobj(handle, out)
+                for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
+                    digest.update(chunk)
+                    out.write(chunk)
                 copied = out.tell()
         except OSError as exc:
             fail(f"cannot copy release asset {name}: {exc}")
         _require_stable_during_read(descriptor, status, copied, f"release asset {name}")
+        _require_source_still_hashes_to(descriptor, digest.hexdigest(), f"release asset {name}")
     finally:
         os.close(descriptor)
     return target
 
 
-def _require_stable_during_read(descriptor: int, before: os.stat_result, copied: int, label: str) -> None:
-    """Refuse a copy that raced a writer on the same inode.
+def _require_source_still_hashes_to(descriptor: int, copied_digest: str, label: str) -> None:
+    """Refuse a copy whose bytes are not a coherent version of the source.
 
-    Compares the size and the modification and change timestamps recorded before the read against
-    the same descriptor afterwards, and requires the byte count to match the size that was
-    validated. Any disagreement means the bytes now in hand are not a coherent version of the file.
+    This is the integrity boundary; the metadata comparison beside it is diagnostics. Size and
+    timestamps cannot carry that weight. A writer can restore st_mtime_ns with utimensat, coarse
+    filesystem timestamp granularity can miss a rapid rewrite, and st_ctime does not mean
+    write-time on every platform, so a same-size rewrite can leave every recorded field unchanged.
+
+    Re-reading the source from the SAME descriptor and requiring the digest to match the bytes just
+    copied does not have that gap. If the two reads agree, the second read saw the bytes the first
+    read produced, so the copy holds a version that actually existed on disk. If a writer changed
+    the file at any point the two disagree and the release stops.
+    """
+    second = hashlib.sha256()
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        while True:
+            chunk = os.read(descriptor, _COPY_CHUNK_BYTES)
+            if not chunk:
+                break
+            second.update(chunk)
+    except OSError as exc:
+        fail(f"cannot re-read {label} to confirm what was copied: {exc}")
+    if second.hexdigest() != copied_digest:
+        fail(f"{label} did not read back as the bytes that were copied")
+
+
+def _require_stable_during_read(descriptor: int, before: os.stat_result, copied: int, label: str) -> None:
+    """Report a copy that raced a writer on the same inode.
+
+    Diagnostics, not the boundary: see _require_source_still_hashes_to for the check that actually
+    establishes the copied bytes. This catches the ordinary case early and with a clearer message,
+    and requires the byte count to match the size that was validated.
     """
     try:
         after = os.fstat(descriptor)
