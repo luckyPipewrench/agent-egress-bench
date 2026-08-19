@@ -255,6 +255,10 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         # as long as the stand-in wrote its file, which would leave this test vacuous.
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("disappeared before publication", result.stderr)
+        # Swapping identity AFTER the snapshot returns is exactly the case snapshot-then-verify
+        # is built to survive: the copies already hold the original bytes, so publication proceeds
+        # with them and the swap changes nothing. Refusing here instead would mean the snapshot
+        # had not taken the bytes it claims to.
         self.assertTrue(seen_path.exists(), "the stand-in never reached the upload arguments")
         seen = json.loads(seen_path.read_text(encoding="utf-8"))
         self.assertEqual("tampered", target.read_text(encoding="utf-8"))
@@ -360,7 +364,12 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         release_publish._verified_notes_snapshot = swap_after(original_notes)
         release_publish._verified_asset_snapshot = swap_after(original_assets)
         try:
-            with self.assertRaises(release_publish.PublishError):
+            # The refusal is incidental: this stand-in answers `release view` with "not found"
+            # even after `release create`, so publication stops there. Asserting only that SOME
+            # PublishError was raised would pass for any failure, including one that never
+            # reached the upload, which is the shape this test exists to inspect. Pin the
+            # message so the run has to get as far as the arguments it then checks.
+            with self.assertRaisesRegex(release_publish.PublishError, "disappeared before publication"):
                 release_publish.publish("v1.0.0", self.dist, str(gh))
         finally:
             release_publish._verified_notes_snapshot = original_notes
