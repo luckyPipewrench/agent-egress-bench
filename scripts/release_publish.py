@@ -264,15 +264,24 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
 def _require_source_still_hashes_to(descriptor: int, copied_digest: str, label: str) -> None:
     """Refuse a copy whose bytes are not a coherent version of the source.
 
-    This is the integrity boundary; the metadata comparison beside it is diagnostics. Size and
-    timestamps cannot carry that weight. A writer can restore st_mtime_ns with utimensat, coarse
-    filesystem timestamp granularity can miss a rapid rewrite, and st_ctime does not mean
-    write-time on every platform, so a same-size rewrite can leave every recorded field unchanged.
+    Stronger than the metadata comparison beside it, and NOT a proof of atomicity. Say what each
+    one does. Size and timestamps carry almost nothing: a writer can restore st_mtime_ns with
+    utimensat, coarse filesystem timestamp granularity can miss a rapid rewrite, and st_ctime does
+    not mean write-time on every platform, so a same-size rewrite can leave every recorded field
+    unchanged. Re-reading the source and requiring the digest to match the bytes just copied closes
+    that, and it stops any writer whose timing is independent of this process.
 
-    Re-reading the source from the SAME descriptor and requiring the digest to match the bytes just
-    copied does not have that gap. If the two reads agree, the second read saw the bytes the first
-    read produced, so the copy holds a version that actually existed on disk. If a writer changed
-    the file at any point the two disagree and the release stops.
+    It does NOT establish that the copied bytes ever existed on disk. An earlier version of this
+    comment claimed exactly that and the claim is false, shown by reproduction: with the file only
+    ever holding AAAAAAAA or BBBBBBBB, a writer rewriting it after the reader's first chunk on the
+    same cadence both times yields AAAABBBB from both reads. The digests agree on a value that was
+    never a version of the file. Agreement means the two reads saw the same thing, which a
+    repeatable interleaving satisfies as easily as a quiet file does.
+
+    Closing that needs something this function cannot get by reading harder: an immutable build
+    output, or a manifest of expected digests produced before the copy and trusted independently of
+    dist/. Absent either, treat write access to dist/ during publication as outside the boundary,
+    because an attacker holding it has already compromised the artifacts being published.
     """
     second = hashlib.sha256()
     try:
