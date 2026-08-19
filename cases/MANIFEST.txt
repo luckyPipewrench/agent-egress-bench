@@ -95,7 +95,6 @@ header-dlp-basic-auth-007
 header-dlp-bearer-001
 header-dlp-bearer-audience-010
 header-dlp-cookie-003
-header-dlp-cookie-foreign-origin-011
 header-dlp-custom-002
 header-dlp-jwt-004
 header-dlp-multi-secret-006

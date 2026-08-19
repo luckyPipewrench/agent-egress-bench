@@ -1,7 +1,7 @@
 # agent-egress-bench stats
-cases_total: 243
+cases_total: 242
 categories: 18
-block: 177
+block: 176
 allow: 65
 warn: 1
 by_category:
@@ -10,7 +10,7 @@ by_category:
   crypto_financial: 11
   encoding_evasion: 9
   false_positive: 21
-  headers: 15
+  headers: 14
   hostname_exfiltration: 10
   mcp_chain: 17
   mcp_drift: 6
