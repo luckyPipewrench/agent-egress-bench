@@ -122,10 +122,6 @@ class SchemaDiscoveryFeedTest(unittest.TestCase):
         self.assertEqual({"path", "$id"}, set(feed["schemas"][0]))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SchemaDiscoveryReadBindingTest(SchemaDiscoveryFeedTest):
     """The digest must come from the descriptor containment was checked against.
 
@@ -253,3 +249,49 @@ class SchemaCatalogIdentityBindingTest(SchemaDiscoveryFeedTest):
             (self.root / "schemas" / "index.json").read_bytes(),
             schema_discovery_feed.catalog_bytes(self.root),
         )
+
+
+class SchemaRootContainmentTest(SchemaDiscoveryFeedTest):
+    """A published root that is itself a symlink escapes the checkout.
+
+    O_NOFOLLOW refuses a symlink at the FINAL component only. Measuring containment against
+    ``(root / "schemas").resolve()`` therefore measures it against wherever that link points, so
+    with ``schemas`` linked outside the checkout every file at the far end reads as contained.
+    """
+
+    def test_symlinked_schema_root_is_refused(self):
+        outside = self.root.parent / f"{self.root.name}-outside"
+        outside.mkdir()
+        (outside / "fixture-v1.schema.json").write_text(
+            json.dumps({"$id": "https://example.invalid/fixture-v1.schema.json"}) + "\n",
+            encoding="utf-8",
+        )
+        try:
+            planted = self.root / "schemas"
+            for child in planted.iterdir():
+                child.unlink()
+            planted.rmdir()
+            planted.symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "does not resolve inside the checkout"):
+                schema_discovery_feed._contained_file_bytes(
+                    self.root, 0, "schemas/fixture-v1.schema.json"
+                )
+        finally:
+            link = self.root / "schemas"
+            if link.is_symlink():
+                link.unlink()
+            for child in outside.iterdir():
+                child.unlink()
+            outside.rmdir()
+
+    def test_ordinary_schema_root_still_reads(self):
+        self.assertIn(
+            b"fixture-v1",
+            schema_discovery_feed._contained_file_bytes(
+                self.root, 0, "schemas/fixture-v1.schema.json"
+            ),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

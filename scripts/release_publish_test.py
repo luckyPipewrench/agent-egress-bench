@@ -455,5 +455,64 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         self.assertIn("assets do not match dist/release", result.stderr)
 
 
+class AssetSnapshotCoherenceTest(unittest.TestCase):
+    """An open descriptor fixes WHICH object is read, not what it contains.
+
+    The earlier binding work closed the swap window: the copy holds the inode, so a rename or a
+    symlink replacement cannot redirect it. A writer that rewrites that same inode while the copy
+    streams is a different failure. It hands the snapshot a mix of old and new bytes, which is a
+    version that never existed on disk, and the release notes are then checked against that mix.
+    """
+
+    def setUp(self) -> None:
+        sys.path.insert(0, str(SCRIPT.parent))
+        import release_publish
+
+        self.module = release_publish
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.source = self.root / "archive.tar.gz"
+        self.source.write_bytes(b"original-bytes")
+        self.target = self.root / "copy.tar.gz"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_a_write_during_the_copy_is_refused(self) -> None:
+        original = self.module.shutil.copyfileobj
+
+        def rewriting_copy(handle, out):
+            original(handle, out)
+            # A writer landing here has already been let through by every check that ran before the
+            # read, which is the whole point: nothing after the open looks at the file again.
+            self.source.write_bytes(b"tampered-bytes")
+
+        self.module.shutil.copyfileobj = rewriting_copy
+        try:
+            with self.assertRaises(self.module.PublishError) as caught:
+                self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
+        finally:
+            self.module.shutil.copyfileobj = original
+        self.assertIn("while it was being read", str(caught.exception))
+
+    def test_a_short_copy_is_refused(self) -> None:
+        original = self.module.shutil.copyfileobj
+
+        def truncating_copy(handle, out):
+            out.write(handle.read(4))
+
+        self.module.shutil.copyfileobj = truncating_copy
+        try:
+            with self.assertRaises(self.module.PublishError) as caught:
+                self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
+        finally:
+            self.module.shutil.copyfileobj = original
+        self.assertIn("changed size while it was being read", str(caught.exception))
+
+    def test_an_untouched_asset_copies(self) -> None:
+        self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
+        self.assertEqual(b"original-bytes", self.target.read_bytes())
+
+
 if __name__ == "__main__":
     unittest.main()

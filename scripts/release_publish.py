@@ -222,6 +222,13 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
 
     O_NOFOLLOW refuses a final-component symlink in the same operation that opens the file, which a
     separate check cannot do: between the check and the open, the name can change.
+
+    An open descriptor fixes WHICH object is read, not what that object contains. A writer that
+    rewrites the same inode while this copy streams hands the snapshot a mix of the old and new
+    bytes, which is a version that never existed and which the notes check then compares against.
+    So the copy records the size and the modification and change timestamps before reading, and
+    refuses if either the byte count or those timestamps moved. st_ctime_ns is the load-bearing
+    half: a writer can restore st_mtime_ns with utimensat, and doing so moves st_ctime_ns forward.
     """
     try:
         # O_NONBLOCK is load-bearing. A FIFO substituted after release_assets listed the name
@@ -236,14 +243,38 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
         if not stat.S_ISREG(status.st_mode):
             fail(f"release asset {name} is not a regular file")
         _require_opened_identity(source, status, f"release asset {name}")
+        copied = 0
         try:
             with os.fdopen(descriptor, "rb", closefd=False) as handle, open(target, "wb") as out:
                 shutil.copyfileobj(handle, out)
+                copied = out.tell()
         except OSError as exc:
             fail(f"cannot copy release asset {name}: {exc}")
+        _require_stable_during_read(descriptor, status, copied, f"release asset {name}")
     finally:
         os.close(descriptor)
     return target
+
+
+def _require_stable_during_read(descriptor: int, before: os.stat_result, copied: int, label: str) -> None:
+    """Refuse a copy that raced a writer on the same inode.
+
+    Compares the size and the modification and change timestamps recorded before the read against
+    the same descriptor afterwards, and requires the byte count to match the size that was
+    validated. Any disagreement means the bytes now in hand are not a coherent version of the file.
+    """
+    try:
+        after = os.fstat(descriptor)
+    except OSError as exc:
+        fail(f"cannot re-check {label} after reading it: {exc}")
+    if copied != before.st_size:
+        fail(f"{label} changed size while it was being read")
+    if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ):
+        fail(f"{label} was written while it was being read")
 
 
 def publish(tag: str, dist: Path, gh: str) -> None:
