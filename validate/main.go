@@ -606,7 +606,20 @@ func validateFile(path string, ids map[string]string) []string {
 		}
 	}
 
-	payloadHost := extractPayloadURLHost(c.Payload)
+	payloadHosts := extractPayloadURLHosts(c.Payload)
+	payloadHost := ""
+	if len(payloadHosts) > 0 {
+		payloadHost = payloadHosts[0]
+	}
+	matchesPayloadHost := func(value string) bool {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		for _, host := range payloadHosts {
+			if normalized == host {
+				return true
+			}
+		}
+		return false
+	}
 	seenPrereq := make(map[string]bool, len(c.Prerequisites))
 	for i, prereq := range c.Prerequisites {
 		key := prereq.Kind + "\x00" + prereq.Value
@@ -624,11 +637,20 @@ func validateFile(path string, ids map[string]string) []string {
 			continue
 		}
 		if prereq.Kind == "blocklist_domain" || prereq.Kind == "reserved_sink_route" {
-			if payloadHost == "" {
+			// Match ANY endpoint the payload names, not just the first. A payload
+			// carrying both url and target_url delivers to one of them depending on
+			// transport, and binding to the first let a decoy satisfy the check.
+			if len(payloadHosts) == 0 {
 				addErr(fmt.Sprintf("prerequisite kind %q at index %d requires a payload url or target_url host to bind against", prereq.Kind, i))
-			} else if strings.ToLower(strings.TrimSpace(prereq.Value)) != payloadHost {
-				addErr(fmt.Sprintf("prerequisite kind %q value %q does not match payload host %q", prereq.Kind, prereq.Value, payloadHost))
+			} else if !matchesPayloadHost(prereq.Value) {
+				addErr(fmt.Sprintf("prerequisite kind %q value %q does not match any payload host %v", prereq.Kind, prereq.Value, payloadHosts))
 			}
+		}
+		// reservedSinkHosts is declared as a closed contract, so enforce it. Without
+		// this a case could name any host as a reserved sink route and turn a
+		// scoreable case into an unsatisfied-setup error no runner can clear.
+		if prereq.Kind == "reserved_sink_route" && !reservedSinkHosts[strings.ToLower(strings.TrimSpace(prereq.Value))] {
+			addErr(fmt.Sprintf("prerequisite reserved_sink_route value %q at index %d is not a corpus-reserved sink host", prereq.Value, i))
 		}
 	}
 	// The prerequisite VALUE is derivable, so it is not demanded. A case requiring a blocklist
@@ -986,6 +1008,35 @@ func categoryToDir(category string) string {
 	default:
 		return ""
 	}
+}
+
+// extractPayloadURLHosts returns every endpoint host a payload names, lowercased.
+// Returning all of them keeps validation and the runner on one rule: a payload
+// carrying both url and target_url must not let one satisfy a check the other
+// escapes.
+func extractPayloadURLHosts(payload map[string]interface{}) []string {
+	if payload == nil {
+		return nil
+	}
+	var hosts []string
+	seen := make(map[string]struct{}, 2)
+	for _, key := range []string{"url", "target_url"} {
+		raw, ok := payload[key].(string)
+		if !ok {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			continue
+		}
+		host := strings.ToLower(u.Hostname())
+		if _, dup := seen[host]; dup {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	return hosts
 }
 
 func extractPayloadURLHost(payload map[string]interface{}) string {

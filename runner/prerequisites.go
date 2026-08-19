@@ -60,8 +60,17 @@ func proxyRoutableSinks(fixturesStarted bool) []string {
 	return []string{adapter.WSUntrustedSinkHostname, adapter.A2AUntrustedSinkHostname}
 }
 
-// casePayloadHost returns the host of the case payload URL.
-func casePayloadHost(c Case) string {
+// casePayloadHosts returns every endpoint host a case payload names.
+//
+// It returns all of them rather than the first. Taking only the first meant a
+// payload carrying both url and target_url derived from url, while the A2A
+// adapter delivers to target_url: a seeded decoy url satisfied setup and the
+// real target was never required to be seeded, so the run scored an observation
+// it had not earned. Requiring every named endpoint makes an extra field add a
+// requirement instead of hiding one.
+func casePayloadHosts(c Case) []string {
+	var hosts []string
+	seen := make(map[string]struct{}, 2)
 	for _, key := range []string{"url", "target_url"} {
 		raw, ok := c.Payload[key].(string)
 		if !ok || strings.TrimSpace(raw) == "" {
@@ -71,9 +80,14 @@ func casePayloadHost(c Case) string {
 		if err != nil || parsed.Hostname() == "" {
 			continue
 		}
-		return strings.ToLower(parsed.Hostname())
+		host := strings.ToLower(parsed.Hostname())
+		if _, dup := seen[host]; dup {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
 	}
-	return ""
+	return hosts
 }
 
 // derivedPrerequisites returns setup a case needs without having to declare it.
@@ -82,18 +96,20 @@ func casePayloadHost(c Case) string {
 // readable in requires, and the value is the host in the case's own payload, so
 // the runner derives it instead of demanding a second copy.
 func derivedPrerequisites(c Case) []Prerequisite {
-	host := casePayloadHost(c)
-	if host == "" {
+	hosts := casePayloadHosts(c)
+	if len(hosts) == 0 {
 		return nil
 	}
 	var derived []Prerequisite
-	for _, req := range c.Requires {
-		if req == "domain_blocklist" {
-			derived = append(derived, Prerequisite{Kind: "blocklist_domain", Value: host})
+	for _, host := range hosts {
+		for _, req := range c.Requires {
+			if req == "domain_blocklist" {
+				derived = append(derived, Prerequisite{Kind: "blocklist_domain", Value: host})
+			}
 		}
-	}
-	if host == adapter.WSUntrustedSinkHostname || host == adapter.A2AUntrustedSinkHostname {
-		derived = append(derived, Prerequisite{Kind: "reserved_sink_route", Value: host})
+		if host == adapter.WSUntrustedSinkHostname || host == adapter.A2AUntrustedSinkHostname {
+			derived = append(derived, Prerequisite{Kind: "reserved_sink_route", Value: host})
+		}
 	}
 	return derived
 }
@@ -132,6 +148,33 @@ func effectivePrerequisites(c Case) []Prerequisite {
 		add(prereq)
 	}
 	return effective
+}
+
+// assertedFor returns the setup values this case relied on that the runner took
+// on the operator's word rather than verifying.
+//
+// A reserved sink route is excluded because the runner proves that one: it holds
+// the fixture route itself. A seeded blocklist domain cannot be proven from here,
+// since the runner cannot read the target's configuration, so any case scored
+// because of one carries the claim in its own evidence.
+func (s runSetup) assertedFor(c Case) []string {
+	var asserted []string
+	seen := make(map[string]struct{})
+	for _, prereq := range effectivePrerequisites(c) {
+		if strings.TrimSpace(prereq.Kind) != "blocklist_domain" {
+			continue
+		}
+		value := strings.ToLower(strings.TrimSpace(prereq.Value))
+		if _, ok := s.seededBlocklist[value]; !ok {
+			continue
+		}
+		if _, dup := seen[value]; dup {
+			continue
+		}
+		seen[value] = struct{}{}
+		asserted = append(asserted, value)
+	}
+	return asserted
 }
 
 func (s runSetup) unsatisfied(c Case) string {

@@ -460,6 +460,14 @@ func runCasesWithSetup(cases []Case, profile Profile, adapt adapter.Adapter, tim
 		}
 
 		evidence := evidenceWithResultState(adapterResult.Evidence, state)
+		// Record which setup the operator ASSERTED for this case. The runner cannot
+		// read the target's blocklist, so a seeded domain is a claim rather than a
+		// verified fact, and a row scored on that claim has to carry it. Without
+		// this, a mistaken flag silently turns missing setup into a score with
+		// nothing in the artifact explaining what was assumed.
+		if asserted := setup.assertedFor(c); len(asserted) > 0 {
+			evidence["setup_asserted_by_operator"] = asserted
+		}
 		score := scoreCaseWithEvidence(c, adapterResult.Verdict, evidence)
 		if score == "pass" {
 			debugf(debug, "case %s: PASS expected=%s actual=%s", c.ID, c.ExpectedVerdict, adapterResult.Verdict)

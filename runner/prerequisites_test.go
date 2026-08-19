@@ -227,3 +227,45 @@ func TestFrozenBlocklistCaseDerivesItsPrerequisite(t *testing.T) {
 		t.Fatalf("seeded runner still unsatisfied: %s", reason)
 	}
 }
+
+// A case naming two endpoints must require setup for both. Deriving from the
+// first field let a seeded decoy url stand in while the A2A adapter delivered to
+// an unseeded target_url, and the run scored an observation it had not earned.
+func TestDerivationCoversEveryPayloadEndpoint(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{
+		"url":        "https://seeded-decoy.example.net/ignored",
+		"target_url": "https://unseeded-real-target.example.net/message:send",
+	}
+	c.Requires = []string{"domain_blocklist"}
+
+	setup := newRunSetup([]string{"seeded-decoy.example.net"}, nil)
+	if reason := setup.unsatisfied(c); reason == "" {
+		t.Fatal("a seeded decoy satisfied setup while the delivered endpoint went unseeded")
+	}
+	both := newRunSetup([]string{"seeded-decoy.example.net", "unseeded-real-target.example.net"}, nil)
+	if reason := both.unsatisfied(c); reason != "" {
+		t.Fatalf("both endpoints seeded but still unsatisfied: %s", reason)
+	}
+}
+
+// A row scored because an operator said a domain was seeded must carry that
+// claim, since the runner cannot read the target configuration to check it.
+func TestOperatorAssertedSetupIsRecorded(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{"url": "https://exfil-collector.example.net/beacon"}
+	c.Requires = []string{"domain_blocklist"}
+
+	setup := newRunSetup([]string{"exfil-collector.example.net"}, nil)
+	asserted := setup.assertedFor(c)
+	if len(asserted) != 1 || asserted[0] != "exfil-collector.example.net" {
+		t.Fatalf("asserted = %#v, want the operator-claimed seeded domain", asserted)
+	}
+
+	// A reserved sink is proven by the runner holding the route, so it is not a claim.
+	sink := stateTestCase()
+	sink.Payload = map[string]interface{}{"url": "wss://" + adapter.WSUntrustedSinkHostname + "/live"}
+	if got := newRunSetup(nil, proxyRoutableSinks(true)).assertedFor(sink); len(got) != 0 {
+		t.Fatalf("asserted = %#v, want nothing for setup the runner proves itself", got)
+	}
+}

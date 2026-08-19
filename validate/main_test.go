@@ -1796,7 +1796,7 @@ func TestBlocklistPrerequisiteMustMatchPayloadHost(t *testing.T) {
 		`"id": "url-test-002"`,
 	))
 	errors := validateFile(unrelated, make(map[string]string))
-	assertContainsError(t, errors, "does not match payload host")
+	assertContainsError(t, errors, "does not match any payload host")
 }
 
 func TestReservedSinkPrerequisiteMustMatchPayloadHost(t *testing.T) {
@@ -1821,7 +1821,7 @@ func TestReservedSinkPrerequisiteMustMatchPayloadHost(t *testing.T) {
 	)
 	unrelated := writeCase(t, dir, "websocket-dlp", "ws-dlp-test-002.json", unrelatedJSON)
 	errors := validateFile(unrelated, make(map[string]string))
-	assertContainsError(t, errors, "does not match payload host")
+	assertContainsError(t, errors, "does not match any payload host")
 }
 
 // Declaring nothing is valid, because the runner derives the sink route from the
@@ -1985,4 +1985,33 @@ source: "synthetic: validator test"
 			t.Error("expected runCases to fail on a multi-file case directory with no case.yaml, got exit 0")
 		}
 	})
+}
+
+// A payload naming two endpoints must not let one satisfy a check the other
+// escapes. The A2A adapter delivers to target_url, so binding to the first field
+// let a seeded decoy url stand in for an unseeded real target.
+func TestPrerequisiteMatchesEitherPayloadEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCase(t, dir, "a2a-message", "a2a-msg-test-001.json", a2aCaseWithPrereqs(
+		"http://a2a-exfil-sink.test/message:send",
+		`["entropy_scanning"]`,
+		`[{"kind":"reserved_sink_route","value":"a2a-exfil-sink.test"}]`,
+	))
+	if errors := validateFile(path, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("a target_url host should satisfy the binding, got: %v", errors)
+	}
+}
+
+// reservedSinkHosts is a closed contract, so a value outside it must be refused.
+// Accepting any host would let a case name an unroutable sink and convert a
+// scoreable case into an unsatisfied-setup error no runner could clear.
+func TestReservedSinkRouteRejectsHostsOutsideTheClosedSet(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCase(t, dir, "websocket-dlp", "ws-dlp-test-003.json", wsCaseWithPrereqs(
+		"wss://not-a-reserved-sink.test/live",
+		`["entropy_scanning"]`,
+		`[{"kind":"reserved_sink_route","value":"not-a-reserved-sink.test"}]`,
+	))
+	errors := validateFile(path, make(map[string]string))
+	assertContainsError(t, errors, "is not a corpus-reserved sink host")
 }
