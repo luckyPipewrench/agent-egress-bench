@@ -45,6 +45,7 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 | Field | Type | Description |
 |-------|------|-------------|
 | `safe_example` | boolean | Must be `true` for benign cases (`expected_verdict: allow`). Omit for malicious cases. |
+| `prerequisites` | array of objects | Machine-readable external setup a runner must satisfy before executing the case. Required when the case needs tool-specific configuration beyond declaring a capability. Each entry has `kind` (`blocklist_domain` or `reserved_sink_route`) and `value` (the exact host). The value must match the payload URL host. An unsatisfied prerequisite is a runner error, not a detection miss. |
 
 ## Enums
 

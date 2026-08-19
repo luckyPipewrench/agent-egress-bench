@@ -64,8 +64,8 @@ const (
 	fixtureHostname           = "aeb-fixture.test"
 	hostnameExfilFixtureHost  = "cdn.fixture.example.com"
 	wsFixtureHostname         = fixtureHostname
-	wsUntrustedSinkHostname   = "ws-exfil-sink.test"
-	a2aUntrustedSinkHostname  = "a2a-exfil-sink.test"
+	WSUntrustedSinkHostname   = "ws-exfil-sink.test"
+	A2AUntrustedSinkHostname  = "a2a-exfil-sink.test"
 	a2aMessageDefaultEndpoint = "/message:send"
 )
 
@@ -89,11 +89,11 @@ type ProxyAdapter struct {
 	setTLSRoute         func(path, body string)
 	setTLSRouteCT       func(path, body, contentType string)
 	setTLSRouteHost     func(host, path, body, contentType string)
-	tlsRequests         func() int64  // requests the TLS fixture has served
+	tlsRequests         func() int64               // requests the TLS fixture has served
 	httpFixtureRequests func(string, string) int64 // trusted-listener deliveries for one route and token
-	wsAddr              string        // trusted WS fixture for websocket cases
-	wsUntrustedAddr     string        // untrusted WS fixture for reserved sink cases
-	responseRouteID     atomic.Uint64 // unique low-entropy response fixture route
+	wsAddr              string                     // trusted WS fixture for websocket cases
+	wsUntrustedAddr     string                     // untrusted WS fixture for reserved sink cases
+	responseRouteID     atomic.Uint64              // unique low-entropy response fixture route
 
 	wsUpstreamMessages   func() int64             // runner-managed WS fixture message counter
 	wsRSV1Outcome        func(string) (int, bool) // marked permissive-fixture outcome
@@ -992,12 +992,12 @@ func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
 	}
 	host := strings.ToLower(u.Hostname())
 	shouldRouteTrusted := host == "example.com" || host == "echo.websocket.org" || strings.HasSuffix(host, ".example.com")
-	shouldRouteUntrusted := host == wsUntrustedSinkHostname
+	shouldRouteUntrusted := host == WSUntrustedSinkHostname
 	if !shouldRouteTrusted && !shouldRouteUntrusted {
 		return targetURL
 	}
 	switch host {
-	case wsUntrustedSinkHostname:
+	case WSUntrustedSinkHostname:
 		untrustedAddr := p.wsUntrustedAddr
 		if untrustedAddr == "" {
 			untrustedAddr = p.wsAddr
@@ -1010,7 +1010,7 @@ func (p *ProxyAdapter) routeWebSocketFixtureURL(targetURL string) string {
 		// policy is exercised. The DNS fixture/config maps it to a reachable
 		// loopback listener separately from the trusted fixture hostname.
 		u.Scheme = "ws"
-		u.Host = net.JoinHostPort(wsUntrustedSinkHostname, port)
+		u.Host = net.JoinHostPort(WSUntrustedSinkHostname, port)
 		u.Path = "/echo"
 		u.RawQuery = ""
 		return u.String()
@@ -1443,7 +1443,7 @@ func (p *ProxyAdapter) routeA2AMessageTargetURL(c Case) (string, string, error) 
 		if err != nil || u.Hostname() == "" {
 			return "", "", fmt.Errorf("case %s: invalid A2A target_url %q", c.ID, targetURL)
 		}
-		if strings.ToLower(u.Hostname()) != a2aUntrustedSinkHostname {
+		if strings.ToLower(u.Hostname()) != A2AUntrustedSinkHostname {
 			return "", "", fmt.Errorf("case %s: A2A target_url host %q is not a reserved benchmark sink", c.ID, u.Hostname())
 		}
 		path := u.EscapedPath()
@@ -1459,7 +1459,7 @@ func (p *ProxyAdapter) routeA2AMessageTargetURL(c Case) (string, string, error) 
 			return "", "", fmt.Errorf("case %s: invalid HTTP fixture address %q", c.ID, p.httpFixtureAddr)
 		}
 		u.Scheme = "http"
-		u.Host = net.JoinHostPort(a2aUntrustedSinkHostname, port)
+		u.Host = net.JoinHostPort(A2AUntrustedSinkHostname, port)
 		return u.String(), path, nil
 	}
 

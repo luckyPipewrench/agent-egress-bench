@@ -582,6 +582,7 @@ cmd=(
   --mcp-http-session-refusal-header X-Pipelock-Block-Reason-Layer
   --mcp-http-session-refusal-value mcp_listener_session
   --fixtures
+  --seeded-blocklist-domain exfil-collector.example.net
   --output "$summary_path"
   --emit-receipt-profile "$receipt_profile_path"
 )
@@ -602,6 +603,8 @@ printf '\n' >> "$command_path"
 failure_reason="canonical runner command contract failed"
 grep -Eq '(^|[[:space:]])--fixtures($|[[:space:]])' "$command_path" || \
   die "recorded command does not include --fixtures"
+grep -Fq -- '--seeded-blocklist-domain exfil-collector.example.net' "$command_path" || \
+  die "recorded command does not declare the seeded blocklist domain"
 
 failure_reason="corpus statistics or case index generation failed"
 make stats > "$stats_path"

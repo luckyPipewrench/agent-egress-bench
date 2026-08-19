@@ -38,21 +38,22 @@ var validMultiFileRequires = map[string]struct{}{
 // and emits a CaseResult in the same shape as single-file cases so the
 // downstream scoring and receipt-profile code does not need to branch.
 type MultiFileCase struct {
-	Dir             string   `yaml:"-"`
-	SchemaVersion   int      `yaml:"schema_version"`
-	ID              string   `yaml:"id"`
-	Category        string   `yaml:"category"`
-	Title           string   `yaml:"title"`
-	Description     string   `yaml:"description"`
-	ThreatModel     string   `yaml:"threat_model"`
-	InputType       string   `yaml:"input_type"`
-	Transport       string   `yaml:"transport"`
-	ExpectedVerdict string   `yaml:"expected_verdict"`
-	Severity        string   `yaml:"severity"`
-	CapabilityTags  []string `yaml:"capability_tags"`
-	Requires        []string `yaml:"requires"`
-	FPRisk          string   `yaml:"false_positive_risk"`
-	WhyExpected     string   `yaml:"why_expected"`
+	Dir             string         `yaml:"-"`
+	SchemaVersion   int            `yaml:"schema_version"`
+	ID              string         `yaml:"id"`
+	Category        string         `yaml:"category"`
+	Title           string         `yaml:"title"`
+	Description     string         `yaml:"description"`
+	ThreatModel     string         `yaml:"threat_model"`
+	InputType       string         `yaml:"input_type"`
+	Transport       string         `yaml:"transport"`
+	ExpectedVerdict string         `yaml:"expected_verdict"`
+	Severity        string         `yaml:"severity"`
+	CapabilityTags  []string       `yaml:"capability_tags"`
+	Requires        []string       `yaml:"requires"`
+	Prerequisites   []Prerequisite `yaml:"prerequisites,omitempty"`
+	FPRisk          string         `yaml:"false_positive_risk"`
+	WhyExpected     string         `yaml:"why_expected"`
 	Files           struct {
 		Before   string `yaml:"before"`
 		After    string `yaml:"after"`
@@ -584,6 +585,7 @@ func (c MultiFileCase) toCase() (Case, error) {
 		Severity:        c.Severity,
 		CapabilityTags:  c.CapabilityTags,
 		Requires:        c.Requires,
+		Prerequisites:   c.Prerequisites,
 		FPRisk:          c.FPRisk,
 		WhyExpected:     c.WhyExpected,
 		Notes:           c.Notes,

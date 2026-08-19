@@ -33,6 +33,14 @@ const (
 	v4SchemaVersion = 4
 )
 
+// Prerequisite is a machine-readable external setup step the runner must
+// satisfy before executing a case. Unsatisfied setup is an error, not a miss.
+type Prerequisite struct {
+	Kind        string `json:"kind"`
+	Value       string `json:"value"`
+	Description string `json:"description,omitempty"`
+}
+
 // Case represents a single active benchmark case. CapabilityTags are
 // registry-backed reporting labels. They are not scope declarations.
 type Case struct {
@@ -48,6 +56,7 @@ type Case struct {
 	Severity        string                 `json:"severity"`
 	CapabilityTags  []string               `json:"capability_tags"`
 	Requires        []string               `json:"requires"`
+	Prerequisites   []Prerequisite         `json:"prerequisites,omitempty"`
 	FPRisk          string                 `json:"false_positive_risk"`
 	WhyExpected     string                 `json:"why_expected"`
 	SafeExample     *bool                  `json:"safe_example,omitempty"`

@@ -14,21 +14,28 @@ import (
 
 var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
 
+type multiFilePrerequisite struct {
+	Kind        string `yaml:"kind"`
+	Value       string `yaml:"value"`
+	Description string `yaml:"description,omitempty"`
+}
+
 type multiFileCase struct {
-	SchemaVersion   int      `yaml:"schema_version"`
-	ID              string   `yaml:"id"`
-	Category        string   `yaml:"category"`
-	Title           string   `yaml:"title"`
-	Description     string   `yaml:"description"`
-	ThreatModel     string   `yaml:"threat_model"`
-	InputType       string   `yaml:"input_type"`
-	Transport       string   `yaml:"transport"`
-	ExpectedVerdict string   `yaml:"expected_verdict"`
-	Severity        string   `yaml:"severity"`
-	CapabilityTags  []string `yaml:"capability_tags"`
-	Requires        []string `yaml:"requires"`
-	FPRisk          string   `yaml:"false_positive_risk"`
-	WhyExpected     string   `yaml:"why_expected"`
+	SchemaVersion   int                     `yaml:"schema_version"`
+	ID              string                  `yaml:"id"`
+	Category        string                  `yaml:"category"`
+	Title           string                  `yaml:"title"`
+	Description     string                  `yaml:"description"`
+	ThreatModel     string                  `yaml:"threat_model"`
+	InputType       string                  `yaml:"input_type"`
+	Transport       string                  `yaml:"transport"`
+	ExpectedVerdict string                  `yaml:"expected_verdict"`
+	Severity        string                  `yaml:"severity"`
+	CapabilityTags  []string                `yaml:"capability_tags"`
+	Requires        []string                `yaml:"requires"`
+	Prerequisites   []multiFilePrerequisite `yaml:"prerequisites,omitempty"`
+	FPRisk          string                  `yaml:"false_positive_risk"`
+	WhyExpected     string                  `yaml:"why_expected"`
 	Files           struct {
 		Before   string `yaml:"before"`
 		After    string `yaml:"after"`
@@ -106,6 +113,47 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 	for _, requirement := range c.Requires {
 		if problem := requiresTokenProblem(requirement); problem != "" {
 			add(problem)
+		}
+	}
+	seenPrereq := make(map[string]bool, len(c.Prerequisites))
+	for i, prereq := range c.Prerequisites {
+		key := prereq.Kind + "\x00" + prereq.Value
+		if seenPrereq[key] {
+			add(fmt.Sprintf("duplicate prerequisite at index %d: kind=%q value=%q", i, prereq.Kind, prereq.Value))
+			continue
+		}
+		seenPrereq[key] = true
+		if !validPrerequisiteKinds[prereq.Kind] {
+			add(fmt.Sprintf("invalid prerequisite kind at index %d: %q", i, prereq.Kind))
+		}
+		if strings.TrimSpace(prereq.Value) == "" {
+			add(fmt.Sprintf("prerequisite value at index %d must be non-empty", i))
+		}
+	}
+	for _, requirement := range c.Requires {
+		if requirement == "domain_blocklist" {
+			hasBlocklist := false
+			for _, prereq := range c.Prerequisites {
+				if prereq.Kind == "blocklist_domain" {
+					hasBlocklist = true
+					break
+				}
+			}
+			if !hasBlocklist {
+				add(`requires contains "domain_blocklist" but no "blocklist_domain" prerequisite; add the exact domain the runner must blocklist`)
+			}
+		}
+		if requirement == "dns_rebinding_fixture" {
+			hasSink := false
+			for _, prereq := range c.Prerequisites {
+				if prereq.Kind == "reserved_sink_route" {
+					hasSink = true
+					break
+				}
+			}
+			if !hasSink {
+				add(`requires contains "dns_rebinding_fixture" but no "reserved_sink_route" prerequisite`)
+			}
 		}
 	}
 
@@ -247,6 +295,16 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 				}
 				lists[key] = append(lists[key], value)
 			}
+		case key == "prerequisites":
+			if rest != "" {
+				return c, fmt.Errorf("prerequisites must be a block sequence")
+			}
+			prereqs, parseErr, nextIndex := parseRestrictedYAMLPrerequisites(lines, i)
+			if parseErr != nil {
+				return c, parseErr
+			}
+			c.Prerequisites = prereqs
+			i = nextIndex
 		case rest == "|" || rest == "|-":
 			var block []string
 			for i < len(lines) && (strings.HasPrefix(lines[i], "  ") || strings.TrimSpace(lines[i]) == "") {
@@ -312,6 +370,56 @@ func parseRestrictedYAMLStringList(raw string) ([]string, error) {
 		values = append(values, value)
 	}
 	return values, nil
+}
+
+// parseRestrictedYAMLPrerequisites parses a block sequence of prerequisite
+// objects using exactly two spaces of indentation and the same restricted
+// scalar grammar used elsewhere in case.yaml.
+func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePrerequisite, error, int) {
+	var prereqs []multiFilePrerequisite
+	i := start
+	for i < len(lines) && (strings.HasPrefix(lines[i], "  ") || strings.TrimSpace(lines[i]) == "") {
+		trimmed := strings.TrimSpace(lines[i])
+		i++
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.HasPrefix(lines[i-1], "  - ") {
+			return nil, fmt.Errorf("prerequisites entries must use exactly two spaces and '- '"), i
+		}
+		if trimmed != "-" {
+			return nil, fmt.Errorf("prerequisites entries must use the block object form, not an inline scalar"), i
+		}
+		prereq := multiFilePrerequisite{}
+		for i < len(lines) && (strings.HasPrefix(lines[i], "    ") || strings.TrimSpace(lines[i]) == "") {
+			innerTrimmed := strings.TrimSpace(lines[i])
+			i++
+			if innerTrimmed == "" || strings.HasPrefix(innerTrimmed, "#") {
+				continue
+			}
+			if !strings.HasPrefix(lines[i-1], "    ") {
+				break
+			}
+			key, raw, found := strings.Cut(innerTrimmed, ":")
+			if !found || (key != "kind" && key != "value" && key != "description") {
+				return nil, fmt.Errorf("prerequisite object has unknown or malformed field %q", key), i
+			}
+			value, err := parseRestrictedYAMLScalar(strings.TrimSpace(raw))
+			if err != nil {
+				return nil, fmt.Errorf("prerequisite.%s: %w", key, err), i
+			}
+			switch key {
+			case "kind":
+				prereq.Kind = value
+			case "value":
+				prereq.Value = value
+			case "description":
+				prereq.Description = value
+			}
+		}
+		prereqs = append(prereqs, prereq)
+	}
+	return prereqs, nil, i
 }
 
 func parseRestrictedYAMLScalar(raw string) (string, error) {

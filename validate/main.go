@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -72,6 +73,22 @@ var (
 
 	validFPRisk = map[string]bool{
 		"low": true, "medium": true, "high": true,
+	}
+
+	validPrerequisiteKinds = map[string]bool{
+		"blocklist_domain":    true,
+		"reserved_sink_route": true,
+	}
+
+	// reservedSinkHosts is the closed set of corpus-reserved untrusted sink
+	// hostnames. These names are reserved in the runner contract; a case that
+	// targets one must declare reserved_sink_route with that exact host. The
+	// list is closed on purpose: a new reserved sink is a contract change
+	// (SPEC, RUNNER, adapter constants, and this map), not something the
+	// validator should infer from hostname shape.
+	reservedSinkHosts = map[string]bool{
+		"ws-exfil-sink.test":  true,
+		"a2a-exfil-sink.test": true,
 	}
 
 	validRequires = map[string]bool{
@@ -154,6 +171,15 @@ var (
 	}
 )
 
+// Prerequisite is a machine-readable external setup step a runner must satisfy
+// before executing a case. It is separate from capability declarations because
+// the exact value (a domain, a sink route, etc.) is case-specific.
+type Prerequisite struct {
+	Kind        string `json:"kind"`
+	Value       string `json:"value"`
+	Description string `json:"description,omitempty"`
+}
+
 // Case represents a single benchmark case.
 type Case struct {
 	SchemaVersion   int                    `json:"schema_version"`
@@ -168,6 +194,7 @@ type Case struct {
 	Severity        string                 `json:"severity"`
 	CapabilityTags  []string               `json:"capability_tags"`
 	Requires        []string               `json:"requires"`
+	Prerequisites   []Prerequisite         `json:"prerequisites,omitempty"`
 	FPRisk          string                 `json:"false_positive_risk"`
 	WhyExpected     string                 `json:"why_expected"`
 	SafeExample     *bool                  `json:"safe_example,omitempty"`
@@ -579,6 +606,44 @@ func validateFile(path string, ids map[string]string) []string {
 		}
 	}
 
+	payloadHost := extractPayloadURLHost(c.Payload)
+	seenPrereq := make(map[string]bool, len(c.Prerequisites))
+	for i, prereq := range c.Prerequisites {
+		key := prereq.Kind + "\x00" + prereq.Value
+		if seenPrereq[key] {
+			addErr(fmt.Sprintf("duplicate prerequisite at index %d: kind=%q value=%q", i, prereq.Kind, prereq.Value))
+			continue
+		}
+		seenPrereq[key] = true
+		if !validPrerequisiteKinds[prereq.Kind] {
+			addErr(fmt.Sprintf("invalid prerequisite kind at index %d: %q", i, prereq.Kind))
+			continue
+		}
+		if strings.TrimSpace(prereq.Value) == "" {
+			addErr(fmt.Sprintf("prerequisite value at index %d must be non-empty", i))
+			continue
+		}
+		if prereq.Kind == "blocklist_domain" || prereq.Kind == "reserved_sink_route" {
+			if payloadHost == "" {
+				addErr(fmt.Sprintf("prerequisite kind %q at index %d requires a payload url or target_url host to bind against", prereq.Kind, i))
+			} else if prereq.Value != payloadHost {
+				addErr(fmt.Sprintf("prerequisite kind %q value %q does not match payload host %q", prereq.Kind, prereq.Value, payloadHost))
+			}
+		}
+	}
+	// The prerequisite VALUE is derivable, so it is not demanded. A case requiring a blocklist
+	// names the action in requires, and the domain to seed is the host in its own payload. A case
+	// targeting a reserved sink names a host that is already a fixed documented list in RUNNER.md.
+	// Demanding a declared copy of either would be unreachable for cases whose bytes are frozen,
+	// which is every case already merged, so the defect this guards would stay open on exactly the
+	// cases that have it. Declaring one stays allowed and is bound to the payload host above; that
+	// is for a future case whose required domain is NOT its payload host, where derivation breaks.
+	for _, req := range c.Requires {
+		if req == "domain_blocklist" && payloadHost == "" {
+			addErr(`requires contains "domain_blocklist" but the payload has no url or target_url host to derive the domain from`)
+		}
+	}
+
 	// Category directory consistency
 	expectedDir := categoryToDir(c.Category)
 	actualDir := filepath.Base(filepath.Dir(path))
@@ -921,6 +986,27 @@ func categoryToDir(category string) string {
 	default:
 		return ""
 	}
+}
+
+func extractPayloadURLHost(payload map[string]interface{}) string {
+	if payload == nil {
+		return ""
+	}
+	for _, key := range []string{"url", "target_url"} {
+		raw, ok := payload[key].(string)
+		if !ok {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		if u.Host == "" {
+			continue
+		}
+		return u.Hostname()
+	}
+	return ""
 }
 
 func contains(slice []string, val string) bool {

@@ -56,6 +56,8 @@ func main() {
 	adapterOwner := flag.String("adapter-owner", "", "who authored the adapter driving the target; a vendor-authored adapter is normal, leaving it unstated is not")
 	targetConfig := flag.String("target-config", "", "path to the target's configuration file; its path and digest are recorded so the score can be repeated")
 	requireComplete := flag.Bool("require-complete", false, "exit nonzero after writing artifacts when the measurement is incomplete")
+	var seededBlocklist stringList
+	flag.Var(&seededBlocklist, "seeded-blocklist-domain", "domain already seeded in the tool blocklist; repeat for each domain. Required to score blocklist_domain prerequisites; omitting it records an error instead of a miss")
 
 	// --debug / -v: emit verbose per-case diagnostics to stderr. Both
 	// flag names point at the same variable so either can be used.
@@ -150,7 +152,7 @@ func main() {
 	prov.MCPHTTPSessionRefusalValue = *mcpHTTPSessionRefusalValue
 	prov.RequireComplete = *requireComplete
 
-	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion, prov); err != nil {
+	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion, prov, seededBlocklist); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -161,10 +163,10 @@ func run(casesDir, profilePath, outputPath string, timeout time.Duration, adapte
 }
 
 func runWithOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string) error {
-	return runWithGatewayPluginOptions(casesDir, profilePath, outputPath, timeout, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, "", useFixtures, emitReceiptProfile, receiptVerifierFile, multiFileCases, debug, toolVersion, RunProvenance{AdapterID: adapterName})
+	return runWithGatewayPluginOptions(casesDir, profilePath, outputPath, timeout, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, "", useFixtures, emitReceiptProfile, receiptVerifierFile, multiFileCases, debug, toolVersion, RunProvenance{AdapterID: adapterName}, nil)
 }
 
-func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, gatewayPluginPath string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string, prov RunProvenance) error {
+func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeout time.Duration, adapterName, proxyAddr, scanAddr, scanToken, mcpCmd, mcpHTTPURL, managedProxyCmd, managedMCPHTTPCmd, gatewayPluginPath string, useFixtures bool, emitReceiptProfile, receiptVerifierFile, multiFileCases string, debug bool, toolVersion string, prov RunProvenance, seededBlocklist []string) error {
 	if err := bindRunProvenanceAdapter(adapterName, &prov); err != nil {
 		return err
 	}
@@ -287,7 +289,12 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		return fmt.Errorf("unknown adapter: %q (available: dryrun, null, blockall, proxy, mcp-gateway)", adapterName)
 	}
 
-	applicableResults, unreachableResults, unreachableIDs, naReasons, runErr := runCases(cases, profile, adapt, timeout, debug, os.Stdout)
+	routableSinks := []string(nil)
+	if adapterName == "proxy" && fm != nil {
+		routableSinks = proxyRoutableSinks(true)
+	}
+	setup := newRunSetup(seededBlocklist, routableSinks)
+	applicableResults, unreachableResults, unreachableIDs, naReasons, runErr := runCasesWithSetup(cases, profile, adapt, timeout, debug, os.Stdout, setup)
 	if runErr != nil {
 		return runErr
 	}
@@ -391,6 +398,10 @@ func bindRunProvenanceAdapter(adapterName string, prov *RunProvenance) error {
 // claim, requirement, or capability tag selects a case. Only an exact adapter route,
 // proven delivery, and observed verdict can create a scoreable measurement.
 func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time.Duration, debug bool, output io.Writer) ([]CaseResult, []CaseResult, map[string]struct{}, map[NAKind]int, error) {
+	return runCasesWithSetup(cases, profile, adapt, timeout, debug, output, runSetup{})
+}
+
+func runCasesWithSetup(cases []Case, profile Profile, adapt adapter.Adapter, timeout time.Duration, debug bool, output io.Writer, setup runSetup) ([]CaseResult, []CaseResult, map[string]struct{}, map[NAKind]int, error) {
 	var applicableResults []CaseResult
 	var unreachableResults []CaseResult
 	unreachableIDs := make(map[string]struct{})
@@ -407,12 +418,12 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 			Payload:         c.Payload,
 		}
 
-		_, routed := adapter.SupportsTuple(adapt, adapterCase)
+		tuple, routed := adapter.SupportsTuple(adapt, adapterCase)
 		if !routed {
 			// The adapter declared no exact route, so its tuple carries no
 			// information about this case. Derive the tuple from the case
 			// itself for the evidence record.
-			tuple := adapter.TupleForCase(adapterCase)
+			tuple = adapter.TupleForCase(adapterCase)
 			result := caseResultForState(
 				profile, c, ResultStateUnreachable, tupleEvidence(tuple),
 				"unreachable: adapter has no exact delivery route for this case",
@@ -420,6 +431,16 @@ func runCases(cases []Case, profile Profile, adapt adapter.Adapter, timeout time
 			unreachableResults = append(unreachableResults, result)
 			unreachableIDs[c.ID] = struct{}{}
 			debugf(debug, "case %s: UNREACHABLE %s/%s/%s", c.ID, tuple.WireTransport, tuple.SemanticSurface, tuple.Lifecycle)
+			if err := enc.Encode(result); err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
+			}
+			continue
+		}
+
+		if reason := setup.unsatisfied(c); reason != "" {
+			result := caseResultForState(profile, c, ResultStateAdapterError, tupleEvidence(tuple), reason)
+			applicableResults = append(applicableResults, result)
+			debugf(debug, "case %s: ERROR unsatisfied prerequisite expected=%s notes=%s", c.ID, c.ExpectedVerdict, reason)
 			if err := enc.Encode(result); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("writing result for %s: %w", c.ID, err)
 			}

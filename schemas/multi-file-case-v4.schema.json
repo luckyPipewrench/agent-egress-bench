@@ -118,6 +118,30 @@
         ]
       }
     },
+    "prerequisites": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Machine-readable external setup prerequisites a runner must satisfy before executing this case. Required whenever the case needs tool-specific configuration beyond declaring a capability (for example, seeding a blocklist with a benchmark domain or routing a reserved sink host).",
+      "items": {
+        "type": "object",
+        "required": ["kind", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["blocklist_domain", "reserved_sink_route"]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "false_positive_risk": {
       "enum": ["low", "medium", "high"]
     },
