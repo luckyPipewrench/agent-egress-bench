@@ -232,6 +232,17 @@ func uncoveredEndpoint(c Case) string {
 }
 
 func (s runSetup) unsatisfied(c Case) string {
+	// The validator rejects a domain_blocklist case without a parseable endpoint,
+	// but the runner also accepts an arbitrary --cases directory. Do not let that
+	// boundary turn an unvalidated malformed case into a score: without a host,
+	// the runner cannot derive the exact domain whose setup it is meant to verify.
+	if len(casePayloadHosts(c)) == 0 {
+		for _, req := range c.Requires {
+			if req == "domain_blocklist" {
+				return "unsatisfied domain_blocklist requirement: payload has no parseable url or target_url host from which to derive the domain to seed"
+			}
+		}
+	}
 	if host := uncoveredEndpoint(c); host != "" {
 		return fmt.Sprintf("case names endpoint %q that no prerequisite covers while covering another endpoint it names: setup must cover every endpoint the payload names, because the transport selects one of them", host)
 	}

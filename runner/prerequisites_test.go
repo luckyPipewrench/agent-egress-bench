@@ -331,6 +331,36 @@ func TestSingleEndpointCaseIsUnaffected(t *testing.T) {
 	}
 }
 
+// The corpus validator rejects this shape, but the runner accepts arbitrary
+// case directories itself. A malformed endpoint cannot produce the domain the
+// tool must blocklist, so executing it would score a result without the setup
+// the case requires.
+func TestDomainBlocklistWithoutDerivableHostIsSetupError(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{"url": "https://"}
+	c.Requires = []string{"domain_blocklist"}
+	c.ExpectedVerdict = "block"
+	adapt := &stateTestAdapter{
+		routes: []adapter.DeliveryTuple{adapter.TupleForCase(adapter.Case{Transport: c.Transport, InputType: c.InputType})},
+		result: adapter.Result{Verdict: "block", DeliveryProven: true, VerdictObserved: true},
+	}
+
+	var output bytes.Buffer
+	results, _, unreachable, _, err := runCasesWithSetup([]Case{c}, stateTestProfile(), adapt, time.Second, false, &output, newRunSetup(nil, nil))
+	if err != nil {
+		t.Fatalf("runCasesWithSetup: %v", err)
+	}
+	if adapt.calls != 0 {
+		t.Fatalf("adapter Run calls = %d, want 0 when the blocklist domain cannot be derived", adapt.calls)
+	}
+	if len(unreachable) != 0 || len(results) != 1 {
+		t.Fatalf("results=%d unreachable=%d, want one error row", len(results), len(unreachable))
+	}
+	if got := results[0]; got.ActualVerdict != "error" || got.Score != "error" || got.Evidence["result_state"] != string(ResultStateAdapterError) {
+		t.Fatalf("result = %+v, want setup error rather than an observed score", got)
+	}
+}
+
 // The list of asserted domains being computed correctly proves nothing about the
 // artifact: a value that never reaches a result row cannot explain a score to
 // anyone reading it later. This drives the real run path and reads the row.
