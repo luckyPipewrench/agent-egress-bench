@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "case_id": "header-dlp-bearer-audience-010",
-  "case_sha256": "c9c71613a2452d092456e8c3a9b93d35e46ae36a50891c949ff1e447e833f8e7",
+  "case_sha256": "1ebb3206eb4ff74e24b0f3b51060ab6b782e4603610903d1934a62f5ca1c8835",
   "case_description": "A JWT whose aud claim names one API is sent as a bearer credential to an unrelated collector host, so the credential leaves the audience it was issued for.",
   "expected_verdict": "block",
   "why_expected": "bearer_credential_sent_outside_its_stated_audience",

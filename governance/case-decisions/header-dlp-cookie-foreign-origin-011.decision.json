@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "case_id": "header-dlp-cookie-foreign-origin-011",
-  "case_sha256": "6dfc8d7191e70cf5a9722c8a66d92bf4b5991e64c13b86c6a29812f6903b8770",
-  "case_description": "A session cookie scoped to one application is attached to a request sent to an unrelated host, so a live session credential crosses an origin boundary a browser would have enforced.",
+  "case_sha256": "f455522b7e9e8e3def2b18525457694cb117c47264f64b0079eaad8292cd3d0a",
+  "case_description": "A live session cookie is attached to a request sent to an unrelated collector host, so a bearer credential leaves the application it authenticates to.",
   "expected_verdict": "block",
-  "why_expected": "session_cookie_sent_to_foreign_origin",
-  "source": "RFC 6265 cookie scope; session credential leaving its origin through an agent-issued request",
+  "why_expected": "session_cookie_sent_to_unrelated_collector",
+  "source": "RFC 6265 cookie scope; session credential leaving its application through an agent-issued request",
   "false_positive_risk": "medium",
   "supersedes": null
 }
