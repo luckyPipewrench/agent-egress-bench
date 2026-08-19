@@ -441,6 +441,15 @@ func TestEndpointPayloadKeysAreTheOnlyDialableFields(t *testing.T) {
 	if len(found) == 0 {
 		t.Fatal("matched no dialable payload fields; the pattern no longer matches the adapter and the guard proves nothing")
 	}
+	// The other direction. A key left in the list after the adapter stopped dialing it
+	// would have casePayloadHosts demand setup for a field the run never reaches, which
+	// refuses cases an operator cannot fix rather than letting one through. Set equality
+	// covers both directions; checking only one is the shape this guard exists to catch.
+	for key := range declared {
+		if !found[key] {
+			t.Errorf("endpointPayloadKeys declares %q, but no adapter reads it as a dialable payload field", key)
+		}
+	}
 
 	// The validator's copy has to hold the same list. It is a separate Go module,
 	// so this reads its source rather than importing it.
