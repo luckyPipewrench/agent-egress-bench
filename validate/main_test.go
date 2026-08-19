@@ -2075,3 +2075,43 @@ func TestEveryPayloadEndpointMustBeCovered(t *testing.T) {
 		t.Fatalf("covering no endpoint should pass, got: %v", errors)
 	}
 }
+
+// Both branches are new gates on case content with no test behind them, so a
+// regression in either would have merged silently.
+func TestPrerequisiteDuplicateAndUnknownKindAreRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	duplicate := writeCase(t, dir, "url", "url-dup-001.json", strings.ReplaceAll(
+		caseWithPayloadAndPrereqs(
+			"https://exfil-collector.example.net/beacon",
+			`["domain_blocklist"]`,
+			`[{"kind":"blocklist_domain","value":"exfil-collector.example.net"},{"kind":"blocklist_domain","value":"exfil-collector.example.net"}]`,
+		),
+		`"id": "url-test-001"`,
+		`"id": "url-dup-001"`,
+	))
+	assertContainsError(t, validateFile(duplicate, make(map[string]string)), "duplicate prerequisite at index 1")
+
+	unknown := writeCase(t, dir, "url", "url-kind-001.json", strings.ReplaceAll(
+		caseWithPayloadAndPrereqs(
+			"https://exfil-collector.example.net/beacon",
+			`["domain_blocklist"]`,
+			`[{"kind":"seed_the_moon","value":"exfil-collector.example.net"}]`,
+		),
+		`"id": "url-test-001"`,
+		`"id": "url-kind-001"`,
+	))
+	assertContainsError(t, validateFile(unknown, make(map[string]string)), "invalid prerequisite kind at index 0")
+}
+
+// The runner trims an endpoint before parsing it and the validator did not, so a
+// leading-space endpoint yielded no host here and a real host at runtime. The
+// case validated and then failed setup on a host validation never saw.
+func TestPayloadHostExtractionTrimsLikeTheRunner(t *testing.T) {
+	hosts := extractPayloadURLHosts(map[string]interface{}{
+		"url": "  https://exfil-collector.example.net/beacon  ",
+	})
+	if len(hosts) != 1 || hosts[0] != "exfil-collector.example.net" {
+		t.Fatalf("hosts = %v, want [exfil-collector.example.net]", hosts)
+	}
+}

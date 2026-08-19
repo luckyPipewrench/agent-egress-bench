@@ -1058,7 +1058,11 @@ func extractPayloadURLHosts(payload map[string]interface{}) []string {
 		if !ok {
 			continue
 		}
-		u, err := url.Parse(raw)
+		// The runner trims before parsing. Parsing the raw string here meant a
+		// leading-space endpoint produced no host for the validator and a real host
+		// for the runner, so a case could validate and then fail setup on a host
+		// validation never saw.
+		u, err := url.Parse(strings.TrimSpace(raw))
 		if err != nil || u.Host == "" {
 			continue
 		}

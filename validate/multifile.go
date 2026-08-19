@@ -129,6 +129,12 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 		if strings.TrimSpace(prereq.Value) == "" {
 			add(fmt.Sprintf("prerequisite value at index %d must be non-empty", i))
 		}
+		// The single-file validator enforces this closed set and this one did not, so a
+		// multi-file case could pass validation and then hit a runner setup error no flag
+		// clears: the runner routes only the two reserved sinks.
+		if prereq.Kind == "reserved_sink_route" && !reservedSinkHosts[strings.ToLower(strings.TrimSpace(prereq.Value))] {
+			add(fmt.Sprintf("prerequisite reserved_sink_route value %q at index %d is not a corpus-reserved sink host", prereq.Value, i))
+		}
 	}
 	for _, requirement := range c.Requires {
 		if requirement == "domain_blocklist" {
@@ -217,6 +223,11 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 		"severity": true, "capability_tags": true, "requires": true,
 		"false_positive_risk": true, "why_expected": true, "notes": true, "source": true,
 	}
+	// prerequisites is accepted but not required. Adding it to `known` alone would
+	// make it mandatory, because the loop below demands every `known` key be
+	// present. Leaving it out of both is what made the parse branch below dead:
+	// the field was rejected as unknown before it could ever be reached.
+	optional := map[string]bool{"prerequisites": true}
 	present := make(map[string]bool, len(known))
 	values := make(map[string]string, len(known))
 	lists := make(map[string][]string, 2)
@@ -235,7 +246,7 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 			return c, fmt.Errorf("line %d: expected a top-level key", i+1)
 		}
 		key, rest, ok := strings.Cut(line, ":")
-		if !ok || strings.TrimSpace(key) != key || !known[key] || (rest != "" && rest[0] != ' ') {
+		if !ok || strings.TrimSpace(key) != key || (!known[key] && !optional[key]) || (rest != "" && rest[0] != ' ') {
 			return c, fmt.Errorf("line %d: unknown or malformed field %q", i+1, key)
 		}
 		if present[key] {
@@ -299,7 +310,7 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 			if rest != "" {
 				return c, fmt.Errorf("prerequisites must be a block sequence")
 			}
-			prereqs, parseErr, nextIndex := parseRestrictedYAMLPrerequisites(lines, i)
+			prereqs, nextIndex, parseErr := parseRestrictedYAMLPrerequisites(lines, i)
 			if parseErr != nil {
 				return c, parseErr
 			}
@@ -372,9 +383,29 @@ func parseRestrictedYAMLStringList(raw string) ([]string, error) {
 	return values, nil
 }
 
-// parseRestrictedYAMLPrerequisites parses a block sequence of prerequisite
-// objects using exactly two spaces of indentation and the same restricted
-// scalar grammar used elsewhere in case.yaml.
+// assignMultiFilePrerequisiteField reads one "key: value" pair of a prerequisite
+// object. It is shared by the inline-mapping and block-object spellings so the
+// two cannot drift into accepting different field sets.
+func assignMultiFilePrerequisiteField(prereq *multiFilePrerequisite, field string) error {
+	key, raw, found := strings.Cut(field, ":")
+	if !found || (key != "kind" && key != "value" && key != "description") {
+		return fmt.Errorf("prerequisite object has unknown or malformed field %q", key)
+	}
+	value, err := parseRestrictedYAMLScalar(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("prerequisite.%s: %w", key, err)
+	}
+	switch key {
+	case "kind":
+		prereq.Kind = value
+	case "value":
+		prereq.Value = value
+	case "description":
+		prereq.Description = value
+	}
+	return nil
+}
+
 // isExactIndent reports whether a line begins with exactly n spaces, so a
 // deeper line is refused rather than parsed as if it sat at n.
 func isExactIndent(line string, n int) bool {
@@ -389,7 +420,16 @@ func isExactIndent(line string, n int) bool {
 	return line[n] != ' '
 }
 
-func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePrerequisite, error, int) {
+// parseRestrictedYAMLPrerequisites parses a block sequence of prerequisite
+// objects using exactly two spaces of indentation and the same restricted
+// scalar grammar used elsewhere in case.yaml.
+//
+// It accepts both spellings a YAML emitter produces for one object: a bare
+// marker with every field on its own four-space line, and the standard inline
+// mapping that puts the first field on the marker line. The runner parses the
+// same file with a real YAML library, so rejecting the inline form here meant
+// the validator refused input the runner accepts.
+func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePrerequisite, int, error) {
 	var prereqs []multiFilePrerequisite
 	i := start
 	for i < len(lines) && (isExactIndent(lines[i], 2) || isExactIndent(lines[i], 4) || strings.TrimSpace(lines[i]) == "") {
@@ -398,13 +438,18 @@ func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePre
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if !strings.HasPrefix(lines[i-1], "  - ") {
-			return nil, fmt.Errorf("prerequisites entries must use exactly two spaces and '- '"), i
-		}
-		if trimmed != "-" {
-			return nil, fmt.Errorf("prerequisites entries must use the block object form, not an inline scalar"), i
+		if !isExactIndent(lines[i-1], 2) || !strings.HasPrefix(trimmed, "-") {
+			return nil, i, fmt.Errorf("prerequisites entries must use exactly two spaces and '-'")
 		}
 		prereq := multiFilePrerequisite{}
+		// Everything after the marker on the SAME line is the standard inline
+		// mapping form. Accepting only the bare marker rejected what every YAML
+		// emitter writes, and what the runner's own parser reads back.
+		if inline := strings.TrimSpace(strings.TrimPrefix(trimmed, "-")); inline != "" {
+			if err := assignMultiFilePrerequisiteField(&prereq, inline); err != nil {
+				return nil, i, err
+			}
+		}
 		for i < len(lines) && (isExactIndent(lines[i], 4) || strings.TrimSpace(lines[i]) == "") {
 			innerTrimmed := strings.TrimSpace(lines[i])
 			i++
@@ -418,26 +463,13 @@ func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePre
 			if !isExactIndent(lines[i-1], 4) {
 				break
 			}
-			key, raw, found := strings.Cut(innerTrimmed, ":")
-			if !found || (key != "kind" && key != "value" && key != "description") {
-				return nil, fmt.Errorf("prerequisite object has unknown or malformed field %q", key), i
-			}
-			value, err := parseRestrictedYAMLScalar(strings.TrimSpace(raw))
-			if err != nil {
-				return nil, fmt.Errorf("prerequisite.%s: %w", key, err), i
-			}
-			switch key {
-			case "kind":
-				prereq.Kind = value
-			case "value":
-				prereq.Value = value
-			case "description":
-				prereq.Description = value
+			if err := assignMultiFilePrerequisiteField(&prereq, innerTrimmed); err != nil {
+				return nil, i, err
 			}
 		}
 		prereqs = append(prereqs, prereq)
 	}
-	return prereqs, nil, i
+	return prereqs, i, nil
 }
 
 func parseRestrictedYAMLScalar(raw string) (string, error) {

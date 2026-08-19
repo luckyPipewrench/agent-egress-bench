@@ -155,8 +155,9 @@ rely on runner-side command rewriting.
 
 ### Domain blocklist seeding
 
-A case requiring a blocklist needs the runner to configure the tool with that
-exact host before running. The case does not have to declare the host, and the
+A case requiring a blocklist needs the operator to configure the tool with that
+exact host before running, and to say so with `--seeded-blocklist-domain`. The
+runner configures nothing itself. The case does not have to declare the host, and the
 current corpus ones do not, because case bytes are fixed once a case ships. A
 runner resolves the requirement from both sources and acts on their union:
 
