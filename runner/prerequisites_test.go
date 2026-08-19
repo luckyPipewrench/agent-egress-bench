@@ -269,3 +269,61 @@ func TestOperatorAssertedSetupIsRecorded(t *testing.T) {
 		t.Fatalf("asserted = %#v, want nothing for setup the runner proves itself", got)
 	}
 }
+
+// A reserved sink in one endpoint field must not vouch for an attacker host in
+// the other. Derivation only produces a requirement for a host that is itself a
+// reserved sink or that a domain_blocklist require covers, so without this the
+// sink's own prerequisite was the only one, it was satisfied, and the case
+// scored while nothing was ever required of the endpoint beside it.
+func TestReservedSinkDoesNotVouchForItsSiblingEndpoint(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{
+		"url":        "https://" + adapter.A2AUntrustedSinkHostname + "/decoy",
+		"target_url": "https://unseeded-real-target.example.net/message:send",
+	}
+	c.Requires = nil
+	c.Prerequisites = []Prerequisite{{Kind: "reserved_sink_route", Value: adapter.A2AUntrustedSinkHostname}}
+
+	setup := newRunSetup(nil, []string{adapter.A2AUntrustedSinkHostname})
+	reason := setup.unsatisfied(c)
+	if reason == "" {
+		t.Fatal("a covered reserved sink satisfied setup while the sibling endpoint went uncovered")
+	}
+	if !strings.Contains(reason, "unseeded-real-target.example.net") {
+		t.Fatalf("refusal did not name the uncovered endpoint: %s", reason)
+	}
+
+	c.Prerequisites = append(c.Prerequisites, Prerequisite{Kind: "blocklist_domain", Value: "unseeded-real-target.example.net"})
+	covered := newRunSetup([]string{"unseeded-real-target.example.net"}, []string{adapter.A2AUntrustedSinkHostname})
+	if reason := covered.unsatisfied(c); reason != "" {
+		t.Fatalf("every endpoint covered but still unsatisfied: %s", reason)
+	}
+}
+
+// A case that covers no endpoint at all is making no claim about a destination,
+// so completeness has nothing to be complete about. Refusing here would fail the
+// availability direction: it would turn ordinary two-endpoint cases that need no
+// external setup into errors no operator can clear.
+func TestCaseCoveringNoEndpointIsNotRefusedForCompleteness(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{
+		"url":        "https://first.example.net/a",
+		"target_url": "https://second.example.net/b",
+	}
+	c.Requires = nil
+	c.Prerequisites = nil
+	if reason := newRunSetup(nil, nil).unsatisfied(c); reason != "" {
+		t.Fatalf("case needing no endpoint setup was refused: %s", reason)
+	}
+}
+
+// One endpoint cannot trip completeness against itself.
+func TestSingleEndpointCaseIsUnaffected(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{"url": "https://exfil-collector.example.net/beacon"}
+	c.Requires = []string{"domain_blocklist"}
+	c.Prerequisites = nil
+	if reason := newRunSetup([]string{"exfil-collector.example.net"}, nil).unsatisfied(c); reason != "" {
+		t.Fatalf("single-endpoint case was refused: %s", reason)
+	}
+}

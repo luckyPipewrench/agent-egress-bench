@@ -177,7 +177,55 @@ func (s runSetup) assertedFor(c Case) []string {
 	return asserted
 }
 
+// endpointBoundKinds are the prerequisite kinds whose value IS an endpoint the
+// case delivers to. Coverage of these is what has to be complete.
+var endpointBoundKinds = map[string]struct{}{
+	"blocklist_domain":    {},
+	"reserved_sink_route": {},
+}
+
+// uncoveredEndpoint reports a payload endpoint that no endpoint-bound
+// prerequisite covers, once the case covers at least one.
+//
+// Matching a prerequisite against ANY payload host is the defect this closes. A
+// payload naming both url and target_url delivers to one of them depending on
+// transport, so a prerequisite that binds to the other one is setup for a
+// destination the run never uses: the decoy satisfies the check and the real
+// destination is never required to be seeded or routed. Requiring EVERY named
+// endpoint to be covered removes the choice, and unlike a per-transport rule it
+// cannot drift out of step with which field an adapter actually delivers to.
+//
+// The check is gated on the case covering something, because a case that needs
+// no endpoint setup at all is making no claim about any destination. Once it
+// covers one, leaving a sibling endpoint uncovered is a claim about the wrong
+// one, and refusing loudly beats scoring a result the setup did not earn.
+func uncoveredEndpoint(c Case) string {
+	hosts := casePayloadHosts(c)
+	if len(hosts) < 2 {
+		return ""
+	}
+	covered := make(map[string]struct{}, len(hosts))
+	for _, prereq := range effectivePrerequisites(c) {
+		if _, ok := endpointBoundKinds[strings.TrimSpace(prereq.Kind)]; !ok {
+			continue
+		}
+		covered[strings.ToLower(strings.TrimSpace(prereq.Value))] = struct{}{}
+	}
+	if len(covered) == 0 {
+		return ""
+	}
+	for _, host := range hosts {
+		if _, ok := covered[host]; !ok {
+			return host
+		}
+	}
+	return ""
+}
+
 func (s runSetup) unsatisfied(c Case) string {
+	if host := uncoveredEndpoint(c); host != "" {
+		return fmt.Sprintf("case names endpoint %q that no prerequisite covers while covering another endpoint it names: setup must cover every endpoint the payload names, because the transport selects one of them", host)
+	}
 	for _, prereq := range effectivePrerequisites(c) {
 		kind := strings.TrimSpace(prereq.Kind)
 		value := strings.ToLower(strings.TrimSpace(prereq.Value))

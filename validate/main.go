@@ -653,6 +653,39 @@ func validateFile(path string, ids map[string]string) []string {
 			addErr(fmt.Sprintf("prerequisite reserved_sink_route value %q at index %d is not a corpus-reserved sink host", prereq.Value, i))
 		}
 	}
+	// Coverage has to be COMPLETE, not just consistent. The per-entry check above only asks
+	// that a declared value name some endpoint the payload carries; with both url and
+	// target_url present, one entry naming either of them satisfies it while the transport may
+	// select the other. So once a case covers one endpoint it must cover every endpoint it
+	// names, mirrored in runner/prerequisites.go uncoveredEndpoint.
+	if len(payloadHosts) > 1 {
+		covered := make(map[string]bool, len(payloadHosts))
+		for _, prereq := range c.Prerequisites {
+			if prereq.Kind != "blocklist_domain" && prereq.Kind != "reserved_sink_route" {
+				continue
+			}
+			covered[strings.ToLower(strings.TrimSpace(prereq.Value))] = true
+		}
+		for _, req := range c.Requires {
+			if req == "domain_blocklist" {
+				for _, host := range payloadHosts {
+					covered[host] = true
+				}
+			}
+		}
+		for _, host := range payloadHosts {
+			if reservedSinkHosts[host] {
+				covered[host] = true
+			}
+		}
+		if len(covered) > 0 {
+			for _, host := range payloadHosts {
+				if !covered[host] {
+					addErr(fmt.Sprintf("payload names endpoint %q that no prerequisite covers while another endpoint it names is covered: setup must cover every endpoint the payload names, because the transport selects one of them", host))
+				}
+			}
+		}
+	}
 	// The prerequisite VALUE is derivable, so it is not demanded. A case requiring a blocklist
 	// names the action in requires, and the domain to seed is the host in its own payload. A case
 	// targeting a reserved sink names a host that is already a fixed documented list in RUNNER.md.

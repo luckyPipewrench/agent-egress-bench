@@ -2015,3 +2015,63 @@ func TestReservedSinkRouteRejectsHostsOutsideTheClosedSet(t *testing.T) {
 	errors := validateFile(path, make(map[string]string))
 	assertContainsError(t, errors, "is not a corpus-reserved sink host")
 }
+
+// A prerequisite that matches ANY payload host still leaves the other one
+// unguarded. With url and target_url both present the transport selects one of
+// them, so a decoy in the covered field passed validation while the endpoint
+// the run actually delivers to carried no setup at all. Mirrors
+// runner/prerequisites.go uncoveredEndpoint.
+func TestEveryPayloadEndpointMustBeCovered(t *testing.T) {
+	dir := t.TempDir()
+	twoEndpoints := func(id, prereqs string) string {
+		return fmt.Sprintf(`{
+		"schema_version": 4,
+		"id": %q,
+		"category": "url",
+		"title": "Test URL case",
+		"description": "Valid URL test case",
+		"input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://a2a-exfil-sink.test/decoy", "target_url": "https://unseeded-real-target.example.net/message:send"},
+		"expected_verdict": "block",
+		"severity": "high",
+		"capability_tags": ["domain_blocklist"],
+		"requires": [],
+		"prerequisites": %s,
+		"false_positive_risk": "low",
+		"why_expected": "test_reason",
+		"notes": "",
+		"source": ""
+	}`, id, prereqs)
+	}
+
+	partial := writeCase(t, dir, "url", "url-cover-001.json", twoEndpoints(
+		"url-cover-001",
+		`[{"kind":"reserved_sink_route","value":"a2a-exfil-sink.test"}]`,
+	))
+	errors := validateFile(partial, make(map[string]string))
+	assertContainsError(t, errors, "unseeded-real-target.example.net")
+
+	complete := writeCase(t, dir, "url", "url-cover-002.json", twoEndpoints(
+		"url-cover-002",
+		`[{"kind":"reserved_sink_route","value":"a2a-exfil-sink.test"},{"kind":"blocklist_domain","value":"unseeded-real-target.example.net"}]`,
+	))
+	if errors := validateFile(complete, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("covering every endpoint should pass, got: %v", errors)
+	}
+
+	// Covering nothing is not a claim about any destination, so completeness has
+	// nothing to enforce. Refusing here would reject ordinary cases that need no
+	// external setup, which is the availability direction of the same mistake.
+	// Neither host may be a reserved sink: naming one IS coverage, derived rather
+	// than declared, and that is the case the block above refuses.
+	neutral := strings.ReplaceAll(
+		twoEndpoints("url-cover-003", `[]`),
+		"https://a2a-exfil-sink.test/decoy",
+		"https://first.example.net/a",
+	)
+	none := writeCase(t, dir, "url", "url-cover-003.json", neutral)
+	if errors := validateFile(none, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("covering no endpoint should pass, got: %v", errors)
+	}
+}
