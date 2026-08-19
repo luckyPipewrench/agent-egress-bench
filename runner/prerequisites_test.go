@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -496,4 +497,79 @@ func TestEndpointPayloadKeysAreTheOnlyDialableFields(t *testing.T) {
 	if got := strings.ReplaceAll(matches[0][1], `,"`, `", "`); got != want {
 		t.Fatalf("validator endpoint keys = %s, runner declares %s", got, want)
 	}
+}
+
+// Prerequisite rules are now enforced in three places: the validator for
+// single-file cases, the validator for multi-file cases, and this package's own
+// loader, which exists because the runner accepts a caller-provided --cases
+// directory that never passed through the validator. Nothing makes the three
+// agree, and a kind or a reserved host added to one and not the others is the
+// same split that let a multi-file case validate and then fail setup.
+//
+// The validator is a separate Go module, so this reads its source rather than
+// importing it, the way the endpoint-key guard above does.
+func TestPrerequisiteContractMatchesTheValidator(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "validate", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	declaredKinds := keysOfDeclaredMap(t, string(source), "validPrerequisiteKinds")
+	runnerKinds := map[string]bool{}
+	for kind := range endpointBoundKinds {
+		runnerKinds[kind] = true
+	}
+	if !sameStringSet(declaredKinds, runnerKinds) {
+		t.Errorf("validator prerequisite kinds %v, runner endpointBoundKinds %v", sortedKeys(declaredKinds), sortedKeys(runnerKinds))
+	}
+
+	declaredSinks := keysOfDeclaredMap(t, string(source), "reservedSinkHosts")
+	runnerSinks := map[string]bool{
+		adapter.WSUntrustedSinkHostname:  true,
+		adapter.A2AUntrustedSinkHostname: true,
+	}
+	if !sameStringSet(declaredSinks, runnerSinks) {
+		t.Errorf("validator reserved sinks %v, runner adapter constants %v", sortedKeys(declaredSinks), sortedKeys(runnerSinks))
+	}
+}
+
+// keysOfDeclaredMap reads the string keys of a `name = map[string]bool{...}`
+// declaration. It fails when the declaration is absent or has no keys, so a
+// rename cannot turn this guard into one that compares nothing.
+func keysOfDeclaredMap(t *testing.T, source, name string) map[string]bool {
+	t.Helper()
+	block := regexp.MustCompile(`(?s)\b` + regexp.QuoteMeta(name) + `\s*=\s*map\[string\]bool\{(.*?)\n\t\}`)
+	match := block.FindStringSubmatch(source)
+	if match == nil {
+		t.Fatalf("no map[string]bool declaration named %q in the validator source", name)
+	}
+	keys := map[string]bool{}
+	for _, entry := range regexp.MustCompile(`"([^"]+)"\s*:`).FindAllStringSubmatch(match[1], -1) {
+		keys[entry[1]] = true
+	}
+	if len(keys) == 0 {
+		t.Fatalf("declaration %q parsed to no keys; the guard would compare nothing", name)
+	}
+	return keys
+}
+
+func sameStringSet(left, right map[string]bool) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key := range left {
+		if !right[key] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
