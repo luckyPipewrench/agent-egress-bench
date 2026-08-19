@@ -1,7 +1,7 @@
 # agent-egress-bench stats
-cases_total: 240
+cases_total: 242
 categories: 18
-block: 174
+block: 176
 allow: 65
 warn: 1
 by_category:
@@ -10,14 +10,14 @@ by_category:
   crypto_financial: 11
   encoding_evasion: 9
   false_positive: 21
-  headers: 13
+  headers: 14
   hostname_exfiltration: 10
   mcp_chain: 17
   mcp_drift: 6
   mcp_input: 15
   mcp_tool: 23
   request_body: 24
-  response_fetch: 8
+  response_fetch: 9
   response_mitm: 9
   shell_obfuscation: 10
   ssrf_bypass: 11
