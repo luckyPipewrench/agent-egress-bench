@@ -364,23 +364,27 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # can change assets in that window. The body is not exposed: one command sets the verified body
     # and clears the draft together. Closing the asset window needs an API primitive that does not
     # exist today; pretending otherwise would be the actual defect.
-    published = inspect_draft(gh, tag)
-    if published is None:
-        fail(f"release {tag} disappeared during publication")
-    # The edit asked to clear the draft. If that did not take, this process still returns success
-    # unless we look: an incomplete publication must not present as done.
-    if published.get("isDraft") is not False:
-        fail(f"release {tag} is still a draft after publication")
-    published_body = published.get("body")
-    if not isinstance(published_body, str) or published_body != notes_text:
-        _withdraw(gh, tag, "body does not match the verified release notes")
-    published_names = actual_asset_names(published)
-    if published_names != sorted(expected_names):
-        _withdraw(
-            gh,
-            tag,
-            f"assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}",
-        )
+    try:
+        published = inspect_draft(gh, tag)
+        if published is None:
+            fail(f"release {tag} disappeared during publication")
+        # The edit asked to clear the draft. If that did not take, this process still returns success
+        # unless we look: an incomplete publication must not present as done.
+        if published.get("isDraft") is not False:
+            fail(f"release {tag} is still a draft after publication")
+        published_body = published.get("body")
+        if not isinstance(published_body, str) or published_body != notes_text:
+            fail("body does not match the verified release notes")
+        published_names = actual_asset_names(published)
+        if published_names != sorted(expected_names):
+            fail(
+                f"assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}"
+            )
+    except PublishError as exc:
+        # Every failed post-publication check leaves the same state question: the release may be
+        # public but no longer proved to match the verified snapshot. That includes malformed or
+        # incomplete metadata, not only a well-formed body or asset mismatch.
+        _withdraw(gh, tag, str(exc))
 
 
 def _withdraw(gh: str, tag: str, reason: str) -> NoReturn:

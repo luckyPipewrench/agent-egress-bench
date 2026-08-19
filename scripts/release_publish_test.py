@@ -302,6 +302,37 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         finally:
             signal.alarm(0)
 
+    def test_malformed_post_publication_metadata_is_returned_to_draft(self) -> None:
+        """Unknown metadata after undrafting cannot leave the release public.
+
+        The existing mismatch test covers a valid-but-wrong asset list. A malformed or incomplete
+        `gh release view` reply follows the same failure direction: it cannot prove the public
+        release is sound, so it must be withdrawn before reporting the error.
+        """
+        import release_publish
+
+        notes = "<!-- agent-egress-bench-release-workflow-v1 -->\n"
+        assets = [self.root / "archive.tar.gz"]
+        draft = {"isDraft": True, "body": notes, "assets": [{"name": "archive.tar.gz"}]}
+        # GitHub has already made the release public, but its response lacks the asset list the
+        # verifier needs. Previously actual_asset_names raised directly and skipped _withdraw.
+        malformed_public = {"isDraft": False, "body": notes}
+        releases = iter((None, draft, malformed_public))
+        calls = []
+        original_inspect = release_publish.inspect_draft
+        original_command = release_publish.command
+        release_publish.inspect_draft = lambda *_: next(releases)
+        release_publish.command = lambda _gh, *args: calls.append(args) or ""
+        try:
+            with self.assertRaisesRegex(release_publish.PublishError, "returned to draft"):
+                release_publish._publish_with_notes(
+                    "v1.0.0", self.dist, "gh", assets, ["archive.tar.gz"], self.root / "notes.md", notes
+                )
+        finally:
+            release_publish.inspect_draft = original_inspect
+            release_publish.command = original_command
+        self.assertIn(("release", "edit", "v1.0.0", "--draft=true"), calls)
+
     def test_notes_and_uploaded_identity_stay_paired_after_a_source_swap(self) -> None:
         # Swap identity on disk after the first of (notes check, asset snapshot) returns. If notes
         # are checked against dist and assets are copied later, the upload carries identity B under
