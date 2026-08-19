@@ -439,6 +439,8 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
             "  if '--draft=false' in args:\n"
             "    state['isDraft'] = False\n"
             "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  if '--draft=true' in args:\n"
+            "    state['isDraft'] = True\n"
             "  state_path.write_text(json.dumps(state))\n"
             "else:\n"
             "  raise SystemExit(2)\n",
@@ -453,6 +455,58 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("assets do not match dist/release", result.stderr)
+        # Reporting the divergence and walking away leaves a release carrying bytes nothing
+        # checked. The exposure cannot be undone; staying public can be.
+        self.assertIn("returned to draft", result.stderr)
+        self.assertIs(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"], True)
+
+    def test_a_failed_withdrawal_is_reported_rather_than_hidden(self) -> None:
+        gh = self.root / "gh-swap-assets-nowithdraw"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            "  if '--draft=true' in args:\n"
+            "    print('permission denied', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  if '--draft=false' in args:\n"
+            "    state['isDraft'] = False\n"
+            "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        # The divergence is the finding; the failed withdrawal is how much worse the state is.
+        # Replacing one message with the other would hide which of the two happened.
+        self.assertIn("assets do not match dist/release", result.stderr)
+        self.assertIn("still public", result.stderr)
 
 
 class AssetSnapshotCoherenceTest(unittest.TestCase):

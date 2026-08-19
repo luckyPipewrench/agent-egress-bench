@@ -322,10 +322,10 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # One update sets the verified body AND clears the draft. Doing those separately leaves a window
     # in which another editor can replace the body between the check and publication.
     command(gh, "release", "edit", tag, "--notes-file", str(notes), "--draft=false")
-    # DETECTION, NOT PREVENTION. By the time this runs the release is already public, so a failure
-    # here reports a bad state that readers may already have seen. It is worth keeping because a
-    # silent divergence is worse than a loud one, and it must not be read as a guarantee that the
-    # published release always matched.
+    # DETECTION AND WITHDRAWAL, NOT PREVENTION. By the time this runs the release is already public,
+    # so a divergence here may already have been read. What follows refuses to LEAVE it public: a
+    # mismatch returns the release to draft and then fails. That does not undo an exposure and must
+    # not be read as a guarantee that the published release always matched.
     #
     # Residual, stated rather than implied: GitHub offers no compare-and-set on a release, so the
     # asset set is verified and then undrafted as two operations. Another editor with write access
@@ -341,10 +341,34 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
         fail(f"release {tag} is still a draft after publication")
     published_body = published.get("body")
     if not isinstance(published_body, str) or published_body != notes_text:
-        fail(f"published release {tag} body does not match the verified release notes")
+        _withdraw(gh, tag, "body does not match the verified release notes")
     published_names = actual_asset_names(published)
     if published_names != sorted(expected_names):
-        fail(f"published release {tag} assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}")
+        _withdraw(
+            gh,
+            tag,
+            f"assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}",
+        )
+
+
+def _withdraw(gh: str, tag: str, reason: str) -> NoReturn:
+    """Put a diverged release back into draft, then fail.
+
+    The window above cannot be closed: GitHub has no compare-and-set on a release, so the asset set
+    is verified and undrafted as two operations and another editor with write access can change it
+    in between. What CAN be done is refusing to leave the result public. Reporting the divergence and
+    walking away leaves a release carrying bytes nothing checked, which is the fail-open direction on
+    a publishing boundary.
+
+    Re-drafting is best effort by construction, since whoever changed the release can change it back.
+    A failed withdrawal is reported alongside the divergence rather than replacing it, because the
+    divergence is the finding and the failed withdrawal is how much worse the state is.
+    """
+    try:
+        command(gh, "release", "edit", tag, "--draft=true")
+    except PublishError as exc:
+        fail(f"published release {tag} {reason}; it could NOT be returned to draft and is still public: {exc}")
+    fail(f"published release {tag} {reason}; it has been returned to draft")
 
 
 def main() -> int:
