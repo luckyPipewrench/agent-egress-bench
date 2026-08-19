@@ -267,6 +267,14 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_pipelock_result_inventory.py
 	@node gauntlet-site/scope-render_test.js
 	@node gauntlet-site/latest-result_test.js
+	@# An artifact and the manifest it was measured against are one pair. Overriding only
+	@# the artifact validates it against the fixture's manifest and fails on a digest or
+	@# count mismatch that names neither, so refuse the invocation instead.
+	@if [ "$(GAUNTLET_SCOPE_ARTIFACT)" != "gauntlet-site/testdata/complete-provenance-artifact.json" ] \
+		&& [ "$(GAUNTLET_SCOPE_MANIFEST)" = "gauntlet-site/testdata/complete-provenance-corpus-manifest.txt" ]; then \
+		echo "check-gauntlet-site: FAIL - GAUNTLET_SCOPE_ARTIFACT was overridden without GAUNTLET_SCOPE_MANIFEST; set both to the artifact and the corpus manifest it was measured against" >&2; \
+		exit 1; \
+	fi
 	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }
 	@python3 scripts/validate_gauntlet_scope.py "$(GAUNTLET_SCOPE_ARTIFACT)" --expected-manifest "$(GAUNTLET_SCOPE_MANIFEST)"
 
