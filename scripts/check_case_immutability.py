@@ -158,6 +158,25 @@ def current_drift_paths(root, case_id):
     return paths
 
 
+def current_regular_paths(root, case_id):
+    """Discover every current single-file case carrying one existing case ID."""
+    cases_dir = root / "cases"
+    paths = set()
+    for path in sorted(cases_dir.rglob("*.json")):
+        relative = path.relative_to(root)
+        if "mcp-drift" in relative.parts:
+            continue
+        if path.is_symlink() or not path.is_file():
+            fail(f"current single-file case is not a regular file: {relative}")
+        try:
+            document = json.loads(path.read_bytes())
+        except json.JSONDecodeError as exc:
+            fail(f"current case is not valid JSON: {relative}: {exc}")
+        if isinstance(document, dict) and document.get("id") == case_id:
+            paths.add(relative.as_posix())
+    return paths
+
+
 def changed_base_cases(root, base, cases, drift_ids):
     changed = []
     for case_id, expected_files in sorted(cases.items()):
@@ -196,7 +215,7 @@ def current_case_files(root, case_id, expected_files, drift_ids):
         if actual_paths is None:
             fail(f"repair records cannot authorize removing case {case_id}")
     else:
-        actual_paths = set(expected_files)
+        actual_paths = current_regular_paths(root, case_id)
     files = {}
     for relative in sorted(actual_paths):
         path = root / relative

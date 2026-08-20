@@ -140,6 +140,22 @@ class CaseImmutabilityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "repair record hashes do not match"):
             case_immutability.check(self.repo, self.base)
 
+    def test_repair_record_cannot_hide_added_file_for_regular_case(self):
+        base_raw = self.case_path.read_bytes()
+        self.write_json(self.case_path, {"id": "immutable-case", "payload": {"url": "https://changed.example.invalid"}})
+        self.write_json(
+            self.repo / "cases" / "headers" / "duplicate.json",
+            {"id": "immutable-case", "payload": {"header": "added"}},
+        )
+        self.add_repair_record(
+            "immutable-case",
+            "cases/url/immutable-case.json",
+            base_raw,
+            self.case_path.read_bytes(),
+        )
+        with self.assertRaisesRegex(ValueError, "repair record file inventory does not match"):
+            case_immutability.check(self.repo, self.base)
+
     def test_cannot_reuse_a_repair_record_from_the_base(self):
         base_raw = self.case_path.read_bytes()
         self.write_json(self.case_path, {"id": "immutable-case", "payload": {"url": "https://first-repair.example.invalid"}})
