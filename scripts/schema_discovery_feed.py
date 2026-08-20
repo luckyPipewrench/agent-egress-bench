@@ -171,12 +171,22 @@ def _contained_file_bytes(root: Path, index: int, path: str) -> bytes:
             raise ValueError(f"schema catalog entry {index} path could not be resolved: {path!r}") from exc
         if (resolved.st_dev, resolved.st_ino) != (status.st_dev, status.st_ino):
             raise ValueError(f"schema catalog entry {index} path changed while it was being read: {path!r}")
-        contained = False
+        # Resolve the checkout once and require each published root to BE the directory of that
+        # name inside it. Resolving `root / allowed` on its own measures containment against
+        # wherever a symlinked root points: with `schemas` a link to /etc, the allowed root becomes
+        # /etc and every file under /etc is "contained". O_NOFOLLOW does not cover this, because the
+        # symlink is a parent component and never the final one.
+        try:
+            checkout = root.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError(f"schema catalog root could not be resolved: {root}") from exc
+        allowed_roots = []
         for allowed in SCHEMA_ROOTS:
             allowed_root = (root / allowed).resolve()
-            if target == allowed_root or allowed_root in target.parents:
-                contained = True
-                break
+            if allowed_root != checkout / allowed:
+                raise ValueError(f"published schema root {allowed!r} does not resolve inside the checkout")
+            allowed_roots.append(allowed_root)
+        contained = any(target == allowed_root or allowed_root in target.parents for allowed_root in allowed_roots)
         if not contained:
             raise ValueError(f"schema catalog entry {index} path resolves outside the published schema roots: {path!r}")
         with os.fdopen(descriptor, "rb", closefd=False) as handle:

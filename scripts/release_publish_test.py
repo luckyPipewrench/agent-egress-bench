@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -305,6 +306,40 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         finally:
             signal.alarm(0)
 
+    def test_malformed_post_publication_metadata_is_returned_to_draft(self) -> None:
+        """Unknown metadata after undrafting cannot leave the release public.
+
+        The existing mismatch test covers a valid-but-wrong asset list. A malformed or incomplete
+        `gh release view` reply follows the same failure direction: it cannot prove the public
+        release is sound, so it must be withdrawn before reporting the error.
+        """
+        import release_publish
+
+        notes = "<!-- agent-egress-bench-release-workflow-v1 -->\n"
+        assets = [self.root / "archive.tar.gz"]
+        draft = {"isDraft": True, "body": notes, "assets": [{"name": "archive.tar.gz"}]}
+        # GitHub has already made the release public, but its response lacks the asset list the
+        # verifier needs. Previously actual_asset_names raised directly and skipped _withdraw.
+        malformed_public = {"isDraft": False, "body": notes}
+        # The fourth read is the withdrawal confirmation. A zero exit from the edit says the
+        # command was accepted, not that the release came down, so the state is read back.
+        withdrawn = {"isDraft": True, "body": notes, "assets": [{"name": "archive.tar.gz"}]}
+        releases = iter((None, draft, malformed_public, withdrawn))
+        calls = []
+        original_inspect = release_publish.inspect_draft
+        original_command = release_publish.command
+        release_publish.inspect_draft = lambda *_: next(releases)
+        release_publish.command = lambda _gh, *args: calls.append(args) or ""
+        try:
+            with self.assertRaisesRegex(release_publish.PublishError, "returned to draft"):
+                release_publish._publish_with_notes(
+                    "v1.0.0", self.dist, "gh", assets, ["archive.tar.gz"], self.root / "notes.md", notes
+                )
+        finally:
+            release_publish.inspect_draft = original_inspect
+            release_publish.command = original_command
+        self.assertIn(("release", "edit", "v1.0.0", "--draft=true"), calls)
+
     def test_notes_and_uploaded_identity_stay_paired_after_a_source_swap(self) -> None:
         # Swap identity on disk after the first of (notes check, asset snapshot) returns. If notes
         # are checked against dist and assets are copied later, the upload carries identity B under
@@ -448,6 +483,8 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
             "  if '--draft=false' in args:\n"
             "    state['isDraft'] = False\n"
             "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  if '--draft=true' in args:\n"
+            "    state['isDraft'] = True\n"
             "  state_path.write_text(json.dumps(state))\n"
             "else:\n"
             "  raise SystemExit(2)\n",
@@ -462,6 +499,273 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("assets do not match dist/release", result.stderr)
+        # Reporting the divergence and walking away leaves a release carrying bytes nothing
+        # checked. The exposure cannot be undone; staying public can be.
+        self.assertIn("returned to draft", result.stderr)
+        self.assertIs(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"], True)
+
+    def test_a_withdrawal_that_does_not_take_is_not_reported_as_success(self) -> None:
+        """The edit is accepted and the release stays public.
+
+        A zero exit says the command was accepted, not that the release came down. A no-op
+        response or a concurrent re-publication leaves it public, and an operator reading
+        "it has been returned to draft" will not go and look.
+        """
+        gh = self.root / "gh-withdraw-noop"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            # Accepts the withdrawal and does nothing, which is the whole point.
+            "  if '--draft=true' in args:\n"
+            "    raise SystemExit(0)\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  if '--draft=false' in args:\n"
+            "    state['isDraft'] = False\n"
+            "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("assets do not match dist/release", result.stderr)
+        self.assertIn("withdrawal could not be confirmed", result.stderr)
+        self.assertNotIn("has been returned to draft", result.stderr)
+        self.assertIs(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"], False)
+
+    def test_an_unreadable_withdrawal_state_is_reported_as_unconfirmed(self) -> None:
+        """The edit succeeds and the confirmation read fails.
+
+        The read raises its own error about inspecting the release, which never says the
+        divergent release may still be public. An operator reading a diagnostic instead of
+        the state they have to act on will not go and take it down.
+        """
+        gh = self.root / "gh-withdraw-unreadable"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "flag = state_path.with_suffix('.withdrawn')\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            # Only the read AFTER the withdrawal fails, so the run gets that far.
+            "  if flag.exists():\n"
+            "    print('upstream is unavailable', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            "  if '--draft=true' in args:\n"
+            "    flag.write_text('1')\n"
+            "    raise SystemExit(0)\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  if '--draft=false' in args:\n"
+            "    state['isDraft'] = False\n"
+            "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("withdrawal could not be confirmed", result.stderr)
+        self.assertIn("may still be public", result.stderr)
+        self.assertNotIn("has been returned to draft", result.stderr)
+
+    def test_a_failed_withdrawal_is_reported_rather_than_hidden(self) -> None:
+        gh = self.root / "gh-swap-assets-nowithdraw"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            "state_path = Path(os.environ['MOCK_GH_STATE'])\n"
+            "args = sys.argv[1:]\n"
+            "state = json.loads(state_path.read_text()) if state_path.exists() else None\n"
+            "if args[:2] == ['release', 'view']:\n"
+            "  if state is None:\n"
+            "    print('release not found', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  print(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'create']:\n"
+            "  files = [Path(item).name for item in args[3:args.index('--title')]]\n"
+            "  notes = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  state = {'isDraft': True, 'body': notes, 'assets': [{'name': name} for name in files]}\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "elif args[:2] == ['release', 'edit']:\n"
+            "  if '--draft=true' in args:\n"
+            "    print('permission denied', file=sys.stderr)\n"
+            "    raise SystemExit(1)\n"
+            "  if '--notes-file' in args:\n"
+            "    state['body'] = Path(args[args.index('--notes-file') + 1]).read_text(encoding='utf-8')\n"
+            "  if '--draft=false' in args:\n"
+            "    state['isDraft'] = False\n"
+            "    state['assets'] = state['assets'] + [{'name': 'extra.bin'}]\n"
+            "  state_path.write_text(json.dumps(state))\n"
+            "else:\n"
+            "  raise SystemExit(2)\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            text=True,
+            capture_output=True,
+            env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        # The divergence is the finding; the failed withdrawal is how much worse the state is.
+        # Replacing one message with the other would hide which of the two happened.
+        self.assertIn("assets do not match dist/release", result.stderr)
+        self.assertIn("may still be public", result.stderr)
+
+
+class AssetSnapshotCoherenceTest(unittest.TestCase):
+    """An open descriptor fixes WHICH object is read, not what it contains.
+
+    The earlier binding work closed the swap window: the copy holds the inode, so a rename or a
+    symlink replacement cannot redirect it. A writer that rewrites that same inode while the copy
+    streams is a different failure. It hands the snapshot a mix of old and new bytes, which is a
+    version that never existed on disk, and the release notes are then checked against that mix.
+    """
+
+    def setUp(self) -> None:
+        sys.path.insert(0, str(SCRIPT.parent))
+        import release_publish
+
+        self.module = release_publish
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.source = self.root / "archive.tar.gz"
+        self.source.write_bytes(b"original-bytes")
+        self.target = self.root / "copy.tar.gz"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_a_write_that_survives_the_metadata_check_is_refused(self) -> None:
+        """An equal-size rewrite whose observed metadata never moved.
+
+        This is the case metadata cannot catch. The stand-in runs the real metadata comparison,
+        which passes because it sees the pristine file, and only then rewrites the source. A
+        writer restoring st_mtime_ns with utimensat, or a filesystem whose timestamp granularity
+        is coarser than the write, produces the same state.
+        """
+        original = self.module._require_stable_during_read
+
+        def rewrite_after_metadata_passes(descriptor, before, copied, label):
+            original(descriptor, before, copied, label)
+            self.source.write_bytes(b"tampered-bytes")
+
+        self.module._require_stable_during_read = rewrite_after_metadata_passes
+        try:
+            with self.assertRaises(self.module.PublishError) as caught:
+                self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
+        finally:
+            self.module._require_stable_during_read = original
+        self.assertIn("did not read back as the bytes that were copied", str(caught.exception))
+        self.assertEqual(len(b"original-bytes"), len(b"tampered-bytes"))
+
+    def test_the_metadata_check_still_reports_an_ordinary_racing_write(self) -> None:
+        original = self.module._require_source_still_hashes_to
+        self.module._require_source_still_hashes_to = lambda *_: None
+        try:
+            self.source.write_bytes(b"original-bytes")
+            descriptor = os.open(self.source, os.O_RDONLY)
+            try:
+                before = os.fstat(descriptor)
+                self.source.write_bytes(b"a-longer-set-of-bytes")
+                with self.assertRaises(self.module.PublishError) as caught:
+                    self.module._require_stable_during_read(
+                        descriptor, before, len(b"original-bytes"), "release asset archive.tar.gz"
+                    )
+            finally:
+                os.close(descriptor)
+        finally:
+            self.module._require_source_still_hashes_to = original
+        self.assertIn("while it was being read", str(caught.exception))
+
+    def test_a_short_copy_is_refused(self) -> None:
+        original = self.module._require_source_still_hashes_to
+        # Neutralized so the size check is what answers, not the digest that would also catch it.
+        self.module._require_source_still_hashes_to = lambda *_: None
+        real_fdopen = self.module.os.fdopen
+
+        class _Short:
+            def __init__(self, handle):
+                self._handle = handle
+                self._served = False
+
+            def read(self, size):
+                if self._served:
+                    return b""
+                self._served = True
+                return self._handle.read(4)
+
+            def __enter__(self):
+                self._handle.__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                return self._handle.__exit__(*exc)
+
+        self.module.os.fdopen = lambda *a, **k: _Short(real_fdopen(*a, **k))
+        try:
+            with self.assertRaises(self.module.PublishError) as caught:
+                self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
+        finally:
+            self.module.os.fdopen = real_fdopen
+            self.module._require_source_still_hashes_to = original
+        self.assertIn("changed size while it was being read", str(caught.exception))
+
+    def test_an_untouched_asset_copies(self) -> None:
+        self.module._copy_verified_asset(self.source, self.target, "archive.tar.gz")
+        self.assertEqual(b"original-bytes", self.target.read_bytes())
 
 
 if __name__ == "__main__":

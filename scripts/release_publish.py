@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
-import shutil
 import subprocess
 import stat
 import sys
@@ -21,6 +21,7 @@ from typing import Any, NoReturn
 DRAFT_OWNER = "agent-egress-bench-release-workflow-v1"
 DRAFT_MARKER = f"<!-- {DRAFT_OWNER} -->"
 # A release notes body is prose. Anything approaching this size is a wrong or hostile file.
+_COPY_CHUNK_BYTES = 1024 * 1024
 MAX_NOTES_BYTES = 1 << 20
 RELEASE_NOTES_NAME = "release-notes.md"
 
@@ -222,6 +223,13 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
 
     O_NOFOLLOW refuses a final-component symlink in the same operation that opens the file, which a
     separate check cannot do: between the check and the open, the name can change.
+
+    An open descriptor fixes WHICH object is read, not what that object contains. A writer that
+    rewrites the same inode while this copy streams hands the snapshot a mix of the old and new
+    bytes, which is a version that never existed and which the notes check then compares against.
+    So the copy records the size and the modification and change timestamps before reading, and
+    refuses if either the byte count or those timestamps moved. st_ctime_ns is the load-bearing
+    half: a writer can restore st_mtime_ns with utimensat, and doing so moves st_ctime_ns forward.
     """
     try:
         # O_NONBLOCK is load-bearing. A FIFO substituted after release_assets listed the name
@@ -236,14 +244,78 @@ def _copy_verified_asset(source: Path, target: Path, name: str) -> Path:
         if not stat.S_ISREG(status.st_mode):
             fail(f"release asset {name} is not a regular file")
         _require_opened_identity(source, status, f"release asset {name}")
+        digest = hashlib.sha256()
+        copied = 0
         try:
             with os.fdopen(descriptor, "rb", closefd=False) as handle, open(target, "wb") as out:
-                shutil.copyfileobj(handle, out)
+                for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
+                    digest.update(chunk)
+                    out.write(chunk)
+                copied = out.tell()
         except OSError as exc:
             fail(f"cannot copy release asset {name}: {exc}")
+        _require_stable_during_read(descriptor, status, copied, f"release asset {name}")
+        _require_source_still_hashes_to(descriptor, digest.hexdigest(), f"release asset {name}")
     finally:
         os.close(descriptor)
     return target
+
+
+def _require_source_still_hashes_to(descriptor: int, copied_digest: str, label: str) -> None:
+    """Refuse a copy whose bytes are not a coherent version of the source.
+
+    Stronger than the metadata comparison beside it, and NOT a proof of atomicity. Say what each
+    one does. Size and timestamps carry almost nothing: a writer can restore st_mtime_ns with
+    utimensat, coarse filesystem timestamp granularity can miss a rapid rewrite, and st_ctime does
+    not mean write-time on every platform, so a same-size rewrite can leave every recorded field
+    unchanged. Re-reading the source and requiring the digest to match the bytes just copied closes
+    that, and it stops any writer whose timing is independent of this process.
+
+    It does NOT establish that the copied bytes ever existed on disk. An earlier version of this
+    comment claimed exactly that and the claim is false, shown by reproduction: with the file only
+    ever holding AAAAAAAA or BBBBBBBB, a writer rewriting it after the reader's first chunk on the
+    same cadence both times yields AAAABBBB from both reads. The digests agree on a value that was
+    never a version of the file. Agreement means the two reads saw the same thing, which a
+    repeatable interleaving satisfies as easily as a quiet file does.
+
+    Closing that needs something this function cannot get by reading harder: an immutable build
+    output, or a manifest of expected digests produced before the copy and trusted independently of
+    dist/. Absent either, treat write access to dist/ during publication as outside the boundary,
+    because an attacker holding it has already compromised the artifacts being published.
+    """
+    second = hashlib.sha256()
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        while True:
+            chunk = os.read(descriptor, _COPY_CHUNK_BYTES)
+            if not chunk:
+                break
+            second.update(chunk)
+    except OSError as exc:
+        fail(f"cannot re-read {label} to confirm what was copied: {exc}")
+    if second.hexdigest() != copied_digest:
+        fail(f"{label} did not read back as the bytes that were copied")
+
+
+def _require_stable_during_read(descriptor: int, before: os.stat_result, copied: int, label: str) -> None:
+    """Report a copy that raced a writer on the same inode.
+
+    Diagnostics, not the boundary: see _require_source_still_hashes_to for the check that actually
+    establishes the copied bytes. This catches the ordinary case early and with a clearer message,
+    and requires the byte count to match the size that was validated.
+    """
+    try:
+        after = os.fstat(descriptor)
+    except OSError as exc:
+        fail(f"cannot re-check {label} after reading it: {exc}")
+    if copied != before.st_size:
+        fail(f"{label} changed size while it was being read")
+    if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ):
+        fail(f"{label} was written while it was being read")
 
 
 def publish(tag: str, dist: Path, gh: str) -> None:
@@ -291,29 +363,70 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # One update sets the verified body AND clears the draft. Doing those separately leaves a window
     # in which another editor can replace the body between the check and publication.
     command(gh, "release", "edit", tag, "--notes-file", str(notes), "--draft=false")
-    # DETECTION, NOT PREVENTION. By the time this runs the release is already public, so a failure
-    # here reports a bad state that readers may already have seen. It is worth keeping because a
-    # silent divergence is worse than a loud one, and it must not be read as a guarantee that the
-    # published release always matched.
+    # DETECTION AND WITHDRAWAL, NOT PREVENTION. By the time this runs the release is already public,
+    # so a divergence here may already have been read. What follows refuses to LEAVE it public: a
+    # mismatch returns the release to draft and then fails. That does not undo an exposure and must
+    # not be read as a guarantee that the published release always matched.
     #
     # Residual, stated rather than implied: GitHub offers no compare-and-set on a release, so the
     # asset set is verified and then undrafted as two operations. Another editor with write access
     # can change assets in that window. The body is not exposed: one command sets the verified body
     # and clears the draft together. Closing the asset window needs an API primitive that does not
     # exist today; pretending otherwise would be the actual defect.
-    published = inspect_draft(gh, tag)
-    if published is None:
-        fail(f"release {tag} disappeared during publication")
-    # The edit asked to clear the draft. If that did not take, this process still returns success
-    # unless we look: an incomplete publication must not present as done.
-    if published.get("isDraft") is not False:
-        fail(f"release {tag} is still a draft after publication")
-    published_body = published.get("body")
-    if not isinstance(published_body, str) or published_body != notes_text:
-        fail(f"published release {tag} body does not match the verified release notes")
-    published_names = actual_asset_names(published)
-    if published_names != sorted(expected_names):
-        fail(f"published release {tag} assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}")
+    try:
+        published = inspect_draft(gh, tag)
+        if published is None:
+            fail(f"release {tag} disappeared during publication")
+        # The edit asked to clear the draft. If that did not take, this process still returns success
+        # unless we look: an incomplete publication must not present as done.
+        if published.get("isDraft") is not False:
+            fail(f"release {tag} is still a draft after publication")
+        published_body = published.get("body")
+        if not isinstance(published_body, str) or published_body != notes_text:
+            fail("body does not match the verified release notes")
+        published_names = actual_asset_names(published)
+        if published_names != sorted(expected_names):
+            fail(
+                f"assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}"
+            )
+    except PublishError as exc:
+        # Every failed post-publication check leaves the same state question: the release may be
+        # public but no longer proved to match the verified snapshot. That includes malformed or
+        # incomplete metadata, not only a well-formed body or asset mismatch.
+        _withdraw(gh, tag, str(exc))
+
+
+def _withdraw(gh: str, tag: str, reason: str) -> NoReturn:
+    """Put a diverged release back into draft, then fail.
+
+    The window above cannot be closed: GitHub has no compare-and-set on a release, so the asset set
+    is verified and undrafted as two operations and another editor with write access can change it
+    in between. What CAN be done is refusing to leave the result public. Reporting the divergence and
+    walking away leaves a release carrying bytes nothing checked, which is the fail-open direction on
+    a publishing boundary.
+
+    Re-drafting is best effort by construction, since whoever changed the release can change it back.
+    A failed withdrawal is reported alongside the divergence rather than replacing it, because the
+    divergence is the finding and the failed withdrawal is how much worse the state is.
+
+    A zero exit from the edit is not the withdrawal. It says the command was accepted, not that the
+    release is a draft, and a no-op or a concurrent re-publication leaves it public while this
+    reports the opposite. So the state is read back and only `isDraft` being true earns the message
+    that says the release came down. Anything else, including a read that fails, says the withdrawal
+    could not be confirmed, because an operator acting on "it has been returned to draft" will not go
+    and look.
+    """
+    try:
+        command(gh, "release", "edit", tag, "--draft=true")
+        # Inside the try on purpose. A failing confirmation read raises its own error about
+        # inspecting the release, which never says the divergent release may still be public,
+        # so the operator reads a diagnostic instead of the state they have to act on.
+        withdrawn = inspect_draft(gh, tag)
+    except PublishError as exc:
+        fail(f"published release {tag} {reason}; withdrawal could not be confirmed and it may still be public: {exc}")
+    if withdrawn is None or withdrawn.get("isDraft") is not True:
+        fail(f"published release {tag} {reason}; withdrawal could not be confirmed and it may still be public")
+    fail(f"published release {tag} {reason}; it has been returned to draft")
 
 
 def main() -> int:
