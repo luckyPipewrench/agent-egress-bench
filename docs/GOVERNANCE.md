@@ -15,13 +15,15 @@ Once a case ID is merged to `main`, it never changes. No renaming. No reassignme
 
 CI compares every file belonging to an existing case ID with the pull request merge base. It rejects changed, removed, or added files belonging to every existing case ID, including multi-file cases. New case IDs remain allowed, along with the generated manifest and stats changes that follow from adding them.
 
-Only a genuine repository repair may bypass this check. A maintainer must run the exact command below, with a visible reason that names the repair record:
+Only a genuine repository repair may bypass this check. A pull request must add a new record under `governance/case-repairs/` that names the case, explains the repair, and binds every changed file to its exact base and repaired SHA-256 digests. CI accepts the change only when that new record matches the complete case inventory and both versions of the bytes.
+
+A maintainer may verify the same repair locally before its record exists by running the exact command below with a visible reason:
 
 ```bash
-AEB_CASE_IMMUTABILITY_REPAIR=I_UNDERSTAND_CASE_IMMUTABILITY_REPAIR AEB_CASE_IMMUTABILITY_REASON='repair: documented issue URL' make check-case-immutability
+AEB_CASE_IMMUTABILITY_REPAIR=I_UNDERSTAND_CASE_IMMUTABILITY_REPAIR AEB_CASE_IMMUTABILITY_REASON='repair: exact fixture correction' make check-case-immutability
 ```
 
-The gate prints `OVERRIDE ACTIVE` when it accepts a repair. CI must never set this override.
+The gate prints `OVERRIDE ACTIVE` when it accepts the local override and `REPAIR RECORD ACTIVE` when it verifies a tracked record. CI must never set the environment override.
 
 ## Semantic stability
 

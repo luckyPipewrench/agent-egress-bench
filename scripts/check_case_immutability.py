@@ -2,6 +2,7 @@
 """Reject rewrites of case bytes already present at a pull request's base."""
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -12,6 +13,7 @@ from pathlib import Path
 OVERRIDE_ENV = "AEB_CASE_IMMUTABILITY_REPAIR"
 OVERRIDE_TOKEN = "I_UNDERSTAND_CASE_IMMUTABILITY_REPAIR"
 OVERRIDE_REASON_ENV = "AEB_CASE_IMMUTABILITY_REASON"
+REPAIR_RECORD_DIR = Path("governance/case-repairs")
 
 
 def fail(message):
@@ -182,6 +184,91 @@ def changed_base_cases(root, base, cases, drift_ids):
     return changed
 
 
+def sha256(raw):
+    """Return the lowercase SHA-256 digest for exact case bytes."""
+    return hashlib.sha256(raw).hexdigest()
+
+
+def current_case_files(root, case_id, expected_files, drift_ids):
+    """Read the complete current file inventory for one existing case."""
+    if case_id in drift_ids:
+        actual_paths = current_drift_paths(root, case_id)
+        if actual_paths is None:
+            fail(f"repair records cannot authorize removing case {case_id}")
+    else:
+        actual_paths = set(expected_files)
+    files = {}
+    for relative in sorted(actual_paths):
+        path = root / relative
+        if path.is_symlink() or not path.is_file():
+            fail(f"repair record for {case_id} cannot authorize missing file {relative}")
+        files[relative] = path.read_bytes()
+    return files
+
+
+def path_exists_at_revision(root, revision, relative):
+    """Report whether a repository-relative path exists at a Git revision."""
+    found = git(root, "ls-tree", "--name-only", revision, "--", relative)
+    return found.decode("utf-8", errors="surrogateescape").strip() == relative
+
+
+def validate_repair_record(root, base, case_id, expected_files, drift_ids):
+    """Validate one new repair record against exact base and working-tree bytes."""
+    records = []
+    directory = root / REPAIR_RECORD_DIR
+    if directory.is_dir() and not directory.is_symlink():
+        for path in sorted(directory.glob(f"{case_id}-*.repair.json")):
+            relative = path.relative_to(root).as_posix()
+            if not path_exists_at_revision(root, base, relative):
+                records.append(path)
+    if not records:
+        return None
+    if len(records) != 1:
+        fail(f"case {case_id} has multiple new repair records")
+
+    record_path = records[0]
+    if record_path.is_symlink() or not record_path.is_file():
+        fail(f"repair record must be a regular file: {record_path.relative_to(root)}")
+    try:
+        record = json.loads(record_path.read_bytes())
+    except json.JSONDecodeError as exc:
+        fail(f"repair record is not valid JSON: {record_path.relative_to(root)}: {exc}")
+    required = {"schema_version", "case_id", "reason", "files"}
+    if not isinstance(record, dict) or set(record) != required:
+        fail(f"repair record for {case_id} must contain exactly {sorted(required)}")
+    if record["schema_version"] != 1 or record["case_id"] != case_id:
+        fail(f"repair record identity does not match case {case_id}")
+    reason = record["reason"]
+    if not isinstance(reason, str) or not reason.strip() or len(reason) > 240 or "\n" in reason or "\r" in reason:
+        fail(f"repair record reason for {case_id} must be one visible line of at most 240 characters")
+
+    current_files = current_case_files(root, case_id, expected_files, drift_ids)
+    files = record["files"]
+    if not isinstance(files, list) or not files:
+        fail(f"repair record for {case_id} must contain a non-empty files list")
+    recorded = {}
+    for item in files:
+        keys = {"path", "base_sha256", "repaired_sha256"}
+        if not isinstance(item, dict) or set(item) != keys:
+            fail(f"repair record file entries for {case_id} must contain exactly {sorted(keys)}")
+        relative = item["path"]
+        if not isinstance(relative, str) or relative in recorded:
+            fail(f"repair record for {case_id} contains an invalid or duplicate path")
+        recorded[relative] = (item["base_sha256"], item["repaired_sha256"])
+
+    all_paths = set(expected_files) | set(current_files)
+    if set(recorded) != all_paths:
+        fail(f"repair record file inventory does not match case {case_id}")
+    for relative in sorted(all_paths):
+        base_raw = expected_files.get(relative)
+        repaired_raw = current_files.get(relative)
+        if base_raw is None or repaired_raw is None:
+            fail(f"repair record for {case_id} cannot authorize adding or removing files")
+        if recorded[relative] != (sha256(base_raw), sha256(repaired_raw)):
+            fail(f"repair record hashes do not match {relative}")
+    return reason.strip()
+
+
 def override_from_environment():
     value = os.environ.get(OVERRIDE_ENV, "")
     if not value:
@@ -204,10 +291,16 @@ def check(root, base, override_reason=None):
     cases, drift_ids = base_case_inventory(root, resolved_base)
     changed = changed_base_cases(root, resolved_base, cases, drift_ids)
     if changed and not override_reason:
-        fail(
-            "immutable case bytes changed since base "
-            f"{resolved_base}:\n  " + "\n  ".join(changed)
-        )
+        changed_ids = {item.split(":", 1)[0] for item in changed}
+        missing = []
+        for case_id in sorted(changed_ids):
+            if validate_repair_record(root, resolved_base, case_id, cases[case_id], drift_ids) is None:
+                missing.append(case_id)
+        if missing:
+            fail(
+                "immutable case bytes changed since base "
+                f"{resolved_base}:\n  " + "\n  ".join(changed)
+            )
     return resolved_base, len(cases), changed
 
 
@@ -223,10 +316,15 @@ def main():
     except (OSError, ValueError) as exc:
         print(f"check-case-immutability: FAIL - {exc}", file=sys.stderr)
         return 1
-    if changed:
+    if changed and override_reason:
         print(
             "check-case-immutability: OVERRIDE ACTIVE "
             f"(base {base}, {len(changed)} changed existing cases, reason: {override_reason})"
+        )
+    elif changed:
+        print(
+            "check-case-immutability: REPAIR RECORD ACTIVE "
+            f"(base {base}, {len(changed)} changed existing cases)"
         )
     else:
         print(f"check-case-immutability: OK ({count} base cases unchanged from {base})")
