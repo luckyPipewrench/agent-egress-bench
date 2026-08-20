@@ -5,11 +5,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -32,9 +32,9 @@ func TestHTTPDeliveryTokenIsOpaqueWithoutEntropyRaisingPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := hex.DecodeString(token)
-	if err != nil || len(decoded) != 32 {
-		t.Fatalf("token %q is not a 256-bit hexadecimal nonce: bytes=%d err=%v", token, len(decoded), err)
+	decoded, ok := new(big.Int).SetString(token, 10)
+	if !ok || len(token) != 78 || decoded.Sign() < 0 || decoded.BitLen() > 256 {
+		t.Fatalf("token %q is not a fixed-width decimal encoding of a 256-bit nonce", token)
 	}
 	if strings.Contains(token, "aeb-request-") {
 		t.Fatalf("HTTP delivery token retained entropy-raising prefix: %q", token)

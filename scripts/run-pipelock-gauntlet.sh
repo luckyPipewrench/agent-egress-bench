@@ -402,10 +402,16 @@ done
 PYTHONDONTWRITEBYTECODE=1 python3 "$provenance_script" "${start_args[@]}"
 cp "$repo_root/cases/MANIFEST.txt" "$output_dir/corpus-manifest.txt"
 profile_path="$repo_root/examples/pipelock/tool-profile.json"
-cp "$profile_path" "$output_dir/tool-profile.json"
-registry_id="$(jq -r '.capability_registry.id // empty' "$profile_path")"
-registry_format="$(jq -r '.capability_registry.format // empty' "$profile_path")"
-registry_revision="$(jq -r '.capability_registry.revision // empty' "$profile_path")"
+runtime_profile_path="$output_dir/tool-profile.json"
+# The reviewed profile describes capabilities, while the release pin names the
+# binary actually under test. Bind the recorded profile to that verified binary
+# even when an operator supplies an external release pin.
+failure_reason="runtime tool profile generation failed"
+jq --arg version "$PIPELOCK_VERSION" '.tool_version = $version' \
+  "$profile_path" > "$runtime_profile_path"
+registry_id="$(jq -r '.capability_registry.id // empty' "$runtime_profile_path")"
+registry_format="$(jq -r '.capability_registry.format // empty' "$runtime_profile_path")"
+registry_revision="$(jq -r '.capability_registry.revision // empty' "$runtime_profile_path")"
 [[ -n "$registry_id" && "$registry_format" =~ ^[1-9][0-9]*$ && "$registry_revision" =~ ^[1-9][0-9]*$ ]] || \
   die "tool profile has no valid capability registry reference"
 registry_snapshot="$repo_root/capability-registry/$registry_id/format-$registry_format/revision-$registry_revision.json"
@@ -572,7 +578,7 @@ cmd=(
   --managed-proxy-cmd "$managed_proxy_cmd"
   --managed-mcp-http-cmd "$managed_mcp_http_cmd"
   --cases ./cases
-  --profile examples/pipelock/tool-profile.json
+  --profile "$runtime_profile_path"
   --method-repository "$corpus_repository"
   --method-commit "$corpus_git_sha"
   --adapter-owner "agent-egress-bench maintainers"

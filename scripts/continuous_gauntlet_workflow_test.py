@@ -180,6 +180,25 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("--release-pin", self.entrypoint)
         self.assertIn("reviewed release pin is invalid", self.entrypoint)
 
+    def test_runtime_profile_uses_the_verified_release_version(self):
+        self.assertIn('runtime_profile_path="$output_dir/tool-profile.json"', self.entrypoint)
+        self.assertIn('--arg version "$PIPELOCK_VERSION"', self.entrypoint)
+        self.assertIn("'.tool_version = $version'", self.entrypoint)
+        self.assertIn('--profile "$runtime_profile_path"', self.entrypoint)
+        self.assertNotIn("--profile examples/pipelock/tool-profile.json", self.entrypoint)
+        self.assertIn('failure_reason="runtime tool profile generation failed"', self.entrypoint)
+
+        source_profile = json.loads(PIPELOCK_PROFILE.read_text(encoding="utf-8"))
+        result = subprocess.run(
+            ["jq", "--arg", "version", "9.9.9", ".tool_version = $version", str(PIPELOCK_PROFILE)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["tool_version"], "9.9.9")
+        self.assertNotEqual(source_profile["tool_version"], "9.9.9")
+
     def test_target_runs_under_a_filesystem_restricted_environment(self):
         self.assertIn("go build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
         self.assertIn('pipelock_bin="$target_wrapper"', self.entrypoint)

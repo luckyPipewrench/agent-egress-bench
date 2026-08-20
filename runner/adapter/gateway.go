@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"mime"
 	"net/http"
 	"net/url"
@@ -46,7 +47,12 @@ func nextGatewayRequestIdentity() (string, error) {
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
 		return "", fmt.Errorf("generate request identity: %w", err)
 	}
-	return fmt.Sprintf("aeb-request-%x", nonce), nil
+	// Fixed-width decimal preserves all 256 random bits while keeping these
+	// correlation values below 4-bit query-entropy thresholds. Hex plus the
+	// fixed prefix can block the benchmark's own delivery proof before it
+	// reaches the trusted fixture.
+	decimal := new(big.Int).SetBytes(nonce[:]).String()
+	return "aeb-request-" + strings.Repeat("0", 78-len(decimal)) + decimal, nil
 }
 
 func prepareGatewayRequest(message map[string]interface{}) (map[string]interface{}, gatewayRequest, error) {

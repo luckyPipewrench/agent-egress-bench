@@ -201,12 +201,11 @@ func (p *ProxyAdapter) beginHTTPFixtureDelivery(path string) (deliveryProof, err
 	return proof, nil
 }
 
-// nextHTTPDeliveryToken keeps the 256-bit opaque identity while using only
-// hexadecimal characters. The token is appended to the URL under test; a
-// human-readable prefix raises its Shannon entropy above a strict scanner's
-// threshold and makes the benchmark's own delivery proof block before the
-// declared case reaches the fixture. Hex is load-bearing here: its 16-symbol
-// alphabet caps Shannon entropy at 4.0; base64url would reintroduce the bug.
+// nextHTTPDeliveryToken keeps the fixed-width decimal encoding of the 256-bit
+// opaque identity but removes its human-readable prefix. The token is appended
+// to the URL under test; a human-readable prefix raises its Shannon entropy
+// above a strict scanner's threshold and makes the benchmark's own delivery
+// proof block before the declared case reaches the fixture.
 func nextHTTPDeliveryToken() (string, error) {
 	identity, err := nextGatewayRequestIdentity()
 	if err != nil {
@@ -2153,11 +2152,7 @@ func correlateMCPStdioSessionMessages(clientMsgs, serverResponses []interface{})
 }
 
 func freshMCPStdioRequestIdentity() (string, error) {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("generate random request identity: %w", err)
-	}
-	return "aeb-stdio-" + base64.RawURLEncoding.EncodeToString(bytes), nil
+	return nextGatewayRequestIdentity()
 }
 
 func mcpStdioObservationEvidence(observer *mcpStdioUpstreamObserver) (map[string]interface{}, bool) {
