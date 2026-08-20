@@ -19,10 +19,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The action installs the latest Pipelock RELEASE. It still runs the
-      # whole-tree audit and resolves the shared config, but its built-in diff
-      # scan is disabled here and both diff scans below use a scanner built from
-      # Pipelock's default branch instead.
+      # The action runs the whole-tree audit and resolves the shared config, but
+      # its built-in diff scan is disabled here. Pin its release so the generated
+      # config cannot gain fields that the source-pinned scanner below cannot
+      # parse. Advance both producers together through a reviewed change.
       #
       # Why: a scanner fix on Pipelock's default branch does not reach a release
       # for weeks, and this repository inherits every bug that shipped meanwhile.
@@ -35,6 +35,7 @@ jobs:
         id: pipelock
         uses: luckyPipewrench/pipelock@9d2e37d296359c38e599525a0424cdc189a812e1 # v3.0.0
         with:
+          version: '3.3.0'
           scan-diff: 'false'
           fail-on-findings: 'true'
           test-vectors: 'false'
