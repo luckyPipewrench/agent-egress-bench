@@ -273,6 +273,39 @@ func uncoveredEndpoint(c Case) string {
 	return ""
 }
 
+// mismatchedDeclaration reports a declared endpoint value that names no host the
+// payload carries.
+//
+// The validator already refuses such a case, but the runner is what scores, so a
+// case reaching it by any other route must not be taken on faith. Left unchecked
+// the declaration IS the requirement: seed an unrelated domain and a
+// single-endpoint case runs with its real destination unprotected, scoring a
+// result it did not earn. The coverage rule below does not catch that one,
+// because with a single endpoint it returns before it looks at anything.
+//
+// A payload naming no endpoint is exempt. There is nothing to check against, and
+// multi-file cases carry files rather than URLs, so refusing them here would make
+// every one of them unrunnable.
+func mismatchedDeclaration(c Case) string {
+	hosts := casePayloadHosts(c)
+	if len(hosts) == 0 {
+		return ""
+	}
+	named := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		named[host] = struct{}{}
+	}
+	for _, prereq := range c.Prerequisites {
+		if _, ok := endpointBoundKinds[strings.TrimSpace(prereq.Kind)]; !ok {
+			continue
+		}
+		if _, ok := named[strings.ToLower(strings.TrimSpace(prereq.Value))]; !ok {
+			return prereq.Value
+		}
+	}
+	return ""
+}
+
 func (s runSetup) unsatisfied(c Case) string {
 	// The validator rejects a domain_blocklist case without a parseable endpoint,
 	// but the runner also accepts an arbitrary --cases directory. Do not let that
@@ -284,6 +317,9 @@ func (s runSetup) unsatisfied(c Case) string {
 				return "unsatisfied domain_blocklist requirement: payload has no parseable url or target_url host from which to derive the domain to seed"
 			}
 		}
+	}
+	if value := mismatchedDeclaration(c); value != "" {
+		return fmt.Sprintf("declared prerequisite value %q names no endpoint this case sends to: an endpoint-bound declaration must name a host the payload carries, or the setup it demands guards a destination the run never reaches", value)
 	}
 	if host := uncoveredEndpoint(c); host != "" {
 		return fmt.Sprintf("case names endpoint %q that no prerequisite covers while covering another endpoint it names: setup must cover every endpoint the payload names, because the transport selects one of them", host)

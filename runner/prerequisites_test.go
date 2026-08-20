@@ -17,6 +17,10 @@ import (
 func TestUnsatisfiedBlocklistPrerequisiteIsErrorNotMiss(t *testing.T) {
 	c := stateTestCase()
 	c.ExpectedVerdict = "block"
+	// A declared value has to name a host the payload carries; the validator refuses
+	// anything else, so a fixture declaring a domain the payload never names is not a
+	// case that can exist.
+	c.Payload = map[string]interface{}{"method": "GET", "url": "https://exfil-collector.example.net/beacon"}
 	c.Prerequisites = []Prerequisite{{Kind: "blocklist_domain", Value: "exfil-collector.example.net"}}
 	adapt := &stateTestAdapter{
 		routes: []adapter.DeliveryTuple{adapter.TupleForCase(adapter.Case{Transport: c.Transport, InputType: c.InputType})},
@@ -54,6 +58,10 @@ func TestUnsatisfiedBlocklistPrerequisiteIsErrorNotMiss(t *testing.T) {
 func TestSatisfiedBlocklistPrerequisiteRunsAdapter(t *testing.T) {
 	c := stateTestCase()
 	c.ExpectedVerdict = "block"
+	// A declared value has to name a host the payload carries; the validator refuses
+	// anything else, so a fixture declaring a domain the payload never names is not a
+	// case that can exist.
+	c.Payload = map[string]interface{}{"method": "GET", "url": "https://exfil-collector.example.net/beacon"}
 	c.Prerequisites = []Prerequisite{{Kind: "blocklist_domain", Value: "exfil-collector.example.net"}}
 	adapt := &stateTestAdapter{
 		routes: []adapter.DeliveryTuple{adapter.TupleForCase(adapter.Case{Transport: c.Transport, InputType: c.InputType})},
@@ -82,6 +90,7 @@ func TestUnsatisfiedReservedSinkPrerequisiteIsErrorNotMiss(t *testing.T) {
 	c.Transport = "websocket"
 	c.InputType = "websocket_frame"
 	c.ExpectedVerdict = "block"
+	c.Payload = map[string]interface{}{"url": "wss://" + adapter.WSUntrustedSinkHostname + "/live"}
 	c.Prerequisites = []Prerequisite{{Kind: "reserved_sink_route", Value: adapter.WSUntrustedSinkHostname}}
 	adapt := &stateTestAdapter{
 		routes: []adapter.DeliveryTuple{adapter.TupleForCase(adapter.Case{Transport: c.Transport, InputType: c.InputType})},
@@ -109,6 +118,7 @@ func TestSatisfiedReservedSinkPrerequisiteRunsAdapter(t *testing.T) {
 	c.Transport = "websocket"
 	c.InputType = "websocket_frame"
 	c.ExpectedVerdict = "block"
+	c.Payload = map[string]interface{}{"url": "wss://" + adapter.WSUntrustedSinkHostname + "/live"}
 	c.Prerequisites = []Prerequisite{{Kind: "reserved_sink_route", Value: adapter.WSUntrustedSinkHostname}}
 	adapt := &stateTestAdapter{
 		routes: []adapter.DeliveryTuple{adapter.TupleForCase(adapter.Case{Transport: c.Transport, InputType: c.InputType})},
@@ -572,4 +582,49 @@ func sortedKeys(values map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// A declared endpoint value that names no payload host is setup for a destination
+// this case never reaches. The validator refuses such a case, but the runner is
+// what scores, and it took the declaration on faith.
+//
+// The single-endpoint shape is the one that bites. With two endpoints the coverage
+// rule already refuses, because a bogus value counts as covering nothing the payload
+// names. With one endpoint that rule returns early, so the bogus value was the ONLY
+// requirement: seed an unrelated domain and the case runs with its real destination
+// unprotected, scoring a result it did not earn.
+func TestDeclaredEndpointValueMustNameAPayloadHost(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{"url": "https://real-target.example.net/beacon"}
+	c.Requires = nil
+	c.Prerequisites = []Prerequisite{{Kind: "blocklist_domain", Value: "unrelated.example.org"}}
+
+	seeded := newRunSetup([]string{"unrelated.example.org"}, nil)
+	reason := seeded.unsatisfied(c)
+	if reason == "" {
+		t.Fatal("seeding an unrelated declared domain satisfied setup while the real destination went unseeded")
+	}
+	if !strings.Contains(reason, "unrelated.example.org") {
+		t.Fatalf("refusal did not name the mismatched declaration: %s", reason)
+	}
+
+	// A declaration that DOES name the payload host stays valid, which is the whole
+	// point of allowing declarations at all.
+	c.Prerequisites = []Prerequisite{{Kind: "blocklist_domain", Value: "real-target.example.net"}}
+	matching := newRunSetup([]string{"real-target.example.net"}, nil)
+	if reason := matching.unsatisfied(c); reason != "" {
+		t.Fatalf("a declaration naming the payload host was refused: %s", reason)
+	}
+}
+
+// A case that names no endpoint at all cannot be checked against one, and refusing
+// its declaration would make multi-file cases unrunnable: they carry files, not URLs.
+func TestDeclaredValueIsNotCheckedWhenThePayloadNamesNoEndpoint(t *testing.T) {
+	c := stateTestCase()
+	c.Payload = map[string]interface{}{}
+	c.Requires = nil
+	c.Prerequisites = []Prerequisite{{Kind: "blocklist_domain", Value: "declared.example.net"}}
+	if reason := newRunSetup([]string{"declared.example.net"}, nil).unsatisfied(c); reason != "" {
+		t.Fatalf("a case with no payload endpoint was refused: %s", reason)
+	}
 }
