@@ -360,3 +360,153 @@ func replaceOnce(t *testing.T, value, old, replacement string) string {
 	}
 	return value[:index] + replacement + value[index+len(old):]
 }
+
+// The prerequisites key was in neither the known-field map nor any optional set,
+// so the parser rejected it as an unknown field before the branch that reads it
+// could run. Every multi-file case declaring setup failed, and the parse branch
+// below that rejection was unreachable code no test could reach either.
+func TestMultiFileCaseParsesPrerequisites(t *testing.T) {
+	raw := multiFileFixtureYAML(t)
+	if strings.Contains(string(raw), "prerequisites:") {
+		t.Fatal("fixture already declares prerequisites; pick a case that does not")
+	}
+
+	// Both spellings a YAML emitter produces for one object. The inline mapping is
+	// what the runner's own YAML library reads, so the validator refusing it meant
+	// the two disagreed about the same bytes.
+	forms := map[string]string{
+		"block_object":   "prerequisites:\n  -\n    kind: reserved_sink_route\n    value: a2a-exfil-sink.test\n",
+		"inline_mapping": "prerequisites:\n  - kind: reserved_sink_route\n    value: a2a-exfil-sink.test\n",
+	}
+	for name, block := range forms {
+		t.Run(name, func(t *testing.T) {
+			parsed, err := parseMultiFileCaseYAML(append(append([]byte{}, raw...), []byte(block)...))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if len(parsed.Prerequisites) != 1 {
+				t.Fatalf("prerequisites = %d, want 1", len(parsed.Prerequisites))
+			}
+			if parsed.Prerequisites[0].Kind != "reserved_sink_route" {
+				t.Fatalf("kind = %q", parsed.Prerequisites[0].Kind)
+			}
+			if parsed.Prerequisites[0].Value != "a2a-exfil-sink.test" {
+				t.Fatalf("value = %q", parsed.Prerequisites[0].Value)
+			}
+		})
+	}
+
+	// Optional means optional. Adding the key to the required set would have made
+	// every existing multi-file case invalid instead.
+	if _, err := parseMultiFileCaseYAML(raw); err != nil {
+		t.Fatalf("case without prerequisites must still parse: %v", err)
+	}
+}
+
+// The single-file validator enforces the closed reserved-sink set and this one
+// did not, so a multi-file case could pass validation and then produce a runner
+// setup error no operator flag can clear.
+func TestMultiFileValidationEnforcesClosedReservedSinkSet(t *testing.T) {
+	for name, tc := range map[string]struct {
+		value    string
+		rejected bool
+	}{
+		"arbitrary_host":   {value: "attacker.example.net", rejected: true},
+		"reserved_sink":    {value: "a2a-exfil-sink.test", rejected: false},
+		"letter_case_only": {value: "A2A-Exfil-Sink.TEST", rejected: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			block := "prerequisites:\n  - kind: reserved_sink_route\n    value: " + tc.value + "\n"
+			path := multiFileFixtureCopy(t, block)
+			problems := validateMultiFileCase(path, make(map[string]string))
+			found := false
+			for _, problem := range problems {
+				if strings.Contains(problem, "is not a corpus-reserved sink host") {
+					found = true
+				}
+			}
+			if found != tc.rejected {
+				t.Fatalf("rejected = %v, want %v; problems: %v", found, tc.rejected, problems)
+			}
+		})
+	}
+}
+
+func multiFileFixtureDir() string {
+	return filepath.Join("..", "cases", "mcp-drift", "mcp-drift-http-rugpull-desc-005")
+}
+
+func multiFileFixtureYAML(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(multiFileFixtureDir(), "case.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// multiFileFixtureCopy reproduces the fixture case directory under a temporary
+// root, keeping its directory name because the validator binds the case id to it,
+// and appends the given case.yaml block.
+func multiFileFixtureCopy(t *testing.T, appended string) string {
+	t.Helper()
+	source := multiFileFixtureDir()
+	target := filepath.Join(t.TempDir(), filepath.Base(source))
+	if err := os.MkdirAll(target, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(source, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.Name() == "case.yaml" {
+			data = append(append([]byte{}, data...), []byte(appended)...)
+		}
+		if err := os.WriteFile(filepath.Join(target, entry.Name()), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(target, "case.yaml")
+}
+
+// The runner reads the same case.yaml through a YAML decoder that rejects a
+// duplicate mapping key. A validator that kept the last value would accept a
+// case the runner cannot load, which is the split this parser already had once.
+func TestMultiFilePrerequisiteRepeatedFieldIsRefused(t *testing.T) {
+	raw := multiFileFixtureYAML(t)
+	for name, block := range map[string]string{
+		"repeated_across_lines": "prerequisites:\n  - kind: reserved_sink_route\n    kind: blocklist_domain\n    value: a2a-exfil-sink.test\n",
+		"repeated_after_inline": "prerequisites:\n  - value: a2a-exfil-sink.test\n    value: ws-exfil-sink.test\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseMultiFileCaseYAML(append(append([]byte{}, raw...), []byte(block)...))
+			if err == nil {
+				t.Fatal("a repeated prerequisite field was accepted")
+			}
+			if !strings.Contains(err.Error(), "repeats field") {
+				t.Fatalf("err = %v, want a repeated-field refusal", err)
+			}
+		})
+	}
+
+	// Each object gets its own field set, so a second entry may reuse the names.
+	twoEntries := "prerequisites:\n  - kind: reserved_sink_route\n    value: a2a-exfil-sink.test\n  - kind: reserved_sink_route\n    value: ws-exfil-sink.test\n"
+	parsed, err := parseMultiFileCaseYAML(append(append([]byte{}, raw...), []byte(twoEntries)...))
+	if err != nil {
+		t.Fatalf("two entries reusing field names must parse: %v", err)
+	}
+	if len(parsed.Prerequisites) != 2 {
+		t.Fatalf("prerequisites = %d, want 2", len(parsed.Prerequisites))
+	}
+	if parsed.Prerequisites[1].Value != "ws-exfil-sink.test" {
+		t.Fatalf("second entry value = %q", parsed.Prerequisites[1].Value)
+	}
+}

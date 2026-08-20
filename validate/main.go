@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -72,6 +73,22 @@ var (
 
 	validFPRisk = map[string]bool{
 		"low": true, "medium": true, "high": true,
+	}
+
+	validPrerequisiteKinds = map[string]bool{
+		"blocklist_domain":    true,
+		"reserved_sink_route": true,
+	}
+
+	// reservedSinkHosts is the closed set of corpus-reserved untrusted sink
+	// hostnames. These names are reserved in the runner contract; a case that
+	// targets one must declare reserved_sink_route with that exact host. The
+	// list is closed on purpose: a new reserved sink is a contract change
+	// (SPEC, RUNNER, adapter constants, and this map), not something the
+	// validator should infer from hostname shape.
+	reservedSinkHosts = map[string]bool{
+		"ws-exfil-sink.test":  true,
+		"a2a-exfil-sink.test": true,
 	}
 
 	validRequires = map[string]bool{
@@ -154,6 +171,15 @@ var (
 	}
 )
 
+// Prerequisite is a machine-readable external setup step a runner must satisfy
+// before executing a case. It is separate from capability declarations because
+// the exact value (a domain, a sink route, etc.) is case-specific.
+type Prerequisite struct {
+	Kind        string `json:"kind"`
+	Value       string `json:"value"`
+	Description string `json:"description,omitempty"`
+}
+
 // Case represents a single benchmark case.
 type Case struct {
 	SchemaVersion   int                    `json:"schema_version"`
@@ -168,6 +194,7 @@ type Case struct {
 	Severity        string                 `json:"severity"`
 	CapabilityTags  []string               `json:"capability_tags"`
 	Requires        []string               `json:"requires"`
+	Prerequisites   []Prerequisite         `json:"prerequisites,omitempty"`
 	FPRisk          string                 `json:"false_positive_risk"`
 	WhyExpected     string                 `json:"why_expected"`
 	SafeExample     *bool                  `json:"safe_example,omitempty"`
@@ -579,6 +606,99 @@ func validateFile(path string, ids map[string]string) []string {
 		}
 	}
 
+	payloadHosts := extractPayloadURLHosts(c.Payload)
+	payloadHost := ""
+	if len(payloadHosts) > 0 {
+		payloadHost = payloadHosts[0]
+	}
+	matchesPayloadHost := func(value string) bool {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		for _, host := range payloadHosts {
+			if normalized == host {
+				return true
+			}
+		}
+		return false
+	}
+	seenPrereq := make(map[string]bool, len(c.Prerequisites))
+	for i, prereq := range c.Prerequisites {
+		key := prereq.Kind + "\x00" + prereq.Value
+		if seenPrereq[key] {
+			addErr(fmt.Sprintf("duplicate prerequisite at index %d: kind=%q value=%q", i, prereq.Kind, prereq.Value))
+			continue
+		}
+		seenPrereq[key] = true
+		if !validPrerequisiteKinds[prereq.Kind] {
+			addErr(fmt.Sprintf("invalid prerequisite kind at index %d: %q", i, prereq.Kind))
+			continue
+		}
+		if strings.TrimSpace(prereq.Value) == "" {
+			addErr(fmt.Sprintf("prerequisite value at index %d must be non-empty", i))
+			continue
+		}
+		if prereq.Kind == "blocklist_domain" || prereq.Kind == "reserved_sink_route" {
+			// Match ANY endpoint the payload names, not just the first. A payload
+			// carrying both url and target_url delivers to one of them depending on
+			// transport, and binding to the first let a decoy satisfy the check.
+			if len(payloadHosts) == 0 {
+				addErr(fmt.Sprintf("prerequisite kind %q at index %d requires a payload url or target_url host to bind against", prereq.Kind, i))
+			} else if !matchesPayloadHost(prereq.Value) {
+				addErr(fmt.Sprintf("prerequisite kind %q value %q does not match any payload host %v", prereq.Kind, prereq.Value, payloadHosts))
+			}
+		}
+		// reservedSinkHosts is declared as a closed contract, so enforce it. Without
+		// this a case could name any host as a reserved sink route and turn a
+		// scoreable case into an unsatisfied-setup error no runner can clear.
+		if prereq.Kind == "reserved_sink_route" && !reservedSinkHosts[strings.ToLower(strings.TrimSpace(prereq.Value))] {
+			addErr(fmt.Sprintf("prerequisite reserved_sink_route value %q at index %d is not a corpus-reserved sink host", prereq.Value, i))
+		}
+	}
+	// Coverage has to be COMPLETE, not just consistent. The per-entry check above only asks
+	// that a declared value name some endpoint the payload carries; with both url and
+	// target_url present, one entry naming either of them satisfies it while the transport may
+	// select the other. So once a case covers one endpoint it must cover every endpoint it
+	// names, mirrored in runner/prerequisites.go uncoveredEndpoint.
+	if len(payloadHosts) > 1 {
+		covered := make(map[string]bool, len(payloadHosts))
+		for _, prereq := range c.Prerequisites {
+			if prereq.Kind != "blocklist_domain" && prereq.Kind != "reserved_sink_route" {
+				continue
+			}
+			covered[strings.ToLower(strings.TrimSpace(prereq.Value))] = true
+		}
+		for _, req := range c.Requires {
+			if req == "domain_blocklist" {
+				for _, host := range payloadHosts {
+					covered[host] = true
+				}
+			}
+		}
+		for _, host := range payloadHosts {
+			if reservedSinkHosts[host] {
+				covered[host] = true
+			}
+		}
+		if len(covered) > 0 {
+			for _, host := range payloadHosts {
+				if !covered[host] {
+					addErr(fmt.Sprintf("payload names endpoint %q that no prerequisite covers while another endpoint it names is covered: setup must cover every endpoint the payload names, because the transport selects one of them", host))
+				}
+			}
+		}
+	}
+	// The prerequisite VALUE is derivable, so it is not demanded. A case requiring a blocklist
+	// names the action in requires, and the domain to seed is the host in its own payload. A case
+	// targeting a reserved sink names a host that is already a fixed documented list in RUNNER.md.
+	// Demanding a declared copy of either would be unreachable for cases whose bytes are frozen,
+	// which is every case already merged, so the defect this guards would stay open on exactly the
+	// cases that have it. Declaring one stays allowed and is bound to the payload host above; that
+	// is for a future case whose required domain is NOT its payload host, where derivation breaks.
+	for _, req := range c.Requires {
+		if req == "domain_blocklist" && payloadHost == "" {
+			addErr(`requires contains "domain_blocklist" but the payload has no url or target_url host to derive the domain from`)
+		}
+	}
+
 	// Category directory consistency
 	expectedDir := categoryToDir(c.Category)
 	actualDir := filepath.Base(filepath.Dir(path))
@@ -921,6 +1041,39 @@ func categoryToDir(category string) string {
 	default:
 		return ""
 	}
+}
+
+// extractPayloadURLHosts returns every endpoint host a payload names, lowercased.
+// Returning all of them keeps validation and the runner on one rule: a payload
+// carrying both url and target_url must not let one satisfy a check the other
+// escapes.
+func extractPayloadURLHosts(payload map[string]interface{}) []string {
+	if payload == nil {
+		return nil
+	}
+	var hosts []string
+	seen := make(map[string]struct{}, 2)
+	for _, key := range []string{"url", "target_url"} {
+		raw, ok := payload[key].(string)
+		if !ok {
+			continue
+		}
+		// The runner trims before parsing. Parsing the raw string here meant a
+		// leading-space endpoint produced no host for the validator and a real host
+		// for the runner, so a case could validate and then fail setup on a host
+		// validation never saw.
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || u.Host == "" {
+			continue
+		}
+		host := strings.ToLower(u.Hostname())
+		if _, dup := seen[host]; dup {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	return hosts
 }
 
 func contains(slice []string, val string) bool {

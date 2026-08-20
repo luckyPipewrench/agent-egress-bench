@@ -1670,6 +1670,80 @@ func caseWithRequires(requires string) string {
 	}`, requires)
 }
 
+func caseWithPayloadAndPrereqs(payloadURL, requires, prereqs string) string {
+	return fmt.Sprintf(`{
+		"schema_version": 4,
+		"id": "url-test-001",
+		"category": "url",
+		"title": "Test URL case",
+		"description": "Valid URL test case",
+		"input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": %q},
+		"expected_verdict": "block",
+		"severity": "high",
+		"capability_tags": ["domain_blocklist"],
+		"requires": %s,
+		"prerequisites": %s,
+		"false_positive_risk": "low",
+		"why_expected": "test_reason",
+		"notes": "",
+		"source": ""
+	}`, payloadURL, requires, prereqs)
+}
+
+func wsCaseWithPrereqs(payloadURL, requires, prereqs string) string {
+	prereqField := ""
+	if prereqs != "[]" {
+		prereqField = fmt.Sprintf(`"prerequisites": %s,`, prereqs)
+	}
+	return fmt.Sprintf(`{
+		"schema_version": 4,
+		"id": "ws-dlp-test-001",
+		"category": "websocket_dlp",
+		"title": "Test WS case",
+		"description": "Valid WS test case",
+		"input_type": "websocket_frame",
+		"transport": "websocket",
+		"payload": {"url": %q, "frames": [{"opcode": "text", "payload": "x"}]},
+		"expected_verdict": "block",
+		"severity": "high",
+		"capability_tags": ["websocket_dlp"],
+		"requires": %s,
+		%s
+		"false_positive_risk": "low",
+		"why_expected": "test_reason",
+		"notes": "",
+		"source": "synthetic: validator test"
+	}`, payloadURL, requires, prereqField)
+}
+
+func a2aCaseWithPrereqs(targetURL, requires, prereqs string) string {
+	prereqField := ""
+	if prereqs != "[]" {
+		prereqField = fmt.Sprintf(`"prerequisites": %s,`, prereqs)
+	}
+	return fmt.Sprintf(`{
+		"schema_version": 4,
+		"id": "a2a-msg-test-001",
+		"category": "a2a_message",
+		"title": "Test A2A case",
+		"description": "Valid A2A test case",
+		"input_type": "a2a_message",
+		"transport": "a2a",
+		"payload": {"target_url": %q, "jsonrpc_messages": [{"jsonrpc": "2.0", "id": "req-1", "method": "message/send"}]},
+		"expected_verdict": "block",
+		"severity": "high",
+		"capability_tags": ["a2a_scan"],
+		"requires": %s,
+		%s
+		"false_positive_risk": "low",
+		"why_expected": "test_reason",
+		"notes": "",
+		"source": "synthetic: validator test"
+	}`, targetURL, requires, prereqField)
+}
+
 // Attack-difficulty flags describe how hard an input is on a surface the tool
 // already inspects. Letting one gate applicability would let a tool dodge the
 // hard variant by declining the claim, so requires must reject them on every
@@ -1699,6 +1773,110 @@ func TestRequiresRejectsEnforcementClaims(t *testing.T) {
 
 	errors := validateFile(path, make(map[string]string))
 	assertContainsError(t, errors, "enforcement claim")
+}
+
+func TestBlocklistPrerequisiteMustMatchPayloadHost(t *testing.T) {
+	dir := t.TempDir()
+	matching := writeCase(t, dir, "url", "url-test-001.json", caseWithPayloadAndPrereqs(
+		"https://exfil-collector.example.net/beacon",
+		`["domain_blocklist"]`,
+		`[{"kind":"blocklist_domain","value":"exfil-collector.example.net"}]`,
+	))
+	if errors := validateFile(matching, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("matching blocklist_domain should pass, got: %v", errors)
+	}
+
+	unrelated := writeCase(t, dir, "url", "url-test-002.json", strings.ReplaceAll(
+		caseWithPayloadAndPrereqs(
+			"https://exfil-collector.example.net/beacon",
+			`["domain_blocklist"]`,
+			`[{"kind":"blocklist_domain","value":"totally-unrelated.example.org"}]`,
+		),
+		`"id": "url-test-001"`,
+		`"id": "url-test-002"`,
+	))
+	errors := validateFile(unrelated, make(map[string]string))
+	assertContainsError(t, errors, "does not match any payload host")
+}
+
+func TestReservedSinkPrerequisiteMustMatchPayloadHost(t *testing.T) {
+	dir := t.TempDir()
+	matching := writeCase(t, dir, "websocket-dlp", "ws-dlp-test-001.json", wsCaseWithPrereqs(
+		"wss://ws-exfil-sink.test/live",
+		`["entropy_scanning"]`,
+		`[{"kind":"reserved_sink_route","value":"ws-exfil-sink.test"}]`,
+	))
+	if errors := validateFile(matching, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("matching reserved_sink_route should pass, got: %v", errors)
+	}
+
+	unrelatedJSON := strings.ReplaceAll(
+		wsCaseWithPrereqs(
+			"wss://ws-exfil-sink.test/live",
+			`["entropy_scanning"]`,
+			`[{"kind":"reserved_sink_route","value":"totally-unrelated.example.org"}]`,
+		),
+		`"id": "ws-dlp-test-001"`,
+		`"id": "ws-dlp-test-002"`,
+	)
+	unrelated := writeCase(t, dir, "websocket-dlp", "ws-dlp-test-002.json", unrelatedJSON)
+	errors := validateFile(unrelated, make(map[string]string))
+	assertContainsError(t, errors, "does not match any payload host")
+}
+
+// Declaring nothing is valid, because the runner derives the sink route from the
+// payload host against a fixed reserved list. Demanding a declaration here would
+// be unreachable for every case whose bytes are already fixed, which is exactly
+// the set of cases this guard exists to protect.
+func TestReservedSinkPayloadNeedsNoDeclaredRoute(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCase(t, dir, "a2a-message", "a2a-msg-test-001.json", a2aCaseWithPrereqs(
+		"http://a2a-exfil-sink.test/message:send",
+		`["entropy_scanning"]`,
+		`[]`,
+	))
+	if errors := validateFile(path, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("undeclared reserved sink should pass and be derived, got: %v", errors)
+	}
+}
+
+func TestCorpusPrerequisiteCasesValidate(t *testing.T) {
+	ids := make(map[string]string)
+	for _, path := range []string{
+		"../cases/url/url-domain-blocklist-001.json",
+		"../cases/websocket-dlp/ws-dlp-opaque-binary-010.json",
+		"../cases/a2a-message/a2a-msg-opaque-entropy-013.json",
+	} {
+		if errors := validateFile(path, ids); len(errors) > 0 {
+			t.Errorf("%s: %v", path, errors)
+		}
+	}
+}
+
+// A case requiring a blocklist need not declare the domain, because the runner
+// derives it from the payload host. What it must have is a host to derive from:
+// without one there is nothing for an operator to seed and the case would score
+// a miss that is really missing setup.
+func TestDomainBlocklistDerivesFromPayloadHost(t *testing.T) {
+	dir := t.TempDir()
+	derivable := writeCase(t, dir, "url", "url-test-001.json", caseWithPayloadAndPrereqs(
+		"https://exfil-collector.example.net/beacon",
+		`["domain_blocklist"]`,
+		`[]`,
+	))
+	if errors := validateFile(derivable, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("undeclared blocklist domain should pass and be derived, got: %v", errors)
+	}
+
+	hostless := writeCase(t, dir, "url", "url-test-002.json", strings.ReplaceAll(
+		strings.ReplaceAll(
+			caseWithPayloadAndPrereqs("https://exfil-collector.example.net/beacon", `["domain_blocklist"]`, `[]`),
+			`"id": "url-test-001"`, `"id": "url-test-002"`,
+		),
+		`"url": "https://exfil-collector.example.net/beacon"`, `"url": "not-a-url"`,
+	))
+	errors := validateFile(hostless, make(map[string]string))
+	assertContainsError(t, errors, "no url or target_url host to derive the domain from")
 }
 
 // Positive control for the test above: a legitimate runtime prerequisite in the
@@ -1807,4 +1985,133 @@ source: "synthetic: validator test"
 			t.Error("expected runCases to fail on a multi-file case directory with no case.yaml, got exit 0")
 		}
 	})
+}
+
+// A payload naming two endpoints must not let one satisfy a check the other
+// escapes. The A2A adapter delivers to target_url, so binding to the first field
+// let a seeded decoy url stand in for an unseeded real target.
+func TestPrerequisiteMatchesEitherPayloadEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCase(t, dir, "a2a-message", "a2a-msg-test-001.json", a2aCaseWithPrereqs(
+		"http://a2a-exfil-sink.test/message:send",
+		`["entropy_scanning"]`,
+		`[{"kind":"reserved_sink_route","value":"a2a-exfil-sink.test"}]`,
+	))
+	if errors := validateFile(path, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("a target_url host should satisfy the binding, got: %v", errors)
+	}
+}
+
+// reservedSinkHosts is a closed contract, so a value outside it must be refused.
+// Accepting any host would let a case name an unroutable sink and convert a
+// scoreable case into an unsatisfied-setup error no runner could clear.
+func TestReservedSinkRouteRejectsHostsOutsideTheClosedSet(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCase(t, dir, "websocket-dlp", "ws-dlp-test-003.json", wsCaseWithPrereqs(
+		"wss://not-a-reserved-sink.test/live",
+		`["entropy_scanning"]`,
+		`[{"kind":"reserved_sink_route","value":"not-a-reserved-sink.test"}]`,
+	))
+	errors := validateFile(path, make(map[string]string))
+	assertContainsError(t, errors, "is not a corpus-reserved sink host")
+}
+
+// A prerequisite that matches ANY payload host still leaves the other one
+// unguarded. With url and target_url both present the transport selects one of
+// them, so a decoy in the covered field passed validation while the endpoint
+// the run actually delivers to carried no setup at all. Mirrors
+// runner/prerequisites.go uncoveredEndpoint.
+func TestEveryPayloadEndpointMustBeCovered(t *testing.T) {
+	dir := t.TempDir()
+	twoEndpoints := func(id, prereqs string) string {
+		return fmt.Sprintf(`{
+		"schema_version": 4,
+		"id": %q,
+		"category": "url",
+		"title": "Test URL case",
+		"description": "Valid URL test case",
+		"input_type": "url",
+		"transport": "fetch_proxy",
+		"payload": {"method": "GET", "url": "https://a2a-exfil-sink.test/decoy", "target_url": "https://unseeded-real-target.example.net/message:send"},
+		"expected_verdict": "block",
+		"severity": "high",
+		"capability_tags": ["domain_blocklist"],
+		"requires": [],
+		"prerequisites": %s,
+		"false_positive_risk": "low",
+		"why_expected": "test_reason",
+		"notes": "",
+		"source": ""
+	}`, id, prereqs)
+	}
+
+	partial := writeCase(t, dir, "url", "url-cover-001.json", twoEndpoints(
+		"url-cover-001",
+		`[{"kind":"reserved_sink_route","value":"a2a-exfil-sink.test"}]`,
+	))
+	errors := validateFile(partial, make(map[string]string))
+	assertContainsError(t, errors, "unseeded-real-target.example.net")
+
+	complete := writeCase(t, dir, "url", "url-cover-002.json", twoEndpoints(
+		"url-cover-002",
+		`[{"kind":"reserved_sink_route","value":"a2a-exfil-sink.test"},{"kind":"blocklist_domain","value":"unseeded-real-target.example.net"}]`,
+	))
+	if errors := validateFile(complete, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("covering every endpoint should pass, got: %v", errors)
+	}
+
+	// Covering nothing is not a claim about any destination, so completeness has
+	// nothing to enforce. Refusing here would reject ordinary cases that need no
+	// external setup, which is the availability direction of the same mistake.
+	// Neither host may be a reserved sink: naming one IS coverage, derived rather
+	// than declared, and that is the case the block above refuses.
+	neutral := strings.ReplaceAll(
+		twoEndpoints("url-cover-003", `[]`),
+		"https://a2a-exfil-sink.test/decoy",
+		"https://first.example.net/a",
+	)
+	none := writeCase(t, dir, "url", "url-cover-003.json", neutral)
+	if errors := validateFile(none, make(map[string]string)); len(errors) > 0 {
+		t.Fatalf("covering no endpoint should pass, got: %v", errors)
+	}
+}
+
+// Both branches are new gates on case content with no test behind them, so a
+// regression in either would have merged silently.
+func TestPrerequisiteDuplicateAndUnknownKindAreRejected(t *testing.T) {
+	dir := t.TempDir()
+
+	duplicate := writeCase(t, dir, "url", "url-dup-001.json", strings.ReplaceAll(
+		caseWithPayloadAndPrereqs(
+			"https://exfil-collector.example.net/beacon",
+			`["domain_blocklist"]`,
+			`[{"kind":"blocklist_domain","value":"exfil-collector.example.net"},{"kind":"blocklist_domain","value":"exfil-collector.example.net"}]`,
+		),
+		`"id": "url-test-001"`,
+		`"id": "url-dup-001"`,
+	))
+	assertContainsError(t, validateFile(duplicate, make(map[string]string)), "duplicate prerequisite at index 1")
+
+	unknown := writeCase(t, dir, "url", "url-kind-001.json", strings.ReplaceAll(
+		caseWithPayloadAndPrereqs(
+			"https://exfil-collector.example.net/beacon",
+			`["domain_blocklist"]`,
+			`[{"kind":"seed_the_moon","value":"exfil-collector.example.net"}]`,
+		),
+		`"id": "url-test-001"`,
+		`"id": "url-kind-001"`,
+	))
+	assertContainsError(t, validateFile(unknown, make(map[string]string)), "invalid prerequisite kind at index 0")
+}
+
+// The runner trims an endpoint before parsing it and the validator did not, so a
+// leading-space endpoint yielded no host here and a real host at runtime. The
+// case validated and then failed setup on a host validation never saw.
+func TestPayloadHostExtractionTrimsLikeTheRunner(t *testing.T) {
+	hosts := extractPayloadURLHosts(map[string]interface{}{
+		"url": "  https://exfil-collector.example.net/beacon  ",
+	})
+	if len(hosts) != 1 || hosts[0] != "exfil-collector.example.net" {
+		t.Fatalf("hosts = %v, want [exfil-collector.example.net]", hosts)
+	}
 }

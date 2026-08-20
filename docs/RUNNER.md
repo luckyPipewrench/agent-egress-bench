@@ -155,9 +155,35 @@ rely on runner-side command rewriting.
 
 ### Domain blocklist seeding
 
-Cases with `capability_tags: ["domain_blocklist"]` require the runner to configure the tool's blocklist with benchmark-specific test domains before running. The current test domain is:
+A case requiring a blocklist needs the operator to configure the tool with that
+exact host before running, and to say so with `--seeded-blocklist-domain`. The
+runner configures nothing itself. The case does not have to declare the host, and the
+current corpus ones do not, because case bytes are fixed once a case ships. A
+runner resolves the requirement from both sources and acts on their union:
+
+- Declared: a `blocklist_domain` prerequisite naming the host.
+- Derived: `requires` containing `domain_blocklist`, with the host taken from
+  `payload.url` or `payload.target_url`.
+
+Acting on the union matters. Preferring declarations would let a case that
+declares some other prerequisite suppress a derived blocklist requirement and
+score a detection result with nothing seeded. A declared value must equal the
+payload host, so the two describe one requirement rather than two.
+
+The current corpus host is:
 
 - `exfil-collector.example.net` (IANA-reserved, no real DNS resolution)
+
+The built-in runner cannot see the tool's blocklist, so it treats the domain as
+unsatisfied until the operator passes `--seeded-blocklist-domain` with that
+host. An unsatisfied `blocklist_domain` records `actual_verdict: "error"` and
+`score: "error"`. It never becomes a containment miss.
+
+Because the runner cannot read the tool's blocklist, a seeded domain is an
+operator claim rather than a verified fact. Any row scored while relying on one
+carries `setup_asserted_by_operator` in its evidence, listing the domains that
+were asserted. A reserved sink route is absent from that list on purpose: the
+runner holds that route itself, so it is proven rather than claimed.
 
 If your tool does not support domain blocklisting, implement an adapter route
 that proves the input and verdict. A reporting label alone never skips these
@@ -185,12 +211,51 @@ that purpose:
 - `ws-exfil-sink.test` for WebSocket frame cases
 - `a2a-exfil-sink.test` for A2A message cases using `payload.target_url`
 
+A case needing this routing may declare a `reserved_sink_route` prerequisite
+with that host, and a runner derives the same requirement when the payload host
+is one of the two reserved names above, so an undeclared case is covered. The built-in proxy adapter satisfies it when `--fixtures` is on,
+because the fixture manager then has a reachable route that keeps the reserved
+hostname. Without that route the runner records `actual_verdict: "error"` and
+`score: "error"` instead of a miss.
+
 A runner should route these hosts deterministically to a local or otherwise
 controlled sink, but the routing mechanism must not make the hostname trusted.
 For tools with an SSRF floor, use an IP-scoped reachability exception or
 equivalent local fixture route rather than adding the sink hostname to trusted
 domains. This keeps benign trusted-fixture controls allowed while still scoring
 whether opaque high-entropy content is blocked when sent to an untrusted sink.
+
+### Frame reassembly and cross-message correlation
+
+Two different obligations sit behind multi-frame cases, and conflating them makes one look
+unbounded when it is not.
+
+**Fragment reassembly is protocol-defined and mandatory.** A frame carrying `fin: false` followed by
+`continuation` frames is one logical message under RFC 6455, and the message ends at the frame with
+`fin: true`. A runner reassembles that message and scans the reassembled content. The boundary comes
+from the wire, so this needs no window, no timer, and no eviction policy. Three corpus cases have this
+shape, including a benign one.
+
+**Cross-message correlation is a policy, and the corpus states its bound.** Separate complete
+messages, each with `fin: true`, are distinct messages that a tool may nonetheless correlate to catch
+a credential split across them. A conforming runner MUST correlate at least **two consecutive
+complete messages within a single connection**. That is the widest span any current corpus case
+requires, and a runner correlating less will report a miss that is a configuration gap rather than a
+detection failure.
+
+Beyond that minimum a runner MAY correlate further, subject to two bounds it must be able to state:
+
+- **Eviction.** Correlation state is per connection and ends when the connection closes. A runner
+  that retains it across connections is answering for traffic the case never sent.
+- **Overflow.** A correlation buffer is attacker-influenced, so it must have a fixed ceiling on
+  retained bytes or messages. On reaching it, a runner evicts oldest-first and continues scanning.
+  Growing without limit turns a detection feature into a memory-exhaustion path, which is a failure
+  direction, not a thoroughness setting.
+
+**The availability direction is scored.** `fp-ws-clean-multiframe-016` is a benign three-fragment
+message that must be ALLOWED after reassembly. A tool that treats any multi-frame sequence as
+suspicious fails that case. Correlating more aggressively is not free, and the corpus measures both
+directions.
 
 ## Result State Check
 
@@ -353,6 +418,7 @@ Flags:
 - `--emit-receipt-profile <path>`: write the profile JSON to `<path>`. Default off.
 - `--receipt-verifier-file <path>`: optional JSON file describing the tool's receipt verifier (shape: the `verifier` object in the receipt-scoring schema). Omitted means "no verifier shipped" and the runner emits a degraded honest verifier block.
 - `--multifile-cases <dir>`: optional source-location override for the multi-file MCP-drift cases. By default the runner discovers registered multi-file families under `--cases`; an override must yield the same logical case IDs as that loader-backed corpus.
+- `--seeded-blocklist-domain <host>`: repeatable. Declares that the operator already seeded this host in the tool blocklist. Required to score a `blocklist_domain` prerequisite; omitting it records an error instead of a miss.
 
 ### Multi-file MCP drift loader
 
@@ -407,6 +473,7 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
   --managed-proxy-cmd './examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"' \
   --managed-mcp-http-cmd './examples/pipelock/start-mcp-http-for-benchmark.sh "$PIPELOCK_BIN"' \
   --fixtures \
+  --seeded-blocklist-domain exfil-collector.example.net \
   --cases ./cases \
   --profile examples/pipelock/tool-profile.json \
   --output /tmp/gauntlet.json \

@@ -164,6 +164,33 @@
       },
       "description": "Runtime delivery and observation prerequisites. Active scoring selects cases from adapter-proven delivery and verdict observation, not tool-profile supports."
     },
+    "prerequisites": {
+      "type": "array",
+      "minItems": 0,
+      "uniqueItems": true,
+      "description": "Optional machine-readable external setup a runner must satisfy before executing this case, for example seeding a blocklist with a benchmark domain or routing a reserved sink host. Declaring nothing is normal and is not an absence of setup: a runner derives the requirement from requires and the payload host, and a declared value must equal that host. An empty array is permitted and means the same as omitting the field.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["blocklist_domain", "reserved_sink_route"],
+            "description": "The kind of external setup required."
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The specific value the runner must configure (domain, host, etc.)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional human-readable context for the runner operator."
+          }
+        }
+      }
+    },
     "false_positive_risk": {
       "type": "string",
       "enum": [
