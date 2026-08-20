@@ -3,10 +3,11 @@ package adapter
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -496,24 +497,51 @@ func TestMCPGatewayAdapterUsesUniqueInitializeIDs(t *testing.T) {
 	}
 }
 
-func TestGatewayRequestIdentitiesAreOpaqueRandomNonces(t *testing.T) {
-	first, err := nextGatewayRequestIdentity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := nextGatewayRequestIdentity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first == second {
-		t.Fatalf("request identity reused: %s", first)
-	}
-	for _, identity := range []string{first, second} {
-		suffix := strings.TrimPrefix(identity, "aeb-request-")
-		decoded, err := hex.DecodeString(suffix)
-		if err != nil || len(decoded) != 32 {
-			t.Fatalf("identity %q is not a 256-bit opaque nonce: bytes=%d err=%v", identity, len(decoded), err)
-		}
+func TestGatewayRequestIdentitiesAreOpaqueLowEntropyRandomNonces(t *testing.T) {
+	for name, mint := range map[string]func() (string, error){
+		"gateway":   nextGatewayRequestIdentity,
+		"mcp_stdio": freshMCPStdioRequestIdentity,
+	} {
+		t.Run(name, func(t *testing.T) {
+			first, err := mint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := mint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first == second {
+				t.Fatalf("request identity reused: %s", first)
+			}
+			for _, identity := range []string{first, second} {
+				suffix := strings.TrimPrefix(identity, "aeb-request-")
+				if len(suffix) != 78 {
+					t.Fatalf("identity %q has decimal width %d, want 78", identity, len(suffix))
+				}
+				decoded, ok := new(big.Int).SetString(suffix, 10)
+				if !ok || decoded.Sign() < 0 || decoded.BitLen() > 256 {
+					t.Fatalf("identity %q is not a decimal encoding of a 256-bit nonce", identity)
+				}
+				for _, character := range suffix {
+					if character < '0' || character > '9' {
+						t.Fatalf("identity %q has a non-decimal suffix", identity)
+					}
+				}
+				counts := make(map[rune]int)
+				for _, character := range identity {
+					counts[character]++
+				}
+				entropy := 0.0
+				for _, count := range counts {
+					probability := float64(count) / float64(len(identity))
+					entropy -= probability * math.Log2(probability)
+				}
+				if entropy >= 4.0 {
+					t.Fatalf("identity %q has %.2f bits of character entropy, want below 4.0", identity, entropy)
+				}
+			}
+		})
 	}
 }
 

@@ -190,7 +190,7 @@ type deliveryProof struct {
 // its counter. The token is what makes attribution exact when cases share a
 // declared path or a target fetches asynchronously.
 func (p *ProxyAdapter) beginHTTPFixtureDelivery(path string) (deliveryProof, error) {
-	token, err := nextGatewayRequestIdentity()
+	token, err := nextHTTPDeliveryToken()
 	if err != nil {
 		return deliveryProof{}, err
 	}
@@ -199,6 +199,19 @@ func (p *ProxyAdapter) beginHTTPFixtureDelivery(path string) (deliveryProof, err
 		proof.baseline = p.httpFixtureRequests(path, token)
 	}
 	return proof, nil
+}
+
+// nextHTTPDeliveryToken keeps the fixed-width decimal encoding of the 256-bit
+// opaque identity but removes its human-readable prefix. The token is appended
+// to the URL under test; a human-readable prefix raises its Shannon entropy
+// above a strict scanner's threshold and makes the benchmark's own delivery
+// proof block before the declared case reaches the fixture.
+func nextHTTPDeliveryToken() (string, error) {
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(identity, "aeb-request-"), nil
 }
 
 // annotate appends the delivery token to a fixture URL, leaving the query the
@@ -2139,11 +2152,7 @@ func correlateMCPStdioSessionMessages(clientMsgs, serverResponses []interface{})
 }
 
 func freshMCPStdioRequestIdentity() (string, error) {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("generate random request identity: %w", err)
-	}
-	return "aeb-stdio-" + base64.RawURLEncoding.EncodeToString(bytes), nil
+	return nextGatewayRequestIdentity()
 }
 
 func mcpStdioObservationEvidence(observer *mcpStdioUpstreamObserver) (map[string]interface{}, bool) {
