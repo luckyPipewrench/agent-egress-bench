@@ -156,6 +156,7 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
   --cases ./cases \
   --profile examples/pipelock/tool-profile.json \
   --fixtures \
+  --seeded-blocklist-domain exfil-collector.example.net \
   --output /tmp/gauntlet.json \
   --emit-receipt-profile /tmp/pipelock.json \
   --receipt-verifier-file examples/pipelock/receipt-verifier.json

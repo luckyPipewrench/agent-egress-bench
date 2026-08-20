@@ -273,12 +273,17 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_pipelock_result_inventory.py
 	@node gauntlet-site/scope-render_test.js
 	@node gauntlet-site/latest-result_test.js
-	@# An artifact and the manifest it was measured against are one pair. Overriding only
-	@# the artifact validates it against the fixture's manifest and fails on a digest or
-	@# count mismatch that names neither, so refuse the invocation instead.
-	@if [ "$(GAUNTLET_SCOPE_ARTIFACT)" != "gauntlet-site/testdata/complete-provenance-artifact.json" ] \
-		&& [ "$(GAUNTLET_SCOPE_MANIFEST)" = "gauntlet-site/testdata/complete-provenance-corpus-manifest.txt" ]; then \
-		echo "check-gauntlet-site: FAIL - GAUNTLET_SCOPE_ARTIFACT was overridden without GAUNTLET_SCOPE_MANIFEST; set both to the artifact and the corpus manifest it was measured against" >&2; \
+	@# An artifact and the manifest it was measured against are one pair, so both are
+	@# overridden together or neither is. Overriding one side validates an artifact
+	@# against a manifest it was never measured against, and the resulting digest or
+	@# count mismatch names neither variable. Checking only the artifact side left the
+	@# mirror image open: a manifest override against the default artifact reaches the
+	@# same wrong comparison. Refuse either half.
+	@artifact_overridden=0; manifest_overridden=0; \
+	[ "$(GAUNTLET_SCOPE_ARTIFACT)" = "gauntlet-site/testdata/complete-provenance-artifact.json" ] || artifact_overridden=1; \
+	[ "$(GAUNTLET_SCOPE_MANIFEST)" = "gauntlet-site/testdata/complete-provenance-corpus-manifest.txt" ] || manifest_overridden=1; \
+	if [ "$$artifact_overridden" != "$$manifest_overridden" ]; then \
+		echo "check-gauntlet-site: FAIL - GAUNTLET_SCOPE_ARTIFACT and GAUNTLET_SCOPE_MANIFEST must be overridden together; set both to the artifact and the corpus manifest it was measured against" >&2; \
 		exit 1; \
 	fi
 	@test -f "$(GAUNTLET_SCOPE_ARTIFACT)" || { echo "check-gauntlet-site: FAIL - missing provenance artifact: $(GAUNTLET_SCOPE_ARTIFACT)"; exit 1; }

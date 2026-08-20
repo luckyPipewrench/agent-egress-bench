@@ -14,21 +14,28 @@ import (
 
 var multiFileComponentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
 
+type multiFilePrerequisite struct {
+	Kind        string `yaml:"kind"`
+	Value       string `yaml:"value"`
+	Description string `yaml:"description,omitempty"`
+}
+
 type multiFileCase struct {
-	SchemaVersion   int      `yaml:"schema_version"`
-	ID              string   `yaml:"id"`
-	Category        string   `yaml:"category"`
-	Title           string   `yaml:"title"`
-	Description     string   `yaml:"description"`
-	ThreatModel     string   `yaml:"threat_model"`
-	InputType       string   `yaml:"input_type"`
-	Transport       string   `yaml:"transport"`
-	ExpectedVerdict string   `yaml:"expected_verdict"`
-	Severity        string   `yaml:"severity"`
-	CapabilityTags  []string `yaml:"capability_tags"`
-	Requires        []string `yaml:"requires"`
-	FPRisk          string   `yaml:"false_positive_risk"`
-	WhyExpected     string   `yaml:"why_expected"`
+	SchemaVersion   int                     `yaml:"schema_version"`
+	ID              string                  `yaml:"id"`
+	Category        string                  `yaml:"category"`
+	Title           string                  `yaml:"title"`
+	Description     string                  `yaml:"description"`
+	ThreatModel     string                  `yaml:"threat_model"`
+	InputType       string                  `yaml:"input_type"`
+	Transport       string                  `yaml:"transport"`
+	ExpectedVerdict string                  `yaml:"expected_verdict"`
+	Severity        string                  `yaml:"severity"`
+	CapabilityTags  []string                `yaml:"capability_tags"`
+	Requires        []string                `yaml:"requires"`
+	Prerequisites   []multiFilePrerequisite `yaml:"prerequisites,omitempty"`
+	FPRisk          string                  `yaml:"false_positive_risk"`
+	WhyExpected     string                  `yaml:"why_expected"`
 	Files           struct {
 		Before   string `yaml:"before"`
 		After    string `yaml:"after"`
@@ -108,6 +115,53 @@ func validateMultiFileCase(path string, ids map[string]string) []string {
 			add(problem)
 		}
 	}
+	seenPrereq := make(map[string]bool, len(c.Prerequisites))
+	for i, prereq := range c.Prerequisites {
+		key := prereq.Kind + "\x00" + prereq.Value
+		if seenPrereq[key] {
+			add(fmt.Sprintf("duplicate prerequisite at index %d: kind=%q value=%q", i, prereq.Kind, prereq.Value))
+			continue
+		}
+		seenPrereq[key] = true
+		if !validPrerequisiteKinds[prereq.Kind] {
+			add(fmt.Sprintf("invalid prerequisite kind at index %d: %q", i, prereq.Kind))
+		}
+		if strings.TrimSpace(prereq.Value) == "" {
+			add(fmt.Sprintf("prerequisite value at index %d must be non-empty", i))
+		}
+		// The single-file validator enforces this closed set and this one did not, so a
+		// multi-file case could pass validation and then hit a runner setup error no flag
+		// clears: the runner routes only the two reserved sinks.
+		if prereq.Kind == "reserved_sink_route" && !reservedSinkHosts[strings.ToLower(strings.TrimSpace(prereq.Value))] {
+			add(fmt.Sprintf("prerequisite reserved_sink_route value %q at index %d is not a corpus-reserved sink host", prereq.Value, i))
+		}
+	}
+	for _, requirement := range c.Requires {
+		if requirement == "domain_blocklist" {
+			hasBlocklist := false
+			for _, prereq := range c.Prerequisites {
+				if prereq.Kind == "blocklist_domain" {
+					hasBlocklist = true
+					break
+				}
+			}
+			if !hasBlocklist {
+				add(`requires contains "domain_blocklist" but no "blocklist_domain" prerequisite; add the exact domain the runner must blocklist`)
+			}
+		}
+		if requirement == "dns_rebinding_fixture" {
+			hasSink := false
+			for _, prereq := range c.Prerequisites {
+				if prereq.Kind == "reserved_sink_route" {
+					hasSink = true
+					break
+				}
+			}
+			if !hasSink {
+				add(`requires contains "dns_rebinding_fixture" but no "reserved_sink_route" prerequisite`)
+			}
+		}
+	}
 
 	fileNames := []struct {
 		label string
@@ -169,6 +223,11 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 		"severity": true, "capability_tags": true, "requires": true,
 		"false_positive_risk": true, "why_expected": true, "notes": true, "source": true,
 	}
+	// prerequisites is accepted but not required. Adding it to `known` alone would
+	// make it mandatory, because the loop below demands every `known` key be
+	// present. Leaving it out of both is what made the parse branch below dead:
+	// the field was rejected as unknown before it could ever be reached.
+	optional := map[string]bool{"prerequisites": true}
 	present := make(map[string]bool, len(known))
 	values := make(map[string]string, len(known))
 	lists := make(map[string][]string, 2)
@@ -187,7 +246,7 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 			return c, fmt.Errorf("line %d: expected a top-level key", i+1)
 		}
 		key, rest, ok := strings.Cut(line, ":")
-		if !ok || strings.TrimSpace(key) != key || !known[key] || (rest != "" && rest[0] != ' ') {
+		if !ok || strings.TrimSpace(key) != key || (!known[key] && !optional[key]) || (rest != "" && rest[0] != ' ') {
 			return c, fmt.Errorf("line %d: unknown or malformed field %q", i+1, key)
 		}
 		if present[key] {
@@ -247,6 +306,16 @@ func parseMultiFileCaseYAML(data []byte) (multiFileCase, error) {
 				}
 				lists[key] = append(lists[key], value)
 			}
+		case key == "prerequisites":
+			if rest != "" {
+				return c, fmt.Errorf("prerequisites must be a block sequence")
+			}
+			prereqs, nextIndex, parseErr := parseRestrictedYAMLPrerequisites(lines, i)
+			if parseErr != nil {
+				return c, parseErr
+			}
+			c.Prerequisites = prereqs
+			i = nextIndex
 		case rest == "|" || rest == "|-":
 			var block []string
 			for i < len(lines) && (strings.HasPrefix(lines[i], "  ") || strings.TrimSpace(lines[i]) == "") {
@@ -312,6 +381,106 @@ func parseRestrictedYAMLStringList(raw string) ([]string, error) {
 		values = append(values, value)
 	}
 	return values, nil
+}
+
+// assignMultiFilePrerequisiteField reads one "key: value" pair of a prerequisite
+// object. It is shared by the inline-mapping and block-object spellings so the
+// two cannot drift into accepting different field sets.
+//
+// A repeated field is refused rather than overwritten. The runner reads the same
+// file through a YAML decoder that rejects a duplicate mapping key, so silently
+// keeping the last one here would accept a case the runner cannot load, which is
+// the same validator-accepts-runner-refuses split this parser already had.
+// The seen set belongs to one object and is rebuilt for the next.
+func assignMultiFilePrerequisiteField(prereq *multiFilePrerequisite, seen map[string]bool, field string) error {
+	key, raw, found := strings.Cut(field, ":")
+	if !found || (key != "kind" && key != "value" && key != "description") {
+		return fmt.Errorf("prerequisite object has unknown or malformed field %q", key)
+	}
+	if seen[key] {
+		return fmt.Errorf("prerequisite object repeats field %q", key)
+	}
+	seen[key] = true
+	value, err := parseRestrictedYAMLScalar(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("prerequisite.%s: %w", key, err)
+	}
+	switch key {
+	case "kind":
+		prereq.Kind = value
+	case "value":
+		prereq.Value = value
+	case "description":
+		prereq.Description = value
+	}
+	return nil
+}
+
+// isExactIndent reports whether a line begins with exactly n spaces, so a
+// deeper line is refused rather than parsed as if it sat at n.
+func isExactIndent(line string, n int) bool {
+	if len(line) <= n {
+		return false
+	}
+	for i := 0; i < n; i++ {
+		if line[i] != ' ' {
+			return false
+		}
+	}
+	return line[n] != ' '
+}
+
+// parseRestrictedYAMLPrerequisites parses a block sequence of prerequisite
+// objects using exactly two spaces of indentation and the same restricted
+// scalar grammar used elsewhere in case.yaml.
+//
+// It accepts both spellings a YAML emitter produces for one object: a bare
+// marker with every field on its own four-space line, and the standard inline
+// mapping that puts the first field on the marker line. The runner parses the
+// same file with a real YAML library, so rejecting the inline form here meant
+// the validator refused input the runner accepts.
+func parseRestrictedYAMLPrerequisites(lines []string, start int) ([]multiFilePrerequisite, int, error) {
+	var prereqs []multiFilePrerequisite
+	i := start
+	for i < len(lines) && (isExactIndent(lines[i], 2) || isExactIndent(lines[i], 4) || strings.TrimSpace(lines[i]) == "") {
+		trimmed := strings.TrimSpace(lines[i])
+		i++
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !isExactIndent(lines[i-1], 2) || !strings.HasPrefix(trimmed, "-") {
+			return nil, i, fmt.Errorf("prerequisites entries must use exactly two spaces and '-'")
+		}
+		prereq := multiFilePrerequisite{}
+		seen := make(map[string]bool, 3)
+		// Everything after the marker on the SAME line is the standard inline
+		// mapping form. Accepting only the bare marker rejected what every YAML
+		// emitter writes, and what the runner's own parser reads back.
+		if inline := strings.TrimSpace(strings.TrimPrefix(trimmed, "-")); inline != "" {
+			if err := assignMultiFilePrerequisiteField(&prereq, seen, inline); err != nil {
+				return nil, i, err
+			}
+		}
+		for i < len(lines) && (isExactIndent(lines[i], 4) || strings.TrimSpace(lines[i]) == "") {
+			innerTrimmed := strings.TrimSpace(lines[i])
+			i++
+			if innerTrimmed == "" || strings.HasPrefix(innerTrimmed, "#") {
+				continue
+			}
+			// HasPrefix alone accepted deeper indentation, so a five- or
+			// six-space line parsed as a field of this object rather than being
+			// refused. A restricted grammar that silently accepts a shape it does
+			// not document is not restricted.
+			if !isExactIndent(lines[i-1], 4) {
+				break
+			}
+			if err := assignMultiFilePrerequisiteField(&prereq, seen, innerTrimmed); err != nil {
+				return nil, i, err
+			}
+		}
+		prereqs = append(prereqs, prereq)
+	}
+	return prereqs, i, nil
 }
 
 func parseRestrictedYAMLScalar(raw string) (string, error) {
