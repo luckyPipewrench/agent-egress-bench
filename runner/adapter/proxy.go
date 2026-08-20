@@ -190,7 +190,7 @@ type deliveryProof struct {
 // its counter. The token is what makes attribution exact when cases share a
 // declared path or a target fetches asynchronously.
 func (p *ProxyAdapter) beginHTTPFixtureDelivery(path string) (deliveryProof, error) {
-	token, err := nextGatewayRequestIdentity()
+	token, err := nextHTTPDeliveryToken()
 	if err != nil {
 		return deliveryProof{}, err
 	}
@@ -199,6 +199,20 @@ func (p *ProxyAdapter) beginHTTPFixtureDelivery(path string) (deliveryProof, err
 		proof.baseline = p.httpFixtureRequests(path, token)
 	}
 	return proof, nil
+}
+
+// nextHTTPDeliveryToken keeps the 256-bit opaque identity while using only
+// hexadecimal characters. The token is appended to the URL under test; a
+// human-readable prefix raises its Shannon entropy above a strict scanner's
+// threshold and makes the benchmark's own delivery proof block before the
+// declared case reaches the fixture. Hex is load-bearing here: its 16-symbol
+// alphabet caps Shannon entropy at 4.0; base64url would reintroduce the bug.
+func nextHTTPDeliveryToken() (string, error) {
+	identity, err := nextGatewayRequestIdentity()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(identity, "aeb-request-"), nil
 }
 
 // annotate appends the delivery token to a fixture URL, leaving the query the

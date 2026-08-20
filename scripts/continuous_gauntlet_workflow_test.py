@@ -183,6 +183,11 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
     def test_target_runs_under_a_filesystem_restricted_environment(self):
         self.assertIn("go build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
         self.assertIn('pipelock_bin="$target_wrapper"', self.entrypoint)
+        self.assertIn(
+            'PIPELOCK_POSTURE_PROOF=$work_dir/absent-posture-proof.json',
+            self.entrypoint,
+        )
+        self.assertIn("/usr/bin/env", self.entrypoint)
         self.assertIn('sha256sum "$target_binary"', self.entrypoint)
         self.assertIn("target sandbox integrity check failed", self.entrypoint)
         self.assertIn("benchmark target modified the corpus checkout", self.entrypoint)
@@ -312,6 +317,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("not a trusted identity boundary", readme)
         config = PIPELOCK_CONFIG.read_text(encoding="utf-8")
         self.assertRegex(config, r"(?m)^\s+max_tool_calls_per_session: 0$")
+        self.assertRegex(config, r"(?ms)^reverse_proxy:\n(?:\s+#.*\n)*\s+enabled: false$")
 
     def test_collection_upload_and_enforcement_order_is_fail_safe(self):
         ensure = self.workflow.index("      - name: Ensure fail-closed decision exists")

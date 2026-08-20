@@ -223,9 +223,10 @@ address_protection:
   action: block
 
 reverse_proxy:
-  enabled: true
-  listen: "127.0.0.1:9992"
-  upstream: "http://127.0.0.1:9993"
+  # The proxy adapter does not exercise Pipelock's reverse-proxy listener.
+  # Leaving its fixed example ports enabled makes two independent benchmark
+  # runs collide before any declared case starts.
+  enabled: false
 
 logging:
   format: json

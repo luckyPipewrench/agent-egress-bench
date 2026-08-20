@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -25,6 +26,51 @@ import (
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
 )
+
+func TestHTTPDeliveryTokenIsOpaqueWithoutEntropyRaisingPrefix(t *testing.T) {
+	token, err := nextHTTPDeliveryToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := hex.DecodeString(token)
+	if err != nil || len(decoded) != 32 {
+		t.Fatalf("token %q is not a 256-bit hexadecimal nonce: bytes=%d err=%v", token, len(decoded), err)
+	}
+	if strings.Contains(token, "aeb-request-") {
+		t.Fatalf("HTTP delivery token retained entropy-raising prefix: %q", token)
+	}
+	second, err := nextHTTPDeliveryToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token == second {
+		t.Fatalf("HTTP delivery token reused: %q", token)
+	}
+
+	var capturedPath, capturedToken string
+	a := ProxyAdapter{httpFixtureRequests: func(path, token string) int64 {
+		capturedPath, capturedToken = path, token
+		return 7
+	}}
+	proof, err := a.beginHTTPFixtureDelivery("/case")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capturedPath != proof.path || capturedToken != proof.token || proof.baseline != 7 {
+		t.Fatalf("delivery proof was not propagated to the counter: captured=(%q,%q) proof=%+v", capturedPath, capturedToken, proof)
+	}
+	annotated, err := proof.annotate("https://fixture.example/case?declared=value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(annotated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parsed.Query().Get(fixture.DeliveryTokenParam); got != proof.token {
+		t.Fatalf("annotated delivery token %q does not match proof token %q", got, proof.token)
+	}
+}
 
 func TestRunWebSocketFrameViaProxy_Non101UpgradeSkipsNotAllows(t *testing.T) {
 	// A proxy-local 200 to a WebSocket upgrade request proves nothing about

@@ -20,22 +20,14 @@ jobs:
           fetch-depth: 0
 
       # The action runs the whole-tree audit and resolves the shared config, but
-      # its built-in diff scan is disabled here. Pin its release so the generated
-      # config cannot gain fields that the source-pinned scanner below cannot
-      # parse. Advance both producers together through a reviewed change.
-      #
-      # Why: a scanner fix on Pipelock's default branch does not reach a release
-      # for weeks, and this repository inherits every bug that shipped meanwhile.
-      # Whole-file-deletion hunk parsing was fixed in pipelock#1145, which is on
-      # Pipelock's default branch and absent from v3.3.0, so the released binary
-      # rejects any pull request that deletes a file with "unverifiable input:
-      # content outside unified diff hunks" and surfaces it as "Secrets detected
-      # in PR diff" when there is no secret.
+      # its built-in diff scan is disabled here. Pin the action release and the
+      # scanner source together so generated config cannot drift beyond what the
+      # scanner parses. Advance both producers through a reviewed change.
       - name: Pipelock Scan
         id: pipelock
-        uses: luckyPipewrench/pipelock@9d2e37d296359c38e599525a0424cdc189a812e1 # v3.0.0
+        uses: luckyPipewrench/pipelock@4c748ab986d611138ce202ab800b16eca6fb589f # v3.4.0
         with:
-          version: '3.3.0'
+          version: '3.4.0'
           scan-diff: 'false'
           fail-on-findings: 'true'
           test-vectors: 'false'
@@ -62,11 +54,11 @@ jobs:
       # would let any later commit on Pipelock change or disable this
       # repository's secret gate with no reviewed change here. Advance this pin
       # through a normal reviewed pull request when a scanner fix is needed.
-      # This commit contains pipelock#1145, the whole-file-deletion hunk fix.
+      # This commit is the reviewed v3.4.0 release.
       - name: Build scanner from pinned Pipelock commit
         shell: bash
         env:
-          PIPELOCK_REV: 96a57e78c0f577a6074c6b48917d618c1f88f1ab
+          PIPELOCK_REV: 4c748ab986d611138ce202ab800b16eca6fb589f
         run: |
           set -euo pipefail
           GOBIN="${RUNNER_TEMP}/bin" go install "github.com/luckyPipewrench/pipelock/cmd/pipelock@${PIPELOCK_REV}"

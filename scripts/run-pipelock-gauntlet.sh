@@ -507,7 +507,15 @@ target_wrapper="$work_dir/pipelock-sandboxed"
     /etc/nsswitch.conf /etc/gai.conf /etc/passwd /etc/group /etc/localtime; do
     [[ -e "$readable_path" ]] && printf ' %q' "$readable_path"
   done
-  printf ' -- %q "$@"\n' "$target_binary"
+  # This target is benchmark-managed rather than launched by `pipelock
+  # contain`, so it has no signed runtime posture capsule. `target-sandbox`
+  # deliberately rebuilds the environment; pass this target-specific override
+  # through argv using env(1), pointing at an absent file inside the read-only
+  # extracted-artifact directory. Missing means "no attested containment" while
+  # malformed or unreadable evidence still fails closed, and the measured target
+  # cannot manufacture its own self-consistent capsule at that path.
+  [[ -x /usr/bin/env ]] || die "target sandbox requires /usr/bin/env"
+  printf ' -- %q %q %q "$@"\n' /usr/bin/env "PIPELOCK_POSTURE_PROOF=$work_dir/absent-posture-proof.json" "$target_binary"
 } > "$target_wrapper"
 chmod 0755 "$target_wrapper"
 pipelock_bin="$target_wrapper"
