@@ -148,8 +148,11 @@ class PipelockScanWorkflowTest(unittest.TestCase):
         ]
         self.assertEqual(1, len(action_steps), "expected one Pipelock action step")
         version = str((action_steps[0].get("with") or {}).get("version") or "")
-        self.assertRegex(version, r"^\d+\.\d+\.\d+$", "pin the audit config producer to a stable release")
-        self.assertNotEqual("latest", version, "a moving release can produce config the pinned scanner cannot parse")
+        self.assertEqual(
+            "3.3.0",
+            version,
+            "advance the audit config producer and source-pinned scanner together after proving compatibility",
+        )
 
     def test_scanned_diff_is_generated_with_text(self):
         """The diff feeding the scanner must be generated with --text.
