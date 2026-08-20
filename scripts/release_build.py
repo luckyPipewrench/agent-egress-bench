@@ -23,7 +23,7 @@ from typing import Any
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-SNAPSHOT_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-SNAPSHOT-[0-9a-f]{7}$")
+SNAPSHOT_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-SNAPSHOT-[0-9a-f]{4,40}$")
 IDENTITY_NAME = "release-identity.json"
 CHECKSUM_NAME = "checksums.txt"
 SCHEMA_CATALOG_PATH = "schemas/index.json"
@@ -148,7 +148,12 @@ def snapshot_source_tag(repo: Path, commit: str) -> str:
 def snapshot_version(repo: Path, commit: str) -> str:
     tag = snapshot_source_tag(repo, commit)
     template = configured_snapshot_template(repo)
-    values = {"{{ .Version }}": tag[1:], "{{ .ShortCommit }}": commit[:7]}
+    # Match GoReleaser's git show --format=%h producer instead of guessing the
+    # abbreviation length. Git chooses that length from the repository's
+    # object population and core.abbrev setting, so fresh and long-lived clones
+    # can legitimately render different lengths for the same commit.
+    short_commit = git(repo, "show", "--format=%h", "--quiet", commit)
+    values = {"{{ .Version }}": tag[1:], "{{ .ShortCommit }}": short_commit}
     if any(token not in values for token in re.findall(r"{{[^}]+}}", template)):
         fail("GoReleaser snapshot.version_template uses an unsupported value")
     rendered = template
@@ -299,6 +304,8 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
         fail(f"release tag {tag} does not resolve to requested commit")
     if git(repo, "status", "--porcelain", "--untracked-files=all"):
         fail("release tree has tracked or untracked changes")
+    if snapshot and version != snapshot_version(repo, commit):
+        fail("snapshot identity must use tag snapshot and the GoReleaser snapshot version")
     ignored_inputs = ignored_runner_build_inputs(repo)
     if ignored_inputs:
         fail(f"release tree has ignored runner build inputs: {ignored_inputs}")

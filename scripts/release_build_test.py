@@ -45,7 +45,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.commit = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
         subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.0.0", "-m", "baseline", self.commit], check=True)
         self.identity = self.root / ".release/release-identity.json"
-        self.snapshot_version = f"1.0.0-SNAPSHOT-{self.commit[:7]}"
+        self.snapshot_version = f"1.0.0-SNAPSHOT-{self.git_short(self.commit)}"
 
     def tearDown(self) -> None:
         try:
@@ -57,6 +57,12 @@ class ReleaseBuildTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), *args], text=True, capture_output=True)
         self.assertEqual(result.returncode, expect, msg=result.stderr)
         return result
+
+    def git_short(self, commit: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(self.root), "show", "--format=%h", "--quiet", commit],
+            check=True, text=True, capture_output=True,
+        ).stdout.strip()
 
     def prepare(self) -> None:
         self.invoke(
@@ -202,7 +208,7 @@ class ReleaseBuildTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "broken contract"], check=True)
         broken_commit = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{broken_commit[:7]}", "--commit", broken_commit, "--snapshot", "--output", str(self.identity)],
+            [sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{self.git_short(broken_commit)}", "--commit", broken_commit, "--snapshot", "--output", str(self.identity)],
             text=True, capture_output=True,
         )
         self.assertNotEqual(result.returncode, 0)
@@ -234,14 +240,46 @@ class ReleaseBuildTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "commented version"], check=True)
         commit = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
         identity = self.root / ".release/comment-identity.json"
-        version = f"1.0.0-SNAPSHOT-{commit[:7]}"
+        version = f"1.0.0-SNAPSHOT-{self.git_short(commit)}"
         self.invoke("prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", version, "--commit", commit, "--snapshot", "--output", str(identity))
         self.assertEqual("v2.4.0", json.loads(identity.read_text(encoding="utf-8"))["corpus"]["version"])
 
     def test_snapshot_version_uses_the_configured_goreleaser_template(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.1.0-snaptest", "-m", "snapshot base", self.commit], check=True)
         result = self.invoke("snapshot-version", "--repo-root", str(self.root), "--commit", self.commit)
-        self.assertEqual(f"1.1.0-snaptest-SNAPSHOT-{self.commit[:7]}", result.stdout.strip())
+        self.assertEqual(f"1.1.0-snaptest-SNAPSHOT-{self.git_short(self.commit)}", result.stdout.strip())
+
+    def test_snapshot_version_matches_gits_configured_abbreviation(self) -> None:
+        subprocess.run(["git", "-C", str(self.root), "config", "core.abbrev", "12"], check=True)
+        result = self.invoke("snapshot-version", "--repo-root", str(self.root), "--commit", self.commit)
+        self.assertEqual(f"1.0.0-SNAPSHOT-{self.commit[:12]}", result.stdout.strip())
+
+    def test_snapshot_identity_rejects_a_nonproducer_abbreviation(self) -> None:
+        produced = self.git_short(self.commit)
+        wrong_length = 8 if len(produced) == 7 else 7
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "prepare",
+                "--repo-root",
+                str(self.root),
+                "--tag",
+                "snapshot",
+                "--version",
+                f"1.0.0-SNAPSHOT-{self.commit[:wrong_length]}",
+                "--commit",
+                self.commit,
+                "--snapshot",
+                "--output",
+                str(self.identity),
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("snapshot identity must use tag snapshot", result.stderr)
+        self.assertFalse(self.identity.exists())
 
     def test_snapshot_version_rejects_an_unsupported_goreleaser_template(self) -> None:
         config = self.root / ".goreleaser.yaml"
@@ -256,7 +294,7 @@ class ReleaseBuildTest(unittest.TestCase):
 
     def test_release_shell_uses_goreleaser_snapshot_version(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.1.0-snaptest", "-m", "snapshot base", self.commit], check=True)
-        expected = f"1.1.0-snaptest-SNAPSHOT-{self.commit[:7]}"
+        expected = f"1.1.0-snaptest-SNAPSHOT-{self.git_short(self.commit)}"
         fake_bin = Path(self.temp.name) / "bin"
         fake_bin.mkdir()
         fake = fake_bin / "goreleaser"
@@ -736,7 +774,7 @@ class ReleaseBuildTest(unittest.TestCase):
             text=True,
             capture_output=True,
         ).stdout.strip()
-        self.snapshot_version = f"1.0.0-SNAPSHOT-{self.commit[:7]}"
+        self.snapshot_version = f"1.0.0-SNAPSHOT-{self.git_short(self.commit)}"
 
         self.prepare()
         dist = self.root / "dist"
@@ -895,7 +933,7 @@ class ReleaseBuildTest(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root),
-                "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{broken_commit[:7]}",
+                "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{self.git_short(broken_commit)}",
                 "--commit", broken_commit, "--snapshot", "--output", str(self.identity),
             ],
             text=True,
@@ -923,7 +961,7 @@ class ReleaseBuildTest(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable, str(SCRIPT), "prepare", "--repo-root", str(self.root),
-                "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{broken_commit[:7]}",
+                "--tag", "snapshot", "--version", f"1.0.0-SNAPSHOT-{self.git_short(broken_commit)}",
                 "--commit", broken_commit, "--snapshot", "--output", str(self.identity),
             ],
             text=True,
