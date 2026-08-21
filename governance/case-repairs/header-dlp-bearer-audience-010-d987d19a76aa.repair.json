@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "case_id": "header-dlp-bearer-audience-010",
+  "reason": "Route the POST case through the forward proxy so the request reaches outbound-header scanning instead of the GET-only fetch endpoint.",
+  "files": [
+    {
+      "path": "cases/headers/header-dlp-bearer-audience-010.json",
+      "base_sha256": "c755d1bc4c77a9730747b7895967133abc25ebc5a121e4edd03acd9c54d54fd5",
+      "repaired_sha256": "d987d19a76aaa10cab024b5dfbdcb685ea8902b99458b02337d3ea6438458c62"
+    }
+  ]
+}

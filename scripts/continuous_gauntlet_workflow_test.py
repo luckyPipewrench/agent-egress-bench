@@ -19,6 +19,9 @@ RELEASE_PIN = REPO_ROOT / "examples" / "pipelock" / "release.env"
 PIPELOCK_PROFILE = REPO_ROOT / "examples" / "pipelock" / "tool-profile.json"
 PIPELOCK_README = REPO_ROOT / "examples" / "pipelock" / "README.md"
 PIPELOCK_CONFIG = REPO_ROOT / "examples" / "pipelock" / "pipelock-benchmark.yaml"
+BEARER_AUDIENCE_CASE = (
+    REPO_ROOT / "cases" / "headers" / "header-dlp-bearer-audience-010.json"
+)
 MAKEFILE = REPO_ROOT / "Makefile"
 
 
@@ -337,6 +340,12 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         config = PIPELOCK_CONFIG.read_text(encoding="utf-8")
         self.assertRegex(config, r"(?m)^\s+max_tool_calls_per_session: 0$")
         self.assertRegex(config, r"(?ms)^reverse_proxy:\n(?:\s+#.*\n)*\s+enabled: false$")
+
+    def test_bearer_audience_case_uses_the_header_scanning_proxy_surface(self):
+        case = json.loads(BEARER_AUDIENCE_CASE.read_text(encoding="utf-8"))
+        self.assertEqual(case["transport"], "http_proxy")
+        self.assertEqual(case["input_type"], "header")
+        self.assertEqual(case["payload"]["method"], "POST")
 
     def test_collection_upload_and_enforcement_order_is_fail_safe(self):
         ensure = self.workflow.index("      - name: Ensure fail-closed decision exists")

