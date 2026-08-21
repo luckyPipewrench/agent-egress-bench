@@ -354,14 +354,13 @@ else
 fi
 
 corpus_git_sha="$(git rev-parse HEAD)"
-origin_main_sha="$(git rev-parse --verify origin/main 2>/dev/null || true)"
 if [[ "$development_mode" == true ]]; then
   pointed_tags="$(git tag --points-at HEAD)"
 else
   pointed_tags="$(git ls-remote --tags https://github.com/luckyPipewrench/agent-egress-bench.git | \
     awk -v sha="$corpus_git_sha" '$1 == sha { print $2 }')"
 fi
-if [[ "$corpus_git_sha" == "$origin_main_sha" ]]; then
+if git merge-base --is-ancestor "$corpus_git_sha" refs/remotes/origin/main; then
   corpus_ref_kind="origin/main"
 elif [[ -n "$pointed_tags" ]]; then
   corpus_ref_kind="tag"
