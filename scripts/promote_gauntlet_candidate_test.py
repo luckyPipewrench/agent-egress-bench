@@ -123,14 +123,19 @@ def candidate(run_id="123", run_attempt=None, generated_at="2026-08-05T00:10:08Z
     }
 
 
-def v6_candidate(run_id="123", run_attempt=None, generated_at="2026-08-05T00:10:08Z"):
+def v6_candidate(
+    run_id="123",
+    run_attempt=None,
+    generated_at="2026-08-05T00:10:08Z",
+    attempt_url=False,
+):
     artifact_suffix = run_id if run_attempt is None else f"{run_id}:{run_attempt}"
     value = {
         "schema_version": 6,
         "artifact_id": f"github-actions:luckyPipewrench/agent-egress-bench:{artifact_suffix}",
-        "canonical_url": (
-            "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/" + run_id
-        ),
+        "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
+        + run_id
+        + (f"/attempts/{run_attempt}" if attempt_url and run_attempt is not None else ""),
         "local_run_id": "local:test:1",
         "generated_at": generated_at,
         "corpus_ref_kind": "origin/main",
@@ -226,8 +231,10 @@ class PromotionFixture:
         self.store_root = root / "site" / "results"
         self.latest = root / "site" / "latest-verified.json"
         self.baseline_path = root / "baseline.json"
+        self.source_baseline_path = root / "source-baseline.json"
         self.summary = root / "promotion-summary.md"
         write_json(self.baseline_path, baseline_value or baseline())
+        write_json(self.source_baseline_path, baseline_value or baseline())
 
         value = dict(candidate_value or v6_candidate())
         publication_fields = (
@@ -377,10 +384,12 @@ class PromotionFixture:
         self.write_source_decision()
 
     def write_source_decision(self):
-        decision = evaluator.evaluate(self.candidate_path, self.baseline_path, self.evidence)
+        decision = evaluator.evaluate(self.candidate_path, self.source_baseline_path, self.evidence)
         write_json(self.artifact_dir / promotion.SOURCE_DECISION_FILENAME, decision)
 
     def command(self, accept_policy_change=False):
+        artifact_parts = self.candidate_value["artifact_id"].split(":")
+        expected_run_id = artifact_parts[-2] if len(artifact_parts) == 4 else artifact_parts[-1]
         command = [
             sys.executable,
             str(SCRIPT),
@@ -388,6 +397,8 @@ class PromotionFixture:
             str(self.artifact_dir),
             "--baseline",
             str(self.baseline_path),
+            "--source-baseline",
+            str(self.source_baseline_path),
             "--store-root",
             str(self.store_root),
             "--latest",
@@ -395,9 +406,8 @@ class PromotionFixture:
             "--summary",
             str(self.summary),
             "--expected-run-id",
-            self.candidate_value["canonical_url"].rsplit("/", 1)[1],
+            expected_run_id,
         ]
-        artifact_parts = self.candidate_value["artifact_id"].split(":")
         if len(artifact_parts) == 4:
             command.extend(["--expected-run-attempt", artifact_parts[-1]])
         if accept_policy_change:
@@ -544,6 +554,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
     def test_clean_candidate_creates_append_only_record_pointer_and_baseline(self):
         fixture = self.fixture()
         original_candidate = fixture.candidate_path.read_bytes()
+        original_source_baseline = fixture.source_baseline_path.read_bytes()
         result = fixture.run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -551,6 +562,10 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         digest = pointer["candidate_sha256"]
         record = fixture.store_root / "pipelock" / digest
         self.assertEqual((record / promotion.CANDIDATE_FILENAME).read_bytes(), original_candidate)
+        self.assertEqual(
+            (record / promotion.SOURCE_BASELINE_FILENAME).read_bytes(),
+            original_source_baseline,
+        )
         self.assertEqual(
             evaluator.file_sha256(record / promotion.RECORD_MANIFEST_FILENAME),
             pointer["record_manifest_sha256"],
@@ -562,6 +577,88 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         summary = fixture.summary.read_text(encoding="utf-8")
         self.assertIn("Scope: `2 / 2` routed", summary)
         self.assertIn("Reviewed policy change proposed: `no`", summary)
+
+    def test_source_decision_and_destination_policy_use_separate_baselines(self):
+        fixture = self.fixture()
+        destination = evaluator.load_object(fixture.baseline_path)
+        destination["pipelock_version"] = "3.2.0"
+        write_json(fixture.baseline_path, destination)
+
+        blocked = fixture.run()
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("explicit reviewed policy-change", blocked.stdout)
+
+        accepted = fixture.run(accept_policy_change=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertIn("Reviewed policy change proposed: `yes`", fixture.summary.read_text())
+        fixture.summary.unlink()
+        repeated = fixture.run(accept_policy_change=True)
+        self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+        self.assertIn("Reviewed policy change proposed: `yes`", fixture.summary.read_text())
+
+    def test_mismatched_source_decision_is_rejected(self):
+        fixture = self.fixture()
+        decision_path = fixture.artifact_dir / promotion.SOURCE_DECISION_FILENAME
+        decision = evaluator.load_object(decision_path)
+        decision["blocked"] = not decision["blocked"]
+        write_json(decision_path, decision)
+
+        result = fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fresh evaluation against the source baseline", result.stdout)
+
+    def test_baselines_are_snapshotted_before_evaluation(self):
+        fixture = self.fixture()
+        source_bytes = fixture.source_baseline_path.read_bytes()
+        destination_bytes = fixture.baseline_path.read_bytes()
+        original_evaluate = evaluator.evaluate
+        changed = False
+
+        def mutate_inputs_after_snapshot(*args, **kwargs):
+            nonlocal changed
+            if not changed:
+                changed = True
+                fixture.source_baseline_path.write_text("{}\n", encoding="utf-8")
+                fixture.baseline_path.write_text("{}\n", encoding="utf-8")
+            return original_evaluate(*args, **kwargs)
+
+        artifact_parts = fixture.candidate_value["artifact_id"].split(":")
+        args = SimpleNamespace(
+            artifact_dir=fixture.artifact_dir,
+            baseline=fixture.baseline_path,
+            source_baseline=fixture.source_baseline_path,
+            store_root=fixture.store_root,
+            latest=fixture.latest,
+            summary=None,
+            artifact_prefix=promotion.DEFAULT_ARTIFACT_PREFIX,
+            url_prefix=promotion.DEFAULT_URL_PREFIX,
+            expected_run_id=artifact_parts[-1],
+            expected_run_attempt=None,
+            accept_policy_change=False,
+        )
+        with mock.patch.object(evaluator, "evaluate", side_effect=mutate_inputs_after_snapshot):
+            record = promotion.promote(args)
+
+        self.assertEqual(
+            (record / promotion.SOURCE_BASELINE_FILENAME).read_bytes(), source_bytes
+        )
+        self.assertEqual(
+            (record / promotion.DESTINATION_BASELINE_FILENAME).read_bytes(),
+            destination_bytes,
+        )
+
+    def test_blocked_source_decision_requires_explicit_review(self):
+        fixture = self.fixture()
+        source = evaluator.load_object(fixture.source_baseline_path)
+        source["pipelock_version"] = "3.2.0"
+        write_json(fixture.source_baseline_path, source)
+        fixture.write_source_decision()
+
+        blocked = fixture.run()
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("explicit reviewed policy-change", blocked.stdout)
+        accepted = fixture.run(accept_policy_change=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
 
     def test_new_legacy_candidate_is_rejected_before_publication(self):
         fixture = self.fixture(candidate())
@@ -581,6 +678,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         args = SimpleNamespace(
             artifact_dir=fixture.artifact_dir,
             baseline=fixture.baseline_path,
+            source_baseline=None,
             store_root=fixture.store_root,
             latest=fixture.latest,
             summary=None,
@@ -773,9 +871,9 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         record = fixture.store_root / "pipelock" / pointer["candidate_sha256"]
         manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
         manifest = evaluator.load_object(manifest_path)
-        manifest["schema_version"] = 3
+        manifest["schema_version"] = 4
         write_json(manifest_path, manifest)
-        with self.assertRaisesRegex(ValueError, "manifest schema_version must be 1 or 2"):
+        with self.assertRaisesRegex(ValueError, "manifest schema_version is unsupported"):
             promotion.validate_record(record, pointer["candidate_sha256"])
 
     def test_record_candidate_digest_is_bound_to_inventory(self):
@@ -856,7 +954,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertIn("does not match the requested source run", result.stdout)
 
     def test_run_attempt_is_bound_when_present(self):
-        fixture = self.fixture(v6_candidate(run_attempt="2"))
+        fixture = self.fixture(v6_candidate(run_attempt="2", attempt_url=True))
         accepted = fixture.run()
         self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
         command = fixture.command()
@@ -866,6 +964,19 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         )
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("does not match the requested source attempt", rejected.stdout)
+
+    def test_run_attempt_accepts_plain_canonical_run_url(self):
+        fixture = self.fixture(v6_candidate(run_attempt="2", attempt_url=False))
+        accepted = fixture.run()
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+    def test_canonical_url_cannot_name_a_different_run_attempt(self):
+        value = v6_candidate(run_attempt="2", attempt_url=True)
+        value["canonical_url"] = value["canonical_url"].removesuffix("2") + "3"
+        fixture = self.fixture(value)
+        result = fixture.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("artifact_id and canonical_url run IDs do not match", result.stdout)
 
     def test_run_id_only_candidate_is_accepted_without_expected_attempt(self):
         fixture = self.fixture(v6_candidate())
@@ -982,7 +1093,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             second_artifact / promotion.SOURCE_DECISION_FILENAME,
             evaluator.evaluate(
                 second_artifact / promotion.CANDIDATE_FILENAME,
-                fixture.baseline_path,
+                fixture.source_baseline_path,
                 second_paths,
             ),
         )

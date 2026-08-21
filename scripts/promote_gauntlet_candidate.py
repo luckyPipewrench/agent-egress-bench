@@ -38,6 +38,8 @@ SOURCE_BASELINE_FILENAME = "source-baseline.json"
 RECORD_MANIFEST_FILENAME = "record-manifest.json"
 LATEST_POINTER_FILENAME = "latest-verified.json"
 SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
+DESTINATION_BASELINE_FILENAME = "destination-baseline.json"
+DESTINATION_PROMOTION_DECISION_FILENAME = "destination-promotion-decision.json"
 DEFAULT_ARTIFACT_PREFIX = "github-actions:luckyPipewrench/agent-egress-bench:"
 DEFAULT_URL_PREFIX = "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -142,8 +144,10 @@ def validate_candidate_origin(
         or run_attempt.startswith("0")
     ):
         raise ValueError("artifact_id run attempt must be a positive decimal integer")
-    expected_url = url_prefix + run_id
-    if canonical_url != expected_url:
+    expected_urls = {url_prefix + run_id}
+    if run_attempt is not None:
+        expected_urls.add(f"{url_prefix}{run_id}/attempts/{run_attempt}")
+    if canonical_url not in expected_urls:
         raise ValueError("artifact_id and canonical_url run IDs do not match")
     if expected_run_id is not None and run_id != expected_run_id:
         raise ValueError("candidate run ID does not match the requested source run")
@@ -342,7 +346,7 @@ def validate_record(record_dir, candidate_sha256):
     manifest = require_object(manifest_path)
     schema_version = manifest.get("schema_version")
     if schema_version not in PROMOTED_RECORD_SCHEMAS:
-        raise ValueError("record manifest schema_version must be 1 or 2")
+        raise ValueError("record manifest schema_version is unsupported")
     manifest = artifact_schema.validate_file(
         manifest, PROMOTED_RECORD_SCHEMAS[schema_version], "record manifest"
     )
@@ -477,7 +481,7 @@ def nonpassing_case_lines(results_path):
 
 
 def write_summary(
-    path, candidate, candidate_sha256, source_decision, policy_change, results_path
+    path, candidate, candidate_sha256, destination_decision, policy_change, results_path
 ):
     counts = candidate["case_count"]
     applicable_scores = candidate["scores"]["applicable"]
@@ -510,10 +514,10 @@ def write_summary(
             "and advances `latest-verified`. It does not replace or delete earlier records."
         ),
     ]
-    failures = source_decision.get("failures", [])
-    notes = source_decision.get("review_notes", [])
+    failures = destination_decision.get("failures", [])
+    notes = destination_decision.get("review_notes", [])
     if failures or notes:
-        lines.extend(["", "### Source decision"])
+        lines.extend(["", "### Current-site baseline comparison"])
         lines.extend(f"- Failure: {markdown_code(value)}" for value in failures)
         lines.extend(f"- Review: {markdown_code(value)}" for value in notes)
     case_lines = nonpassing_case_lines(results_path)
@@ -558,16 +562,17 @@ def promote(args):
             raise ValueError("latest-verified record and reviewed baseline are out of sync")
         if args.summary is not None:
             stored_candidate = require_object(record_dir / CANDIDATE_FILENAME)
-            stored_source_decision = require_object(
-                record_dir / SOURCE_PROMOTION_DECISION_FILENAME
-            )
+            destination_decision_path = record_dir / DESTINATION_PROMOTION_DECISION_FILENAME
+            if not destination_decision_path.is_file():
+                destination_decision_path = record_dir / SOURCE_PROMOTION_DECISION_FILENAME
+            stored_destination_decision = require_object(destination_decision_path)
             write_summary(
                 args.summary.resolve(),
                 stored_candidate,
                 candidate_sha256,
-                stored_source_decision,
-                bool(stored_source_decision.get("failures"))
-                or stored_source_decision.get("promotion_status")
+                stored_destination_decision,
+                bool(stored_destination_decision.get("failures"))
+                or stored_destination_decision.get("promotion_status")
                 == "scope_changed_requires_review",
                 record_dir / provenance.RAW_EVIDENCE["results"],
             )
@@ -600,15 +605,34 @@ def promote(args):
     validate_execution_decision(paths["execution_decision"])
     validate_new_candidate_evidence(candidate, paths)
 
-    source_decision = require_object(source_decision_path)
-    fresh_source_decision = evaluator.evaluate(candidate_path, args.baseline, paths)
+    source_baseline = (getattr(args, "source_baseline", None) or args.baseline).resolve()
+    destination_baseline = args.baseline.resolve()
+    source_baseline_bytes = source_baseline.read_bytes()
+    destination_baseline_bytes = destination_baseline.read_bytes()
+    source_decision_bytes = source_decision_path.read_bytes()
+    with tempfile.TemporaryDirectory(prefix="gauntlet-baseline-snapshots-") as temporary:
+        snapshot_root = Path(temporary)
+        source_baseline_snapshot = snapshot_root / SOURCE_BASELINE_FILENAME
+        destination_baseline_snapshot = snapshot_root / DESTINATION_BASELINE_FILENAME
+        source_decision_snapshot = snapshot_root / SOURCE_PROMOTION_DECISION_FILENAME
+        source_baseline_snapshot.write_bytes(source_baseline_bytes)
+        destination_baseline_snapshot.write_bytes(destination_baseline_bytes)
+        source_decision_snapshot.write_bytes(source_decision_bytes)
+        source_decision = require_object(source_decision_snapshot)
+        fresh_source_decision = evaluator.evaluate(
+            candidate_path, source_baseline_snapshot, paths
+        )
+        destination_decision = evaluator.evaluate(
+            candidate_path, destination_baseline_snapshot, paths
+        )
     if source_decision != fresh_source_decision:
-        raise ValueError("source decision does not match a fresh evaluation against the current baseline")
-    failures = fresh_source_decision.get("failures")
+        raise ValueError("source decision does not match a fresh evaluation against the source baseline")
+    failures = destination_decision.get("failures")
     if not isinstance(failures, list):
-        raise ValueError("source decision failures must be an array")
-    scope_change = fresh_source_decision.get("promotion_status") == "scope_changed_requires_review"
-    policy_change = bool(failures) or scope_change
+        raise ValueError("destination decision failures must be an array")
+    scope_change = destination_decision.get("promotion_status") == "scope_changed_requires_review"
+    source_blocked = fresh_source_decision.get("blocked") is not False
+    policy_change = bool(failures) or scope_change or source_blocked
     if policy_change and not args.accept_policy_change:
         raise ValueError(
             "candidate requires an explicit reviewed policy-change proposal"
@@ -633,11 +657,17 @@ def promote(args):
         temporary_record = Path(tempfile.mkdtemp(prefix=f".{candidate_sha256}.", dir=tool_root))
         try:
             atomic_copy(candidate_path, temporary_record / CANDIDATE_FILENAME)
-            atomic_copy(
-                source_decision_path,
-                temporary_record / SOURCE_PROMOTION_DECISION_FILENAME,
+            (temporary_record / SOURCE_PROMOTION_DECISION_FILENAME).write_bytes(
+                source_decision_bytes
             )
-            atomic_copy(args.baseline.resolve(), temporary_record / SOURCE_BASELINE_FILENAME)
+            (temporary_record / SOURCE_BASELINE_FILENAME).write_bytes(source_baseline_bytes)
+            (temporary_record / DESTINATION_BASELINE_FILENAME).write_bytes(
+                destination_baseline_bytes
+            )
+            evaluator.atomic_json_write(
+                temporary_record / DESTINATION_PROMOTION_DECISION_FILENAME,
+                destination_decision,
+            )
             for path in paths.values():
                 atomic_copy(path, temporary_record / path.name)
             evaluator.atomic_json_write(
@@ -692,7 +722,7 @@ def promote(args):
             args.summary.resolve(),
             candidate,
             candidate_sha256,
-            fresh_source_decision,
+            destination_decision,
             policy_change,
             paths["results"],
         )
@@ -705,6 +735,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument("--baseline", type=Path, required=True)
+    parser.add_argument(
+        "--source-baseline",
+        type=Path,
+        help="baseline used by the producer to create promotion-decision.json; defaults to --baseline",
+    )
     parser.add_argument("--store-root", type=Path, default=Path("gauntlet-site/results"))
     parser.add_argument("--latest", type=Path, default=Path("gauntlet-site") / LATEST_POINTER_FILENAME)
     parser.add_argument("--summary", type=Path)

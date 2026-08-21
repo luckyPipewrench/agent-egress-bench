@@ -48,6 +48,11 @@ class ValidRecordFixture:
         (self.corpus_root / "contracts").mkdir()
         shutil.copy2(REPO_ROOT / "contracts" / "artifacts.json", self.corpus_root / "contracts")
         shutil.copy2(REPO_ROOT / "contracts" / "result-states-v5.json", self.corpus_root / "contracts")
+        (self.corpus_root / "ci").mkdir()
+        shutil.copy2(
+            REPO_ROOT / "ci" / "gauntlet-baseline.json",
+            self.corpus_root / "ci" / "gauntlet-baseline.json",
+        )
         (self.artifact_dir / "corpus-manifest.txt").write_text(manifest, encoding="utf-8")
         subprocess.run(["git", "init", "-q", str(self.corpus_root)], check=True)
         subprocess.run(
@@ -281,19 +286,21 @@ class ValidRecordFixture:
         candidate_digest = evaluator.file_sha256(self.candidate_path)
         self.baseline = root / "baseline.json"
         write_json(self.baseline, promotion.proposed_baseline(candidate, candidate_digest))
+        self.source_baseline = self.corpus_root / "ci" / "gauntlet-baseline.json"
         evidence = {
             label: self.artifact_dir / filename
             for label, filename in promotion.evidence_files_for(candidate).items()
         }
         write_json(
             self.artifact_dir / promotion.SOURCE_DECISION_FILENAME,
-            evaluator.evaluate(self.candidate_path, self.baseline, evidence),
+            evaluator.evaluate(self.candidate_path, self.source_baseline, evidence),
         )
         self.site = root / "site"
         promotion.promote(
             SimpleNamespace(
                 artifact_dir=self.artifact_dir,
                 baseline=self.baseline,
+                source_baseline=self.source_baseline,
                 store_root=self.site / "results",
                 latest=self.site / promotion.LATEST_POINTER_FILENAME,
                 summary=None,
@@ -303,7 +310,7 @@ class ValidRecordFixture:
                 ),
                 expected_run_id="123",
                 expected_run_attempt=None,
-                accept_policy_change=False,
+                accept_policy_change=True,
             )
         )
 
@@ -346,12 +353,13 @@ class ValidRecordFixture:
         }
         write_json(
             self.artifact_dir / promotion.SOURCE_DECISION_FILENAME,
-            evaluator.evaluate(self.candidate_path, self.baseline, evidence),
+            evaluator.evaluate(self.candidate_path, self.source_baseline, evidence),
         )
         promotion.promote(
             SimpleNamespace(
                 artifact_dir=self.artifact_dir,
                 baseline=self.baseline,
+                source_baseline=self.source_baseline,
                 store_root=self.site / "results",
                 latest=self.site / promotion.LATEST_POINTER_FILENAME,
                 summary=None,
@@ -359,7 +367,7 @@ class ValidRecordFixture:
                 url_prefix=promotion.DEFAULT_URL_PREFIX,
                 expected_run_id="124",
                 expected_run_attempt=None,
-                accept_policy_change=False,
+                accept_policy_change=True,
             )
         )
 
@@ -459,6 +467,39 @@ class ValidateGauntletRecordsTest(unittest.TestCase):
         fixture = ValidRecordFixture(self.root())
         fixture.baseline.write_text("{}\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "reviewed baseline does not match"):
+            validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
+
+    def test_source_baseline_must_match_candidate_commit(self):
+        fixture = ValidRecordFixture(self.root())
+        pointer_path = fixture.site / promotion.LATEST_POINTER_FILENAME
+        pointer = evaluator.load_object(pointer_path)
+        record = fixture.site / "results" / "pipelock" / pointer["candidate_sha256"]
+        source_baseline = record / promotion.SOURCE_BASELINE_FILENAME
+        source = evaluator.load_object(source_baseline)
+        source["recorded_on"] = "2099-01-01"
+        write_json(source_baseline, source)
+        candidate_path = record / promotion.CANDIDATE_FILENAME
+        candidate = evaluator.load_object(candidate_path)
+        evidence = {
+            label: record / filename
+            for label, filename in promotion.evidence_files_for(candidate).items()
+        }
+        write_json(
+            record / promotion.SOURCE_PROMOTION_DECISION_FILENAME,
+            evaluator.evaluate(candidate_path, source_baseline, evidence),
+        )
+        manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
+        manifest = evaluator.load_object(manifest_path)
+        for filename in (
+            promotion.SOURCE_BASELINE_FILENAME,
+            promotion.SOURCE_PROMOTION_DECISION_FILENAME,
+        ):
+            manifest["files"][filename] = evaluator.file_sha256(record / filename)
+        write_json(manifest_path, manifest)
+        pointer["record_manifest_sha256"] = evaluator.file_sha256(manifest_path)
+        write_json(pointer_path, pointer)
+
+        with self.assertRaisesRegex(ValueError, "source baseline differs from corpus_git_sha"):
             validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
 
     def test_missing_predecessor_breaks_append_only_chain(self):

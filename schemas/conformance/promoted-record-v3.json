@@ -1,0 +1,33 @@
+{
+  "schema": "../promoted-record-v3.schema.json",
+  "accepted": [
+    {
+      "description": "closed promoted record emitted by the v3 writer",
+      "instance": {
+        "schema_version": 3,
+        "tool": "pipelock",
+        "tool_version": "3.4.0",
+        "artifact_id": "github-actions:luckyPipewrench/pipelock:32495220680:1",
+        "canonical_url": "https://github.com/luckyPipewrench/pipelock/actions/runs/32495220680/attempts/1",
+        "generated_at": "2026-08-20T18:26:27Z",
+        "candidate_sha256": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+        "previous_candidate_sha256": null,
+        "previous_record_manifest_sha256": null,
+        "files": {
+          "continuous-gauntlet-pipelock.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+          "destination-baseline.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+          "destination-promotion-decision.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+          "reviewed-baseline.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+          "reviewed-promotion-decision.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+          "source-baseline.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886",
+          "source-promotion-decision.json": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"
+        }
+      }
+    }
+  ],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
+    {"description": "missing destination decision", "mutation": {"remove": ["files", "destination-promotion-decision.json"]}},
+    {"description": "unknown file", "mutation": {"replace": ["files", "unexpected.bin"], "value": "5869b18cf5027d502bc5d0fd8b8f6899872a8b379137226c617670a295222886"}}
+  ]
+}

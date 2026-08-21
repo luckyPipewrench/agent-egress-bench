@@ -107,7 +107,12 @@ def validate_decision(record_dir, candidate_path, baseline_filename, decision_fi
     return actual
 
 
-def validate_record(record_dir, repo_root):
+def validate_record(
+    record_dir,
+    repo_root,
+    artifact_prefix=promotion.DEFAULT_ARTIFACT_PREFIX,
+    url_prefix=promotion.DEFAULT_URL_PREFIX,
+):
     digest = promotion.require_sha256(record_dir.name, "record directory name")
     manifest = promotion.validate_record(record_dir, digest)
     candidate_path = record_dir / promotion.CANDIDATE_FILENAME
@@ -115,21 +120,46 @@ def validate_record(record_dir, repo_root):
     if evaluator.file_sha256(candidate_path) != digest:
         raise ValueError(f"{record_dir}: candidate digest does not match its directory")
     candidate = promotion.validate_reference_candidate(candidate)
+    record_artifact_prefix = (
+        artifact_prefix if manifest["schema_version"] >= 3 else promotion.DEFAULT_ARTIFACT_PREFIX
+    )
+    record_url_prefix = (
+        url_prefix if manifest["schema_version"] >= 3 else promotion.DEFAULT_URL_PREFIX
+    )
     promotion.validate_candidate_origin(
         candidate,
-        promotion.DEFAULT_ARTIFACT_PREFIX,
-        promotion.DEFAULT_URL_PREFIX,
+        record_artifact_prefix,
+        record_url_prefix,
         None,
         None,
     )
     promotion.validate_execution_decision(record_dir / promotion.EXECUTION_DECISION_FILENAME)
     reconstruct_candidate(record_dir, candidate, repo_root)
+    if manifest["schema_version"] >= 3:
+        expected_source_baseline = file_at_commit(
+            repo_root, candidate["corpus_git_sha"], "ci/gauntlet-baseline.json"
+        )
+        retained_source_baseline = (
+            record_dir / promotion.SOURCE_BASELINE_FILENAME
+        ).read_bytes()
+        if retained_source_baseline != expected_source_baseline:
+            raise ValueError(f"{record_dir}: source baseline differs from corpus_git_sha")
     validate_decision(
         record_dir,
         candidate_path,
         promotion.SOURCE_BASELINE_FILENAME,
         promotion.SOURCE_PROMOTION_DECISION_FILENAME,
     )
+    if manifest["schema_version"] >= 3:
+        destination = validate_decision(
+            record_dir,
+            candidate_path,
+            promotion.DESTINATION_BASELINE_FILENAME,
+            promotion.DESTINATION_PROMOTION_DECISION_FILENAME,
+        )
+        failures = destination.get("failures")
+        if not isinstance(failures, list):
+            raise ValueError(f"{record_dir}: destination decision failures must be an array")
     reviewed = validate_decision(
         record_dir,
         candidate_path,
@@ -195,7 +225,13 @@ def validate_immutable_history(repo_root, base_ref):
             raise ValueError(f"append-only history modified a retained file: {relative}")
 
 
-def validate(site_root, baseline_path, repo_root):
+def validate(
+    site_root,
+    baseline_path,
+    repo_root,
+    artifact_prefix=promotion.DEFAULT_ARTIFACT_PREFIX,
+    url_prefix=promotion.DEFAULT_URL_PREFIX,
+):
     results_root = site_root / "results" / "pipelock"
     latest_path = site_root / promotion.LATEST_POINTER_FILENAME
     if not results_root.exists():
@@ -210,7 +246,7 @@ def validate(site_root, baseline_path, repo_root):
     for entry in sorted(results_root.iterdir(), key=lambda item: item.name):
         if entry.is_symlink() or not entry.is_dir():
             raise ValueError(f"unexpected non-directory result-store entry: {entry}")
-        candidate, manifest = validate_record(entry, repo_root)
+        candidate, manifest = validate_record(entry, repo_root, artifact_prefix, url_prefix)
         records[entry.name] = (entry, candidate, manifest)
     if not records:
         raise ValueError("Pipelock result store is empty")
@@ -278,6 +314,8 @@ def parse_args():
     parser.add_argument("--site-root", type=Path, default=Path("gauntlet-site"))
     parser.add_argument("--baseline", type=Path, default=Path("ci/gauntlet-baseline.json"))
     parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument("--artifact-prefix", default=promotion.DEFAULT_ARTIFACT_PREFIX)
+    parser.add_argument("--url-prefix", default=promotion.DEFAULT_URL_PREFIX)
     parser.add_argument("--immutable-base")
     return parser.parse_args()
 
@@ -287,7 +325,13 @@ def main():
     try:
         if args.immutable_base is not None:
             validate_immutable_history(args.repo_root.resolve(), args.immutable_base)
-        validate(args.site_root.resolve(), args.baseline.resolve(), args.repo_root.resolve())
+        validate(
+            args.site_root.resolve(),
+            args.baseline.resolve(),
+            args.repo_root.resolve(),
+            args.artifact_prefix,
+            args.url_prefix,
+        )
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         print(f"Gauntlet record validation: BLOCKED: {exc}")
         return 1
