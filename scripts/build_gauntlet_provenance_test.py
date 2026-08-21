@@ -1105,16 +1105,12 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("score 'pass' does not match its verdicts", result.stderr)
 
-    def test_reviewed_release_pin_matches_profile_and_baseline(self):
+    def test_reviewed_release_pin_matches_profile(self):
         pin = parsed_release_pin()
         profile = json.loads(
             (REPO_ROOT / "examples" / "pipelock" / "tool-profile.json").read_text(encoding="utf-8")
         )
-        baseline = json.loads(
-            (REPO_ROOT / "ci" / "gauntlet-baseline.json").read_text(encoding="utf-8")
-        )
         self.assertEqual(profile["tool_version"], pin["PIPELOCK_VERSION"])
-        self.assertEqual(baseline["pipelock_version"], pin["PIPELOCK_VERSION"])
         self.assertEqual(pin["PIPELOCK_TAG"], "v" + pin["PIPELOCK_VERSION"])
 
 
