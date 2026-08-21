@@ -125,6 +125,7 @@ jobs:
             echo "candidate corpus commit is not in current default-branch history" >&2
             exit 1
           }
+          git show "$corpus_sha:ci/gauntlet-baseline.json" > "$RUNNER_TEMP/source-gauntlet-baseline.json"
 
       - name: Prepare append-only record
         shell: bash
@@ -137,6 +138,7 @@ jobs:
           python3 scripts/promote_gauntlet_candidate.py \
             --artifact-dir "$ARTIFACT_DIR" \
             --baseline ci/gauntlet-baseline.json \
+            --source-baseline "$RUNNER_TEMP/source-gauntlet-baseline.json" \
             --store-root gauntlet-site/results \
             --latest gauntlet-site/latest-verified.json \
             --summary "$PR_BODY" \

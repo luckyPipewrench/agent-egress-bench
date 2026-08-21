@@ -130,6 +130,16 @@ def validate_record(record_dir, repo_root):
         promotion.SOURCE_BASELINE_FILENAME,
         promotion.SOURCE_PROMOTION_DECISION_FILENAME,
     )
+    if manifest["schema_version"] >= 3:
+        destination = validate_decision(
+            record_dir,
+            candidate_path,
+            promotion.DESTINATION_BASELINE_FILENAME,
+            promotion.DESTINATION_PROMOTION_DECISION_FILENAME,
+        )
+        failures = destination.get("failures")
+        if not isinstance(failures, list):
+            raise ValueError(f"{record_dir}: destination decision failures must be an array")
     reviewed = validate_decision(
         record_dir,
         candidate_path,
