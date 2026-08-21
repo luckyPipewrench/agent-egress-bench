@@ -103,6 +103,13 @@ class CaseImmutabilityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "immutable-case: file inventory changed"):
             case_immutability.check(self.repo, self.base)
 
+    def test_reports_invalid_utf8_case_with_its_path(self):
+        path = self.repo / "cases" / "headers" / "invalid.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\xff")
+        with self.assertRaisesRegex(ValueError, r"not valid UTF-8 JSON: cases/headers/invalid\.json"):
+            case_immutability.check(self.repo, self.base)
+
     def test_repair_override_is_deliberate_and_visible_to_the_caller(self):
         self.write_json(self.case_path, {"id": "immutable-case", "payload": {"url": "https://changed.example.invalid"}})
         base, count, changed = case_immutability.check(self.repo, self.base, "repair: documented fixture correction")

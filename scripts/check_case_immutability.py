@@ -169,9 +169,12 @@ def current_regular_paths(root, case_id):
         if path.is_symlink() or not path.is_file():
             fail(f"current single-file case is not a regular file: {relative}")
         try:
-            document = json.loads(path.read_bytes())
-        except json.JSONDecodeError as exc:
-            fail(f"current case is not valid JSON: {relative}: {exc}")
+            raw = path.read_bytes()
+            document = json.loads(raw)
+        except OSError as exc:
+            fail(f"cannot read current case {relative}: {exc}")
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            fail(f"current case is not valid UTF-8 JSON: {relative}: {exc}")
         if isinstance(document, dict) and document.get("id") == case_id:
             paths.add(relative.as_posix())
     return paths
