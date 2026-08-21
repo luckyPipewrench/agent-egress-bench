@@ -70,6 +70,8 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertNotIn("--fixtures", self.workflow)
         self.assertNotIn("--multifile-cases", self.workflow)
         self.assertIn("--fixtures", self.entrypoint)
+        self.assertIn('--tool-version-command "$tool_version_command"', self.entrypoint)
+        self.assertIn("'[$binary, \"--version\"]'", self.entrypoint)
         self.assertNotIn("--multifile-cases", self.entrypoint)
 
     def test_zero_argument_entrypoint_avoids_old_bash_empty_array_expansion(self):

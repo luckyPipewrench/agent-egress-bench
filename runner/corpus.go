@@ -41,8 +41,9 @@ type multiFileCaseDir struct {
 // runCorpus is the immutable input used for one run. Cases and both digests
 // come from snapshot, captured before parsing or adapter execution.
 type runCorpus struct {
-	cases    []Case
-	snapshot corpusSnapshot
+	cases         []Case
+	snapshot      corpusSnapshot
+	gitProvenance CorpusGitProvenance
 }
 
 // loadCorpus loads every logical case from the supplied corpus root. It is the
@@ -182,6 +183,12 @@ func loadRunCorpus(root, multiFileOverride string) (runCorpus, error) {
 		effectiveDirs[0].path = multiFileOverride
 	}
 
+	// Capture Git provenance on both sides of the byte snapshot. A single clean
+	// observation is not enough: a checkout that changed while the runner read
+	// it cannot honestly be attributed to either endpoint revision.
+	gitSourceRoots := corpusSourceRoots(root, effectiveDirs)
+	gitBefore := observeCorpusGitProvenance(gitSourceRoots)
+
 	// Capture every candidate byte once before parsing either the executable
 	// corpus or its canonical comparator. An override needs both source trees,
 	// but the returned snapshot is narrowed to only the chosen run corpus.
@@ -201,6 +208,7 @@ func loadRunCorpus(root, multiFileOverride string) (runCorpus, error) {
 	if err != nil {
 		return runCorpus{}, err
 	}
+	gitProvenance := stableCorpusGitProvenance(gitBefore, observeCorpusGitProvenance(gitSourceRoots))
 	effectiveFiles, err := selectedCorpusFiles(snapshot, effectiveDirs)
 	if err != nil {
 		return runCorpus{}, err
@@ -220,7 +228,16 @@ func loadRunCorpus(root, multiFileOverride string) (runCorpus, error) {
 	if err := ensureExactRunCorpus(cases, canonical); err != nil {
 		return runCorpus{}, err
 	}
-	return runCorpus{cases: cases, snapshot: corpusSnapshot{files: effectiveFiles}}, nil
+	return runCorpus{cases: cases, snapshot: corpusSnapshot{files: effectiveFiles}, gitProvenance: gitProvenance}, nil
+}
+
+func corpusSourceRoots(root string, multiFileDirs []multiFileCaseDir) []string {
+	roots := make([]string, 0, len(multiFileDirs)+1)
+	roots = append(roots, root)
+	for _, directory := range multiFileDirs {
+		roots = append(roots, directory.path)
+	}
+	return roots
 }
 
 // selectedCorpusFiles removes documentation and unreferenced files from a

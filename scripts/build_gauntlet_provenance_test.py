@@ -358,6 +358,42 @@ class ProvenanceBuilderTest(unittest.TestCase):
             )
         summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
+        if summary_schema_version == 5:
+            (self.run_dir / "receipt-profile.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 5,
+                        "tool": summary["tool"],
+                        "tool_version": summary["tool_version"],
+                        "observed_tool_version": {"status": "not_requested", "value": None},
+                        "corpus_version": summary["corpus_version"],
+                        "corpus_sha256": summary["corpus_sha256"],
+                        "benchmark_manifest_sha256": summary["benchmark_manifest_sha256"],
+                        "corpus_git_sha": summary.get("method_commit", ""),
+                        "corpus_git_status": "unavailable",
+                        "tool_profile_sha256": summary["tool_profile_sha256"],
+                        "capability_registry": reference,
+                        "verifier": {
+                            "shipped": False,
+                            "open_source": False,
+                            "verifier_url": None,
+                            "license": None,
+                            "exit_code_contract": None,
+                        },
+                        "summary": {
+                            "blocked_yes_count": 0,
+                            "blocked_no_count": 0,
+                            "explained_yes_count": 0,
+                            "receipt_produced_yes_count": 0,
+                            "receipt_independently_verifiable_yes_count": 0,
+                            "false_positive_yes_count": 0,
+                        },
+                        "per_case": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
         for row in self.results:
             row["schema_version"] = summary_schema_version
             row["capability_registry"] = reference
@@ -472,6 +508,21 @@ class ProvenanceBuilderTest(unittest.TestCase):
             scope["diagnostic_counts"]["applicable"]["classification_present_rate"],
             {"numerator": 2, "denominator": 2},
         )
+
+    def test_v5_rejects_receipt_profile_with_a_different_manifest_digest(self):
+        self.make_active_fixture(summary_schema_version=5)
+        receipt_path = self.run_dir / "receipt-profile.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt.update(
+            schema_version=5,
+            benchmark_manifest_sha256="f" * 64,
+        )
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("receipt profile benchmark manifest digest does not match summary", result.stderr)
 
     def test_v6_candidate_carries_bound_publication_provenance(self):
         self.make_active_fixture(summary_schema_version=5)

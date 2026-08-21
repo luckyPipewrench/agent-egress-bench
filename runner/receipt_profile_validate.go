@@ -26,8 +26,27 @@ var validVerifiableValues = map[string]bool{"yes": true, "partial": true, "no": 
 // false_positive dimension.
 var validFalsePositiveValues = map[string]bool{"yes": true, "no": true, "n/a": true}
 
+var validCorpusGitStatuses = map[string]bool{
+	corpusGitStatusClean:                true,
+	corpusGitStatusDirty:                true,
+	corpusGitStatusNotGitCheckout:       true,
+	corpusGitStatusMultipleSources:      true,
+	corpusGitStatusUnavailable:          true,
+	corpusGitStatusChangedDuringCapture: true,
+}
+
+var validToolVersionObservationStatuses = map[string]bool{
+	toolVersionStatusObserved:       true,
+	toolVersionStatusNotRequested:   true,
+	toolVersionStatusInvalidCommand: true,
+	toolVersionStatusCommandFailed:  true,
+	toolVersionStatusTimedOut:       true,
+	toolVersionStatusEmptyOutput:    true,
+	toolVersionStatusOutputTooLarge: true,
+}
+
 // ValidateReceiptProfile checks a ReceiptProfile against the structural
-// rules in schemas/receipt-scoring-profile-v4.schema.json, including the
+// rules in schemas/receipt-scoring-profile-v5.schema.json, including the
 // cross-field invariants the schema encodes via allOf and if/then. It
 // also re-derives summary counts from per_case and confirms they match
 // (the kickoff's done-state item 2).
@@ -83,6 +102,27 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 		issues = append(issues, "tool_profile_sha256 must be 64 lower-case hex characters")
 	}
 	if rp.SchemaVersion == activeReceiptProfileSchemaVersion {
+		if !sha256HexPattern.MatchString(rp.BenchmarkManifestSHA256) {
+			issues = append(issues, "benchmark_manifest_sha256 must be 64 lower-case hex characters")
+		}
+		if !validCorpusGitStatuses[rp.CorpusGitStatus] {
+			issues = append(issues, "corpus_git_status must be clean|dirty|not_git_checkout|multiple_sources|unavailable|changed_during_capture")
+		} else if rp.CorpusGitStatus == corpusGitStatusClean {
+			if !gitSHA1Pattern.MatchString(rp.CorpusGitSHA) {
+				issues = append(issues, "corpus_git_sha must be a 40-character lower-case Git SHA when corpus_git_status=clean")
+			}
+		} else if rp.CorpusGitSHA != "" {
+			issues = append(issues, "corpus_git_sha must be empty unless corpus_git_status=clean")
+		}
+		if !validToolVersionObservationStatuses[rp.ObservedToolVersion.Status] {
+			issues = append(issues, "observed_tool_version.status is invalid")
+		} else if rp.ObservedToolVersion.Status == toolVersionStatusObserved {
+			if rp.ObservedToolVersion.Value == nil || strings.TrimSpace(*rp.ObservedToolVersion.Value) == "" {
+				issues = append(issues, "observed_tool_version.value must be a non-empty string when status=observed")
+			}
+		} else if rp.ObservedToolVersion.Value != nil {
+			issues = append(issues, "observed_tool_version.value must be null unless status=observed")
+		}
 		if rp.CapabilityRegistry.ID == "" || rp.CapabilityRegistry.Format != 1 || rp.CapabilityRegistry.Revision < 1 || !sha256HexPattern.MatchString(rp.CapabilityRegistry.SHA256) {
 			issues = append(issues, "capability_registry must contain a supported id, format, revision, and 64-character sha256")
 		}

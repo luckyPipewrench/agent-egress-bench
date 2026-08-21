@@ -44,7 +44,8 @@ func main() {
 	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 	toolVersion := flag.String("tool-version", "", "override the tool_version field from the profile in result summaries (uses profile value when empty)")
-	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile-v4.schema.json) to this path alongside the Gauntlet summary")
+	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile-v5.schema.json) to this path alongside the Gauntlet summary")
+	toolVersionCommand := flag.String("tool-version-command", "", "JSON array argv used to ask the tool for its version when emitting a receipt profile; executed without a shell")
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
 	multiFileCases := flag.String("multifile-cases", "", "override the auto-discovered multi-file case directory. The selected case IDs must equal the loader-backed corpus.")
 	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
@@ -167,6 +168,7 @@ func main() {
 	prov.MCPHTTPSessionRefusalHeader = *mcpHTTPSessionRefusalHeader
 	prov.MCPHTTPSessionRefusalValue = *mcpHTTPSessionRefusalValue
 	prov.RequireComplete = *requireComplete
+	prov.ToolVersionCommand = *toolVersionCommand
 
 	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion, prov, seededBlocklist); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -207,6 +209,15 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	// rows or calculate a score.
 	if _, err := preflightRegistry(profile, cases, casesDir); err != nil {
 		return fmt.Errorf("capability registry preflight: %w", err)
+	}
+
+	observedToolVersion := ToolVersionObservation{Status: toolVersionStatusNotRequested}
+	if emitReceiptProfile != "" {
+		// Query the tool before the run starts. The profile keeps the tool's raw
+		// self-report separate from the profile's declared tool_version label;
+		// a failed query is evidence of an unavailable observation, not a reason
+		// to substitute the declaration.
+		observedToolVersion = observeToolVersion(prov.ToolVersionCommand)
 	}
 
 	// Build case lookup by ID for category scoring.
@@ -359,6 +370,11 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			summary.CorpusVersion,
 			summary.CorpusSHA256,
 			summary.ToolProfileSHA256,
+			ReceiptProfileProvenance{
+				BenchmarkManifestSHA256: summary.BenchmarkManifestSHA256,
+				CorpusGit:               runCorpus.gitProvenance,
+				ObservedToolVersion:     observedToolVersion,
+			},
 		)
 		if err := writeReceiptProfile(rp, emitReceiptProfile); err != nil {
 			return err

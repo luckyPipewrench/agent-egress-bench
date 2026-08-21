@@ -31,7 +31,8 @@ The weakest-instance column describes the least informative structurally valid r
 | `tool-profile-v4.schema.json` | Closed | A named tool, runner version, registry reference, and claim set; optional receipt evidence is contained and resolved by the runner | Active v4 unchanged |
 | `receipt-scoring-profile-v1.schema.json` | Closed | Identified corpus and tool evidence with complete summary and per-case rows | Frozen v1 unchanged |
 | `receipt-scoring-profile-v3.schema.json` | Closed | Identified corpus and tool evidence with bounded enumerated observations | Frozen v3 unchanged |
-| `receipt-scoring-profile-v4.schema.json` | Closed | Active registry-bound receipt observations with explicit unmeasured states | Active v4 unchanged |
+| `receipt-scoring-profile-v4.schema.json` | Closed | Registry-bound receipt observations with explicit unmeasured states | Frozen v4 unchanged; v5 replaces it |
+| `receipt-scoring-profile-v5.schema.json` | Closed | Receipt observations plus exact manifest identity, honest Git-checkout state, and tool self-report status | New v5 because those provenance fields are required for every new profile |
 | `control-evidence-assessment-v1.schema.json` | Closed | Identified verifier predicates and assessment profile | Unchanged |
 | `control-evidence-assessment-v2.schema.json` | Closed | Identified verifier predicates and assessment profile | Unchanged |
 | `control-evidence-authentication-context-v1.schema.json` | Closed | Trust policy, trusted keys, and bounded authentication context | Unchanged |

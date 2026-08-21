@@ -565,6 +565,7 @@ command_path="$output_dir/command.txt"
 stats_path="$output_dir/make-stats.txt"
 case_index_path="$output_dir/case-index.json"
 receipt_profile_path="$output_dir/receipt-profile.json"
+tool_version_command="$(jq -cn --arg binary "$pipelock_bin" '[$binary, "--version"]')"
 
 mcp_cmd="\"$PIPELOCK_BIN\" mcp proxy --config \"$PIPELOCK_BENCH_CONFIG\" --env AEB_MCP_STDIO_UPSTREAM_ADDR -- sh ./examples/pipelock/mcp-stdio-upstream-bridge.sh"
 managed_proxy_cmd='./examples/pipelock/start-proxy-for-benchmark.sh "$PIPELOCK_BIN"'
@@ -598,6 +599,7 @@ cmd=(
   --seeded-blocklist-domain exfil-collector.example.net
   --output "$summary_path"
   --emit-receipt-profile "$receipt_profile_path"
+  --tool-version-command "$tool_version_command"
 )
 
 benchmark_cap_seconds="$benchmark_timeout_seconds"

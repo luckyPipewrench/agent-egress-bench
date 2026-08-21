@@ -43,20 +43,27 @@ outcome summary count. The raw Gauntlet result carries the error state.
 
 A tool can publish a receipt profile as a JSON file in the `profiles/`
 directory. The shape is defined by
-[`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json)
+[`schemas/receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json)
 (`$id`:
-`https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json`).
+`https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v5.schema.json`).
 This is separate from the runner capability profile described in
 [`docs/RUNNER.md`](RUNNER.md) and
 [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json).
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "tool": "example-tool",
   "tool_version": "1.2.3",
+  "observed_tool_version": {
+    "status": "observed",
+    "value": "example-tool 1.2.4"
+  },
   "corpus_version": "v2.1.0",
   "corpus_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "benchmark_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_git_sha": "0000000000000000000000000000000000000000",
+  "corpus_git_status": "clean",
   "tool_profile_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "capability_registry": {
     "id": "aeb.core-capabilities",
@@ -101,6 +108,21 @@ This is separate from the runner capability profile described in
   ]
 }
 ```
+
+The two tool-version fields intentionally have different sources. `tool_version`
+is the declared label from `tool-profile.json`; it remains for compatibility.
+`observed_tool_version` is stdout from the tool-version argv the runner ran. An
+unavailable observation records a status such as `not_requested`,
+`command_failed`, or `timed_out` and a null value. The runner never fills it
+from the declared label.
+
+`corpus_sha256` remains the legacy content digest. It does not bind file
+boundaries or membership. `benchmark_manifest_sha256` is the exact corpus
+identity for a run because it binds the loaded paths, boundaries, and bytes.
+`corpus_git_sha` is an additional source-checkout reference only when
+`corpus_git_status=clean`. A dirty checkout, a non-Git source, several source
+directories, an unavailable Git query, or a change during snapshot capture
+uses an empty SHA and names the state rather than guessing a revision.
 
 `receipt_independently_verifiable` takes `yes`, `partial`, or `no`. Only `yes`
 increments `receipt_independently_verifiable_yes_count`; a `partial` row is
@@ -329,7 +351,7 @@ marketing claim.
 
 ## Reference artifacts in this repo
 
-- [`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json):
+- [`schemas/receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json):
   JSON Schema for receipt-scoring profile validation.
 - [`profiles/EXAMPLE.json`](../profiles/EXAMPLE.json): minimal template
   profile showing the four per-case combinations plus a placeholder
@@ -340,13 +362,16 @@ marketing claim.
   3.1.0 on corpus v2.0.0. It is evidence of that run, not a current
   result, and `profiles/retained-artifacts.json` pins its identity.
 - Runner integration: `runner/main.go` accepts
-  `--emit-receipt-profile <path>` and `--receipt-verifier-file <path>`
+  `--emit-receipt-profile <path>`, `--receipt-verifier-file <path>`, and
+  `--tool-version-command <json-argv>`
   to emit a profile alongside the standard Gauntlet summary. Output is
-  byte-reproducible across runs against the same corpus and tool
-  profile. See [`docs/RUNNER.md`](RUNNER.md).
+  reproducible against the retained inputs and observations. Byte-for-byte
+  equality also requires the corpus Git state and tool-version command output
+  to match. See [`docs/RUNNER.md`](RUNNER.md).
 
 ## Version
 
-This is v1 of the receipt-scoring rubric. Breaking changes to dimensions,
-values, or the profile format will land in `RECEIPT-SCORING.md` v2
-alongside a migration note in this file.
+This is v1 of the receipt-scoring rubric. Profile schemas version their
+provenance fields independently; v5 adds attribution without changing a
+receipt-scoring dimension or value. A breaking change to dimensions or values
+will land in `RECEIPT-SCORING.md` v2 alongside a migration note in this file.
