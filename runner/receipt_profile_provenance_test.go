@@ -70,7 +70,7 @@ func TestObserveCorpusGitProvenanceMergesRelativeRootsFromOneCheckout(t *testing
 	}
 }
 
-func TestObserveCorpusGitProvenanceCollapsesRootlessSourcesByStatus(t *testing.T) {
+func TestObserveCorpusGitProvenanceCollapsesNestedRootlessSources(t *testing.T) {
 	root := t.TempDir()
 	first := filepath.Join(root, "cases")
 	second := filepath.Join(first, "mcp-drift")
@@ -81,6 +81,21 @@ func TestObserveCorpusGitProvenanceCollapsesRootlessSourcesByStatus(t *testing.T
 	provenance := observeCorpusGitProvenance([]string{first, second})
 	if provenance.Status != corpusGitStatusNotGitCheckout {
 		t.Fatalf("corpus_git_status = %q, want not_git_checkout", provenance.Status)
+	}
+}
+
+func TestObserveCorpusGitProvenanceKeepsIndependentRootlessSourcesSeparate(t *testing.T) {
+	first := filepath.Join(t.TempDir(), "cases")
+	second := filepath.Join(t.TempDir(), "cases")
+	for _, root := range []string{first, second} {
+		if err := os.MkdirAll(root, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	provenance := observeCorpusGitProvenance([]string{first, second})
+	if provenance.Status != corpusGitStatusMultipleSources {
+		t.Fatalf("corpus_git_status = %q, want multiple_sources", provenance.Status)
 	}
 }
 
