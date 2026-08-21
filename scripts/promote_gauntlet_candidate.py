@@ -605,12 +605,28 @@ def promote(args):
     validate_execution_decision(paths["execution_decision"])
     validate_new_candidate_evidence(candidate, paths)
 
-    source_decision = require_object(source_decision_path)
     source_baseline = (getattr(args, "source_baseline", None) or args.baseline).resolve()
-    fresh_source_decision = evaluator.evaluate(candidate_path, source_baseline, paths)
+    destination_baseline = args.baseline.resolve()
+    source_baseline_bytes = source_baseline.read_bytes()
+    destination_baseline_bytes = destination_baseline.read_bytes()
+    source_decision_bytes = source_decision_path.read_bytes()
+    with tempfile.TemporaryDirectory(prefix="gauntlet-baseline-snapshots-") as temporary:
+        snapshot_root = Path(temporary)
+        source_baseline_snapshot = snapshot_root / SOURCE_BASELINE_FILENAME
+        destination_baseline_snapshot = snapshot_root / DESTINATION_BASELINE_FILENAME
+        source_decision_snapshot = snapshot_root / SOURCE_PROMOTION_DECISION_FILENAME
+        source_baseline_snapshot.write_bytes(source_baseline_bytes)
+        destination_baseline_snapshot.write_bytes(destination_baseline_bytes)
+        source_decision_snapshot.write_bytes(source_decision_bytes)
+        source_decision = require_object(source_decision_snapshot)
+        fresh_source_decision = evaluator.evaluate(
+            candidate_path, source_baseline_snapshot, paths
+        )
+        destination_decision = evaluator.evaluate(
+            candidate_path, destination_baseline_snapshot, paths
+        )
     if source_decision != fresh_source_decision:
         raise ValueError("source decision does not match a fresh evaluation against the source baseline")
-    destination_decision = evaluator.evaluate(candidate_path, args.baseline, paths)
     failures = destination_decision.get("failures")
     if not isinstance(failures, list):
         raise ValueError("destination decision failures must be an array")
@@ -641,12 +657,13 @@ def promote(args):
         temporary_record = Path(tempfile.mkdtemp(prefix=f".{candidate_sha256}.", dir=tool_root))
         try:
             atomic_copy(candidate_path, temporary_record / CANDIDATE_FILENAME)
-            atomic_copy(
-                source_decision_path,
-                temporary_record / SOURCE_PROMOTION_DECISION_FILENAME,
+            (temporary_record / SOURCE_PROMOTION_DECISION_FILENAME).write_bytes(
+                source_decision_bytes
             )
-            atomic_copy(source_baseline, temporary_record / SOURCE_BASELINE_FILENAME)
-            atomic_copy(args.baseline.resolve(), temporary_record / DESTINATION_BASELINE_FILENAME)
+            (temporary_record / SOURCE_BASELINE_FILENAME).write_bytes(source_baseline_bytes)
+            (temporary_record / DESTINATION_BASELINE_FILENAME).write_bytes(
+                destination_baseline_bytes
+            )
             evaluator.atomic_json_write(
                 temporary_record / DESTINATION_PROMOTION_DECISION_FILENAME,
                 destination_decision,

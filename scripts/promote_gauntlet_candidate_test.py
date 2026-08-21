@@ -607,6 +607,46 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("fresh evaluation against the source baseline", result.stdout)
 
+    def test_baselines_are_snapshotted_before_evaluation(self):
+        fixture = self.fixture()
+        source_bytes = fixture.source_baseline_path.read_bytes()
+        destination_bytes = fixture.baseline_path.read_bytes()
+        original_evaluate = evaluator.evaluate
+        changed = False
+
+        def mutate_inputs_after_snapshot(*args, **kwargs):
+            nonlocal changed
+            if not changed:
+                changed = True
+                fixture.source_baseline_path.write_text("{}\n", encoding="utf-8")
+                fixture.baseline_path.write_text("{}\n", encoding="utf-8")
+            return original_evaluate(*args, **kwargs)
+
+        artifact_parts = fixture.candidate_value["artifact_id"].split(":")
+        args = SimpleNamespace(
+            artifact_dir=fixture.artifact_dir,
+            baseline=fixture.baseline_path,
+            source_baseline=fixture.source_baseline_path,
+            store_root=fixture.store_root,
+            latest=fixture.latest,
+            summary=None,
+            artifact_prefix=promotion.DEFAULT_ARTIFACT_PREFIX,
+            url_prefix=promotion.DEFAULT_URL_PREFIX,
+            expected_run_id=artifact_parts[-1],
+            expected_run_attempt=None,
+            accept_policy_change=False,
+        )
+        with mock.patch.object(evaluator, "evaluate", side_effect=mutate_inputs_after_snapshot):
+            record = promotion.promote(args)
+
+        self.assertEqual(
+            (record / promotion.SOURCE_BASELINE_FILENAME).read_bytes(), source_bytes
+        )
+        self.assertEqual(
+            (record / promotion.DESTINATION_BASELINE_FILENAME).read_bytes(),
+            destination_bytes,
+        )
+
     def test_blocked_source_decision_requires_explicit_review(self):
         fixture = self.fixture()
         source = evaluator.load_object(fixture.source_baseline_path)
