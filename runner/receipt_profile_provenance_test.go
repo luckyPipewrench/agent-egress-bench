@@ -27,6 +27,63 @@ func TestLoadRunCorpusRecordsCleanGitRevision(t *testing.T) {
 	}
 }
 
+func TestLoadRunCorpusRecordsCleanGitRevisionFromRelativePath(t *testing.T) {
+	root := writeGitCorpus(t)
+	wantSHA := runGitForTest(t, root, "rev-parse", "HEAD")
+	t.Chdir(filepath.Dir(root))
+
+	run, err := loadRunCorpus(filepath.Base(root), "")
+	if err != nil {
+		t.Fatalf("loadRunCorpus: %v", err)
+	}
+	if run.gitProvenance.Status != corpusGitStatusClean {
+		t.Fatalf("corpus_git_status = %q, want clean", run.gitProvenance.Status)
+	}
+	if run.gitProvenance.SHA == nil || *run.gitProvenance.SHA != wantSHA {
+		t.Fatalf("corpus_git_sha = %v, want %q", run.gitProvenance.SHA, wantSHA)
+	}
+}
+
+func TestObserveCorpusGitProvenanceMergesRelativeRootsFromOneCheckout(t *testing.T) {
+	root := writeGitCorpus(t)
+	nested := filepath.Join(root, "nested")
+	if err := os.Mkdir(nested, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "fixture.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGitForTest(t, root, "add", "nested/fixture.json")
+	runGitForTest(t, root, "commit", "-qm", "nested fixture")
+	wantSHA := runGitForTest(t, root, "rev-parse", "HEAD")
+	t.Chdir(filepath.Dir(root))
+
+	provenance := observeCorpusGitProvenance([]string{
+		filepath.Base(root),
+		filepath.Join(filepath.Base(root), "nested"),
+	})
+	if provenance.Status != corpusGitStatusClean {
+		t.Fatalf("corpus_git_status = %q, want clean", provenance.Status)
+	}
+	if provenance.SHA == nil || *provenance.SHA != wantSHA {
+		t.Fatalf("corpus_git_sha = %v, want %q", provenance.SHA, wantSHA)
+	}
+}
+
+func TestObserveCorpusGitProvenanceCollapsesRootlessSourcesByStatus(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "cases")
+	second := filepath.Join(first, "mcp-drift")
+	if err := os.MkdirAll(second, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	provenance := observeCorpusGitProvenance([]string{first, second})
+	if provenance.Status != corpusGitStatusNotGitCheckout {
+		t.Fatalf("corpus_git_status = %q, want not_git_checkout", provenance.Status)
+	}
+}
+
 func TestLoadRunCorpusRecordsDirtyGitCheckout(t *testing.T) {
 	root := writeGitCorpus(t)
 	if err := os.WriteFile(filepath.Join(root, "dirty.txt"), []byte("changed"), 0o600); err != nil {

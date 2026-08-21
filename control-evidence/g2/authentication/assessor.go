@@ -595,7 +595,7 @@ func externalToPackage(root, path string) bool {
 		return false
 	}
 	rel, err := filepath.Rel(a, b)
-	return err == nil && rel != "." && rel != ".." && strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+	return err == nil && rel != "." && (rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
 func readRegularBounded(path string, maxBytes int64) ([]byte, error) {

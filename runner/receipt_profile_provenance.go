@@ -75,7 +75,7 @@ func observeCorpusGitProvenance(sourceRoots []string) CorpusGitProvenance {
 		checkout := observeGitCheckout(sourceRoot)
 		key := checkout.root
 		if key == "" {
-			key = checkout.status + ":" + filepath.Clean(sourceRoot)
+			key = checkout.status
 		}
 		if previous, exists := checkouts[key]; exists {
 			checkouts[key] = mergeObservedGitCheckouts(previous, checkout)
@@ -131,7 +131,11 @@ func gitSHAValue(value *string) string {
 }
 
 func observeGitCheckout(sourceRoot string) observedGitCheckout {
-	resolvedSource, err := filepath.EvalSymlinks(sourceRoot)
+	absoluteSource, err := filepath.Abs(sourceRoot)
+	if err != nil {
+		return observedGitCheckout{status: corpusGitStatusUnavailable}
+	}
+	resolvedSource, err := filepath.EvalSymlinks(absoluteSource)
 	if err != nil {
 		return observedGitCheckout{status: corpusGitStatusUnavailable}
 	}

@@ -102,3 +102,27 @@ func TestEvidenceFiles_SkipsNonRegularEntries(t *testing.T) {
 		t.Fatalf("got %v, want only %q", got, real)
 	}
 }
+
+func TestEvidenceFiles_RetainsInternalSymlinkFromRelativeDirectory(t *testing.T) {
+	root := t.TempDir()
+	evidence := filepath.Join(root, "evidence")
+	if err := os.Mkdir(evidence, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(evidence, "real.jsonl")
+	if err := os.WriteFile(real, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(evidence, "inside-link.jsonl")); err != nil {
+		t.Skipf("symlinks unavailable on this platform: %v", err)
+	}
+	t.Chdir(root)
+
+	got, err := evidenceFiles("", ReceiptEvidenceDeclaration{EvidenceDir: "evidence", FileGlob: "*.jsonl"})
+	if err != nil {
+		t.Fatalf("evidenceFiles: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d files %v, want the file and its internal symlink", len(got), got)
+	}
+}

@@ -1238,8 +1238,13 @@ func (r *buyerReport) receiptProfileBindingError(reference capabilityregistry.Re
 	if receipt.SchemaVersion == activeReceiptProfileSchemaVersion && receipt.BenchmarkManifestSHA256 != reportString(r.summary, "benchmark_manifest_sha256") {
 		return "receipt profile benchmark manifest digest does not match the result"
 	}
-	if receipt.SchemaVersion == activeReceiptProfileSchemaVersion && receipt.CorpusGitStatus == corpusGitStatusClean && receipt.CorpusGitSHA != reportString(r.summary, "method_commit") {
-		return "receipt profile corpus Git commit does not match the result method commit"
+	if receipt.SchemaVersion == activeReceiptProfileSchemaVersion {
+		if receipt.CorpusGitStatus != corpusGitStatusClean {
+			return "v5 receipt profile requires clean corpus Git provenance for publication"
+		}
+		if receipt.CorpusGitSHA != reportString(r.summary, "method_commit") {
+			return "receipt profile corpus Git commit does not match the result method commit"
+		}
 	}
 	if receipt.ToolProfileSHA256 != reportString(r.summary, "tool_profile_sha256") {
 		return "receipt profile tool profile digest does not match the result"
