@@ -1,0 +1,54 @@
+{
+  "schema_version": 4,
+  "tool": "pipelock",
+  "tool_version": "3.4.0",
+  "runner_version": "v2",
+  "claims": [
+    "url_dlp",
+    "request_body_dlp",
+    "header_dlp",
+    "response_injection",
+    "mcp_input_scan",
+    "mcp_tool_poison",
+    "mcp_chain",
+    "ssrf",
+    "ssrf_bypass",
+    "domain_blocklist",
+    "entropy",
+    "encoding_evasion",
+    "websocket_dlp",
+    "shell_obfuscation",
+    "crypto_dlp",
+    "hostname_exfil",
+    "a2a_card_poison",
+    "a2a_scan",
+    "benign"
+  ],
+  "capability_registry": {
+    "id": "aeb.core-capabilities",
+    "format": 1,
+    "revision": 2,
+    "sha256": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c"
+  },
+  "receipt_evidence": {
+    "evidence_dir": ".receipt-evidence",
+    "file_glob": "evidence-*.jsonl",
+    "jsonl_record_type": "action_receipt",
+    "detail_json_pointer": "/detail",
+    "detail_encoding": "object_or_json_string",
+    "record_case_id_json_pointer": "",
+    "record_identifier_json_pointer": "/action_record/target",
+    "case_identifier_json_pointer": "/payload/url",
+    "verify_command": [
+      "$PIPELOCK_BIN",
+      "verify-receipt",
+      "{evidence_file}",
+      "--key",
+      "$AEB_RECEIPT_PUBKEY"
+    ],
+    "verify_timeout_seconds": 30,
+    "valid_exit_codes": [
+      0
+    ]
+  }
+}

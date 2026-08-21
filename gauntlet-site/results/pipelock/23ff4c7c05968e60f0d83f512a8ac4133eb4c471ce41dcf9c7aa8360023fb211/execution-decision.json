@@ -1,0 +1,26 @@
+{
+  "blocked": false,
+  "evidence_sha256": {
+    "capability_registry": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c",
+    "case_index": "d164d5b5cf8aac0151e476be04250972c84e931489958b0dc8dfbb71583757cf",
+    "command": "1f6db298f66087a159bd95cc830678e26fa2499656aa2e9c6e97ec278bdf8ccd",
+    "corpus_manifest": "4e30d47ef9c92abe66cc80caf79f180b92f5d47bba25a76d89913617bde1bfe9",
+    "entrypoint_command": "be98f0607efa3390f42c614a0d9ae7655af48667f081f123bb49526de37a8e3c",
+    "pipelock_release": "7181b77fb77fd400c1a359bf018834ecb905962f8e82a8d63a6fc77669cb4a0a",
+    "pipelock_version_output": "fefbb56abb62e622fdf9667475411ac0ec3b5f04b0a0375f3e981d8efd898960",
+    "raw_summary": "1e182405cdff08f8f0e8835c7c0aed7047b4c0e2fbd539f22c390175d5507b64",
+    "receipt_profile": "2beeb7194b0e1a5f610198e2d4e29ddb793f8213177627cb9f0de4775f36481b",
+    "release_checksums": "aa1635913219f267985b7ff12980afae863ef51f0030ebffe5715c6bc4915178",
+    "results": "54fcc42dd596d0233c3cdff5e70816ff665415953ab5ef1d40c308d8dce5695e",
+    "run_metadata": "4f3e8dcb9f8f9b5e534119f9665ac5b897f2c06b43bf16f3bddcce3aa0ce9149",
+    "runner_stderr": "6de715e96f9a8cb565451bae1211138655a5d3ed2ef95ad61f73115126091af6",
+    "stats": "b163435253c3147b30ac6fd89effdf8355b13d78c0ab2dc854cdf141364072de",
+    "tool_profile": "a559fd894aac6bbd086e4f353b78ce64c9910355e3058e3cc77a3352ee51794a"
+  },
+  "execution_status": "complete",
+  "failures": [],
+  "local_run_id": "local:20260821T012335Z:2356",
+  "publication_eligible": true,
+  "review_notes": [],
+  "schema_version": 1
+}

@@ -1,0 +1,30 @@
+{
+  "id": "aeb.core-capabilities",
+  "format": 1,
+  "revision": 2,
+  "previous_sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b",
+  "entries": [
+    {"id": "a2a_card_poison", "status": "active", "introduced_revision": 1, "title": "A2A agent-card poisoning", "description": "Reporting label only"},
+    {"id": "a2a_scan", "status": "active", "introduced_revision": 1, "title": "A2A scanning", "description": "Reporting label only"},
+    {"id": "benign", "status": "active", "introduced_revision": 1, "title": "Benign baseline", "description": "Reporting label only"},
+    {"id": "crypto_dlp", "status": "active", "introduced_revision": 1, "title": "Cryptocurrency and financial DLP", "description": "Reporting label only"},
+    {"id": "denial_of_wallet", "status": "active", "introduced_revision": 1, "title": "Denial of wallet", "description": "Reporting label only"},
+    {"id": "domain_blocklist", "status": "active", "introduced_revision": 1, "title": "Domain blocklist", "description": "Reporting label only"},
+    {"id": "encoding_evasion", "status": "active", "introduced_revision": 1, "title": "Encoding evasion", "description": "Reporting label only"},
+    {"id": "entropy", "status": "active", "introduced_revision": 1, "title": "Entropy detection", "description": "Reporting label only"},
+    {"id": "header_dlp", "status": "active", "introduced_revision": 1, "title": "Header DLP", "description": "Reporting label only"},
+    {"id": "hostname_exfil", "status": "active", "introduced_revision": 1, "title": "Hostname exfiltration", "description": "Reporting label only"},
+    {"id": "mcp_chain", "status": "active", "introduced_revision": 1, "title": "MCP chain analysis", "description": "Reporting label only"},
+    {"id": "mcp_input_scan", "status": "active", "introduced_revision": 1, "title": "MCP input scanning", "description": "Reporting label only"},
+    {"id": "mcp_tool_poison", "status": "active", "introduced_revision": 1, "title": "MCP tool poisoning", "description": "Reporting label only"},
+    {"id": "mcp_session_binding", "status": "active", "introduced_revision": 2, "title": "MCP session binding", "description": "Reporting label only"},
+    {"id": "mcp_tool_result_dlp_scanning", "status": "active", "introduced_revision": 2, "title": "MCP tool-result DLP scanning", "description": "Reporting label only"},
+    {"id": "request_body_dlp", "status": "active", "introduced_revision": 1, "title": "Request-body DLP", "description": "Reporting label only"},
+    {"id": "response_injection", "status": "active", "introduced_revision": 1, "title": "Response injection", "description": "Reporting label only"},
+    {"id": "shell_obfuscation", "status": "active", "introduced_revision": 1, "title": "Shell obfuscation", "description": "Reporting label only"},
+    {"id": "ssrf", "status": "active", "introduced_revision": 1, "title": "SSRF", "description": "Reporting label only"},
+    {"id": "ssrf_bypass", "status": "active", "introduced_revision": 1, "title": "SSRF bypass", "description": "Reporting label only"},
+    {"id": "url_dlp", "status": "active", "introduced_revision": 1, "title": "URL DLP", "description": "Reporting label only"},
+    {"id": "websocket_dlp", "status": "active", "introduced_revision": 1, "title": "WebSocket DLP", "description": "Reporting label only"}
+  ]
+}

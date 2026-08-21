@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts import artifact_contracts
+
 ROOT = Path(__file__).resolve().parents[1]
 VECTOR_ROOT = ROOT / "schemas" / "conformance"
 SPEC = importlib.util.spec_from_file_location("artifact_schema", ROOT / "scripts" / "artifact_schema.py")
@@ -241,13 +243,16 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
             self.assertIn("is not true", result.failures[0][1])
 
     def test_existing_promoted_records(self):
-        schema = ROOT / "schemas" / "promoted-record-v1.schema.json"
+        schemas = artifact_contracts.schema_paths("promoted_record")
         records = sorted((ROOT / "gauntlet-site" / "results" / "pipelock").glob("*/record-manifest.json"))
         self.assertTrue(records)
         for path in records:
             with self.subTest(path=path):
+                document = json.loads(path.read_text())
+                schema = schemas.get(document.get("schema_version"))
+                self.assertIsNotNone(schema, "promoted record has no governed schema reader")
                 validated = artifact_schema.validate_file(
-                    json.loads(path.read_text()), schema, str(path)
+                    document, schema, str(path)
                 )
                 self.assertIsNotNone(validated)
 

@@ -491,6 +491,34 @@
           "scripts/validate_gauntlet_records.py",
           "scripts/validate_gauntlet_scope.py"
         ]
+      },
+      {
+        "version": 3,
+        "reader": [
+          "scripts/validate_gauntlet_records.py",
+          "scripts/validate_gauntlet_scope.py"
+        ]
+      },
+      {
+        "version": 4,
+        "reader": [
+          "scripts/validate_gauntlet_records.py",
+          "scripts/validate_gauntlet_scope.py"
+        ]
+      },
+      {
+        "version": 5,
+        "reader": [
+          "scripts/validate_gauntlet_records.py",
+          "scripts/validate_gauntlet_scope.py"
+        ]
+      },
+      {
+        "version": 6,
+        "reader": [
+          "scripts/validate_gauntlet_records.py",
+          "scripts/validate_gauntlet_scope.py"
+        ]
       }
     ]
   },
