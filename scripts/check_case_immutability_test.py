@@ -95,6 +95,14 @@ class CaseImmutabilityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mcp-drift-immutable: file inventory changed"):
             case_immutability.check(self.repo, self.base)
 
+    def test_rejects_added_file_for_existing_regular_case_id(self):
+        self.write_json(
+            self.repo / "cases" / "headers" / "duplicate.json",
+            {"id": "immutable-case", "payload": {"header": "added"}},
+        )
+        with self.assertRaisesRegex(ValueError, "immutable-case: file inventory changed"):
+            case_immutability.check(self.repo, self.base)
+
     def test_repair_override_is_deliberate_and_visible_to_the_caller(self):
         self.write_json(self.case_path, {"id": "immutable-case", "payload": {"url": "https://changed.example.invalid"}})
         base, count, changed = case_immutability.check(self.repo, self.base, "repair: documented fixture correction")

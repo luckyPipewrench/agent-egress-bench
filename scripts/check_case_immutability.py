@@ -192,6 +192,14 @@ def changed_base_cases(root, base, cases, drift_ids):
                     f"(missing={sorted(expected_paths - actual_paths)}, added={sorted(actual_paths - expected_paths)})"
                 )
                 continue
+        else:
+            actual_paths = current_regular_paths(root, case_id)
+            if actual_paths != expected_paths:
+                changed.append(
+                    f"{case_id}: file inventory changed "
+                    f"(missing={sorted(expected_paths - actual_paths)}, added={sorted(actual_paths - expected_paths)})"
+                )
+                continue
         for relative, expected in sorted(expected_files.items()):
             path = root / relative
             if path.is_symlink() or not path.is_file():
