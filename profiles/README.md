@@ -30,9 +30,11 @@ timestamps appear in the file. Byte-identical output additionally requires
 the same `benchmark_manifest_sha256`, a `clean` `corpus_git_status` with the
 recorded `corpus_git_sha`, and the same tool-version command output. Other Git
 statuses do not identify checkout bytes that can be reproduced by cloning a
-revision. Any `observed_tool_version.status` other than `observed` means the
-tool's version output was unavailable for that run. The exact JSON-argv command
-is retained in the runner command as `--tool-version-command`.
+revision. `observed_tool_version.status` records whether the runner observed the
+output, couldn't obtain it, or wasn't asked to run a version command. A
+reproduction must match the recorded status and, when the status is `observed`,
+the recorded bounded value. The exact JSON-argv command is retained in the
+runner command as `--tool-version-command`.
 
 The reference command for Pipelock is documented in
 [`../docs/RUNNER.md`](../docs/RUNNER.md). Other tools provide their own
@@ -88,8 +90,11 @@ The PR is reviewed for:
   [`receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json).
 - Per-case results reference real case IDs in [`../cases/`](../cases/).
 - The `verifier` block, license, and exit-code contract are accurate.
-- The `corpus_version`, `benchmark_manifest_sha256`, and any clean
-  `corpus_git_sha` identify the corpus the profile actually read.
+- The `corpus_version` and `benchmark_manifest_sha256` identify the corpus the
+  profile actually read. A `clean` `corpus_git_status` requires the recorded
+  `corpus_git_sha`; every other status requires an empty SHA.
+- `observed_tool_version` has a recorded status. An `observed` status requires
+  a bounded non-empty value; every other status requires a null value.
 
 The PR is not reviewed for whether the tool "passes" anything. There is
 nothing to pass. The profile is the published evidence.

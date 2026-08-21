@@ -524,6 +524,18 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("receipt profile benchmark manifest digest does not match summary", result.stderr)
 
+    def test_bundle_rejects_tool_profile_bytes_that_do_not_match_summary(self):
+        self.make_active_fixture(summary_schema_version=5)
+        profile_path = self.run_dir / "tool-profile.json"
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        profile["claims"].append("altered")
+        profile_path.write_text(json.dumps(profile, sort_keys=True), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tool profile raw snapshot digest does not match summary", result.stderr)
+
     def assert_v5_receipt_mutation_rejected(self, mutate, message):
         self.make_active_fixture(summary_schema_version=5)
         receipt_path = self.run_dir / "receipt-profile.json"

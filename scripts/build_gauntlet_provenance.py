@@ -282,6 +282,8 @@ def validate_active_registry_binding(run_dir, summary, results):
     if not isinstance(profile, dict) or not isinstance(snapshot, dict):
         raise ValueError("active registry evidence must be JSON objects")
     reference = registry_reference(summary.get("capability_registry"), "summary capability_registry")
+    if hashlib.sha256(profile_bytes).hexdigest() != summary.get("tool_profile_sha256"):
+        raise ValueError("tool profile raw snapshot digest does not match summary")
     if hashlib.sha256(snapshot_bytes).hexdigest() != reference["sha256"]:
         raise ValueError("capability registry raw snapshot digest does not match summary")
     for label, value in (("profile", profile), ("receipt profile", receipt)):
