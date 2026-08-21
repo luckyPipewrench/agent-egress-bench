@@ -217,7 +217,14 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 		"capabilities": reportStringList(report.summary, "exercised", "capability_tags"),
 	}
 	for name, values := range coverage {
-		if len(values) == 0 || values[0] == absentFact || values[0] == "Invalid in run artifacts" {
+		invalid := len(values) == 0
+		for _, value := range values {
+			if value == absentFact || value == "Invalid in run artifacts" || value == "None declared" {
+				invalid = true
+				break
+			}
+		}
+		if invalid {
 			return fmt.Errorf("publication lockup requires exercised %s", name)
 		}
 	}
@@ -263,7 +270,7 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 }
 
 func (r *buyerReport) retainedPublicationRefusal() string {
-	if len(r.decision.data) > 0 {
+	if r.decision.status != absentFact {
 		if blocked, ok := r.decision.data["blocked"].(bool); !ok || blocked {
 			return "execution decision is blocked or invalid"
 		}
@@ -271,7 +278,7 @@ func (r *buyerReport) retainedPublicationRefusal() string {
 			return "execution decision is ineligible or invalid"
 		}
 	}
-	if len(r.bundle.data) > 0 {
+	if r.bundle.status != absentFact {
 		if eligible, ok := r.bundle.data["publication_eligible"].(bool); !ok || !eligible {
 			return "run bundle is ineligible or invalid"
 		}

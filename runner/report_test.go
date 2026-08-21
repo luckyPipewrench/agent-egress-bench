@@ -453,6 +453,12 @@ func TestPublicationLockupRefusesIncompleteOrUnboundRun(t *testing.T) {
 		{name: "mismatched-run-id", mutate: func(f *reportFixture) {
 			f.metadata["local_run_id"] = "local:other"
 		}},
+		{name: "empty-coverage", mutate: func(f *reportFixture) {
+			f.summary["exercised"].(map[string]interface{})["transports"] = []interface{}{}
+		}},
+		{name: "mixed-invalid-coverage", mutate: func(f *reportFixture) {
+			f.summary["exercised"].(map[string]interface{})["transports"] = []interface{}{"0", json.Number("1")}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -462,6 +468,28 @@ func TestPublicationLockupRefusesIncompleteOrUnboundRun(t *testing.T) {
 			fixture.write(t, dir)
 			if err := generatePublicationLockup(dir, filepath.Join(t.TempDir(), "result-lockup.md"), []string{"self-run"}, "https://lab.example/results/run-1"); err == nil {
 				t.Fatal("expected publication lockup refusal")
+			}
+		})
+	}
+}
+
+func TestPublicationLockupRefusesInvalidRetainedDecisionArtifacts(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+	}{
+		{name: "malformed", content: "{"},
+		{name: "empty-object", content: "{}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := publicationFixture()
+			dir := t.TempDir()
+			fixture.write(t, dir)
+			if err := os.WriteFile(filepath.Join(dir, "execution-decision.json"), []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := generatePublicationLockup(dir, filepath.Join(t.TempDir(), "result-lockup.md"), []string{"self-run"}, "https://lab.example/results/run-1"); err == nil {
+				t.Fatal("expected invalid retained decision refusal")
 			}
 		})
 	}
