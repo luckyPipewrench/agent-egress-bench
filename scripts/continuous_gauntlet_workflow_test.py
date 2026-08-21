@@ -78,6 +78,59 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn('${original_args[$original_arg_index]}', self.entrypoint)
         self.assertNotRegex(self.entrypoint, r"\$\{original_args\[[@*]\]")
 
+    def test_canonical_pinned_commit_may_be_in_origin_main_history(self):
+        ancestry_guard = (
+            'git merge-base --is-ancestor "$corpus_git_sha" refs/remotes/origin/main'
+        )
+        self.assertIn(ancestry_guard, self.entrypoint)
+        self.assertNotIn('[[ "$corpus_git_sha" == "$origin_main_sha" ]]', self.entrypoint)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", *arguments],
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+            self.assertEqual(git("init").returncode, 0)
+            self.assertEqual(git("config", "user.name", "Test Operator").returncode, 0)
+            self.assertEqual(git("config", "user.email", "operator@example.test").returncode, 0)
+            (repo / "fixture").write_text("one\n", encoding="utf-8")
+            self.assertEqual(git("add", "fixture").returncode, 0)
+            self.assertEqual(git("commit", "-m", "first").returncode, 0)
+            first = git("rev-parse", "HEAD").stdout.strip()
+            (repo / "fixture").write_text("two\n", encoding="utf-8")
+            self.assertEqual(git("commit", "-am", "second").returncode, 0)
+            main_tip = git("rev-parse", "HEAD").stdout.strip()
+            self.assertEqual(
+                git("update-ref", "refs/remotes/origin/main", main_tip).returncode,
+                0,
+            )
+
+            self.assertEqual(
+                git("merge-base", "--is-ancestor", first, "refs/remotes/origin/main").returncode,
+                0,
+            )
+            self.assertEqual(git("checkout", "--detach", first).returncode, 0)
+            (repo / "other").write_text("side\n", encoding="utf-8")
+            self.assertEqual(git("add", "other").returncode, 0)
+            self.assertEqual(git("commit", "-m", "divergent").returncode, 0)
+            divergent = git("rev-parse", "HEAD").stdout.strip()
+            self.assertEqual(
+                git(
+                    "merge-base",
+                    "--is-ancestor",
+                    divergent,
+                    "refs/remotes/origin/main",
+                ).returncode,
+                1,
+            )
+
     def test_doctor_reports_every_check_as_json_without_starting_a_run(self):
         before = set((REPO_ROOT / "continuous-gauntlet-runs").glob("*"))
         result = subprocess.run(
