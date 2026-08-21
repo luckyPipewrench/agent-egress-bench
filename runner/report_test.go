@@ -374,6 +374,146 @@ type reportFixture struct {
 	malformedSummary bool
 }
 
+func publicationFixture() *reportFixture {
+	fixture := newReportFixture()
+	fixture.summary["schema_version"] = 5
+	fixture.summary["method_repository"] = "example/agent-egress-bench"
+	fixture.summary["method_commit"] = strings.Repeat("c", 40)
+	fixture.summary["benchmark_manifest_sha256"] = strings.Repeat("f", 64)
+	fixture.summary["measurement_status"] = measurementStatusMeasured
+	fixture.summary["case_count"].(map[string]interface{})["unreachable"] = 0
+	fixture.summary["diagnostics"] = map[string]interface{}{
+		"full": map[string]interface{}{}, "applicable": map[string]interface{}{},
+	}
+	fixture.summary["exercised"] = map[string]interface{}{
+		"transports": []interface{}{"http_proxy"}, "categories": []interface{}{"url"},
+		"capability_tags": []interface{}{"url_dlp"},
+	}
+	return fixture
+}
+
+func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	output := filepath.Join(t.TempDir(), "result-lockup.md")
+	if err := generatePublicationLockup(dir, output, []string{"self-run"}, "https://lab.example/results/run-1"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"**example-tool 1.2.3 — Agent Egress Bench result**",
+		"Publisher-declared assurance: **self run**",
+		"example/agent-egress-bench@cccccccccccccccccccccccccccccccccccccccc",
+		"2 total · 2 applicable · 0 unreachable · 0 not applicable · 0 errors",
+		"containment 75.00% · false-positive rate 10.00%",
+		"Exercised transports: http\\_proxy",
+		"internal consistency only",
+		"not a certification, accreditation, audit, endorsement",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("lockup missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestPublicationLockupRefusesIncompleteOrUnboundRun(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*reportFixture)
+	}{
+		{name: "missing-method", mutate: func(f *reportFixture) {
+			delete(f.summary, "method_repository")
+		}},
+		{name: "missing-adapter-owner", mutate: func(f *reportFixture) {
+			delete(f.summary, "adapter_owner")
+		}},
+		{name: "method-metadata-mismatch", mutate: func(f *reportFixture) {
+			f.summary["method_commit"] = strings.Repeat("d", 40)
+		}},
+		{name: "incomplete-measurement", mutate: func(f *reportFixture) {
+			f.summary["measurement_status"] = measurementStatusIncomplete
+		}},
+		{name: "invalid-manifest-digest", mutate: func(f *reportFixture) {
+			f.summary["benchmark_manifest_sha256"] = "bad"
+		}},
+		{name: "blocked-decision", mutate: func(f *reportFixture) {
+			f.decision["blocked"] = true
+		}},
+		{name: "ineligible-decision", mutate: func(f *reportFixture) {
+			f.decision["publication_eligible"] = false
+		}},
+		{name: "ineligible-bundle", mutate: func(f *reportFixture) {
+			f.bundle["publication_eligible"] = false
+		}},
+		{name: "mismatched-run-id", mutate: func(f *reportFixture) {
+			f.metadata["local_run_id"] = "local:other"
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := publicationFixture()
+			tt.mutate(fixture)
+			dir := t.TempDir()
+			fixture.write(t, dir)
+			if err := generatePublicationLockup(dir, filepath.Join(t.TempDir(), "result-lockup.md"), []string{"self-run"}, "https://lab.example/results/run-1"); err == nil {
+				t.Fatal("expected publication lockup refusal")
+			}
+		})
+	}
+}
+
+func TestPublicationLockupRequiresAssuranceAndEvidenceURL(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	output := filepath.Join(t.TempDir(), "result-lockup.md")
+	for _, test := range []struct {
+		assurances []string
+		url        string
+	}{
+		{url: "https://lab.example/results/run-1"},
+		{assurances: []string{"self-run"}},
+		{assurances: []string{"self-run"}, url: "http://lab.example/results/run-1"},
+		{assurances: []string{"self-run"}, url: "https://certified.example/results/run-1"},
+		{assurances: []string{"unknown"}, url: "https://lab.example/results/run-1"},
+	} {
+		if err := generatePublicationLockup(dir, output, test.assurances, test.url); err == nil {
+			t.Fatalf("expected refusal for assurances=%v url=%q", test.assurances, test.url)
+		}
+	}
+}
+
+func TestPublicationLockupUsesTargetNeutralArtifacts(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	for _, name := range []string{"run-bundle.json", "execution-decision.json", "pipelock-release.json", "pipelock-version.txt", "checksums.txt", "make-stats.txt"} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	if err := generatePublicationLockup(dir, filepath.Join(t.TempDir(), "result-lockup.md"), []string{"independently-executed"}, "https://lab.example/results/run-2"); err != nil {
+		t.Fatalf("target-neutral lockup refused: %v", err)
+	}
+}
+
+func TestPublicationLockupRefusesBrokenRegistryBinding(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "tool-profile.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := generatePublicationLockup(dir, filepath.Join(t.TempDir(), "result-lockup.md"), []string{"self-run"}, "https://lab.example/results/run-3"); err == nil {
+		t.Fatal("expected registry binding refusal")
+	}
+}
+
 func newReportFixture() *reportFixture {
 	return &reportFixture{
 		summary: map[string]interface{}{

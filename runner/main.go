@@ -51,6 +51,9 @@ func main() {
 	caseIndex := flag.Bool("case-index", false, "print loader-normalized case IDs and expected verdicts as JSON (requires --cases; ignores runner profile flags)")
 	reportDir := flag.String("report", "", "render a buyer-readable Markdown report from an existing Gauntlet artifact directory")
 	reportOutput := flag.String("report-output", "gauntlet-report.md", "report output path, or - for stdout (used with --report)")
+	publicationLockupDir := flag.String("publication-lockup", "", "render a compact public-result lockup from a complete publication-eligible artifact directory")
+	publicationLockupOutput := flag.String("publication-lockup-output", "result-lockup.md", "publication lockup output path, or - for stdout (used with --publication-lockup)")
+	publicationEvidenceURL := flag.String("publication-evidence-url", "", "public HTTPS URL for the exact retained evidence (required with --publication-lockup)")
 	methodRepository := flag.String("method-repository", "", "repository this corpus came from, recorded in the summary so a reader can reproduce the run")
 	methodCommit := flag.String("method-commit", "", "exact commit of the corpus under test, recorded in the summary")
 	adapterOwner := flag.String("adapter-owner", "", "who authored the adapter driving the target; a vendor-authored adapter is normal, leaving it unstated is not")
@@ -58,6 +61,8 @@ func main() {
 	requireComplete := flag.Bool("require-complete", false, "exit nonzero after writing artifacts when the measurement is incomplete")
 	var seededBlocklist stringList
 	flag.Var(&seededBlocklist, "seeded-blocklist-domain", "domain already seeded in the tool blocklist; repeat for each domain. Required to score blocklist_domain prerequisites; omitting it records an error instead of a miss")
+	var publicationAssurance stringList
+	flag.Var(&publicationAssurance, "publication-assurance", "publisher-declared assurance label; repeat for multiple labels (required with --publication-lockup)")
 
 	// --debug / -v: emit verbose per-case diagnostics to stderr. Both
 	// flag names point at the same variable so either can be used.
@@ -66,6 +71,10 @@ func main() {
 	flag.BoolVar(&debug, "v", false, "alias for --debug")
 
 	flag.Parse()
+	if *reportDir != "" && *publicationLockupDir != "" {
+		_, _ = fmt.Fprintln(os.Stderr, "error: --report and --publication-lockup are separate modes")
+		os.Exit(1)
+	}
 	if *version {
 		_, _ = fmt.Fprintf(os.Stdout, "aeb-gauntlet %s %s\n", releaseVersion, releaseCommit)
 		return
@@ -88,6 +97,13 @@ func main() {
 	}
 	if *reportDir != "" {
 		if err := generateBuyerReport(*reportDir, *reportOutput); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *publicationLockupDir != "" {
+		if err := generatePublicationLockup(*publicationLockupDir, *publicationLockupOutput, publicationAssurance, *publicationEvidenceURL); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

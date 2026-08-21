@@ -650,6 +650,8 @@ def promote(args):
                 previous_candidate_sha256,
                 previous_record_manifest_sha256,
             )
+            if record_manifest["candidate_sha256"] != candidate_sha256:
+                raise ValueError("candidate changed while preparing the append-only record")
             record_manifest = artifact_schema.validate_file(
                 record_manifest,
                 PROMOTED_RECORD_SCHEMAS[ACTIVE_PROMOTED_RECORD_SCHEMA_VERSION],
