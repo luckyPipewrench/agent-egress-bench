@@ -59,11 +59,23 @@ Publish these next to any score, or the number is not reproducible.
 
 The runner writes these into the v5 summary JSON. The corpus-derived facts come from the run itself; repository and commit, adapter owner, and target configuration are operator declarations supplied with `--method-repository`, `--method-commit`, `--adapter-owner`, and `--target-config`. A local summary may omit a declaration rather than guess it. The v6 provenance candidate requires every declaration before promotion, and the buyer report names anything absent from older or local artifacts. Reproduction instructions belong beside a public result too, so a reader can run it rather than believe it.
 
+The released runner can render a neutral, copy-ready lockup from a complete publication-eligible artifact directory:
+
+```bash
+./aeb-gauntlet \
+  --publication-lockup artifacts \
+  --publication-assurance self-run \
+  --publication-evidence-url https://publisher.example/results/run-123 \
+  --publication-lockup-output artifacts/result-lockup.md
+```
+
+The lockup carries the method identity, scope, scores, configuration identity, exercised coverage, publisher-declared assurance label, evidence URL, and non-claims. The `self-run`, `independently-executed`, `transparency-registered`, and `challenge-verified` labels validate the target-neutral summary, result rows, profile, registry, receipt profile, and declared method identity without requiring Pipelock-specific release files or an AEB-Go bundle. The first-party Pipelock lane may also declare `artifact-validated` after its complete AEB bundle passes the stricter retained-decision checks. A lab or vendor may style the surrounding presentation, but wherever a score appears these facts must remain adjacent to it. Putting them only in a methodology page does not make a detached screenshot, badge, or sales slide reproducible.
+
 ## Verify a public result
 
 The public result must include the score, its exact scope and pinned inputs, the reproduction commands, the raw evidence, the normalized decisions, and a verification path. Those categories bind any publisher. The exact filenames do not: they belong to the lane that produced the result. The [public result contract](../contracts/public-result-v1.json) names the files the first-party Pipelock lane retains, and the [Pipelock result inventory](../migration/pipelock-result-inventory-v1.json) gives each of those files a commit-pinned public URL and digest. Run `python3 scripts/validate_gauntlet_records.py` from a checkout of this repository to verify that lane's retained chain and reconstruct its decisions from the raw evidence.
 
-Paid reports may add analysis or convenience. They can't gate the evidence or verification needed to check a public result.
+Paid reports may add analysis or convenience. They can't gate the score, scope, evidence, or verification needed to check a public result. A private engagement may remain private and be priced however its parties agree, but it cannot support a public claim while its underlying result remains unavailable.
 
 ## Non-claims
 
@@ -75,8 +87,7 @@ A result does not establish any of the following, and no publisher should imply 
 - security of a product outside the exercised capability profile;
 - absence of bypasses, including bypasses of the same class the corpus tests.
 
-Words to avoid beside a result until the underlying protocol exists: certified, sealed, witnessed,
-neutral benchmark, proven secure, no bypass, any product, all proxies. <!-- claim-ok: names the terms it forbids -->
+Words to avoid beside a result until the underlying protocol exists: certified, accredited, audited, approved, assured, attested, endorsed, graded, rated, sealed, stamped, witnessed, passed, neutral benchmark, proven secure, no bypass, any product, all proxies. `artifact-validated` is the defined self-consistency label above; bare `validated` must not be used as a substitute for certification or endorsement. <!-- claim-ok: names the terms it forbids -->
 
 ## Adverse results
 
@@ -86,6 +97,8 @@ cannot be quietly withdrawn later.
 
 The maintainer may respond in public with a factual correction. A correction is an argument, not a
 veto, and the original result stays published.
+
+A continuous or version-tracking public campaign states its selection rule before it runs and keeps every completed scored result in that declared scope, including adverse results. A correction or rerun receives a new permanent record and links back to the earlier result; it does not replace it. Every displayed score carries its run date. An error, incomplete measurement, or unknown state must remain visibly non-successful and must not leave an older successful score looking current.
 
 ## Configuration verification
 

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,6 +98,192 @@ func generateBuyerReport(dir, outputPath string) error {
 		return fmt.Errorf("writing report to %s: %w", outputPath, err)
 	}
 	return nil
+}
+
+// generatePublicationLockup emits neutral, copy-ready presentation text from
+// the same retained facts the buyer report verifies. It deliberately carries
+// no publisher logo, badge, or pass/fail judgment. Assurance labels are explicit
+// publisher declarations, while these method and scope facts must remain
+// adjacent to any displayed score.
+func generatePublicationLockup(dir, outputPath string, assurances []string, evidenceURL string) error {
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		return err
+	}
+	if reportNumber(report.summary, "schema_version") != "5" {
+		return fmt.Errorf("publication lockup requires a v5 summary")
+	}
+	if failures := report.summaryScopeFailures(); len(failures) > 0 {
+		return fmt.Errorf("publication lockup scope is invalid: %s", strings.Join(failures, "; "))
+	}
+	if bindingError := report.v4RegistryBindingError(); bindingError != "" {
+		return fmt.Errorf("publication lockup registry binding is invalid: %s", bindingError)
+	}
+	if len(assurances) == 0 {
+		return fmt.Errorf("publication lockup requires at least one publisher-declared assurance label")
+	}
+	allowedAssurance := map[string]bool{
+		"self-run": true, "artifact-validated": true, "independently-executed": true,
+		"transparency-registered": true, "challenge-verified": true,
+	}
+	seenAssurance := make(map[string]bool, len(assurances))
+	for _, assurance := range assurances {
+		if !allowedAssurance[assurance] || seenAssurance[assurance] {
+			return fmt.Errorf("publication lockup assurance label is invalid or duplicated: %q", assurance)
+		}
+		seenAssurance[assurance] = true
+	}
+	if seenAssurance["artifact-validated"] && !report.publicationEligible() {
+		return fmt.Errorf("publication lockup artifact-validated label requires a complete self-consistent AEB bundle")
+	}
+	if reason := report.retainedPublicationRefusal(); reason != "" {
+		return fmt.Errorf("publication lockup refuses retained publication decision: %s", reason)
+	}
+	parsedEvidenceURL, parseErr := url.Parse(evidenceURL)
+	if parseErr != nil || parsedEvidenceURL.Scheme != "https" || parsedEvidenceURL.Host == "" || parsedEvidenceURL.User != nil {
+		return fmt.Errorf("publication lockup requires a public HTTPS evidence URL")
+	}
+	if safeReportText(evidenceURL) != evidenceURL {
+		return fmt.Errorf("publication lockup evidence URL contains restricted claim language")
+	}
+
+	required := map[string]string{
+		"tool":                        reportString(report.summary, "tool"),
+		"tool version":                reportString(report.summary, "tool_version"),
+		"method repository":           reportString(report.summary, "method_repository"),
+		"method commit":               reportString(report.summary, "method_commit"),
+		"corpus version":              reportString(report.summary, "corpus_version"),
+		"scoring version":             reportString(report.summary, "scoring_version"),
+		"benchmark manifest digest":   reportString(report.summary, "benchmark_manifest_sha256"),
+		"profile digest":              reportString(report.summary, "tool_profile_sha256"),
+		"adapter":                     reportString(report.summary, "adapter_id"),
+		"adapter owner":               reportString(report.summary, "adapter_owner"),
+		"target configuration":        reportString(report.summary, "target_config_ref"),
+		"target configuration digest": reportString(report.summary, "target_config_sha256"),
+		"date":                        reportString(report.summary, "date"),
+		"run id":                      reportString(report.metadata, "local_run_id"),
+		"measurement status":          reportString(report.summary, "measurement_status"),
+		"total":                       reportNumber(report.summary, "case_count", "total"),
+		"applicable":                  reportNumber(report.summary, "case_count", "applicable"),
+		"unreachable":                 reportNumber(report.summary, "case_count", "unreachable"),
+		"not applicable":              reportNumber(report.summary, "case_count", "not_applicable"),
+		"errors":                      reportNumber(report.summary, "case_count", "errors"),
+		"containment":                 reportPercent(report.summary, "scores", "full", "containment"),
+		"false-positive rate":         reportPercent(report.summary, "scores", "full", "false_positive_rate"),
+	}
+	for name, value := range required {
+		if value == absentFact || value == "Invalid in run artifacts" || value == "Artifact value withheld by claim-language gate" || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("publication lockup requires %s", name)
+		}
+	}
+	if required["measurement status"] != measurementStatusMeasured {
+		return fmt.Errorf("publication lockup refuses measurement status %q", required["measurement status"])
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(required["method commit"]) {
+		return fmt.Errorf("publication lockup requires a full lowercase Git commit")
+	}
+	for _, name := range []string{"benchmark manifest digest", "profile digest", "target configuration digest"} {
+		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(required[name]) {
+			return fmt.Errorf("publication lockup requires a valid %s", name)
+		}
+	}
+	if metadataRepository := reportString(report.metadata, "corpus_repository"); metadataRepository != required["method repository"] {
+		return fmt.Errorf("publication lockup method repository does not match run metadata")
+	}
+	if metadataCommit := reportString(report.metadata, "corpus_git_sha"); metadataCommit != required["method commit"] {
+		return fmt.Errorf("publication lockup method commit does not match run metadata")
+	}
+	for _, doc := range []reportDocument{report.bundle, report.decision} {
+		if len(doc.data) > 0 && reportString(doc, "local_run_id") != required["run id"] {
+			return fmt.Errorf("publication lockup run id does not match %s", doc.name)
+		}
+	}
+
+	registryID := reportString(report.summary, "capability_registry", "id")
+	registryFormat := reportNumber(report.summary, "capability_registry", "format")
+	registryRevision := reportNumber(report.summary, "capability_registry", "revision")
+	registrySHA := reportString(report.summary, "capability_registry", "sha256")
+	for name, value := range map[string]string{"registry ID": registryID, "registry format": registryFormat, "registry revision": registryRevision, "registry digest": registrySHA} {
+		if value == absentFact || value == "Invalid in run artifacts" {
+			return fmt.Errorf("publication lockup requires %s", name)
+		}
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(registrySHA) {
+		return fmt.Errorf("publication lockup requires a valid registry digest")
+	}
+	coverage := map[string][]string{
+		"transports":   reportStringList(report.summary, "exercised", "transports"),
+		"categories":   reportStringList(report.summary, "exercised", "categories"),
+		"capabilities": reportStringList(report.summary, "exercised", "capability_tags"),
+	}
+	for name, values := range coverage {
+		invalid := len(values) == 0
+		for _, value := range values {
+			if value == absentFact || value == "Invalid in run artifacts" || value == "None declared" {
+				invalid = true
+				break
+			}
+		}
+		if invalid {
+			return fmt.Errorf("publication lockup requires exercised %s", name)
+		}
+	}
+	naReasons, reasonsOK := reportCountMap(report.summary, "case_count", "not_applicable_reasons")
+	if !reasonsOK {
+		return fmt.Errorf("publication lockup requires not-applicable reasons")
+	}
+	assuranceText := make([]string, len(assurances))
+	for i, assurance := range assurances {
+		assuranceText[i] = strings.ReplaceAll(assurance, "-", " ")
+	}
+	var out bytes.Buffer
+	line := func(format string, args ...interface{}) { _, _ = fmt.Fprintf(&out, format+"\n", args...) }
+	line("**%s %s — Agent Egress Bench result**", markdownInline(required["tool"]), markdownInline(required["tool version"]))
+	line("")
+	line("Publisher-declared assurance: **%s** · evidence: %s", markdownInline(strings.Join(assuranceText, ", ")), markdownInline(evidenceURL))
+	line("")
+	line("Agent Egress Bench `%s@%s` · corpus `%s` · scoring `%s` · manifest `sha256:%s`", markdownInline(required["method repository"]), markdownInline(required["method commit"]), markdownInline(required["corpus version"]), markdownInline(required["scoring version"]), markdownInline(required["benchmark manifest digest"]))
+	line("")
+	line("%s total · %s applicable · %s unreachable · %s not applicable · %s errors · containment %s · false-positive rate %s", required["total"], required["applicable"], required["unreachable"], required["not applicable"], required["errors"], required["containment"], required["false-positive rate"])
+	if len(naReasons) > 0 {
+		line("Not-applicable reasons: %s", markdownInline(strings.Join(naReasons, ", ")))
+	}
+	line("")
+	line("Registry `%s` format %s revision %s (`sha256:%s`) · profile `sha256:%s`", markdownInline(registryID), registryFormat, registryRevision, markdownInline(registrySHA), markdownInline(required["profile digest"]))
+	line("")
+	line("Exercised transports: %s", markdownInline(strings.Join(coverage["transports"], ", ")))
+	line("Exercised categories: %s", markdownInline(strings.Join(coverage["categories"], ", ")))
+	line("Exercised capabilities: %s", markdownInline(strings.Join(coverage["capabilities"], ", ")))
+	line("")
+	line("Adapter `%s` owned by %s · target configuration `%s` (`sha256:%s`) · measured %s · run `%s`", markdownInline(required["adapter"]), markdownInline(required["adapter owner"]), markdownInline(required["target configuration"]), markdownInline(required["target configuration digest"]), markdownInline(required["date"]), markdownInline(required["run id"]))
+	line("")
+	line("Reproduce and verify with the published command, raw evidence, normalized decisions, profile, and registry snapshot. The artifact-directory checks establish internal consistency only; they do not authenticate who produced the directory or when. This result is not a certification, accreditation, audit, endorsement, pass mark, compliance determination, insurance determination, or claim about unexercised behavior or the absence of bypasses.")
+
+	if outputPath == "-" {
+		_, err = os.Stdout.Write(out.Bytes())
+		return err
+	}
+	if err := os.WriteFile(outputPath, out.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("writing publication lockup to %s: %w", outputPath, err)
+	}
+	return nil
+}
+
+func (r *buyerReport) retainedPublicationRefusal() string {
+	if r.decision.status != absentFact {
+		if blocked, ok := r.decision.data["blocked"].(bool); !ok || blocked {
+			return "execution decision is blocked or invalid"
+		}
+		if eligible, ok := r.decision.data["publication_eligible"].(bool); !ok || !eligible {
+			return "execution decision is ineligible or invalid"
+		}
+	}
+	if r.bundle.status != absentFact {
+		if eligible, ok := r.bundle.data["publication_eligible"].(bool); !ok || !eligible {
+			return "run bundle is ineligible or invalid"
+		}
+	}
+	return ""
 }
 
 func loadBuyerReport(dir string) (*buyerReport, error) {
@@ -559,6 +746,28 @@ func reportStringList(doc reportDocument, path ...string) []string {
 	return out
 }
 
+func reportCountMap(doc reportDocument, path ...string) ([]string, bool) {
+	value, ok := nestedValue(doc.data, path...)
+	items, object := value.(map[string]interface{})
+	if !ok || !object {
+		return nil, false
+	}
+	out := make([]string, 0, len(items))
+	for key, raw := range items {
+		number, numberOK := raw.(json.Number)
+		if strings.TrimSpace(key) == "" || !numberOK {
+			return nil, false
+		}
+		count, err := strconv.Atoi(number.String())
+		if err != nil || count < 0 {
+			return nil, false
+		}
+		out = append(out, fmt.Sprintf("%s=%d", safeReportText(key), count))
+	}
+	sort.Strings(out)
+	return out, true
+}
+
 func markdownInline(value string) string {
 	replacer := strings.NewReplacer("\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]", "<", "&lt;", ">", "&gt;", "\n", " ")
 	return replacer.Replace(value)
@@ -770,14 +979,23 @@ func (r *buyerReport) publicationEligibility() string {
 	if decision != bundle {
 		return "Invalid: execution decision and run bundle disagree"
 	}
-	if decision {
-		if !strings.HasPrefix(r.bundleValidation(), reportSelfConsistentPrefix) ||
-			!strings.HasPrefix(r.decisionValidation(), reportSelfConsistentPrefix) {
-			return "Not established because retained validation checks are not valid"
-		}
+	if decision && r.publicationEligible() {
 		return "Recorded eligible by both retained decisions"
 	}
+	if decision {
+		return "Not established because retained validation checks are not valid"
+	}
 	return "Recorded not eligible by both retained decisions"
+}
+
+func (r *buyerReport) publicationEligible() bool {
+	decisionValue, decisionPresent := nestedValue(r.decision.data, "publication_eligible")
+	bundleValue, bundlePresent := nestedValue(r.bundle.data, "publication_eligible")
+	decision, decisionBool := decisionValue.(bool)
+	bundle, bundleBool := bundleValue.(bool)
+	return decisionPresent && bundlePresent && decisionBool && bundleBool && decision && bundle &&
+		strings.HasPrefix(r.bundleValidation(), reportSelfConsistentPrefix) &&
+		strings.HasPrefix(r.decisionValidation(), reportSelfConsistentPrefix)
 }
 
 func renderIndented(w io.Writer, value string) {
