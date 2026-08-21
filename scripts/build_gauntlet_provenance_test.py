@@ -552,6 +552,12 @@ class ProvenanceBuilderTest(unittest.TestCase):
             "observed tool version requires a non-empty value",
         )
 
+    def test_v5_rejects_observed_tool_version_with_whitespace_only_value(self):
+        self.assert_v5_receipt_mutation_rejected(
+            lambda receipt: receipt.update(observed_tool_version={"status": "observed", "value": " \t "}),
+            "observed tool version requires a non-empty value",
+        )
+
     def test_v5_rejects_unavailable_tool_version_with_value(self):
         self.assert_v5_receipt_mutation_rejected(
             lambda receipt: receipt.update(observed_tool_version={"status": "not_requested", "value": "claimed"}),

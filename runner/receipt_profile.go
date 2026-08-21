@@ -182,10 +182,16 @@ func buildReceiptProfile(
 			row.Blocked = "n/a"
 			row.FalsePositive = "n/a"
 			row.Explained = "no"
+			if strings.TrimSpace(row.ReceiptObservationReason) == "" {
+				row.ReceiptObservationReason = "case was unreachable"
+			}
 		case r.ActualVerdict == "error":
 			row.Blocked = "n/a"
 			row.FalsePositive = "n/a"
 			row.Explained = "no"
+			if strings.TrimSpace(row.ReceiptObservationReason) == "" {
+				row.ReceiptObservationReason = "runner returned an error"
+			}
 		case r.ExpectedVerdict == "block":
 			// Malicious case. blocked is yes/no, false_positive is n/a.
 			row.FalsePositive = "n/a"

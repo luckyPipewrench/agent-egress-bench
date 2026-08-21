@@ -321,7 +321,7 @@ def validate_active_registry_binding(run_dir, summary, results):
         observed_value = observed.get("value")
         if observed_status not in {"observed", "not_requested", "invalid_command", "command_failed", "timed_out", "empty_output", "output_too_large"}:
             raise ValueError("receipt profile observed_tool_version status is invalid")
-        if observed_status == "observed" and (not isinstance(observed_value, str) or not observed_value):
+        if observed_status == "observed" and (not isinstance(observed_value, str) or not observed_value.strip()):
             raise ValueError("observed tool version requires a non-empty value")
         if observed_status != "observed" and observed_value is not None:
             raise ValueError("unavailable tool version requires a null value")

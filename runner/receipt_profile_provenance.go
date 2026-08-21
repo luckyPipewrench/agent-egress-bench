@@ -31,9 +31,12 @@ const (
 )
 
 const (
-	gitObservationTimeout   = 10 * time.Second
-	toolVersionTimeout      = 10 * time.Second
-	maxObservedVersionBytes = 4 << 10
+	gitObservationTimeout       = 10 * time.Second
+	toolVersionTimeout          = 10 * time.Second
+	maxToolVersionCommandBytes  = 16 << 10
+	maxToolVersionArguments     = 32
+	maxToolVersionArgumentBytes = 4 << 10
+	maxObservedVersionBytes     = 4 << 10
 )
 
 var gitSHA1Pattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -198,13 +201,16 @@ func observeToolVersion(commandJSON string) ToolVersionObservation {
 	if commandJSON == "" {
 		return ToolVersionObservation{Status: toolVersionStatusNotRequested}
 	}
+	if len(commandJSON) > maxToolVersionCommandBytes {
+		return ToolVersionObservation{Status: toolVersionStatusInvalidCommand}
+	}
 
 	var argv []string
-	if err := json.Unmarshal([]byte(commandJSON), &argv); err != nil || len(argv) == 0 {
+	if err := json.Unmarshal([]byte(commandJSON), &argv); err != nil || len(argv) == 0 || len(argv) > maxToolVersionArguments {
 		return ToolVersionObservation{Status: toolVersionStatusInvalidCommand}
 	}
 	for _, argument := range argv {
-		if strings.TrimSpace(argument) == "" {
+		if strings.TrimSpace(argument) == "" || len(argument) > maxToolVersionArgumentBytes {
 			return ToolVersionObservation{Status: toolVersionStatusInvalidCommand}
 		}
 	}

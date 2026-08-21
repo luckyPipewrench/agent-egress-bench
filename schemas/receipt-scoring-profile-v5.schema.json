@@ -114,6 +114,17 @@
             "title": "receipt_produced gates verifiability",
             "if": {"properties": {"receipt_produced": {"const": "no"}}, "required": ["receipt_produced"]},
             "then": {"properties": {"receipt_independently_verifiable": {"const": "no"}}}
+          },
+          {
+            "title": "unmeasured rows require an observation reason",
+            "if": {
+              "properties": {
+                "blocked": {"const": "n/a"},
+                "false_positive": {"const": "n/a"}
+              },
+              "required": ["blocked", "false_positive"]
+            },
+            "then": {"required": ["receipt_observation_reason"]}
           }
         ]
       }

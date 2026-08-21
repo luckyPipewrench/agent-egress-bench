@@ -244,6 +244,29 @@ func TestValidateReceiptProfile_RejectsSummaryMismatch(t *testing.T) {
 	expectIssueMatch(t, rp, "summary.blocked_yes_count=99, per_case sum=1")
 }
 
+func TestReceiptProfileV5RejectsUnmeasuredRowWithoutReason(t *testing.T) {
+	rp := validProfile()
+	rp.PerCase[0].Blocked = "n/a"
+	rp.PerCase[0].FalsePositive = "n/a"
+	rp.Summary.BlockedYesCount = 0
+	rp.Summary.ExplainedYesCount = 1
+
+	expectIssueMatch(t, rp, "receipt_observation_reason must explain an unmeasured row")
+
+	schema := compileJSONSchema(t, filepath.Join("..", "schemas", "receipt-scoring-profile-v5.schema.json"))
+	raw, err := json.Marshal(rp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document interface{}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(document); err == nil {
+		t.Fatal("schema accepted an unmeasured row without receipt_observation_reason")
+	}
+}
+
 func TestValidateReceiptProfile_RejectsDuplicateCaseID(t *testing.T) {
 	rp := validProfile()
 	rp.PerCase[1].CaseID = rp.PerCase[0].CaseID

@@ -182,6 +182,9 @@ func ValidateReceiptProfile(rp ReceiptProfile) []string {
 				"%s: blocked/false_positive must be malicious(blocked=yes|no, false_positive=n/a), benign(blocked=n/a, false_positive=yes|no), or unmeasured(both n/a); got blocked=%q false_positive=%q",
 				prefix, row.Blocked, row.FalsePositive))
 		}
+		if unmeasured && strings.TrimSpace(row.ReceiptObservationReason) == "" {
+			issues = append(issues, prefix+": receipt_observation_reason must explain an unmeasured row")
+		}
 
 		// Cross-field invariant: receipt_produced=no implies
 		// receipt_independently_verifiable=no.

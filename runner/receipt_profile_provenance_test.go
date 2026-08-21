@@ -164,6 +164,35 @@ func TestObserveToolVersionRecordsNotRequested(t *testing.T) {
 	}
 }
 
+func TestObserveToolVersionRejectsOversizedCommandInputs(t *testing.T) {
+	manyArguments := make([]string, maxToolVersionArguments+1)
+	for index := range manyArguments {
+		manyArguments[index] = "x"
+	}
+	tests := map[string]string{
+		"encoded command": strings.Repeat(" ", maxToolVersionCommandBytes+1),
+		"argument count":  mustJSONCommand(t, manyArguments),
+		"argument size":   mustJSONCommand(t, []string{strings.Repeat("x", maxToolVersionArgumentBytes+1)}),
+	}
+	for name, commandJSON := range tests {
+		t.Run(name, func(t *testing.T) {
+			observation := observeToolVersion(commandJSON)
+			if observation.Status != toolVersionStatusInvalidCommand || observation.Value != nil {
+				t.Fatalf("observation = %+v, want invalid_command with no value", observation)
+			}
+		})
+	}
+}
+
+func mustJSONCommand(t *testing.T, argv []string) string {
+	t.Helper()
+	data, err := json.Marshal(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
 func TestObserveToolVersionBoundsInheritedStdout(t *testing.T) {
 	t.Setenv("AEB_RECEIPT_VERSION_HELPER", "spawn_stdout_holder")
 	started := time.Now()
