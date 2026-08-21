@@ -43,6 +43,18 @@ That option does not change an incomplete execution into a measured one. It only
 
 Promotion branches are created with GitHub's workflow token, so the promotion workflow explicitly dispatches the repository's required validation workflows against the branch. Re-running a candidate that is already selected on `main` exits successfully without creating another branch or dispatching unnecessary checks. A second unmerged promotion may conflict with the first at the baseline and pointer. It must be regenerated from the newly merged baseline rather than bypassing the up-to-date branch requirement.
 
+## Promotion operator checklist
+
+Treat the generated pull request as a proposal that still needs proof before merge.
+
+1. Confirm the source run used the intended release and finished with a measured result, zero execution errors, and the expected corpus scope.
+2. Read the generated baseline, reviewed decision, record manifest, and `latest-verified` change. Their candidate digest, artifact identity, tool version, corpus commit, and case counts must agree.
+3. Check every dispatched validation workflow. GitHub may mark pull-request workflows as `action_required` when a workflow-token branch needs approval, so inspect the separately dispatched runs too. A failed dispatched run still blocks the promotion even when the pull request shows only the checks GitHub attached to it.
+4. Run `make preflight` from the promotion branch. A new retained evidence bundle may introduce schema versions that aren't listed under `retained_public_records.frozen_readers` in `contracts/artifacts.json`. Add a reader only after the named validators accept that version. Tests for versioned promoted records must resolve the schema through `scripts/artifact_contracts.py`; they must not hardcode the oldest schema.
+5. Merge only after the append-only record checks, compatibility checks, and review are clean. Record the resulting `main` commit because downstream consumers must pin the merged commit, not the source-run commit or the promotion branch head.
+
+After merge, any Pipelock-hosted rerun and the pipelab.org importer must use that exact benchmark commit. The hosted workflow must fetch `origin/main` before running the pinned detached commit so the benchmark can prove the commit belongs to the canonical history. The website can publish the result only after its importer verifies the same benchmark commit, candidate digest, and hosted-run identity.
+
 ## Independent operators
 
 The portable command is not tied to GitHub Actions:
