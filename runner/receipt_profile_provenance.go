@@ -31,6 +31,7 @@ const (
 )
 
 const (
+	gitObservationTimeout   = 10 * time.Second
 	toolVersionTimeout      = 10 * time.Second
 	maxObservedVersionBytes = 4 << 10
 )
@@ -100,13 +101,13 @@ func observeCorpusGitProvenance(sourceRoots []string) CorpusGitProvenance {
 }
 
 func mergeObservedGitCheckouts(left, right observedGitCheckout) observedGitCheckout {
-	if left.root != right.root || left.sha != right.sha {
-		return observedGitCheckout{root: left.root, status: corpusGitStatusUnavailable}
-	}
 	if left.status == corpusGitStatusDirty || right.status == corpusGitStatusDirty {
 		return observedGitCheckout{root: left.root, status: corpusGitStatusDirty}
 	}
 	if left.status != right.status {
+		return observedGitCheckout{root: left.root, status: corpusGitStatusUnavailable}
+	}
+	if left.root != right.root || left.sha != right.sha {
 		return observedGitCheckout{root: left.root, status: corpusGitStatusUnavailable}
 	}
 	return left
@@ -164,7 +165,10 @@ func observeGitCheckout(sourceRoot string) observedGitCheckout {
 }
 
 func runGit(dir string, args ...string) (stdout, stderr string, err error) {
-	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	ctx, cancel := context.WithTimeout(context.Background(), gitObservationTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	command.WaitDelay = time.Second
 	command.Env = append(filteredGitEnvironment(), "LC_ALL=C", "LANG=C")
 	var stderrBuffer bytes.Buffer
 	command.Stderr = &stderrBuffer

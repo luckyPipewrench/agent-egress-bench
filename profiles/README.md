@@ -27,7 +27,12 @@ against a tool. The runner is in [`../runner/`](../runner/) and accepts
 `--emit-receipt-profile <path>` to write the artifact alongside the
 standard Gauntlet summary. Per-case rows are sorted by `case_id` and no
 timestamps appear in the file. Byte-identical output additionally requires
-the same corpus Git state and the same tool-version command output.
+the same `benchmark_manifest_sha256`, a `clean` `corpus_git_status` with the
+recorded `corpus_git_sha`, and the same tool-version command output. Other Git
+statuses do not identify checkout bytes that can be reproduced by cloning a
+revision. Any `observed_tool_version.status` other than `observed` means the
+tool's version output was unavailable for that run. The exact JSON-argv command
+is retained in the runner command as `--tool-version-command`.
 
 The reference command for Pipelock is documented in
 [`../docs/RUNNER.md`](../docs/RUNNER.md). Other tools provide their own

@@ -524,6 +524,40 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("receipt profile benchmark manifest digest does not match summary", result.stderr)
 
+    def assert_v5_receipt_mutation_rejected(self, mutate, message):
+        self.make_active_fixture(summary_schema_version=5)
+        receipt_path = self.run_dir / "receipt-profile.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        mutate(receipt)
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(message, result.stderr)
+
+    def test_v5_rejects_missing_observed_tool_version(self):
+        self.assert_v5_receipt_mutation_rejected(
+            lambda receipt: receipt.pop("observed_tool_version"),
+            "missing v5 provenance field observed_tool_version",
+        )
+
+    def test_v5_rejects_dirty_corpus_with_a_git_sha(self):
+        self.assert_v5_receipt_mutation_rejected(
+            lambda receipt: receipt.update(corpus_git_status="dirty", corpus_git_sha="d" * 40),
+            "non-clean receipt profile requires an empty corpus_git_sha",
+        )
+
+    def test_v5_rejects_observed_tool_version_without_value(self):
+        self.assert_v5_receipt_mutation_rejected(
+            lambda receipt: receipt.update(observed_tool_version={"status": "observed", "value": None}),
+            "observed tool version requires a non-empty value",
+        )
+
+    def test_v5_rejects_unavailable_tool_version_with_value(self):
+        self.assert_v5_receipt_mutation_rejected(
+            lambda receipt: receipt.update(observed_tool_version={"status": "not_requested", "value": "claimed"}),
+            "unavailable tool version requires a null value",
+        )
+
     def test_v6_candidate_carries_bound_publication_provenance(self):
         self.make_active_fixture(summary_schema_version=5)
 

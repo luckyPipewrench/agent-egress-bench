@@ -121,6 +121,17 @@ func TestStableCorpusGitProvenanceRecordsChangedDuringCapture(t *testing.T) {
 	}
 }
 
+func TestMergeObservedGitCheckoutsPreservesDirtyStatus(t *testing.T) {
+	root := t.TempDir()
+	merged := mergeObservedGitCheckouts(
+		observedGitCheckout{root: root, sha: strings.Repeat("a", 40), status: corpusGitStatusClean},
+		observedGitCheckout{root: root, status: corpusGitStatusDirty},
+	)
+	if merged.status != corpusGitStatusDirty {
+		t.Fatalf("merged status = %q, want dirty", merged.status)
+	}
+}
+
 func TestObserveToolVersionRecordsToolStdout(t *testing.T) {
 	t.Setenv("AEB_RECEIPT_VERSION_HELPER", "success")
 	observation := observeToolVersion(testToolVersionCommand(t))
@@ -304,6 +315,8 @@ func writeGitCorpus(t *testing.T) string {
 	runGitForTest(t, root, "init", "-q")
 	runGitForTest(t, root, "config", "user.email", "receipt-profile-test@example.invalid")
 	runGitForTest(t, root, "config", "user.name", "Receipt Profile Test")
+	runGitForTest(t, root, "config", "commit.gpgsign", "false")
+	runGitForTest(t, root, "config", "core.hooksPath", "/dev/null")
 	runGitForTest(t, root, "add", "case.json")
 	runGitForTest(t, root, "commit", "-qm", "fixture")
 	return root
@@ -320,6 +333,7 @@ func writeMinimalCorpusCase(t *testing.T, root string) {
 func runGitForTest(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command.Env = append(filteredGitEnvironment(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)

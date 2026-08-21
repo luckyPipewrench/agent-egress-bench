@@ -260,6 +260,9 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 	}
 	line("")
 	line("Registry `%s` format %s revision %s (`sha256:%s`) · profile `sha256:%s`", markdownInline(registryID), registryFormat, registryRevision, markdownInline(registrySHA), markdownInline(required["profile digest"]))
+	if corpusStatus, ok := required["corpus Git observation"]; ok {
+		line("Corpus Git observation: `%s` · tool version observation: `%s`", markdownInline(corpusStatus), markdownInline(required["tool version observation"]))
+	}
 	line("")
 	line("Exercised transports: %s", markdownInline(strings.Join(coverage["transports"], ", ")))
 	line("Exercised categories: %s", markdownInline(strings.Join(coverage["categories"], ", ")))

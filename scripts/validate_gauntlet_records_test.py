@@ -113,7 +113,7 @@ class ValidRecordFixture:
                     "status": "observed",
                     "value": "pipelock version 3.3.0",
                 },
-                "corpus_version": "v2.3.0",
+                "corpus_version": "v-test",
                 "corpus_sha256": "a" * 64,
                 "benchmark_manifest_sha256": "c" * 64,
                 "corpus_git_sha": corpus_git_sha,

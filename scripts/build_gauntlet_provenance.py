@@ -288,9 +288,44 @@ def validate_active_registry_binding(run_dir, summary, results):
         if registry_reference(value.get("capability_registry"), f"{label} capability_registry") != reference:
             raise ValueError(f"{label} capability registry does not match summary")
     if summary.get("schema_version") == 5 and receipt.get("schema_version") == 5:
+        for key in (
+            "tool", "tool_version", "corpus_version", "corpus_sha256",
+            "benchmark_manifest_sha256", "corpus_git_sha", "corpus_git_status",
+            "tool_profile_sha256", "observed_tool_version",
+        ):
+            if key not in receipt:
+                raise ValueError(f"receipt profile is missing v5 provenance field {key}")
+        for receipt_key, summary_key in (
+            ("tool", "tool"),
+            ("tool_version", "tool_version"),
+            ("corpus_version", "corpus_version"),
+            ("corpus_sha256", "corpus_sha256"),
+            ("tool_profile_sha256", "tool_profile_sha256"),
+        ):
+            if receipt.get(receipt_key) != summary.get(summary_key):
+                raise ValueError(f"receipt profile {receipt_key} does not match summary")
         if receipt.get("benchmark_manifest_sha256") != summary.get("benchmark_manifest_sha256"):
             raise ValueError("receipt profile benchmark manifest digest does not match summary")
-        if receipt.get("corpus_git_status") == "clean" and receipt.get("corpus_git_sha") != summary.get("method_commit"):
+        git_status = receipt.get("corpus_git_status")
+        git_sha = receipt.get("corpus_git_sha")
+        if git_status not in {"clean", "dirty", "not_git_checkout", "multiple_sources", "unavailable", "changed_during_capture"}:
+            raise ValueError("receipt profile corpus_git_status is invalid")
+        if git_status == "clean" and (not isinstance(git_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", git_sha)):
+            raise ValueError("clean receipt profile requires a full corpus_git_sha")
+        if git_status != "clean" and git_sha != "":
+            raise ValueError("non-clean receipt profile requires an empty corpus_git_sha")
+        observed = receipt.get("observed_tool_version")
+        if not isinstance(observed, dict) or set(observed) != {"status", "value"}:
+            raise ValueError("receipt profile observed_tool_version is invalid")
+        observed_status = observed.get("status")
+        observed_value = observed.get("value")
+        if observed_status not in {"observed", "not_requested", "invalid_command", "command_failed", "timed_out", "empty_output", "output_too_large"}:
+            raise ValueError("receipt profile observed_tool_version status is invalid")
+        if observed_status == "observed" and (not isinstance(observed_value, str) or not observed_value):
+            raise ValueError("observed tool version requires a non-empty value")
+        if observed_status != "observed" and observed_value is not None:
+            raise ValueError("unavailable tool version requires a null value")
+        if git_status == "clean" and git_sha != summary.get("method_commit"):
             raise ValueError("receipt profile corpus Git commit does not match summary method commit")
     if snapshot.get("id") != reference["id"] or snapshot.get("format") != reference["format"] or snapshot.get("revision") != reference["revision"]:
         raise ValueError("capability registry snapshot identity does not match summary")
