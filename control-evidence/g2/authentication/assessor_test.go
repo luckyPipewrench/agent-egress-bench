@@ -307,6 +307,18 @@ func TestAssessRejectsPhysicalContainmentThroughSymlinkedParent(t *testing.T) {
 	}
 }
 
+func TestExternalToPackageAcceptsParentDirectory(t *testing.T) {
+	root := t.TempDir()
+	pkg := filepath.Join(root, "nested", "pkg")
+	if err := os.MkdirAll(pkg, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if !externalToPackage(pkg, filepath.Dir(pkg)) {
+		t.Fatal("parent directory outside the package was rejected as internal")
+	}
+}
+
 func TestConcurrentSameEpochPoliciesCannotBothPass(t *testing.T) {
 	fixture := newFixture(t)
 	firstPolicy := signed(t, fixture.root, policyType, fixture.policy)

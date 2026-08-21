@@ -314,6 +314,31 @@ func TestBuyerReportRefusesCleanCorpusCommitContradiction(t *testing.T) {
 	}
 }
 
+func TestBuyerReportRefusesNonCleanCorpusForPublication(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	receiptPath := filepath.Join(dir, "receipt-profile.json")
+	data, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt ReceiptProfile
+	if err := decodeStrictJSON(data, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	receipt.CorpusGitStatus = corpusGitStatusUnavailable
+	receipt.CorpusGitSHA = ""
+	writeFixtureJSON(t, receiptPath, receipt)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problem := report.receiptProfileBindingError(receipt.CapabilityRegistry); problem != "v5 receipt profile requires clean corpus Git provenance for publication" {
+		t.Fatalf("corpus Git binding = %q", problem)
+	}
+}
+
 func TestV4ReceiptProfileBindingStaysReadableAfterActiveSchemaAdvances(t *testing.T) {
 	fixture := newReportFixture()
 	dir := t.TempDir()

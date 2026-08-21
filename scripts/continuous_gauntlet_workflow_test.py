@@ -257,6 +257,12 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["tool_version"], "9.9.9")
         self.assertNotEqual(source_profile["tool_version"], "9.9.9")
 
+    def test_canonical_runner_binds_absolute_corpus_and_receipt_commit(self):
+        self.assertIn('--cases "$repo_root/cases"', self.entrypoint)
+        self.assertNotIn("--cases ./cases", self.entrypoint)
+        self.assertIn('.corpus_git_status == "clean" and .corpus_git_sha == $sha', self.entrypoint)
+        self.assertIn("canonical receipt does not bind the clean corpus commit", self.entrypoint)
+
     def test_target_runs_under_a_filesystem_restricted_environment(self):
         self.assertIn("go build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
         self.assertIn('pipelock_bin="$target_wrapper"', self.entrypoint)

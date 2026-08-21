@@ -312,10 +312,10 @@ def validate_active_registry_binding(run_dir, summary, results):
         git_sha = receipt.get("corpus_git_sha")
         if git_status not in {"clean", "dirty", "not_git_checkout", "multiple_sources", "unavailable", "changed_during_capture"}:
             raise ValueError("receipt profile corpus_git_status is invalid")
-        if git_status == "clean" and (not isinstance(git_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", git_sha)):
+        if git_status != "clean":
+            raise ValueError("v5 receipt profile requires clean corpus Git provenance for publication")
+        if not isinstance(git_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", git_sha):
             raise ValueError("clean receipt profile requires a full corpus_git_sha")
-        if git_status != "clean" and git_sha != "":
-            raise ValueError("non-clean receipt profile requires an empty corpus_git_sha")
         observed = receipt.get("observed_tool_version")
         if not isinstance(observed, dict) or set(observed) != {"status", "value"}:
             raise ValueError("receipt profile observed_tool_version is invalid")
@@ -327,8 +327,8 @@ def validate_active_registry_binding(run_dir, summary, results):
             raise ValueError("observed tool version requires a non-empty value")
         if observed_status != "observed" and observed_value is not None:
             raise ValueError("unavailable tool version requires a null value")
-        if git_status == "clean" and git_sha != summary.get("method_commit"):
-            raise ValueError("receipt profile corpus Git commit does not match summary method commit")
+        if git_sha != summary.get("method_commit"):
+            raise ValueError("receipt profile corpus Git commit does not match summary method_commit")
     if snapshot.get("id") != reference["id"] or snapshot.get("format") != reference["format"] or snapshot.get("revision") != reference["revision"]:
         raise ValueError("capability registry snapshot identity does not match summary")
     entries = snapshot.get("entries")

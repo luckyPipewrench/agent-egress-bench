@@ -577,7 +577,7 @@ cmd=(
   --mcp-cmd "$mcp_cmd"
   --managed-proxy-cmd "$managed_proxy_cmd"
   --managed-mcp-http-cmd "$managed_mcp_http_cmd"
-  --cases ./cases
+  --cases "$repo_root/cases"
   --profile "$runtime_profile_path"
   --method-repository "$corpus_repository"
   --method-commit "$corpus_git_sha"
@@ -623,7 +623,7 @@ grep -Fq -- '--seeded-blocklist-domain exfil-collector.example.net' "$command_pa
 
 failure_reason="corpus statistics or case index generation failed"
 make stats > "$stats_path"
-"$gauntlet_bin" --cases ./cases --case-index > "$case_index_path"
+"$gauntlet_bin" --cases "$repo_root/cases" --case-index > "$case_index_path"
 
 failure_reason="Gauntlet runner failed"
 set +e
@@ -637,6 +637,10 @@ if [[ "$run_status" -ne 0 ]]; then
 fi
 grep -Eq '^Fixtures: HTTP=.* TLS=.* WS=.* DNS=.* MCP_HTTP=' "$stderr_path" || \
   die "runner did not report fixture startup"
+if [[ "$canonical_execution" == true ]] && ! jq -e --arg sha "$corpus_git_sha" \
+  '.corpus_git_status == "clean" and .corpus_git_sha == $sha' "$receipt_profile_path" >/dev/null; then
+  die "canonical receipt does not bind the clean corpus commit"
+fi
 
 failure_reason="target sandbox integrity check failed"
 post_run_dirty="$(git status --porcelain=v1 --untracked-files=all)"

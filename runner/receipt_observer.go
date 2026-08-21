@@ -169,7 +169,11 @@ func evidenceFiles(profileDir string, decl ReceiptEvidenceDeclaration) ([]string
 	for _, entry := range entries {
 		entryTypes[filepath.Join(dir, entry.Name())] = entry
 	}
-	resolvedDir, err := filepath.EvalSymlinks(dir)
+	absoluteDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving evidence_dir %q: %w", dir, err)
+	}
+	resolvedDir, err := filepath.EvalSymlinks(absoluteDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolving evidence_dir %q: %w", dir, err)
 	}
@@ -184,7 +188,11 @@ func evidenceFiles(profileDir string, decl ReceiptEvidenceDeclaration) ([]string
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			resolved, err := filepath.EvalSymlinks(match)
+			absoluteMatch, err := filepath.Abs(match)
+			if err != nil {
+				continue
+			}
+			resolved, err := filepath.EvalSymlinks(absoluteMatch)
 			if err != nil {
 				continue
 			}

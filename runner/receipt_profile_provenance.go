@@ -70,12 +70,13 @@ func observeCorpusGitProvenance(sourceRoots []string) CorpusGitProvenance {
 		return CorpusGitProvenance{Status: corpusGitStatusUnavailable}
 	}
 
+	sourceRoots = independentSourceRoots(sourceRoots)
 	checkouts := make(map[string]observedGitCheckout, len(sourceRoots))
 	for _, sourceRoot := range sourceRoots {
 		checkout := observeGitCheckout(sourceRoot)
 		key := checkout.root
 		if key == "" {
-			key = checkout.status + ":" + filepath.Clean(sourceRoot)
+			key = sourceRoot
 		}
 		if previous, exists := checkouts[key]; exists {
 			checkouts[key] = mergeObservedGitCheckouts(previous, checkout)
@@ -101,6 +102,39 @@ func observeCorpusGitProvenance(sourceRoots []string) CorpusGitProvenance {
 		}
 	}
 	return CorpusGitProvenance{Status: corpusGitStatusUnavailable}
+}
+
+func independentSourceRoots(sourceRoots []string) []string {
+	normalized := make([]string, 0, len(sourceRoots))
+	for _, sourceRoot := range sourceRoots {
+		absolute, err := filepath.Abs(sourceRoot)
+		if err != nil {
+			absolute = filepath.Clean(sourceRoot)
+		}
+		if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
+			absolute = resolved
+		}
+		normalized = append(normalized, absolute)
+	}
+
+	independent := make([]string, 0, len(normalized))
+	for index, candidate := range normalized {
+		contained := false
+		for otherIndex, other := range normalized {
+			if index == otherIndex || candidate == other {
+				continue
+			}
+			relative, err := filepath.Rel(other, candidate)
+			if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				contained = true
+				break
+			}
+		}
+		if !contained {
+			independent = append(independent, candidate)
+		}
+	}
+	return independent
 }
 
 func mergeObservedGitCheckouts(left, right observedGitCheckout) observedGitCheckout {
@@ -131,7 +165,11 @@ func gitSHAValue(value *string) string {
 }
 
 func observeGitCheckout(sourceRoot string) observedGitCheckout {
-	resolvedSource, err := filepath.EvalSymlinks(sourceRoot)
+	absoluteSource, err := filepath.Abs(sourceRoot)
+	if err != nil {
+		return observedGitCheckout{status: corpusGitStatusUnavailable}
+	}
+	resolvedSource, err := filepath.EvalSymlinks(absoluteSource)
 	if err != nil {
 		return observedGitCheckout{status: corpusGitStatusUnavailable}
 	}

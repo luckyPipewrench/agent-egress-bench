@@ -369,8 +369,8 @@ class ProvenanceBuilderTest(unittest.TestCase):
                         "corpus_version": summary["corpus_version"],
                         "corpus_sha256": summary["corpus_sha256"],
                         "benchmark_manifest_sha256": summary["benchmark_manifest_sha256"],
-                        "corpus_git_sha": summary.get("method_commit", ""),
-                        "corpus_git_status": "unavailable",
+                        "corpus_git_sha": "c" * 40,
+                        "corpus_git_status": "clean",
                         "tool_profile_sha256": summary["tool_profile_sha256"],
                         "capability_registry": reference,
                         "verifier": {
@@ -552,10 +552,10 @@ class ProvenanceBuilderTest(unittest.TestCase):
             "missing v5 provenance field observed_tool_version",
         )
 
-    def test_v5_rejects_dirty_corpus_with_a_git_sha(self):
+    def test_v5_rejects_non_clean_corpus_for_publication(self):
         self.assert_v5_receipt_mutation_rejected(
-            lambda receipt: receipt.update(corpus_git_status="dirty", corpus_git_sha="d" * 40),
-            "non-clean receipt profile requires an empty corpus_git_sha",
+            lambda receipt: receipt.update(corpus_git_status="dirty", corpus_git_sha=""),
+            "requires clean corpus Git provenance for publication",
         )
 
     def test_v5_rejects_observed_tool_version_without_value(self):
