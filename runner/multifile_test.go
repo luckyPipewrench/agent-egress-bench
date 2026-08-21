@@ -691,6 +691,7 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 		summary.CorpusVersion,
 		summary.CorpusSHA256,
 		summary.ToolProfileSHA256,
+		testReceiptProfileProvenance(),
 	)
 	if len(rp.PerCase) != len(expected) {
 		t.Fatalf("receipt profile rows = %d, want loader-backed %d", len(rp.PerCase), len(expected))

@@ -13,21 +13,35 @@ import (
 )
 
 // ReceiptProfile is the on-disk receipt-scoring artifact described by
-// schemas/receipt-scoring-profile-v4.schema.json. It captures, for every
+// schemas/receipt-scoring-profile-v5.schema.json. It captures, for every
 // applicable corpus case the runner exercised, the five rubric dimensions
 // (blocked, explained, receipt_produced, receipt_independently_verifiable,
 // false_positive) plus declarative verifier metadata and provenance hashes.
 type ReceiptProfile struct {
-	SchemaVersion      int                          `json:"schema_version"`
-	Tool               string                       `json:"tool"`
-	ToolVersion        string                       `json:"tool_version"`
-	CorpusVersion      string                       `json:"corpus_version"`
-	CorpusSHA256       string                       `json:"corpus_sha256"`
-	ToolProfileSHA256  string                       `json:"tool_profile_sha256"`
-	CapabilityRegistry capabilityregistry.Reference `json:"capability_registry"`
-	Verifier           ReceiptVerifier              `json:"verifier"`
-	Summary            ReceiptSummary               `json:"summary"`
-	PerCase            []ReceiptPerCase             `json:"per_case"`
+	SchemaVersion           int                          `json:"schema_version"`
+	Tool                    string                       `json:"tool"`
+	ToolVersion             string                       `json:"tool_version"`
+	ObservedToolVersion     ToolVersionObservation       `json:"observed_tool_version"`
+	CorpusVersion           string                       `json:"corpus_version"`
+	CorpusSHA256            string                       `json:"corpus_sha256"`
+	BenchmarkManifestSHA256 string                       `json:"benchmark_manifest_sha256"`
+	CorpusGitSHA            string                       `json:"corpus_git_sha"`
+	CorpusGitStatus         string                       `json:"corpus_git_status"`
+	ToolProfileSHA256       string                       `json:"tool_profile_sha256"`
+	CapabilityRegistry      capabilityregistry.Reference `json:"capability_registry"`
+	Verifier                ReceiptVerifier              `json:"verifier"`
+	Summary                 ReceiptSummary               `json:"summary"`
+	PerCase                 []ReceiptPerCase             `json:"per_case"`
+}
+
+// ReceiptProfileProvenance holds the runner-observed identity fields whose
+// sources are outside the declarative tool profile. The runner writes every
+// field even when it cannot establish the requested identity, so absence can
+// never be read as a clean or matching result.
+type ReceiptProfileProvenance struct {
+	BenchmarkManifestSHA256 string
+	CorpusGit               CorpusGitProvenance
+	ObservedToolVersion     ToolVersionObservation
 }
 
 // ReceiptVerifier records declarative metadata about the tool's receipt
@@ -66,7 +80,7 @@ type ReceiptPerCase struct {
 
 // loadReceiptVerifier reads a JSON file containing the verifier block. The
 // file shape matches the verifier object in
-// schemas/receipt-scoring-profile-v4.schema.json. An empty path returns a
+// schemas/receipt-scoring-profile-v5.schema.json. An empty path returns a
 // degraded verifier block (no verifier shipped); the runner does not
 // invent verifier metadata.
 func loadReceiptVerifier(path string) (ReceiptVerifier, error) {
@@ -124,6 +138,7 @@ func buildReceiptProfile(
 	casesByID map[string]Case,
 	verifier ReceiptVerifier,
 	corpusVersion, corpusSHA, profileSHA string,
+	provenance ReceiptProfileProvenance,
 ) ReceiptProfile {
 	sorted := make([]CaseResult, len(applicable))
 	copy(sorted, applicable)
@@ -167,10 +182,16 @@ func buildReceiptProfile(
 			row.Blocked = "n/a"
 			row.FalsePositive = "n/a"
 			row.Explained = "no"
+			if strings.TrimSpace(row.ReceiptObservationReason) == "" {
+				row.ReceiptObservationReason = "case was unreachable"
+			}
 		case r.ActualVerdict == "error":
 			row.Blocked = "n/a"
 			row.FalsePositive = "n/a"
 			row.Explained = "no"
+			if strings.TrimSpace(row.ReceiptObservationReason) == "" {
+				row.ReceiptObservationReason = "runner returned an error"
+			}
 		case r.ExpectedVerdict == "block":
 			// Malicious case. blocked is yes/no, false_positive is n/a.
 			row.FalsePositive = "n/a"
@@ -225,16 +246,20 @@ func buildReceiptProfile(
 	}
 
 	return ReceiptProfile{
-		SchemaVersion:      activeReceiptProfileSchemaVersion,
-		Tool:               p.Tool,
-		ToolVersion:        p.ToolVersion,
-		CorpusVersion:      corpusVersion,
-		CorpusSHA256:       corpusSHA,
-		ToolProfileSHA256:  profileSHA,
-		CapabilityRegistry: p.CapabilityRegistry,
-		Verifier:           verifier,
-		Summary:            summary,
-		PerCase:            rows,
+		SchemaVersion:           activeReceiptProfileSchemaVersion,
+		Tool:                    p.Tool,
+		ToolVersion:             p.ToolVersion,
+		ObservedToolVersion:     provenance.ObservedToolVersion,
+		CorpusVersion:           corpusVersion,
+		CorpusSHA256:            corpusSHA,
+		BenchmarkManifestSHA256: provenance.BenchmarkManifestSHA256,
+		CorpusGitSHA:            gitSHAValue(provenance.CorpusGit.SHA),
+		CorpusGitStatus:         provenance.CorpusGit.Status,
+		ToolProfileSHA256:       profileSHA,
+		CapabilityRegistry:      p.CapabilityRegistry,
+		Verifier:                verifier,
+		Summary:                 summary,
+		PerCase:                 rows,
 	}
 }
 
@@ -255,8 +280,11 @@ func hasExplanation(ev map[string]interface{}) bool {
 // writeReceiptProfile writes the profile as indented JSON with a trailing
 // newline. It uses 0o600 permissions to match the rest of the runner's
 // output writers. The output is deterministic for byte-for-byte
-// reproducibility across runs against the same corpus and tool profile.
+// stable serialization across runs with identical retained inputs and observations.
 func writeReceiptProfile(rp ReceiptProfile, path string) error {
+	if rp.SchemaVersion != activeReceiptProfileSchemaVersion {
+		return fmt.Errorf("refusing to write receipt profile schema_version %d; new profiles must use active version %d", rp.SchemaVersion, activeReceiptProfileSchemaVersion)
+	}
 	if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
 		return fmt.Errorf("invalid receipt profile: %s", strings.Join(issues, "; "))
 	}

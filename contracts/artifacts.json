@@ -206,17 +206,19 @@
     },
     {
       "family": "receipt_scoring_profile",
-      "active_writer_version": 4,
+      "active_writer_version": 5,
       "accepted_reader_versions": [
+        1,
+        3,
+        4,
+        5
+      ],
+      "frozen_versions": [
         1,
         3,
         4
       ],
-      "frozen_versions": [
-        1,
-        3
-      ],
-      "canonical_schema_path": "schemas/receipt-scoring-profile-v4.schema.json",
+      "canonical_schema_path": "schemas/receipt-scoring-profile-v5.schema.json",
       "schemas": [
         {
           "version": 1,
@@ -234,16 +236,26 @@
         },
         {
           "version": 4,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/receipt-scoring-profile-v4.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v4.schema.json",
+          "sha256": "560dbefab11b0e5be0886cc5768f894ed25d0566887ec9af32ff50dd76611daa"
+        },
+        {
+          "version": 5,
+          "status": "active",
+          "path": "schemas/receipt-scoring-profile-v5.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/receipt-scoring-profile-v5.schema.json"
         }
       ],
       "writer": [
-        "runner/receipt_profile.go"
+        "runner/receipt_profile.go",
+        "runner/receipt_profile_provenance.go"
       ],
       "reader": [
         "runner/receipt_profile_validate.go",
+        "runner/report.go",
+        "scripts/build_gauntlet_provenance.py",
         "profiles/README.md"
       ],
       "source_versions": [

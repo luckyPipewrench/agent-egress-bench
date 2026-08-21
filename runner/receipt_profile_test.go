@@ -18,18 +18,40 @@ import (
 // (or nil) per the on-disk encoding.
 func stringPtr(s string) *string { return &s }
 
+func testReceiptProfileProvenance() ReceiptProfileProvenance {
+	gitSHA := strings.Repeat("a", 40)
+	observedVersion := "0.0.0-observed"
+	return ReceiptProfileProvenance{
+		BenchmarkManifestSHA256: strings.Repeat("0", 64),
+		CorpusGit: CorpusGitProvenance{
+			SHA:    &gitSHA,
+			Status: corpusGitStatusClean,
+		},
+		ObservedToolVersion: ToolVersionObservation{
+			Status: toolVersionStatusObserved,
+			Value:  &observedVersion,
+		},
+	}
+}
+
 // validProfile returns a minimal valid ReceiptProfile that tests can mutate
 // to exercise specific failure modes. The malicious-blocked row plus the
 // benign-allowed row cover both sides of the blocked/false_positive split.
 func validProfile() ReceiptProfile {
 	zeros := strings.Repeat("0", 64)
+	provenance := testReceiptProfileProvenance()
 	return ReceiptProfile{
-		SchemaVersion:     3,
-		Tool:              "example-tool",
-		ToolVersion:       "0.0.0-example",
-		CorpusVersion:     "v2.0.0",
-		CorpusSHA256:      zeros,
-		ToolProfileSHA256: zeros,
+		SchemaVersion:           activeReceiptProfileSchemaVersion,
+		Tool:                    "example-tool",
+		ToolVersion:             "0.0.0-example",
+		ObservedToolVersion:     provenance.ObservedToolVersion,
+		CorpusVersion:           "v2.0.0",
+		CorpusSHA256:            zeros,
+		BenchmarkManifestSHA256: provenance.BenchmarkManifestSHA256,
+		CorpusGitSHA:            gitSHAValue(provenance.CorpusGit.SHA),
+		CorpusGitStatus:         provenance.CorpusGit.Status,
+		ToolProfileSHA256:       zeros,
+		CapabilityRegistry:      testRegistryReference,
 		Verifier: ReceiptVerifier{
 			Shipped:          true,
 			OpenSource:       true,
@@ -101,7 +123,7 @@ func TestValidateReceiptProfile_RejectsBadSchemaVersion(t *testing.T) {
 		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 			invalid := rp
 			invalid.SchemaVersion = version
-			expectIssueMatch(t, invalid, "schema_version must be 4")
+			expectIssueMatch(t, invalid, "schema_version must be 5")
 		})
 	}
 }
@@ -150,7 +172,7 @@ func TestValidateReceiptProfile_RejectsBenignWithBlockedResult(t *testing.T) {
 }
 
 func TestReceiptProfileSchemaAllowsUnmeasuredRow(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "schemas", "receipt-scoring-profile-v4.schema.json"))
+	data, err := os.ReadFile(filepath.Join("..", "schemas", "receipt-scoring-profile-v5.schema.json"))
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
@@ -220,6 +242,29 @@ func TestValidateReceiptProfile_RejectsSummaryMismatch(t *testing.T) {
 	rp := validProfile()
 	rp.Summary.BlockedYesCount = 99
 	expectIssueMatch(t, rp, "summary.blocked_yes_count=99, per_case sum=1")
+}
+
+func TestReceiptProfileV5RejectsUnmeasuredRowWithoutReason(t *testing.T) {
+	rp := validProfile()
+	rp.PerCase[0].Blocked = "n/a"
+	rp.PerCase[0].FalsePositive = "n/a"
+	rp.Summary.BlockedYesCount = 0
+	rp.Summary.ExplainedYesCount = 1
+
+	expectIssueMatch(t, rp, "receipt_observation_reason must explain an unmeasured row")
+
+	schema := compileJSONSchema(t, filepath.Join("..", "schemas", "receipt-scoring-profile-v5.schema.json"))
+	raw, err := json.Marshal(rp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document interface{}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(document); err == nil {
+		t.Fatal("schema accepted an unmeasured row without receipt_observation_reason")
+	}
 }
 
 func TestValidateReceiptProfile_RejectsDuplicateCaseID(t *testing.T) {
@@ -346,7 +391,7 @@ func TestBuildReceiptProfile_PerCaseShape(t *testing.T) {
 		{CaseID: "benign-allowed", ExpectedVerdict: "allow", ActualVerdict: "allow", Evidence: map[string]interface{}{}},
 		{CaseID: "benign-fp", ExpectedVerdict: "allow", ActualVerdict: "block", Evidence: map[string]interface{}{"block_reason": "fp"}},
 	}
-	rp := buildReceiptProfile(profile, applicable, nil, verifier, "v2.0.0", zeros, zeros)
+	rp := buildReceiptProfile(profile, applicable, nil, verifier, "v2.0.0", zeros, zeros, testReceiptProfileProvenance())
 
 	if got, want := len(rp.PerCase), len(applicable); got != want {
 		t.Fatalf("per_case length: got %d want %d", got, want)
@@ -546,6 +591,7 @@ func TestBuildReceiptProfile_ReceiptObservation(t *testing.T) {
 				"v2.0.0",
 				strings.Repeat("0", 64),
 				strings.Repeat("0", 64),
+				testReceiptProfileProvenance(),
 			)
 			if issues := ValidateReceiptProfile(rp); len(issues) != 0 {
 				t.Fatalf("profile validation failed:\n%s", strings.Join(issues, "\n"))
@@ -594,6 +640,7 @@ func TestBuildReceiptProfile_EvidenceDirUnreadableFailsClosed(t *testing.T) {
 		"v2.0.0",
 		strings.Repeat("0", 64),
 		strings.Repeat("0", 64),
+		testReceiptProfileProvenance(),
 	)
 	row := rp.PerCase[0]
 	if row.ReceiptProduced != "no" || row.ReceiptIndependentlyVerifiable != "no" {
@@ -794,7 +841,7 @@ func TestBuildReceiptProfile_ErrorRowsAreNotScoredAsOutcomes(t *testing.T) {
 		{CaseID: "mal-errored", ExpectedVerdict: "block", ActualVerdict: "error", Evidence: map[string]interface{}{}},
 		{CaseID: "benign-errored", ExpectedVerdict: "allow", ActualVerdict: "error", Evidence: map[string]interface{}{}},
 	}
-	rp := buildReceiptProfile(profile, applicable, nil, verifier, "v2.0.0", zeros, zeros)
+	rp := buildReceiptProfile(profile, applicable, nil, verifier, "v2.0.0", zeros, zeros, testReceiptProfileProvenance())
 
 	if got := len(rp.PerCase); got != 2 {
 		t.Fatalf("per_case length: got %d want 2 (error rows stay visible)", got)
@@ -842,6 +889,7 @@ func TestBuildReceiptProfile_ErrorRowsRetainFactualReceiptObservations(t *testin
 		"v2.0.0",
 		strings.Repeat("0", 64),
 		strings.Repeat("0", 64),
+		testReceiptProfileProvenance(),
 	)
 
 	row := rp.PerCase[0]
@@ -875,7 +923,7 @@ func TestBuildReceiptProfile_UnreachableRowsAreNotScoredAsOutcomes(t *testing.T)
 		{CaseID: "mal-unreachable", ExpectedVerdict: "block", ActualVerdict: "unreachable", Evidence: map[string]interface{}{}},
 		{CaseID: "benign-unreachable", ExpectedVerdict: "allow", ActualVerdict: "unreachable", Evidence: map[string]interface{}{}},
 	}
-	rp := buildReceiptProfile(profile, applicable, nil, ReceiptVerifier{}, "v2.0.0", zeros, zeros)
+	rp := buildReceiptProfile(profile, applicable, nil, ReceiptVerifier{}, "v2.0.0", zeros, zeros, testReceiptProfileProvenance())
 
 	for _, row := range rp.PerCase {
 		if row.Blocked != "n/a" || row.FalsePositive != "n/a" {

@@ -423,12 +423,13 @@ The expected record-manifest digest must come from an authenticated immutable so
 
 ## Receipt-Scoring Profile (optional)
 
-The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. Output validates against [`schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
+The reference runner can emit a [receipt-scoring profile](RECEIPT-SCORING.md) alongside the Gauntlet summary. The profile records, per applicable case, whether the tool blocked the action, explained it, produced a signed receipt, produced one that is independently verifiable, and whether it blocked a benign baseline. It also carries the exact manifest digest, an honest Git-checkout status, and a separate tool-version observation. Output validates against [`schemas/receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json).
 
 Flags:
 
 - `--emit-receipt-profile <path>`: write the profile JSON to `<path>`. Default off.
 - `--receipt-verifier-file <path>`: optional JSON file describing the tool's receipt verifier (shape: the `verifier` object in the receipt-scoring schema). Omitted means "no verifier shipped" and the runner emits a degraded honest verifier block.
+- `--tool-version-command <json-argv>`: optional JSON array of argv strings that asks the target tool to self-report a version, for example `["/opt/example-tool", "--version"]`. The runner executes it without a shell before the benchmark begins, stores bounded stdout only on success, and otherwise records an explicit unavailable status. It never substitutes the profile's declared `tool_version`.
 - `--multifile-cases <dir>`: optional source-location override for the multi-file MCP-drift cases. By default the runner discovers registered multi-file families under `--cases`; an override must yield the same logical case IDs as that loader-backed corpus.
 - `--seeded-blocklist-domain <host>`: repeatable. Declares that the operator already seeded this host in the tool blocklist. Required to score a `blocklist_domain` prerequisite; omitting it records an error instead of a miss.
 
@@ -466,8 +467,8 @@ those fields become observed evidence.
 
 Reproducibility:
 
-- The top-level Gauntlet summary contract, including `corpus_sha256`, `benchmark_manifest_sha256`, and `tool_profile_sha256`, is documented in [gauntlet.md](gauntlet.md#gauntlet-summary-json-file).
-- Per-case rows are sorted by `case_id` and the runner emits no timestamps in the profile. Repeated runs against the same corpus and tool profile produce byte-identical output. A relying party can reproduce a published profile by running the same command and `sha256sum`-comparing the result.
+- The receipt profile repeats the Gauntlet summary's `benchmark_manifest_sha256`, which is the exact loaded case identity. Its retained `corpus_sha256` is a legacy content digest and does not bind file boundaries or membership. The top-level summary contract is documented in [gauntlet.md](gauntlet.md#gauntlet-summary-json-file).
+- Per-case rows are sorted by `case_id` and the runner emits no timestamps in the profile. A relying party can reproduce a published profile by running the same command and comparing the retained fields. Byte-for-byte equality also requires the corpus Git state and tool-version command output to match.
 - The Gauntlet summary includes a `date` by default. For byte-stable summary JSON, set `AEB_GAUNTLET_SUMMARY_DATE` to a fixed RFC3339 value, or set it to an empty string to omit the field.
 
 Example shape for a tool-specific benchmark run:

@@ -97,6 +97,7 @@ func TestResultState_UnreachableRowIsRetainedInReceiptProfile(t *testing.T) {
 		"v2.0.0",
 		strings.Repeat("0", 64),
 		strings.Repeat("0", 64),
+		testReceiptProfileProvenance(),
 	)
 	if len(rp.PerCase) != 1 {
 		t.Fatalf("receipt profile rows = %d, want one visible unreachable row", len(rp.PerCase))

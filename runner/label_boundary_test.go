@@ -52,7 +52,7 @@ func measureLabelsOnly(t *testing.T, profile Profile) labelMeasurement {
 	if err != nil {
 		t.Fatalf("buildSummary: %v", err)
 	}
-	receipt := buildReceiptProfile(profile, rows, byID, ReceiptVerifier{}, summary.CorpusVersion, summary.CorpusSHA256, summary.ToolProfileSHA256)
+	receipt := buildReceiptProfile(profile, rows, byID, ReceiptVerifier{}, summary.CorpusVersion, summary.CorpusSHA256, summary.ToolProfileSHA256, testReceiptProfileProvenance())
 	receiptRows, err := json.Marshal(receipt.PerCase)
 	if err != nil {
 		t.Fatal(err)

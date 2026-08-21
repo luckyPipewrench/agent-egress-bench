@@ -42,6 +42,10 @@ FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
 PROVENANCE_SCHEMAS = artifact_contracts.schema_paths("provenance_candidate")
 CASE_INDEX_SCHEMAS = artifact_contracts.schema_paths("case_index")
 ACTIVE_CASE_INDEX_SCHEMA_VERSION = artifact_contracts.active_version("case_index")
+FROZEN_V5_SUMMARY_V4_RECEIPT = (
+    "1e182405cdff08f8f0e8835c7c0aed7047b4c0e2fbd539f22c390175d5507b64",
+    "2beeb7194b0e1a5f610198e2d4e29ddb793f8213177627cb9f0de4775f36481b",
+)
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -57,11 +61,14 @@ RAW_EVIDENCE = {
     "pipelock_version_output": "pipelock-version.txt",
     "corpus_manifest": "corpus-manifest.txt",
 }
-V4_RAW_EVIDENCE = {
+ACTIVE_RAW_EVIDENCE = {
     "tool_profile": "tool-profile.json",
     "capability_registry": "capability-registry.json",
     "receipt_profile": "receipt-profile.json",
 }
+# Other publication and validation modules import this historical name. Keep
+# it as a compatibility alias while active v4/v5 evidence shares one contract.
+V4_RAW_EVIDENCE = ACTIVE_RAW_EVIDENCE
 ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 ACTIVE_SUMMARY_SCHEMA_VERSION = 5
 ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = artifact_contracts.active_version("provenance_candidate")
@@ -181,7 +188,7 @@ def raw_evidence_for_summary(summary):
     first-class evidence rather than a reconstructed view of current files.
     """
     if summary.get("schema_version") in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
-        return {**RAW_EVIDENCE, **V4_RAW_EVIDENCE}
+        return {**RAW_EVIDENCE, **ACTIVE_RAW_EVIDENCE}
     return RAW_EVIDENCE
 
 
@@ -254,11 +261,19 @@ def registry_reference(value, label):
     return value
 
 
-def validate_v4_registry_binding(run_dir, summary, results):
+def validate_active_registry_binding(run_dir, summary, results):
     """Bind active publication data to one exact raw snapshot, never today's registry."""
-    profile_bytes = (run_dir / V4_RAW_EVIDENCE["tool_profile"]).read_bytes()
-    snapshot_bytes = (run_dir / V4_RAW_EVIDENCE["capability_registry"]).read_bytes()
-    receipt = load_object(run_dir / V4_RAW_EVIDENCE["receipt_profile"])
+    profile_bytes = (run_dir / ACTIVE_RAW_EVIDENCE["tool_profile"]).read_bytes()
+    snapshot_bytes = (run_dir / ACTIVE_RAW_EVIDENCE["capability_registry"]).read_bytes()
+    receipt_path = run_dir / ACTIVE_RAW_EVIDENCE["receipt_profile"]
+    receipt_bytes = receipt_path.read_bytes()
+    receipt = load_object(receipt_path)
+    receipt_version = receipt.get("schema_version")
+    if summary.get("schema_version") == 5 and receipt_version != 5:
+        summary_bytes = (run_dir / RAW_EVIDENCE["raw_summary"]).read_bytes()
+        pair = (hashlib.sha256(summary_bytes).hexdigest(), hashlib.sha256(receipt_bytes).hexdigest())
+        if pair != FROZEN_V5_SUMMARY_V4_RECEIPT:
+            raise ValueError("v5 summary requires a v5 receipt profile")
     try:
         profile = json.loads(profile_bytes)
         snapshot = json.loads(snapshot_bytes)
@@ -267,11 +282,53 @@ def validate_v4_registry_binding(run_dir, summary, results):
     if not isinstance(profile, dict) or not isinstance(snapshot, dict):
         raise ValueError("active registry evidence must be JSON objects")
     reference = registry_reference(summary.get("capability_registry"), "summary capability_registry")
+    if hashlib.sha256(profile_bytes).hexdigest() != summary.get("tool_profile_sha256"):
+        raise ValueError("tool profile raw snapshot digest does not match summary")
     if hashlib.sha256(snapshot_bytes).hexdigest() != reference["sha256"]:
         raise ValueError("capability registry raw snapshot digest does not match summary")
     for label, value in (("profile", profile), ("receipt profile", receipt)):
         if registry_reference(value.get("capability_registry"), f"{label} capability_registry") != reference:
             raise ValueError(f"{label} capability registry does not match summary")
+    if summary.get("schema_version") == 5 and receipt.get("schema_version") == 5:
+        for key in (
+            "tool", "tool_version", "corpus_version", "corpus_sha256",
+            "benchmark_manifest_sha256", "corpus_git_sha", "corpus_git_status",
+            "tool_profile_sha256", "observed_tool_version",
+        ):
+            if key not in receipt:
+                raise ValueError(f"receipt profile is missing v5 provenance field {key}")
+        for receipt_key, summary_key in (
+            ("tool", "tool"),
+            ("tool_version", "tool_version"),
+            ("corpus_version", "corpus_version"),
+            ("corpus_sha256", "corpus_sha256"),
+            ("tool_profile_sha256", "tool_profile_sha256"),
+        ):
+            if receipt.get(receipt_key) != summary.get(summary_key):
+                raise ValueError(f"receipt profile {receipt_key} does not match summary")
+        if receipt.get("benchmark_manifest_sha256") != summary.get("benchmark_manifest_sha256"):
+            raise ValueError("receipt profile benchmark manifest digest does not match summary")
+        git_status = receipt.get("corpus_git_status")
+        git_sha = receipt.get("corpus_git_sha")
+        if git_status not in {"clean", "dirty", "not_git_checkout", "multiple_sources", "unavailable", "changed_during_capture"}:
+            raise ValueError("receipt profile corpus_git_status is invalid")
+        if git_status == "clean" and (not isinstance(git_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", git_sha)):
+            raise ValueError("clean receipt profile requires a full corpus_git_sha")
+        if git_status != "clean" and git_sha != "":
+            raise ValueError("non-clean receipt profile requires an empty corpus_git_sha")
+        observed = receipt.get("observed_tool_version")
+        if not isinstance(observed, dict) or set(observed) != {"status", "value"}:
+            raise ValueError("receipt profile observed_tool_version is invalid")
+        observed_status = observed.get("status")
+        observed_value = observed.get("value")
+        if observed_status not in {"observed", "not_requested", "invalid_command", "command_failed", "timed_out", "empty_output", "output_too_large"}:
+            raise ValueError("receipt profile observed_tool_version status is invalid")
+        if observed_status == "observed" and (not isinstance(observed_value, str) or not observed_value.strip()):
+            raise ValueError("observed tool version requires a non-empty value")
+        if observed_status != "observed" and observed_value is not None:
+            raise ValueError("unavailable tool version requires a null value")
+        if git_status == "clean" and git_sha != summary.get("method_commit"):
+            raise ValueError("receipt profile corpus Git commit does not match summary method commit")
     if snapshot.get("id") != reference["id"] or snapshot.get("format") != reference["format"] or snapshot.get("revision") != reference["revision"]:
         raise ValueError("capability registry snapshot identity does not match summary")
     entries = snapshot.get("entries")
@@ -295,6 +352,11 @@ def validate_v4_registry_binding(run_dir, summary, results):
         if registry_reference(row.get("capability_registry"), f"runner JSONL row {row_number} capability_registry") != reference:
             raise ValueError(f"runner JSONL row {row_number} capability registry does not match summary")
     return reference
+
+
+def validate_v4_registry_binding(run_dir, summary, results):
+    """Keep the historical helper name for publication and validation callers."""
+    return validate_active_registry_binding(run_dir, summary, results)
 
 
 def require_non_empty_string(document, key, label=None):
@@ -664,7 +726,7 @@ def measurements(repo_root, run_dir):
     # historical reader path above.
     registry = None
     if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
-        registry = validate_v4_registry_binding(run_dir, summary, results)
+        registry = validate_active_registry_binding(run_dir, summary, results)
     manifest, manifest_ids = load_manifest(repo_root, run_dir)
     (
         case_index_bytes,
@@ -1202,7 +1264,7 @@ def finalize_command(args):
     if bundle.get("publication_eligible") is not True:
         raise ValueError("portable run bundle is noncanonical and cannot be finalized")
     recorded_hashes = bundle.get("evidence_sha256")
-    evidence_spec = {**RAW_EVIDENCE, **V4_RAW_EVIDENCE} if isinstance(recorded_hashes, dict) and set(V4_RAW_EVIDENCE).issubset(recorded_hashes) else RAW_EVIDENCE
+    evidence_spec = {**RAW_EVIDENCE, **ACTIVE_RAW_EVIDENCE} if isinstance(recorded_hashes, dict) and set(ACTIVE_RAW_EVIDENCE).issubset(recorded_hashes) else RAW_EVIDENCE
     protected_paths = {
         (run_dir / relative_path).resolve() for relative_path in evidence_spec.values()
     }

@@ -21,14 +21,15 @@ import (
 // new version they had no reason to leave. That is version churn manufactured
 // by the code rather than required by the contract.
 //
-// Result rows moved to v5 when evidence.result_state became required. The
-// remaining families stay at v4 because their formats did not change.
+// Result rows moved to v5 when evidence.result_state became required. Receipt
+// profiles also write v5 because their provenance fields now identify source
+// state and distinguish a declaration from a tool self-report.
 const (
 	activeCaseSchemaVersion           = 4
 	activeMultiFileCaseSchemaVersion  = 4
 	activeResultSchemaVersion         = 5
 	activeToolProfileSchemaVersion    = 4
-	activeReceiptProfileSchemaVersion = 4
+	activeReceiptProfileSchemaVersion = 5
 
 	v4SchemaVersion = 4
 )

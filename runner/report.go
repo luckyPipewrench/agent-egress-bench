@@ -22,6 +22,11 @@ import (
 
 const absentFact = "Absent from run artifacts"
 
+const (
+	frozenV5SummaryV4ReceiptSummarySHA256 = "1e182405cdff08f8f0e8835c7c0aed7047b4c0e2fbd539f22c390175d5507b64"
+	frozenV5SummaryV4ReceiptSHA256        = "2beeb7194b0e1a5f610198e2d4e29ddb793f8213177627cb9f0de4775f36481b"
+)
+
 // reportArtifactNames is every file the report reads. Each one is individually
 // optional, because a partial run should still be reported honestly. A
 // directory holding none of them is a different situation: it is not a run
@@ -62,6 +67,7 @@ var reportRestrictedClaims = []*regexp.Regexp{
 type reportDocument struct {
 	name   string
 	data   map[string]interface{}
+	raw    []byte
 	status string
 }
 
@@ -171,6 +177,10 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 		"containment":                 reportPercent(report.summary, "scores", "full", "containment"),
 		"false-positive rate":         reportPercent(report.summary, "scores", "full", "false_positive_rate"),
 	}
+	if receipt, ok := report.receiptProfile(); ok && receipt.SchemaVersion == activeReceiptProfileSchemaVersion {
+		required["corpus Git observation"] = receipt.CorpusGitStatus
+		required["tool version observation"] = receipt.ObservedToolVersion.Status
+	}
 	for name, value := range required {
 		if value == absentFact || value == "Invalid in run artifacts" || value == "Artifact value withheld by claim-language gate" || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("publication lockup requires %s", name)
@@ -250,6 +260,9 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 	}
 	line("")
 	line("Registry `%s` format %s revision %s (`sha256:%s`) · profile `sha256:%s`", markdownInline(registryID), registryFormat, registryRevision, markdownInline(registrySHA), markdownInline(required["profile digest"]))
+	if corpusStatus, ok := required["corpus Git observation"]; ok {
+		line("Corpus Git observation: `%s` · tool version observation: `%s`", markdownInline(corpusStatus), markdownInline(required["tool version observation"]))
+	}
 	line("")
 	line("Exercised transports: %s", markdownInline(strings.Join(coverage["transports"], ", ")))
 	line("Exercised categories: %s", markdownInline(strings.Join(coverage["categories"], ", ")))
@@ -487,6 +500,7 @@ func loadReportDocument(dir, name string) reportDocument {
 		doc.status = "Malformed JSON: " + safeReportText(err.Error())
 		return doc
 	}
+	doc.raw = data
 	doc.status = "Readable"
 	return doc
 }
@@ -818,6 +832,10 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	bullet("Runner version", reportString(r.summary, "runner_version"))
 	bullet("Run date", reportString(r.summary, "date"))
 	bullet("corpus_sha256", reportString(r.summary, "corpus_sha256"))
+	if receipt, ok := r.receiptProfile(); ok && receipt.SchemaVersion == activeReceiptProfileSchemaVersion {
+		bullet("Corpus Git observation", receipt.CorpusGitStatus)
+		bullet("Observed tool version status", receipt.ObservedToolVersion.Status)
+	}
 	line("")
 	line("## Target identity")
 	line("")
@@ -1186,41 +1204,69 @@ func (r *buyerReport) v4RegistryBindingError() string {
 	if err != nil || resolved.ValidateActiveIDs("exercised capability_tag", tags) != nil {
 		return "active exercised capability_tags are not active IDs in the retained registry"
 	}
-	return r.v4ReceiptProfileBindingError(reference)
+	return r.receiptProfileBindingError(reference)
 }
 
-// v4ReceiptProfileBindingError confirms that the retained receipt profile is
-// attached to this exact v4 run. A matching bundle digest only says the profile
-// was retained intact; it cannot establish that the retained profile describes
-// the summary, tool profile, and registry snapshot beside it.
-func (r *buyerReport) v4ReceiptProfileBindingError(reference capabilityregistry.Reference) string {
+// receiptProfileBindingError confirms that the retained receipt profile is
+// attached to this exact active run. A matching bundle digest only says the
+// profile was retained intact; it cannot establish that the retained profile
+// describes the summary, tool profile, and registry snapshot beside it.
+func (r *buyerReport) receiptProfileBindingError(reference capabilityregistry.Reference) string {
 	data, err := readRegularArtifact(r.dir, "receipt-profile.json")
 	if err != nil {
-		return "v4 receipt profile is absent or unreadable"
+		return "receipt profile is absent or unreadable"
 	}
 	var receipt ReceiptProfile
 	if err := decodeStrictJSON(data, &receipt); err != nil {
-		return "v4 receipt profile is malformed"
+		return "receipt profile is malformed"
 	}
 	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
-		return "v4 receipt profile is invalid"
+		return "receipt profile is invalid"
 	}
-	if receipt.SchemaVersion != v4SchemaVersion {
-		return "v4 receipt profile schema version does not match the result"
+	if receipt.SchemaVersion != v4SchemaVersion && receipt.SchemaVersion != activeReceiptProfileSchemaVersion {
+		return "receipt profile schema version does not match the result"
+	}
+	if reportNumber(r.summary, "schema_version") == "5" && receipt.SchemaVersion != activeReceiptProfileSchemaVersion && !isFrozenV5SummaryV4Receipt(r.summary.raw, data) {
+		return "v5 result requires a v5 receipt profile"
 	}
 	if receipt.Tool != reportString(r.summary, "tool") || receipt.ToolVersion != reportString(r.summary, "tool_version") {
-		return "v4 receipt profile tool identity does not match the result"
+		return "receipt profile tool identity does not match the result"
 	}
 	if receipt.CorpusVersion != reportString(r.summary, "corpus_version") || receipt.CorpusSHA256 != reportString(r.summary, "corpus_sha256") {
-		return "v4 receipt profile corpus identity does not match the result"
+		return "receipt profile corpus identity does not match the result"
+	}
+	if receipt.SchemaVersion == activeReceiptProfileSchemaVersion && receipt.BenchmarkManifestSHA256 != reportString(r.summary, "benchmark_manifest_sha256") {
+		return "receipt profile benchmark manifest digest does not match the result"
+	}
+	if receipt.SchemaVersion == activeReceiptProfileSchemaVersion && receipt.CorpusGitStatus == corpusGitStatusClean && receipt.CorpusGitSHA != reportString(r.summary, "method_commit") {
+		return "receipt profile corpus Git commit does not match the result method commit"
 	}
 	if receipt.ToolProfileSHA256 != reportString(r.summary, "tool_profile_sha256") {
-		return "v4 receipt profile tool profile digest does not match the result"
+		return "receipt profile tool profile digest does not match the result"
 	}
 	if receipt.CapabilityRegistry != reference {
-		return "v4 receipt profile registry reference does not match the result"
+		return "receipt profile registry reference does not match the result"
 	}
 	return ""
+}
+
+func (r *buyerReport) receiptProfile() (ReceiptProfile, bool) {
+	data, err := readRegularArtifact(r.dir, "receipt-profile.json")
+	if err != nil {
+		return ReceiptProfile{}, false
+	}
+	var receipt ReceiptProfile
+	if decodeStrictJSON(data, &receipt) != nil {
+		return ReceiptProfile{}, false
+	}
+	return receipt, true
+}
+
+func isFrozenV5SummaryV4Receipt(summary, receipt []byte) bool {
+	summaryDigest := sha256.Sum256(summary)
+	receiptDigest := sha256.Sum256(receipt)
+	return hex.EncodeToString(summaryDigest[:]) == frozenV5SummaryV4ReceiptSummarySHA256 &&
+		hex.EncodeToString(receiptDigest[:]) == frozenV5SummaryV4ReceiptSHA256
 }
 
 func reportRegistryLabels(doc reportDocument, path ...string) ([]string, error) {

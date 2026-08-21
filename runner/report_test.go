@@ -204,7 +204,7 @@ func TestBuyerReportRefusesReceiptProfileWithMismatchedRegistryReference(t *test
 	// in both provenance records. Its registry reference alone belongs to a
 	// different run, so only an explicit cross-artifact binding can reject it.
 	receipt := validProfile()
-	receipt.SchemaVersion = activeReceiptProfileSchemaVersion
+	receipt.SchemaVersion = v4SchemaVersion
 	receipt.Tool = fixture.summary["tool"].(string)
 	receipt.ToolVersion = fixture.summary["tool_version"].(string)
 	receipt.CorpusVersion = fixture.summary["corpus_version"].(string)
@@ -217,7 +217,7 @@ func TestBuyerReportRefusesReceiptProfileWithMismatchedRegistryReference(t *test
 	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
 		t.Fatalf("test receipt profile is invalid: %v", issues)
 	}
-	writeFixtureJSON(t, filepath.Join(dir, "receipt-profile.json"), receipt)
+	writeFixtureJSON(t, filepath.Join(dir, "receipt-profile.json"), receiptProfileFixtureValue(receipt))
 
 	receiptBytes, err := os.ReadFile(filepath.Join(dir, "receipt-profile.json"))
 	if err != nil {
@@ -237,6 +237,80 @@ func TestBuyerReportRefusesReceiptProfileWithMismatchedRegistryReference(t *test
 	report.renderMarkdown(&output)
 	if !strings.Contains(output.String(), "## Result unavailable") {
 		t.Fatalf("report accepted a receipt profile bound to a different registry:\n%s", output.String())
+	}
+}
+
+func TestBuyerReportRefusesV5ReceiptProfileWithMismatchedManifestDigest(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+
+	receiptPath := filepath.Join(dir, "receipt-profile.json")
+	data, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt ReceiptProfile
+	if err := decodeStrictJSON(data, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	receipt.BenchmarkManifestSHA256 = strings.Repeat("0", 64)
+	writeFixtureJSON(t, receiptPath, receipt)
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problem := report.receiptProfileBindingError(receipt.CapabilityRegistry); problem != "receipt profile benchmark manifest digest does not match the result" {
+		t.Fatalf("receipt profile manifest binding = %q", problem)
+	}
+}
+
+func TestBuyerReportRefusesSyntheticV5SummaryWithV4Receipt(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	receiptPath := filepath.Join(dir, "receipt-profile.json")
+	data, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt ReceiptProfile
+	if err := decodeStrictJSON(data, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	receipt.SchemaVersion = v4SchemaVersion
+	writeFixtureJSON(t, receiptPath, receiptProfileFixtureValue(receipt))
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problem := report.receiptProfileBindingError(receipt.CapabilityRegistry); problem != "v5 result requires a v5 receipt profile" {
+		t.Fatalf("mixed-version binding = %q", problem)
+	}
+}
+
+func TestBuyerReportRefusesCleanCorpusCommitContradiction(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	receiptPath := filepath.Join(dir, "receipt-profile.json")
+	data, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt ReceiptProfile
+	if err := decodeStrictJSON(data, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	receipt.CorpusGitSHA = strings.Repeat("d", 40)
+	writeFixtureJSON(t, receiptPath, receipt)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problem := report.receiptProfileBindingError(receipt.CapabilityRegistry); problem != "receipt profile corpus Git commit does not match the result method commit" {
+		t.Fatalf("corpus Git binding = %q", problem)
 	}
 }
 
@@ -262,13 +336,13 @@ func TestV4ReceiptProfileBindingStaysReadableAfterActiveSchemaAdvances(t *testin
 	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
 		t.Fatalf("test receipt profile is invalid: %v", issues)
 	}
-	writeFixtureJSON(t, filepath.Join(dir, "receipt-profile.json"), receipt)
+	writeFixtureJSON(t, filepath.Join(dir, "receipt-profile.json"), receiptProfileFixtureValue(receipt))
 
 	report, err := loadBuyerReport(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if problem := report.v4ReceiptProfileBindingError(receipt.CapabilityRegistry); problem != "" {
+	if problem := report.receiptProfileBindingError(receipt.CapabilityRegistry); problem != "" {
 		t.Fatalf("v4 receipt profile was rejected after an active-schema advance: %s", problem)
 	}
 }
@@ -411,6 +485,7 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		"example/agent-egress-bench@cccccccccccccccccccccccccccccccccccccccc",
 		"2 total · 2 applicable · 0 unreachable · 0 not applicable · 0 errors",
 		"containment 75.00% · false-positive rate 10.00%",
+		"Corpus Git observation: `clean` · tool version observation: `observed`",
 		"Exercised transports: http\\_proxy",
 		"internal consistency only",
 		"not a certification, accreditation, audit, endorsement",
@@ -633,11 +708,20 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	receipt := validProfile()
-	receipt.SchemaVersion = activeReceiptProfileSchemaVersion
+	receipt.SchemaVersion = v4SchemaVersion
+	if f.summary["schema_version"] == 5 {
+		receipt.SchemaVersion = activeReceiptProfileSchemaVersion
+		if manifest, ok := f.summary["benchmark_manifest_sha256"].(string); ok && sha256HexPattern.MatchString(manifest) {
+			receipt.BenchmarkManifestSHA256 = manifest
+		}
+	}
 	receipt.Tool = f.summary["tool"].(string)
 	receipt.ToolVersion = f.summary["tool_version"].(string)
 	receipt.CorpusVersion = f.summary["corpus_version"].(string)
 	receipt.CorpusSHA256 = f.summary["corpus_sha256"].(string)
+	if methodCommit, ok := f.summary["method_commit"].(string); ok {
+		receipt.CorpusGitSHA = methodCommit
+	}
 	receipt.ToolProfileSHA256 = f.summary["tool_profile_sha256"].(string)
 	receipt.CapabilityRegistry.ID = registry["id"].(string)
 	receipt.CapabilityRegistry.Format = registry["format"].(int)
@@ -646,7 +730,7 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 	if issues := ValidateReceiptProfile(receipt); len(issues) != 0 {
 		t.Fatalf("fixture receipt profile is invalid: %v", issues)
 	}
-	writeFixtureJSON(t, filepath.Join(dir, "receipt-profile.json"), receipt)
+	writeFixtureJSON(t, filepath.Join(dir, "receipt-profile.json"), receiptProfileFixtureValue(receipt))
 	for _, name := range []string{
 		"case-index.json", "corpus-manifest.txt", "pipelock-release.json", "pipelock-version.txt",
 		"checksums.txt", "runner.stderr", "make-stats.txt",
@@ -698,6 +782,39 @@ func (f *reportFixture) write(t *testing.T, dir string) {
 	f.decision["evidence_sha256"] = hashes
 	writeFixtureJSON(t, filepath.Join(dir, "run-bundle.json"), f.bundle)
 	writeFixtureJSON(t, filepath.Join(dir, "execution-decision.json"), f.decision)
+}
+
+// receiptProfileFixtureValue writes a schema-v4 fixture in its original
+// public shape. ReceiptProfile represents both readable historical versions
+// and the active writer, so marshaling the current struct for a v4 fixture
+// would add v5-only fields and change its retained-artifact digest.
+func receiptProfileFixtureValue(receipt ReceiptProfile) interface{} {
+	if receipt.SchemaVersion != v4SchemaVersion {
+		return receipt
+	}
+	return struct {
+		SchemaVersion      int              `json:"schema_version"`
+		Tool               string           `json:"tool"`
+		ToolVersion        string           `json:"tool_version"`
+		CorpusVersion      string           `json:"corpus_version"`
+		CorpusSHA256       string           `json:"corpus_sha256"`
+		ToolProfileSHA256  string           `json:"tool_profile_sha256"`
+		CapabilityRegistry interface{}      `json:"capability_registry"`
+		Verifier           ReceiptVerifier  `json:"verifier"`
+		Summary            ReceiptSummary   `json:"summary"`
+		PerCase            []ReceiptPerCase `json:"per_case"`
+	}{
+		SchemaVersion:      receipt.SchemaVersion,
+		Tool:               receipt.Tool,
+		ToolVersion:        receipt.ToolVersion,
+		CorpusVersion:      receipt.CorpusVersion,
+		CorpusSHA256:       receipt.CorpusSHA256,
+		ToolProfileSHA256:  receipt.ToolProfileSHA256,
+		CapabilityRegistry: receipt.CapabilityRegistry,
+		Verifier:           receipt.Verifier,
+		Summary:            receipt.Summary,
+		PerCase:            receipt.PerCase,
+	}
 }
 
 func writeFixtureJSON(t *testing.T, path string, value interface{}) {

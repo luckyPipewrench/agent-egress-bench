@@ -105,7 +105,38 @@ class ValidRecordFixture:
         (self.artifact_dir / "tool-profile.json").write_bytes(tool_profile)
         write_json(
             self.artifact_dir / "receipt-profile.json",
-            {"capability_registry": capability_registry},
+            {
+                "schema_version": 5,
+                "tool": "pipelock",
+                "tool_version": "3.3.0",
+                "observed_tool_version": {
+                    "status": "observed",
+                    "value": "pipelock version 3.3.0",
+                },
+                "corpus_version": "v-test",
+                "corpus_sha256": "a" * 64,
+                "benchmark_manifest_sha256": "c" * 64,
+                "corpus_git_sha": corpus_git_sha,
+                "corpus_git_status": "clean",
+                "tool_profile_sha256": hashlib.sha256(tool_profile).hexdigest(),
+                "capability_registry": capability_registry,
+                "verifier": {
+                    "shipped": False,
+                    "open_source": False,
+                    "verifier_url": None,
+                    "license": None,
+                    "exit_code_contract": None,
+                },
+                "summary": {
+                    "blocked_yes_count": 0,
+                    "blocked_no_count": 0,
+                    "explained_yes_count": 0,
+                    "receipt_produced_yes_count": 0,
+                    "receipt_independently_verifiable_yes_count": 0,
+                    "false_positive_yes_count": 0,
+                },
+                "per_case": [],
+            },
         )
 
         rows = [

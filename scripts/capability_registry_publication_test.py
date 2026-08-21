@@ -22,9 +22,10 @@ class CapabilityRegistryPublicationTest(unittest.TestCase):
             "sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
         }
         (root / "capability-registry.json").write_bytes(snapshot_bytes)
-        (root / "tool-profile.json").write_text(json.dumps({"capability_registry": reference, "claims": ["url_dlp"]}), encoding="utf-8")
+        profile_bytes = json.dumps({"capability_registry": reference, "claims": ["url_dlp"]}).encode()
+        (root / "tool-profile.json").write_bytes(profile_bytes)
         (root / "receipt-profile.json").write_text(json.dumps({"capability_registry": reference}), encoding="utf-8")
-        summary = {"schema_version": 4, "capability_registry": reference, "reported_claims": ["url_dlp"], "exercised": {"capability_tags": ["url_dlp"]}}
+        summary = {"schema_version": 4, "capability_registry": reference, "reported_claims": ["url_dlp"], "exercised": {"capability_tags": ["url_dlp"]}, "tool_profile_sha256": hashlib.sha256(profile_bytes).hexdigest()}
         rows = [{"capability_registry": reference}]
         return summary, rows
 

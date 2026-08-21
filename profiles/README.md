@@ -22,12 +22,19 @@ not update this artifact to make an old run look current.
 
 ## Where profiles come from
 
-A profile is the output of one reproducible run of the reference runner
+A profile is the output of one recorded run of the reference runner
 against a tool. The runner is in [`../runner/`](../runner/) and accepts
 `--emit-receipt-profile <path>` to write the artifact alongside the
 standard Gauntlet summary. Per-case rows are sorted by `case_id` and no
-timestamps appear in the file, so repeated runs against the same corpus
-and the same tool produce byte-identical output.
+timestamps appear in the file. Byte-identical output additionally requires
+the same `benchmark_manifest_sha256`, a `clean` `corpus_git_status` with the
+recorded `corpus_git_sha`, and the same tool-version command output. Other Git
+statuses do not identify checkout bytes that can be reproduced by cloning a
+revision. `observed_tool_version.status` records whether the runner observed the
+output, couldn't obtain it, or wasn't asked to run a version command. A
+reproduction must match the recorded status and, when the status is `observed`,
+the recorded bounded value. The exact JSON-argv command is retained in the
+runner command as `--tool-version-command`.
 
 The reference command for Pipelock is documented in
 [`../docs/RUNNER.md`](../docs/RUNNER.md). Other tools provide their own
@@ -35,9 +42,13 @@ runner or adapter; the schema is tool-neutral.
 
 ## What a profile proves
 
-- **The tool's per-case behavior at a specific corpus version.** The
-  `corpus_sha256` and `tool_profile_sha256` fields pin exactly which case
-  set and which capability declaration produced the values.
+- **The tool's per-case behavior at a specific corpus input.**
+  `benchmark_manifest_sha256` pins the exact loaded paths, boundaries, and
+  bytes. `corpus_sha256` remains a legacy content digest. `corpus_git_sha`
+  identifies the source revision only when `corpus_git_status` is `clean`.
+- **The tool label and its self-report.** `tool_version` is a declared
+  compatibility label. `observed_tool_version` records the tool command's
+  stdout or an explicit reason the runner could not obtain it.
 - **Whether the tool emits independently verifiable evidence.** The
   `verifier` block plus the per-case `receipt_produced` and
   `receipt_independently_verifiable` dimensions answer the procurement
@@ -68,7 +79,7 @@ runner or adapter; the schema is tool-neutral.
    Pipelock; tools that speak the same HTTP-proxy + scan-API surface can
    reuse it. Other tools provide their own runner.
 2. Run your tool against the corpus and emit a profile that conforms to
-   [`../schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
+   [`../schemas/receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json).
 3. Add `profiles/<tool>.json` and (optionally) a sibling `notes.md`
    describing how to reproduce the profile from scratch.
 4. Open a pull request.
@@ -76,11 +87,14 @@ runner or adapter; the schema is tool-neutral.
 The PR is reviewed for:
 
 - Profile JSON validates against
-  [`receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json).
+  [`receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json).
 - Per-case results reference real case IDs in [`../cases/`](../cases/).
 - The `verifier` block, license, and exit-code contract are accurate.
-- The `corpus_version` matches a published corpus tag and the
-  `corpus_sha256` is reproducible from `cases/`.
+- The `corpus_version` and `benchmark_manifest_sha256` identify the corpus the
+  profile actually read. A `clean` `corpus_git_status` requires the recorded
+  `corpus_git_sha`; every other status requires an empty SHA.
+- `observed_tool_version` has a recorded status. An `observed` status requires
+  a bounded non-empty value; every other status requires a null value.
 
 The PR is not reviewed for whether the tool "passes" anything. There is
 nothing to pass. The profile is the published evidence.
@@ -112,14 +126,16 @@ per-case row records.
   benign, false-positive benign) plus a placeholder verifier block. Uses
   `tool: "example-tool"` and SHA fields filled with zeros so it cannot
   be mistaken for a real profile.
-- [`../schemas/receipt-scoring-profile-v4.schema.json`](../schemas/receipt-scoring-profile-v4.schema.json):
-  the JSON Schema both profile files validate against.
+- [`../schemas/receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json):
+  the JSON Schema for newly emitted profile files. Historical profiles retain
+  their declared schema version.
 
 ## Reproducing a published profile
 
 A relying party reproduces a profile by cloning the tool source, building or
-installing the recorded tool version, running the matching corpus version, and
-comparing the output with the committed profile via `sha256sum`. A byte
+installing the recorded tool version, running the matching corpus version with
+the recorded tool-version command, and comparing the output with the committed
+profile via `sha256sum`. A byte
 mismatch is informative: the corpus, tool, or artifact changed. Publish a new
 active measurement through the current Gauntlet result flow.
 

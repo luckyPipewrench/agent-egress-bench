@@ -753,11 +753,11 @@ func withJSONRPCID(msg interface{}, id float64) interface{} {
 	return cp
 }
 
-// computeMultiFileSHA256 hashes the multi-file corpus directory contents
-// (case.yaml plus the three JSON snapshots per case, sorted by path) so
-// the receipt profile's corpus_sha256 covers multi-file cases when the
-// driver loads them. notes.md is intentionally excluded: it is documentation
-// for human reviewers, not part of the case-machine-readable contract.
+// computeMultiFileSHA256Paths returns the machine-readable multi-file inputs
+// (case.yaml plus the three JSON snapshots per case, sorted by path). The
+// loader snapshot and its digest functions consume those bytes; notes.md is
+// documentation for human reviewers, not part of the case-machine-readable
+// contract.
 func computeMultiFileSHA256Paths(dir string) ([]string, error) {
 	if dir == "" {
 		return nil, nil

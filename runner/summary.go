@@ -127,6 +127,11 @@ type RunProvenance struct {
 	// been written. It is an execution policy rather than summary provenance,
 	// so it must not enter the closed summary schema.
 	RequireComplete bool
+	// ToolVersionCommand is execution input for receipt-profile provenance. It
+	// is intentionally not serialized into a Gauntlet summary because it can
+	// contain a local binary path; the receipt profile records only the tool's
+	// bounded self-report or an explicit unavailable status.
+	ToolVersionCommand string
 }
 
 // CaseCount tracks routed, historical N/A, and adapter-unreachable rows. The
