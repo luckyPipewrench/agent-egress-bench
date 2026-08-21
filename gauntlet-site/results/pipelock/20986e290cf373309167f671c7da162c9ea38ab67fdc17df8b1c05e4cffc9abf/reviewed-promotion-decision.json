@@ -1,0 +1,30 @@
+{
+  "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:32536980640:1",
+  "baseline_sha256": "77e38595bfd6fc654c62a8e4b8f274ad3628121186a09aaf056820457219d6bc",
+  "blocked": false,
+  "candidate_sha256": "20986e290cf373309167f671c7da162c9ea38ab67fdc17df8b1c05e4cffc9abf",
+  "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/32536980640",
+  "evidence_sha256": {
+    "capability_registry": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c",
+    "case_index": "d164d5b5cf8aac0151e476be04250972c84e931489958b0dc8dfbb71583757cf",
+    "command": "ad68ccda4571241a98611e81ef294e28046896bac8cb3a8eb2014f421f033490",
+    "corpus_manifest": "4e30d47ef9c92abe66cc80caf79f180b92f5d47bba25a76d89913617bde1bfe9",
+    "entrypoint_command": "d2641583802d3b975a0316fe4a3783169d88de55e809ac6e710b72ebb88e607a",
+    "execution_decision": "c20b87f93b4e1e00ffaa487412abba162688be9056ed2b13a4c46591377b8424",
+    "pipelock_release": "7181b77fb77fd400c1a359bf018834ecb905962f8e82a8d63a6fc77669cb4a0a",
+    "pipelock_version_output": "fefbb56abb62e622fdf9667475411ac0ec3b5f04b0a0375f3e981d8efd898960",
+    "raw_summary": "ef96dcb08d691680835b238fcf6e4b1c7d8b59ad40648a159d1b77ccad5b9544",
+    "receipt_profile": "3907c5a79122deb8a3a5e645b300e06b11cd89fcb080709add8e9086db5b7530",
+    "release_checksums": "aa1635913219f267985b7ff12980afae863ef51f0030ebffe5715c6bc4915178",
+    "results": "125b4071372b1f1e07bbce349c2099de5d8eed259259151647d93e630f715f4e",
+    "run_bundle": "82bdec2cbe46188aa61ac11ff09fe907feeb14974dfdea7e0ef6077d82d7e87f",
+    "run_metadata": "cda651308d62870cf30a4b020587e9c0bdd100b66723565b71a0e9cf70fe6d1c",
+    "runner_stderr": "8b64f0da654d08e6b9fd8ed8fcdc7cae1c53de4f3f7afaf5e019d6d2f01a5b29",
+    "stats": "b163435253c3147b30ac6fd89effdf8355b13d78c0ab2dc854cdf141364072de",
+    "tool_profile": "a559fd894aac6bbd086e4f353b78ce64c9910355e3058e3cc77a3352ee51794a"
+  },
+  "failures": [],
+  "promotion_status": "under_review",
+  "review_notes": [],
+  "schema_version": 1
+}

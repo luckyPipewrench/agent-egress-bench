@@ -1,7 +1,7 @@
 {
   "_comment": "Reviewed baseline for the continuous Gauntlet lane. Exact candidate scores become the next run's floors and ceiling only through a promotion PR. Public records remain append-only and the latest-verified pointer moves only with that reviewed commit.",
   "benchmark_manifest_sha256": "83106091b8f17457fb2866484d23b136520e6fa1d3b9894dc4a0b9f5efbd25bf",
-  "corpus_git_sha": "3e99a29434d0f23825a131efc8f0f0d9caa8d765",
+  "corpus_git_sha": "e010b9892c8c7e054b86fc60746597905d50fa73",
   "corpus_sha256": "bc355228584ff02541eef41ba1b1e1da6cce148749f1fe3b0e59de01362a9de9",
   "corpus_version": "v2.4.0",
   "observed_case_count": {
@@ -30,6 +30,6 @@
   },
   "scoring_version": "2.8",
   "summary_schema_version": 5,
-  "verified_artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:32536980640:1",
-  "verified_candidate_sha256": "20986e290cf373309167f671c7da162c9ea38ab67fdc17df8b1c05e4cffc9abf"
+  "verified_artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:32436118293:1",
+  "verified_candidate_sha256": "23ff4c7c05968e60f0d83f512a8ac4133eb4c471ce41dcf9c7aa8360023fb211"
 }
