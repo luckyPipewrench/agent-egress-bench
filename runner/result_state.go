@@ -40,6 +40,7 @@ func caseResultForState(profile Profile, c Case, state ResultState, evidence map
 	}
 	return CaseResult{
 		SchemaVersion:      activeResultSchemaVersion,
+		ScoringVersion:     scoringVersion,
 		CaseID:             c.ID,
 		Tool:               profile.Tool,
 		ToolVersion:        profile.ToolVersion,

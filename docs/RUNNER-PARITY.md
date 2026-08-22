@@ -6,7 +6,7 @@ first, then reveal and compare it.
 
 ## Protocol
 
-The prepare step accepts active v5 result rows. Historical v4 rows remain readable through the Go validator but are not normalized into the v5 parity protocol.
+The prepare step accepts active v6 result rows and retained v5 rows. Historical v4 rows remain readable through the Go validator but are not normalized into the parity protocol.
 
 1. Both sides agree on a unique comparison ID and pin the same corpus,
    benchmark manifest, tool binary version, and tool profile digest. The
@@ -34,6 +34,7 @@ keys, no insignificant whitespace, and no ASCII escaping.
 Rows are uniquely sorted by `case_id` and retain exactly:
 
 - `case_id`
+- `scoring_version` for active v6 rows
 - `expected_verdict`
 - `actual_verdict`
 - `score`

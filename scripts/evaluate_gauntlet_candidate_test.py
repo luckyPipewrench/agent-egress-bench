@@ -394,6 +394,23 @@ class CandidateEvaluationTest(unittest.TestCase):
 
         self.assertFalse(accepted["blocked"], accepted["failures"])
 
+    def test_v6_result_rows_must_match_candidate_scoring_version(self):
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        for row in rows:
+            row["schema_version"] = 6
+            row["scoring_version"] = "2.7"
+        results_bytes = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+
+        decision, *_ = self.run_evaluate(
+            v6_candidate(), v5_baseline(), results_bytes=results_bytes
+        )
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "result 'malicious-000' scoring_version does not match the candidate",
+            decision["failures"],
+        )
+
     def test_v5_self_consistent_lie_is_rejected_by_raw_results(self):
         value = v5_candidate()
         for scope in ("full", "applicable"):

@@ -378,7 +378,11 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	r.metadata = loadReportDocument(dir, "run-metadata.json")
 	r.bundle = loadReportDocument(dir, "run-bundle.json")
 	r.decision = loadReportDocument(dir, "execution-decision.json")
-	r.results, r.failures, r.rowCounts, r.resultErr = loadReportResults(filepath.Join(dir, "results.jsonl"))
+	expectedScoringVersion := reportString(r.summary, "scoring_version")
+	if expectedScoringVersion == absentFact || expectedScoringVersion == "Invalid in run artifacts" || expectedScoringVersion == "Artifact value withheld by claim-language gate" {
+		expectedScoringVersion = ""
+	}
+	r.results, r.failures, r.rowCounts, r.resultErr = loadReportResults(filepath.Join(dir, "results.jsonl"), expectedScoringVersion)
 	r.command = loadReportText(dir, "command.txt")
 	r.entrypoint = loadReportText(dir, "entrypoint-command.txt")
 	if !r.hasFact() {
@@ -619,7 +623,7 @@ type reportRowCounts struct {
 	benignFalsePositives int
 }
 
-func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCounts, string) {
+func loadReportResults(path, expectedScoringVersion string) ([]reportNA, []reportFailure, reportRowCounts, string) {
 	var counts reportRowCounts
 	// Streams rather than reading whole, so it opens the descriptor itself, and
 	// it uses the same no-follow open as the other readers: the type is checked
@@ -657,6 +661,21 @@ func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCount
 		// malformed input, not a row with extra decoration to ignore.
 		if err := ensureJSONEOF(dec); err != nil {
 			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		schemaVersion := 0
+		if rawSchemaVersion, present := row["schema_version"]; present {
+			number, numberOK := rawSchemaVersion.(json.Number)
+			parsed, parseErr := strconv.ParseFloat(fmt.Sprint(number), 64)
+			if !numberOK || parseErr != nil || math.Trunc(parsed) != parsed || parsed < 4 || parsed > float64(activeResultSchemaVersion) {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+			schemaVersion = int(parsed)
+		}
+		if schemaVersion == activeResultSchemaVersion {
+			scorer, scorerOK := row["scoring_version"].(string)
+			if !scorerOK || strings.TrimSpace(scorer) == "" || (expectedScoringVersion != "" && scorer != expectedScoringVersion) {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
 		}
 		counts.total++
 		actual, _ := row["actual_verdict"].(string)

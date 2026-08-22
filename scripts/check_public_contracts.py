@@ -116,16 +116,20 @@ def check_case_shapes(root):
 
 
 def check_result_states(root):
-    contract = load_json(root / "contracts/result-states-v5.json")
-    schema = load_json(root / "schemas/result-v5.schema.json")
-    if (contract.get("contract"), contract.get("format"), contract.get("result_schema_version")) != (
+    contract = load_json(root / "contracts/result-states-v6.json")
+    schema = load_json(root / "schemas/result-v6.schema.json")
+    if (contract.get("contract"), contract.get("format"), contract.get("result_schema_version"), contract.get("scoring_version")) != (
         "aeb.result-states",
         1,
-        5,
+        6,
+        runner_parity.SCORING_VERSION,
     ):
         fail("result-states identity or version is invalid")
     if runner_parity.RESULT_SCHEMA_VERSION != contract["result_schema_version"]:
         fail("parity reader result schema version differs from result-states")
+    scoring_property = schema_property(schema, "scoring_version")
+    if scoring_property.get("type") != "string" or scoring_property.get("minLength", 0) < 1:
+        fail("result schema scoring_version must require a non-empty string")
     for field, schema_field in (
         ("expected_verdicts", "expected_verdict"),
         ("actual_verdicts", "actual_verdict"),
@@ -228,7 +232,7 @@ def check_result_states(root):
             fail(f"gauntlet result-state row has {len(row)} cells: {row}")
         documented.add((backtick_values(row[0])[0], backtick_values(row[1])[0], backtick_values(row[2])[0]))
     if documented != rows:
-        fail("gauntlet result-state table differs from contracts/result-states-v5.json")
+        fail("gauntlet result-state table differs from contracts/result-states-v6.json")
 
 
 def check(root):

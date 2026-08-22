@@ -112,6 +112,37 @@ class RunnerParityTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     runner_parity.load_results(self.results)
 
+    def test_v6_scoring_version_is_normalized_and_bound(self):
+        row = json.loads(self.results.read_text(encoding="utf-8").splitlines()[0])
+        row["schema_version"] = 6
+        row["scoring_version"] = runner_parity.SCORING_VERSION
+        self.results.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        normalized = runner_parity.load_results(self.results)
+        self.assertEqual(runner_parity.SCORING_VERSION, normalized[0]["scoring_version"])
+        row["scoring_version"] = ""
+        self.results.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "scoring_version"):
+            runner_parity.load_results(self.results)
+        row["scoring_version"] = "2.9"
+        self.results.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        normalized = runner_parity.load_results(self.results)
+        self.assertEqual("2.9", normalized[0]["scoring_version"])
+
+    def test_v6_scoring_version_changes_commitment(self):
+        rows = [json.loads(line) for line in self.results.read_text(encoding="utf-8").splitlines()]
+        for row in rows:
+            row["schema_version"] = 6
+            row["scoring_version"] = runner_parity.SCORING_VERSION
+        self.results.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        left, left_digest = self.prepare()
+        reveal = json.loads(left.read_text(encoding="utf-8"))
+        reveal["normalized_results"][0]["scoring_version"] = "3.0"
+        left.write_text(json.dumps(reveal), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            runner_parity.verify(
+                Namespace(reveal=left, commitment_sha256=left_digest, benchmark_manifest=self.manifest)
+            )
+
     def test_tool_identity_mismatch_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "tool does not match"):
             runner_parity.load_results(self.results, "different-tool", "1.2.3")

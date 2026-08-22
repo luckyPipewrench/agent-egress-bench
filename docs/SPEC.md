@@ -261,8 +261,8 @@ JSON Schema files for programmatic validation:
 - [`schemas/case-v4.schema.json`](../schemas/case-v4.schema.json): case file schema
 - [`schemas/multi-file-case-v4.schema.json`](../schemas/multi-file-case-v4.schema.json): temporal MCP drift `case.yaml` schema
 - [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json): tool profile schema
-- [`schemas/result-v5.schema.json`](../schemas/result-v5.schema.json): active runner result line schema
-- [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json): frozen result line schema
+- [`schemas/result-v6.schema.json`](../schemas/result-v6.schema.json): active runner result line schema
+- [`schemas/result-v5.schema.json`](../schemas/result-v5.schema.json) and [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json): frozen result line schemas
 
 ## Governance
 

@@ -27,7 +27,7 @@ import (
 const (
 	activeCaseSchemaVersion           = 4
 	activeMultiFileCaseSchemaVersion  = 4
-	activeResultSchemaVersion         = 5
+	activeResultSchemaVersion         = 6
 	activeToolProfileSchemaVersion    = 4
 	activeReceiptProfileSchemaVersion = 5
 

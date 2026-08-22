@@ -276,7 +276,7 @@ def _case_labels(entry, case_id):
     return transport, category, tags
 
 
-def recompute_v5_measurements(case_index_path, results_path):
+def recompute_v5_measurements(case_index_path, results_path, scoring_version):
     """Derive promotion measurements from the bound case index and raw result rows."""
     case_index = load_object(case_index_path)
     if case_index.get("schema_version") not in {2, 3} or not isinstance(case_index.get("cases"), dict):
@@ -299,6 +299,10 @@ def recompute_v5_measurements(case_index_path, results_path):
     if set(ids) != set(indexed):
         raise ValueError("results case IDs do not match the case index")
     for row in rows:
+        if row.get("schema_version") == 6 and row.get("scoring_version") != scoring_version:
+            raise ValueError(
+                f"result {row['case_id']!r} scoring_version does not match the candidate"
+            )
         expected = indexed[row["case_id"]].get("expected_verdict")
         if row.get("expected_verdict") != expected:
             raise ValueError(f"result {row['case_id']!r} expected_verdict does not match the case index")
@@ -406,7 +410,11 @@ def verify_v5_measurements(candidate, evidence_paths, candidate_schema_version):
     missing = sorted({"case_index", "results"} - set(evidence_paths))
     if missing:
         raise ValueError(f"v5 metric recomputation requires evidence: {missing!r}")
-    derived = recompute_v5_measurements(evidence_paths["case_index"], evidence_paths["results"])
+    derived = recompute_v5_measurements(
+        evidence_paths["case_index"],
+        evidence_paths["results"],
+        candidate.get("scoring_version"),
+    )
     for field in ("metric_counts", "diagnostic_counts"):
         if candidate.get(field) != derived[field]:
             raise ValueError(f"candidate {field} does not match the case index and raw results")

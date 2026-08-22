@@ -1,0 +1,60 @@
+{
+  "accepted": [
+    {
+      "name": "observed",
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "accepted-observed", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}, "notes": ""}
+    },
+    {
+      "name": "unreachable",
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "accepted-unreachable", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "unreachable", "score": "error", "evidence": {"result_state": "unreachable"}, "notes": ""}
+    },
+    {
+      "name": "adapter_error",
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "accepted-adapter-error", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "adapter_error"}, "notes": ""}
+    },
+    {
+      "name": "delivery_unavailable",
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "accepted-delivery-unavailable", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "delivery_unavailable"}, "notes": ""}
+    },
+    {
+      "name": "verdict_unobservable",
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "accepted-verdict-unobservable", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "verdict_unobservable"}, "notes": ""}
+    },
+    {
+      "name": "invalid_verdict",
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "accepted-invalid-verdict", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "block", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "invalid_verdict"}, "notes": ""}
+    }
+  ],
+  "rejected": [
+    {
+      "name": "missing_scoring_version",
+      "failure_mode": "scoring version is missing",
+      "schema_rejects": true,
+      "row": {"schema_version": 6, "case_id": "rejected-missing-scorer", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}, "notes": ""}
+    },
+    {
+      "name": "blank_scoring_version",
+      "failure_mode": "scoring version is blank",
+      "schema_rejects": true,
+      "row": {"schema_version": 6, "scoring_version": "", "case_id": "rejected-blank-scorer", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}, "notes": ""}
+    },
+    {
+      "name": "non_string_scoring_version",
+      "failure_mode": "scoring version has the wrong type",
+      "schema_rejects": true,
+      "row": {"schema_version": 6, "scoring_version": 2.8, "case_id": "rejected-type-scorer", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {"result_state": "observed"}, "notes": ""}
+    },
+    {
+      "name": "missing_result_state",
+      "failure_mode": "result state is missing",
+      "schema_rejects": true,
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "rejected-missing-state", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": {}, "notes": ""}
+    },
+    {
+      "name": "observed_without_measurement",
+      "failure_mode": "observed state is paired with an unmeasured result",
+      "schema_rejects": false,
+      "row": {"schema_version": 6, "scoring_version": "2.8", "case_id": "rejected-observed", "tool": "fixture-tool", "tool_version": "1.0.0", "capability_registry": {"id": "aeb.core-capabilities", "format": 1, "revision": 1, "sha256": "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}, "expected_verdict": "allow", "actual_verdict": "error", "score": "error", "evidence": {"result_state": "observed"}, "notes": ""}
+    }
+  ]
+}

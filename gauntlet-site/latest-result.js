@@ -181,6 +181,14 @@
           typeof row.case_id !== 'string' || !row.case_id || seen[row.case_id]) {
         throw new Error('results.jsonl contains an invalid or duplicate case ID');
       }
+      if (row.schema_version !== undefined && [4, 5, 6].indexOf(row.schema_version) === -1) {
+        throw new Error('results.jsonl contains an unsupported result schema version');
+      }
+      if (row.schema_version === 6 &&
+          (typeof row.scoring_version !== 'string' || !row.scoring_version.trim() ||
+           row.scoring_version !== artifact.scoring_version)) {
+        throw new Error('results.jsonl scoring version does not match the published artifact');
+      }
       var indexed = caseIndex.cases[row.case_id];
       if (!indexed || row.expected_verdict !== indexed.expected_verdict ||
           (row.expected_verdict !== 'allow' && row.expected_verdict !== 'block')) {

@@ -263,6 +263,11 @@
       "sha256": "34883c47b14a35188a8d8b0ef7ccf55b6a3d993c5f9ebbeacd756ef130257956"
     },
     {
+      "path": "schemas/result-v6.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v6.schema.json",
+      "sha256": "b7482c569717d10f8577eb14ffde5c60887ab0f5d7a0b7b32aa31ab35cd3b748"
+    },
+    {
       "path": "schemas/summary-v4.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v4.schema.json",
       "sha256": "e856970251d322634743a5e66abae2390f1fce6f27ef17d993753c4447bfcd23"

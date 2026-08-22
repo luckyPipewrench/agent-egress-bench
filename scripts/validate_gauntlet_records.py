@@ -86,6 +86,7 @@ def reconstruct_candidate(record_dir, candidate, repo_root):
                 artifact_id=candidate["artifact_id"],
                 canonical_url=candidate["canonical_url"],
                 output=rebuilt,
+                allow_frozen_result_rows=True,
             )
         )
         if rebuilt.read_bytes() != (record_dir / promotion.CANDIDATE_FILENAME).read_bytes():

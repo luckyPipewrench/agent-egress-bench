@@ -48,6 +48,14 @@ func runStateTestCase(t *testing.T, adapt adapter.Adapter) ([]CaseResult, int, s
 	if err != nil {
 		t.Fatalf("runCases: %v", err)
 	}
+	var emitted CaseResult
+	if err := json.Unmarshal(output.Bytes(), &emitted); err != nil {
+		t.Fatalf("decode emitted result: %v", err)
+	}
+	if emitted.SchemaVersion != activeResultSchemaVersion || emitted.ScoringVersion != scoringVersion {
+		t.Fatalf("emitted result identity = schema %d scoring %q, want schema %d scoring %q",
+			emitted.SchemaVersion, emitted.ScoringVersion, activeResultSchemaVersion, scoringVersion)
+	}
 	return results, len(unreachable), output.String()
 }
 

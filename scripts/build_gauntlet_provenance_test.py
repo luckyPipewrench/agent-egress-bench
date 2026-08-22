@@ -68,7 +68,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
             )
 
     def test_v5_result_row_contract_conformance_vectors(self):
-        active_version, accepted_versions, result_states = (
+        active_version, accepted_versions, result_states, active_scoring_version = (
             build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
         )
         corpus = json.loads(
@@ -81,10 +81,11 @@ class ProvenanceBuilderTest(unittest.TestCase):
                 build_gauntlet_provenance.validate_result_row_contract(
                     vector["row"],
                     1,
-                    active_version,
+                    5,
                     active_version,
                     accepted_versions,
                     result_states,
+                    active_scoring_version,
                 )
         for vector in corpus["rejected"]:
             with self.subTest(kind="rejected", name=vector["name"]):
@@ -92,33 +93,91 @@ class ProvenanceBuilderTest(unittest.TestCase):
                     build_gauntlet_provenance.validate_result_row_contract(
                         vector["row"],
                         1,
-                        active_version,
+                        5,
                         active_version,
                         accepted_versions,
                         result_states,
+                        active_scoring_version,
                     )
 
     def test_current_summary_rejects_legacy_labeled_result_row(self):
-        active_version, accepted_versions, result_states = (
+        active_version, accepted_versions, result_states, active_scoring_version = (
             build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
         )
-        with self.assertRaisesRegex(ValueError, "must match active result schema_version 5"):
+        with self.assertRaisesRegex(ValueError, "must be at least summary schema_version 5"):
             build_gauntlet_provenance.validate_result_row_contract(
                 {"schema_version": 4},
                 1,
-                active_version,
+                5,
                 active_version,
                 accepted_versions,
                 result_states,
+                active_scoring_version,
             )
 
     def test_v4_summary_accepts_v4_result_row_contract(self):
-        active_version, accepted_versions, result_states = (
+        active_version, accepted_versions, result_states, active_scoring_version = (
             build_gauntlet_provenance.result_reader_contract(REPO_ROOT)
         )
         build_gauntlet_provenance.validate_result_row_contract(
-            {"schema_version": 4}, 1, 4, active_version, accepted_versions, result_states
+            {"schema_version": 4}, 1, 4, active_version, accepted_versions, result_states, active_scoring_version
         )
+
+    def test_v6_result_row_requires_summary_bound_scoring_version(self):
+        row = {
+            "schema_version": 6,
+            "actual_verdict": "block",
+            "score": "pass",
+            "evidence": {"result_state": "observed"},
+            "scoring_version": "2.9",
+        }
+        states = frozenset({"observed", "unreachable", "adapter_error"})
+        accepted = frozenset({4, 5, 6})
+        build_gauntlet_provenance.validate_result_row_contract(
+            row, 1, 5, 6, accepted, states, "2.8", summary_scoring_version="2.9"
+        )
+        for value, message in (("", "missing or empty"), ("2.8", "does not match summary")):
+            with self.subTest(scoring_version=value):
+                row["scoring_version"] = value
+                with self.assertRaisesRegex(ValueError, message):
+                    build_gauntlet_provenance.validate_result_row_contract(
+                        row, 1, 5, 6, accepted, states, "2.8", summary_scoring_version="2.9"
+                    )
+
+    def test_fresh_publication_requires_active_row_and_scorer(self):
+        states = frozenset({"observed", "unreachable", "adapter_error"})
+        accepted = frozenset({4, 5, 6})
+        v5_row = {
+            "schema_version": 5,
+            "actual_verdict": "block",
+            "score": "pass",
+            "evidence": {"result_state": "observed"},
+        }
+        with self.assertRaisesRegex(ValueError, "must use active result schema_version 6"):
+            build_gauntlet_provenance.validate_result_row_contract(
+                v5_row,
+                1,
+                5,
+                6,
+                accepted,
+                states,
+                "2.8",
+                summary_scoring_version="2.8",
+                require_active=True,
+            )
+        v6_row = {**v5_row, "schema_version": 6, "scoring_version": "2.9"}
+        with self.assertRaisesRegex(ValueError, "summary scoring_version"):
+            build_gauntlet_provenance.validate_result_row_contract(
+                v6_row,
+                1,
+                5,
+                6,
+                accepted,
+                states,
+                "2.8",
+                summary_scoring_version="2.9",
+                require_active=True,
+            )
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -127,7 +186,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.run_dir = self.root / "run"
         (self.root / "cases").mkdir()
         (self.root / "contracts").mkdir()
-        for name in ("artifacts.json", "result-states-v5.json"):
+        for name in ("artifacts.json", "result-states-v5.json", "result-states-v6.json"):
             (self.root / "contracts" / name).write_bytes(
                 (REPO_ROOT / "contracts" / name).read_bytes()
             )
@@ -395,9 +454,10 @@ class ProvenanceBuilderTest(unittest.TestCase):
             )
 
         for row in self.results:
-            row["schema_version"] = summary_schema_version
+            row["schema_version"] = 6 if summary_schema_version == 5 else summary_schema_version
             row["capability_registry"] = reference
             if summary_schema_version == 5:
+                row["scoring_version"] = summary["scoring_version"]
                 row["evidence"]["result_state"] = "observed"
         (self.run_dir / "results.jsonl").write_text(
             "".join(json.dumps(row) + "\n" for row in self.results), encoding="utf-8"

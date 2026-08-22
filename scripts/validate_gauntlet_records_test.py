@@ -48,6 +48,7 @@ class ValidRecordFixture:
         (self.corpus_root / "contracts").mkdir()
         shutil.copy2(REPO_ROOT / "contracts" / "artifacts.json", self.corpus_root / "contracts")
         shutil.copy2(REPO_ROOT / "contracts" / "result-states-v5.json", self.corpus_root / "contracts")
+        shutil.copy2(REPO_ROOT / "contracts" / "result-states-v6.json", self.corpus_root / "contracts")
         (self.corpus_root / "ci").mkdir()
         shutil.copy2(
             REPO_ROOT / "ci" / "gauntlet-baseline.json",
@@ -285,7 +286,11 @@ class ValidRecordFixture:
             "pipelock version 3.3.0\n", encoding="utf-8"
         )
 
-        bundle = provenance.build_complete_bundle(self.corpus_root, self.artifact_dir)
+        bundle = provenance.build_complete_bundle(
+            self.corpus_root,
+            self.artifact_dir,
+            allow_frozen_result_rows=True,
+        )
         write_json(self.artifact_dir / promotion.RUN_BUNDLE_FILENAME, bundle)
         write_json(
             self.artifact_dir / promotion.EXECUTION_DECISION_FILENAME,
@@ -352,7 +357,11 @@ class ValidRecordFixture:
         run_metadata["generated_at"] = "2026-08-06T00:10:08Z"
         write_json(run_metadata_path, run_metadata)
 
-        bundle = provenance.build_complete_bundle(self.corpus_root, self.artifact_dir)
+        bundle = provenance.build_complete_bundle(
+            self.corpus_root,
+            self.artifact_dir,
+            allow_frozen_result_rows=True,
+        )
         write_json(self.artifact_dir / promotion.RUN_BUNDLE_FILENAME, bundle)
         write_json(
             self.artifact_dir / promotion.EXECUTION_DECISION_FILENAME,

@@ -24,9 +24,10 @@ import (
 const (
 	activeCaseSchemaVersion          = 4
 	activeMultiFileCaseSchemaVersion = 4
-	activeResultSchemaVersion        = 5
+	activeResultSchemaVersion        = 6
 	activeToolProfileSchemaVersion   = 4
-	legacyResultSchemaVersion        = 4
+	legacyResultSchemaVersionV4      = 4
+	legacyResultSchemaVersionV5      = 5
 )
 
 // Valid enum values for v1 schema.
@@ -209,7 +210,7 @@ var (
 		"expected_verdict", "severity", "capability_tags", "requires", "false_positive_risk", "why_expected", "notes", "source",
 	}
 	resultRequiredFields = []string{
-		"schema_version", "case_id", "tool", "tool_version", "capability_registry", "expected_verdict", "actual_verdict", "score", "evidence", "notes",
+		"schema_version", "scoring_version", "case_id", "tool", "tool_version", "capability_registry", "expected_verdict", "actual_verdict", "score", "evidence", "notes",
 	}
 	profileRequiredFields = []string{
 		"schema_version", "tool", "tool_version", "runner_version", "claims", "capability_registry",
@@ -1132,6 +1133,7 @@ func requiresTokenProblem(token string) string {
 // ResultLine represents a single line in a runner results JSONL file.
 type ResultLine struct {
 	SchemaVersion      int                          `json:"schema_version"`
+	ScoringVersion     string                       `json:"scoring_version"`
 	CaseID             string                       `json:"case_id"`
 	Tool               string                       `json:"tool"`
 	ToolVersion        string                       `json:"tool_version"`
@@ -1163,8 +1165,11 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	} else if r.SchemaVersion == activeResultSchemaVersion && !caseIDPattern.MatchString(r.CaseID) {
 		addErr("case_id must contain only lower-case letters, digits, hyphens, and underscores")
 	}
-	if r.SchemaVersion != legacyResultSchemaVersion && r.SchemaVersion != activeResultSchemaVersion {
-		addErr(fmt.Sprintf("schema_version must be %d or %d, got %d", legacyResultSchemaVersion, activeResultSchemaVersion, r.SchemaVersion))
+	if r.SchemaVersion != legacyResultSchemaVersionV4 && r.SchemaVersion != legacyResultSchemaVersionV5 && r.SchemaVersion != activeResultSchemaVersion {
+		addErr(fmt.Sprintf("schema_version must be %d, %d, or %d, got %d", legacyResultSchemaVersionV4, legacyResultSchemaVersionV5, activeResultSchemaVersion, r.SchemaVersion))
+	}
+	if r.SchemaVersion == activeResultSchemaVersion && strings.TrimSpace(r.ScoringVersion) == "" {
+		addErr("missing scoring_version")
 	}
 	if r.Tool == "" {
 		addErr("missing tool")
@@ -1183,7 +1188,7 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 	if r.Evidence == nil {
 		addErr("missing evidence (must be an object)")
-	} else if r.SchemaVersion == activeResultSchemaVersion {
+	} else if r.SchemaVersion >= legacyResultSchemaVersionV5 {
 		for _, issue := range validateResultState(r) {
 			addErr(issue)
 		}
@@ -1199,7 +1204,7 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 
 	// Score consistency checks. The exhaustive public matrix lives in
-	// contracts/result-states-v5.json and contract tests compare every row to
+	// contracts/result-states-v6.json and contract tests compare every row to
 	// this validator.
 	if validActualVerdicts[r.ActualVerdict] && validMeasuredVerdicts[r.ExpectedVerdict] && validScores[r.Score] {
 		caseSpecificScore, hasCaseSpecificScore, caseSpecificProblem := expectedCaseSpecificScore(r, caseMetadata)
@@ -1396,6 +1401,7 @@ func validateResultsFileWithMetadata(path string, caseMetadata map[string]result
 	lineNum := 0
 	resultCount := 0
 	var registryReference *capabilityregistry.Reference
+	var scoringVersion string
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -1425,6 +1431,13 @@ func validateResultsFileWithMetadata(path string, caseMetadata map[string]result
 		}
 		lineErrors := validateResultLineAgainstCase(lineNum, r, metadata)
 		allErrors = append(allErrors, lineErrors...)
+		if r.SchemaVersion == activeResultSchemaVersion && r.ScoringVersion != "" {
+			if scoringVersion == "" {
+				scoringVersion = r.ScoringVersion
+			} else if scoringVersion != r.ScoringVersion {
+				allErrors = append(allErrors, fmt.Sprintf("line %d: scoring_version differs from prior result rows", lineNum))
+			}
+		}
 		if registryReference == nil {
 			copy := r.CapabilityRegistry
 			registryReference = &copy

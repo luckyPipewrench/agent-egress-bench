@@ -140,15 +140,15 @@ func TestRootJSONSchemasCompileAndValidateFixtures(t *testing.T) {
 		})
 	}
 
-	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v5.schema.json"))
+	resultSchema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v6.schema.json"))
 	result := map[string]interface{}{
-		"schema_version": float64(5), "case_id": caseDocument["id"], "tool": "tool",
+		"schema_version": float64(6), "scoring_version": scoringVersion, "case_id": caseDocument["id"], "tool": "tool",
 		"tool_version": "1.0.0", "expected_verdict": "allow", "actual_verdict": "allow",
 		"score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": "",
 		"capability_registry": map[string]interface{}{"id": "registry", "format": float64(1), "revision": float64(1), "sha256": strings.Repeat("a", 64)},
 	}
 	if err := resultSchema.Validate(result); err != nil {
-		t.Fatalf("result-v5 rejected valid result fixture: %v", err)
+		t.Fatalf("result-v6 rejected valid result fixture: %v", err)
 	}
 	for name, mutate := range map[string]func(map[string]interface{}){
 		"malformed_case_id":  func(value map[string]interface{}) { value["case_id"] = "../case" },
@@ -159,7 +159,7 @@ func TestRootJSONSchemasCompileAndValidateFixtures(t *testing.T) {
 			mutated := cloneToolProfileObject(t, result)
 			mutate(mutated)
 			if err := resultSchema.Validate(mutated); err == nil {
-				t.Fatal("result-v5 accepted rejected conformance vector")
+				t.Fatal("result-v6 accepted rejected conformance vector")
 			}
 		})
 	}

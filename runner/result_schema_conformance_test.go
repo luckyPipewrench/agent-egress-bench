@@ -18,9 +18,9 @@ type resultSchemaConformanceCorpus struct {
 	Rejected []resultSchemaConformanceVector `json:"rejected"`
 }
 
-func TestResultV5SchemaConformanceVectors(t *testing.T) {
-	schema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v5.schema.json"))
-	raw, err := os.ReadFile(filepath.Join("..", "validate", "testdata", "result-v5-conformance.json"))
+func TestResultV6SchemaConformanceVectors(t *testing.T) {
+	schema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v6.schema.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "validate", "testdata", "result-v6-conformance.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +53,18 @@ func TestResultV5SchemaConformanceVectors(t *testing.T) {
 				t.Fatalf("schema rejected Go-only cross-field vector: %v", err)
 			}
 		})
+	}
+}
+
+func TestResultV5SchemaStillAcceptsMissingScoringVersion(t *testing.T) {
+	schema := compileJSONSchema(t, filepath.Join("..", "schemas", "result-v5.schema.json"))
+	row := map[string]interface{}{
+		"schema_version": float64(5), "case_id": "legacy-v5", "tool": "fixture-tool", "tool_version": "1.0.0",
+		"capability_registry": map[string]interface{}{"id": "registry", "format": float64(1), "revision": float64(1), "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		"expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": "",
+	}
+	if err := schema.Validate(row); err != nil {
+		t.Fatalf("result-v5 rejected a historical row without scoring_version: %v", err)
 	}
 }
 

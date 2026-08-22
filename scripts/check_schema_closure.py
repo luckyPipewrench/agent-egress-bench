@@ -35,7 +35,8 @@ OPEN_OBJECTS = {
     ("https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v4.schema.json", "/properties/capability_registry"): "supported legacy reader shape with semantic checks",
     ("https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v4.schema.json", "/properties/exercised"): "supported legacy reader shape with semantic checks",
     ("https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v4.schema.json", "/properties/evidence"): "frozen evidence extension point",
-    ("https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json", "/properties/evidence"): "active adapter evidence extension point with required result_state",
+    ("https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json", "/properties/evidence"): "frozen adapter evidence extension point with required result_state",
+    ("https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v6.schema.json", "/properties/evidence"): "active adapter evidence extension point with required result_state",
     ("https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v4.schema.json", ""): "frozen historical root",
 }
 

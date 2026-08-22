@@ -508,6 +508,7 @@ func runCasesWithSetup(cases []Case, profile Profile, adapt adapter.Adapter, tim
 		}
 		result := CaseResult{
 			SchemaVersion:      activeResultSchemaVersion,
+			ScoringVersion:     scoringVersion,
 			CaseID:             c.ID,
 			Tool:               profile.Tool,
 			ToolVersion:        profile.ToolVersion,

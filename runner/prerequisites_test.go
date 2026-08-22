@@ -53,6 +53,10 @@ func TestUnsatisfiedBlocklistPrerequisiteIsErrorNotMiss(t *testing.T) {
 	if emitted.Score != "error" {
 		t.Fatalf("emitted score = %q, want error so an unsatisfied setup cannot read as a miss", emitted.Score)
 	}
+	if emitted.SchemaVersion != activeResultSchemaVersion || emitted.ScoringVersion != scoringVersion {
+		t.Fatalf("emitted result identity = schema %d scoring %q, want schema %d scoring %q",
+			emitted.SchemaVersion, emitted.ScoringVersion, activeResultSchemaVersion, scoringVersion)
+	}
 }
 
 func TestSatisfiedBlocklistPrerequisiteRunsAdapter(t *testing.T) {

@@ -105,15 +105,17 @@
     },
     {
       "family": "result_row",
-      "active_writer_version": 5,
+      "active_writer_version": 6,
       "accepted_reader_versions": [
+        4,
+        5,
+        6
+      ],
+      "frozen_versions": [
         4,
         5
       ],
-      "frozen_versions": [
-        4
-      ],
-      "canonical_schema_path": "schemas/result-v5.schema.json",
+      "canonical_schema_path": "schemas/result-v6.schema.json",
       "schemas": [
         {
           "version": 4,
@@ -124,9 +126,16 @@
         },
         {
           "version": 5,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/result-v5.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json",
+          "sha256": "34883c47b14a35188a8d8b0ef7ccf55b6a3d993c5f9ebbeacd756ef130257956"
+        },
+        {
+          "version": 6,
+          "status": "active",
+          "path": "schemas/result-v6.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v6.schema.json"
         }
       ],
       "writer": [

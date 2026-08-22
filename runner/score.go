@@ -5,6 +5,7 @@ import capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capabil
 // CaseResult holds the outcome of running a single case.
 type CaseResult struct {
 	SchemaVersion      int                          `json:"schema_version"`
+	ScoringVersion     string                       `json:"scoring_version"`
 	CaseID             string                       `json:"case_id"`
 	Tool               string                       `json:"tool"`
 	ToolVersion        string                       `json:"tool_version"`

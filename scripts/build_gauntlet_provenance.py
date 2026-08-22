@@ -119,7 +119,7 @@ def active_result_score(expected, actual, evidence, budget_timing_required):
     return "pass" if actual == expected else "fail"
 
 
-def result_reader_contract(repo_root):
+def result_reader_contract(repo_root, allow_frozen_result_rows=False):
     manifest = load_object(repo_root / "contracts" / "artifacts.json")
     families = manifest.get("artifact_families")
     if not isinstance(families, list):
@@ -147,23 +147,45 @@ def result_reader_contract(repo_root):
     states = contract.get("evidence_result_states")
     if not isinstance(states, dict) or not states or any(not isinstance(state, str) for state in states):
         raise ValueError("active result-state contract has no valid evidence_result_states")
-    return active_version, frozenset(accepted_versions), frozenset(states)
+    active_scoring_version = contract.get("scoring_version")
+    if not isinstance(active_scoring_version, str) or not active_scoring_version.strip():
+        if not allow_frozen_result_rows or active_version >= 6:
+            raise ValueError("active result-state contract has no valid scoring_version")
+        active_scoring_version = None
+    return active_version, frozenset(accepted_versions), frozenset(states), active_scoring_version
 
 
 def validate_result_row_contract(
-    row, row_number, expected_version, active_version, accepted_versions, result_states
+    row,
+    row_number,
+    summary_schema_version,
+    active_version,
+    accepted_versions,
+    result_states,
+    active_scoring_version,
+    summary_scoring_version=None,
+    require_active=False,
 ):
     schema_version = row.get("schema_version")
     if schema_version not in accepted_versions:
         raise ValueError(
             f"runner JSONL row {row_number} schema_version must be one of {sorted(accepted_versions)}"
         )
-    if schema_version != expected_version:
+    if require_active and schema_version != active_version:
         raise ValueError(
-            f"runner JSONL row {row_number} schema_version must match active result "
-            f"schema_version {expected_version}"
+            f"runner JSONL row {row_number} must use active result schema_version {active_version}"
         )
-    if schema_version != active_version:
+    if require_active and summary_scoring_version != active_scoring_version:
+        raise ValueError("runner summary scoring_version does not match the active scoring contract")
+    if schema_version < summary_schema_version:
+        raise ValueError(
+            f"runner JSONL row {row_number} schema_version must be at least summary "
+            f"schema_version {summary_schema_version}"
+        )
+    # A v4 summary has the frozen v4 row semantics. An active v5 summary can
+    # retain v5 rows or use the v6 scorer-bound row shape; its summary schema
+    # did not change when the row provenance did.
+    if schema_version == 4:
         return
 
     evidence = row.get("evidence")
@@ -178,6 +200,14 @@ def validate_result_row_contract(
         raise ValueError(f"runner JSONL row {row_number} unreachable result is inconsistent")
     if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
         raise ValueError(f"runner JSONL row {row_number} unobserved failure result is inconsistent")
+    if schema_version == 6:
+        scoring_version = row.get("scoring_version")
+        if not isinstance(scoring_version, str) or not scoring_version.strip():
+            raise ValueError(f"runner JSONL row {row_number} has missing or empty scoring_version")
+        if scoring_version != summary_scoring_version:
+            raise ValueError(
+                f"runner JSONL row {row_number} scoring_version does not match summary"
+            )
 
 
 def raw_evidence_for_summary(summary):
@@ -659,7 +689,7 @@ def verify_diagnostic(summary, scope, diagnostic, numerator, denominator):
         )
 
 
-def measurements(repo_root, run_dir):
+def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
     summary = load_object(run_dir / RAW_EVIDENCE["raw_summary"])
     # Active summaries always serialize the explicit unreachable counter.
     # The retained v2.4 summary predates that field and carries no
@@ -720,7 +750,10 @@ def measurements(repo_root, run_dir):
     results = read_results(run_dir / RAW_EVIDENCE["results"])
     result_contract = None
     if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
-        result_contract = result_reader_contract(repo_root)
+        result_contract = result_reader_contract(
+            repo_root,
+            allow_frozen_result_rows=allow_frozen_result_rows,
+        )
     # An active artifact is uninterpretable without the exact raw registry
     # snapshot it names. Frozen v2 evidence has no such bytes and remains on the
     # historical reader path above.
@@ -784,7 +817,17 @@ def measurements(repo_root, run_dir):
         if not isinstance(evidence, dict):
             raise ValueError(f"runner JSONL row {row_number} evidence must be an object")
         if result_contract is not None:
-            validate_result_row_contract(row, row_number, summary_schema_version, *result_contract)
+            validate_result_row_contract(
+                row,
+                row_number,
+                summary_schema_version,
+                *result_contract,
+                summary_scoring_version=summary["scoring_version"],
+                require_active=(
+                    summary_schema_version == ACTIVE_SUMMARY_SCHEMA_VERSION
+                    and not allow_frozen_result_rows
+                ),
+            )
         if not isinstance(row.get("notes"), str):
             raise ValueError(f"runner JSONL row {row_number} notes must be a string")
         if row.get("tool") != summary.get("tool") or row.get("tool_version") != summary.get(
@@ -1115,14 +1158,18 @@ def validate_release(release, metadata, run_dir):
             raise ValueError("release checksums do not bind the recorded Pipelock asset digest")
 
 
-def build_complete_bundle(repo_root, run_dir):
+def build_complete_bundle(repo_root, run_dir, allow_frozen_result_rows=False):
     metadata = load_object(run_dir / RAW_EVIDENCE["run_metadata"])
     release = load_object(run_dir / RAW_EVIDENCE["pipelock_release"])
     validate_metadata(metadata)
     validate_release(release, metadata, run_dir)
     if not (run_dir / RAW_EVIDENCE["entrypoint_command"]).read_text(encoding="utf-8").strip():
         raise ValueError("entrypoint command evidence is empty")
-    measured = measurements(repo_root, run_dir)
+    measured = measurements(
+        repo_root,
+        run_dir,
+        allow_frozen_result_rows=allow_frozen_result_rows,
+    )
     summary = measured["summary"]
     provenance_fields = None
     if summary.get("schema_version") == ACTIVE_SUMMARY_SCHEMA_VERSION:
@@ -1285,7 +1332,11 @@ def finalize_command(args):
     for label in sorted(evidence_spec):
         if recorded_hashes.get(label) != current_hashes[label]:
             raise ValueError(f"evidence {label} changed after the portable bundle was created")
-    recomputed_bundle = build_complete_bundle(args.repo_root.resolve(), run_dir)
+    recomputed_bundle = build_complete_bundle(
+        args.repo_root.resolve(),
+        run_dir,
+        allow_frozen_result_rows=getattr(args, "allow_frozen_result_rows", False),
+    )
     if bundle != recomputed_bundle:
         raise ValueError("portable run bundle does not match a fresh reconstruction from evidence")
 

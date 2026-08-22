@@ -232,6 +232,7 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   const v6Artifact = {
     ...v4Artifact,
     schema_version: 6,
+    scoring_version: '2.8',
     method_repository: 'example/agent-egress-bench',
     method_commit: 'e'.repeat(40),
     adapter_id: 'proxy',
@@ -243,8 +244,8 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   const v6ResultsText = [
     // Evidence-sensitive scoring can fail an observed block, for example when
     // a call-budget block happens too early or too late.
-    JSON.stringify({ case_id: 'url-attack-001', expected_verdict: 'block', actual_verdict: 'block', score: 'fail' }),
-    JSON.stringify({ case_id: 'url-benign-002', expected_verdict: 'allow', actual_verdict: 'allow', score: 'pass' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-attack-001', expected_verdict: 'block', actual_verdict: 'block', score: 'fail' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-benign-002', expected_verdict: 'allow', actual_verdict: 'allow', score: 'pass' }),
   ].join('\n') + '\n';
   const v6CaseIndexText = JSON.stringify({
     schema_version: 3,
@@ -298,6 +299,54 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   assert.equal(v6Loaded._failedCases[0].actual_verdict, 'block');
   assert.deepEqual(v6Loaded._assurances, ['self-run', 'artifact-validated']);
 
+  const wrongScorerText = v6ResultsText.replace('"scoring_version":"2.8"', '"scoring_version":"2.7"');
+  const wrongScorerManifest = {
+    ...v6Manifest,
+    files: {
+      ...v6Manifest.files,
+      'results.jsonl': nodeCrypto.createHash('sha256').update(wrongScorerText).digest('hex'),
+    },
+  };
+  const wrongScorerManifestText = JSON.stringify(wrongScorerManifest) + '\n';
+  const wrongScorerPointer = {
+    ...v6Pointer,
+    record_manifest_sha256: nodeCrypto.createHash('sha256').update(wrongScorerManifestText).digest('hex'),
+  };
+  await assert.rejects(
+    window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
+      const prefix = './results/pipelock/' + v6Digest + '/';
+      if (url === './latest-verified.json') return response(JSON.stringify(wrongScorerPointer));
+      if (url === wrongScorerPointer.record_manifest_path) return response(wrongScorerManifestText);
+      if (url === prefix + 'results.jsonl') return response(wrongScorerText);
+      return v6Fetch(url);
+    }, crypto),
+    /scoring version does not match/
+  );
+
+  const stringSchemaText = v6ResultsText.replace('"schema_version":6', '"schema_version":"6"');
+  const stringSchemaManifest = {
+    ...v6Manifest,
+    files: {
+      ...v6Manifest.files,
+      'results.jsonl': nodeCrypto.createHash('sha256').update(stringSchemaText).digest('hex'),
+    },
+  };
+  const stringSchemaManifestText = JSON.stringify(stringSchemaManifest) + '\n';
+  const stringSchemaPointer = {
+    ...v6Pointer,
+    record_manifest_sha256: nodeCrypto.createHash('sha256').update(stringSchemaManifestText).digest('hex'),
+  };
+  await assert.rejects(
+    window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
+      const prefix = './results/pipelock/' + v6Digest + '/';
+      if (url === './latest-verified.json') return response(JSON.stringify(stringSchemaPointer));
+      if (url === stringSchemaPointer.record_manifest_path) return response(stringSchemaManifestText);
+      if (url === prefix + 'results.jsonl') return response(stringSchemaText);
+      return v6Fetch(url);
+    }, crypto),
+    /unsupported result schema version/
+  );
+
   const v6BlankManifestText = 'url-attack-001\n\nurl-benign-002\n';
   const v6BlankManifest = {
     ...v6Manifest,
@@ -328,9 +377,9 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
     /one case ID per physical line/
   );
 
-  // A v6 record with a not-applicable row must still load. The runner emits
-  // score "not_applicable" for cases that did not apply to the target, and the
-  // failed-case list excludes them rather than the loader refusing the record.
+  // A retained record with a historical not-applicable row must still load.
+  // The failed-case list excludes that frozen shape rather than blanking an
+  // otherwise readable older result card.
   const v6NaArtifact = { ...v6Artifact, case_count: { total: 3 } };
   const v6NaResultsText = [
     JSON.stringify({ case_id: 'url-attack-001', expected_verdict: 'block', actual_verdict: 'allow', score: 'fail' }),

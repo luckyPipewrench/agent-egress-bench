@@ -29,6 +29,7 @@ type publicResultStatesContract struct {
 	Contract              string                      `json:"contract"`
 	Format                int                         `json:"format"`
 	ResultSchemaVersion   int                         `json:"result_schema_version"`
+	ScoringVersion        string                      `json:"scoring_version"`
 	EvidenceResultStates  map[string]string           `json:"evidence_result_states"`
 	Matrix                []publicResultMatrixRow     `json:"matrix"`
 	CaseSpecificOverrides []publicResultStateOverride `json:"case_specific_overrides"`
@@ -36,7 +37,7 @@ type publicResultStatesContract struct {
 
 func loadPublicResultStates(t *testing.T) publicResultStatesContract {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "contracts", "result-states-v5.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "contracts", "result-states-v6.json"))
 	if err != nil {
 		t.Fatalf("read public result-state contract: %v", err)
 	}
@@ -51,6 +52,9 @@ func TestPublicResultStateMatrixMatchesScorer(t *testing.T) {
 	contract := loadPublicResultStates(t)
 	if contract.Contract != "aeb.result-states" || contract.Format != 1 || contract.ResultSchemaVersion != activeResultSchemaVersion {
 		t.Fatalf("result-states identity/version = %q/%d/%d", contract.Contract, contract.Format, contract.ResultSchemaVersion)
+	}
+	if contract.ScoringVersion != scoringVersion {
+		t.Fatalf("result-states scoring_version = %q, runner writes %q", contract.ScoringVersion, scoringVersion)
 	}
 	for _, row := range contract.Matrix {
 		if got := scoreCase(row.ExpectedVerdict, row.ActualVerdict); got != row.Score {
@@ -84,7 +88,7 @@ func TestPublicBudgetTimingOverrideMatchesScorer(t *testing.T) {
 //
 // Every row carries evidence.result_state, added by evidenceWithResultState.
 // Keep the published vocabulary tied to the emitter so an outside runner can
-// implement the closed v5 result-state contract without guessing.
+// implement the closed v6 result-state contract without guessing.
 func TestPublicResultStatesMatchEmitter(t *testing.T) {
 	contract := loadPublicResultStates(t)
 

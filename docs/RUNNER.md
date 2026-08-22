@@ -2,9 +2,9 @@
 
 A runner connects a specific tool to the benchmark corpus. This document defines the contract every runner must satisfy.
 
-**JSON Schemas:** [`schemas/result-v5.schema.json`](../schemas/result-v5.schema.json) (active result lines), [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json) (frozen result lines), and [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) (tool profiles). [SCHEMAS.md](SCHEMAS.md) explains schema identifiers, the discovery catalog, and adapter quickstarts.
+**JSON Schemas:** [`schemas/result-v6.schema.json`](../schemas/result-v6.schema.json) (active result lines), [`schemas/result-v4.schema.json`](../schemas/result-v4.schema.json) and [`schemas/result-v5.schema.json`](../schemas/result-v5.schema.json) (frozen result lines), and [`schemas/tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) (tool profiles). [SCHEMAS.md](SCHEMAS.md) explains schema identifiers, the discovery catalog, and adapter quickstarts.
 
-**Cross-field result contract:** [`contracts/result-states-v5.json`](../contracts/result-states-v5.json). [`gauntlet.md`](gauntlet.md) explains the same matrix and owns its scoring meaning.
+**Cross-field result contract:** [`contracts/result-states-v6.json`](../contracts/result-states-v6.json). [`gauntlet.md`](gauntlet.md) explains the same matrix and owns its scoring meaning.
 
 **Starter template:** [`examples/runner-template/`](../examples/runner-template/)
 
@@ -44,7 +44,8 @@ One JSON object per case, written to stdout (one per line, JSONL):
 
 ```json
 {
-  "schema_version": 5,
+  "schema_version": 6,
+  "scoring_version": "2.8",
   "case_id": "url-dlp-aws-key-001",
   "tool": "pipelock",
   "tool_version": "0.3.6",
@@ -70,6 +71,8 @@ One JSON object per case, written to stdout (one per line, JSONL):
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `schema_version` | integer | Active result schema version, currently `6` |
+| `scoring_version` | string | Exact scoring rules used for this row, currently `2.8` |
 | `case_id` | string | The case ID |
 | `tool` | string | Tool name from profile |
 | `tool_version` | string | Tool version from profile |
@@ -398,7 +401,7 @@ cd validate && go build -o aeb-validate .
 ./aeb-validate profile path/to/tool-profile.json
 ```
 
-This checks field presence, enum validity, and the active cross-field result rules defined by [Gauntlet Scoring](gauntlet.md#per-case-results) and the machine-readable [`result-states-v5.json`](../contracts/result-states-v5.json). The cases directory binds each row to canonical case metadata, including whether budget timing evidence is required. Omitting it performs structural checks only and cannot authenticate a result row's case-specific claims.
+This checks field presence, enum validity, row-level scoring identity, and the active cross-field result rules defined by [Gauntlet Scoring](gauntlet.md#per-case-results) and the machine-readable [`result-states-v6.json`](../contracts/result-states-v6.json). The cases directory binds each row to canonical case metadata, including whether budget timing evidence is required. Omitting it performs structural checks only and cannot authenticate a result row's case-specific claims.
 
 ### Scope-artifact verification
 
