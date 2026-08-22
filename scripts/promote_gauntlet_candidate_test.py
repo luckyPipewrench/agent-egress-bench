@@ -559,6 +559,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         pointer = evaluator.load_object(fixture.latest)
+        self.assertEqual(pointer["assurances"], ["self-run", "artifact-validated"])
         digest = pointer["candidate_sha256"]
         record = fixture.store_root / "pipelock" / digest
         self.assertEqual((record / promotion.CANDIDATE_FILENAME).read_bytes(), original_candidate)

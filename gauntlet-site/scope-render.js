@@ -250,10 +250,12 @@
       measurementStatus: measurementStatus,
       reasons: reasons,
       containment: containment,
+      containmentNumerator: containmentCounts.numerator,
       containmentDenominator: containmentCounts.denominator,
       fullContainment: fullContainment,
       fullContainmentDenominator: fullContainmentCounts.denominator,
       falsePositiveRate: scopeValue(artifact, ['scores', 'applicable', 'false_positive_rate']),
+      falsePositiveNumerator: falsePositiveCounts.numerator,
       canonicalURL: validateCanonicalURL(scopeValue(artifact, ['canonical_url'])),
     };
   }
@@ -285,11 +287,18 @@
       '), false positives ' + formatPercent(falsePositiveRate) + ', '
     ));
 
-    var badge = document.createElement('span');
-    badge.className = 'badge badge-verified';
-    badge.textContent = 'verified';
-    block.appendChild(badge);
-    block.appendChild(document.createTextNode(' '));
+    var assurances = artifact._assurances || [];
+    if (assurances.length &&
+        JSON.stringify(assurances) !== JSON.stringify(['self-run', 'artifact-validated'])) {
+      throw new Error('publisher assurance labels are invalid');
+    }
+    assurances.forEach(function(assurance) {
+      var badge = document.createElement('span');
+      badge.className = 'badge badge-assurance';
+      badge.textContent = assurance;
+      block.appendChild(badge);
+    });
+    if (assurances.length) block.appendChild(document.createTextNode(' '));
 
     var link = document.createElement('a');
     link.href = canonicalURL;
@@ -301,6 +310,86 @@
     evidenceLink.href = 'https://github.com/luckyPipewrench/agent-egress-bench/blob/main/docs/RESULTS-USE.md#verify-a-public-result';
     evidenceLink.textContent = 'evidence and verify';
     block.appendChild(evidenceLink);
+    return block;
+  }
+
+  function renderGauntletFailures(artifact) {
+    var scope = validateScope(artifact);
+    var block = document.createElement('div');
+    block.className = 'failure-summary';
+    var title = document.createElement('div');
+    title.className = 'section-label failure-title';
+    title.textContent = 'Failed cases';
+    block.appendChild(title);
+    if (artifact.schema_version !== 6) {
+      var unavailable = document.createElement('div');
+      unavailable.className = 'failure-context';
+      unavailable.textContent = 'Per-case loss details were not retained in this frozen result format.';
+      block.appendChild(unavailable);
+      return block;
+    }
+    var failures = artifact._failedCases;
+    if (!Array.isArray(failures)) {
+      throw new Error('verified result has no digest-bound failed-case list');
+    }
+    var seen = {};
+    var maliciousFailures = 0;
+    var benignFailures = 0;
+    failures.forEach(function(failure) {
+      if (!failure || typeof failure !== 'object' || Array.isArray(failure) ||
+          typeof failure.case_id !== 'string' || !failure.case_id || seen[failure.case_id] ||
+          (failure.expected_verdict !== 'allow' && failure.expected_verdict !== 'block') ||
+          (failure.actual_verdict !== 'allow' && failure.actual_verdict !== 'block') ||
+          typeof failure.category !== 'string' || !failure.category ||
+          !Number.isInteger(failure.manifest_line) || failure.manifest_line < 1) {
+        throw new Error('failed-case list contains an invalid row');
+      }
+      sortedStringSet(failure.capability_tags, 'failed case capability_tags');
+      seen[failure.case_id] = true;
+      if (failure.expected_verdict === 'block') maliciousFailures++;
+      else benignFailures++;
+    });
+    if (maliciousFailures !== scope.containmentDenominator - scope.containmentNumerator ||
+        benignFailures !== scope.falsePositiveNumerator) {
+      throw new Error('failed-case list does not explain the applicable score losses');
+    }
+
+    if (failures.length === 0) {
+      block.appendChild(document.createTextNode('None.'));
+      return block;
+    }
+
+    var categories = {};
+    var sharedTags = null;
+    failures.forEach(function(failure) {
+      categories[failure.category] = true;
+      var tags = sortedStringSet(failure.capability_tags, 'failed case capability_tags');
+      sharedTags = sharedTags === null ? tags : sharedTags.filter(function(tag) {
+        return tags.indexOf(tag) !== -1;
+      });
+    });
+    var context = document.createElement('div');
+    context.className = 'failure-context';
+    context.textContent = failures.length + (failures.length === 1 ? ' failed case in ' : ' failed cases in ') +
+      Object.keys(categories).sort().join(', ').replaceAll('_', ' ') +
+      (sharedTags.length ? '. Shared capabilities: ' + sharedTags.map(function(tag) {
+        return root.capabilityLabel(artifact, tag);
+      }).join(', ') + '.' : '.');
+    block.appendChild(context);
+
+    var list = document.createElement('ul');
+    failures.forEach(function(failure) {
+      var item = document.createElement('li');
+      var link = document.createElement('a');
+      link.href = 'https://github.com/' + artifact.method_repository + '/blob/' +
+        artifact.method_commit + '/cases/MANIFEST.txt#L' + failure.manifest_line;
+      link.textContent = failure.case_id;
+      item.appendChild(link);
+      item.appendChild(document.createTextNode(': expected ' + failure.expected_verdict +
+        ', observed ' + failure.actual_verdict + '.'));
+      list.appendChild(item);
+    });
+    block.appendChild(list);
     return block;
   }
 
@@ -330,5 +419,6 @@
   }
 
   root.renderGauntletScope = renderGauntletScope;
+  root.renderGauntletFailures = renderGauntletFailures;
   root.renderGauntletControlCoverage = renderGauntletControlCoverage;
 })(window);

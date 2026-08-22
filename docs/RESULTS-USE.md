@@ -54,6 +54,7 @@ Publish these next to any score, or the number is not reproducible.
 | Adapter identity and owner | A vendor-authored adapter is normal. Hiding who wrote it is not. |
 | Target product, version, and configuration | A score against an unnamed configuration cannot be repeated. |
 | Applicable, unreachable, historical not-applicable, and error counts, with N/A reasons | An N/A case that silently leaves the denominator inflates the score; an unreachable row exposes an adapter coverage gap without pretending it was a measurement. |
+| Every failed case ID, a commit-pinned link, and the expected and observed verdicts | An aggregate score without its losses makes a concentrated product gap look like unexplained weakness. |
 | Containment and false-positive rate, reported separately | There is no composite score in this corpus. V5 field-presence diagnostics are non-scoring observations, not detection or proof claims. |
 | The non-claims that apply | See below. |
 
@@ -69,7 +70,7 @@ The released runner can render a neutral, copy-ready lockup from a complete publ
   --publication-lockup-output artifacts/result-lockup.md
 ```
 
-The lockup carries the method identity, scope, scores, configuration identity, exercised coverage, publisher-declared assurance label, evidence URL, and non-claims. The `self-run`, `independently-executed`, `transparency-registered`, and `challenge-verified` labels validate the target-neutral summary, result rows, profile, registry, receipt profile, and declared method identity without requiring Pipelock-specific release files or an AEB-Go bundle. The first-party Pipelock lane may also declare `artifact-validated` after its complete AEB bundle passes the stricter retained-decision checks. A lab or vendor may style the surrounding presentation, but wherever a score appears these facts must remain adjacent to it. Putting them only in a methodology page does not make a detached screenshot, badge, or sales slide reproducible.
+The lockup lists each failed case before the aggregate scores, with a stable link and the expected and observed verdicts. It also carries the method identity, scope, configuration identity, exercised coverage, publisher-declared assurance label, evidence URL, and non-claims. The `self-run`, `independently-executed`, `transparency-registered`, and `challenge-verified` labels validate the target-neutral summary, result rows, profile, registry, receipt profile, and declared method identity without requiring Pipelock-specific release files or an AEB-Go bundle. The first-party Pipelock lane may also declare `artifact-validated` after its complete AEB bundle passes the stricter retained-decision checks. A lab or vendor may style the surrounding presentation, but wherever a score appears these facts must remain adjacent to it. Putting them only in a methodology page does not make a detached screenshot, badge, or sales slide reproducible.
 
 ## Verify a public result
 

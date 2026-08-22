@@ -18,7 +18,11 @@ global.document = {
     return { textContent: text };
   },
 };
-global.window = {};
+global.window = {
+  capabilityLabel(_artifact, id) {
+    return id === 'url_dlp' ? 'URL DLP' : id;
+  },
+};
 
 require('./scope-render.js');
 
@@ -58,6 +62,7 @@ function completeArtifact() {
         false_positive_rate: { numerator: 0, denominator: 1 },
       },
     },
+    _assurances: ['self-run', 'artifact-validated'],
   };
 }
 
@@ -78,11 +83,15 @@ assert.equal(rendered.className, 'denominator');
 // applicable score in the first place.
 assert.match(rendered.children[0].textContent,
   /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic/);
-assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
-assert.equal(rendered.children[5].textContent, 'evidence and verify');
-assert.match(rendered.children[5].href, /docs\/RESULTS-USE\.md#verify-a-public-result$/);
+assert.equal(rendered.children[1].textContent, 'self-run');
+assert.equal(rendered.children[2].textContent, 'artifact-validated');
+assert.equal(rendered.children[4].href, completeArtifact().canonical_url);
+assert.equal(rendered.children[6].textContent, 'evidence and verify');
+assert.match(rendered.children[6].href, /docs\/RESULTS-USE\.md#verify-a-public-result$/);
 assert.match(window.renderGauntletControlCoverage(completeArtifact()).textContent,
   /not recorded in this frozen result/);
+assert.match(window.renderGauntletFailures(completeArtifact()).children[1].textContent,
+  /not retained in this frozen result format/);
 
 const unboundV4 = completeArtifact();
 unboundV4.schema_version = 4;
@@ -147,6 +156,36 @@ activeV5._capabilityRegistry = { id: 'aeb.core-capabilities' };
 activeV5.benchmark_manifest_sha256 = 'f'.repeat(64);
 assert.match(window.renderGauntletScope(activeV5).children[0].textContent,
   /Containment 50\.0% of 158 malicious cases/);
+
+const activeV6Failures = JSON.parse(JSON.stringify(activeV5));
+activeV6Failures.schema_version = 6;
+activeV6Failures.method_repository = 'example/agent-egress-bench';
+activeV6Failures.method_commit = 'e'.repeat(40);
+activeV6Failures.adapter_id = 'proxy';
+activeV6Failures.adapter_owner = 'Example Maintainers';
+activeV6Failures.target_config_ref = 'examples/tool/benchmark.yaml';
+activeV6Failures.target_config_sha256 = 'f'.repeat(64);
+activeV6Failures._failedCases = [{
+  case_id: 'url-attack-001',
+  expected_verdict: 'block',
+  actual_verdict: 'block',
+  category: 'url',
+  capability_tags: ['url_dlp'],
+  manifest_line: 1,
+}];
+const failures = window.renderGauntletFailures(activeV6Failures);
+assert.equal(failures.children[0].textContent, 'Failed cases');
+assert.match(failures.children[1].textContent, /1 failed case in url\. Shared capabilities: URL DLP\./);
+assert.equal(failures.children[2].children[0].children[0].textContent, 'url-attack-001');
+assert.match(failures.children[2].children[0].children[0].href, /cases\/MANIFEST\.txt#L1$/);
+assert.equal(failures.children[2].children[0].children[1].textContent, ': expected block, observed block.');
+
+const hiddenFailure = JSON.parse(JSON.stringify(activeV6Failures));
+hiddenFailure._failedCases = [];
+assert.throws(
+  () => window.renderGauntletFailures(hiddenFailure),
+  /does not explain the applicable score losses/
+);
 
 const v5WithoutBenchmarkManifest = JSON.parse(JSON.stringify(activeV5));
 delete v5WithoutBenchmarkManifest.benchmark_manifest_sha256;

@@ -24,12 +24,14 @@ class GauntletSiteIndexTest(unittest.TestCase):
         self.assertNotIn("catch(function() { return loadLegacyResult();", self.html)
 
     def test_verified_scope_is_rendered_as_one_validated_block(self):
+        self.assertIn("card.appendChild(window.renderGauntletFailures(r));", self.html)
         self.assertIn("card.appendChild(window.renderGauntletScope(r));", self.html)
         self.assertIn(
             "card.appendChild(window.renderGauntletControlCoverage(r));", self.html
         )
         self.assertIn('<script src="./scope-render.js"></script>', self.html)
         self.assertIn('<script src="./latest-result.js"></script>', self.html)
+        self.assertNotIn("badge.textContent = 'verified';", self.html)
 
     def test_diagnostic_scope_describes_routed_cases_not_profile_claims(self):
         # The invariant is that scope comes from what the adapter did, never

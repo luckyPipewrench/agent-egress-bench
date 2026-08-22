@@ -37,6 +37,7 @@ BASELINE_SNAPSHOT_FILENAME = "reviewed-baseline.json"
 SOURCE_BASELINE_FILENAME = "source-baseline.json"
 RECORD_MANIFEST_FILENAME = "record-manifest.json"
 LATEST_POINTER_FILENAME = "latest-verified.json"
+FIRST_PARTY_ASSURANCES = ["self-run", "artifact-validated"]
 SOURCE_PROMOTION_DECISION_FILENAME = "source-promotion-decision.json"
 DESTINATION_BASELINE_FILENAME = "destination-baseline.json"
 DESTINATION_PROMOTION_DECISION_FILENAME = "destination-promotion-decision.json"
@@ -410,6 +411,9 @@ def validate_pointer(pointer, latest_path):
     if pointer.get("record_manifest_path") != expected_manifest:
         raise ValueError("latest pointer record_manifest_path is not canonical")
     require_sha256(pointer.get("record_manifest_sha256"), "pointer record_manifest_sha256")
+    assurances = pointer.get("assurances")
+    if assurances is not None and assurances != FIRST_PARTY_ASSURANCES:
+        raise ValueError("latest pointer assurances must name the first-party execution and artifact checks")
     previous_candidate = pointer.get("previous_candidate_sha256")
     previous_manifest = pointer.get("previous_record_manifest_sha256")
     if previous_candidate is None:
@@ -703,6 +707,7 @@ def promote(args):
     pointer = {
         "schema_version": 1,
         "status": "verified",
+        "assurances": FIRST_PARTY_ASSURANCES,
         "tool": "pipelock",
         "tool_version": require_non_empty_string(candidate, "tool_version"),
         "generated_at": require_non_empty_string(candidate, "generated_at"),

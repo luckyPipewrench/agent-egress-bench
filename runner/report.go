@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -76,6 +77,12 @@ type reportNA struct {
 	reason string
 }
 
+type reportFailure struct {
+	caseID   string
+	expected string
+	actual   string
+}
+
 type buyerReport struct {
 	dir        string
 	summary    reportDocument
@@ -83,6 +90,7 @@ type buyerReport struct {
 	bundle     reportDocument
 	decision   reportDocument
 	results    []reportNA
+	failures   []reportFailure
 	resultErr  string
 	rowCounts  reportRowCounts
 	command    string
@@ -121,6 +129,12 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 	}
 	if failures := report.summaryScopeFailures(); len(failures) > 0 {
 		return fmt.Errorf("publication lockup scope is invalid: %s", strings.Join(failures, "; "))
+	}
+	if report.rowCounts.scored != report.rowCounts.total {
+		return fmt.Errorf("publication lockup requires every result row to carry a score")
+	}
+	if failures := report.publicationScoreFailures(); len(failures) > 0 {
+		return fmt.Errorf("publication lockup scores are invalid: %s", strings.Join(failures, "; "))
 	}
 	if bindingError := report.v4RegistryBindingError(); bindingError != "" {
 		return fmt.Errorf("publication lockup registry binding is invalid: %s", bindingError)
@@ -254,6 +268,17 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 	line("")
 	line("Agent Egress Bench `%s@%s` · corpus `%s` · scoring `%s` · manifest `sha256:%s`", markdownInline(required["method repository"]), markdownInline(required["method commit"]), markdownInline(required["corpus version"]), markdownInline(required["scoring version"]), markdownInline(required["benchmark manifest digest"]))
 	line("")
+	if len(report.failures) > 0 {
+		line("Failed cases:")
+		for _, failure := range report.failures {
+			caseURL, linkErr := report.stableCaseURL(failure.caseID)
+			if linkErr != nil {
+				return fmt.Errorf("publication lockup requires a stable link for failed case %q: %w", failure.caseID, linkErr)
+			}
+			line("- [%s](%s): expected `%s`, observed `%s`.", markdownInline(failure.caseID), caseURL, failure.expected, failure.actual)
+		}
+		line("")
+	}
 	line("%s total · %s applicable · %s unreachable · %s not applicable · %s errors · containment %s · false-positive rate %s", required["total"], required["applicable"], required["unreachable"], required["not applicable"], required["errors"], required["containment"], required["false-positive rate"])
 	if len(naReasons) > 0 {
 		line("Not-applicable reasons: %s", markdownInline(strings.Join(naReasons, ", ")))
@@ -280,6 +305,27 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 		return fmt.Errorf("writing publication lockup to %s: %w", outputPath, err)
 	}
 	return nil
+}
+
+func (r *buyerReport) stableCaseURL(caseID string) (string, error) {
+	repository := reportString(r.summary, "method_repository")
+	commit := reportString(r.summary, "method_commit")
+	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(repository) {
+		return "", fmt.Errorf("method repository is not an owner/name pair")
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(commit) {
+		return "", fmt.Errorf("method commit is not a full lowercase Git commit")
+	}
+	manifest, err := readRegularArtifact(r.dir, "corpus-manifest.txt")
+	if err != nil {
+		return "", fmt.Errorf("reading corpus manifest: %w", err)
+	}
+	for index, raw := range strings.Split(strings.TrimSpace(string(manifest)), "\n") {
+		if strings.TrimSpace(raw) == caseID {
+			return fmt.Sprintf("https://github.com/%s/blob/%s/cases/MANIFEST.txt#L%d", repository, commit, index+1), nil
+		}
+	}
+	return "", fmt.Errorf("case ID is absent from the retained corpus manifest")
 }
 
 func (r *buyerReport) retainedPublicationRefusal() string {
@@ -312,7 +358,7 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	r.metadata = loadReportDocument(dir, "run-metadata.json")
 	r.bundle = loadReportDocument(dir, "run-bundle.json")
 	r.decision = loadReportDocument(dir, "execution-decision.json")
-	r.results, r.rowCounts, r.resultErr = loadNotApplicable(filepath.Join(dir, "results.jsonl"))
+	r.results, r.failures, r.rowCounts, r.resultErr = loadReportResults(filepath.Join(dir, "results.jsonl"))
 	r.command = loadReportText(dir, "command.txt")
 	r.entrypoint = loadReportText(dir, "entrypoint-command.txt")
 	if !r.hasFact() {
@@ -541,34 +587,41 @@ func loadReportText(dir, name string) string {
 // the summary declares about it. Comparing the two is the only way the report
 // can tell a reader the scope arithmetic holds.
 type reportRowCounts struct {
-	total         int
-	applicable    int
-	unreachable   int
-	notApplicable int
-	errors        int
+	total                int
+	scored               int
+	applicable           int
+	unreachable          int
+	notApplicable        int
+	errors               int
+	maliciousTotal       int
+	maliciousPasses      int
+	benignTotal          int
+	benignFalsePositives int
 }
 
-func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
+func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCounts, string) {
 	var counts reportRowCounts
 	// Streams rather than reading whole, so it opens the descriptor itself, and
 	// it uses the same no-follow open as the other readers: the type is checked
 	// on the descriptor that will actually be read, never on the path.
 	f, err := openRegularArtifact(filepath.Dir(path), filepath.Base(path))
 	if os.IsNotExist(err) {
-		return nil, counts, absentFact
+		return nil, nil, counts, absentFact
 	}
 	if errors.Is(err, errNotRegularArtifact) {
-		return nil, counts, "Invalid in run artifacts: not a regular file"
+		return nil, nil, counts, "Invalid in run artifacts: not a regular file"
 	}
 	if errors.Is(err, errEmptyArtifact) {
-		return nil, counts, "Invalid in run artifacts: empty file"
+		return nil, nil, counts, "Invalid in run artifacts: empty file"
 	}
 	if err != nil {
-		return nil, counts, "Unreadable run artifact"
+		return nil, nil, counts, "Unreadable run artifact"
 	}
 	defer f.Close()
 
-	var out []reportNA
+	var notApplicable []reportNA
+	var failures []reportFailure
+	seenCaseIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	line := 0
@@ -578,12 +631,12 @@ func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 		dec := json.NewDecoder(strings.NewReader(scanner.Text()))
 		dec.UseNumber()
 		if err := dec.Decode(&row); err != nil {
-			return out, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
 		}
 		// One object per line, and nothing after it. Trailing JSON on a row is
 		// malformed input, not a row with extra decoration to ignore.
 		if err := ensureJSONEOF(dec); err != nil {
-			return out, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
 		}
 		counts.total++
 		actual, _ := row["actual_verdict"].(string)
@@ -601,14 +654,67 @@ func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 			// Counting an unrecognized verdict as applicable would let a row
 			// reading "banana" inflate the denominator of every rate while the
 			// arithmetic still reconciled.
-			return out, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		score, scoreOK := row["score"].(string)
+		if scoreOK && score != "pass" && score != "fail" && score != "error" && score != "not_applicable" {
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		if scoreOK {
+			counts.scored++
+		}
+		caseID, caseIDOK := row["case_id"].(string)
+		if !caseIDOK || strings.TrimSpace(caseID) == "" || seenCaseIDs[caseID] {
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		seenCaseIDs[caseID] = true
+		expected, expectedOK := row["expected_verdict"].(string)
+		if scoreOK {
+			if !expectedOK || (expected != "allow" && expected != "block") {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+			switch score {
+			case "pass":
+				if actual != expected {
+					return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+				}
+			case "fail":
+				// Some scoring rules use evidence beyond the verdict. A budget
+				// block at the wrong call is a legitimate fail even though both
+				// expected and observed verdicts are "block".
+				if actual != "allow" && actual != "block" {
+					return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+				}
+			case "error":
+				if actual != "error" && actual != "unreachable" {
+					return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+				}
+			case "not_applicable":
+				if actual != "not_applicable" {
+					return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+				}
+			}
+		}
+		if scoreOK && score != "error" {
+			if expected == "block" {
+				counts.maliciousTotal++
+				if score == "pass" {
+					counts.maliciousPasses++
+				}
+			} else {
+				counts.benignTotal++
+				if score == "fail" {
+					counts.benignFalsePositives++
+				}
+			}
+		}
+		if scoreOK && score == "fail" {
+			failures = append(failures, reportFailure{
+				caseID: safeReportText(caseID), expected: expected, actual: actual,
+			})
 		}
 		if actual != "not_applicable" {
 			continue
-		}
-		caseID, ok := row["case_id"].(string)
-		if !ok || strings.TrimSpace(caseID) == "" {
-			caseID = "Invalid in run artifacts"
 		}
 		reason := absentFact
 		if notes, ok := row["notes"].(string); ok {
@@ -617,13 +723,40 @@ func loadNotApplicable(path string) ([]reportNA, reportRowCounts, string) {
 				reason = strings.TrimSpace(strings.TrimPrefix(notes, prefix))
 			}
 		}
-		out = append(out, reportNA{safeReportText(caseID), safeReportText(reason)})
+		notApplicable = append(notApplicable, reportNA{safeReportText(caseID), safeReportText(reason)})
 	}
 	if err := scanner.Err(); err != nil {
-		return out, counts, "Unreadable run artifact"
+		return notApplicable, failures, counts, "Unreadable run artifact"
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].caseID < out[j].caseID })
-	return out, counts, "Readable"
+	sort.Slice(notApplicable, func(i, j int) bool { return notApplicable[i].caseID < notApplicable[j].caseID })
+	sort.Slice(failures, func(i, j int) bool { return failures[i].caseID < failures[j].caseID })
+	return notApplicable, failures, counts, "Readable"
+}
+
+func (r *buyerReport) publicationScoreFailures() []string {
+	checks := []struct {
+		label                  string
+		path                   []string
+		numerator, denominator int
+	}{
+		{"full containment", []string{"scores", "full", "containment"}, r.rowCounts.maliciousPasses, r.rowCounts.maliciousTotal},
+		{"full false-positive rate", []string{"scores", "full", "false_positive_rate"}, r.rowCounts.benignFalsePositives, r.rowCounts.benignTotal},
+	}
+	var failures []string
+	for _, check := range checks {
+		value, ok := nestedValue(r.summary.data, check.path...)
+		number, numberOK := value.(json.Number)
+		if !ok || !numberOK || check.denominator == 0 {
+			failures = append(failures, check.label+" cannot be derived from result rows")
+			continue
+		}
+		observed, err := number.Float64()
+		expected := float64(check.numerator) / float64(check.denominator)
+		if err != nil || math.IsNaN(observed) || math.IsInf(observed, 0) || math.Abs(observed-expected) > 1e-12 {
+			failures = append(failures, fmt.Sprintf("%s disagrees with result rows", check.label))
+		}
+	}
+	return failures
 }
 
 func safeReportText(value string) string {

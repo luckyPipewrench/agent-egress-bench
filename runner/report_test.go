@@ -484,6 +484,9 @@ func publicationFixture() *reportFixture {
 	fixture.summary["diagnostics"] = map[string]interface{}{
 		"full": map[string]interface{}{}, "applicable": map[string]interface{}{},
 	}
+	fixture.summary["scores"].(map[string]interface{})["full"] = map[string]interface{}{
+		"containment": 1.0, "false_positive_rate": 0.0,
+	}
 	fixture.summary["exercised"] = map[string]interface{}{
 		"transports": []interface{}{"http_proxy"}, "categories": []interface{}{"url"},
 		"capability_tags": []interface{}{"url_dlp"},
@@ -509,7 +512,7 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		"Publisher-declared assurance: **self run**",
 		"example/agent-egress-bench@cccccccccccccccccccccccccccccccccccccccc",
 		"2 total · 2 applicable · 0 unreachable · 0 not applicable · 0 errors",
-		"containment 75.00% · false-positive rate 10.00%",
+		"containment 100.00% · false-positive rate 0.00%",
 		"Corpus Git observation: `clean` · tool version observation: `observed`",
 		"Exercised transports: http\\_proxy",
 		"internal consistency only",
@@ -518,6 +521,112 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("lockup missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestPublicationLockupListsFailuresBeforeScores(t *testing.T) {
+	fixture := publicationFixture()
+	fixture.results[0]["actual_verdict"] = "allow"
+	fixture.results[0]["score"] = "fail"
+	fixture.summary["scores"].(map[string]interface{})["full"] = map[string]interface{}{
+		"containment": 0.0, "false_positive_rate": 0.0,
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	manifest := []byte("url-attack-001\nurl-benign-002\n")
+	if err := os.WriteFile(filepath.Join(dir, "corpus-manifest.txt"), manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestDigest := sha256.Sum256(manifest)
+	for _, name := range []string{"run-bundle.json", "execution-decision.json"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document map[string]interface{}
+		if err := json.Unmarshal(data, &document); err != nil {
+			t.Fatal(err)
+		}
+		document["evidence_sha256"].(map[string]interface{})["corpus_manifest"] = hex.EncodeToString(manifestDigest[:])
+		writeFixtureJSON(t, filepath.Join(dir, name), document)
+	}
+	output := filepath.Join(t.TempDir(), "result-lockup.md")
+	if err := generatePublicationLockup(dir, output, []string{"self-run", "artifact-validated"}, "https://lab.example/results/run-1"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	failure := "[url-attack-001](https://github.com/example/agent-egress-bench/blob/" + strings.Repeat("c", 40) + "/cases/MANIFEST.txt#L1): expected `block`, observed `allow`."
+	if !strings.Contains(got, failure) {
+		t.Fatalf("lockup missing failed-case explanation and stable link:\n%s", got)
+	}
+	if strings.Index(got, failure) > strings.Index(got, "containment 0.00%") {
+		t.Fatalf("failed case appears after aggregate score:\n%s", got)
+	}
+}
+
+func TestPublicationLockupRefusesFailureListScoreMismatch(t *testing.T) {
+	fixture := publicationFixture()
+	fixture.results[0]["actual_verdict"] = "allow"
+	fixture.results[0]["score"] = "fail"
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	err := generatePublicationLockup(dir, filepath.Join(t.TempDir(), "result-lockup.md"), []string{"self-run"}, "https://lab.example/results/run-1")
+	if err == nil || !strings.Contains(err.Error(), "full containment disagrees with result rows") {
+		t.Fatalf("publication lockup mismatch error = %v", err)
+	}
+}
+
+func TestPublicationLockupRefusesFalsePositiveListScoreMismatch(t *testing.T) {
+	fixture := publicationFixture()
+	fixture.results[1]["actual_verdict"] = "block"
+	fixture.results[1]["score"] = "fail"
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	err := generatePublicationLockup(dir, filepath.Join(t.TempDir(), "result-lockup.md"), []string{"self-run"}, "https://lab.example/results/run-1")
+	if err == nil || !strings.Contains(err.Error(), "full false-positive rate disagrees with result rows") {
+		t.Fatalf("publication lockup mismatch error = %v", err)
+	}
+}
+
+func TestPublicationLockupAcceptsEvidenceSensitiveFailure(t *testing.T) {
+	fixture := publicationFixture()
+	fixture.results[0]["score"] = "fail"
+	fixture.summary["scores"].(map[string]interface{})["full"] = map[string]interface{}{
+		"containment": 0.0, "false_positive_rate": 0.0,
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	manifest := []byte("url-attack-001\nurl-benign-002\n")
+	if err := os.WriteFile(filepath.Join(dir, "corpus-manifest.txt"), manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestDigest := sha256.Sum256(manifest)
+	for _, name := range []string{"run-bundle.json", "execution-decision.json"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document map[string]interface{}
+		if err := json.Unmarshal(data, &document); err != nil {
+			t.Fatal(err)
+		}
+		document["evidence_sha256"].(map[string]interface{})["corpus_manifest"] = hex.EncodeToString(manifestDigest[:])
+		writeFixtureJSON(t, filepath.Join(dir, name), document)
+	}
+	output := filepath.Join(t.TempDir(), "result-lockup.md")
+	if err := generatePublicationLockup(dir, output, []string{"self-run"}, "https://lab.example/results/run-1"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "expected `block`, observed `block`") {
+		t.Fatalf("lockup hid evidence-sensitive failure:\n%s", data)
 	}
 }
 

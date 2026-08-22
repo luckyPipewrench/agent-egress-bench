@@ -1,5 +1,9 @@
 {
   "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:32536980640:1",
+  "assurances": [
+    "self-run",
+    "artifact-validated"
+  ],
   "candidate_sha256": "20986e290cf373309167f671c7da162c9ea38ab67fdc17df8b1c05e4cffc9abf",
   "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/32536980640",
   "generated_at": "2026-08-21T23:28:37Z",
