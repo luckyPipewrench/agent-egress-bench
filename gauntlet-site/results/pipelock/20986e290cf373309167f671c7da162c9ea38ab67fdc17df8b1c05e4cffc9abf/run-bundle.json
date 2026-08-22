@@ -1,0 +1,231 @@
+{
+  "bundle_status": "complete",
+  "candidate_scope": {
+    "adapter_id": "proxy",
+    "adapter_owner": "agent-egress-bench maintainers",
+    "benchmark_manifest_sha256": "83106091b8f17457fb2866484d23b136520e6fa1d3b9894dc4a0b9f5efbd25bf",
+    "capability_registry": {
+      "format": 1,
+      "id": "aeb.core-capabilities",
+      "revision": 2,
+      "sha256": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c"
+    },
+    "case_count": {
+      "applicable": 242,
+      "errors": 0,
+      "not_applicable": 0,
+      "not_applicable_reasons": {},
+      "total": 242,
+      "unreachable": 0
+    },
+    "case_index_sha256": "d164d5b5cf8aac0151e476be04250972c84e931489958b0dc8dfbb71583757cf",
+    "command": "timeout --signal=TERM --kill-after=30s 1440s /tmp/aeb-pipelock-gauntlet.vsBuo0/aeb-gauntlet --adapter proxy --scan-token bench-test-token --mcp-cmd \\\"/tmp/aeb-pipelock-gauntlet.vsBuo0/pipelock-sandboxed\\\"\\ mcp\\ proxy\\ --config\\ \\\"/home/runner/work/agent-egress-bench/agent-egress-bench/examples/pipelock/pipelock-benchmark.yaml\\\"\\ --env\\ AEB_MCP_STDIO_UPSTREAM_ADDR\\ --\\ sh\\ ./examples/pipelock/mcp-stdio-upstream-bridge.sh --managed-proxy-cmd ./examples/pipelock/start-proxy-for-benchmark.sh\\ \\\"\\$PIPELOCK_BIN\\\" --managed-mcp-http-cmd ./examples/pipelock/start-mcp-http-for-benchmark.sh\\ \\\"\\$PIPELOCK_BIN\\\" --cases /home/runner/work/agent-egress-bench/agent-egress-bench/cases --profile /home/runner/work/agent-egress-bench/agent-egress-bench/continuous-gauntlet-artifacts/tool-profile.json --method-repository luckyPipewrench/agent-egress-bench --method-commit 3e99a29434d0f23825a131efc8f0f0d9caa8d765 --adapter-owner agent-egress-bench\\ maintainers --target-config examples/pipelock/pipelock-benchmark.yaml --mcp-http-session-header Pipelock-Session-Token --mcp-http-session-format base64url_256 --mcp-http-session-refusal-header X-Pipelock-Block-Reason-Layer --mcp-http-session-refusal-value mcp_listener_session --fixtures --seeded-blocklist-domain exfil-collector.example.net --output /home/runner/work/agent-egress-bench/agent-egress-bench/continuous-gauntlet-artifacts/raw-summary.json --emit-receipt-profile /home/runner/work/agent-egress-bench/agent-egress-bench/continuous-gauntlet-artifacts/receipt-profile.json --tool-version-command \\[\\\"/tmp/aeb-pipelock-gauntlet.vsBuo0/pipelock-sandboxed\\\"\\,\\\"--version\\\"\\]",
+    "corpus_commit_url": "https://github.com/luckyPipewrench/agent-egress-bench/commit/3e99a29434d0f23825a131efc8f0f0d9caa8d765",
+    "corpus_git_sha": "3e99a29434d0f23825a131efc8f0f0d9caa8d765",
+    "corpus_manifest_sha256": "4e30d47ef9c92abe66cc80caf79f180b92f5d47bba25a76d89913617bde1bfe9",
+    "corpus_ref_kind": "origin/main",
+    "corpus_sha256": "bc355228584ff02541eef41ba1b1e1da6cce148749f1fe3b0e59de01362a9de9",
+    "corpus_version": "v2.4.0",
+    "diagnostic_counts": {
+      "applicable": {
+        "classification_present_rate": {
+          "denominator": 174,
+          "numerator": 174
+        },
+        "structured_evidence_present_rate": {
+          "denominator": 174,
+          "numerator": 174
+        }
+      },
+      "full": {
+        "classification_present_rate": {
+          "denominator": 174,
+          "numerator": 174
+        },
+        "structured_evidence_present_rate": {
+          "denominator": 174,
+          "numerator": 174
+        }
+      }
+    },
+    "diagnostics": {
+      "applicable": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      },
+      "full": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "dirty": false,
+    "evidence_sha256": {
+      "capability_registry": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c",
+      "case_index": "d164d5b5cf8aac0151e476be04250972c84e931489958b0dc8dfbb71583757cf",
+      "command": "ad68ccda4571241a98611e81ef294e28046896bac8cb3a8eb2014f421f033490",
+      "corpus_manifest": "4e30d47ef9c92abe66cc80caf79f180b92f5d47bba25a76d89913617bde1bfe9",
+      "entrypoint_command": "d2641583802d3b975a0316fe4a3783169d88de55e809ac6e710b72ebb88e607a",
+      "pipelock_release": "7181b77fb77fd400c1a359bf018834ecb905962f8e82a8d63a6fc77669cb4a0a",
+      "pipelock_version_output": "fefbb56abb62e622fdf9667475411ac0ec3b5f04b0a0375f3e981d8efd898960",
+      "raw_summary": "ef96dcb08d691680835b238fcf6e4b1c7d8b59ad40648a159d1b77ccad5b9544",
+      "receipt_profile": "3907c5a79122deb8a3a5e645b300e06b11cd89fcb080709add8e9086db5b7530",
+      "release_checksums": "aa1635913219f267985b7ff12980afae863ef51f0030ebffe5715c6bc4915178",
+      "results": "125b4071372b1f1e07bbce349c2099de5d8eed259259151647d93e630f715f4e",
+      "run_metadata": "cda651308d62870cf30a4b020587e9c0bdd100b66723565b71a0e9cf70fe6d1c",
+      "runner_stderr": "8b64f0da654d08e6b9fd8ed8fcdc7cae1c53de4f3f7afaf5e019d6d2f01a5b29",
+      "stats": "b163435253c3147b30ac6fd89effdf8355b13d78c0ab2dc854cdf141364072de",
+      "tool_profile": "a559fd894aac6bbd086e4f353b78ce64c9910355e3058e3cc77a3352ee51794a"
+    },
+    "exercised": {
+      "capability_tags": [
+        "a2a_card_poison",
+        "a2a_scan",
+        "benign",
+        "crypto_dlp",
+        "denial_of_wallet",
+        "domain_blocklist",
+        "encoding_evasion",
+        "entropy",
+        "header_dlp",
+        "hostname_exfil",
+        "mcp_chain",
+        "mcp_input_scan",
+        "mcp_tool_poison",
+        "mcp_tool_result_dlp_scanning",
+        "request_body_dlp",
+        "response_injection",
+        "shell_obfuscation",
+        "ssrf",
+        "ssrf_bypass",
+        "url_dlp",
+        "websocket_dlp"
+      ],
+      "categories": [
+        "a2a_agent_card",
+        "a2a_message",
+        "crypto_financial",
+        "encoding_evasion",
+        "false_positive",
+        "headers",
+        "hostname_exfiltration",
+        "mcp_chain",
+        "mcp_drift",
+        "mcp_input",
+        "mcp_tool",
+        "request_body",
+        "response_fetch",
+        "response_mitm",
+        "shell_obfuscation",
+        "ssrf_bypass",
+        "url",
+        "websocket_dlp"
+      ],
+      "transports": [
+        "a2a",
+        "fetch_proxy",
+        "http_proxy",
+        "mcp_http",
+        "mcp_stdio",
+        "websocket"
+      ]
+    },
+    "fixtures": true,
+    "gauntlet_version": "1.0",
+    "generated_at": "2026-08-21T23:28:37Z",
+    "local_run_id": "local:20260821T232837Z:2357",
+    "logical_case_count": 242,
+    "make_stats": "# agent-egress-bench stats\ncases_total: 242\ncategories: 18\nblock: 176\nallow: 65\nwarn: 1\nby_category:\n  a2a_agent_card: 8\n  a2a_message: 14\n  crypto_financial: 11\n  encoding_evasion: 9\n  false_positive: 21\n  headers: 14\n  hostname_exfiltration: 10\n  mcp_chain: 17\n  mcp_drift: 6\n  mcp_input: 15\n  mcp_tool: 23\n  request_body: 24\n  response_fetch: 9\n  response_mitm: 9\n  shell_obfuscation: 10\n  ssrf_bypass: 11\n  url: 20\n  websocket_dlp: 11\n",
+    "measurement_status": "measured",
+    "method_commit": "3e99a29434d0f23825a131efc8f0f0d9caa8d765",
+    "method_repository": "luckyPipewrench/agent-egress-bench",
+    "metric_counts": {
+      "applicable": {
+        "containment": {
+          "denominator": 176,
+          "numerator": 174
+        },
+        "false_positive_rate": {
+          "denominator": 66,
+          "numerator": 0
+        }
+      },
+      "full": {
+        "containment": {
+          "denominator": 176,
+          "numerator": 174
+        },
+        "false_positive_rate": {
+          "denominator": 66,
+          "numerator": 0
+        }
+      }
+    },
+    "multifile_cases": true,
+    "pipelock_asset": "pipelock_3.4.0_linux_amd64.tar.gz",
+    "pipelock_asset_sha256": "37c267a9c7a5472324e3bb07def179e810a5ae7c8e761537ad1e9b2e32e9abac",
+    "pipelock_binary_sha256": "c16926040868f20c378840459b8d14c5ffc12f83b7f3214a29daf4480ff18d8f",
+    "pipelock_release_url": "https://github.com/luckyPipewrench/pipelock/releases/tag/v3.4.0",
+    "pipelock_tag": "v3.4.0",
+    "pipelock_version": "3.4.0",
+    "reported_claims": [
+      "url_dlp",
+      "request_body_dlp",
+      "header_dlp",
+      "response_injection",
+      "mcp_input_scan",
+      "mcp_tool_poison",
+      "mcp_chain",
+      "ssrf",
+      "ssrf_bypass",
+      "domain_blocklist",
+      "entropy",
+      "encoding_evasion",
+      "websocket_dlp",
+      "shell_obfuscation",
+      "crypto_dlp",
+      "hostname_exfil",
+      "a2a_card_poison",
+      "a2a_scan",
+      "benign"
+    ],
+    "runner_version": "0.4.3",
+    "schema_version": 6,
+    "scores": {
+      "applicable": {
+        "containment": 0.9886363636363636,
+        "false_positive_rate": 0
+      },
+      "full": {
+        "containment": 0.9886363636363636,
+        "false_positive_rate": 0
+      }
+    },
+    "scoring_version": "2.8",
+    "target_config_ref": "examples/pipelock/pipelock-benchmark.yaml",
+    "target_config_sha256": "5566e8c01cf08566d63abb08f291ae3839c257ab3d2c90facc1a78b7242f87f6",
+    "tool": "pipelock",
+    "tool_profile_sha256": "a559fd894aac6bbd086e4f353b78ce64c9910355e3058e3cc77a3352ee51794a",
+    "tool_version": "3.4.0"
+  },
+  "evidence_sha256": {
+    "capability_registry": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c",
+    "case_index": "d164d5b5cf8aac0151e476be04250972c84e931489958b0dc8dfbb71583757cf",
+    "command": "ad68ccda4571241a98611e81ef294e28046896bac8cb3a8eb2014f421f033490",
+    "corpus_manifest": "4e30d47ef9c92abe66cc80caf79f180b92f5d47bba25a76d89913617bde1bfe9",
+    "entrypoint_command": "d2641583802d3b975a0316fe4a3783169d88de55e809ac6e710b72ebb88e607a",
+    "pipelock_release": "7181b77fb77fd400c1a359bf018834ecb905962f8e82a8d63a6fc77669cb4a0a",
+    "pipelock_version_output": "fefbb56abb62e622fdf9667475411ac0ec3b5f04b0a0375f3e981d8efd898960",
+    "raw_summary": "ef96dcb08d691680835b238fcf6e4b1c7d8b59ad40648a159d1b77ccad5b9544",
+    "receipt_profile": "3907c5a79122deb8a3a5e645b300e06b11cd89fcb080709add8e9086db5b7530",
+    "release_checksums": "aa1635913219f267985b7ff12980afae863ef51f0030ebffe5715c6bc4915178",
+    "results": "125b4071372b1f1e07bbce349c2099de5d8eed259259151647d93e630f715f4e",
+    "run_metadata": "cda651308d62870cf30a4b020587e9c0bdd100b66723565b71a0e9cf70fe6d1c",
+    "runner_stderr": "8b64f0da654d08e6b9fd8ed8fcdc7cae1c53de4f3f7afaf5e019d6d2f01a5b29",
+    "stats": "b163435253c3147b30ac6fd89effdf8355b13d78c0ab2dc854cdf141364072de",
+    "tool_profile": "a559fd894aac6bbd086e4f353b78ce64c9910355e3058e3cc77a3352ee51794a"
+  },
+  "local_run_id": "local:20260821T232837Z:2357",
+  "noncanonical_reasons": [],
+  "publication_eligible": true,
+  "schema_version": 1
+}

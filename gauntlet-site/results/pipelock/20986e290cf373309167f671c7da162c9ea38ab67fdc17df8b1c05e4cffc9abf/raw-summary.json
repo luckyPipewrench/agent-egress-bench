@@ -1,0 +1,292 @@
+{
+  "schema_version": 5,
+  "gauntlet_version": "1.0",
+  "scoring_version": "2.8",
+  "runner_version": "0.4.3",
+  "tool": "pipelock",
+  "tool_version": "3.4.0",
+  "corpus_version": "v2.4.0",
+  "corpus_sha256": "bc355228584ff02541eef41ba1b1e1da6cce148749f1fe3b0e59de01362a9de9",
+  "benchmark_manifest_sha256": "83106091b8f17457fb2866484d23b136520e6fa1d3b9894dc4a0b9f5efbd25bf",
+  "tool_profile_sha256": "a559fd894aac6bbd086e4f353b78ce64c9910355e3058e3cc77a3352ee51794a",
+  "capability_registry": {
+    "id": "aeb.core-capabilities",
+    "format": 1,
+    "revision": 2,
+    "sha256": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c"
+  },
+  "reported_claims": [
+    "url_dlp",
+    "request_body_dlp",
+    "header_dlp",
+    "response_injection",
+    "mcp_input_scan",
+    "mcp_tool_poison",
+    "mcp_chain",
+    "ssrf",
+    "ssrf_bypass",
+    "domain_blocklist",
+    "entropy",
+    "encoding_evasion",
+    "websocket_dlp",
+    "shell_obfuscation",
+    "crypto_dlp",
+    "hostname_exfil",
+    "a2a_card_poison",
+    "a2a_scan",
+    "benign"
+  ],
+  "date": "2026-08-21T23:38:42Z",
+  "case_count": {
+    "total": 242,
+    "applicable": 242,
+    "unreachable": 0,
+    "not_applicable": 0,
+    "not_applicable_reasons": {},
+    "errors": 0
+  },
+  "exercised": {
+    "transports": [
+      "a2a",
+      "fetch_proxy",
+      "http_proxy",
+      "mcp_http",
+      "mcp_stdio",
+      "websocket"
+    ],
+    "categories": [
+      "a2a_agent_card",
+      "a2a_message",
+      "crypto_financial",
+      "encoding_evasion",
+      "false_positive",
+      "headers",
+      "hostname_exfiltration",
+      "mcp_chain",
+      "mcp_drift",
+      "mcp_input",
+      "mcp_tool",
+      "request_body",
+      "response_fetch",
+      "response_mitm",
+      "shell_obfuscation",
+      "ssrf_bypass",
+      "url",
+      "websocket_dlp"
+    ],
+    "capability_tags": [
+      "a2a_card_poison",
+      "a2a_scan",
+      "benign",
+      "crypto_dlp",
+      "denial_of_wallet",
+      "domain_blocklist",
+      "encoding_evasion",
+      "entropy",
+      "header_dlp",
+      "hostname_exfil",
+      "mcp_chain",
+      "mcp_input_scan",
+      "mcp_tool_poison",
+      "mcp_tool_result_dlp_scanning",
+      "request_body_dlp",
+      "response_injection",
+      "shell_obfuscation",
+      "ssrf",
+      "ssrf_bypass",
+      "url_dlp",
+      "websocket_dlp"
+    ]
+  },
+  "scores": {
+    "full": {
+      "containment": 0.9886363636363636,
+      "false_positive_rate": 0
+    },
+    "applicable": {
+      "containment": 0.9886363636363636,
+      "false_positive_rate": 0
+    }
+  },
+  "diagnostics": {
+    "full": {
+      "classification_present_rate": 1,
+      "structured_evidence_present_rate": 1
+    },
+    "applicable": {
+      "classification_present_rate": 1,
+      "structured_evidence_present_rate": 1
+    }
+  },
+  "measurement_status": "measured",
+  "per_category": {
+    "a2a_agent_card": {
+      "applicable": 8,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "a2a_message": {
+      "applicable": 14,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "crypto_financial": {
+      "applicable": 11,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "encoding_evasion": {
+      "applicable": 9,
+      "containment": 1,
+      "false_positive_rate": null,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "false_positive": {
+      "applicable": 21,
+      "containment": null,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": null,
+        "structured_evidence_present_rate": null
+      }
+    },
+    "headers": {
+      "applicable": 14,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "hostname_exfiltration": {
+      "applicable": 10,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "mcp_chain": {
+      "applicable": 17,
+      "containment": 0.8461538461538461,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "mcp_drift": {
+      "applicable": 6,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "mcp_input": {
+      "applicable": 15,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "mcp_tool": {
+      "applicable": 23,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "request_body": {
+      "applicable": 24,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "response_fetch": {
+      "applicable": 9,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "response_mitm": {
+      "applicable": 9,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "shell_obfuscation": {
+      "applicable": 10,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "ssrf_bypass": {
+      "applicable": 11,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "url": {
+      "applicable": 20,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    },
+    "websocket_dlp": {
+      "applicable": 11,
+      "containment": 1,
+      "false_positive_rate": 0,
+      "diagnostics": {
+        "classification_present_rate": 1,
+        "structured_evidence_present_rate": 1
+      }
+    }
+  },
+  "method_repository": "luckyPipewrench/agent-egress-bench",
+  "method_commit": "3e99a29434d0f23825a131efc8f0f0d9caa8d765",
+  "adapter_id": "proxy",
+  "adapter_owner": "agent-egress-bench maintainers",
+  "target_config_ref": "examples/pipelock/pipelock-benchmark.yaml",
+  "target_config_sha256": "5566e8c01cf08566d63abb08f291ae3839c257ab3d2c90facc1a78b7242f87f6"
+}

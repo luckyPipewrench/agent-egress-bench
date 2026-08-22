@@ -1,0 +1,37 @@
+Fixtures: HTTP=127.0.0.1:40069 TLS=127.0.0.1:46575 WS=127.0.0.1:45667 DNS=127.0.0.1:52516 MCP_HTTP=127.0.0.1:34313
+2026/08/21 23:30:49 http: TLS handshake error from 127.0.0.1:40756: EOF
+2026/08/21 23:30:49 http: TLS handshake error from 127.0.0.1:40770: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56792: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56822: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56844: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56856: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56870: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56882: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56892: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56900: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:56908: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42380: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42388: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42392: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42400: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42414: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42420: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42424: EOF
+2026/08/21 23:36:20 http: TLS handshake error from 127.0.0.1:42434: EOF
+2026/08/21 23:36:21 http: TLS handshake error from 127.0.0.1:42450: EOF
+
+--- Gauntlet Summary ---
+Tool:       pipelock 3.4.0
+Adapter:    proxy
+Cases:      242 total, 242 routed, 0 unreachable, 0 N/A, 0 errors
+
+  Full Corpus Scores (primary):
+    Containment:      98.9%
+    False Positive:   0.0%
+
+  Applicable Scores (diagnostic):
+    Containment:      98.9%
+    False Positive:   0.0%
+Measurement:      measured
+Summary written:  /home/runner/work/agent-egress-bench/agent-egress-bench/continuous-gauntlet-artifacts/raw-summary.json
+Receipt profile:  /home/runner/work/agent-egress-bench/agent-egress-bench/continuous-gauntlet-artifacts/receipt-profile.json
