@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -894,7 +895,7 @@ func TestMCPGatewayAdapterSkipsMalformedToolsListInventory(t *testing.T) {
 	}
 }
 
-func TestMCPGatewayAdapterAllowsSSEToolsListResponse(t *testing.T) {
+func TestMCPGatewayAdapterAllowsSSEProgressAndUnrelatedEvents(t *testing.T) {
 	fm, err := fixture.StartAll()
 	if err != nil {
 		t.Fatal(err)
@@ -912,7 +913,67 @@ func TestMCPGatewayAdapterAllowsSSEToolsListResponse(t *testing.T) {
 
 	result := a.Run(gatewayToolDefinitionCase("gateway-sse-tools-list", "poisoned_tool"), time.Second)
 	if result.Err != nil || result.Verdict != "allow" {
-		t.Fatalf("result = %+v, want SSE tools/list allow", result)
+		t.Fatalf("result = %+v, want SSE tools/list allow after progress and unrelated events", result)
+	}
+}
+
+func TestJSONRPCMessageFromSSERejectsDuplicateResponseForRequest(t *testing.T) {
+	body := []byte("data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":\"CLEAN\"}}\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":\"POISONED\"}}\n\n")
+	_, err := jsonRPCMessageFromSSE(body, []byte("1"))
+	var duplicate *duplicateSSEJSONRPCResponseError
+	if !errors.As(err, &duplicate) {
+		t.Fatalf("error = %v, want duplicate SSE response error", err)
+	}
+}
+
+func TestMCPGatewayAdapterSkipsDuplicateSSEResponseForRequest(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// t.Fatal exits only the goroutine that calls it, so a handler-side
+		// failure here would leave the test goroutine running and surface later
+		// as a confusing decode or timeout error instead of as its own cause.
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode gateway request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if request.Method != "tools/call" {
+			writeJSONRPC(t, w, request.ID, nil)
+			return
+		}
+		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
+			t.Errorf("forward MCP gateway request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		id := request.ID
+		_, _ = fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"content\":\"first\"}}\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"content\":\"second\"}}\n\n", id, id)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "duplicate SSE gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-duplicate-sse-response"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "duplicate_sse_response" || result.Evidence["upstream_reached"] != true {
+		t.Fatalf("result = %+v, want delivered duplicate SSE response skip", result)
+	}
+	if result.Evidence["duplicate_response_id"] == nil {
+		t.Fatalf("evidence = %+v, want the duplicated request id recorded for triage", result.Evidence)
 	}
 }
 
@@ -2521,7 +2582,7 @@ func sseToolsListGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		}
 		if request.Method == "tools/list" {
 			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"other-request\",\"result\":{\"tools\":[]}}\n\nevent: message\ndata: %s\n\n", responseBody)
+			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{}}\n\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"other-request\",\"result\":{\"tools\":[]}}\n\nevent: message\ndata: %s\n\n", responseBody)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -2710,5 +2771,125 @@ func TestMCPGatewayAdapterRejectsMultiCallLabeledAsSingleToolCall(t *testing.T) 
 	}
 	if result.DeliveryProven || result.VerdictObserved {
 		t.Fatalf("a refused case must prove neither delivery nor observation: %+v", result)
+	}
+}
+
+func TestJSONRPCMessageForRequestRejectsDuplicateResultMember(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":"clean"},"result":{"content":"poisoned"}}`)
+	if _, err := jsonRPCMessageForRequest(body, []byte("1")); err == nil {
+		t.Fatal("error = nil, want rejection of a response carrying two results for one request")
+	}
+}
+
+func TestJSONRPCMessageForRequestRejectsNestedDuplicateMember(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":"clean","content":"poisoned"}}`)
+	if _, err := jsonRPCMessageForRequest(body, []byte("1")); err == nil {
+		t.Fatal("error = nil, want rejection of a duplicate member nested inside the result")
+	}
+}
+
+func TestJSONRPCMessageForRequestAcceptsRepeatedNamesInSiblingObjects(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"a","description":"x"},{"name":"b","description":"y"}]}}`)
+	if _, err := jsonRPCMessageForRequest(body, []byte("1")); err != nil {
+		t.Fatalf("error = %v, want an ordinary inventory response to remain scoreable", err)
+	}
+}
+
+func TestMCPStdioDuplicateIgnoresMalformedMatchingLines(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, lines := range map[string][]string{
+		"null error object": {
+			`{"jsonrpc":"2.0","id":1,"error":null}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"missing jsonrpc version": {
+			`{"id":1,"result":{"content":"not a JSON-RPC response"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"error object without code or message": {
+			`{"jsonrpc":"2.0","id":1,"error":{"detail":"no code or message"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := mcpStdioDuplicateRequestResponse(lines, requestIDs); got != nil {
+				t.Fatalf("result = %+v, want a malformed line to leave the later genuine response scoreable", got)
+			}
+		})
+	}
+}
+
+func TestMCPStdioDuplicateStillRejectsGenuineDuplicates(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, lines := range map[string][]string{
+		"two results": {
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"clean"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"poisoned"}}`,
+		},
+		"deny then deliver": {
+			`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"delivered anyway"}}`,
+		},
+		// JSON-RPC permits any result value, so a null result is a real answer
+		// rather than an absent member.
+		"null result then a second answer": {
+			`{"jsonrpc":"2.0","id":1,"result":null}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"poisoned"}}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := mcpStdioDuplicateRequestResponse(lines, requestIDs); got == nil {
+				t.Fatal("result = nil, want a genuine duplicate response to stay unscoreable")
+			}
+		})
+	}
+}
+
+func TestMCPStdioRejectsAmbiguousDuplicateMembers(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, line := range map[string]string{
+		"duplicate root member":   `{"jsonrpc":"2.0","id":1,"result":{"content":"clean"},"result":{"content":"poisoned"}}`,
+		"duplicate nested member": `{"jsonrpc":"2.0","id":1,"result":{"content":"clean","content":"poisoned"}}`,
+		// Repeating the id itself makes correlation ambiguous, so a single
+		// decoded value must not decide whether the line is ours.
+		"requested id repeated first":  `{"jsonrpc":"2.0","id":1,"id":99,"result":{"content":"clean"},"result":{"content":"poisoned"}}`,
+		"requested id repeated second": `{"jsonrpc":"2.0","id":99,"id":1,"result":{"content":"clean"},"result":{"content":"poisoned"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := mcpStdioDuplicateRequestResponse([]string{line}, requestIDs)
+			if got == nil {
+				t.Fatal("result = nil, want an ambiguous response to stay unscoreable")
+			}
+			if got.Verdict != "skip" || got.Evidence["reason"] != "mcp_stdio_ambiguous_response" {
+				t.Fatalf("result = %+v, want a skip naming the ambiguous response", got)
+			}
+		})
+	}
+}
+
+func TestMCPStdioKeepsOrdinaryMultiplexedOutputScoreable(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, lines := range map[string][]string{
+		"duplicate member belongs to another request": {
+			`{"jsonrpc":"2.0","id":99,"result":{"content":"a","content":"b"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"non-JSON log line before the response": {
+			`starting server on port 1234`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"repeated names in sibling objects": {
+			`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"a"},{"name":"b"}]}}`,
+		},
+		"ambiguous id where no candidate was requested": {
+			`{"jsonrpc":"2.0","id":98,"id":99,"result":{"content":"a"},"result":{"content":"b"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := mcpStdioDuplicateRequestResponse(lines, requestIDs); got != nil {
+				t.Fatalf("result = %+v, want ordinary stdout to remain scoreable", got)
+			}
+		})
 	}
 }

@@ -2392,6 +2392,20 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		return mcpStdioObservationMissingResult(observer, evidence)
 	}
 
+	// JSON-RPC permits notifications alongside responses, but a request has at
+	// most one response. A second result or error for a request we issued means
+	// the proxy delivered content whose semantics we cannot represent with one
+	// case response. Do not let a first policy error or matching result hide it.
+	if duplicate := mcpStdioDuplicateRequestResponse(lines, expectedResponseIDs); duplicate != nil {
+		for key, value := range observationEvidence {
+			duplicate.Evidence[key] = value
+		}
+		if observer != nil {
+			duplicate.Evidence["upstream_reached"] = upstreamObserved
+		}
+		return *duplicate
+	}
+
 	// Check response lines for policy-block JSON-RPC errors.
 	// Tool-specific policy errors use the JSON-RPC server-error range.
 	// Standard JSON-RPC errors (-32700 to -32600) are protocol issues, not blocks.
@@ -4085,6 +4099,135 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 			"synthesized_response": true,
 		},
 	}
+}
+
+// rootJSONRPCIDCandidateKeys returns a correlation key for every root-level id
+// member in the line. A well-formed response has exactly one. When a line
+// repeats the member, single-value decoding silently picks one of them, so the
+// runner can correlate a response to a request nobody asked about while another
+// parser correlates the same bytes to one we did. Enumerating the candidates is
+// what lets the caller refuse that ambiguity instead of resolving it by luck.
+func rootJSONRPCIDCandidateKeys(line string) []string {
+	decoder := json.NewDecoder(strings.NewReader(line))
+	decoder.UseNumber()
+	token, err := decoder.Token()
+	if err != nil {
+		return nil
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '{' {
+		return nil
+	}
+	var keys []string
+	for decoder.More() {
+		nameToken, err := decoder.Token()
+		if err != nil {
+			return keys
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return keys
+		}
+		var value interface{}
+		if err := decoder.Decode(&value); err != nil {
+			return keys
+		}
+		if name == "id" {
+			keys = append(keys, jsonRPCIDCorrelationKey(value))
+		}
+	}
+	return keys
+}
+
+// mcpStdioDuplicateRequestResponse rejects only duplicate JSON-RPC responses
+// for a request from this run. Notifications, non-JSON log lines, and
+// responses for other request IDs may legitimately share stdout and remain
+// outside the case response contract.
+// isJSONRPCResponseLine reports whether a stdout line is a well-formed JSON-RPC
+// 2.0 response. Only a real response may consume a request's single answer, so
+// anything malformed is ignored here rather than counted. Counting it would let
+// one stray line make the following genuine response look like a duplicate and
+// turn a legitimate server's output unscoreable, which is the same damage as
+// missing the duplicate it was meant to catch.
+func isJSONRPCResponseLine(line string) bool {
+	var response struct {
+		Version string          `json:"jsonrpc"`
+		Result  json.RawMessage `json:"result"`
+		Error   json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(line), &response); err != nil {
+		return false
+	}
+	if response.Version != "2.0" {
+		return false
+	}
+	// Membership, not value. JSON-RPC permits any result value including null,
+	// so treating a null result as an absent member would let a valid response
+	// go uncounted and hide the duplicate that follows it. An error member is
+	// different: the specification requires an Error Object there, so a null or
+	// shapeless error is not a response at all.
+	hasResult := response.Result != nil
+	hasError := response.Error != nil
+	if hasResult == hasError {
+		return false
+	}
+	if hasError {
+		var rpcError struct {
+			Code    *int    `json:"code"`
+			Message *string `json:"message"`
+		}
+		if err := json.Unmarshal(response.Error, &rpcError); err != nil {
+			return false
+		}
+		if rpcError.Code == nil || rpcError.Message == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func mcpStdioDuplicateRequestResponse(lines []string, requestIDs map[string]struct{}) *Result {
+	seen := make(map[string]struct{}, len(requestIDs))
+	for _, line := range lines {
+		// A single line can be ambiguous on its own. Decoding keeps the last of
+		// two members sharing a name, so the runner and the agent's own parser
+		// need not agree on which one is the answer. Check this before the
+		// response-shape test, because that test decodes and would inherit the
+		// same silent choice.
+		if name, duplicate := duplicateJSONMemberName([]byte(line)); duplicate {
+			// Correlate against every candidate id, not the one decoding happened
+			// to keep. A line repeating both a requested and an unrequested id
+			// would otherwise be dismissed as somebody else's traffic.
+			candidates := rootJSONRPCIDCandidateKeys(line)
+			if len(candidates) == 0 {
+				candidates = []string{jsonRPCResponseIDCorrelationKey(line)}
+			}
+			for _, candidate := range candidates {
+				if _, requested := requestIDs[candidate]; requested {
+					return &Result{Verdict: "skip", Evidence: map[string]interface{}{
+						"reason":                "mcp_stdio_ambiguous_response",
+						"duplicate_member":      name,
+						"duplicate_response_id": candidate,
+					}}
+				}
+			}
+			continue
+		}
+		if !isJSONRPCResponseLine(line) {
+			continue
+		}
+		id := jsonRPCResponseIDCorrelationKey(line)
+		if _, requested := requestIDs[id]; !requested {
+			continue
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return &Result{Verdict: "skip", Evidence: map[string]interface{}{
+				"reason":                "mcp_stdio_duplicate_response",
+				"duplicate_response_id": id,
+			}}
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }
 
 func mcpResponseMatches(expected, actual map[string]interface{}) bool {

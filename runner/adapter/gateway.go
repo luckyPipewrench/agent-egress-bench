@@ -1110,12 +1110,25 @@ func (a *MCPGatewayAdapter) gatewayDecodeFailure(err error, request *gatewayRequ
 	reason := "malformed_jsonrpc_response"
 	var mismatch *responseCorrelationError
 	var malformedSSE *malformedSSEResponseError
-	if errors.As(err, &mismatch) {
+	var duplicateSSE *duplicateSSEJSONRPCResponseError
+	if errors.As(err, &duplicateSSE) {
+		reason = "duplicate_sse_response"
+	} else if errors.As(err, &mismatch) {
 		reason = "response_id_mismatch"
 	} else if errors.As(err, &malformedSSE) {
 		reason = "malformed_sse_response"
 	}
-	return a.gatewaySkipWithObservation(reason, request, status, "")
+	result := a.gatewaySkipWithObservation(reason, request, status, "")
+	if duplicateSSE != nil && result != nil {
+		// Name the request that was answered twice, matching what the stdio
+		// path records. Without it a triage reader sees only that some request
+		// was duplicated.
+		if result.Evidence == nil {
+			result.Evidence = map[string]interface{}{}
+		}
+		result.Evidence["duplicate_response_id"] = string(duplicateSSE.wantedID)
+	}
+	return result
 }
 
 func (a *MCPGatewayAdapter) attachObservation(result *Result, request *gatewayRequest) {
@@ -1196,10 +1209,43 @@ func (e *responseCorrelationError) Error() string { return e.err.Error() }
 
 func (e *responseCorrelationError) Unwrap() error { return e.err }
 
+// duplicateSSEJSONRPCResponseError marks a stream that contains more than one
+// JSON-RPC response for a single request. JSON-RPC permits one response per
+// request; accepting one would leave the other unscored.
+type duplicateSSEJSONRPCResponseError struct{ wantedID []byte }
+
+func (e *duplicateSSEJSONRPCResponseError) Error() string {
+	return fmt.Sprintf("SSE response contains multiple JSON-RPC messages for request id %s", e.wantedID)
+}
+
 func jsonRPCMessageFromSSE(body, wantedID []byte) ([]byte, error) {
 	var dataLines [][]byte
 	var mismatch error
-	var malformed error
+	var matched []byte
+	processEvent := func() error {
+		message, matchesRequest, err := matchingSSEJSONRPCMessage(dataLines, wantedID)
+		if matchesRequest {
+			if err != nil {
+				return err
+			}
+			if matched != nil {
+				return &duplicateSSEJSONRPCResponseError{wantedID: wantedID}
+			}
+			matched = message
+			return nil
+		}
+		if err != nil {
+			var correlation *responseCorrelationError
+			if errors.As(err, &correlation) {
+				mismatch = err
+				return nil
+			}
+			// A malformed event without a usable, different request id might be
+			// part of this response, so it is ambiguous evidence and cannot score.
+			return err
+		}
+		return nil
+	}
 	for _, rawLine := range bytes.Split(body, []byte("\n")) {
 		line := bytes.TrimSuffix(rawLine, []byte("\r"))
 		if len(line) != 0 {
@@ -1212,51 +1258,149 @@ func jsonRPCMessageFromSSE(body, wantedID []byte) ([]byte, error) {
 			}
 			continue
 		}
-		if message, err := matchingSSEJSONRPCMessage(dataLines, wantedID); err == nil && message != nil {
-			return message, nil
-		} else if err != nil {
-			var correlation *responseCorrelationError
-			if errors.As(err, &correlation) {
-				mismatch = err
-			} else {
-				malformed = err
-			}
+		if err := processEvent(); err != nil {
+			return nil, err
 		}
 		dataLines = nil
 	}
-	if message, err := matchingSSEJSONRPCMessage(dataLines, wantedID); err == nil && message != nil {
-		return message, nil
-	} else if err != nil {
-		var correlation *responseCorrelationError
-		if errors.As(err, &correlation) {
-			mismatch = err
-		} else {
-			malformed = err
-		}
+	if err := processEvent(); err != nil {
+		return nil, err
+	}
+	if matched != nil {
+		return matched, nil
 	}
 	if mismatch != nil {
 		return nil, mismatch
 	}
-	if malformed != nil {
-		return nil, &malformedSSEResponseError{err: malformed}
-	}
 	return nil, &malformedSSEResponseError{err: fmt.Errorf("SSE response has no JSON-RPC message for request id %s", wantedID)}
 }
 
-func matchingSSEJSONRPCMessage(dataLines [][]byte, wantedID []byte) ([]byte, error) {
+func matchingSSEJSONRPCMessage(dataLines [][]byte, wantedID []byte) ([]byte, bool, error) {
 	if len(dataLines) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	message := bytes.Join(dataLines, []byte("\n"))
-	if _, err := jsonRPCMessageForRequest(message, wantedID); err != nil {
-		return nil, err
+	var response map[string]json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(message), &response); err != nil {
+		return nil, false, fmt.Errorf("invalid JSON-RPC response: %w", err)
 	}
-	return message, nil
+	id, hasID := response["id"]
+	if !hasID || len(id) == 0 {
+		if err := validateSSEJSONRPCNotification(response); err != nil {
+			return nil, false, err
+		}
+		// ID-less JSON-RPC notifications, including progress updates, are not
+		// responses and may share this stream without affecting the verdict.
+		return nil, false, nil
+	}
+	var got, wanted interface{}
+	if err := json.Unmarshal(id, &got); err != nil {
+		return nil, false, fmt.Errorf("decode response id: %w", err)
+	}
+	if err := json.Unmarshal(wantedID, &wanted); err != nil {
+		return nil, false, fmt.Errorf("decode request id: %w", err)
+	}
+	if !jsonRPCIDsEqual(got, wanted) {
+		return nil, false, &responseCorrelationError{err: fmt.Errorf("JSON-RPC response id %s does not match request id %s", id, wantedID)}
+	}
+	if _, err := jsonRPCMessageForRequest(message, wantedID); err != nil {
+		return nil, true, err
+	}
+	return message, true, nil
+}
+
+func validateSSEJSONRPCNotification(message map[string]json.RawMessage) error {
+	version, ok := message["jsonrpc"]
+	if !ok || !bytes.Equal(bytes.TrimSpace(version), []byte(`"2.0"`)) {
+		return errors.New("JSON-RPC notification must contain jsonrpc 2.0")
+	}
+	method, ok := message["method"]
+	if !ok {
+		return errors.New("JSON-RPC notification must contain method")
+	}
+	var methodName string
+	if err := json.Unmarshal(method, &methodName); err != nil || methodName == "" {
+		return errors.New("JSON-RPC notification method must be a non-empty string")
+	}
+	if _, hasResult := message["result"]; hasResult {
+		return errors.New("JSON-RPC notification must not contain result")
+	}
+	if _, hasError := message["error"]; hasError {
+		return errors.New("JSON-RPC notification must not contain error")
+	}
+	return nil
+}
+
+// duplicateJSONMemberName reports the first object member name that appears
+// more than once in the same object, anywhere in the document. Decoding into a
+// map silently keeps one of them, so a target could carry two results for one
+// request and leave the runner reporting a verdict on content that a client
+// parsing the same bytes need not agree with. RFC 8259 says object names SHOULD
+// be unique, so rejecting the ambiguity costs no correct server anything.
+func duplicateJSONMemberName(data []byte) (string, bool) {
+	type frame struct {
+		object    bool
+		expectKey bool
+		names     map[string]struct{}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var stack []*frame
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			// Malformed input is reported by the caller's own decode, which runs
+			// next and produces the precise error.
+			return "", false
+		}
+		if delim, ok := token.(json.Delim); ok {
+			switch delim {
+			case '{':
+				stack = append(stack, &frame{object: true, expectKey: true, names: map[string]struct{}{}})
+				continue
+			case '[':
+				stack = append(stack, &frame{})
+				continue
+			case '}', ']':
+				if len(stack) > 0 {
+					stack = stack[:len(stack)-1]
+				}
+				if len(stack) > 0 && stack[len(stack)-1].object {
+					stack[len(stack)-1].expectKey = true
+				}
+				continue
+			}
+		}
+		if len(stack) == 0 {
+			continue
+		}
+		top := stack[len(stack)-1]
+		if !top.object {
+			continue
+		}
+		if !top.expectKey {
+			top.expectKey = true
+			continue
+		}
+		name, ok := token.(string)
+		if !ok {
+			return "", false
+		}
+		if _, seen := top.names[name]; seen {
+			return name, true
+		}
+		top.names[name] = struct{}{}
+		top.expectKey = false
+	}
 }
 
 func jsonRPCMessageForRequest(message, wantedID []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(message)
+	if name, duplicate := duplicateJSONMemberName(trimmed); duplicate {
+		return nil, fmt.Errorf("JSON-RPC response repeats object member %q, so its content is ambiguous", name)
+	}
 	var response map[string]json.RawMessage
-	if err := json.Unmarshal(bytes.TrimSpace(message), &response); err != nil {
+	if err := json.Unmarshal(trimmed, &response); err != nil {
 		return nil, fmt.Errorf("invalid JSON-RPC response: %w", err)
 	}
 	version, ok := response["jsonrpc"]
