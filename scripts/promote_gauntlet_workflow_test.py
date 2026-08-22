@@ -92,6 +92,8 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         body = self.generate_promotion_body()
         for required in (
             "github-actions:luckyPipewrench/agent-egress-bench:32536980640:1",
+            "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/32536980640",
+            "This promotion adds the immutable evidence record",
             "Candidate SHA-256",
             "Applicable containment",
             "Applicable false-positive rate",
