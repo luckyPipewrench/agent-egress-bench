@@ -140,6 +140,16 @@ class RunnerParityTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "frozen result rows cannot share a file"):
                     runner_parity.load_results(self.results)
 
+    def test_validate_reveal_rejects_mixed_legacy_and_scorer_bound_rows(self):
+        path, _ = self.prepare()
+        reveal = json.loads(path.read_text(encoding="utf-8"))
+        reveal["normalized_results"][0]["scoring_version"] = runner_parity.SCORING_VERSION
+        reveal["commitment"]["results"]["normalized_vector_sha256"] = runner_parity.sha256(
+            reveal["normalized_results"]
+        )
+        with self.assertRaisesRegex(ValueError, "cannot mix frozen and scorer-bound rows"):
+            runner_parity.validate_reveal(reveal)
+
     def test_v5_rows_must_omit_declared_scoring_version(self):
         row = json.loads(self.results.read_text(encoding="utf-8").splitlines()[0])
         for scoring_version in (None, "", "2.8"):

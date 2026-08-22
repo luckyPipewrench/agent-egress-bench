@@ -246,6 +246,8 @@ def validate_reveal(value):
     legacy_keys = {"case_id", "expected_verdict", "actual_verdict", "score", "result_state"}
     scorer_bound_keys = legacy_keys | {"scoring_version"}
     ids = []
+    has_legacy_row = False
+    has_scorer_bound_row = False
     for index, row in enumerate(vector):
         if not isinstance(row, dict) or set(row) not in (legacy_keys, scorer_bound_keys):
             raise ValueError(f"normalized_results[{index}] has unexpected or missing fields")
@@ -256,6 +258,9 @@ def validate_reveal(value):
             raise ValueError(f"normalized_results[{index}] has an invalid score or result_state")
         if "scoring_version" in row:
             require_text(row["scoring_version"], f"normalized_results[{index}].scoring_version")
+            has_scorer_bound_row = True
+        else:
+            has_legacy_row = True
         state, actual, score = row["result_state"], row["actual_verdict"], row["score"]
         if state == "observed" and (actual not in {"block", "allow"} or score != ("pass" if actual == row["expected_verdict"] else "fail")):
             raise ValueError(f"normalized_results[{index}] has inconsistent observed result semantics")
@@ -263,6 +268,8 @@ def validate_reveal(value):
             raise ValueError(f"normalized_results[{index}] has inconsistent unreachable semantics")
         if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
             raise ValueError(f"normalized_results[{index}] has inconsistent failure semantics")
+    if has_legacy_row and has_scorer_bound_row:
+        raise ValueError("normalized_results cannot mix frozen and scorer-bound rows")
     if ids != sorted(ids) or len(ids) != len(set(ids)):
         raise ValueError("normalized_results must be uniquely sorted by case_id")
     results = value["commitment"]["results"]
