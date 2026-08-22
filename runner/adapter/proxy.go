@@ -4151,6 +4151,21 @@ func isJSONRPCResponseLine(line string) bool {
 func mcpStdioDuplicateRequestResponse(lines []string, requestIDs map[string]struct{}) *Result {
 	seen := make(map[string]struct{}, len(requestIDs))
 	for _, line := range lines {
+		// A single line can be ambiguous on its own. Decoding keeps the last of
+		// two members sharing a name, so the runner and the agent's own parser
+		// need not agree on which one is the answer. Check this before the
+		// response-shape test, because that test decodes and would inherit the
+		// same silent choice.
+		if name, duplicate := duplicateJSONMemberName([]byte(line)); duplicate {
+			if _, requested := requestIDs[jsonRPCResponseIDCorrelationKey(line)]; requested {
+				return &Result{Verdict: "skip", Evidence: map[string]interface{}{
+					"reason":                "mcp_stdio_ambiguous_response",
+					"duplicate_member":      name,
+					"duplicate_response_id": jsonRPCResponseIDCorrelationKey(line),
+				}}
+			}
+			continue
+		}
 		if !isJSONRPCResponseLine(line) {
 			continue
 		}

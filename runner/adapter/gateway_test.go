@@ -2844,3 +2844,44 @@ func TestMCPStdioDuplicateStillRejectsGenuineDuplicates(t *testing.T) {
 		})
 	}
 }
+
+func TestMCPStdioRejectsAmbiguousDuplicateMembers(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, line := range map[string]string{
+		"duplicate root member":   `{"jsonrpc":"2.0","id":1,"result":{"content":"clean"},"result":{"content":"poisoned"}}`,
+		"duplicate nested member": `{"jsonrpc":"2.0","id":1,"result":{"content":"clean","content":"poisoned"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := mcpStdioDuplicateRequestResponse([]string{line}, requestIDs)
+			if got == nil {
+				t.Fatal("result = nil, want an ambiguous response to stay unscoreable")
+			}
+			if got.Verdict != "skip" || got.Evidence["reason"] != "mcp_stdio_ambiguous_response" {
+				t.Fatalf("result = %+v, want a skip naming the ambiguous response", got)
+			}
+		})
+	}
+}
+
+func TestMCPStdioKeepsOrdinaryMultiplexedOutputScoreable(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, lines := range map[string][]string{
+		"duplicate member belongs to another request": {
+			`{"jsonrpc":"2.0","id":99,"result":{"content":"a","content":"b"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"non-JSON log line before the response": {
+			`starting server on port 1234`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"repeated names in sibling objects": {
+			`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"a"},{"name":"b"}]}}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := mcpStdioDuplicateRequestResponse(lines, requestIDs); got != nil {
+				t.Fatalf("result = %+v, want ordinary stdout to remain scoreable", got)
+			}
+		})
+	}
+}
