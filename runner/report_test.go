@@ -476,6 +476,7 @@ type reportFixture struct {
 func publicationFixture() *reportFixture {
 	fixture := newReportFixture()
 	fixture.summary["schema_version"] = 5
+	fixture.summary["scoring_version"] = scoringVersion
 	fixture.summary["method_repository"] = "example/agent-egress-bench"
 	fixture.summary["method_commit"] = strings.Repeat("c", 40)
 	fixture.summary["benchmark_manifest_sha256"] = strings.Repeat("f", 64)
@@ -490,6 +491,10 @@ func publicationFixture() *reportFixture {
 	fixture.summary["exercised"] = map[string]interface{}{
 		"transports": []interface{}{"http_proxy"}, "categories": []interface{}{"url"},
 		"capability_tags": []interface{}{"url_dlp"},
+	}
+	for _, row := range fixture.results {
+		row["schema_version"] = activeResultSchemaVersion
+		row["scoring_version"] = scoringVersion
 	}
 	return fixture
 }
@@ -595,6 +600,7 @@ func TestPublicationLockupRefusesFalsePositiveListScoreMismatch(t *testing.T) {
 func TestPublicationLockupFullScoreRetainsNotApplicableRows(t *testing.T) {
 	fixture := publicationFixture()
 	fixture.results = append(fixture.results, map[string]interface{}{
+		"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion,
 		"case_id": "mcp-chain-budget-003", "tool": "example-tool", "tool_version": "1.2.3",
 		"expected_verdict": "block", "actual_verdict": "not_applicable",
 		"score": "not_applicable", "evidence": map[string]interface{}{},
@@ -873,14 +879,14 @@ func TestPublicationLockupUsesTargetNeutralArtifacts(t *testing.T) {
 }
 
 func TestReportRejectsActiveResultWithWrongScoringVersion(t *testing.T) {
-	for _, schemaVersion := range []string{"6", `"6"`} {
+	for _, schemaVersion := range []string{"6", "5", `"6"`} {
 		t.Run(schemaVersion, func(t *testing.T) {
 			row := `{"schema_version":` + schemaVersion + `,"scoring_version":"2.7","case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row+"\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), scoringVersion)
+			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), reportResultsActive, scoringVersion)
 			if status != "Malformed JSONL at line 1" {
 				t.Fatalf("active row with schema_version %s and wrong scoring_version status = %q", schemaVersion, status)
 			}
@@ -896,11 +902,25 @@ func TestReportRejectsNonIntegerSchemaVersionSpellings(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row+"\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), scoringVersion)
+			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), reportResultsActive, scoringVersion)
 			if status != "Malformed JSONL at line 1" {
 				t.Fatalf("non-integer schema_version %s status = %q", schemaVersion, status)
 			}
 		})
+	}
+}
+
+func TestReportRejectsActiveRowsWhenSummaryScorerIsMissing(t *testing.T) {
+	fixture := publicationFixture()
+	delete(fixture.summary, "scoring_version")
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.resultErr != "Malformed JSONL at line 1" {
+		t.Fatalf("active rows without a summary scorer status = %q", report.resultErr)
 	}
 }
 
@@ -1249,14 +1269,14 @@ func TestBuyerReportKeepsPartialRunsReportable(t *testing.T) {
 		}
 	})
 
-	t.Run("one results row is enough", func(t *testing.T) {
+	t.Run("results without a summary are unbound", func(t *testing.T) {
 		dir := t.TempDir()
 		row := `{"case_id":"url-benign-api-call-001","actual_verdict":"allow","notes":""}` + "\n"
 		if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := loadBuyerReport(dir); err != nil {
-			t.Fatalf("loadBuyerReport(one results row) = %v, want it accepted", err)
+		if _, err := loadBuyerReport(dir); err == nil {
+			t.Fatal("loadBuyerReport accepted results without a summary identity")
 		}
 	})
 

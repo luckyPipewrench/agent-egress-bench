@@ -1133,7 +1133,7 @@ func requiresTokenProblem(token string) string {
 // ResultLine represents a single line in a runner results JSONL file.
 type ResultLine struct {
 	SchemaVersion      int                          `json:"schema_version"`
-	ScoringVersion     string                       `json:"scoring_version"`
+	ScoringVersion     string                       `json:"scoring_version,omitempty"`
 	CaseID             string                       `json:"case_id"`
 	Tool               string                       `json:"tool"`
 	ToolVersion        string                       `json:"tool_version"`
@@ -1143,6 +1143,7 @@ type ResultLine struct {
 	Score              string                       `json:"score"`
 	Evidence           map[string]interface{}       `json:"evidence"`
 	Notes              *string                      `json:"notes"`
+	scoringVersionSet  bool
 }
 
 type resultCaseMetadata struct {
@@ -1170,6 +1171,9 @@ func validateResultLineAgainstCase(lineNum int, r ResultLine, caseMetadata *resu
 	}
 	if r.SchemaVersion == activeResultSchemaVersion && strings.TrimSpace(r.ScoringVersion) == "" {
 		addErr("missing scoring_version")
+	}
+	if (r.SchemaVersion == legacyResultSchemaVersionV4 || r.SchemaVersion == legacyResultSchemaVersionV5) && (r.scoringVersionSet || r.ScoringVersion != "") {
+		addErr("scoring_version is not allowed for frozen result schemas")
 	}
 	if r.Tool == "" {
 		addErr("missing tool")
@@ -1419,6 +1423,12 @@ func validateResultsFileWithMetadata(path string, caseMetadata map[string]result
 			allErrors = append(allErrors, fmt.Sprintf("line %d: JSON parse error: %v", lineNum, err))
 			continue
 		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(text), &fields); err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("line %d: JSON parse error: %v", lineNum, err))
+			continue
+		}
+		_, r.scoringVersionSet = fields["scoring_version"]
 
 		var metadata *resultCaseMetadata
 		if caseMetadata != nil {

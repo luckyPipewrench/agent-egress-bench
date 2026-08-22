@@ -5,7 +5,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Artifact input status
 
 - raw-summary.json: Malformed JSON: unexpected EOF
-- results.jsonl: Readable
+- results.jsonl: Unbound result identity at line 1
 - run-metadata.json: Readable
 - run-bundle.json: Readable
 - execution-decision.json: Readable
@@ -53,7 +53,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 - Not-applicable cases: Absent from run artifacts
 - Error cases: Absent from run artifacts
 - Not-applicable case IDs and reasons:
-  - Invalid: the summary does not carry a usable not-applicable count
+  - Unbound result identity at line 1
 
 ## Metric vector
 

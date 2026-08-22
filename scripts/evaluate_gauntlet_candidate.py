@@ -299,7 +299,14 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
     if set(ids) != set(indexed):
         raise ValueError("results case IDs do not match the case index")
     for row in rows:
-        if row.get("schema_version") == 6 and row.get("scoring_version") != scoring_version:
+        schema_version = row.get("schema_version")
+        if isinstance(schema_version, bool) or schema_version not in {5, 6}:
+            raise ValueError(f"result {row['case_id']!r} has an unsupported schema_version")
+        if schema_version == 6 and (
+            not isinstance(row.get("scoring_version"), str)
+            or not row["scoring_version"].strip()
+            or row["scoring_version"] != scoring_version
+        ):
             raise ValueError(
                 f"result {row['case_id']!r} scoring_version does not match the candidate"
             )

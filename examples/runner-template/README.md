@@ -213,7 +213,7 @@ bash run.sh /path/to/your-tool > results.jsonl 2>summary.txt
 jq empty results.jsonl
 
 # Check required fields exist on every line
-jq -e 'has("schema_version") and has("scoring_version") and has("case_id") and has("tool") and has("tool_version") and has("expected_verdict") and has("actual_verdict") and has("score") and has("evidence") and has("notes")' results.jsonl > /dev/null
+jq -s -e 'if all(.[]; has("schema_version") and has("scoring_version") and has("case_id") and has("tool") and has("tool_version") and has("expected_verdict") and has("actual_verdict") and has("score") and has("evidence") and has("notes")) then true else error("missing required result field") end' results.jsonl > /dev/null
 ```
 
 ### Check verdicts are valid

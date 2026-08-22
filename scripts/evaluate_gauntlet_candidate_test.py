@@ -27,6 +27,7 @@ def v5_raw_evidence():
         }
         actual = "not_applicable" if index == 157 else "block"
         rows.append({
+            "schema_version": 5,
             "case_id": case_id,
             "expected_verdict": "block",
             "actual_verdict": actual,
@@ -46,6 +47,7 @@ def v5_raw_evidence():
             "capability_tags": ["url_dlp"],
         }
         rows.append({
+            "schema_version": 5,
             "case_id": case_id,
             "expected_verdict": "allow",
             "actual_verdict": "allow",
@@ -408,6 +410,23 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertTrue(decision["blocked"])
         self.assertIn(
             "result 'malicious-000' scoring_version does not match the candidate",
+            decision["failures"],
+        )
+
+    def test_string_v6_result_schema_cannot_bypass_scorer_binding(self):
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        for row in rows:
+            row["schema_version"] = "6"
+            row["scoring_version"] = "2.7"
+        results_bytes = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+
+        decision, *_ = self.run_evaluate(
+            v6_candidate(), v5_baseline(), results_bytes=results_bytes
+        )
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "result 'malicious-000' has an unsupported schema_version",
             decision["failures"],
         )
 

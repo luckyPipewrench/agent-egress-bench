@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -190,6 +191,12 @@ func TestResultV6ConformanceVectors(t *testing.T) {
 			failureModes[vector.FailureMode] = true
 			var row ResultLine
 			if err := json.Unmarshal(vector.Row, &row); err != nil {
+				// A typed decode error is itself a Go rejection. It is valid only
+				// for a vector the public schema also rejects; otherwise the two
+				// validators have drifted rather than agreed on the boundary.
+				if !vector.SchemaRejects {
+					t.Fatalf("Go rejected a schema-accepted vector during decode: %v", err)
+				}
 				return
 			}
 			if issues := validateResultLine(1, row); len(issues) == 0 {
@@ -219,6 +226,24 @@ func TestResultV5WithoutScoringVersionRemainsReadable(t *testing.T) {
 	}
 	if issues := validateResultLine(1, row); len(issues) != 0 {
 		t.Fatalf("validator rejected frozen result-v5 row without scoring_version: %v", issues)
+	}
+}
+
+func TestFrozenResultRowsRejectDeclaredScoringVersion(t *testing.T) {
+	for _, schemaVersion := range []int{legacyResultSchemaVersionV4, legacyResultSchemaVersionV5} {
+		for _, scoringVersion := range []string{"", "2.8"} {
+			t.Run(fmt.Sprintf("v%d/%q", schemaVersion, scoringVersion), func(t *testing.T) {
+				row := ResultLine{
+					SchemaVersion: schemaVersion, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+					CapabilityRegistry: testRegistryReference,
+					ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass",
+					Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+				}
+				raw := decodeConformanceObject(t, marshalConformanceJSON(t, row))
+				raw["scoring_version"] = scoringVersion
+				assertGoReject(t, marshalConformanceJSON(t, raw), resultValidatorAccepts(t))
+			})
+		}
 	}
 }
 

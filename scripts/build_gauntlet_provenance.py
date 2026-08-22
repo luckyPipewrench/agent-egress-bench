@@ -175,7 +175,11 @@ def validate_result_row_contract(
         raise ValueError(
             f"runner JSONL row {row_number} must use active result schema_version {active_version}"
         )
-    if require_active and summary_scoring_version != active_scoring_version:
+    if (
+        schema_version == active_version
+        and active_scoring_version is not None
+        and summary_scoring_version != active_scoring_version
+    ):
         raise ValueError("runner summary scoring_version does not match the active scoring contract")
     if schema_version < summary_schema_version:
         raise ValueError(

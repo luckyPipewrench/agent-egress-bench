@@ -378,11 +378,18 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	r.metadata = loadReportDocument(dir, "run-metadata.json")
 	r.bundle = loadReportDocument(dir, "run-bundle.json")
 	r.decision = loadReportDocument(dir, "execution-decision.json")
+	resultMode := reportResultsUnbound
+	switch reportNumber(r.summary, "schema_version") {
+	case "4":
+		resultMode = reportResultsFrozen
+	case "5":
+		resultMode = reportResultsActive
+	}
 	expectedScoringVersion := reportString(r.summary, "scoring_version")
 	if expectedScoringVersion == absentFact || expectedScoringVersion == "Invalid in run artifacts" || expectedScoringVersion == "Artifact value withheld by claim-language gate" {
 		expectedScoringVersion = ""
 	}
-	r.results, r.failures, r.rowCounts, r.resultErr = loadReportResults(filepath.Join(dir, "results.jsonl"), expectedScoringVersion)
+	r.results, r.failures, r.rowCounts, r.resultErr = loadReportResults(filepath.Join(dir, "results.jsonl"), resultMode, expectedScoringVersion)
 	r.command = loadReportText(dir, "command.txt")
 	r.entrypoint = loadReportText(dir, "entrypoint-command.txt")
 	if !r.hasFact() {
@@ -623,7 +630,15 @@ type reportRowCounts struct {
 	benignFalsePositives int
 }
 
-func loadReportResults(path, expectedScoringVersion string) ([]reportNA, []reportFailure, reportRowCounts, string) {
+type reportResultMode uint8
+
+const (
+	reportResultsUnbound reportResultMode = iota
+	reportResultsFrozen
+	reportResultsActive
+)
+
+func loadReportResults(path string, mode reportResultMode, expectedScoringVersion string) ([]reportNA, []reportFailure, reportRowCounts, string) {
 	var counts reportRowCounts
 	// Streams rather than reading whole, so it opens the descriptor itself, and
 	// it uses the same no-follow open as the other readers: the type is checked
@@ -671,9 +686,24 @@ func loadReportResults(path, expectedScoringVersion string) ([]reportNA, []repor
 			}
 			schemaVersion = parsed
 		}
+		switch mode {
+		case reportResultsActive:
+			if schemaVersion != activeResultSchemaVersion || expectedScoringVersion == "" {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+		case reportResultsFrozen:
+			if schemaVersion == activeResultSchemaVersion {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+			if _, declared := row["scoring_version"]; declared {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+		default:
+			return notApplicable, failures, counts, fmt.Sprintf("Unbound result identity at line %d", line)
+		}
 		if schemaVersion == activeResultSchemaVersion {
 			scorer, scorerOK := row["scoring_version"].(string)
-			if !scorerOK || strings.TrimSpace(scorer) == "" || (expectedScoringVersion != "" && scorer != expectedScoringVersion) {
+			if !scorerOK || strings.TrimSpace(scorer) == "" || scorer != expectedScoringVersion {
 				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
 			}
 		}

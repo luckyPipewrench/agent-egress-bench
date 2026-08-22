@@ -133,15 +133,19 @@ class ProvenanceBuilderTest(unittest.TestCase):
         }
         states = frozenset({"observed", "unreachable", "adapter_error"})
         accepted = frozenset({4, 5, 6})
+        row["scoring_version"] = "2.8"
         build_gauntlet_provenance.validate_result_row_contract(
-            row, 1, 5, 6, accepted, states, "2.8", summary_scoring_version="2.9"
+            row, 1, 5, 6, accepted, states, "2.8", summary_scoring_version="2.8"
         )
-        for value, message in (("", "missing or empty"), ("2.8", "does not match summary")):
+        for value, summary_version, message in (
+            ("", "2.8", "missing or empty"),
+            ("2.9", "2.8", "does not match summary"),
+        ):
             with self.subTest(scoring_version=value):
                 row["scoring_version"] = value
                 with self.assertRaisesRegex(ValueError, message):
                     build_gauntlet_provenance.validate_result_row_contract(
-                        row, 1, 5, 6, accepted, states, "2.8", summary_scoring_version="2.9"
+                        row, 1, 5, 6, accepted, states, "2.8", summary_scoring_version=summary_version
                     )
 
     def test_fresh_publication_requires_active_row_and_scorer(self):
@@ -177,6 +181,18 @@ class ProvenanceBuilderTest(unittest.TestCase):
                 "2.8",
                 summary_scoring_version="2.9",
                 require_active=True,
+            )
+        with self.assertRaisesRegex(ValueError, "summary scoring_version"):
+            build_gauntlet_provenance.validate_result_row_contract(
+                v6_row,
+                1,
+                5,
+                6,
+                accepted,
+                states,
+                "2.8",
+                summary_scoring_version="2.9",
+                require_active=False,
             )
 
     def setUp(self):

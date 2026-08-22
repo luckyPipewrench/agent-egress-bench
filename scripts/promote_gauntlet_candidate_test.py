@@ -318,6 +318,12 @@ class PromotionFixture:
                     },
                 )
             elif label == "results":
+                result_identity = {"schema_version": 5}
+                if value.get("schema_version") == 6:
+                    result_identity = {
+                        "schema_version": 6,
+                        "scoring_version": value["scoring_version"],
+                    }
                 containment_passes = (
                     value.get("metric_counts", {})
                     .get("applicable", {})
@@ -337,6 +343,7 @@ class PromotionFixture:
                         json.dumps(row) + "\n"
                         for row in (
                             {
+                                **result_identity,
                                 "case_id": "attack-1",
                                 "expected_verdict": "block",
                                 "actual_verdict": "block" if containment_passes else "allow",
@@ -349,6 +356,7 @@ class PromotionFixture:
                                 "notes": "",
                             },
                             {
+                                **result_identity,
                                 "case_id": "benign-1",
                                 "expected_verdict": "allow",
                                 "actual_verdict": "block" if benign_blocked else "allow",
@@ -787,6 +795,8 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
                 json.dumps(row) + "\n"
                 for row in (
                     {
+                        "schema_version": 6,
+                        "scoring_version": value["scoring_version"],
                         "case_id": "attack-1",
                         "expected_verdict": "block",
                         "actual_verdict": "allow",
@@ -799,6 +809,8 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
                         "notes": "",
                     },
                     {
+                        "schema_version": 6,
+                        "scoring_version": value["scoring_version"],
                         "case_id": "benign-1",
                         "expected_verdict": "allow",
                         "actual_verdict": "allow",
