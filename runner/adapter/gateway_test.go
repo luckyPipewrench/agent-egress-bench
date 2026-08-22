@@ -2850,6 +2850,10 @@ func TestMCPStdioRejectsAmbiguousDuplicateMembers(t *testing.T) {
 	for name, line := range map[string]string{
 		"duplicate root member":   `{"jsonrpc":"2.0","id":1,"result":{"content":"clean"},"result":{"content":"poisoned"}}`,
 		"duplicate nested member": `{"jsonrpc":"2.0","id":1,"result":{"content":"clean","content":"poisoned"}}`,
+		// Repeating the id itself makes correlation ambiguous, so a single
+		// decoded value must not decide whether the line is ours.
+		"requested id repeated first":  `{"jsonrpc":"2.0","id":1,"id":99,"result":{"content":"clean"},"result":{"content":"poisoned"}}`,
+		"requested id repeated second": `{"jsonrpc":"2.0","id":99,"id":1,"result":{"content":"clean"},"result":{"content":"poisoned"}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := mcpStdioDuplicateRequestResponse([]string{line}, requestIDs)
@@ -2876,6 +2880,10 @@ func TestMCPStdioKeepsOrdinaryMultiplexedOutputScoreable(t *testing.T) {
 		},
 		"repeated names in sibling objects": {
 			`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"a"},{"name":"b"}]}}`,
+		},
+		"ambiguous id where no candidate was requested": {
+			`{"jsonrpc":"2.0","id":98,"id":99,"result":{"content":"a"},"result":{"content":"b"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

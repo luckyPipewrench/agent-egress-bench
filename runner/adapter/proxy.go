@@ -4101,6 +4101,43 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 	}
 }
 
+// rootJSONRPCIDCandidateKeys returns a correlation key for every root-level id
+// member in the line. A well-formed response has exactly one. When a line
+// repeats the member, single-value decoding silently picks one of them, so the
+// runner can correlate a response to a request nobody asked about while another
+// parser correlates the same bytes to one we did. Enumerating the candidates is
+// what lets the caller refuse that ambiguity instead of resolving it by luck.
+func rootJSONRPCIDCandidateKeys(line string) []string {
+	decoder := json.NewDecoder(strings.NewReader(line))
+	decoder.UseNumber()
+	token, err := decoder.Token()
+	if err != nil {
+		return nil
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '{' {
+		return nil
+	}
+	var keys []string
+	for decoder.More() {
+		nameToken, err := decoder.Token()
+		if err != nil {
+			return keys
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return keys
+		}
+		var value interface{}
+		if err := decoder.Decode(&value); err != nil {
+			return keys
+		}
+		if name == "id" {
+			keys = append(keys, jsonRPCIDCorrelationKey(value))
+		}
+	}
+	return keys
+}
+
 // mcpStdioDuplicateRequestResponse rejects only duplicate JSON-RPC responses
 // for a request from this run. Notifications, non-JSON log lines, and
 // responses for other request IDs may legitimately share stdout and remain
@@ -4157,12 +4194,21 @@ func mcpStdioDuplicateRequestResponse(lines []string, requestIDs map[string]stru
 		// response-shape test, because that test decodes and would inherit the
 		// same silent choice.
 		if name, duplicate := duplicateJSONMemberName([]byte(line)); duplicate {
-			if _, requested := requestIDs[jsonRPCResponseIDCorrelationKey(line)]; requested {
-				return &Result{Verdict: "skip", Evidence: map[string]interface{}{
-					"reason":                "mcp_stdio_ambiguous_response",
-					"duplicate_member":      name,
-					"duplicate_response_id": jsonRPCResponseIDCorrelationKey(line),
-				}}
+			// Correlate against every candidate id, not the one decoding happened
+			// to keep. A line repeating both a requested and an unrequested id
+			// would otherwise be dismissed as somebody else's traffic.
+			candidates := rootJSONRPCIDCandidateKeys(line)
+			if len(candidates) == 0 {
+				candidates = []string{jsonRPCResponseIDCorrelationKey(line)}
+			}
+			for _, candidate := range candidates {
+				if _, requested := requestIDs[candidate]; requested {
+					return &Result{Verdict: "skip", Evidence: map[string]interface{}{
+						"reason":                "mcp_stdio_ambiguous_response",
+						"duplicate_member":      name,
+						"duplicate_response_id": candidate,
+					}}
+				}
 			}
 			continue
 		}
