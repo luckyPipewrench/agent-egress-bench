@@ -137,8 +137,11 @@
     }
     if (artifact.schema_version === 6) {
       nonEmptyString(scopeValue(artifact, ['method_repository']), 'method_repository');
-      if (!/^(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+$/.test(artifact.method_repository)) {
-        throw new Error('method_repository must name a slash-separated repository path');
+      var repositoryParts = artifact.method_repository.split('/');
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(artifact.method_repository) ||
+          repositoryParts.length !== 2 || repositoryParts[0] === '.' || repositoryParts[0] === '..' ||
+          repositoryParts[1] === '.' || repositoryParts[1] === '..') {
+        throw new Error('method_repository must name one owner and repository');
       }
       nonEmptyString(scopeValue(artifact, ['method_commit']), 'method_commit');
       if (!/^[0-9a-f]{40}$/.test(artifact.method_commit)) {
@@ -354,8 +357,21 @@
       throw new Error('failed-case list does not explain the applicable score losses');
     }
 
+    var retainedNotApplicableMalicious = scope.fullContainmentDenominator - scope.containmentDenominator;
+    if (retainedNotApplicableMalicious > scope.notApplicable) {
+      throw new Error('full containment denominator gap exceeds retained not-applicable cases');
+    }
     if (failures.length === 0) {
-      block.appendChild(document.createTextNode('None.'));
+      if (retainedNotApplicableMalicious > 0) {
+        var retainedOnly = document.createElement('div');
+        retainedOnly.className = 'failure-context';
+        retainedOnly.textContent = 'No applicable failed cases. Full-corpus containment retains ' +
+          retainedNotApplicableMalicious + ' not-applicable malicious ' +
+          (retainedNotApplicableMalicious === 1 ? 'case' : 'cases') + ' as misses.';
+        block.appendChild(retainedOnly);
+      } else {
+        block.appendChild(document.createTextNode('None.'));
+      }
       return block;
     }
 
@@ -370,11 +386,18 @@
     });
     var context = document.createElement('div');
     context.className = 'failure-context';
-    context.textContent = failures.length + (failures.length === 1 ? ' failed case in ' : ' failed cases in ') +
-      Object.keys(categories).sort().join(', ').replaceAll('_', ' ') +
-      (sharedTags.length ? '. Shared capabilities: ' + sharedTags.map(function(tag) {
+    var contextParts = [failures.length + (failures.length === 1 ? ' failed case in ' : ' failed cases in ') +
+      Object.keys(categories).sort().join(', ').replaceAll('_', ' ')];
+    if (retainedNotApplicableMalicious > 0) {
+      contextParts.push('Full-corpus containment retains ' + retainedNotApplicableMalicious +
+        ' not-applicable malicious ' + (retainedNotApplicableMalicious === 1 ? 'case' : 'cases') + ' as misses');
+    }
+    if (sharedTags.length) {
+      contextParts.push('Shared capabilities: ' + sharedTags.map(function(tag) {
         return root.capabilityLabel(artifact, tag);
-      }).join(', ') + '.' : '.');
+      }).join(', '));
+    }
+    context.textContent = contextParts.join('. ') + '.';
     block.appendChild(context);
 
     var list = document.createElement('ul');

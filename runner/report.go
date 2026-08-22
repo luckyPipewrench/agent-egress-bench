@@ -269,11 +269,15 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 	line("Agent Egress Bench `%s@%s` · corpus `%s` · scoring `%s` · manifest `sha256:%s`", markdownInline(required["method repository"]), markdownInline(required["method commit"]), markdownInline(required["corpus version"]), markdownInline(required["scoring version"]), markdownInline(required["benchmark manifest digest"]))
 	line("")
 	if len(report.failures) > 0 {
+		caseURLs, linkErr := report.stableCaseURLs()
+		if linkErr != nil {
+			return fmt.Errorf("publication lockup requires stable failed-case links: %w", linkErr)
+		}
 		line("Failed cases:")
 		for _, failure := range report.failures {
-			caseURL, linkErr := report.stableCaseURL(failure.caseID)
-			if linkErr != nil {
-				return fmt.Errorf("publication lockup requires a stable link for failed case %q: %w", failure.caseID, linkErr)
+			caseURL, ok := caseURLs[failure.caseID]
+			if !ok {
+				return fmt.Errorf("publication lockup requires a stable link for failed case %q: case ID is absent from the retained corpus manifest", failure.caseID)
 			}
 			line("- [%s](%s): expected `%s`, observed `%s`.", markdownInline(failure.caseID), caseURL, failure.expected, failure.actual)
 		}
@@ -307,25 +311,41 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 	return nil
 }
 
-func (r *buyerReport) stableCaseURL(caseID string) (string, error) {
+func (r *buyerReport) stableCaseURLs() (map[string]string, error) {
 	repository := reportString(r.summary, "method_repository")
 	commit := reportString(r.summary, "method_commit")
-	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(repository) {
-		return "", fmt.Errorf("method repository is not an owner/name pair")
+	repositoryParts := strings.Split(repository, "/")
+	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(repository) ||
+		len(repositoryParts) != 2 || repositoryParts[0] == "." || repositoryParts[0] == ".." ||
+		repositoryParts[1] == "." || repositoryParts[1] == ".." {
+		return nil, fmt.Errorf("method repository is not an owner/name pair")
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(commit) {
-		return "", fmt.Errorf("method commit is not a full lowercase Git commit")
+		return nil, fmt.Errorf("method commit is not a full lowercase Git commit")
 	}
 	manifest, err := readRegularArtifact(r.dir, "corpus-manifest.txt")
 	if err != nil {
-		return "", fmt.Errorf("reading corpus manifest: %w", err)
+		return nil, fmt.Errorf("reading corpus manifest: %w", err)
 	}
-	for index, raw := range strings.Split(strings.TrimSpace(string(manifest)), "\n") {
-		if strings.TrimSpace(raw) == caseID {
-			return fmt.Sprintf("https://github.com/%s/blob/%s/cases/MANIFEST.txt#L%d", repository, commit, index+1), nil
+	text := strings.ReplaceAll(string(manifest), "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("corpus manifest is empty")
+	}
+	urls := make(map[string]string, len(lines))
+	for index, caseID := range lines {
+		if caseID == "" || strings.TrimSpace(caseID) != caseID {
+			return nil, fmt.Errorf("corpus manifest must contain one case ID per physical line")
 		}
+		if _, duplicate := urls[caseID]; duplicate {
+			return nil, fmt.Errorf("corpus manifest contains duplicate case ID %q", caseID)
+		}
+		urls[caseID] = fmt.Sprintf("https://github.com/%s/blob/%s/cases/MANIFEST.txt#L%d", repository, commit, index+1)
 	}
-	return "", fmt.Errorf("case ID is absent from the retained corpus manifest")
+	return urls, nil
 }
 
 func (r *buyerReport) retainedPublicationRefusal() string {
@@ -617,7 +637,7 @@ func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCount
 	if err != nil {
 		return nil, nil, counts, "Unreadable run artifact"
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var notApplicable []reportNA
 	var failures []reportFailure
@@ -696,6 +716,10 @@ func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCount
 			}
 		}
 		if scoreOK && score != "error" {
+			// These counts reconstruct scores.full. Historical not-applicable
+			// rows remain in that denominator as misses, matching
+			// computeFullCorpusScores. scores.applicable intentionally uses a
+			// different denominator and is not reconciled here.
 			if expected == "block" {
 				counts.maliciousTotal++
 				if score == "pass" {

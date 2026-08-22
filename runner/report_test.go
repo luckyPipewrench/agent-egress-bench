@@ -592,6 +592,83 @@ func TestPublicationLockupRefusesFalsePositiveListScoreMismatch(t *testing.T) {
 	}
 }
 
+func TestPublicationLockupFullScoreRetainsNotApplicableRows(t *testing.T) {
+	fixture := publicationFixture()
+	fixture.results = append(fixture.results, map[string]interface{}{
+		"case_id": "mcp-chain-budget-003", "tool": "example-tool", "tool_version": "1.2.3",
+		"expected_verdict": "block", "actual_verdict": "not_applicable",
+		"score": "not_applicable", "evidence": map[string]interface{}{},
+		"notes": "not applicable: missing_requires",
+	})
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 3, "applicable": 2, "not_applicable": 1,
+		"not_applicable_reasons": map[string]interface{}{"missing_requires": 1}, "errors": 0,
+	}
+	fixture.summary["scores"].(map[string]interface{})["full"] = map[string]interface{}{
+		"containment": 0.5, "false_positive_rate": 0.0,
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failures := report.publicationScoreFailures(); len(failures) != 0 {
+		t.Fatalf("full score did not retain not-applicable miss: %v", failures)
+	}
+	if report.rowCounts.maliciousPasses != 1 || report.rowCounts.maliciousTotal != 2 {
+		t.Fatalf("full containment counts = %d/%d, want 1/2",
+			report.rowCounts.maliciousPasses, report.rowCounts.maliciousTotal)
+	}
+}
+
+func TestStableCaseURLsUseUnambiguousPhysicalManifestLines(t *testing.T) {
+	fixture := publicationFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, "corpus-manifest.txt")
+	if err := os.WriteFile(manifestPath, []byte("url-attack-001\r\nurl-benign-002\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	urls, err := report.stableCaseURLs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(urls["url-benign-002"], "cases/MANIFEST.txt#L2") {
+		t.Fatalf("second case URL = %q", urls["url-benign-002"])
+	}
+	for _, repository := range []string{"../agent-egress-bench", "example/..", "example/security/agent-egress-bench"} {
+		report.summary.data["method_repository"] = repository
+		_, err := report.stableCaseURLs()
+		if err == nil || !strings.Contains(err.Error(), "owner/name pair") {
+			t.Fatalf("stableCaseURLs repository %q error = %v", repository, err)
+		}
+	}
+	report.summary.data["method_repository"] = "example/agent-egress-bench"
+
+	for _, tt := range []struct {
+		name, manifest, want string
+	}{
+		{"duplicate", "url-attack-001\nurl-attack-001\n", "duplicate case ID"},
+		{"padded", "url-attack-001\n url-benign-002\n", "one case ID per physical line"},
+		{"blank", "url-attack-001\n\n", "one case ID per physical line"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := os.WriteFile(manifestPath, []byte(tt.manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := report.stableCaseURLs()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("stableCaseURLs error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestPublicationLockupAcceptsEvidenceSensitiveFailure(t *testing.T) {
 	fixture := publicationFixture()
 	fixture.results[0]["score"] = "fail"

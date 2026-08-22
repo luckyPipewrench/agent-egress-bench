@@ -165,6 +165,8 @@ activeV6Failures.adapter_id = 'proxy';
 activeV6Failures.adapter_owner = 'Example Maintainers';
 activeV6Failures.target_config_ref = 'examples/tool/benchmark.yaml';
 activeV6Failures.target_config_sha256 = 'f'.repeat(64);
+activeV6Failures.metric_counts.full.containment = { numerator: 1, denominator: 3 };
+activeV6Failures.scores.full.containment = 1 / 3;
 activeV6Failures._failedCases = [{
   case_id: 'url-attack-001',
   expected_verdict: 'block',
@@ -175,7 +177,8 @@ activeV6Failures._failedCases = [{
 }];
 const failures = window.renderGauntletFailures(activeV6Failures);
 assert.equal(failures.children[0].textContent, 'Failed cases');
-assert.match(failures.children[1].textContent, /1 failed case in url\. Shared capabilities: URL DLP\./);
+assert.match(failures.children[1].textContent,
+  /1 failed case in url\. Full-corpus containment retains 1 not-applicable malicious case as misses\. Shared capabilities: URL DLP\./);
 assert.equal(failures.children[2].children[0].children[0].textContent, 'url-attack-001');
 assert.match(failures.children[2].children[0].children[0].href, /cases\/MANIFEST\.txt#L1$/);
 assert.equal(failures.children[2].children[0].children[1].textContent, ': expected block, observed block.');
@@ -187,6 +190,23 @@ assert.throws(
   /does not explain the applicable score losses/
 );
 
+const retainedOnlyFailure = JSON.parse(JSON.stringify(activeV6Failures));
+retainedOnlyFailure.metric_counts.applicable.containment = { numerator: 2, denominator: 2 };
+retainedOnlyFailure.scores.applicable.containment = 1;
+retainedOnlyFailure.metric_counts.full.containment = { numerator: 2, denominator: 3 };
+retainedOnlyFailure.scores.full.containment = 2 / 3;
+retainedOnlyFailure._failedCases = [];
+assert.match(window.renderGauntletFailures(retainedOnlyFailure).children[1].textContent,
+  /No applicable failed cases\. Full-corpus containment retains 1 not-applicable malicious case as misses\./);
+
+const excessiveRetainedGap = JSON.parse(JSON.stringify(activeV6Failures));
+excessiveRetainedGap.metric_counts.full.containment = { numerator: 1, denominator: 4 };
+excessiveRetainedGap.scores.full.containment = 0.25;
+assert.throws(
+  () => window.renderGauntletFailures(excessiveRetainedGap),
+  /full containment denominator gap exceeds retained not-applicable cases/
+);
+
 const v5WithoutBenchmarkManifest = JSON.parse(JSON.stringify(activeV5));
 delete v5WithoutBenchmarkManifest.benchmark_manifest_sha256;
 assert.throws(
@@ -196,7 +216,7 @@ assert.throws(
 
 const activeV6 = JSON.parse(JSON.stringify(activeV5));
 activeV6.schema_version = 6;
-activeV6.method_repository = 'example/security/agent-egress-bench';
+activeV6.method_repository = 'example/agent-egress-bench';
 activeV6.method_commit = 'c'.repeat(40);
 activeV6.adapter_id = 'proxy';
 activeV6.adapter_owner = 'Example Maintainers';
@@ -204,6 +224,21 @@ activeV6.target_config_ref = 'examples/tool/benchmark.yaml';
 activeV6.target_config_sha256 = 'd'.repeat(64);
 assert.match(window.renderGauntletScope(activeV6).children[0].textContent,
   /Containment 50\.0% of 158 malicious cases/);
+
+const nestedRepository = JSON.parse(JSON.stringify(activeV6));
+nestedRepository.method_repository = 'example/security/agent-egress-bench';
+assert.throws(
+  () => window.renderGauntletScope(nestedRepository),
+  /method_repository must name one owner and repository/
+);
+['../agent-egress-bench', 'example/..'].forEach((repository) => {
+  const normalizedRepository = JSON.parse(JSON.stringify(activeV6));
+  normalizedRepository.method_repository = repository;
+  assert.throws(
+    () => window.renderGauntletScope(normalizedRepository),
+    /method_repository must name one owner and repository/
+  );
+});
 
 // v6 is the version whose coverage object is re-derived from raw rows by the
 // builder and re-derived again by the promotion gate, so it is the only version
