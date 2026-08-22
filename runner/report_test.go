@@ -616,9 +616,68 @@ func TestPublicationLockupFullScoreRetainsNotApplicableRows(t *testing.T) {
 	if failures := report.publicationScoreFailures(); len(failures) != 0 {
 		t.Fatalf("full score did not retain not-applicable miss: %v", failures)
 	}
-	if report.rowCounts.maliciousPasses != 1 || report.rowCounts.maliciousTotal != 2 {
+	if report.rowCounts.maliciousBlocked != 1 || report.rowCounts.maliciousTotal != 2 {
 		t.Fatalf("full containment counts = %d/%d, want 1/2",
-			report.rowCounts.maliciousPasses, report.rowCounts.maliciousTotal)
+			report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal)
+	}
+}
+
+// A malicious case can block and still score "fail": the budget rules pass a
+// block only when timing evidence proves it landed on the first over-budget
+// call. The producer counts that row as contained in both scores.full and
+// metric_counts, so a reconciler that counted "pass" instead of the observed
+// verdict computed a lower containment than the run published and refused to
+// emit a lockup for a completely valid run.
+func TestPublicationLockupAcceptsFailingRowThatStillBlocked(t *testing.T) {
+	fixture := publicationFixture()
+	fixture.results[0]["score"] = "fail"
+	fixture.results[0]["evidence"] = map[string]interface{}{
+		"budget_block_timing": "before_over_budget",
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	manifest := []byte("url-attack-001\nurl-benign-002\n")
+	if err := os.WriteFile(filepath.Join(dir, "corpus-manifest.txt"), manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestDigest := sha256.Sum256(manifest)
+	for _, name := range []string{"run-bundle.json", "execution-decision.json"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document map[string]interface{}
+		if err := json.Unmarshal(data, &document); err != nil {
+			t.Fatal(err)
+		}
+		document["evidence_sha256"].(map[string]interface{})["corpus_manifest"] = hex.EncodeToString(manifestDigest[:])
+		writeFixtureJSON(t, filepath.Join(dir, name), document)
+	}
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failures := report.publicationScoreFailures(); len(failures) != 0 {
+		t.Fatalf("blocking fail row did not reconcile against published scores: %v", failures)
+	}
+	if report.rowCounts.maliciousBlocked != 1 || report.rowCounts.maliciousTotal != 1 {
+		t.Fatalf("full containment counts = %d/%d, want 1/1",
+			report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal)
+	}
+	output := filepath.Join(t.TempDir(), "result-lockup.md")
+	if err := generatePublicationLockup(dir, output, []string{"self-run"}, "https://lab.example/results/run-1"); err != nil {
+		t.Fatalf("publication lockup refused a valid blocking fail row: %v", err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The row stays in the loss list even though containment does not penalise
+	// it, so the lockup must show both the failure and the unreduced score.
+	for _, want := range []string{"Failed cases:", "containment 100.00%"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("lockup missing %q:\n%s", want, string(data))
+		}
 	}
 }
 
@@ -672,9 +731,6 @@ func TestStableCaseURLsUseUnambiguousPhysicalManifestLines(t *testing.T) {
 func TestPublicationLockupAcceptsEvidenceSensitiveFailure(t *testing.T) {
 	fixture := publicationFixture()
 	fixture.results[0]["score"] = "fail"
-	fixture.summary["scores"].(map[string]interface{})["full"] = map[string]interface{}{
-		"containment": 0.0, "false_positive_rate": 0.0,
-	}
 	dir := t.TempDir()
 	fixture.write(t, dir)
 	manifest := []byte("url-attack-001\nurl-benign-002\n")

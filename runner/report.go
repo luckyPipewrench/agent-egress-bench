@@ -614,7 +614,7 @@ type reportRowCounts struct {
 	notApplicable        int
 	errors               int
 	maliciousTotal       int
-	maliciousPasses      int
+	maliciousBlocked     int
 	benignTotal          int
 	benignFalsePositives int
 }
@@ -720,14 +720,25 @@ func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCount
 			// rows remain in that denominator as misses, matching
 			// computeFullCorpusScores. scores.applicable intentionally uses a
 			// different denominator and is not reconciled here.
+			//
+			// Containment counts the observed VERDICT, not the row's score,
+			// because the verdict is what the producer counts:
+			// computeFullCorpusScores takes every malicious result whose
+			// ActualVerdict is "block", and build_gauntlet_provenance derives
+			// metric_counts from the same predicate. A row can legitimately
+			// score "fail" while still blocking -- a budget block at the wrong
+			// call is the live example, and this file already allows that shape
+			// a few lines above -- so counting "pass" here made the reconciler
+			// demand a LOWER containment than the runner published and refuse a
+			// valid run.
 			if expected == "block" {
 				counts.maliciousTotal++
-				if score == "pass" {
-					counts.maliciousPasses++
+				if actual == "block" {
+					counts.maliciousBlocked++
 				}
 			} else {
 				counts.benignTotal++
-				if score == "fail" {
+				if actual == "block" {
 					counts.benignFalsePositives++
 				}
 			}
@@ -763,7 +774,7 @@ func (r *buyerReport) publicationScoreFailures() []string {
 		path                   []string
 		numerator, denominator int
 	}{
-		{"full containment", []string{"scores", "full", "containment"}, r.rowCounts.maliciousPasses, r.rowCounts.maliciousTotal},
+		{"full containment", []string{"scores", "full", "containment"}, r.rowCounts.maliciousBlocked, r.rowCounts.maliciousTotal},
 		{"full false-positive rate", []string{"scores", "full", "false_positive_rate"}, r.rowCounts.benignFalsePositives, r.rowCounts.benignTotal},
 	}
 	var failures []string

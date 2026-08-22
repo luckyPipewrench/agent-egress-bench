@@ -221,11 +221,26 @@
     // covers all cases.
     var fullContainment = scopeValue(artifact, ['scores', 'full', 'containment']);
     var fullContainmentCounts = validateMetricFraction(artifact, 'containment', 'full');
+    validateMetricFraction(artifact, 'false_positive_rate', 'full');
     if (fullContainmentCounts.denominator > total - unreachable) {
       throw new Error('metric denominator cannot exceed scoreable cases: metric_counts.full.containment');
     }
     if (fullContainmentCounts.denominator < containmentCounts.denominator) {
       throw new Error('full containment denominator cannot be smaller than the applicable denominator');
+    }
+    var retainedNotApplicableMalicious =
+      fullContainmentCounts.denominator - containmentCounts.denominator;
+    if (artifact.schema_version === 6 && retainedNotApplicableMalicious > notApplicable) {
+      throw new Error('full containment denominator gap exceeds retained not-applicable cases');
+    }
+    // Schema 6 is rebuilt from retained rows. The producer uses the same
+    // observed blocked-malicious count for both scopes and changes only the
+    // denominator by retaining historical N/A rows in the full view. Without
+    // this binding, a digest-valid artifact could claim a perfect full-corpus
+    // headline directly above applicable failures that contradict it.
+    if (artifact.schema_version === 6 &&
+        fullContainmentCounts.numerator !== containmentCounts.numerator) {
+      throw new Error('full containment numerator must equal the applicable numerator');
     }
     if (containmentCounts.denominator > applicable || falsePositiveCounts.denominator > applicable) {
       throw new Error('metric denominator cannot exceed case_count.applicable');
@@ -257,7 +272,8 @@
       containmentDenominator: containmentCounts.denominator,
       fullContainment: fullContainment,
       fullContainmentDenominator: fullContainmentCounts.denominator,
-      falsePositiveRate: scopeValue(artifact, ['scores', 'applicable', 'false_positive_rate']),
+      retainedNotApplicableMalicious: retainedNotApplicableMalicious,
+      falsePositiveRate: scopeValue(artifact, ['scores', 'full', 'false_positive_rate']),
       falsePositiveNumerator: falsePositiveCounts.numerator,
       canonicalURL: validateCanonicalURL(scopeValue(artifact, ['canonical_url'])),
     };
@@ -287,7 +303,7 @@
       ' malicious cases in the full ' + total + '-case corpus; ' +
       formatPercent(containment) + ' of ' + scope.containmentDenominator +
       ' applicable malicious (diagnostic, ' + (scope.hasUnreachable ? unreachable + ' unreachable, ' : '') + notApplicable + ' N/A: ' + formatReasons(reasons) +
-      '), false positives ' + formatPercent(falsePositiveRate) + ', '
+      '), full-corpus false positives ' + formatPercent(falsePositiveRate) + ', '
     ));
 
     var assurances = artifact._assurances || [];
@@ -336,8 +352,15 @@
       throw new Error('verified result has no digest-bound failed-case list');
     }
     var seen = {};
-    var maliciousFailures = 0;
-    var benignFailures = 0;
+    // A failed case is not always a containment miss. Containment counts the
+    // observed VERDICT: the producer takes every malicious row whose
+    // actual_verdict is "block", regardless of its score. A malicious row can
+    // block and still score "fail" -- a budget block at the wrong call is the
+    // live example -- so it belongs in the loss list while leaving containment
+    // untouched. Comparing ALL malicious failures against the score gap threw
+    // on that run and blanked the entire card, score included.
+    var maliciousMisses = 0;
+    var benignBlocked = 0;
     failures.forEach(function(failure) {
       if (!failure || typeof failure !== 'object' || Array.isArray(failure) ||
           typeof failure.case_id !== 'string' || !failure.case_id || seen[failure.case_id] ||
@@ -349,18 +372,18 @@
       }
       sortedStringSet(failure.capability_tags, 'failed case capability_tags');
       seen[failure.case_id] = true;
-      if (failure.expected_verdict === 'block') maliciousFailures++;
-      else benignFailures++;
+      if (failure.expected_verdict === 'block') {
+        if (failure.actual_verdict !== 'block') maliciousMisses++;
+      } else if (failure.actual_verdict === 'block') {
+        benignBlocked++;
+      }
     });
-    if (maliciousFailures !== scope.containmentDenominator - scope.containmentNumerator ||
-        benignFailures !== scope.falsePositiveNumerator) {
+    if (maliciousMisses !== scope.containmentDenominator - scope.containmentNumerator ||
+        benignBlocked !== scope.falsePositiveNumerator) {
       throw new Error('failed-case list does not explain the applicable score losses');
     }
 
-    var retainedNotApplicableMalicious = scope.fullContainmentDenominator - scope.containmentDenominator;
-    if (retainedNotApplicableMalicious > scope.notApplicable) {
-      throw new Error('full containment denominator gap exceeds retained not-applicable cases');
-    }
+    var retainedNotApplicableMalicious = scope.retainedNotApplicableMalicious;
     if (failures.length === 0) {
       if (retainedNotApplicableMalicious > 0) {
         var retainedOnly = document.createElement('div');

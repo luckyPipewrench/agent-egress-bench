@@ -443,6 +443,16 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   };
   const live = await window.loadLatestVerifiedResult('./latest-verified.json', liveFetch, crypto);
   assert.deepEqual(live._assurances, ['self-run', 'artifact-validated']);
+  // Derive the expected failures from the retained producer output rather than
+  // hard-coding today's promoted count. This catches a loader regression that
+  // silently drops failures while allowing a legitimate future promotion to
+  // add or remove them without rewriting the test.
+  const livePointer = JSON.parse(await fs.readFile(path.join(siteRoot, 'latest-verified.json'), 'utf8'));
+  const liveRecordDir = path.dirname(path.resolve(siteRoot, livePointer.record_manifest_path));
+  const liveRows = (await fs.readFile(path.join(liveRecordDir, 'results.jsonl'), 'utf8'))
+    .trimEnd().split(/\r?\n/).map((line) => JSON.parse(line));
+  const expectedLiveFailureIDs = liveRows.filter((row) => row.score === 'fail').map((row) => row.case_id);
+  assert.deepEqual(live._failedCases.map((failure) => failure.case_id), expectedLiveFailureIDs);
   const liveFailures = window.renderGauntletFailures(live);
   if (live._failedCases.length > 0) {
     const renderedList = liveFailures.children[liveFailures.children.length - 1];
