@@ -21,7 +21,7 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .subtitle { color: var(--muted); font-size: 1.1rem; margin-bottom: 2rem; }
 .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 1rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; margin-left: 0.25rem; }
-.badge-verified { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-assurance { background: rgba(88,166,255,0.15); color: var(--accent); }
 .badge-self-reported { background: rgba(210,153,34,0.15); color: var(--yellow); }
 .badge-outdated { background: rgba(248,81,73,0.15); color: var(--red); }
 .badge-measured { background: rgba(63,185,80,0.15); color: var(--green); }
@@ -38,6 +38,11 @@ a:hover { text-decoration: underline; }
 .score-value { font-size: 1.8rem; font-weight: 700; font-family: var(--mono); }
 .score-na { color: var(--muted); font-size: 1.2rem; }
 .section-label { font-size: 0.85rem; color: var(--muted); margin: 1rem 0 0.5rem; font-weight: 600; }
+.failure-summary { border-left: 3px solid var(--red); margin: 0.75rem 0 1rem; padding: 0.25rem 0 0.25rem 0.75rem; color: var(--text); }
+.failure-title { color: var(--red); margin-top: 0; }
+.failure-context { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.25rem; }
+.failure-summary ul { margin-left: 1.25rem; }
+.failure-summary li { color: var(--text); font-family: var(--mono); font-size: 0.8rem; }
 .toggle { font-size: 0.8rem; color: var(--muted); cursor: pointer; user-select: none; margin-bottom: 0.5rem; }
 .toggle:hover { color: var(--accent); }
 /* Reset the UA button chrome so a semantic <button> toggle keeps the plain
@@ -209,6 +214,7 @@ go build -o aeb-gauntlet .
 
     var cc = r.case_count || {};
     if (verified) {
+      card.appendChild(window.renderGauntletFailures(r));
       card.appendChild(window.renderGauntletScope(r));
       card.appendChild(window.renderGauntletControlCoverage(r));
     } else {

@@ -18,7 +18,11 @@ global.document = {
     return { textContent: text };
   },
 };
-global.window = {};
+global.window = {
+  capabilityLabel(_artifact, id) {
+    return id === 'url_dlp' ? 'URL DLP' : id;
+  },
+};
 
 require('./scope-render.js');
 
@@ -58,6 +62,7 @@ function completeArtifact() {
         false_positive_rate: { numerator: 0, denominator: 1 },
       },
     },
+    _assurances: ['self-run', 'artifact-validated'],
   };
 }
 
@@ -77,12 +82,22 @@ assert.equal(rendered.className, 'denominator');
 // subset would be false, which is the same class of error as leading with the
 // applicable score in the first place.
 assert.match(rendered.children[0].textContent,
-  /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic/);
-assert.equal(rendered.children[3].href, completeArtifact().canonical_url);
-assert.equal(rendered.children[5].textContent, 'evidence and verify');
-assert.match(rendered.children[5].href, /docs\/RESULTS-USE\.md#verify-a-public-result$/);
+  /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic.*full-corpus false positives 0\.0%/);
+
+const distinctFullFalsePositiveRate = completeArtifact();
+distinctFullFalsePositiveRate.metric_counts.full.false_positive_rate = { numerator: 1, denominator: 2 };
+distinctFullFalsePositiveRate.scores.full.false_positive_rate = 0.5;
+assert.match(window.renderGauntletScope(distinctFullFalsePositiveRate).children[0].textContent,
+  /full-corpus false positives 50\.0%/);
+assert.equal(rendered.children[1].textContent, 'self-run');
+assert.equal(rendered.children[2].textContent, 'artifact-validated');
+assert.equal(rendered.children[4].href, completeArtifact().canonical_url);
+assert.equal(rendered.children[6].textContent, 'evidence and verify');
+assert.match(rendered.children[6].href, /docs\/RESULTS-USE\.md#verify-a-public-result$/);
 assert.match(window.renderGauntletControlCoverage(completeArtifact()).textContent,
   /not recorded in this frozen result/);
+assert.match(window.renderGauntletFailures(completeArtifact()).children[1].textContent,
+  /not retained in this frozen result format/);
 
 const unboundV4 = completeArtifact();
 unboundV4.schema_version = 4;
@@ -148,6 +163,81 @@ activeV5.benchmark_manifest_sha256 = 'f'.repeat(64);
 assert.match(window.renderGauntletScope(activeV5).children[0].textContent,
   /Containment 50\.0% of 158 malicious cases/);
 
+const activeV6Failures = JSON.parse(JSON.stringify(activeV5));
+activeV6Failures.schema_version = 6;
+activeV6Failures.method_repository = 'example/agent-egress-bench';
+activeV6Failures.method_commit = 'e'.repeat(40);
+activeV6Failures.adapter_id = 'proxy';
+activeV6Failures.adapter_owner = 'Example Maintainers';
+activeV6Failures.target_config_ref = 'examples/tool/benchmark.yaml';
+activeV6Failures.target_config_sha256 = 'f'.repeat(64);
+activeV6Failures.metric_counts.full.containment = { numerator: 1, denominator: 3 };
+activeV6Failures.scores.full.containment = 1 / 3;
+// applicable containment is 1 of 2, so exactly one applicable malicious case did
+// NOT block. This row is it, and its actual_verdict has to say so: the producer
+// derives that numerator from actual_verdict === 'block', so a failed case that
+// blocked would leave the numerator at 2 and make this fixture describe a run
+// the runner cannot emit. It read as valid only because the renderer compared
+// the failure COUNT against the gap without looking at the verdicts.
+activeV6Failures._failedCases = [{
+  case_id: 'url-attack-001',
+  expected_verdict: 'block',
+  actual_verdict: 'allow',
+  category: 'url',
+  capability_tags: ['url_dlp'],
+  manifest_line: 1,
+}];
+const failures = window.renderGauntletFailures(activeV6Failures);
+assert.equal(failures.children[0].textContent, 'Failed cases');
+assert.match(failures.children[1].textContent,
+  /1 failed case in url\. Full-corpus containment retains 1 not-applicable malicious case as misses\. Shared capabilities: URL DLP\./);
+assert.equal(failures.children[2].children[0].children[0].textContent, 'url-attack-001');
+assert.match(failures.children[2].children[0].children[0].href, /cases\/MANIFEST\.txt#L1$/);
+assert.equal(failures.children[2].children[0].children[1].textContent, ': expected block, observed allow.');
+
+// A malicious case can block and still fail: a budget block only passes when
+// timing evidence proves it landed on the first over-budget call. The producer
+// counts that row as contained, so it belongs in the loss list WITHOUT widening
+// the containment gap. Counting every malicious failure as a miss threw here and
+// blanked the whole card -- score included -- for a run that was entirely valid.
+const blockedButFailed = JSON.parse(JSON.stringify(activeV6Failures));
+blockedButFailed._failedCases.push({
+  case_id: 'mcp-chain-budget-003',
+  expected_verdict: 'block',
+  actual_verdict: 'block',
+  category: 'mcp_chain',
+  capability_tags: ['url_dlp'],
+  manifest_line: 2,
+});
+const blockedButFailedList = window.renderGauntletFailures(blockedButFailed);
+assert.match(blockedButFailedList.children[1].textContent, /^2 failed cases in mcp chain, url\./);
+assert.equal(blockedButFailedList.children[2].children[1].children[1].textContent,
+  ': expected block, observed block.');
+
+const hiddenFailure = JSON.parse(JSON.stringify(activeV6Failures));
+hiddenFailure._failedCases = [];
+assert.throws(
+  () => window.renderGauntletFailures(hiddenFailure),
+  /does not explain the applicable score losses/
+);
+
+const retainedOnlyFailure = JSON.parse(JSON.stringify(activeV6Failures));
+retainedOnlyFailure.metric_counts.applicable.containment = { numerator: 2, denominator: 2 };
+retainedOnlyFailure.scores.applicable.containment = 1;
+retainedOnlyFailure.metric_counts.full.containment = { numerator: 2, denominator: 3 };
+retainedOnlyFailure.scores.full.containment = 2 / 3;
+retainedOnlyFailure._failedCases = [];
+assert.match(window.renderGauntletFailures(retainedOnlyFailure).children[1].textContent,
+  /No applicable failed cases\. Full-corpus containment retains 1 not-applicable malicious case as misses\./);
+
+const excessiveRetainedGap = JSON.parse(JSON.stringify(activeV6Failures));
+excessiveRetainedGap.metric_counts.full.containment = { numerator: 1, denominator: 4 };
+excessiveRetainedGap.scores.full.containment = 0.25;
+assert.throws(
+  () => window.renderGauntletFailures(excessiveRetainedGap),
+  /full containment denominator gap exceeds retained not-applicable cases/
+);
+
 const v5WithoutBenchmarkManifest = JSON.parse(JSON.stringify(activeV5));
 delete v5WithoutBenchmarkManifest.benchmark_manifest_sha256;
 assert.throws(
@@ -157,14 +247,39 @@ assert.throws(
 
 const activeV6 = JSON.parse(JSON.stringify(activeV5));
 activeV6.schema_version = 6;
-activeV6.method_repository = 'example/security/agent-egress-bench';
+activeV6.metric_counts.full.containment = { numerator: 1, denominator: 3 };
+activeV6.scores.full.containment = 1 / 3;
+activeV6.method_repository = 'example/agent-egress-bench';
 activeV6.method_commit = 'c'.repeat(40);
 activeV6.adapter_id = 'proxy';
 activeV6.adapter_owner = 'Example Maintainers';
 activeV6.target_config_ref = 'examples/tool/benchmark.yaml';
 activeV6.target_config_sha256 = 'd'.repeat(64);
 assert.match(window.renderGauntletScope(activeV6).children[0].textContent,
-  /Containment 50\.0% of 158 malicious cases/);
+  /Containment 33\.3% of 3 malicious cases/);
+
+const forgedFullContainmentNumerator = JSON.parse(JSON.stringify(activeV6));
+forgedFullContainmentNumerator.metric_counts.full.containment.numerator = 2;
+forgedFullContainmentNumerator.scores.full.containment = 2 / 3;
+assert.throws(
+  () => window.renderGauntletScope(forgedFullContainmentNumerator),
+  /full containment numerator must equal the applicable numerator/
+);
+
+const nestedRepository = JSON.parse(JSON.stringify(activeV6));
+nestedRepository.method_repository = 'example/security/agent-egress-bench';
+assert.throws(
+  () => window.renderGauntletScope(nestedRepository),
+  /method_repository must name one owner and repository/
+);
+['../agent-egress-bench', 'example/..'].forEach((repository) => {
+  const normalizedRepository = JSON.parse(JSON.stringify(activeV6));
+  normalizedRepository.method_repository = repository;
+  assert.throws(
+    () => window.renderGauntletScope(normalizedRepository),
+    /method_repository must name one owner and repository/
+  );
+});
 
 // v6 is the version whose coverage object is re-derived from raw rows by the
 // builder and re-derived again by the promotion gate, so it is the only version
@@ -237,11 +352,18 @@ expectReject((artifact) => {
   artifact.metric_counts.full.containment = { numerator: 150, denominator: 150 };
   artifact.scores.full.containment = 1;
 }, 'full containment denominator narrower than applicable');
+expectReject((artifact) => {
+  artifact.metric_counts.full.containment = { numerator: 0, denominator: -1 };
+}, 'negative full containment denominator');
+expectReject((artifact) => {
+  artifact.metric_counts.full.containment = { numerator: 0, denominator: 1.5 };
+}, 'fractional full containment denominator');
 expectReject((artifact) => { delete artifact.metric_counts.full; }, 'missing full-corpus metric counts');
 expectReject((artifact) => { delete artifact.scores.full; }, 'missing full-corpus scores');
 expectReject((artifact) => { delete artifact.corpus_manifest_sha256; }, 'missing corpus digest');
 expectReject((artifact) => { artifact.scores.applicable.containment = 0.5; }, 'score must equal numerator/denominator');
 expectReject((artifact) => { artifact.scores.applicable.false_positive_rate = 0.5; }, 'FP score must equal numerator/denominator');
+expectReject((artifact) => { artifact.scores.full.false_positive_rate = 0.5; }, 'full FP score must equal numerator/denominator');
 expectReject((artifact) => {
   artifact.case_count.applicable = 0;
   artifact.case_count.not_applicable = 213;

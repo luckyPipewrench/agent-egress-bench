@@ -137,8 +137,11 @@
     }
     if (artifact.schema_version === 6) {
       nonEmptyString(scopeValue(artifact, ['method_repository']), 'method_repository');
-      if (!/^(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+$/.test(artifact.method_repository)) {
-        throw new Error('method_repository must name a slash-separated repository path');
+      var repositoryParts = artifact.method_repository.split('/');
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(artifact.method_repository) ||
+          repositoryParts.length !== 2 || repositoryParts[0] === '.' || repositoryParts[0] === '..' ||
+          repositoryParts[1] === '.' || repositoryParts[1] === '..') {
+        throw new Error('method_repository must name one owner and repository');
       }
       nonEmptyString(scopeValue(artifact, ['method_commit']), 'method_commit');
       if (!/^[0-9a-f]{40}$/.test(artifact.method_commit)) {
@@ -218,11 +221,26 @@
     // covers all cases.
     var fullContainment = scopeValue(artifact, ['scores', 'full', 'containment']);
     var fullContainmentCounts = validateMetricFraction(artifact, 'containment', 'full');
+    validateMetricFraction(artifact, 'false_positive_rate', 'full');
     if (fullContainmentCounts.denominator > total - unreachable) {
       throw new Error('metric denominator cannot exceed scoreable cases: metric_counts.full.containment');
     }
     if (fullContainmentCounts.denominator < containmentCounts.denominator) {
       throw new Error('full containment denominator cannot be smaller than the applicable denominator');
+    }
+    var retainedNotApplicableMalicious =
+      fullContainmentCounts.denominator - containmentCounts.denominator;
+    if (artifact.schema_version === 6 && retainedNotApplicableMalicious > notApplicable) {
+      throw new Error('full containment denominator gap exceeds retained not-applicable cases');
+    }
+    // Schema 6 is rebuilt from retained rows. The producer uses the same
+    // observed blocked-malicious count for both scopes and changes only the
+    // denominator by retaining historical N/A rows in the full view. Without
+    // this binding, a digest-valid artifact could claim a perfect full-corpus
+    // headline directly above applicable failures that contradict it.
+    if (artifact.schema_version === 6 &&
+        fullContainmentCounts.numerator !== containmentCounts.numerator) {
+      throw new Error('full containment numerator must equal the applicable numerator');
     }
     if (containmentCounts.denominator > applicable || falsePositiveCounts.denominator > applicable) {
       throw new Error('metric denominator cannot exceed case_count.applicable');
@@ -250,10 +268,13 @@
       measurementStatus: measurementStatus,
       reasons: reasons,
       containment: containment,
+      containmentNumerator: containmentCounts.numerator,
       containmentDenominator: containmentCounts.denominator,
       fullContainment: fullContainment,
       fullContainmentDenominator: fullContainmentCounts.denominator,
-      falsePositiveRate: scopeValue(artifact, ['scores', 'applicable', 'false_positive_rate']),
+      retainedNotApplicableMalicious: retainedNotApplicableMalicious,
+      falsePositiveRate: scopeValue(artifact, ['scores', 'full', 'false_positive_rate']),
+      falsePositiveNumerator: falsePositiveCounts.numerator,
       canonicalURL: validateCanonicalURL(scopeValue(artifact, ['canonical_url'])),
     };
   }
@@ -282,14 +303,21 @@
       ' malicious cases in the full ' + total + '-case corpus; ' +
       formatPercent(containment) + ' of ' + scope.containmentDenominator +
       ' applicable malicious (diagnostic, ' + (scope.hasUnreachable ? unreachable + ' unreachable, ' : '') + notApplicable + ' N/A: ' + formatReasons(reasons) +
-      '), false positives ' + formatPercent(falsePositiveRate) + ', '
+      '), full-corpus false positives ' + formatPercent(falsePositiveRate) + ', '
     ));
 
-    var badge = document.createElement('span');
-    badge.className = 'badge badge-verified';
-    badge.textContent = 'verified';
-    block.appendChild(badge);
-    block.appendChild(document.createTextNode(' '));
+    var assurances = artifact._assurances || [];
+    if (assurances.length &&
+        JSON.stringify(assurances) !== JSON.stringify(['self-run', 'artifact-validated'])) {
+      throw new Error('publisher assurance labels are invalid');
+    }
+    assurances.forEach(function(assurance) {
+      var badge = document.createElement('span');
+      badge.className = 'badge badge-assurance';
+      badge.textContent = assurance;
+      block.appendChild(badge);
+    });
+    if (assurances.length) block.appendChild(document.createTextNode(' '));
 
     var link = document.createElement('a');
     link.href = canonicalURL;
@@ -301,6 +329,113 @@
     evidenceLink.href = 'https://github.com/luckyPipewrench/agent-egress-bench/blob/main/docs/RESULTS-USE.md#verify-a-public-result';
     evidenceLink.textContent = 'evidence and verify';
     block.appendChild(evidenceLink);
+    return block;
+  }
+
+  function renderGauntletFailures(artifact) {
+    var scope = validateScope(artifact);
+    var block = document.createElement('div');
+    block.className = 'failure-summary';
+    var title = document.createElement('div');
+    title.className = 'section-label failure-title';
+    title.textContent = 'Failed cases';
+    block.appendChild(title);
+    if (artifact.schema_version !== 6) {
+      var unavailable = document.createElement('div');
+      unavailable.className = 'failure-context';
+      unavailable.textContent = 'Per-case loss details were not retained in this frozen result format.';
+      block.appendChild(unavailable);
+      return block;
+    }
+    var failures = artifact._failedCases;
+    if (!Array.isArray(failures)) {
+      throw new Error('verified result has no digest-bound failed-case list');
+    }
+    var seen = {};
+    // A failed case is not always a containment miss. Containment counts the
+    // observed VERDICT: the producer takes every malicious row whose
+    // actual_verdict is "block", regardless of its score. A malicious row can
+    // block and still score "fail" -- a budget block at the wrong call is the
+    // live example -- so it belongs in the loss list while leaving containment
+    // untouched. Comparing ALL malicious failures against the score gap threw
+    // on that run and blanked the entire card, score included.
+    var maliciousMisses = 0;
+    var benignBlocked = 0;
+    failures.forEach(function(failure) {
+      if (!failure || typeof failure !== 'object' || Array.isArray(failure) ||
+          typeof failure.case_id !== 'string' || !failure.case_id || seen[failure.case_id] ||
+          (failure.expected_verdict !== 'allow' && failure.expected_verdict !== 'block') ||
+          (failure.actual_verdict !== 'allow' && failure.actual_verdict !== 'block') ||
+          typeof failure.category !== 'string' || !failure.category ||
+          !Number.isInteger(failure.manifest_line) || failure.manifest_line < 1) {
+        throw new Error('failed-case list contains an invalid row');
+      }
+      sortedStringSet(failure.capability_tags, 'failed case capability_tags');
+      seen[failure.case_id] = true;
+      if (failure.expected_verdict === 'block') {
+        if (failure.actual_verdict !== 'block') maliciousMisses++;
+      } else if (failure.actual_verdict === 'block') {
+        benignBlocked++;
+      }
+    });
+    if (maliciousMisses !== scope.containmentDenominator - scope.containmentNumerator ||
+        benignBlocked !== scope.falsePositiveNumerator) {
+      throw new Error('failed-case list does not explain the applicable score losses');
+    }
+
+    var retainedNotApplicableMalicious = scope.retainedNotApplicableMalicious;
+    if (failures.length === 0) {
+      if (retainedNotApplicableMalicious > 0) {
+        var retainedOnly = document.createElement('div');
+        retainedOnly.className = 'failure-context';
+        retainedOnly.textContent = 'No applicable failed cases. Full-corpus containment retains ' +
+          retainedNotApplicableMalicious + ' not-applicable malicious ' +
+          (retainedNotApplicableMalicious === 1 ? 'case' : 'cases') + ' as misses.';
+        block.appendChild(retainedOnly);
+      } else {
+        block.appendChild(document.createTextNode('None.'));
+      }
+      return block;
+    }
+
+    var categories = {};
+    var sharedTags = null;
+    failures.forEach(function(failure) {
+      categories[failure.category] = true;
+      var tags = sortedStringSet(failure.capability_tags, 'failed case capability_tags');
+      sharedTags = sharedTags === null ? tags : sharedTags.filter(function(tag) {
+        return tags.indexOf(tag) !== -1;
+      });
+    });
+    var context = document.createElement('div');
+    context.className = 'failure-context';
+    var contextParts = [failures.length + (failures.length === 1 ? ' failed case in ' : ' failed cases in ') +
+      Object.keys(categories).sort().join(', ').replaceAll('_', ' ')];
+    if (retainedNotApplicableMalicious > 0) {
+      contextParts.push('Full-corpus containment retains ' + retainedNotApplicableMalicious +
+        ' not-applicable malicious ' + (retainedNotApplicableMalicious === 1 ? 'case' : 'cases') + ' as misses');
+    }
+    if (sharedTags.length) {
+      contextParts.push('Shared capabilities: ' + sharedTags.map(function(tag) {
+        return root.capabilityLabel(artifact, tag);
+      }).join(', '));
+    }
+    context.textContent = contextParts.join('. ') + '.';
+    block.appendChild(context);
+
+    var list = document.createElement('ul');
+    failures.forEach(function(failure) {
+      var item = document.createElement('li');
+      var link = document.createElement('a');
+      link.href = 'https://github.com/' + artifact.method_repository + '/blob/' +
+        artifact.method_commit + '/cases/MANIFEST.txt#L' + failure.manifest_line;
+      link.textContent = failure.case_id;
+      item.appendChild(link);
+      item.appendChild(document.createTextNode(': expected ' + failure.expected_verdict +
+        ', observed ' + failure.actual_verdict + '.'));
+      list.appendChild(item);
+    });
+    block.appendChild(list);
     return block;
   }
 
@@ -330,5 +465,6 @@
   }
 
   root.renderGauntletScope = renderGauntletScope;
+  root.renderGauntletFailures = renderGauntletFailures;
   root.renderGauntletControlCoverage = renderGauntletControlCoverage;
 })(window);
