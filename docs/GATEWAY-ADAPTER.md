@@ -64,10 +64,12 @@ is a `block` only with the same delivery proof. A successful local
 
 For a tool-result path, both allow and block require the fixture to record that
 case's matching observation while the case owns the identity-scoped response
-lease. A deny before the call reaches the fixture is `skip`, because it does not
-prove that the gateway inspected the declared result. The lease is released and
-cleared after each case, and an ordinary concurrent `tools/call` has no matching
-identity so it receives the fixture's default response.
+lease. A matching observation plus a returned deny proves only that the exact
+`tools/call` reached the fixture and the gateway then returned a denial. It does
+not establish that the gateway read or classified the declared result. A deny
+before the call reaches the fixture is `skip`. The lease is released and cleared
+after each case, and an ordinary concurrent `tools/call` has no matching identity
+so it receives the fixture's default response.
 
 Every JSON-RPC response is structurally validated and correlated by the exact
 request ID before deny classification. This is identical for ordinary JSON and
