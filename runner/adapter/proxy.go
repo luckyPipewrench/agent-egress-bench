@@ -4105,17 +4105,48 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 // for a request from this run. Notifications, non-JSON log lines, and
 // responses for other request IDs may legitimately share stdout and remain
 // outside the case response contract.
+// isJSONRPCResponseLine reports whether a stdout line is a well-formed JSON-RPC
+// 2.0 response. Only a real response may consume a request's single answer, so
+// anything malformed is ignored here rather than counted. Counting it would let
+// one stray line make the following genuine response look like a duplicate and
+// turn a legitimate server's output unscoreable, which is the same damage as
+// missing the duplicate it was meant to catch.
+func isJSONRPCResponseLine(line string) bool {
+	var response struct {
+		Version string          `json:"jsonrpc"`
+		Result  json.RawMessage `json:"result"`
+		Error   json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(line), &response); err != nil {
+		return false
+	}
+	if response.Version != "2.0" {
+		return false
+	}
+	hasResult := len(response.Result) > 0 && !bytes.Equal(bytes.TrimSpace(response.Result), []byte("null"))
+	hasError := len(response.Error) > 0 && !bytes.Equal(bytes.TrimSpace(response.Error), []byte("null"))
+	if hasResult == hasError {
+		return false
+	}
+	if hasError {
+		var rpcError struct {
+			Code    *int    `json:"code"`
+			Message *string `json:"message"`
+		}
+		if err := json.Unmarshal(response.Error, &rpcError); err != nil {
+			return false
+		}
+		if rpcError.Code == nil || rpcError.Message == nil {
+			return false
+		}
+	}
+	return true
+}
+
 func mcpStdioDuplicateRequestResponse(lines []string, requestIDs map[string]struct{}) *Result {
 	seen := make(map[string]struct{}, len(requestIDs))
 	for _, line := range lines {
-		var response struct {
-			Result json.RawMessage `json:"result"`
-			Error  json.RawMessage `json:"error"`
-		}
-		if err := json.Unmarshal([]byte(line), &response); err != nil {
-			continue
-		}
-		if (response.Result == nil) == (response.Error == nil) {
+		if !isJSONRPCResponseLine(line) {
 			continue
 		}
 		id := jsonRPCResponseIDCorrelationKey(line)

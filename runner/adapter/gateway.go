@@ -1118,7 +1118,17 @@ func (a *MCPGatewayAdapter) gatewayDecodeFailure(err error, request *gatewayRequ
 	} else if errors.As(err, &malformedSSE) {
 		reason = "malformed_sse_response"
 	}
-	return a.gatewaySkipWithObservation(reason, request, status, "")
+	result := a.gatewaySkipWithObservation(reason, request, status, "")
+	if duplicateSSE != nil && result != nil {
+		// Name the request that was answered twice, matching what the stdio
+		// path records. Without it a triage reader sees only that some request
+		// was duplicated.
+		if result.Evidence == nil {
+			result.Evidence = map[string]interface{}{}
+		}
+		result.Evidence["duplicate_response_id"] = string(duplicateSSE.wantedID)
+	}
+	return result
 }
 
 func (a *MCPGatewayAdapter) attachObservation(result *Result, request *gatewayRequest) {

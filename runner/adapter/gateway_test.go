@@ -931,19 +931,35 @@ func TestMCPGatewayAdapterSkipsDuplicateSSEResponseForRequest(t *testing.T) {
 	defer fm.Close()
 	client := &http.Client{Timeout: time.Second}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// t.Fatal exits only the goroutine that calls it, so a handler-side
+		// failure here would leave the test goroutine running and surface later
+		// as a confusing decode or timeout error instead of as its own cause.
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("read request body: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
-		if requestMethodFromBody(t, body) != "tools/call" {
-			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+		var request struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode gateway request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if request.Method != "tools/call" {
+			writeJSONRPC(t, w, request.ID, nil)
 			return
 		}
 		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
-			t.Fatal(err)
+			t.Errorf("forward MCP gateway request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		id := requestIDFromBody(t, body)
+		id := request.ID
 		_, _ = fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"content\":\"first\"}}\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"content\":\"second\"}}\n\n", id, id)
 	}))
 	defer server.Close()
@@ -955,6 +971,9 @@ func TestMCPGatewayAdapterSkipsDuplicateSSEResponseForRequest(t *testing.T) {
 	result := a.Run(gatewayToolsCallCase("gateway-duplicate-sse-response"), time.Second)
 	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "duplicate_sse_response" || result.Evidence["upstream_reached"] != true {
 		t.Fatalf("result = %+v, want delivered duplicate SSE response skip", result)
+	}
+	if result.Evidence["duplicate_response_id"] == nil {
+		t.Fatalf("evidence = %+v, want the duplicated request id recorded for triage", result.Evidence)
 	}
 }
 
@@ -2773,5 +2792,49 @@ func TestJSONRPCMessageForRequestAcceptsRepeatedNamesInSiblingObjects(t *testing
 	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"a","description":"x"},{"name":"b","description":"y"}]}}`)
 	if _, err := jsonRPCMessageForRequest(body, []byte("1")); err != nil {
 		t.Fatalf("error = %v, want an ordinary inventory response to remain scoreable", err)
+	}
+}
+
+func TestMCPStdioDuplicateIgnoresMalformedMatchingLines(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, lines := range map[string][]string{
+		"null error object": {
+			`{"jsonrpc":"2.0","id":1,"error":null}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"missing jsonrpc version": {
+			`{"id":1,"result":{"content":"not a JSON-RPC response"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+		"error object without code or message": {
+			`{"jsonrpc":"2.0","id":1,"error":{"detail":"no code or message"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"real"}}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := mcpStdioDuplicateRequestResponse(lines, requestIDs); got != nil {
+				t.Fatalf("result = %+v, want a malformed line to leave the later genuine response scoreable", got)
+			}
+		})
+	}
+}
+
+func TestMCPStdioDuplicateStillRejectsGenuineDuplicates(t *testing.T) {
+	requestIDs := map[string]struct{}{"number:1": {}}
+	for name, lines := range map[string][]string{
+		"two results": {
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"clean"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"poisoned"}}`,
+		},
+		"deny then deliver": {
+			`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"delivered anyway"}}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := mcpStdioDuplicateRequestResponse(lines, requestIDs); got == nil {
+				t.Fatal("result = nil, want a genuine duplicate response to stay unscoreable")
+			}
+		})
 	}
 }
