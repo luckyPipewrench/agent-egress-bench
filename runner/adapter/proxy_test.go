@@ -351,6 +351,61 @@ func TestRunMCPStdio_UnobservedPolicyDenyBlocks(t *testing.T) {
 	}
 }
 
+func TestRunMCPStdio_PolicyDenyThenPayloadForSameRequestSkips(t *testing.T) {
+	// The first line looks like a policy block, but the second line carries a
+	// tool definition for the same fresh request identity. Before the duplicate
+	// response guard, runMCPStdio returned block without examining that payload.
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "policy-deny-then-payload")}).runMCPStdio(
+		mcpStdioExpectedBlockResponseCase("mcp-stdio-policy-deny-then-payload"), 5*time.Second)
+	t.Logf("observed result: verdict=%q evidence=%+v", result.Verdict, result.Evidence)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want skip when a same-ID payload follows a policy deny", result)
+	}
+	if got := result.Evidence["reason"]; got != "mcp_stdio_duplicate_response" {
+		t.Fatalf("reason = %v, want mcp_stdio_duplicate_response; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdio_MatchedResponseThenPayloadForSameRequestSkips(t *testing.T) {
+	// The first response exactly matches the runner-owned fixture, while the
+	// second same-ID response carries extra tool content. Before the guard,
+	// verifyMCPStdioResponses returned allow after matching the first line.
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "matched-response-then-payload")}).runMCPStdio(Case{
+		ID:        "mcp-stdio-matched-response-then-payload",
+		Transport: "mcp_stdio",
+		InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"tools": []interface{}{}}},
+		}},
+	}, 5*time.Second)
+	t.Logf("observed result: verdict=%q evidence=%+v", result.Verdict, result.Evidence)
+	if result.Err != nil || result.Verdict != "skip" {
+		t.Fatalf("result = %+v, want skip when a same-ID payload follows a matched response", result)
+	}
+	if got := result.Evidence["reason"]; got != "mcp_stdio_duplicate_response" {
+		t.Fatalf("reason = %v, want mcp_stdio_duplicate_response; evidence=%+v", got, result.Evidence)
+	}
+}
+
+func TestRunMCPStdio_MixedStdoutStillAllows(t *testing.T) {
+	// Stdout may contain a log line, a notification, and a response for another
+	// request before the one response this case owns. None answers this request.
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "mixed-stdout-then-match")}).runMCPStdio(Case{
+		ID:        "mcp-stdio-mixed-stdout",
+		Transport: "mcp_stdio",
+		InputType: "mcp_tool_definition",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"tools": []interface{}{}}},
+		}},
+	}, 5*time.Second)
+	t.Logf("observed result: verdict=%q evidence=%+v", result.Verdict, result.Evidence)
+	if result.Err != nil || result.Verdict != "allow" {
+		t.Fatalf("result = %+v, want allow for unrelated mixed stdout", result)
+	}
+}
+
 func TestProxyAdapterRunMCPStdioStalePolicyDenySkips(t *testing.T) {
 	// A policy-looking error for a different request can be left over from a
 	// prior session or emitted by a process that never reads this case. It does
@@ -687,6 +742,38 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 	upstream := bufio.NewScanner(conn)
 	client := bufio.NewScanner(os.Stdin)
 	for call := 0; client.Scan(); call++ {
+		if mode == "policy-deny-then-payload" || mode == "matched-response-then-payload" || mode == "mixed-stdout-then-match" {
+			var request struct {
+				ID json.RawMessage `json:"id"`
+			}
+			if err := json.Unmarshal(client.Bytes(), &request); err != nil || len(request.ID) == 0 {
+				fmt.Fprintln(os.Stderr, "decode duplicate-response request")
+				os.Exit(2)
+			}
+			if _, err := fmt.Fprintln(conn, client.Text()); err != nil {
+				fmt.Fprintf(os.Stderr, "forward duplicate-response request: %v\n", err)
+				os.Exit(2)
+			}
+			if !upstream.Scan() {
+				fmt.Fprintln(os.Stderr, "runner-owned MCP stdio upstream did not respond")
+				os.Exit(2)
+			}
+			switch mode {
+			case "policy-deny-then-payload":
+				_, _ = fmt.Fprintf(os.Stdout, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"policy denied"}}`+"\n", request.ID)
+			case "matched-response-then-payload":
+				_, _ = fmt.Fprintln(os.Stdout, upstream.Text())
+			case "mixed-stdout-then-match":
+				_, _ = fmt.Fprintln(os.Stdout, "info: normal proxy output")
+				_, _ = fmt.Fprintln(os.Stdout, `{"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":50}}`)
+				_, _ = fmt.Fprintln(os.Stdout, `{"jsonrpc":"2.0","id":"unrelated","result":{"ok":true}}`)
+				_, _ = fmt.Fprintln(os.Stdout, upstream.Text())
+			}
+			if mode != "mixed-stdout-then-match" {
+				_, _ = fmt.Fprintf(os.Stdout, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"delivered_payload","inputSchema":{}}]}}`+"\n", request.ID)
+			}
+			return
+		}
 		budgetBlockAt := -1
 		budgetErrorCode := -32001
 		forwardBeforeBudgetBlock := false

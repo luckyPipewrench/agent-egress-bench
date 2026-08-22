@@ -2392,6 +2392,20 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		return mcpStdioObservationMissingResult(observer, evidence)
 	}
 
+	// JSON-RPC permits notifications alongside responses, but a request has at
+	// most one response. A second result or error for a request we issued means
+	// the proxy delivered content whose semantics we cannot represent with one
+	// case response. Do not let a first policy error or matching result hide it.
+	if duplicate := mcpStdioDuplicateRequestResponse(lines, expectedResponseIDs); duplicate != nil {
+		for key, value := range observationEvidence {
+			duplicate.Evidence[key] = value
+		}
+		if observer != nil {
+			duplicate.Evidence["upstream_reached"] = upstreamObserved
+		}
+		return *duplicate
+	}
+
 	// Check response lines for policy-block JSON-RPC errors.
 	// Tool-specific policy errors use the JSON-RPC server-error range.
 	// Standard JSON-RPC errors (-32700 to -32600) are protocol issues, not blocks.
@@ -4085,6 +4099,38 @@ func verifyMCPStdioResponses(caseID string, lines []string, expected []interface
 			"synthesized_response": true,
 		},
 	}
+}
+
+// mcpStdioDuplicateRequestResponse rejects only duplicate JSON-RPC responses
+// for a request from this run. Notifications, non-JSON log lines, and
+// responses for other request IDs may legitimately share stdout and remain
+// outside the case response contract.
+func mcpStdioDuplicateRequestResponse(lines []string, requestIDs map[string]struct{}) *Result {
+	seen := make(map[string]struct{}, len(requestIDs))
+	for _, line := range lines {
+		var response struct {
+			Result json.RawMessage `json:"result"`
+			Error  json.RawMessage `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(line), &response); err != nil {
+			continue
+		}
+		if (response.Result == nil) == (response.Error == nil) {
+			continue
+		}
+		id := jsonRPCResponseIDCorrelationKey(line)
+		if _, requested := requestIDs[id]; !requested {
+			continue
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return &Result{Verdict: "skip", Evidence: map[string]interface{}{
+				"reason":                "mcp_stdio_duplicate_response",
+				"duplicate_response_id": id,
+			}}
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }
 
 func mcpResponseMatches(expected, actual map[string]interface{}) bool {
