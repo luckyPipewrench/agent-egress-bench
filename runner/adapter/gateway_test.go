@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -894,7 +895,7 @@ func TestMCPGatewayAdapterSkipsMalformedToolsListInventory(t *testing.T) {
 	}
 }
 
-func TestMCPGatewayAdapterAllowsSSEToolsListResponse(t *testing.T) {
+func TestMCPGatewayAdapterAllowsSSEProgressAndUnrelatedEvents(t *testing.T) {
 	fm, err := fixture.StartAll()
 	if err != nil {
 		t.Fatal(err)
@@ -912,7 +913,48 @@ func TestMCPGatewayAdapterAllowsSSEToolsListResponse(t *testing.T) {
 
 	result := a.Run(gatewayToolDefinitionCase("gateway-sse-tools-list", "poisoned_tool"), time.Second)
 	if result.Err != nil || result.Verdict != "allow" {
-		t.Fatalf("result = %+v, want SSE tools/list allow", result)
+		t.Fatalf("result = %+v, want SSE tools/list allow after progress and unrelated events", result)
+	}
+}
+
+func TestJSONRPCMessageFromSSERejectsDuplicateResponseForRequest(t *testing.T) {
+	body := []byte("data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":\"CLEAN\"}}\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":\"POISONED\"}}\n\n")
+	_, err := jsonRPCMessageFromSSE(body, []byte("1"))
+	var duplicate *duplicateSSEJSONRPCResponseError
+	if !errors.As(err, &duplicate) {
+		t.Fatalf("error = %v, want duplicate SSE response error", err)
+	}
+}
+
+func TestMCPGatewayAdapterSkipsDuplicateSSEResponseForRequest(t *testing.T) {
+	fm := fixtureManagerForGatewayTest(t)
+	defer fm.Close()
+	client := &http.Client{Timeout: time.Second}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if requestMethodFromBody(t, body) != "tools/call" {
+			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
+			return
+		}
+		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		id := requestIDFromBody(t, body)
+		_, _ = fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"content\":\"first\"}}\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"content\":\"second\"}}\n\n", id, id)
+	}))
+	defer server.Close()
+
+	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "duplicate SSE gateway", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := a.Run(gatewayToolsCallCase("gateway-duplicate-sse-response"), time.Second)
+	if result.Err != nil || result.Verdict != "skip" || result.Evidence["reason"] != "duplicate_sse_response" || result.Evidence["upstream_reached"] != true {
+		t.Fatalf("result = %+v, want delivered duplicate SSE response skip", result)
 	}
 }
 
@@ -2521,7 +2563,7 @@ func sseToolsListGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		}
 		if request.Method == "tools/list" {
 			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"other-request\",\"result\":{\"tools\":[]}}\n\nevent: message\ndata: %s\n\n", responseBody)
+			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{}}\n\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"other-request\",\"result\":{\"tools\":[]}}\n\nevent: message\ndata: %s\n\n", responseBody)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
