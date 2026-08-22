@@ -1321,9 +1321,76 @@ func validateSSEJSONRPCNotification(message map[string]json.RawMessage) error {
 	return nil
 }
 
+// duplicateJSONMemberName reports the first object member name that appears
+// more than once in the same object, anywhere in the document. Decoding into a
+// map silently keeps one of them, so a target could carry two results for one
+// request and leave the runner reporting a verdict on content that a client
+// parsing the same bytes need not agree with. RFC 8259 says object names SHOULD
+// be unique, so rejecting the ambiguity costs no correct server anything.
+func duplicateJSONMemberName(data []byte) (string, bool) {
+	type frame struct {
+		object    bool
+		expectKey bool
+		names     map[string]struct{}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var stack []*frame
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			// Malformed input is reported by the caller's own decode, which runs
+			// next and produces the precise error.
+			return "", false
+		}
+		if delim, ok := token.(json.Delim); ok {
+			switch delim {
+			case '{':
+				stack = append(stack, &frame{object: true, expectKey: true, names: map[string]struct{}{}})
+				continue
+			case '[':
+				stack = append(stack, &frame{})
+				continue
+			case '}', ']':
+				if len(stack) > 0 {
+					stack = stack[:len(stack)-1]
+				}
+				if len(stack) > 0 && stack[len(stack)-1].object {
+					stack[len(stack)-1].expectKey = true
+				}
+				continue
+			}
+		}
+		if len(stack) == 0 {
+			continue
+		}
+		top := stack[len(stack)-1]
+		if !top.object {
+			continue
+		}
+		if !top.expectKey {
+			top.expectKey = true
+			continue
+		}
+		name, ok := token.(string)
+		if !ok {
+			return "", false
+		}
+		if _, seen := top.names[name]; seen {
+			return name, true
+		}
+		top.names[name] = struct{}{}
+		top.expectKey = false
+	}
+}
+
 func jsonRPCMessageForRequest(message, wantedID []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(message)
+	if name, duplicate := duplicateJSONMemberName(trimmed); duplicate {
+		return nil, fmt.Errorf("JSON-RPC response repeats object member %q, so its content is ambiguous", name)
+	}
 	var response map[string]json.RawMessage
-	if err := json.Unmarshal(bytes.TrimSpace(message), &response); err != nil {
+	if err := json.Unmarshal(trimmed, &response); err != nil {
 		return nil, fmt.Errorf("invalid JSON-RPC response: %w", err)
 	}
 	version, ok := response["jsonrpc"]

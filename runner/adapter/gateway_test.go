@@ -2754,3 +2754,24 @@ func TestMCPGatewayAdapterRejectsMultiCallLabeledAsSingleToolCall(t *testing.T) 
 		t.Fatalf("a refused case must prove neither delivery nor observation: %+v", result)
 	}
 }
+
+func TestJSONRPCMessageForRequestRejectsDuplicateResultMember(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":"clean"},"result":{"content":"poisoned"}}`)
+	if _, err := jsonRPCMessageForRequest(body, []byte("1")); err == nil {
+		t.Fatal("error = nil, want rejection of a response carrying two results for one request")
+	}
+}
+
+func TestJSONRPCMessageForRequestRejectsNestedDuplicateMember(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":"clean","content":"poisoned"}}`)
+	if _, err := jsonRPCMessageForRequest(body, []byte("1")); err == nil {
+		t.Fatal("error = nil, want rejection of a duplicate member nested inside the result")
+	}
+}
+
+func TestJSONRPCMessageForRequestAcceptsRepeatedNamesInSiblingObjects(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"a","description":"x"},{"name":"b","description":"y"}]}}`)
+	if _, err := jsonRPCMessageForRequest(body, []byte("1")); err != nil {
+		t.Fatalf("error = %v, want an ordinary inventory response to remain scoreable", err)
+	}
+}
