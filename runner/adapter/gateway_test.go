@@ -2830,6 +2830,12 @@ func TestMCPStdioDuplicateStillRejectsGenuineDuplicates(t *testing.T) {
 			`{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"policy denied"}}`,
 			`{"jsonrpc":"2.0","id":1,"result":{"content":"delivered anyway"}}`,
 		},
+		// JSON-RPC permits any result value, so a null result is a real answer
+		// rather than an absent member.
+		"null result then a second answer": {
+			`{"jsonrpc":"2.0","id":1,"result":null}`,
+			`{"jsonrpc":"2.0","id":1,"result":{"content":"poisoned"}}`,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := mcpStdioDuplicateRequestResponse(lines, requestIDs); got == nil {

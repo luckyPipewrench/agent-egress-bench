@@ -4123,8 +4123,13 @@ func isJSONRPCResponseLine(line string) bool {
 	if response.Version != "2.0" {
 		return false
 	}
-	hasResult := len(response.Result) > 0 && !bytes.Equal(bytes.TrimSpace(response.Result), []byte("null"))
-	hasError := len(response.Error) > 0 && !bytes.Equal(bytes.TrimSpace(response.Error), []byte("null"))
+	// Membership, not value. JSON-RPC permits any result value including null,
+	// so treating a null result as an absent member would let a valid response
+	// go uncounted and hide the duplicate that follows it. An error member is
+	// different: the specification requires an Error Object there, so a null or
+	// shapeless error is not a response at all.
+	hasResult := response.Result != nil
+	hasError := response.Error != nil
 	if hasResult == hasError {
 		return false
 	}
