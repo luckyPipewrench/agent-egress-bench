@@ -8,16 +8,16 @@ import (
 	"testing"
 )
 
-type resultV5ConformanceVector struct {
+type resultV6ConformanceVector struct {
 	Name          string          `json:"name"`
 	FailureMode   string          `json:"failure_mode"`
 	SchemaRejects bool            `json:"schema_rejects"`
 	Row           json.RawMessage `json:"row"`
 }
 
-type resultV5ConformanceCorpus struct {
-	Accepted []resultV5ConformanceVector `json:"accepted"`
-	Rejected []resultV5ConformanceVector `json:"rejected"`
+type resultV6ConformanceCorpus struct {
+	Accepted []resultV6ConformanceVector `json:"accepted"`
+	Rejected []resultV6ConformanceVector `json:"rejected"`
 }
 
 // These vectors pin the structural boundary shared by the public root schemas
@@ -150,7 +150,7 @@ func TestResultSchemaConformance(t *testing.T) {
 
 func TestResultV6ConformanceVectors(t *testing.T) {
 	raw := readConformanceFixture(t, filepath.Join("testdata", "result-v6-conformance.json"))
-	var corpus resultV5ConformanceCorpus
+	var corpus resultV6ConformanceCorpus
 	if err := json.Unmarshal(raw, &corpus); err != nil {
 		t.Fatal(err)
 	}

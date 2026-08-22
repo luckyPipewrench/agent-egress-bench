@@ -143,6 +143,20 @@ class RunnerParityTest(unittest.TestCase):
                 Namespace(reveal=left, commitment_sha256=left_digest, benchmark_manifest=self.manifest)
             )
 
+    def test_compare_rejects_independently_committed_scorer_mismatch(self):
+        rows = [json.loads(line) for line in self.results.read_text(encoding="utf-8").splitlines()]
+        for row in rows:
+            row["schema_version"] = 6
+            row["scoring_version"] = runner_parity.SCORING_VERSION
+        self.results.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        left, _ = self.prepare()
+        for row in rows:
+            row["scoring_version"] = "2.9"
+        self.results.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        right, _ = self.prepare("right.json")
+        with self.assertRaisesRegex(ValueError, "vectors differ"):
+            runner_parity.compare(Namespace(left=left, right=right, benchmark_manifest=self.manifest))
+
     def test_tool_identity_mismatch_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "tool does not match"):
             runner_parity.load_results(self.results, "different-tool", "1.2.3")

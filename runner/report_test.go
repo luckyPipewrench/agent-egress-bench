@@ -873,7 +873,7 @@ func TestPublicationLockupUsesTargetNeutralArtifacts(t *testing.T) {
 }
 
 func TestReportRejectsActiveResultWithWrongScoringVersion(t *testing.T) {
-	for _, schemaVersion := range []string{"6", "6.0", "6e0", `"6"`} {
+	for _, schemaVersion := range []string{"6", `"6"`} {
 		t.Run(schemaVersion, func(t *testing.T) {
 			row := `{"schema_version":` + schemaVersion + `,"scoring_version":"2.7","case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`
 			dir := t.TempDir()
@@ -883,6 +883,22 @@ func TestReportRejectsActiveResultWithWrongScoringVersion(t *testing.T) {
 			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), scoringVersion)
 			if status != "Malformed JSONL at line 1" {
 				t.Fatalf("active row with schema_version %s and wrong scoring_version status = %q", schemaVersion, status)
+			}
+		})
+	}
+}
+
+func TestReportRejectsNonIntegerSchemaVersionSpellings(t *testing.T) {
+	for _, schemaVersion := range []string{"6.0", "6e0"} {
+		t.Run(schemaVersion, func(t *testing.T) {
+			row := `{"schema_version":` + schemaVersion + `,"scoring_version":"2.8","case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), scoringVersion)
+			if status != "Malformed JSONL at line 1" {
+				t.Fatalf("non-integer schema_version %s status = %q", schemaVersion, status)
 			}
 		})
 	}

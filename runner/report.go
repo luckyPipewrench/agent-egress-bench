@@ -665,11 +665,11 @@ func loadReportResults(path, expectedScoringVersion string) ([]reportNA, []repor
 		schemaVersion := 0
 		if rawSchemaVersion, present := row["schema_version"]; present {
 			number, numberOK := rawSchemaVersion.(json.Number)
-			parsed, parseErr := strconv.ParseFloat(fmt.Sprint(number), 64)
-			if !numberOK || parseErr != nil || math.Trunc(parsed) != parsed || parsed < 4 || parsed > float64(activeResultSchemaVersion) {
+			parsed, parseErr := strconv.Atoi(fmt.Sprint(number))
+			if !numberOK || parseErr != nil || parsed < 4 || parsed > activeResultSchemaVersion {
 				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
 			}
-			schemaVersion = int(parsed)
+			schemaVersion = parsed
 		}
 		if schemaVersion == activeResultSchemaVersion {
 			scorer, scorerOK := row["scoring_version"].(string)

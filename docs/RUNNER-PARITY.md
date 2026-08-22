@@ -8,6 +8,8 @@ first, then reveal and compare it.
 
 The prepare step accepts active v6 result rows and retained v5 rows. Historical v4 rows remain readable through the Go validator but are not normalized into the parity protocol.
 
+Parity does not decide whether a scoring version is current. It commits each v6 row's scorer identity and requires both reveals to carry the same normalized vector; publication separately validates that identity against the candidate.
+
 1. Both sides agree on a unique comparison ID and pin the same corpus,
    benchmark manifest, tool binary version, and tool profile digest. The
    prepare step reads the manifest itself, commits its digest, and requires
