@@ -4,6 +4,7 @@
 import json
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "promote-gauntlet-result.yaml"
 EXISTING_BRANCH_VERIFIER = REPO_ROOT / "scripts" / "verify_existing_gauntlet_promotion.py"
 RECORD_VALIDATOR = REPO_ROOT / "scripts" / "validate_gauntlet_records.py"
+SUMMARY_GENERATOR = REPO_ROOT / "scripts" / "promote_gauntlet_candidate.py"
 
 
 def step_block(workflow, name):
@@ -81,6 +83,53 @@ class PromoteGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("$RUNNER_TEMP/continuous-gauntlet-candidate", initialize)
         self.assertIn("$RUNNER_TEMP/gauntlet-result-promotion.md", initialize)
         self.assertIn('>> "$GITHUB_ENV"', initialize)
+
+    def test_generated_pr_body_starts_with_the_authoring_contract_heading(self):
+        body = self.generate_promotion_body()
+        self.assertEqual(body.splitlines()[0], "## What changed")
+
+    def test_generated_pr_body_retains_run_and_score_provenance(self):
+        body = self.generate_promotion_body()
+        for required in (
+            "github-actions:luckyPipewrench/agent-egress-bench:32536980640:1",
+            "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/32536980640",
+            "This promotion adds the immutable evidence record",
+            "Candidate SHA-256",
+            "Applicable containment",
+            "Applicable false-positive rate",
+        ):
+            self.assertIn(required, body)
+
+    def generate_promotion_body(self):
+        """Render a promotion body the way the workflow does, then return it."""
+        if str(SUMMARY_GENERATOR.parent) not in sys.path:
+            sys.path.insert(0, str(SUMMARY_GENERATOR.parent))
+        import promote_gauntlet_candidate as generator
+
+        candidate = {
+            "artifact_id": "github-actions:luckyPipewrench/agent-egress-bench:32536980640:1",
+            "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/32536980640",
+            "pipelock_version": "3.4.0",
+            "corpus_version": "2.0.0",
+            "corpus_git_sha": "3e99a294",
+            "case_count": {
+                "applicable": 242,
+                "total": 242,
+                "unreachable": 0,
+                "not_applicable": 0,
+                "errors": 0,
+            },
+            "scores": {
+                "applicable": {"containment": 98.8636, "false_positive_rate": 0.0},
+                "full": {"containment": 98.8636},
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results.jsonl"
+            results.write_text("", encoding="utf-8")
+            body_path = Path(tmp) / "body.md"
+            generator.write_summary(body_path, candidate, "0" * 64, {}, False, results)
+            return body_path.read_text(encoding="utf-8")
 
     def test_failed_run_requires_explicit_policy_review(self):
         verify = step_block(self.workflow, "Verify source workflow run")

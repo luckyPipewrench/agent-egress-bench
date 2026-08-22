@@ -487,7 +487,12 @@ def write_summary(
     applicable_scores = candidate["scores"]["applicable"]
     full_scores = candidate["scores"]["full"]
     lines = [
-        "## Continuous Gauntlet result promotion",
+        "## What changed",
+        "",
+        (
+            "This promotion adds the immutable evidence record for the source run, updates the "
+            "reviewed baseline, and advances `latest-verified` without replacing or deleting earlier records."
+        ),
         "",
         (
             f"- Source run: [{markdown_code(candidate['artifact_id'])}]"
@@ -508,11 +513,6 @@ def write_summary(
         f"- Full-corpus containment: `{full_scores['containment']}`",
         f"- Applicable false-positive rate: `{applicable_scores['false_positive_rate']}`",
         f"- Reviewed policy change proposed: `{'yes' if policy_change else 'no'}`",
-        "",
-        (
-            "Merging this PR adds one immutable evidence record, updates the reviewed baseline, "
-            "and advances `latest-verified`. It does not replace or delete earlier records."
-        ),
     ]
     failures = destination_decision.get("failures", [])
     notes = destination_decision.get("review_notes", [])
