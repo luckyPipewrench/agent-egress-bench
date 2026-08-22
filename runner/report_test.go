@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ func TestBuyerReportGoldens(t *testing.T) {
 				"not_applicable_reasons": map[string]interface{}{"missing_requires": 1}, "errors": 0,
 			}
 			f.results = append(f.results, map[string]interface{}{
-				"case_id": "mcp-chain-budget-003", "tool": "example-tool", "tool_version": "1.2.3",
+				"schema_version": 4, "case_id": "mcp-chain-budget-003", "tool": "example-tool", "tool_version": "1.2.3",
 				"expected_verdict": "block", "actual_verdict": "not_applicable",
 				"score": "not_applicable", "evidence": map[string]interface{}{},
 				"notes": "not applicable: missing_requires",
@@ -397,7 +398,7 @@ func TestBuyerReportTracksUnreachableRowsWithoutReclassifyingThem(t *testing.T) 
 		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
 	}
 	fixture.results = append(fixture.results, map[string]interface{}{
-		"case_id": "mcp-stdio-definition-001", "tool": "example-tool", "tool_version": "1.2.3",
+		"schema_version": 4, "case_id": "mcp-stdio-definition-001", "tool": "example-tool", "tool_version": "1.2.3",
 		"expected_verdict": "block", "actual_verdict": "unreachable", "score": "error",
 		"evidence": map[string]interface{}{"result_state": "unreachable"},
 		"notes":    "unreachable: adapter has no exact delivery route for this case",
@@ -910,6 +911,22 @@ func TestReportRejectsNonIntegerSchemaVersionSpellings(t *testing.T) {
 	}
 }
 
+func TestReportRejectsMissingSchemaVersion(t *testing.T) {
+	row := `{"case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`
+	for _, mode := range []reportResultMode{reportResultsFrozen, reportResultsActive} {
+		t.Run(fmt.Sprint(mode), func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), mode, scoringVersion)
+			if status != "Malformed JSONL at line 1" {
+				t.Fatalf("schema-less row in mode %d status = %q", mode, status)
+			}
+		})
+	}
+}
+
 func TestReportRejectsActiveRowsWhenSummaryScorerIsMissing(t *testing.T) {
 	fixture := publicationFixture()
 	delete(fixture.summary, "scoring_version")
@@ -921,6 +938,79 @@ func TestReportRejectsActiveRowsWhenSummaryScorerIsMissing(t *testing.T) {
 	}
 	if report.resultErr != "Malformed JSONL at line 1" {
 		t.Fatalf("active rows without a summary scorer status = %q", report.resultErr)
+	}
+}
+
+// Summary v5 spans frozen v5 rows and active v6 rows.
+func TestReportReadsFrozenRowsUnderActiveSummary(t *testing.T) {
+	rows := []string{
+		`{"schema_version":5,"case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`,
+		`{"schema_version":5,"case_id":"url-benign-002","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"allow","actual_verdict":"allow","score":"pass","evidence":{"result_state":"observed"},"notes":""}`,
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(strings.Join(rows, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, counts, status := loadReportResults(filepath.Join(dir, "results.jsonl"), reportResultsActive, scoringVersion)
+	if status != "Readable" || counts.total != 2 || counts.scored != 2 {
+		t.Fatalf("frozen rows under an active summary status = %q, counts = %+v", status, counts)
+	}
+}
+
+func TestReportRejectsRowsOlderOrNewerThanTheirSummary(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mode    reportResultMode
+		version int
+	}{
+		{name: "v4-row-under-v5-summary", mode: reportResultsActive, version: reportFrozenResultSchemaVersion},
+		{name: "v5-row-under-v4-summary", mode: reportResultsFrozen, version: reportRetainedResultSchemaVersion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			row := fmt.Sprintf(`{"schema_version":%d,"case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`, tc.version)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), tc.mode, scoringVersion)
+			if status != "Malformed JSONL at line 1" {
+				t.Fatalf("schema %d row in mode %d status = %q", tc.version, tc.mode, status)
+			}
+		})
+	}
+}
+
+// Frozen rows predate scorer binding and cannot declare a scorer.
+func TestReportRejectsFrozenRowDeclaringScorerUnderActiveSummary(t *testing.T) {
+	row := `{"schema_version":5,"scoring_version":"` + scoringVersion + `","case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(row+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), reportResultsActive, scoringVersion)
+	if status != "Malformed JSONL at line 1" {
+		t.Fatalf("frozen row declaring a scorer status = %q", status)
+	}
+}
+
+// Mixed active and frozen rows would leave part of one result file unbound.
+func TestReportRejectsMixedScorerBoundAndFrozenRows(t *testing.T) {
+	active := `{"schema_version":6,"scoring_version":"` + scoringVersion + `","case_id":"url-attack-001","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"block","actual_verdict":"block","score":"pass","evidence":{"result_state":"observed"},"notes":""}`
+	frozen := `{"schema_version":5,"case_id":"url-benign-002","tool":"example-tool","tool_version":"1.2.3","expected_verdict":"allow","actual_verdict":"allow","score":"pass","evidence":{"result_state":"observed"},"notes":""}`
+	for name, rows := range map[string][]string{
+		"frozen-after-active": {active, frozen},
+		"active-after-frozen": {frozen, active},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), []byte(strings.Join(rows, "\n")+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, status := loadReportResults(filepath.Join(dir, "results.jsonl"), reportResultsActive, scoringVersion)
+			if status != "Malformed JSONL at line 2" {
+				t.Fatalf("mixed row versions status = %q", status)
+			}
+		})
 	}
 }
 
@@ -971,8 +1061,8 @@ func newReportFixture() *reportFixture {
 			"failures": []interface{}{}, "review_notes": []interface{}{},
 		},
 		results: []map[string]interface{}{
-			{"case_id": "url-attack-001", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "block", "score": "pass", "evidence": map[string]interface{}{}, "notes": ""},
-			{"case_id": "url-benign-002", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": map[string]interface{}{}, "notes": ""},
+			{"schema_version": 4, "case_id": "url-attack-001", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "block", "score": "pass", "evidence": map[string]interface{}{}, "notes": ""},
+			{"schema_version": 4, "case_id": "url-benign-002", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": map[string]interface{}{}, "notes": ""},
 		},
 		command:    "./runner --adapter example --scan-token fixture-secret --cases ./cases --profile ./profile.json",
 		entrypoint: "./run-gauntlet.sh --output-dir ./artifacts",

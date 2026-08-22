@@ -175,6 +175,10 @@ def validate_result_row_contract(
         raise ValueError(
             f"runner JSONL row {row_number} must use active result schema_version {active_version}"
         )
+    if schema_version != active_version and "scoring_version" in row:
+        raise ValueError(
+            f"runner JSONL row {row_number} frozen result schema must not declare scoring_version"
+        )
     if (
         schema_version == active_version
         and active_scoring_version is not None
@@ -211,6 +215,19 @@ def validate_result_row_contract(
         if scoring_version != summary_scoring_version:
             raise ValueError(
                 f"runner JSONL row {row_number} scoring_version does not match summary"
+            )
+
+
+def validate_result_row_set_contract(results, active_version):
+    """Prevent a scorer-bound active file from borrowing frozen row semantics."""
+    active_seen = any(row.get("schema_version") == active_version for row in results)
+    if not active_seen:
+        return
+    for row_number, row in enumerate(results, 1):
+        if row.get("schema_version") != active_version:
+            raise ValueError(
+                f"runner JSONL row {row_number} frozen result rows cannot share a file "
+                f"with active schema_version {active_version} rows"
             )
 
 
@@ -758,6 +775,7 @@ def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
             repo_root,
             allow_frozen_result_rows=allow_frozen_result_rows,
         )
+        validate_result_row_set_contract(results, result_contract[0])
     # An active artifact is uninterpretable without the exact raw registry
     # snapshot it names. Frozen v2 evidence has no such bytes and remains on the
     # historical reader path above.

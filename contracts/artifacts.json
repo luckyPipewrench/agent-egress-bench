@@ -144,7 +144,11 @@
       ],
       "reader": [
         "validate/main.go",
-        "scripts/build_gauntlet_provenance.py"
+        "scripts/build_gauntlet_provenance.py",
+        "scripts/evaluate_gauntlet_candidate.py",
+        "scripts/runner_parity.py",
+        "runner/report.go",
+        "gauntlet-site/latest-result.js"
       ],
       "source_versions": [
         {

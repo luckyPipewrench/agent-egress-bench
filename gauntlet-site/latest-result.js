@@ -170,6 +170,8 @@
     }
     var seen = {};
     var failed = [];
+    var frozenResultLines = [];
+    var activeResultSeen = false;
     lines.forEach(function(line, index) {
       var row;
       try {
@@ -181,13 +183,21 @@
           typeof row.case_id !== 'string' || !row.case_id || seen[row.case_id]) {
         throw new Error('results.jsonl contains an invalid or duplicate case ID');
       }
-      if (row.schema_version !== undefined && [4, 5, 6].indexOf(row.schema_version) === -1) {
+      if ([4, 5, 6].indexOf(row.schema_version) === -1) {
         throw new Error('results.jsonl contains an unsupported result schema version');
+      }
+      if (row.schema_version === 6) {
+        activeResultSeen = true;
+      } else {
+        frozenResultLines.push(index + 1);
       }
       if (row.schema_version === 6 &&
           (typeof row.scoring_version !== 'string' || !row.scoring_version.trim() ||
            row.scoring_version !== artifact.scoring_version)) {
         throw new Error('results.jsonl scoring version does not match the published artifact');
+      }
+      if (row.schema_version !== 6 && row.scoring_version !== undefined) {
+        throw new Error('results.jsonl frozen result schema declares a scoring version');
       }
       var indexed = caseIndex.cases[row.case_id];
       if (!indexed || row.expected_verdict !== indexed.expected_verdict ||
@@ -233,6 +243,9 @@
         manifest_line: manifestLine[row.case_id],
       });
     });
+    if (activeResultSeen && frozenResultLines.length) {
+      throw new Error('results.jsonl frozen result rows cannot share a file with active schema_version 6 rows');
+    }
     var indexedIDs = Object.keys(caseIndex.cases);
     if (indexedIDs.length !== lines.length ||
         !artifact.case_count || artifact.case_count.total !== lines.length ||

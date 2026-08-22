@@ -128,6 +128,27 @@ class RunnerParityTest(unittest.TestCase):
         normalized = runner_parity.load_results(self.results)
         self.assertEqual("2.9", normalized[0]["scoring_version"])
 
+    def test_v6_rows_cannot_share_a_file_with_v5_rows_in_either_order(self):
+        rows = [json.loads(line) for line in self.results.read_text(encoding="utf-8").splitlines()]
+        active = dict(rows[0], schema_version=6, scoring_version="2.8")
+        frozen = rows[1]
+        for ordered_rows in ((active, frozen), (frozen, active)):
+            with self.subTest(active_first=ordered_rows[0]["schema_version"] == 6):
+                self.results.write_text(
+                    "".join(json.dumps(row) + "\n" for row in ordered_rows), encoding="utf-8"
+                )
+                with self.assertRaisesRegex(ValueError, "frozen result rows cannot share a file"):
+                    runner_parity.load_results(self.results)
+
+    def test_v5_rows_must_omit_declared_scoring_version(self):
+        row = json.loads(self.results.read_text(encoding="utf-8").splitlines()[0])
+        for scoring_version in (None, "", "2.8"):
+            with self.subTest(scoring_version=scoring_version):
+                row["scoring_version"] = scoring_version
+                self.results.write_text(json.dumps(row) + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "must not declare scoring_version"):
+                    runner_parity.load_results(self.results)
+
     def test_v6_scoring_version_changes_commitment(self):
         rows = [json.loads(line) for line in self.results.read_text(encoding="utf-8").splitlines()]
         for row in rows:

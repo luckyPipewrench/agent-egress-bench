@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -283,6 +284,36 @@ func TestResultV4AndV5RowsCanShareFile(t *testing.T) {
 	t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
 	if issues := validateResultsFile(path); len(issues) != 0 {
 		t.Fatalf("mixed v4/v5 result file was rejected: %v", issues)
+	}
+}
+
+func TestResultFileRejectsMixedActiveAndFrozenRowsInEitherOrder(t *testing.T) {
+	v5 := ResultLine{
+		SchemaVersion: legacyResultSchemaVersionV5, CaseID: "frozen-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass", Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	v6 := ResultLine{
+		SchemaVersion: activeResultSchemaVersion, ScoringVersion: "2.8", CaseID: "active-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "block", ActualVerdict: "block", Score: "pass", Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
+	for _, rows := range [][]ResultLine{{v5, v6}, {v6, v5}} {
+		var encoded bytes.Buffer
+		for _, row := range rows {
+			if err := json.NewEncoder(&encoded).Encode(row); err != nil {
+				t.Fatal(err)
+			}
+		}
+		path := filepath.Join(t.TempDir(), "mixed-active-frozen-results.jsonl")
+		if err := os.WriteFile(path, encoded.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		issues := validateResultsFile(path)
+		if !strings.Contains(strings.Join(issues, "\n"), "frozen result rows cannot share a file with active schema_version") {
+			t.Fatalf("mixed active/frozen file was accepted or rejected for the wrong reason: %v", issues)
+		}
 	}
 }
 

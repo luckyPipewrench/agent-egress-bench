@@ -1406,6 +1406,8 @@ func validateResultsFileWithMetadata(path string, caseMetadata map[string]result
 	resultCount := 0
 	var registryReference *capabilityregistry.Reference
 	var scoringVersion string
+	var frozenRowLines []int
+	activeRowsSeen := false
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -1441,6 +1443,11 @@ func validateResultsFileWithMetadata(path string, caseMetadata map[string]result
 		}
 		lineErrors := validateResultLineAgainstCase(lineNum, r, metadata)
 		allErrors = append(allErrors, lineErrors...)
+		if r.SchemaVersion == activeResultSchemaVersion {
+			activeRowsSeen = true
+		} else if r.SchemaVersion == legacyResultSchemaVersionV4 || r.SchemaVersion == legacyResultSchemaVersionV5 {
+			frozenRowLines = append(frozenRowLines, lineNum)
+		}
 		if r.SchemaVersion == activeResultSchemaVersion && r.ScoringVersion != "" {
 			if scoringVersion == "" {
 				scoringVersion = r.ScoringVersion
@@ -1469,6 +1476,11 @@ func validateResultsFileWithMetadata(path string, caseMetadata map[string]result
 	}
 	if resultCount == 0 {
 		allErrors = append(allErrors, fmt.Sprintf("%s: file contains no result lines", path))
+	}
+	if activeRowsSeen {
+		for _, frozenLine := range frozenRowLines {
+			allErrors = append(allErrors, fmt.Sprintf("line %d: frozen result rows cannot share a file with active schema_version %d rows", frozenLine, activeResultSchemaVersion))
+		}
 	}
 	if registryReference != nil {
 		root, err := registryRootForArtifact(path)

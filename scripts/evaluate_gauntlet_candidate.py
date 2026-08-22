@@ -298,10 +298,22 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
         raise ValueError("results contain duplicate case IDs")
     if set(ids) != set(indexed):
         raise ValueError("results case IDs do not match the case index")
+    active_rows_seen = any(row.get("schema_version") == 6 for row in rows)
+    if active_rows_seen:
+        for row in rows:
+            if row.get("schema_version") != 6:
+                raise ValueError(
+                    f"result {row['case_id']!r} frozen result rows cannot share a file "
+                    "with active schema_version 6 rows"
+                )
     for row in rows:
         schema_version = row.get("schema_version")
         if isinstance(schema_version, bool) or schema_version not in {5, 6}:
             raise ValueError(f"result {row['case_id']!r} has an unsupported schema_version")
+        if schema_version != 6 and "scoring_version" in row:
+            raise ValueError(
+                f"result {row['case_id']!r} frozen result schema must not declare scoring_version"
+            )
         if schema_version == 6 and (
             not isinstance(row.get("scoring_version"), str)
             or not row["scoring_version"].strip()

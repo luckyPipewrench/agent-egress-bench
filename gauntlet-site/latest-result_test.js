@@ -299,6 +299,47 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   assert.equal(v6Loaded._failedCases[0].actual_verdict, 'block');
   assert.deepEqual(v6Loaded._assurances, ['self-run', 'artifact-validated']);
 
+  async function assertV6ResultsRejected(resultsText, pattern) {
+    const resultsManifest = {
+      ...v6Manifest,
+      files: {
+        ...v6Manifest.files,
+        'results.jsonl': nodeCrypto.createHash('sha256').update(resultsText).digest('hex'),
+      },
+    };
+    const resultsManifestText = JSON.stringify(resultsManifest) + '\n';
+    const resultsPointer = {
+      ...v6Pointer,
+      record_manifest_sha256: nodeCrypto.createHash('sha256').update(resultsManifestText).digest('hex'),
+    };
+    await assert.rejects(
+      window.loadLatestVerifiedResult('./latest-verified.json', async (url) => {
+        const prefix = './results/pipelock/' + v6Digest + '/';
+        if (url === './latest-verified.json') return response(JSON.stringify(resultsPointer));
+        if (url === resultsPointer.record_manifest_path) return response(resultsManifestText);
+        if (url === prefix + 'results.jsonl') return response(resultsText);
+        return v6Fetch(url);
+      }, crypto),
+      pattern
+    );
+  }
+
+  const missingSchemaText = v6ResultsText.replace('"schema_version":6,', '');
+  await assertV6ResultsRejected(missingSchemaText, /unsupported result schema version/);
+
+  const frozenScorerText = v6ResultsText.replace('"schema_version":6', '"schema_version":5');
+  await assertV6ResultsRejected(frozenScorerText, /frozen result schema declares a scoring version/);
+
+  const activeRows = v6ResultsText.trim().split('\n').map(JSON.parse);
+  const frozenRow = { ...activeRows[1], schema_version: 5 };
+  delete frozenRow.scoring_version;
+  for (const rows of [[activeRows[0], frozenRow], [frozenRow, activeRows[0]]]) {
+    await assertV6ResultsRejected(
+      rows.map(row => JSON.stringify(row)).join('\n') + '\n',
+      /frozen result rows cannot share a file with active schema_version 6 rows/
+    );
+  }
+
   const wrongScorerText = v6ResultsText.replace('"scoring_version":"2.8"', '"scoring_version":"2.7"');
   const wrongScorerManifest = {
     ...v6Manifest,
@@ -377,14 +418,13 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
     /one case ID per physical line/
   );
 
-  // A retained record with a historical not-applicable row must still load.
-  // The failed-case list excludes that frozen shape rather than blanking an
-  // otherwise readable older result card.
+  // An active record with an honest not-applicable row must still load. The
+  // failed-case list excludes that shape rather than blanking the result card.
   const v6NaArtifact = { ...v6Artifact, case_count: { total: 3 } };
   const v6NaResultsText = [
-    JSON.stringify({ case_id: 'url-attack-001', expected_verdict: 'block', actual_verdict: 'allow', score: 'fail' }),
-    JSON.stringify({ case_id: 'url-benign-002', expected_verdict: 'allow', actual_verdict: 'allow', score: 'pass' }),
-    JSON.stringify({ case_id: 'url-na-003', expected_verdict: 'block', actual_verdict: 'not_applicable', score: 'not_applicable' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-attack-001', expected_verdict: 'block', actual_verdict: 'allow', score: 'fail' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-benign-002', expected_verdict: 'allow', actual_verdict: 'allow', score: 'pass' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-na-003', expected_verdict: 'block', actual_verdict: 'not_applicable', score: 'not_applicable' }),
   ].join('\n') + '\n';
   const v6NaCaseIndexText = JSON.stringify({
     schema_version: 3,
@@ -439,9 +479,9 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   // A not-applicable score with any other verdict is still refused: the guard
   // broadens acceptance for the honest shape only, not for arbitrary rows.
   const v6NaBadVerdictResultsText = [
-    JSON.stringify({ case_id: 'url-attack-001', expected_verdict: 'block', actual_verdict: 'allow', score: 'fail' }),
-    JSON.stringify({ case_id: 'url-benign-002', expected_verdict: 'allow', actual_verdict: 'allow', score: 'pass' }),
-    JSON.stringify({ case_id: 'url-na-003', expected_verdict: 'block', actual_verdict: 'allow', score: 'not_applicable' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-attack-001', expected_verdict: 'block', actual_verdict: 'allow', score: 'fail' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-benign-002', expected_verdict: 'allow', actual_verdict: 'allow', score: 'pass' }),
+    JSON.stringify({ schema_version: 6, scoring_version: '2.8', case_id: 'url-na-003', expected_verdict: 'block', actual_verdict: 'allow', score: 'not_applicable' }),
   ].join('\n') + '\n';
   const v6NaBadVerdictResultsDigest = nodeCrypto.createHash('sha256').update(v6NaBadVerdictResultsText).digest('hex');
   const v6NaBadVerdictManifest = {

@@ -79,6 +79,8 @@ def load_benchmark_manifest(path):
 
 def load_results(path, expected_tool=None, expected_tool_version=None, expected_case_ids=None):
     rows = []
+    frozen_row_numbers = []
+    active_row_seen = False
     with path.open(encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
             if not line.strip():
@@ -95,6 +97,14 @@ def load_results(path, expected_tool=None, expected_tool_version=None, expected_
                     f"{path}:{number}: schema_version must be one of "
                     f"{sorted(SUPPORTED_RESULT_SCHEMA_VERSIONS)}"
                 )
+            if schema_version == RESULT_SCHEMA_VERSION:
+                active_row_seen = True
+            else:
+                frozen_row_numbers.append(number)
+                if "scoring_version" in row:
+                    raise ValueError(
+                        f"{path}:{number}: frozen result schema must not declare scoring_version"
+                    )
             if expected_tool is not None and row.get("tool") != expected_tool:
                 raise ValueError(f"{path}:{number}: tool does not match the committed tool identity")
             if expected_tool_version is not None and row.get("tool_version") != expected_tool_version:
@@ -134,6 +144,11 @@ def load_results(path, expected_tool=None, expected_tool_version=None, expected_
             rows.append(normalized)
     if not rows:
         raise ValueError(f"{path}: no result rows")
+    if active_row_seen and frozen_row_numbers:
+        raise ValueError(
+            f"{path}:{frozen_row_numbers[0]}: frozen result rows cannot share a file with active "
+            f"schema_version {RESULT_SCHEMA_VERSION} rows"
+        )
     rows.sort(key=lambda row: row["case_id"])
     ids = [row["case_id"] for row in rows]
     if len(ids) != len(set(ids)):

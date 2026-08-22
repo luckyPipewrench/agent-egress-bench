@@ -123,6 +123,53 @@ class ProvenanceBuilderTest(unittest.TestCase):
             {"schema_version": 4}, 1, 4, active_version, accepted_versions, result_states, active_scoring_version
         )
 
+    def test_active_result_rows_cannot_share_a_file_with_frozen_rows(self):
+        for rows in (
+            [{"schema_version": 5}, {"schema_version": 6}],
+            [{"schema_version": 6}, {"schema_version": 5}],
+        ):
+            with self.subTest(rows=rows):
+                with self.assertRaisesRegex(ValueError, "frozen result rows cannot share a file"):
+                    build_gauntlet_provenance.validate_result_row_set_contract(rows, 6)
+        build_gauntlet_provenance.validate_result_row_set_contract(
+            [{"schema_version": 5}, {"schema_version": 5}], 6
+        )
+
+    def test_frozen_result_rows_must_omit_scoring_version(self):
+        states = frozenset({"observed", "unreachable", "adapter_error"})
+        accepted = frozenset({4, 5, 6})
+        valid_rows = (
+            ({"schema_version": 4}, 4),
+            (
+                {
+                    "schema_version": 5,
+                    "actual_verdict": "block",
+                    "score": "pass",
+                    "evidence": {"result_state": "observed"},
+                },
+                5,
+            ),
+        )
+        for row, summary_schema_version in valid_rows:
+            with self.subTest(schema_version=row["schema_version"], declared=False):
+                build_gauntlet_provenance.validate_result_row_contract(
+                    row, 1, summary_schema_version, 6, accepted, states, "2.8"
+                )
+            for scoring_version in (None, "", "2.8"):
+                with self.subTest(
+                    schema_version=row["schema_version"], scoring_version=scoring_version
+                ):
+                    with self.assertRaisesRegex(ValueError, "must not declare scoring_version"):
+                        build_gauntlet_provenance.validate_result_row_contract(
+                            {**row, "scoring_version": scoring_version},
+                            1,
+                            summary_schema_version,
+                            6,
+                            accepted,
+                            states,
+                            "2.8",
+                        )
+
     def test_v6_result_row_requires_summary_bound_scoring_version(self):
         row = {
             "schema_version": 6,

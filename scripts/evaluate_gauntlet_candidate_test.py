@@ -413,6 +413,45 @@ class CandidateEvaluationTest(unittest.TestCase):
             decision["failures"],
         )
 
+    def test_v6_result_rows_cannot_share_evidence_with_v5_rows_in_either_order(self):
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        active = dict(rows[0], schema_version=6, scoring_version="2.8")
+        frozen = rows[1]
+        for ordered_rows in ((active, frozen, *rows[2:]), (frozen, active, *rows[2:])):
+            with self.subTest(active_first=ordered_rows[0]["schema_version"] == 6):
+                results_bytes = "".join(
+                    json.dumps(row, sort_keys=True) + "\n" for row in ordered_rows
+                ).encode()
+                decision, *_ = self.run_evaluate(
+                    v6_candidate(), v5_baseline(), results_bytes=results_bytes
+                )
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(
+                    any(
+                        "frozen result rows cannot share a file with active schema_version 6 rows"
+                        in failure
+                        for failure in decision["failures"]
+                    ),
+                    decision["failures"],
+                )
+
+    def test_v5_result_rows_must_omit_declared_scoring_version(self):
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        for scoring_version in (None, "", "2.8"):
+            with self.subTest(scoring_version=scoring_version):
+                rows[0]["scoring_version"] = scoring_version
+                results_bytes = "".join(
+                    json.dumps(row, sort_keys=True) + "\n" for row in rows
+                ).encode()
+                decision, *_ = self.run_evaluate(
+                    v5_candidate(), v5_baseline(), results_bytes=results_bytes
+                )
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(
+                    any("must not declare scoring_version" in failure for failure in decision["failures"]),
+                    decision["failures"],
+                )
+
     def test_string_v6_result_schema_cannot_bypass_scorer_binding(self):
         rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
         for row in rows:

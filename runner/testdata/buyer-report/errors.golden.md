@@ -130,7 +130,7 @@ Credential-shaped values in the commands below are replaced with REDACTED. Read 
 - pipelock-version.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - raw-summary.json (sha256 3fe74330bc8d50dcedec070c6aacc84873c765e130f0a6a08c4c167bc8e6f2f8)
 - receipt-profile.json (sha256 e6dd449c31e34ec84ded60b75b507e5acb1fe2a1c7493afad341362ddfe75cb9)
-- results.jsonl (sha256 dd4412b3d57f605224d43cefda25af01d57bf73fd351dd934d1c736bd6becb33)
+- results.jsonl (sha256 e6a8dfaf989b1e7b5e4576cee6e04d3601c454c1c7c39cd1099b0e135472a86d)
 - run-metadata.json (sha256 2ec73028d323d3cf0d2bd7b3e8eb598f515aa3e0f0053e46ef03a53916ac1bc4)
 - runner.stderr (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - tool-profile.json (sha256 5ff9c3781a107a41fb75d76e48e980fe265ffa2d0dec4cf55aa3c6c3b4509296)
