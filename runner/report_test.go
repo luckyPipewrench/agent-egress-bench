@@ -518,7 +518,7 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		"Publisher-declared assurance: **self run**",
 		"example/agent-egress-bench@cccccccccccccccccccccccccccccccccccccccc",
 		"2 total · 2 applicable · 0 unreachable · 0 not applicable · 0 errors",
-		"containment 100.00% · false-positive rate 0.00%",
+		"containment 100.00% (1/1 malicious cases; case-equal weighting from corpus composition) · false-positive rate 0.00%",
 		"Corpus Git observation: `clean` · tool version observation: `observed`",
 		"Exercised transports: http\\_proxy",
 		"internal consistency only",
@@ -527,6 +527,264 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("lockup missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func categoryProfileFixture() *reportFixture {
+	fixture := publicationFixture()
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 5, "applicable": 4, "unreachable": 1, "not_applicable": 0,
+		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
+	}
+	fixture.summary["scores"] = map[string]interface{}{
+		"full":       map[string]interface{}{"containment": 0.5, "false_positive_rate": 0.0},
+		"applicable": map[string]interface{}{"containment": 0.5, "false_positive_rate": 0.0},
+	}
+	fixture.results = []map[string]interface{}{
+		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "url-attack-001", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "block", "score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
+		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "url-benign-002", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
+		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "mcp-drift-attack-003", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "allow", "score": "fail", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
+		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "headers-benign-004", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
+		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "mcp-tool-attack-005", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "unreachable", "score": "error", "evidence": map[string]interface{}{"result_state": "unreachable"}, "notes": ""},
+	}
+	return fixture
+}
+
+func categoryProfileIndex() map[string]interface{} {
+	return map[string]interface{}{
+		"schema_version": 3,
+		"cases": map[string]interface{}{
+			"url-attack-001":       map[string]interface{}{"category": "url", "expected_verdict": "block", "transport": "http_proxy", "capability_tags": []interface{}{"url_dlp"}},
+			"url-benign-002":       map[string]interface{}{"category": "url", "expected_verdict": "allow", "transport": "http_proxy", "capability_tags": []interface{}{"url_dlp"}},
+			"mcp-drift-attack-003": map[string]interface{}{"category": "mcp_drift", "expected_verdict": "block", "transport": "mcp_http", "capability_tags": []interface{}{"mcp_input_scan"}},
+			"headers-benign-004":   map[string]interface{}{"category": "headers", "expected_verdict": "allow", "transport": "http_proxy", "capability_tags": []interface{}{"header_dlp"}},
+			"mcp-tool-attack-005":  map[string]interface{}{"category": "mcp_tool", "expected_verdict": "block", "transport": "mcp_stdio", "capability_tags": []interface{}{"mcp_input_scan"}},
+		},
+	}
+}
+
+func writeBoundReportEvidence(t *testing.T, fixture *reportFixture, dir, key, name string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	for _, document := range []map[string]interface{}{fixture.bundle, fixture.decision} {
+		document["evidence_sha256"].(map[string]interface{})[key] = hex.EncodeToString(digest[:])
+	}
+	writeFixtureJSON(t, filepath.Join(dir, "run-bundle.json"), fixture.bundle)
+	writeFixtureJSON(t, filepath.Join(dir, "execution-decision.json"), fixture.decision)
+}
+
+func writeCategoryProfileIndex(t *testing.T, fixture *reportFixture, dir string, index map[string]interface{}) {
+	t.Helper()
+	data, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBoundReportEvidence(t, fixture, dir, "case_index", "case-index.json", data)
+}
+
+func TestBuyerReportRendersBoundCategoryProfile(t *testing.T) {
+	fixture := categoryProfileFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	writeCategoryProfileIndex(t, fixture, dir, categoryProfileIndex())
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	for _, want := range []string{
+		"### Applicable-only malicious category profile",
+		"evidence of category coverage and concentration, not a score or ranking",
+		"| headers | 0 / 0 | N/A | 0.00% |",
+		"| mcp\\_drift | 0 / 1 | 0.00% | 50.00% |",
+		"| mcp\\_tool | 0 / 0 | N/A | 0.00% |",
+		"| url | 1 / 1 | 100.00% | 50.00% |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("category profile missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// A run that observed no malicious case at all still gets a profile. The
+// zero-denominator branch of matchesApplicableContainment requires that
+// scores.applicable.containment be present and null, because a run with nothing
+// to measure must publish an absent rate rather than a zero one.
+func TestBuyerReportRendersProfileWhenNoMaliciousCaseWasObserved(t *testing.T) {
+	fixture := categoryProfileFixture()
+	for _, row := range fixture.results {
+		if row["expected_verdict"] != "block" {
+			continue
+		}
+		row["actual_verdict"] = "unreachable"
+		row["score"] = "error"
+		row["evidence"] = map[string]interface{}{"result_state": "unreachable"}
+	}
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 5, "applicable": 2, "unreachable": 3, "not_applicable": 0,
+		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
+	}
+	fixture.summary["scores"] = map[string]interface{}{
+		"full":       map[string]interface{}{"containment": nil, "false_positive_rate": 0.0},
+		"applicable": map[string]interface{}{"containment": nil, "false_positive_rate": 0.0},
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	writeCategoryProfileIndex(t, fixture, dir, categoryProfileIndex())
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	if !strings.Contains(got, "### Applicable-only malicious category profile") {
+		t.Fatalf("profile section missing:\n%s", got)
+	}
+	if strings.Contains(got, "Unavailable:") {
+		t.Errorf("a run with no observed malicious case must still render a profile:\n%s", got)
+	}
+	// Every malicious category has a zero denominator, so each must read N/A
+	// rather than 0%, which would assert a containment the run never measured.
+	for _, want := range []string{
+		"| mcp\\_drift | 0 / 0 | N/A | N/A |",
+		"| url | 0 / 0 | N/A | N/A |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in:\n%s", want, got)
+		}
+	}
+}
+
+// Category names come from case-index.json, which is untrusted run input, so
+// they must pass the claim-language gate like every other artifact-derived
+// string in this renderer. Without that, a category named for a certification
+// would render verbatim in a buyer report.
+func TestBuyerReportWithholdsRestrictedCategoryClaim(t *testing.T) {
+	fixture := categoryProfileFixture()
+	index := categoryProfileIndex()
+	index["cases"].(map[string]interface{})["url-attack-001"].(map[string]interface{})["category"] = "fips-certified"
+	index["cases"].(map[string]interface{})["url-benign-002"].(map[string]interface{})["category"] = "fips-certified"
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	writeCategoryProfileIndex(t, fixture, dir, index)
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	if strings.Contains(got, "fips-certified") {
+		t.Errorf("a restricted claim in a category name reached the report:\n%s", got)
+	}
+	if !strings.Contains(got, "Artifact value withheld by claim-language gate") {
+		t.Errorf("expected the claim-language gate to withhold the category:\n%s", got)
+	}
+}
+
+func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, fixture *reportFixture, dir string)
+		want   string
+	}{
+		{name: "missing index", mutate: func(t *testing.T, _ *reportFixture, dir string) {
+			if err := os.Remove(filepath.Join(dir, "case-index.json")); err != nil {
+				t.Fatal(err)
+			}
+		}, want: "Unavailable: case-index.json is absent or unreadable."},
+		{name: "missing results", mutate: func(t *testing.T, _ *reportFixture, dir string) {
+			if err := os.Remove(filepath.Join(dir, "results.jsonl")); err != nil {
+				t.Fatal(err)
+			}
+		}, want: "Unavailable: results.jsonl is absent or unreadable."},
+		{name: "malformed index", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			writeBoundReportEvidence(t, fixture, dir, "case_index", "case-index.json", []byte("{"))
+		}, want: "Unavailable: case-index.json is malformed."},
+		// Named for what it proves. Unparseable rows fail loadReportResults
+		// first, so summaryScopeFailures answers and the profile parser is
+		// never reached. The case below reaches that parser.
+		{name: "unparseable results fail the scope check first", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			writeBoundReportEvidence(t, fixture, dir, "results", "results.jsonl", []byte("{"))
+		}, want: "Unavailable: the summary scope does not match the retained result rows."},
+		// Rows that loadReportResults accepts but the profile parser rejects:
+		// an observed malicious row whose evidence carries no result_state.
+		// Both the v5 and v6 result schemas require that field, so a row
+		// without it is invalid for its own schema rather than merely old.
+		{name: "observed row without a result state", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			rows := make([]map[string]interface{}, len(fixture.results))
+			copy(rows, fixture.results)
+			stripped := map[string]interface{}{}
+			for k, v := range rows[0] {
+				stripped[k] = v
+			}
+			stripped["evidence"] = map[string]interface{}{}
+			rows[0] = stripped
+			var encoded []byte
+			for _, row := range rows {
+				line, err := json.Marshal(row)
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded = append(encoded, line...)
+				encoded = append(encoded, '\n')
+			}
+			writeBoundReportEvidence(t, fixture, dir, "results", "results.jsonl", encoded)
+		}, want: "Unavailable: results.jsonl has an invalid row."},
+		{name: "results digest mismatch", mutate: func(t *testing.T, _ *reportFixture, dir string) {
+			data, err := os.ReadFile(filepath.Join(dir, "results.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), append(data, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, want: "Unavailable: results.jsonl does not match its retained digest."},
+		{name: "summary scope mismatch", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			fixture.summary["case_count"].(map[string]interface{})["total"] = 6
+			writeFixtureJSON(t, filepath.Join(dir, "raw-summary.json"), fixture.summary)
+		}, want: "Unavailable: the summary scope does not match the retained result rows."},
+		{name: "scope mismatch", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			index := categoryProfileIndex()
+			index["cases"].(map[string]interface{})["url-attack-001"].(map[string]interface{})["expected_verdict"] = "allow"
+			writeCategoryProfileIndex(t, fixture, dir, index)
+		}, want: "Unavailable: the case index and result rows have different case IDs or expected verdicts."},
+		{name: "applicable containment mismatch", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			fixture.summary["scores"].(map[string]interface{})["applicable"].(map[string]interface{})["containment"] = 0.75
+			writeFixtureJSON(t, filepath.Join(dir, "raw-summary.json"), fixture.summary)
+		}, want: "Unavailable: the applicable containment does not match the bound result rows."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := categoryProfileFixture()
+			dir := t.TempDir()
+			fixture.write(t, dir)
+			writeCategoryProfileIndex(t, fixture, dir, categoryProfileIndex())
+			tt.mutate(t, fixture, dir)
+			report, err := loadBuyerReport(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			report.renderMarkdown(&output)
+			got := output.String()
+			if !strings.Contains(got, tt.want) {
+				t.Fatalf("report did not mark profile unavailable as expected:\n%s", got)
+			}
+			if !strings.Contains(got, "- Containment: 50.00%") {
+				t.Fatalf("profile failure hid the primary score:\n%s", got)
+			}
+		})
 	}
 }
 
@@ -608,7 +866,7 @@ func TestPublicationLockupFullScoreRetainsNotApplicableRows(t *testing.T) {
 		"notes": "not applicable: missing_requires",
 	})
 	fixture.summary["case_count"] = map[string]interface{}{
-		"total": 3, "applicable": 2, "not_applicable": 1,
+		"total": 3, "applicable": 2, "unreachable": 0, "not_applicable": 1,
 		"not_applicable_reasons": map[string]interface{}{"missing_requires": 1}, "errors": 0,
 	}
 	fixture.summary["scores"].(map[string]interface{})["full"] = map[string]interface{}{
@@ -626,6 +884,17 @@ func TestPublicationLockupFullScoreRetainsNotApplicableRows(t *testing.T) {
 	if report.rowCounts.maliciousBlocked != 1 || report.rowCounts.maliciousTotal != 2 {
 		t.Fatalf("full containment counts = %d/%d, want 1/2",
 			report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal)
+	}
+	output := filepath.Join(t.TempDir(), "result-lockup.md")
+	if err := generatePublicationLockup(dir, output, []string{"self-run"}, "https://lab.example/results/run-1"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "containment 50.00% (1/2 malicious cases; case-equal weighting from corpus composition)") {
+		t.Fatalf("lockup omitted the full-corpus containment denominator:\n%s", data)
 	}
 }
 
