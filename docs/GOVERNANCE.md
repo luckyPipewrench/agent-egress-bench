@@ -70,7 +70,7 @@ Internal code changes still require a bump when they produce one of those effect
 
 A version freezes when the repository commits an immutable public record that declares it. Frozen readers keep that version's exact behavior. A new reader may support a new version, but it must not normalize old bytes into the new definition. Case semantics freeze per case when the case reaches `main`, independent of the artifact-family version.
 
-Retained v1 and v2 evidence records are frozen. The v4 case and tool-profile formats remain active. Receipt profiles write v5 and retain v1, v3, and v4 readers. Result rows and summaries write v5 and retain their frozen v4 readers. Provenance candidates write v6 while retaining their v5 reader. A local v5 summary may omit publication provenance, but a v6 provenance candidate can't cross the promotion boundary without the method repository and commit, adapter identity and owner, and target configuration reference and digest. Promotion baselines remain on v1 because v6 candidates still carry v5 summary and scoring semantics.
+Retained v1 and v2 evidence records are frozen. The v4 case and tool-profile formats remain active. Receipt profiles write v5 and retain v1, v3, and v4 readers. Result rows write v6 and retain frozen v4 and v5 readers; summaries still write v5 and retain their frozen v4 reader. Provenance candidates write v6 while retaining their v5 reader. A local v5 summary may omit publication provenance, but a v6 provenance candidate can't cross the promotion boundary without the method repository and commit, adapter identity and owner, and target configuration reference and digest. Promotion baselines remain on v1 because v6 candidates still carry v5 summary and scoring semantics.
 
 Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not an artifact schema bump.
 
@@ -82,7 +82,7 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | --- | ---: | --- | --- | --- |
 | Case and multi-file case | 4 | 4 | none | [`case-v4.schema.json`](../schemas/case-v4.schema.json), with the multi-file shape enforced in Go |
 | Case governance decision | 1 | 1 | none | [`case-governance-decision-v1.schema.json`](../schemas/case-governance-decision-v1.schema.json) |
-| Result row | 5 | 4, 5 | 4 | [`result-v5.schema.json`](../schemas/result-v5.schema.json) |
+| Result row | 6 | 4, 5, 6 | 4, 5 | [`result-v6.schema.json`](../schemas/result-v6.schema.json) |
 | Tool profile | 4 | 1, 3, 4 | 1, 3 | [`tool-profile-v4.schema.json`](../schemas/tool-profile-v4.schema.json) |
 | Receipt-scoring profile | 5 | 1, 3, 4, 5 | 1, 3, 4 | [`receipt-scoring-profile-v5.schema.json`](../schemas/receipt-scoring-profile-v5.schema.json) |
 | Summary | 5 | 4, 5 | 4 | [`summary-v5.schema.json`](../schemas/summary-v5.schema.json) |
@@ -91,7 +91,7 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Promoted record | 2 | 1, 2 | 1 | [`promoted-record-v2.schema.json`](../schemas/promoted-record-v2.schema.json) |
 | Promotion baseline | 1 | 1 | 1 | [`promotion-baseline-v1.schema.json`](../schemas/promotion-baseline-v1.schema.json) |
 
-Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows and summaries retain frozen v4 beside active v5. Provenance candidates retain every accepted version beside active v6. A path can't silently retarget a historical contract, and the repository provides no unsuffixed compatibility aliases.
+Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows retain frozen v4 and v5 beside active v6; summaries retain frozen v4 beside active v5. Provenance candidates retain every accepted version beside active v6. A path can't silently retarget a historical contract, and the repository provides no unsuffixed compatibility aliases.
 
 The summary stays on v5 because it already has optional fields for the publication facts. Provenance candidate v6 makes those fields mandatory and verifies them before publication. Keeping the requirement in that artifact family avoids changing the local-run summary or the promotion baseline when their meaning hasn't changed.
 

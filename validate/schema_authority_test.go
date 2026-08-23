@@ -139,7 +139,7 @@ func TestCaseSchemaMatchesValidator(t *testing.T) {
 }
 
 func TestResultSchemaMatchesValidator(t *testing.T) {
-	schema := readAuthoritySchema(t, "result-v5.schema.json")
+	schema := readAuthoritySchema(t, "result-v6.schema.json")
 	assertSchemaVersion(t, schema, activeResultSchemaVersion)
 	requireClosedObject(t, schema.AdditionalProperties, "result schema")
 	if got := sortedSchemaStrings(schema.Required); !reflect.DeepEqual(got, sortedSchemaStrings(resultRequiredFields)) {
@@ -159,9 +159,17 @@ func TestResultSchemaMatchesValidator(t *testing.T) {
 
 func TestLegacyResultSchemaRemainsReadable(t *testing.T) {
 	schema := readAuthoritySchema(t, "result-v4.schema.json")
-	assertSchemaVersion(t, schema, legacyResultSchemaVersion)
+	assertSchemaVersion(t, schema, legacyResultSchemaVersionV4)
 	if len(schema.Properties["evidence"].Required) != 0 {
 		t.Fatalf("legacy result schema unexpectedly requires evidence fields: %v", schema.Properties["evidence"].Required)
+	}
+}
+
+func TestResultV5SchemaRemainsReadableWithoutScoringVersion(t *testing.T) {
+	schema := readAuthoritySchema(t, "result-v5.schema.json")
+	assertSchemaVersion(t, schema, legacyResultSchemaVersionV5)
+	if _, required := schema.Properties["scoring_version"]; required {
+		t.Fatal("frozen result-v5 schema unexpectedly declares scoring_version")
 	}
 }
 

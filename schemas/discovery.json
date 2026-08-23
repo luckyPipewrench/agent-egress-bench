@@ -1,7 +1,7 @@
 {
   "format": 1,
   "catalog": "schemas/index.json",
-  "catalog_sha256": "3d64cffa4b327bb603095900658c19ce0a91f16e7666ebadeb7320b6f8b49d63",
+  "catalog_sha256": "121fc7042e84843b0410a1491328265b610e3099b1232e2fd88e9e1e3fa07755",
   "schemas": [
     {
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-governance-decision-v1.schema.json",
@@ -294,6 +294,10 @@
     {
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v5.schema.json",
       "path": "schemas/result-v5.schema.json"
+    },
+    {
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-v6.schema.json",
+      "path": "schemas/result-v6.schema.json"
     },
     {
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/summary-v4.schema.json",

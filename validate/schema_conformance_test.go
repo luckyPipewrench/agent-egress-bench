@@ -3,21 +3,23 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-type resultV5ConformanceVector struct {
+type resultV6ConformanceVector struct {
 	Name          string          `json:"name"`
 	FailureMode   string          `json:"failure_mode"`
 	SchemaRejects bool            `json:"schema_rejects"`
 	Row           json.RawMessage `json:"row"`
 }
 
-type resultV5ConformanceCorpus struct {
-	Accepted []resultV5ConformanceVector `json:"accepted"`
-	Rejected []resultV5ConformanceVector `json:"rejected"`
+type resultV6ConformanceCorpus struct {
+	Accepted []resultV6ConformanceVector `json:"accepted"`
+	Rejected []resultV6ConformanceVector `json:"rejected"`
 }
 
 // These vectors pin the structural boundary shared by the public root schemas
@@ -88,7 +90,8 @@ func TestResultSchemaConformance(t *testing.T) {
 	profile := decodeConformanceObject(t, readConformanceFixture(t, filepath.Join("..", "examples", "pipelock", "tool-profile.json")))
 	caseDoc := decodeConformanceObject(t, readConformanceFixture(t, filepath.Join("..", "cases", "a2a-agent-card", "a2a-card-benign-normal-006.json")))
 	baseline := map[string]any{
-		"schema_version":      5,
+		"schema_version":      6,
+		"scoring_version":     "2.8",
 		"case_id":             caseDoc["id"],
 		"tool":                profile["tool"],
 		"tool_version":        profile["tool_version"],
@@ -103,7 +106,7 @@ func TestResultSchemaConformance(t *testing.T) {
 	accepts := resultValidatorAccepts(t)
 	assertGoAccept(t, raw, accepts)
 
-	for _, required := range []string{"schema_version", "case_id", "tool", "tool_version", "capability_registry", "expected_verdict", "actual_verdict", "score", "evidence", "notes"} {
+	for _, required := range []string{"schema_version", "scoring_version", "case_id", "tool", "tool_version", "capability_registry", "expected_verdict", "actual_verdict", "score", "evidence", "notes"} {
 		t.Run("required_"+required, func(t *testing.T) {
 			mutated := cloneConformanceObject(t, baseline)
 			delete(mutated, required)
@@ -147,14 +150,14 @@ func TestResultSchemaConformance(t *testing.T) {
 	})
 }
 
-func TestResultV5ConformanceVectors(t *testing.T) {
-	raw := readConformanceFixture(t, filepath.Join("testdata", "result-v5-conformance.json"))
-	var corpus resultV5ConformanceCorpus
+func TestResultV6ConformanceVectors(t *testing.T) {
+	raw := readConformanceFixture(t, filepath.Join("testdata", "result-v6-conformance.json"))
+	var corpus resultV6ConformanceCorpus
 	if err := json.Unmarshal(raw, &corpus); err != nil {
 		t.Fatal(err)
 	}
 	if len(corpus.Accepted) == 0 || len(corpus.Rejected) == 0 {
-		t.Fatal("result-v5 conformance corpus must contain accepted and rejected vectors")
+		t.Fatal("result-v6 conformance corpus must contain accepted and rejected vectors")
 	}
 
 	acceptedStates := make(map[string]bool)
@@ -189,7 +192,13 @@ func TestResultV5ConformanceVectors(t *testing.T) {
 			failureModes[vector.FailureMode] = true
 			var row ResultLine
 			if err := json.Unmarshal(vector.Row, &row); err != nil {
-				t.Fatal(err)
+				// A typed decode error is itself a Go rejection. It is valid only
+				// for a vector the public schema also rejects; otherwise the two
+				// validators have drifted rather than agreed on the boundary.
+				if !vector.SchemaRejects {
+					t.Fatalf("Go rejected a schema-accepted vector during decode: %v", err)
+				}
+				return
 			}
 			if issues := validateResultLine(1, row); len(issues) == 0 {
 				t.Fatal("validator accepted rejected vector")
@@ -200,7 +209,7 @@ func TestResultV5ConformanceVectors(t *testing.T) {
 
 func TestResultV4WithoutResultStateRemainsReadable(t *testing.T) {
 	row := ResultLine{
-		SchemaVersion: legacyResultSchemaVersion, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		SchemaVersion: legacyResultSchemaVersionV4, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
 		CapabilityRegistry: testRegistryReference,
 		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass", Evidence: map[string]interface{}{}, Notes: strPtr(""),
 	}
@@ -209,14 +218,56 @@ func TestResultV4WithoutResultStateRemainsReadable(t *testing.T) {
 	}
 }
 
+func TestResultV5WithoutScoringVersionRemainsReadable(t *testing.T) {
+	row := ResultLine{
+		SchemaVersion: legacyResultSchemaVersionV5, CaseID: "legacy-result-v5", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass",
+		Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	if issues := validateResultLine(1, row); len(issues) != 0 {
+		t.Fatalf("validator rejected frozen result-v5 row without scoring_version: %v", issues)
+	}
+}
+
+func TestFrozenResultRowsRejectDeclaredScoringVersion(t *testing.T) {
+	for _, schemaVersion := range []int{legacyResultSchemaVersionV4, legacyResultSchemaVersionV5} {
+		for _, scoringVersion := range []string{"", "2.8"} {
+			t.Run(fmt.Sprintf("v%d/%q", schemaVersion, scoringVersion), func(t *testing.T) {
+				row := ResultLine{
+					SchemaVersion: schemaVersion, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+					CapabilityRegistry: testRegistryReference,
+					ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass",
+					Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+				}
+				raw := decodeConformanceObject(t, marshalConformanceJSON(t, row))
+				raw["scoring_version"] = scoringVersion
+				assertGoReject(t, marshalConformanceJSON(t, raw), resultValidatorAccepts(t))
+			})
+		}
+	}
+}
+
+func TestResultV6RetainsOlderScoringIdentity(t *testing.T) {
+	row := ResultLine{
+		SchemaVersion: activeResultSchemaVersion, ScoringVersion: "2.7", CaseID: "retained-v6-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass",
+		Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	if issues := validateResultLine(1, row); len(issues) != 0 {
+		t.Fatalf("validator rejected a well-formed retained v6 scoring identity: %v", issues)
+	}
+}
+
 func TestResultV4AndV5RowsCanShareFile(t *testing.T) {
 	v4 := ResultLine{
-		SchemaVersion: legacyResultSchemaVersion, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		SchemaVersion: legacyResultSchemaVersionV4, CaseID: "legacy-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
 		CapabilityRegistry: testRegistryReference,
 		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass", Evidence: map[string]interface{}{}, Notes: strPtr(""),
 	}
 	v5 := ResultLine{
-		SchemaVersion: activeResultSchemaVersion, CaseID: "active-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		SchemaVersion: legacyResultSchemaVersionV5, CaseID: "legacy-result-v5-mixed", Tool: "fixture-tool", ToolVersion: "1.0.0",
 		CapabilityRegistry: testRegistryReference,
 		ExpectedVerdict:    "block", ActualVerdict: "block", Score: "pass", Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
 	}
@@ -233,6 +284,36 @@ func TestResultV4AndV5RowsCanShareFile(t *testing.T) {
 	t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
 	if issues := validateResultsFile(path); len(issues) != 0 {
 		t.Fatalf("mixed v4/v5 result file was rejected: %v", issues)
+	}
+}
+
+func TestResultFileRejectsMixedActiveAndFrozenRowsInEitherOrder(t *testing.T) {
+	v5 := ResultLine{
+		SchemaVersion: legacyResultSchemaVersionV5, CaseID: "frozen-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "allow", ActualVerdict: "allow", Score: "pass", Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	v6 := ResultLine{
+		SchemaVersion: activeResultSchemaVersion, ScoringVersion: "2.8", CaseID: "active-result", Tool: "fixture-tool", ToolVersion: "1.0.0",
+		CapabilityRegistry: testRegistryReference,
+		ExpectedVerdict:    "block", ActualVerdict: "block", Score: "pass", Evidence: map[string]interface{}{"result_state": "observed"}, Notes: strPtr(""),
+	}
+	t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
+	for _, rows := range [][]ResultLine{{v5, v6}, {v6, v5}} {
+		var encoded bytes.Buffer
+		for _, row := range rows {
+			if err := json.NewEncoder(&encoded).Encode(row); err != nil {
+				t.Fatal(err)
+			}
+		}
+		path := filepath.Join(t.TempDir(), "mixed-active-frozen-results.jsonl")
+		if err := os.WriteFile(path, encoded.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		issues := validateResultsFile(path)
+		if !strings.Contains(strings.Join(issues, "\n"), "frozen result rows cannot share a file with active schema_version") {
+			t.Fatalf("mixed active/frozen file was accepted or rejected for the wrong reason: %v", issues)
+		}
 	}
 }
 

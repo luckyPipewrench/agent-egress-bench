@@ -1430,7 +1430,7 @@ func TestResultValidationRejectsPreV3Schema(t *testing.T) {
 		ExpectedVerdict: "block", ActualVerdict: "block", Score: "pass",
 		Evidence: map[string]interface{}{}, Notes: strPtr(""),
 	}
-	assertContainsError(t, validateResultLine(1, r), "schema_version must be 4 or 5")
+	assertContainsError(t, validateResultLine(1, r), "schema_version must be 4, 5, or 6")
 }
 
 func TestProfileValidationRejectsPreV3Schema(t *testing.T) {

@@ -378,7 +378,18 @@ func loadBuyerReport(dir string) (*buyerReport, error) {
 	r.metadata = loadReportDocument(dir, "run-metadata.json")
 	r.bundle = loadReportDocument(dir, "run-bundle.json")
 	r.decision = loadReportDocument(dir, "execution-decision.json")
-	r.results, r.failures, r.rowCounts, r.resultErr = loadReportResults(filepath.Join(dir, "results.jsonl"))
+	resultMode := reportResultsUnbound
+	switch reportNumber(r.summary, "schema_version") {
+	case "4":
+		resultMode = reportResultsFrozen
+	case "5":
+		resultMode = reportResultsActive
+	}
+	expectedScoringVersion := reportString(r.summary, "scoring_version")
+	if expectedScoringVersion == absentFact || expectedScoringVersion == "Invalid in run artifacts" || expectedScoringVersion == "Artifact value withheld by claim-language gate" {
+		expectedScoringVersion = ""
+	}
+	r.results, r.failures, r.rowCounts, r.resultErr = loadReportResults(filepath.Join(dir, "results.jsonl"), resultMode, expectedScoringVersion)
 	r.command = loadReportText(dir, "command.txt")
 	r.entrypoint = loadReportText(dir, "entrypoint-command.txt")
 	if !r.hasFact() {
@@ -619,7 +630,17 @@ type reportRowCounts struct {
 	benignFalsePositives int
 }
 
-func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCounts, string) {
+type reportResultMode uint8
+
+const (
+	reportResultsUnbound reportResultMode = iota
+	reportResultsFrozen
+	reportResultsActive
+	reportFrozenResultSchemaVersion   = 4
+	reportRetainedResultSchemaVersion = 5
+)
+
+func loadReportResults(path string, mode reportResultMode, expectedScoringVersion string) ([]reportNA, []reportFailure, reportRowCounts, string) {
 	var counts reportRowCounts
 	// Streams rather than reading whole, so it opens the descriptor itself, and
 	// it uses the same no-follow open as the other readers: the type is checked
@@ -641,6 +662,7 @@ func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCount
 
 	var notApplicable []reportNA
 	var failures []reportFailure
+	var sawActiveRow, sawFrozenRow bool
 	seenCaseIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
@@ -657,6 +679,55 @@ func loadReportResults(path string) ([]reportNA, []reportFailure, reportRowCount
 		// malformed input, not a row with extra decoration to ignore.
 		if err := ensureJSONEOF(dec); err != nil {
 			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		rawSchemaVersion, present := row["schema_version"]
+		if !present {
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		number, numberOK := rawSchemaVersion.(json.Number)
+		schemaVersion, parseErr := strconv.Atoi(fmt.Sprint(number))
+		if !numberOK || parseErr != nil || schemaVersion < 4 || schemaVersion > activeResultSchemaVersion {
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		switch mode {
+		case reportResultsActive:
+			// Summary v5 spans both frozen v5 rows and scorer-bound v6 rows, so
+			// the row version selects the provenance rule.
+			if schemaVersion == reportFrozenResultSchemaVersion {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+			if schemaVersion == activeResultSchemaVersion {
+				if expectedScoringVersion == "" {
+					return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+				}
+			} else if _, declared := row["scoring_version"]; schemaVersion == reportRetainedResultSchemaVersion && declared {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+		case reportResultsFrozen:
+			if schemaVersion != reportFrozenResultSchemaVersion {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+			if _, declared := row["scoring_version"]; declared {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
+		default:
+			return notApplicable, failures, counts, fmt.Sprintf("Unbound result identity at line %d", line)
+		}
+		// A runner emits one row schema per file. Mixing active and frozen rows
+		// would let the frozen rows carry scores without a scorer identity.
+		if schemaVersion == activeResultSchemaVersion {
+			sawActiveRow = true
+		} else {
+			sawFrozenRow = true
+		}
+		if sawActiveRow && sawFrozenRow {
+			return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+		}
+		if schemaVersion == activeResultSchemaVersion {
+			scorer, scorerOK := row["scoring_version"].(string)
+			if !scorerOK || strings.TrimSpace(scorer) == "" || scorer != expectedScoringVersion {
+				return notApplicable, failures, counts, fmt.Sprintf("Malformed JSONL at line %d", line)
+			}
 		}
 		counts.total++
 		actual, _ := row["actual_verdict"].(string)

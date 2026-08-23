@@ -27,6 +27,8 @@ TOOL=$(jq -r '.tool' "$PROFILE")
 TOOL_VERSION=$(jq -r '.tool_version' "$PROFILE")
 CAPABILITY_REGISTRY=$(jq -c '.capability_registry' "$PROFILE")
 RESULT_SCHEMA_VERSION=$(python3 "$SCRIPT_DIR/../../scripts/artifact_contracts.py" active-version result_row)
+RESULT_STATE_CONTRACT="$SCRIPT_DIR/../../contracts/result-states-v${RESULT_SCHEMA_VERSION}.json"
+SCORING_VERSION=$(jq -er '.scoring_version | select(type == "string" and length > 0)' "$RESULT_STATE_CONTRACT")
 # --- Emit a single JSONL result line to stdout ---
 # This function is complete. Copy it as-is.
 emit_result() {
@@ -40,9 +42,10 @@ emit_result() {
         --arg actual "$actual" \
         --arg score "$score" \
         --argjson schema_version "$RESULT_SCHEMA_VERSION" \
+        --arg scoring_version "$SCORING_VERSION" \
         --argjson evidence "$evidence" \
         --arg notes "$notes" \
-        '{schema_version: $schema_version, case_id: $case_id, tool: $tool, tool_version: $tool_version,
+        '{schema_version: $schema_version, scoring_version: $scoring_version, case_id: $case_id, tool: $tool, tool_version: $tool_version,
           capability_registry: $capability_registry,
           expected_verdict: $expected, actual_verdict: $actual, score: $score,
           evidence: $evidence, notes: $notes}'
@@ -147,7 +150,7 @@ while read -r case_file; do
     #
     # Replace both placeholder values below with your implementation. Measured
     # allow/block verdicts require result_state=observed; other outcomes must use
-    # the matching state from contracts/result-states-v5.json.
+    # the matching state from contracts/result-states-v6.json.
     # ============================================================
 
     actual_verdict="error"

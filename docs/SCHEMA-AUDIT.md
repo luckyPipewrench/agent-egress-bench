@@ -1,6 +1,6 @@
 # Published schema audit
 
-This audit covers every versioned JSON Schema in the public catalog. The catalog currently contains 53 canonical contracts and 36 verifier copies. `make check-schema-copies` requires each verifier copy to remain byte-identical to its canonical schema, so the canonical row also covers every copied path.
+This audit covers every versioned JSON Schema in the public catalog. The catalog currently contains 58 canonical contracts and 36 verifier copies. `make check-schema-copies` requires each verifier copy to remain byte-identical to its canonical schema, so the canonical row also covers every copied path.
 
 `make check-contracts` scans all published copies. Known object shapes must set `additionalProperties: false`. Typed maps remain open only over constrained values. Every other open object needs an exact schema ID and JSON Pointer entry in `scripts/check_schema_closure.py`, with a reason and a non-stale gate.
 
@@ -15,7 +15,8 @@ The weakest-instance column describes the least informative structurally valid r
 | `case-governance-decision-v1.schema.json` | Closed root | One immutable case binding plus the existing description, expected-verdict rationale, source, false-positive assessment, and supersession state | New v1; the governance gate compares every field with its referenced logical case |
 | `multi-file-case-v4.schema.json` | Closed, including the file inventory | A complete temporal case with three normalized relative JSON filenames; absolute and parent paths fail | Unchanged |
 | `result-v4.schema.json` | Closed except frozen adapter evidence | A complete historical scored row; evidence is a frozen extension point | Frozen v4 unchanged |
-| `result-v5.schema.json` | Closed except adapter evidence with required `result_state` | A complete identified scored or explicit unmeasured row; the validator binds state, verdict, and score | In-place amendment; retained v5 rows keep the same result |
+| `result-v5.schema.json` | Closed except adapter evidence with required `result_state` | A complete historical identified scored or explicit unmeasured row; the validator retains its state, verdict, and score semantics | Frozen v5 unchanged |
+| `result-v6.schema.json` | Closed except adapter evidence with required `result_state` | A complete identified scored or explicit unmeasured row carrying its exact scoring version; the validator binds scorer, state, verdict, and score | New v6 because a required row-level scoring identity would reject retained v5 rows |
 | `summary-v4.schema.json` | Open frozen root | The historical required summary fields can carry unknown siblings | Frozen v4 unchanged |
 | `summary-v5.schema.json` | Closed; category and reason names are typed maps; publication provenance is optional for local runs | A non-empty counted run with bounded rates, diagnostics, registry binding, and explicit measurement status | Active v5 unchanged; the publication candidate owns the stricter promotion rule |
 | `provenance-candidate-v1.schema.json` | Closed root; three nested historical objects are open | Empty count, score, and metric objects are structurally valid | Frozen v1 unchanged; v5 replaces it |
@@ -75,6 +76,6 @@ Counts and rates use non-negative bounds and zero-to-one bounds where those valu
 
 ## Long-term source shape
 
-Hand-written JSON Schema remains useful for portable structural validation, but it can't be the only authority for cross-field contracts. The result-state vocabulary now generates its Go and Python bindings from `contracts/result-states-v5.json`. Count arithmetic, rate equality, digest-to-file binding, archive containment, and signature policy stay in semantic verifiers with negative tests because JSON Schema can't express or observe them.
+Hand-written JSON Schema remains useful for portable structural validation, but it can't be the only authority for cross-field contracts. The result-state vocabulary and active scoring identity now generate their Go and Python bindings from `contracts/result-states-v6.json`. Count arithmetic, rate equality, digest-to-file binding, archive containment, and signature policy stay in semantic verifiers with negative tests because JSON Schema can't express or observe them.
 
 The next contract with a vocabulary consumed in more than one language should follow the same pattern: govern the vocabulary once, generate static bindings, and make the public-contract gate reject stale output. A larger schema generator isn't justified yet because most schemas don't share enough shape to offset the migration and review cost.

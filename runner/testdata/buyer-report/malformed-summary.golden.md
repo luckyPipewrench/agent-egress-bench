@@ -5,7 +5,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 ## Artifact input status
 
 - raw-summary.json: Malformed JSON: unexpected EOF
-- results.jsonl: Readable
+- results.jsonl: Unbound result identity at line 1
 - run-metadata.json: Readable
 - run-bundle.json: Readable
 - execution-decision.json: Readable
@@ -53,7 +53,7 @@ This report renders facts retained by one Gauntlet run. It does not combine the 
 - Not-applicable cases: Absent from run artifacts
 - Error cases: Absent from run artifacts
 - Not-applicable case IDs and reasons:
-  - Invalid: the summary does not carry a usable not-applicable count
+  - Unbound result identity at line 1
 
 ## Metric vector
 
@@ -129,7 +129,7 @@ Credential-shaped values in the commands below are replaced with REDACTED. Read 
 - pipelock-version.txt (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - raw-summary.json (sha256 a6fb08fda1acb957b6116bd37811a1fe41a01611c0631edbf786d6889a27a55c)
 - receipt\_profile (sha256 e6dd449c31e34ec84ded60b75b507e5acb1fe2a1c7493afad341362ddfe75cb9)
-- results.jsonl (sha256 d1413b853523d00171fb500f4c0bb02973cd4aa2276c1eed650295f9eace651f)
+- results.jsonl (sha256 2c3de64ce408ca1cba1345ed5634e2261967bc92fa8b04256a977b0b3816ab57)
 - run-metadata.json (sha256 2ec73028d323d3cf0d2bd7b3e8eb598f515aa3e0f0053e46ef03a53916ac1bc4)
 - runner.stderr (sha256 9bdaff9d24e8e222099c05ad4495d5828e9f455b31759ebb0e6dcd96d881b460)
 - tool\_profile (sha256 5ff9c3781a107a41fb75d76e48e980fe265ffa2d0dec4cf55aa3c6c3b4509296)

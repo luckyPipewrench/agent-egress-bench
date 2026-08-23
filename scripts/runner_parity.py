@@ -13,12 +13,24 @@ import tempfile
 from pathlib import Path
 
 try:
-    from scripts.result_states_generated import RESULT_SCHEMA_VERSION, RESULT_STATES, SCORES
+    from scripts.result_states_generated import (
+        RESULT_SCHEMA_VERSION,
+        RESULT_STATES,
+        SCORING_VERSION,
+        SCORES,
+    )
 except ModuleNotFoundError:
-    from result_states_generated import RESULT_SCHEMA_VERSION, RESULT_STATES, SCORES
+    from result_states_generated import RESULT_SCHEMA_VERSION, RESULT_STATES, SCORING_VERSION, SCORES
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 NONCE = re.compile(r"^[0-9a-f]{32,}$")
+LEGACY_RESULT_SCHEMA_VERSION = 5
+SUPPORTED_RESULT_SCHEMA_VERSIONS = frozenset(
+    {
+        LEGACY_RESULT_SCHEMA_VERSION,
+        RESULT_SCHEMA_VERSION,
+    }
+)
 
 
 def canonical_bytes(value):
@@ -67,6 +79,8 @@ def load_benchmark_manifest(path):
 
 def load_results(path, expected_tool=None, expected_tool_version=None, expected_case_ids=None):
     rows = []
+    frozen_row_numbers = []
+    active_row_seen = False
     with path.open(encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
             if not line.strip():
@@ -77,8 +91,20 @@ def load_results(path, expected_tool=None, expected_tool_version=None, expected_
                 raise ValueError(f"{path}:{number}: invalid JSON: {exc}") from exc
             if not isinstance(row, dict):
                 raise ValueError(f"{path}:{number}: result must be an object")
-            if row.get("schema_version") != RESULT_SCHEMA_VERSION:
-                raise ValueError(f"{path}:{number}: schema_version must be {RESULT_SCHEMA_VERSION}")
+            schema_version = row.get("schema_version")
+            if schema_version not in SUPPORTED_RESULT_SCHEMA_VERSIONS:
+                raise ValueError(
+                    f"{path}:{number}: schema_version must be one of "
+                    f"{sorted(SUPPORTED_RESULT_SCHEMA_VERSIONS)}"
+                )
+            if schema_version == RESULT_SCHEMA_VERSION:
+                active_row_seen = True
+            else:
+                frozen_row_numbers.append(number)
+                if "scoring_version" in row:
+                    raise ValueError(
+                        f"{path}:{number}: frozen result schema must not declare scoring_version"
+                    )
             if expected_tool is not None and row.get("tool") != expected_tool:
                 raise ValueError(f"{path}:{number}: tool does not match the committed tool identity")
             if expected_tool_version is not None and row.get("tool_version") != expected_tool_version:
@@ -93,6 +119,11 @@ def load_results(path, expected_tool=None, expected_tool_version=None, expected_
                 "score": row.get("score"),
                 "result_state": evidence["result_state"],
             }
+            if schema_version == RESULT_SCHEMA_VERSION:
+                scoring_version = require_text(
+                    row.get("scoring_version"), f"{path}:{number}: scoring_version"
+                )
+                normalized["scoring_version"] = scoring_version
             if normalized["expected_verdict"] not in {"block", "allow"}:
                 raise ValueError(f"{path}:{number}: invalid expected_verdict")
             if normalized["actual_verdict"] not in {"block", "allow", "unreachable", "error"}:
@@ -113,6 +144,11 @@ def load_results(path, expected_tool=None, expected_tool_version=None, expected_
             rows.append(normalized)
     if not rows:
         raise ValueError(f"{path}: no result rows")
+    if active_row_seen and frozen_row_numbers:
+        raise ValueError(
+            f"{path}:{frozen_row_numbers[0]}: frozen result rows cannot share a file with active "
+            f"schema_version {RESULT_SCHEMA_VERSION} rows"
+        )
     rows.sort(key=lambda row: row["case_id"])
     ids = [row["case_id"] for row in rows]
     if len(ids) != len(set(ids)):
@@ -207,16 +243,24 @@ def validate_reveal(value):
     vector = value["normalized_results"]
     if not isinstance(vector, list) or not vector:
         raise ValueError("normalized_results must be a non-empty array")
-    keys = {"case_id", "expected_verdict", "actual_verdict", "score", "result_state"}
+    legacy_keys = {"case_id", "expected_verdict", "actual_verdict", "score", "result_state"}
+    scorer_bound_keys = legacy_keys | {"scoring_version"}
     ids = []
+    has_legacy_row = False
+    has_scorer_bound_row = False
     for index, row in enumerate(vector):
-        if not isinstance(row, dict) or set(row) != keys:
+        if not isinstance(row, dict) or set(row) not in (legacy_keys, scorer_bound_keys):
             raise ValueError(f"normalized_results[{index}] has unexpected or missing fields")
         ids.append(require_text(row["case_id"], f"normalized_results[{index}].case_id"))
         if row["expected_verdict"] not in {"block", "allow"} or row["actual_verdict"] not in {"block", "allow", "unreachable", "error"}:
             raise ValueError(f"normalized_results[{index}] has an invalid verdict")
         if row["score"] not in SCORES or row["result_state"] not in RESULT_STATES:
             raise ValueError(f"normalized_results[{index}] has an invalid score or result_state")
+        if "scoring_version" in row:
+            require_text(row["scoring_version"], f"normalized_results[{index}].scoring_version")
+            has_scorer_bound_row = True
+        else:
+            has_legacy_row = True
         state, actual, score = row["result_state"], row["actual_verdict"], row["score"]
         if state == "observed" and (actual not in {"block", "allow"} or score != ("pass" if actual == row["expected_verdict"] else "fail")):
             raise ValueError(f"normalized_results[{index}] has inconsistent observed result semantics")
@@ -224,6 +268,8 @@ def validate_reveal(value):
             raise ValueError(f"normalized_results[{index}] has inconsistent unreachable semantics")
         if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
             raise ValueError(f"normalized_results[{index}] has inconsistent failure semantics")
+    if has_legacy_row and has_scorer_bound_row:
+        raise ValueError("normalized_results cannot mix frozen and scorer-bound rows")
     if ids != sorted(ids) or len(ids) != len(set(ids)):
         raise ValueError("normalized_results must be uniquely sorted by case_id")
     results = value["commitment"]["results"]
