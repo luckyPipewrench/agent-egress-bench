@@ -100,13 +100,16 @@ type buyerReport struct {
 type reportCategoryProfile struct {
 	rows           []reportCategoryProfileRow
 	maliciousTotal int
+	benignTotal    int
 	unavailable    string
 }
 
 type reportCategoryProfileRow struct {
-	category  string
-	blocked   int
-	malicious int
+	category     string
+	blocked      int
+	malicious    int
+	falseBlocked int
+	benign       int
 }
 
 type reportProfileCase struct {
@@ -307,7 +310,7 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 		}
 		line("")
 	}
-	line("%s total · %s applicable · %s unreachable · %s not applicable · %s errors · containment %s (%d/%d malicious cases; case-equal weighting from corpus composition) · false-positive rate %s", required["total"], required["applicable"], required["unreachable"], required["not applicable"], required["errors"], required["containment"], report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal, required["false-positive rate"])
+	line("%s total · %s applicable · %s unreachable · %s not applicable · %s errors · containment %s (%d/%d malicious cases; case-equal weighting from corpus composition) · false-positive rate %s (%d/%d benign cases; case-equal weighting from corpus composition)", required["total"], required["applicable"], required["unreachable"], required["not applicable"], required["errors"], required["containment"], report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal, required["false-positive rate"], report.rowCounts.benignFalsePositives, report.rowCounts.benignTotal)
 	if len(naReasons) > 0 {
 		line("Not-applicable reasons: %s", markdownInline(strings.Join(naReasons, ", ")))
 	}
@@ -664,10 +667,11 @@ func loadReportText(dir, name string) string {
 	return safeReportText(value)
 }
 
-// categoryProfile reconstructs the applicable-only malicious category profile
-// from the two retained inputs that bind case identity to observed outcomes.
-// The summary's per_category.applicable count cannot supply this denominator:
-// it includes benign rows, so using it would overstate the malicious scope.
+// categoryProfile reconstructs the applicable-only category profiles from the
+// two retained inputs that bind case identity to observed outcomes. The
+// summary's per_category.applicable count cannot supply either denominator:
+// it includes malicious and benign rows, so using it would overstate both
+// category-specific scopes.
 func (r *buyerReport) categoryProfile() reportCategoryProfile {
 	if reportNumber(r.summary, "schema_version") != "5" {
 		return reportCategoryProfile{unavailable: "requires a v5 summary and bound active evidence"}
@@ -703,10 +707,18 @@ func (r *buyerReport) categoryProfile() reportCategoryProfile {
 		}
 		row := byCategory[c.category]
 		row.category = c.category
-		if c.expected == "block" && result.observed {
-			row.malicious++
-			if result.actual == "block" {
-				row.blocked++
+		if result.observed {
+			switch c.expected {
+			case "block":
+				row.malicious++
+				if result.actual == "block" {
+					row.blocked++
+				}
+			case "allow":
+				row.benign++
+				if result.actual == "block" {
+					row.falseBlocked++
+				}
 			}
 		}
 		byCategory[c.category] = row
@@ -716,10 +728,14 @@ func (r *buyerReport) categoryProfile() reportCategoryProfile {
 	for _, row := range byCategory {
 		profile.rows = append(profile.rows, row)
 		profile.maliciousTotal += row.malicious
+		profile.benignTotal += row.benign
 	}
 	sort.Slice(profile.rows, func(i, j int) bool { return profile.rows[i].category < profile.rows[j].category })
 	if !r.matchesApplicableContainment(profile) {
 		return reportCategoryProfile{unavailable: "the applicable containment does not match the bound result rows"}
+	}
+	if !r.matchesApplicableFalsePositiveRate(profile) {
+		return reportCategoryProfile{unavailable: "the applicable false-positive rate does not match the bound result rows"}
 	}
 	return profile
 }
@@ -919,6 +935,29 @@ func (r *buyerReport) matchesApplicableContainment(profile reportCategoryProfile
 	}
 	ratio, err := observed.Float64()
 	expected := float64(blocked) / float64(profile.maliciousTotal)
+	return err == nil && !math.IsNaN(ratio) && !math.IsInf(ratio, 0) && math.Abs(ratio-expected) <= 1e-12
+}
+
+func (r *buyerReport) matchesApplicableFalsePositiveRate(profile reportCategoryProfile) bool {
+	scores, scoresOK := r.summary.data["scores"].(map[string]interface{})
+	applicable, applicableOK := scores["applicable"].(map[string]interface{})
+	value, present := applicable["false_positive_rate"]
+	if !scoresOK || !applicableOK || !present {
+		return false
+	}
+	if profile.benignTotal == 0 {
+		return value == nil
+	}
+	observed, numberOK := value.(json.Number)
+	if !numberOK {
+		return false
+	}
+	falseBlocked := 0
+	for _, row := range profile.rows {
+		falseBlocked += row.falseBlocked
+	}
+	ratio, err := observed.Float64()
+	expected := float64(falseBlocked) / float64(profile.benignTotal)
 	return err == nil && !math.IsNaN(ratio) && !math.IsInf(ratio, 0) && math.Abs(ratio-expected) <= 1e-12
 }
 
@@ -1490,6 +1529,21 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		for _, row := range profile.rows {
 			line("| %s | %d / %d | %s | %s |", markdownInline(safeReportText(row.category)), row.blocked, row.malicious,
 				reportCategoryProfilePercent(row.blocked, row.malicious), reportCategoryProfilePercent(row.malicious, profile.maliciousTotal))
+		}
+	}
+	line("")
+	line("### Applicable-only benign category profile")
+	line("")
+	line("This profile is evidence of category coverage and concentration, not a score or ranking. It uses observed benign rows only. False-positive rate gives every observed benign case equal influence, and the share column shows how corpus composition sets the category weighting. Do not compare this profile with full-corpus false-positive rate when their scopes differ.")
+	line("")
+	if profile.unavailable != "" {
+		line("Unavailable: %s.", markdownInline(profile.unavailable))
+	} else {
+		line("| Category | Falsely blocked / observed benign | False-positive rate | Share of observed benign denominator |")
+		line("| --- | ---: | ---: | ---: |")
+		for _, row := range profile.rows {
+			line("| %s | %d / %d | %s | %s |", markdownInline(safeReportText(row.category)), row.falseBlocked, row.benign,
+				reportCategoryProfilePercent(row.falseBlocked, row.benign), reportCategoryProfilePercent(row.benign, profile.benignTotal))
 		}
 	}
 	line("")

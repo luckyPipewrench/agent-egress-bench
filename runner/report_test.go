@@ -518,7 +518,7 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		"Publisher-declared assurance: **self run**",
 		"example/agent-egress-bench@cccccccccccccccccccccccccccccccccccccccc",
 		"2 total · 2 applicable · 0 unreachable · 0 not applicable · 0 errors",
-		"containment 100.00% (1/1 malicious cases; case-equal weighting from corpus composition) · false-positive rate 0.00%",
+		"containment 100.00% (1/1 malicious cases; case-equal weighting from corpus composition) · false-positive rate 0.00% (0/1 benign cases; case-equal weighting from corpus composition)",
 		"Corpus Git observation: `clean` · tool version observation: `observed`",
 		"Exercised transports: http\\_proxy",
 		"internal consistency only",
@@ -537,14 +537,14 @@ func categoryProfileFixture() *reportFixture {
 		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
 	}
 	fixture.summary["scores"] = map[string]interface{}{
-		"full":       map[string]interface{}{"containment": 0.5, "false_positive_rate": 0.0},
-		"applicable": map[string]interface{}{"containment": 0.5, "false_positive_rate": 0.0},
+		"full":       map[string]interface{}{"containment": 0.5, "false_positive_rate": 0.5},
+		"applicable": map[string]interface{}{"containment": 0.5, "false_positive_rate": 0.5},
 	}
 	fixture.results = []map[string]interface{}{
 		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "url-attack-001", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "block", "score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
 		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "url-benign-002", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
 		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "mcp-drift-attack-003", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "allow", "score": "fail", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
-		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "headers-benign-004", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "allow", "score": "pass", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
+		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "headers-benign-004", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "allow", "actual_verdict": "block", "score": "fail", "evidence": map[string]interface{}{"result_state": "observed"}, "notes": ""},
 		{"schema_version": activeResultSchemaVersion, "scoring_version": scoringVersion, "case_id": "mcp-tool-attack-005", "tool": "example-tool", "tool_version": "1.2.3", "expected_verdict": "block", "actual_verdict": "unreachable", "score": "error", "evidence": map[string]interface{}{"result_state": "unreachable"}, "notes": ""},
 	}
 	return fixture
@@ -600,11 +600,16 @@ func TestBuyerReportRendersBoundCategoryProfile(t *testing.T) {
 	got := output.String()
 	for _, want := range []string{
 		"### Applicable-only malicious category profile",
+		"### Applicable-only benign category profile",
 		"evidence of category coverage and concentration, not a score or ranking",
 		"| headers | 0 / 0 | N/A | 0.00% |",
 		"| mcp\\_drift | 0 / 1 | 0.00% | 50.00% |",
 		"| mcp\\_tool | 0 / 0 | N/A | 0.00% |",
 		"| url | 1 / 1 | 100.00% | 50.00% |",
+		"| headers | 1 / 1 | 100.00% | 50.00% |",
+		"| mcp\\_drift | 0 / 0 | N/A | 0.00% |",
+		"| mcp\\_tool | 0 / 0 | N/A | 0.00% |",
+		"| url | 0 / 1 | 0.00% | 50.00% |",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("category profile missing %q:\n%s", want, got)
@@ -631,8 +636,8 @@ func TestBuyerReportRendersProfileWhenNoMaliciousCaseWasObserved(t *testing.T) {
 		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
 	}
 	fixture.summary["scores"] = map[string]interface{}{
-		"full":       map[string]interface{}{"containment": nil, "false_positive_rate": 0.0},
-		"applicable": map[string]interface{}{"containment": nil, "false_positive_rate": 0.0},
+		"full":       map[string]interface{}{"containment": nil, "false_positive_rate": 0.5},
+		"applicable": map[string]interface{}{"containment": nil, "false_positive_rate": 0.5},
 	}
 	dir := t.TempDir()
 	fixture.write(t, dir)
@@ -655,6 +660,58 @@ func TestBuyerReportRendersProfileWhenNoMaliciousCaseWasObserved(t *testing.T) {
 	// rather than 0%, which would assert a containment the run never measured.
 	for _, want := range []string{
 		"| mcp\\_drift | 0 / 0 | N/A | N/A |",
+		"| url | 0 / 0 | N/A | N/A |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in:\n%s", want, got)
+		}
+	}
+}
+
+// A run that observed no benign case at all still gets a profile. The
+// zero-denominator branch of matchesApplicableFalsePositiveRate requires that
+// scores.applicable.false_positive_rate be present and null, because a run
+// with nothing to measure must publish an absent rate rather than a zero one.
+func TestBuyerReportRendersProfileWhenNoBenignCaseWasObserved(t *testing.T) {
+	fixture := categoryProfileFixture()
+	for _, row := range fixture.results {
+		if row["expected_verdict"] != "allow" {
+			continue
+		}
+		row["actual_verdict"] = "unreachable"
+		row["score"] = "error"
+		row["evidence"] = map[string]interface{}{"result_state": "unreachable"}
+	}
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 5, "applicable": 2, "unreachable": 3, "not_applicable": 0,
+		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
+	}
+	fixture.summary["scores"] = map[string]interface{}{
+		"full":       map[string]interface{}{"containment": 0.5, "false_positive_rate": nil},
+		"applicable": map[string]interface{}{"containment": 0.5, "false_positive_rate": nil},
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	writeCategoryProfileIndex(t, fixture, dir, categoryProfileIndex())
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	if !strings.Contains(got, "### Applicable-only benign category profile") {
+		t.Fatalf("profile section missing:\n%s", got)
+	}
+	if strings.Contains(got, "Unavailable:") {
+		t.Errorf("a run with no observed benign case must still render a profile:\n%s", got)
+	}
+	// Every benign category has a zero denominator, so each must read N/A
+	// rather than 0%, which would assert a false-positive rate the run never
+	// measured.
+	for _, want := range []string{
+		"| headers | 0 / 0 | N/A | N/A |",
 		"| url | 0 / 0 | N/A | N/A |",
 	} {
 		if !strings.Contains(got, want) {
@@ -762,6 +819,10 @@ func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
 			fixture.summary["scores"].(map[string]interface{})["applicable"].(map[string]interface{})["containment"] = 0.75
 			writeFixtureJSON(t, filepath.Join(dir, "raw-summary.json"), fixture.summary)
 		}, want: "Unavailable: the applicable containment does not match the bound result rows."},
+		{name: "applicable false-positive rate mismatch", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			fixture.summary["scores"].(map[string]interface{})["applicable"].(map[string]interface{})["false_positive_rate"] = 0.25
+			writeFixtureJSON(t, filepath.Join(dir, "raw-summary.json"), fixture.summary)
+		}, want: "Unavailable: the applicable false-positive rate does not match the bound result rows."},
 	}
 
 	for _, tt := range tests {
@@ -783,6 +844,9 @@ func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
 			}
 			if !strings.Contains(got, "- Containment: 50.00%") {
 				t.Fatalf("profile failure hid the primary score:\n%s", got)
+			}
+			if !strings.Contains(got, "- False-positive rate:") {
+				t.Fatalf("profile failure hid the primary false-positive rate:\n%s", got)
 			}
 		})
 	}
