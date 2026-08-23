@@ -623,9 +623,17 @@ func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, want: "Unavailable: case-index.json is absent or unreadable."},
+		{name: "missing results", mutate: func(t *testing.T, _ *reportFixture, dir string) {
+			if err := os.Remove(filepath.Join(dir, "results.jsonl")); err != nil {
+				t.Fatal(err)
+			}
+		}, want: "Unavailable: results.jsonl is absent or unreadable."},
 		{name: "malformed index", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
 			writeBoundReportEvidence(t, fixture, dir, "case_index", "case-index.json", []byte("{"))
 		}, want: "Unavailable: case-index.json is malformed."},
+		{name: "malformed results", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			writeBoundReportEvidence(t, fixture, dir, "results", "results.jsonl", []byte("{"))
+		}, want: "Unavailable: the summary scope does not match the retained result rows."},
 		{name: "results digest mismatch", mutate: func(t *testing.T, _ *reportFixture, dir string) {
 			data, err := os.ReadFile(filepath.Join(dir, "results.jsonl"))
 			if err != nil {
@@ -635,6 +643,10 @@ func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, want: "Unavailable: results.jsonl does not match its retained digest."},
+		{name: "summary scope mismatch", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			fixture.summary["case_count"].(map[string]interface{})["total"] = 6
+			writeFixtureJSON(t, filepath.Join(dir, "raw-summary.json"), fixture.summary)
+		}, want: "Unavailable: the summary scope does not match the retained result rows."},
 		{name: "scope mismatch", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
 			index := categoryProfileIndex()
 			index["cases"].(map[string]interface{})["url-attack-001"].(map[string]interface{})["expected_verdict"] = "allow"
