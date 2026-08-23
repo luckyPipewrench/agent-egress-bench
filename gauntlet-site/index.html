@@ -117,7 +117,10 @@ go build -o aeb-gauntlet .
   // a number the artifact never carried, which is the same defect as scoring a
   // null containment as zero.
   function fmtCount(v) {
-    return (typeof v === 'number' && Number.isFinite(v) && v >= 0) ? String(v) : 'unknown';
+    // Integer, because a case count is a count of cases. A fractional value is
+    // not a smaller count, it is evidence the artifact is wrong, and printing
+    // it would present that as a real total.
+    return (typeof v === 'number' && Number.isInteger(v) && v >= 0) ? String(v) : 'unknown';
   }
 
   function pctCls(v) {
@@ -328,14 +331,27 @@ go build -o aeb-gauntlet .
 
   function render(results, verified) {
     while (container.firstChild) container.removeChild(container.firstChild);
-    var entries = Array.isArray(results) ? results.slice() : results ? [results] : [];
+    // Only null and undefined mean "nothing was published". A payload of
+    // false, 0, or "" is a value that is not a result object, and rendering it
+    // as an empty page would report absence when the truth is malformed input.
+    var entries = Array.isArray(results) ? results.slice() : results == null ? [] : [results];
     if (entries.length === 0) {
       container.appendChild(txt('div', 'No results yet. Be the first to run the Gauntlet.', 'empty-state'));
       return;
     }
+    // Code-point order, not localeCompare, which varies by browser locale and
+    // would make the order this page discloses non-reproducible for a reader
+    // checking it. The original index breaks ties so equal names keep their
+    // source order rather than being reordered by the sort.
+    entries = entries.map(function(entry, index) { return {entry: entry, index: index}; });
     entries.sort(function(a, b) {
-      return toolName(a).localeCompare(toolName(b));
+      var an = toolName(a.entry);
+      var bn = toolName(b.entry);
+      if (an < bn) return -1;
+      if (an > bn) return 1;
+      return a.index - b.index;
     });
+    entries = entries.map(function(item) { return item.entry; });
     entries.forEach(function(r) { container.appendChild(renderResult(r, verified)); });
   }
 
