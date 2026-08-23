@@ -5,12 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/luckyPipewrench/agent-egress-bench/runner/internal/cappedread"
 )
 
 // MCPHTTPFixture runs a minimal Streamable HTTP MCP upstream.
@@ -272,8 +273,17 @@ func StartMCPHTTP() (*MCPHTTPFixture, error) {
 			return
 		}
 		f.calls.Add(1)
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		read, err := cappedread.Read(r.Body, 1<<20)
 		_ = r.Body.Close()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("read MCP request: %v", err), http.StatusBadRequest)
+			return
+		}
+		if read.Truncated {
+			http.Error(w, fmt.Sprintf("MCP request exceeded %d-byte cap after %d bytes", 1<<20, read.ObservedBytes), http.StatusRequestEntityTooLarge)
+			return
+		}
+		body := read.Bytes
 		var req struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      json.RawMessage `json:"id"`

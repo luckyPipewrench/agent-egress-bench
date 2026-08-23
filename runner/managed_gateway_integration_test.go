@@ -14,6 +14,7 @@ import (
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/adapter"
 	"github.com/luckyPipewrench/agent-egress-bench/runner/fixture"
+	"github.com/luckyPipewrench/agent-egress-bench/runner/internal/cappedread"
 )
 
 // End-to-end: a gateway plugin with a managed lifecycle must start its gateway,
@@ -167,8 +168,12 @@ func TestBuildManagedGatewayAdapterDoesNotCreditManagedDenyAsAtomicProof(t *test
 func forwardingGatewayHandler(upstream string) http.Handler {
 	client := &http.Client{Timeout: 3 * time.Second}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, err := readManagedGatewayBody(r.Body)
 		_ = r.Body.Close()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		var req struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
@@ -199,7 +204,11 @@ func forwardingGatewayHandler(upstream string) http.Handler {
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		respBody, err := readManagedGatewayBody(resp.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
 		_, _ = w.Write(respBody)
 	})
 }
@@ -252,8 +261,12 @@ func TestGatewayForwardHelper(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, err := readManagedGatewayBody(r.Body)
 		_ = r.Body.Close()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		var req struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
@@ -302,7 +315,11 @@ func TestGatewayForwardHelper(t *testing.T) {
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		respBody, err := readManagedGatewayBody(resp.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
 		_, _ = w.Write(respBody)
 	})
 
@@ -322,6 +339,17 @@ func TestGatewayForwardHelper(t *testing.T) {
 		_, _ = fmt.Fprintf(os.Stderr, "forwarding gateway helper exited: %v\n", err)
 		return
 	}
+}
+
+func readManagedGatewayBody(r io.Reader) ([]byte, error) {
+	read, err := cappedread.Read(r, 1<<20)
+	if err != nil {
+		return nil, err
+	}
+	if read.Truncated {
+		return nil, fmt.Errorf("response exceeded %d-byte cap after %d bytes", 1<<20, read.ObservedBytes)
+	}
+	return read.Bytes, nil
 }
 
 func gatewayForwardHelperCommand() string {

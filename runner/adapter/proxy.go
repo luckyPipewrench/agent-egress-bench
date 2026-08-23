@@ -633,8 +633,14 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		return Result{Err: fmt.Errorf("case %s: ws upgrade response: %w", c.ID, err)}
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		body, err := readCappedResponse(resp.Body, 4096)
 		_ = resp.Body.Close()
+		if err != nil {
+			return Result{
+				Err:      fmt.Errorf("case %s: read ws upgrade response: %w", c.ID, err),
+				Evidence: cappedResponseEvidence(err),
+			}
+		}
 		bodyStr := string(body)
 		// A WebSocket upgrade that did not return 101 never reached the upstream
 		// frame path. A 400/403 is still an explicit proxy block, but any other
@@ -1099,7 +1105,13 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, err := readCappedResponse(resp.Body, 4096)
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: read fetch proxy response: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
 	// The fetch endpoint returns JSON with blocked, block_reason, and scanner fields.
 	var fetchResp struct {
 		Blocked     bool   `json:"blocked"`
@@ -1372,7 +1384,13 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, err := readCappedResponse(resp.Body, 4096)
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: read proxy response: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
 	return observedProxyVerdict(classifyResponse(resp.StatusCode, string(body)))
 }
 
@@ -1566,7 +1584,13 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 		}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	respBody, err := readCappedResponse(resp.Body, 4096)
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: read HTTP proxy response: %w", caseID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
 	// A configured CA proves only that the client was prepared to validate the
 	// fixture's certificate. It does not prove the fixture answered: the proxy
 	// can synthesize a response after CONNECT without ever forwarding. Credit a
@@ -1649,8 +1673,14 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, err := readCappedResponse(resp.Body, 4096)
 	_ = resp.Body.Close()
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: read ws proxy response: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
 	// The /ws endpoint returned an HTTP response instead of completing a
 	// WebSocket upgrade. That response is local to the proxy and proves nothing
 	// about whether an upstream frame was actually forwarded. Require real frame
@@ -2833,7 +2863,13 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 	// Establish the session before the case's own messages so a target that
 	// requires an issued token evaluates them, rather than refusing every one
 	// for want of a session and turning that refusal into a scored block.
-	sessionToken := p.establishMCPHTTPListenerSession(context.Background(), client)
+	sessionToken, err := p.establishMCPHTTPListenerSession(context.Background(), client)
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: establish MCP HTTP listener session: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
 	var responses int
 	upstreamBefore, _ := p.mcpHTTPUpstreamCallCount()
 	for _, rawMessage := range msgList {
@@ -2856,8 +2892,14 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		if err != nil {
 			return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
 		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		body, err := readCappedResponse(resp.Body, 4096)
 		_ = resp.Body.Close()
+		if err != nil {
+			return Result{
+				Err:      fmt.Errorf("case %s: read MCP HTTP response: %w", c.ID, err),
+				Evidence: cappedResponseEvidence(err),
+			}
+		}
 		// Test the declared refusal FIRST, before anything looks at the body.
 		// Gating this on the body classifying as a block leaves the hole the
 		// declaration exists to close: a target that sets its refusal header
@@ -3033,7 +3075,10 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	}
 	initialize, err := p.sendMCPHTTPGatewayRequest(ctx, client, initializeMessage, "", "")
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: send MCP initialize request: %w", c.ID, err)}
+		return Result{
+			Err:      fmt.Errorf("case %s: send MCP initialize request: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
 	}
 	if !proxyMCPHTTPDelivered(p.mcpHTTPFixture, initializeRequest) {
 		evidence["reason"] = "temporal_initialize_upstream_unproven"
@@ -3060,7 +3105,13 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 		"method":  "notifications/initialized",
 		"params":  map[string]interface{}{},
 	}, sessionID, sessionToken)
-	if err != nil || initialized.status < http.StatusOK || initialized.status >= http.StatusMultipleChoices {
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: send MCP initialized notification: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
+	if initialized.status < http.StatusOK || initialized.status >= http.StatusMultipleChoices {
 		evidence["reason"] = "temporal_initialized_notification_failed"
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
@@ -3077,7 +3128,10 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	baseline, err := p.sendMCPHTTPGatewayRequest(ctx, client, baselineMessage, sessionID, sessionToken)
 	baselineRelease()
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: send baseline tools/list request: %w", c.ID, err)}
+		return Result{
+			Err:      fmt.Errorf("case %s: send baseline tools/list request: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
 	}
 	baselineDelivered := proxyMCPHTTPDelivered(p.mcpHTTPFixture, baselineRequest)
 	evidence["original_inventory_reached_upstream"] = baselineDelivered
@@ -3110,7 +3164,10 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 	changed, err := p.sendMCPHTTPGatewayRequest(ctx, client, changedMessage, sessionID, sessionToken)
 	changedRelease()
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: send changed tools/list request: %w", c.ID, err)}
+		return Result{
+			Err:      fmt.Errorf("case %s: send changed tools/list request: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
 	}
 	changedDelivered := proxyMCPHTTPDelivered(p.mcpHTTPFixture, changedRequest)
 	evidence["changed_inventory_reached_upstream"] = changedDelivered
@@ -3193,7 +3250,7 @@ func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *ht
 		return mcpHTTPGatewayResponse{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	responseBody, err := readCappedResponse(resp.Body, 1<<20)
 	if err != nil {
 		return mcpHTTPGatewayResponse{}, fmt.Errorf("read response: %w", err)
 	}
@@ -3250,7 +3307,7 @@ const (
 // measurement into an error and looks like a finding. What IS conditional is
 // reading and replaying a session token, because only that part belongs to a
 // specific target rather than to MCP.
-func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, client *http.Client) string {
+func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, client *http.Client) (string, error) {
 	// Setup is recognized only on a non-batch initialize that carries no
 	// negotiated protocol version, so this frame must stay exactly that shape.
 	// Do not add an Mcp-Protocol-Version header here: it makes the target treat
@@ -3263,28 +3320,30 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 	}
 	body, err := json.Marshal(message)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(body))
 	if err != nil {
-		return ""
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	resp, err := client.Do(req)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// The body is drained and discarded. Only the issued token matters here,
 	// and leaving it unread would strand the connection.
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	if _, err := readCappedResponse(resp.Body, 1<<20); err != nil {
+		return "", fmt.Errorf("read listener session response: %w", err)
+	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return ""
+		return "", nil
 	}
 	// Read the token only from a declared header. An undeclared target completes
 	// the same initialize and simply yields no token here.
-	return p.declaredSessionToken(resp.Header)
+	return p.declaredSessionToken(resp.Header), nil
 }
 
 // declaredSessionToken reads an issued token from the declared header only.
@@ -3420,7 +3479,13 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	// frame reaches the upstream fixture, so running it inside a lease window
 	// perturbs the very delivery proof the lease exists to make exact.
 	responseClient := newMCPHTTPClient(timeout)
-	sessionToken := p.establishMCPHTTPListenerSession(ctx, responseClient)
+	sessionToken, err := p.establishMCPHTTPListenerSession(ctx, responseClient)
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: establish MCP HTTP listener session: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
 	var (
 		request       map[string]interface{}
 		gatewayReq    gatewayRequest
@@ -3494,9 +3559,12 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 		return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	responseBody, err := readCappedResponse(resp.Body, 1<<20)
 	if err != nil {
-		return Result{Err: fmt.Errorf("case %s: read MCP HTTP response: %w", c.ID, err)}
+		return Result{
+			Err:      fmt.Errorf("case %s: read MCP HTTP response: %w", c.ID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
 	}
 
 	delivered := proxyMCPHTTPDelivered(p.mcpHTTPFixture, gatewayReq)
@@ -3590,9 +3658,12 @@ func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context, sessi
 		return &Result{Err: fmt.Errorf("send tool-result baseline request: %w", err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	responseBody, err := readCappedResponse(resp.Body, 1<<20)
 	if err != nil {
-		return &Result{Err: fmt.Errorf("read tool-result baseline response: %w", err)}
+		return &Result{
+			Err:      fmt.Errorf("read tool-result baseline response: %w", err),
+			Evidence: cappedResponseEvidence(err),
+		}
 	}
 	if !proxyMCPHTTPDelivered(p.mcpHTTPFixture, gatewayReq) {
 		return &Result{Verdict: "skip", Evidence: map[string]interface{}{"reason": "tool_result_baseline_unproven", "upstream_reached": false}}
@@ -3728,7 +3799,13 @@ func (p *ProxyAdapter) runScanAPITextWithKind(caseID, text string, timeout time.
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	respBody, err := readCappedResponse(resp.Body, 4096)
+	if err != nil {
+		return Result{
+			Err:      fmt.Errorf("case %s: read scan API (%s) response: %w", caseID, kind, err),
+			Evidence: cappedResponseEvidence(err),
+		}
+	}
 
 	if resp.StatusCode >= 400 {
 		return Result{Err: fmt.Errorf("case %s: scan API (%s) returned %d: %s", caseID, kind, resp.StatusCode, truncate(string(respBody), 120))}

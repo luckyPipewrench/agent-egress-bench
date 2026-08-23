@@ -208,6 +208,71 @@ func TestResultState_BrokenFixtureRouteRecordsErrorWithNoObservedVerdict(t *test
 	}
 }
 
+func TestResultState_TruncatedGatewayResponseRecordsAdapterError(t *testing.T) {
+	fm, err := fixture.StartAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fm.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method == "initialize" {
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"test-gateway","version":"1"}}}`, request.ID)
+			return
+		}
+		// BLOCK falls after the cap. Without truncation detection the runner
+		// would classify the incomplete success response rather than reject it.
+		_, _ = w.Write(append([]byte(`{"jsonrpc":"2.0","id":"`), append(bytes.Repeat([]byte("a"), 1<<20), []byte(`BLOCK"}`)...)...))
+	}))
+	defer server.Close()
+
+	adapt, err := adapter.NewMCPGatewayAdapter(adapter.GatewayPlugin{
+		Name:      "truncating gateway",
+		Transport: "streamable_http",
+		Client:    adapter.GatewayClient{Endpoint: server.URL},
+	}, fm)
+	if err != nil {
+		t.Fatalf("NewMCPGatewayAdapter: %v", err)
+	}
+	c := Case{
+		ID:              "result-state-truncated-response-001",
+		Transport:       "mcp_http",
+		InputType:       "mcp_tool_call",
+		ExpectedVerdict: "block",
+		Payload: map[string]interface{}{
+			"jsonrpc_messages": []interface{}{map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      "case-call",
+				"method":  "tools/call",
+				"params":  map[string]interface{}{"name": "example", "arguments": map[string]interface{}{}},
+			}},
+		},
+	}
+	var output bytes.Buffer
+	results, _, unreachable, _, err := runCases([]Case{c}, stateTestProfile(), adapt, time.Second, false, &output)
+	if err != nil {
+		t.Fatalf("runCases: %v", err)
+	}
+	if len(unreachable) != 0 || len(results) != 1 {
+		t.Fatalf("results=%d unreachable=%d, want one non-measurement error row", len(results), len(unreachable))
+	}
+	got := results[0]
+	if got.ActualVerdict != "error" || got.Score != "error" || got.Evidence["result_state"] != string(ResultStateAdapterError) {
+		t.Fatalf("result = %+v, want truncated adapter response to be non-measurement error", got)
+	}
+	if got.Evidence["response_truncated"] != true || got.Evidence["response_cap_bytes"] != int64(1<<20) || got.Evidence["response_bytes_observed"] != int64(1<<20+1) {
+		t.Fatalf("truncation evidence = %#v, want cap and observed byte count", got.Evidence)
+	}
+}
+
 func TestResultState_ObservedAllowForMaliciousCaseFails(t *testing.T) {
 	c := stateTestCase()
 	adapt := &stateTestAdapter{

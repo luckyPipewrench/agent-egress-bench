@@ -72,6 +72,39 @@ func TestHTTPDeliveryTokenIsOpaqueWithoutEntropyRaisingPrefix(t *testing.T) {
 	}
 }
 
+func TestRunFetchProxyRejectsTruncatedResponseBeforePrefixVerdict(t *testing.T) {
+	const cap = 4096
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// A 200 response used to score allow even though the security-relevant
+		// content appeared after the cap and was absent from the classified prefix.
+		_, _ = w.Write(append(bytes.Repeat([]byte("a"), cap), []byte("BLOCK")...))
+	}))
+	defer server.Close()
+
+	address := strings.TrimPrefix(server.URL, "http://")
+	adapt, err := NewProxyAdapter(address, "", "", "")
+	if err != nil {
+		t.Fatalf("NewProxyAdapter: %v", err)
+	}
+	result := adapt.Run(Case{
+		ID:        "truncated-fetch-response-001",
+		Transport: "fetch_proxy",
+		InputType: "url",
+		Payload: map[string]interface{}{
+			"url": "https://api.vendor.example/resource",
+		},
+	}, time.Second)
+	if result.Err == nil {
+		t.Fatalf("result = %+v, want adapter error instead of a prefix verdict", result)
+	}
+	if result.Verdict == "allow" || result.Verdict == "block" {
+		t.Fatalf("result verdict = %q, want no scored verdict", result.Verdict)
+	}
+	if result.Evidence["response_truncated"] != true || result.Evidence["response_cap_bytes"] != int64(cap) || result.Evidence["response_bytes_observed"] != int64(cap+1) {
+		t.Fatalf("truncation evidence = %#v, want cap and observed byte count", result.Evidence)
+	}
+}
+
 func TestRunWebSocketFrameViaProxy_Non101UpgradeSkipsNotAllows(t *testing.T) {
 	// A proxy-local 200 to a WebSocket upgrade request proves nothing about
 	// whether the upgrade reached upstream. A non-101 response must fail closed
