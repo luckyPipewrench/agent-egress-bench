@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,6 +62,10 @@ type Case struct {
 	SafeExample     *bool                  `json:"safe_example,omitempty"`
 	Notes           string                 `json:"notes"`
 	Source          string                 `json:"source"`
+	// Supersedes is not read by the scorer. It is declared so the runner and
+	// the validator accept exactly the same field set: without it, strict
+	// decoding here would reject a case the validator considers valid.
+	Supersedes string `json:"supersedes,omitempty"`
 }
 
 // Profile contains tool identity, reporting claims, and the exact immutable
@@ -123,7 +126,11 @@ func loadCases(dir string) ([]Case, error) {
 			return fmt.Errorf("reading %s: %w", path, err)
 		}
 		var c Case
-		if err := json.Unmarshal(data, &c); err != nil {
+		// Strict, matching the validator. A permissive decode here would let a
+		// case with an undeclared field execute with that field silently
+		// dropped, so the same file would behave differently depending on
+		// whether the validator gate ran first.
+		if err := decodeStrictJSON(data, &c); err != nil {
 			return fmt.Errorf("parsing %s: %w", path, err)
 		}
 		if c.SchemaVersion != activeCaseSchemaVersion {
@@ -153,7 +160,7 @@ func readHistoricalCase(path string) (Case, error) {
 		return Case{}, fmt.Errorf("reading historical case: %w", err)
 	}
 	var c Case
-	if err := json.Unmarshal(data, &c); err != nil {
+	if err := decodeStrictJSON(data, &c); err != nil {
 		return Case{}, fmt.Errorf("parsing historical case: %w", err)
 	}
 	if c.SchemaVersion != 2 {

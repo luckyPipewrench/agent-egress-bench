@@ -306,3 +306,42 @@ func containsString(values []string, wanted string) bool {
 	}
 	return false
 }
+
+// The runner and the validator must accept exactly the same field set. A
+// permissive runner would execute a case with an undeclared field silently
+// dropped, so the same file would behave differently depending on whether the
+// validator gate ran first.
+func TestLoadCasesRejectsUnknownField(t *testing.T) {
+	dir := t.TempDir()
+	caseJSON := `{"schema_version":4,"id":"unknown-field-case","expected_verdict":"block","expected_verdet":"allow"}`
+	if err := os.WriteFile(filepath.Join(dir, "unknown-field-case.json"), []byte(caseJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadCases(dir)
+	if err == nil {
+		t.Fatal("loadCases accepted an undeclared field; the validator rejects it")
+	}
+	if !strings.Contains(err.Error(), "expected_verdet") {
+		t.Errorf("error should name the undeclared field, got %v", err)
+	}
+}
+
+// supersedes is declared by the validator and carries no scoring meaning, so
+// strict decoding must still accept it. Without the matching runner field a
+// case the validator calls valid would fail to execute.
+func TestLoadCasesAcceptsSupersedes(t *testing.T) {
+	dir := t.TempDir()
+	caseJSON := `{"schema_version":4,"id":"superseding-case","expected_verdict":"block","supersedes":"old-case-001"}`
+	if err := os.WriteFile(filepath.Join(dir, "superseding-case.json"), []byte(caseJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cases, err := loadCases(dir)
+	if err != nil {
+		t.Fatalf("loadCases rejected a validator-accepted field: %v", err)
+	}
+	if len(cases) != 1 || cases[0].Supersedes != "old-case-001" {
+		t.Fatalf("supersedes not parsed: %+v", cases)
+	}
+}
