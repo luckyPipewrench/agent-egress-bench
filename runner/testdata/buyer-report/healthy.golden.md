@@ -80,6 +80,12 @@ This profile is evidence of category coverage and concentration, not a score or 
 
 Unavailable: requires a v5 summary and bound active evidence.
 
+### Applicable-only benign category profile
+
+This profile is evidence of category coverage and concentration, not a score or ranking. It uses observed benign rows only. False-positive rate gives every observed benign case equal influence, and the share column shows how corpus composition sets the category weighting. Don't compare this profile with full-corpus false-positive rate when their scopes differ.
+
+Unavailable: requires a v5 summary and bound active evidence.
+
 ## Execution and bundle status
 
 - Execution status: complete
