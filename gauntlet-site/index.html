@@ -113,6 +113,13 @@ go build -o aeb-gauntlet .
     return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
   }
 
+  // Absent counts must read as absent. Coercing a missing count to 0 publishes
+  // a number the artifact never carried, which is the same defect as scoring a
+  // null containment as zero.
+  function fmtCount(v) {
+    return (typeof v === 'number' && Number.isFinite(v) && v >= 0) ? String(v) : 'unknown';
+  }
+
   function pctCls(v) {
     if (!isScoreNumber(v)) return 'score-na';
     return '';
@@ -224,8 +231,8 @@ go build -o aeb-gauntlet .
       card.appendChild(window.renderGauntletScope(r));
       card.appendChild(window.renderGauntletControlCoverage(r));
     } else {
-      var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? (cc.unreachable || 0) + ' unreachable, ' : '';
-      card.appendChild(txt('div', 'Routed ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + unreachable + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+      var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? fmtCount(cc.unreachable) + ' unreachable, ' : '';
+      card.appendChild(txt('div', 'Routed ' + fmtCount(cc.applicable) + ' / ' + fmtCount(cc.total) + ' cases (' + unreachable + fmtCount(cc.not_applicable) + ' N/A, ' + fmtCount(cc.errors) + ' errors)', 'denominator'));
     }
 
     var scores = r.scores || {};
@@ -239,7 +246,7 @@ go build -o aeb-gauntlet .
       // Full corpus is the primary view. Applicable-only is a diagnostic of the
       // cases this adapter routed, rather than the whole corpus. Routed is not
       // the same as observed: the count includes rows that ended in error.
-      card.appendChild(txt('div', 'Full Corpus Scores (' + (cc.total || 0) + ' cases)', 'section-label'));
+      card.appendChild(txt('div', 'Full Corpus Scores (' + fmtCount(cc.total) + ' cases)', 'section-label'));
       card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version));
 
       // A real button, not a click-handled div: the control is keyboard
@@ -249,7 +256,7 @@ go build -o aeb-gauntlet .
       aToggle.type = 'button';
       var aWrap = el('div', 'hidden');
       aToggle.setAttribute('aria-expanded', 'false');
-      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
+      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + fmtCount(cc.applicable) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
       aWrap.appendChild(makeScoresGrid(applicable, applicableDiagnostics, r.schema_version));
       aToggle.addEventListener('click', function() {
         aWrap.classList.toggle('hidden');
@@ -285,25 +292,37 @@ go build -o aeb-gauntlet .
     return result.tool.trim();
   }
 
-  function malformedResultCard(result) {
+  // Two distinct cards, because the page must not assert more than it knows.
+  // notAResultCard states a determination we actually made: the entry is not a
+  // result object. undisplayableResultCard covers a render that threw, where
+  // the cause is unknown: bad data and a bug in this page produce the identical
+  // exception, so naming a tool's record malformed would publish a claim about
+  // that vendor which we cannot support.
+  function notAResultCard(result) {
     var card = el('div', 'tool-card');
     var hdr = el('div', 'tool-header');
-    var isObject = result && typeof result === 'object' && !Array.isArray(result);
-    var name = isObject ? toolName(result) : '';
-    hdr.appendChild(txt('span', name && name !== 'Unknown tool' ? 'Malformed result record: ' + name : 'Malformed result record', 'tool-name'));
+    hdr.appendChild(txt('span', 'Not a result record', 'tool-name'));
     card.appendChild(hdr);
-    var message = isObject ? 'This result object has malformed fields. Its measurements are unavailable.' :
-      'This entry is ' + (result === null ? 'null' : Array.isArray(result) ? 'array' : typeof result) + ', not a result object. Its measurements are unavailable.';
-    card.appendChild(txt('div', message, 'denominator'));
+    card.appendChild(txt('div', 'This entry is ' + (result === null ? 'null' : Array.isArray(result) ? 'array' : typeof result) + ', not a result object. Its measurements are unavailable.', 'denominator'));
+    return card;
+  }
+
+  function undisplayableResultCard(result) {
+    var card = el('div', 'tool-card');
+    var hdr = el('div', 'tool-header');
+    var name = toolName(result);
+    hdr.appendChild(txt('span', name && name !== 'Unknown tool' ? 'Result unavailable: ' + name : 'Result unavailable', 'tool-name'));
+    card.appendChild(hdr);
+    card.appendChild(txt('div', 'This result could not be displayed. The cause is not established here, so no claim is made about the record itself. Its measurements are unavailable.', 'denominator'));
     return card;
   }
 
   function renderResult(result, verified) {
-    if (!result || typeof result !== 'object' || Array.isArray(result)) return malformedResultCard(result);
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return notAResultCard(result);
     try {
       return renderTool(result, verified);
     } catch (err) {
-      return malformedResultCard(result);
+      return undisplayableResultCard(result);
     }
   }
 

@@ -103,10 +103,10 @@ async function settle() {
     'Charlie',
     'Delta',
     'Echo',
-    'Malformed result record: Foxtrot',
+    'Result unavailable: Foxtrot',
     'Hotel',
     'Hotel',
-    'Malformed result record',
+    'Not a result record',
     'Zulu',
   ]);
   const hotels = container.children.filter((card) => title(card) === 'Hotel');
@@ -124,7 +124,7 @@ async function settle() {
   });
   assert.equal(
     container.children[5].children[1].textContent,
-    'This result object has malformed fields. Its measurements are unavailable.'
+    'This result could not be displayed. The cause is not established here, so no claim is made about the record itself. Its measurements are unavailable.'
   );
   assert.equal(
     container.children[8].children[1].textContent,
