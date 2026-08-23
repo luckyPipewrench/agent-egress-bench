@@ -313,7 +313,7 @@ func containsString(values []string, wanted string) bool {
 // validator gate ran first.
 func TestLoadCasesRejectsUnknownField(t *testing.T) {
 	dir := t.TempDir()
-	caseJSON := `{"schema_version":4,"id":"unknown-field-case","expected_verdict":"block","expected_verdet":"allow"}`
+	caseJSON := fmt.Sprintf(`{"schema_version":%d,"id":"unknown-field-case","expected_verdict":"block","expected_verdet":"allow"}`, activeCaseSchemaVersion)
 	if err := os.WriteFile(filepath.Join(dir, "unknown-field-case.json"), []byte(caseJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +332,7 @@ func TestLoadCasesRejectsUnknownField(t *testing.T) {
 // case the validator calls valid would fail to execute.
 func TestLoadCasesAcceptsSupersedes(t *testing.T) {
 	dir := t.TempDir()
-	caseJSON := `{"schema_version":4,"id":"superseding-case","expected_verdict":"block","supersedes":"old-case-001"}`
+	caseJSON := fmt.Sprintf(`{"schema_version":%d,"id":"superseding-case","expected_verdict":"block","supersedes":"old-case-001"}`, activeCaseSchemaVersion)
 	if err := os.WriteFile(filepath.Join(dir, "superseding-case.json"), []byte(caseJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
