@@ -612,6 +612,85 @@ func TestBuyerReportRendersBoundCategoryProfile(t *testing.T) {
 	}
 }
 
+// A run that observed no malicious case at all still gets a profile. The
+// zero-denominator branch of matchesApplicableContainment requires that
+// scores.applicable.containment be present and null, because a run with nothing
+// to measure must publish an absent rate rather than a zero one.
+func TestBuyerReportRendersProfileWhenNoMaliciousCaseWasObserved(t *testing.T) {
+	fixture := categoryProfileFixture()
+	for _, row := range fixture.results {
+		if row["expected_verdict"] != "block" {
+			continue
+		}
+		row["actual_verdict"] = "unreachable"
+		row["score"] = "error"
+		row["evidence"] = map[string]interface{}{"result_state": "unreachable"}
+	}
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 5, "applicable": 2, "unreachable": 3, "not_applicable": 0,
+		"not_applicable_reasons": map[string]interface{}{}, "errors": 0,
+	}
+	fixture.summary["scores"] = map[string]interface{}{
+		"full":       map[string]interface{}{"containment": nil, "false_positive_rate": 0.0},
+		"applicable": map[string]interface{}{"containment": nil, "false_positive_rate": 0.0},
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	writeCategoryProfileIndex(t, fixture, dir, categoryProfileIndex())
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	if !strings.Contains(got, "### Applicable-only malicious category profile") {
+		t.Fatalf("profile section missing:\n%s", got)
+	}
+	if strings.Contains(got, "Unavailable:") {
+		t.Errorf("a run with no observed malicious case must still render a profile:\n%s", got)
+	}
+	// Every malicious category has a zero denominator, so each must read N/A
+	// rather than 0%, which would assert a containment the run never measured.
+	for _, want := range []string{
+		"| mcp\\_drift | 0 / 0 | N/A | N/A |",
+		"| url | 0 / 0 | N/A | N/A |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in:\n%s", want, got)
+		}
+	}
+}
+
+// Category names come from case-index.json, which is untrusted run input, so
+// they must pass the claim-language gate like every other artifact-derived
+// string in this renderer. Without that, a category named for a certification
+// would render verbatim in a buyer report.
+func TestBuyerReportWithholdsRestrictedCategoryClaim(t *testing.T) {
+	fixture := categoryProfileFixture()
+	index := categoryProfileIndex()
+	index["cases"].(map[string]interface{})["url-attack-001"].(map[string]interface{})["category"] = "fips-certified"
+	index["cases"].(map[string]interface{})["url-benign-002"].(map[string]interface{})["category"] = "fips-certified"
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	writeCategoryProfileIndex(t, fixture, dir, index)
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	if strings.Contains(got, "fips-certified") {
+		t.Errorf("a restricted claim in a category name reached the report:\n%s", got)
+	}
+	if !strings.Contains(got, "Artifact value withheld by claim-language gate") {
+		t.Errorf("expected the claim-language gate to withhold the category:\n%s", got)
+	}
+}
+
 func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -631,9 +710,36 @@ func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
 		{name: "malformed index", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
 			writeBoundReportEvidence(t, fixture, dir, "case_index", "case-index.json", []byte("{"))
 		}, want: "Unavailable: case-index.json is malformed."},
-		{name: "malformed results", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+		// Named for what it proves. Unparseable rows fail loadReportResults
+		// first, so summaryScopeFailures answers and the profile parser is
+		// never reached. The case below reaches that parser.
+		{name: "unparseable results fail the scope check first", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
 			writeBoundReportEvidence(t, fixture, dir, "results", "results.jsonl", []byte("{"))
 		}, want: "Unavailable: the summary scope does not match the retained result rows."},
+		// Rows that loadReportResults accepts but the profile parser rejects:
+		// an observed malicious row whose evidence carries no result_state.
+		// Both the v5 and v6 result schemas require that field, so a row
+		// without it is invalid for its own schema rather than merely old.
+		{name: "observed row without a result state", mutate: func(t *testing.T, fixture *reportFixture, dir string) {
+			rows := make([]map[string]interface{}, len(fixture.results))
+			copy(rows, fixture.results)
+			stripped := map[string]interface{}{}
+			for k, v := range rows[0] {
+				stripped[k] = v
+			}
+			stripped["evidence"] = map[string]interface{}{}
+			rows[0] = stripped
+			var encoded []byte
+			for _, row := range rows {
+				line, err := json.Marshal(row)
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded = append(encoded, line...)
+				encoded = append(encoded, '\n')
+			}
+			writeBoundReportEvidence(t, fixture, dir, "results", "results.jsonl", encoded)
+		}, want: "Unavailable: results.jsonl has an invalid row."},
 		{name: "results digest mismatch", mutate: func(t *testing.T, _ *reportFixture, dir string) {
 			data, err := os.ReadFile(filepath.Join(dir, "results.jsonl"))
 			if err != nil {

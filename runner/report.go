@@ -553,18 +553,44 @@ func openRootedArtifact(root *os.Root, name string) (*os.File, error) {
 // readRegularArtifact reads a report input, refusing anything that is not a
 // regular file. The report states facts about a run, and a file outside the run
 // directory is not one.
+// maxReportArtifactBytes bounds every run-artifact read. Run artifacts are
+// untrusted input, so an unbounded read lets one oversized file exhaust memory
+// and take report generation down with it. The largest artifact this repository
+// has ever retained is well under a megabyte, so this ceiling is generous by
+// several orders of magnitude and exists to fail closed, not to be tight.
+const maxReportArtifactBytes = 64 << 20
+
 func readRegularArtifact(dir, name string) ([]byte, error) {
 	handle, err := openRegularArtifact(dir, name)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = handle.Close() }()
-	return io.ReadAll(handle)
+	// Read one byte past the ceiling so an artifact sitting exactly at the
+	// limit is still accepted and anything larger is detected rather than
+	// silently truncated, which would be worse than refusing it outright.
+	data, err := io.ReadAll(io.LimitReader(handle, maxReportArtifactBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxReportArtifactBytes {
+		return nil, errArtifactTooLarge
+	}
+	return data, nil
 }
+
+// Compiled once at package scope. These ran per case entry and per result row,
+// so a full corpus recompiled the same expressions thousands of times per
+// report. The file already keeps reportRestrictedClaims this way.
+var (
+	reportProfileCaseIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`)
+	reportProfileDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 var (
 	errNotRegularArtifact = errors.New("run artifact is not a regular file")
 	errEmptyArtifact      = errors.New("run artifact is empty")
+	errArtifactTooLarge   = errors.New("run artifact exceeds the maximum readable size")
 )
 
 func loadReportDocument(dir, name string) reportDocument {
@@ -708,7 +734,7 @@ func (r *buyerReport) categoryProfileArtifact(key, name string) ([]byte, string)
 	}
 	value, present := nestedValue(r.bundle.data, "evidence_sha256", key)
 	expected, digestOK := value.(string)
-	if !present || !digestOK || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(expected) {
+	if !present || !digestOK || !reportProfileDigestPattern.MatchString(expected) {
 		return nil, "the run bundle does not carry a valid " + name + " digest"
 	}
 	data, err := readRegularArtifact(r.dir, name)
@@ -737,7 +763,7 @@ func parseReportProfileCaseIndex(data []byte) (map[string]reportProfileCase, str
 	}
 	cases := make(map[string]reportProfileCase, len(rawCases))
 	for caseID, raw := range rawCases {
-		if !regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`).MatchString(caseID) {
+		if !reportProfileCaseIDPattern.MatchString(caseID) {
 			return nil, "case-index.json has an invalid case ID"
 		}
 		entry, entryOK := raw.(map[string]interface{})
@@ -799,7 +825,7 @@ func parseReportProfileResults(data []byte) (map[string]reportProfileResult, str
 		score, scoreOK := row["score"].(string)
 		evidence, evidenceOK := row["evidence"].(map[string]interface{})
 		state, stateOK := evidence["result_state"].(string)
-		if !caseIDOK || !regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`).MatchString(caseID) || !expectedOK ||
+		if !caseIDOK || !reportProfileCaseIDPattern.MatchString(caseID) || !expectedOK ||
 			(expected != "block" && expected != "allow") || !actualOK || !scoreOK || !evidenceOK || !stateOK {
 			return nil, "results.jsonl has an invalid row"
 		}
@@ -1462,7 +1488,7 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		line("| Category | Blocked / observed malicious | Containment | Share of observed malicious denominator |")
 		line("| --- | ---: | ---: | ---: |")
 		for _, row := range profile.rows {
-			line("| %s | %d / %d | %s | %s |", markdownInline(row.category), row.blocked, row.malicious,
+			line("| %s | %d / %d | %s | %s |", markdownInline(safeReportText(row.category)), row.blocked, row.malicious,
 				reportCategoryProfilePercent(row.blocked, row.malicious), reportCategoryProfilePercent(row.malicious, profile.maliciousTotal))
 		}
 	}
