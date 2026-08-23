@@ -929,7 +929,7 @@ const (
 	// block requires proof that the exact request did not reach the fixture.
 	deliveryAbsent deliveryExpectation = false
 	// deliveryRequired applies where the gateway must first see runner-owned
-	// upstream content: tool-result inspection and tools/list filtering.
+	// upstream content: tool-result response-path measurement and tools/list filtering.
 	deliveryRequired deliveryExpectation = true
 )
 
