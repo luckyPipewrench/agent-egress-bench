@@ -73,6 +73,12 @@ Each metric stands on its own. Full-corpus scores retain historical N/A rows as 
 - Evidence: Absent from run artifacts
 - False-positive rate: Absent from run artifacts
 
+### Applicable-only malicious category profile
+
+This profile is evidence of category coverage and concentration, not a score or ranking. It uses observed malicious rows only. Containment gives every observed malicious case equal influence, and the share column shows how corpus composition sets the category weighting. Do not compare this profile with full-corpus containment when their scopes differ.
+
+Unavailable: requires a v5 summary and bound active evidence.
+
 ## Execution and bundle status
 
 - Execution status: complete

@@ -97,6 +97,30 @@ type buyerReport struct {
 	entrypoint string
 }
 
+type reportCategoryProfile struct {
+	rows           []reportCategoryProfileRow
+	maliciousTotal int
+	unavailable    string
+}
+
+type reportCategoryProfileRow struct {
+	category  string
+	blocked   int
+	malicious int
+}
+
+type reportProfileCase struct {
+	category string
+	expected string
+}
+
+type reportProfileResult struct {
+	caseID   string
+	expected string
+	actual   string
+	observed bool
+}
+
 func generateBuyerReport(dir, outputPath string) error {
 	report, err := loadBuyerReport(dir)
 	if err != nil {
@@ -612,6 +636,264 @@ func loadReportText(dir, name string) string {
 		return "Invalid in run artifacts: empty file"
 	}
 	return safeReportText(value)
+}
+
+// categoryProfile reconstructs the applicable-only malicious category profile
+// from the two retained inputs that bind case identity to observed outcomes.
+// The summary's per_category.applicable count cannot supply this denominator:
+// it includes benign rows, so using it would overstate the malicious scope.
+func (r *buyerReport) categoryProfile() reportCategoryProfile {
+	if reportNumber(r.summary, "schema_version") != "5" {
+		return reportCategoryProfile{unavailable: "requires a v5 summary and bound active evidence"}
+	}
+	indexData, unavailable := r.categoryProfileArtifact("case_index", "case-index.json")
+	if unavailable != "" {
+		return reportCategoryProfile{unavailable: unavailable}
+	}
+	resultsData, unavailable := r.categoryProfileArtifact("results", "results.jsonl")
+	if unavailable != "" {
+		return reportCategoryProfile{unavailable: unavailable}
+	}
+	if failures := r.summaryScopeFailures(); len(failures) > 0 {
+		return reportCategoryProfile{unavailable: "the summary scope does not match the retained result rows"}
+	}
+	cases, parseFailure := parseReportProfileCaseIndex(indexData)
+	if parseFailure != "" {
+		return reportCategoryProfile{unavailable: parseFailure}
+	}
+	results, parseFailure := parseReportProfileResults(resultsData)
+	if parseFailure != "" {
+		return reportCategoryProfile{unavailable: parseFailure}
+	}
+	if len(cases) != len(results) {
+		return reportCategoryProfile{unavailable: "the case index and result rows have different case IDs"}
+	}
+
+	byCategory := make(map[string]reportCategoryProfileRow)
+	for caseID, c := range cases {
+		result, present := results[caseID]
+		if !present || result.expected != c.expected {
+			return reportCategoryProfile{unavailable: "the case index and result rows have different case IDs or expected verdicts"}
+		}
+		row := byCategory[c.category]
+		row.category = c.category
+		if c.expected == "block" && result.observed {
+			row.malicious++
+			if result.actual == "block" {
+				row.blocked++
+			}
+		}
+		byCategory[c.category] = row
+	}
+
+	profile := reportCategoryProfile{rows: make([]reportCategoryProfileRow, 0, len(byCategory))}
+	for _, row := range byCategory {
+		profile.rows = append(profile.rows, row)
+		profile.maliciousTotal += row.malicious
+	}
+	sort.Slice(profile.rows, func(i, j int) bool { return profile.rows[i].category < profile.rows[j].category })
+	if !r.matchesApplicableContainment(profile) {
+		return reportCategoryProfile{unavailable: "the applicable containment does not match the bound result rows"}
+	}
+	return profile
+}
+
+// categoryProfileArtifact returns a retained input only when the run bundle
+// binds its exact bytes. A buyer report remains useful without this optional
+// profile, but a profile without this check could turn a replaced input into a
+// reassuring composition display.
+func (r *buyerReport) categoryProfileArtifact(key, name string) ([]byte, string) {
+	if r.bundle.data == nil {
+		return nil, "the run bundle does not bind " + name
+	}
+	value, present := nestedValue(r.bundle.data, "evidence_sha256", key)
+	expected, digestOK := value.(string)
+	if !present || !digestOK || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(expected) {
+		return nil, "the run bundle does not carry a valid " + name + " digest"
+	}
+	data, err := readRegularArtifact(r.dir, name)
+	if err != nil {
+		return nil, name + " is absent or unreadable"
+	}
+	actual := sha256.Sum256(data)
+	if hex.EncodeToString(actual[:]) != expected {
+		return nil, name + " does not match its retained digest"
+	}
+	return data, ""
+}
+
+func parseReportProfileCaseIndex(data []byte) (map[string]reportProfileCase, string) {
+	index, err := decodeReportJSONObject(data)
+	if err != nil {
+		return nil, "case-index.json is malformed"
+	}
+	version, versionOK := reportJSONInteger(index["schema_version"])
+	if !versionOK || (version != 2 && version != 3) || !reportExactKeys(index, "schema_version", "cases") {
+		return nil, "case-index.json has an unsupported schema"
+	}
+	rawCases, casesOK := index["cases"].(map[string]interface{})
+	if !casesOK || len(rawCases) == 0 {
+		return nil, "case-index.json has no usable cases"
+	}
+	cases := make(map[string]reportProfileCase, len(rawCases))
+	for caseID, raw := range rawCases {
+		if !regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`).MatchString(caseID) {
+			return nil, "case-index.json has an invalid case ID"
+		}
+		entry, entryOK := raw.(map[string]interface{})
+		if !entryOK || !reportExactKeys(entry, reportCaseIndexKeys(version)...) {
+			return nil, "case-index.json has an invalid case entry"
+		}
+		category, categoryOK := entry["category"].(string)
+		expected, expectedOK := entry["expected_verdict"].(string)
+		if !categoryOK || strings.TrimSpace(category) == "" || !expectedOK || (expected != "block" && expected != "allow") {
+			return nil, "case-index.json has an invalid case entry"
+		}
+		if version == 3 && !reportProfileCaseIndexV3EntryValid(entry) {
+			return nil, "case-index.json has an invalid case entry"
+		}
+		cases[caseID] = reportProfileCase{category: category, expected: expected}
+	}
+	return cases, ""
+}
+
+func reportCaseIndexKeys(version int) []string {
+	if version == 3 {
+		return []string{"category", "expected_verdict", "transport", "capability_tags"}
+	}
+	return []string{"category", "expected_verdict"}
+}
+
+func reportProfileCaseIndexV3EntryValid(entry map[string]interface{}) bool {
+	transport, transportOK := entry["transport"].(string)
+	tags, tagsOK := entry["capability_tags"].([]interface{})
+	if !transportOK || strings.TrimSpace(transport) == "" || !tagsOK || len(tags) == 0 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(tags))
+	for _, raw := range tags {
+		tag, tagOK := raw.(string)
+		if !tagOK || strings.TrimSpace(tag) == "" {
+			return false
+		}
+		if _, duplicate := seen[tag]; duplicate {
+			return false
+		}
+		seen[tag] = struct{}{}
+	}
+	return true
+}
+
+func parseReportProfileResults(data []byte) (map[string]reportProfileResult, string) {
+	results := make(map[string]reportProfileResult)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	for line := 1; scanner.Scan(); line++ {
+		row, err := decodeReportJSONObject([]byte(scanner.Text()))
+		if err != nil {
+			return nil, "results.jsonl is malformed"
+		}
+		caseID, caseIDOK := row["case_id"].(string)
+		expected, expectedOK := row["expected_verdict"].(string)
+		actual, actualOK := row["actual_verdict"].(string)
+		score, scoreOK := row["score"].(string)
+		evidence, evidenceOK := row["evidence"].(map[string]interface{})
+		state, stateOK := evidence["result_state"].(string)
+		if !caseIDOK || !regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,127}$`).MatchString(caseID) || !expectedOK ||
+			(expected != "block" && expected != "allow") || !actualOK || !scoreOK || !evidenceOK || !stateOK {
+			return nil, "results.jsonl has an invalid row"
+		}
+		if _, duplicate := results[caseID]; duplicate {
+			return nil, "results.jsonl has duplicate case IDs"
+		}
+		observed := actual == "block" || actual == "allow"
+		if observed && ((score != "pass" && score != "fail") || state != "observed") {
+			return nil, "results.jsonl has an invalid observed row"
+		}
+		if actual == "unreachable" && (score != "error" || state != "unreachable") {
+			return nil, "results.jsonl has an invalid unreachable row"
+		}
+		if actual == "error" && (score != "error" || !reportErrorResultState(state)) {
+			return nil, "results.jsonl has an invalid error row"
+		}
+		if !observed && actual != "unreachable" && actual != "error" {
+			return nil, "results.jsonl has an invalid row"
+		}
+		results[caseID] = reportProfileResult{caseID: caseID, expected: expected, actual: actual, observed: observed}
+	}
+	if err := scanner.Err(); err != nil || len(results) == 0 {
+		return nil, "results.jsonl is malformed"
+	}
+	return results, ""
+}
+
+func reportErrorResultState(state string) bool {
+	switch state {
+	case "adapter_error", "delivery_unavailable", "verdict_unobservable", "invalid_verdict":
+		return true
+	default:
+		return false
+	}
+}
+
+func decodeReportJSONObject(data []byte) (map[string]interface{}, error) {
+	var object map[string]interface{}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&object); err != nil {
+		return nil, err
+	}
+	if object == nil {
+		return nil, errors.New("expected JSON object")
+	}
+	if err := ensureJSONEOF(dec); err != nil {
+		return nil, err
+	}
+	return object, nil
+}
+
+func reportExactKeys(object map[string]interface{}, allowed ...string) bool {
+	if len(object) != len(allowed) {
+		return false
+	}
+	for _, key := range allowed {
+		if _, present := object[key]; !present {
+			return false
+		}
+	}
+	return true
+}
+
+func reportJSONInteger(value interface{}) (int, bool) {
+	number, numberOK := value.(json.Number)
+	if !numberOK {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(number.String())
+	return parsed, err == nil
+}
+
+func (r *buyerReport) matchesApplicableContainment(profile reportCategoryProfile) bool {
+	scores, scoresOK := r.summary.data["scores"].(map[string]interface{})
+	applicable, applicableOK := scores["applicable"].(map[string]interface{})
+	value, present := applicable["containment"]
+	if !scoresOK || !applicableOK || !present {
+		return false
+	}
+	if profile.maliciousTotal == 0 {
+		return value == nil
+	}
+	observed, numberOK := value.(json.Number)
+	if !numberOK {
+		return false
+	}
+	blocked := 0
+	for _, row := range profile.rows {
+		blocked += row.blocked
+	}
+	ratio, err := observed.Float64()
+	expected := float64(blocked) / float64(profile.maliciousTotal)
+	return err == nil && !math.IsNaN(ratio) && !math.IsInf(ratio, 0) && math.Abs(ratio-expected) <= 1e-12
 }
 
 // reportRowCounts is what results.jsonl actually contains, as opposed to what
@@ -1169,6 +1451,22 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
 	}
 	line("")
+	line("### Applicable-only malicious category profile")
+	line("")
+	line("This profile is evidence of category coverage and concentration, not a score or ranking. It uses observed malicious rows only. Containment gives every observed malicious case equal influence, and the share column shows how corpus composition sets the category weighting. Do not compare this profile with full-corpus containment when their scopes differ.")
+	line("")
+	profile := r.categoryProfile()
+	if profile.unavailable != "" {
+		line("Unavailable: %s.", markdownInline(profile.unavailable))
+	} else {
+		line("| Category | Blocked / observed malicious | Containment | Share of observed malicious denominator |")
+		line("| --- | ---: | ---: | ---: |")
+		for _, row := range profile.rows {
+			line("| %s | %d / %d | %s | %s |", markdownInline(row.category), row.blocked, row.malicious,
+				reportCategoryProfilePercent(row.blocked, row.malicious), reportCategoryProfilePercent(row.malicious, profile.maliciousTotal))
+		}
+	}
+	line("")
 	line("## Execution and bundle status")
 	line("")
 	bullet("Execution status", reportString(r.decision, "execution_status"))
@@ -1223,6 +1521,13 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	for _, material := range r.materialList() {
 		line("- %s", markdownInline(material))
 	}
+}
+
+func reportCategoryProfilePercent(numerator, denominator int) string {
+	if denominator == 0 {
+		return "N/A"
+	}
+	return fmt.Sprintf("%.2f%%", 100*float64(numerator)/float64(denominator))
 }
 
 func (r *buyerReport) publicationEligibility() string {
