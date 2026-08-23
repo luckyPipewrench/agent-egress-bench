@@ -50,7 +50,7 @@ id: <unique, immutable>
 category: mcp_drift                # multi-file category, not in the single-file case-v4 schema
 title: <human-readable>
 description: <what the case demonstrates>
-threat_model: <prose: what the attacker controls, what they want>
+threat_model: <prose: the trust assumption, hostile party if the case establishes one>
 input_type: mcp_tool_sequence_temporal
 transport: mcp_stdio | mcp_http
 files:

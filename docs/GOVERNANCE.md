@@ -104,8 +104,19 @@ Cases from any vendor, researcher, or individual are welcome. Every submitted ca
 - **Source:** where the attack pattern comes from (real-world incident, research paper, original creation)
 - **False positive assessment:** likelihood of benign traffic matching this pattern
 - **Synthetic fixtures:** credentials and secrets must be fake and unmistakably test-only
+- **Threat model, multi-file cases only:** the trust assumption the case is written under, in prose
 
 The [validator](../validate/) enforces structural correctness (valid JSON, required fields, correct enums, ID matching filename). Semantic review (is the expected verdict correct? is the attack realistic?) is manual and happens during PR review.
+
+### Why `threat_model` is required on multi-file cases and absent from single-file cases
+
+The multi-file schema requires a `threat_model` paragraph and the single-file schema has no such field. That asymmetry is deliberate, and it survives because of what the two case shapes can honestly answer rather than because one shape is better documented.
+
+A multi-file case is a temporal sequence: the same tool inventory observed across sessions. Its verdict depends on a trust assumption that no other field records, because identical bytes can be an approved vendor update or a post-approval mutation. Stating that assumption in prose is what makes the expected verdict reviewable, so a reviewer reads it during semantic review and a case that omits it cannot be assessed.
+
+A single-file case usually cannot answer the same question. Most of the corpus observes an outbound request at the egress boundary: a credential leaves in a query string, a header, a body, or a subdomain label. A poisoned page, a malicious operator, a compromised peer agent, or an ordinary bug in the agent all produce the same observable bytes, and the case deliberately does not choose between them, because containment is expected either way. Requiring an attacker's position on those cases would ask authors to assert a cause the case does not establish, which reads as documentation while adding no reviewable fact.
+
+`threat_model` is prose for human review and is not machine-readable. It does not reach the scorer, it does not affect a verdict, and no published number is derived from it. A structured attacker-position vocabulary was evaluated as a replacement and rejected. Independent classification passes over the corpus agreed that most attack cases name no upstream attacker, and disagreed with each other about whether the acting agent counts as the hostile party in the rest. A field whose value depends on which reasonable reading a rater applies cannot carry a stable public claim.
 
 ## Conflict of interest
 
