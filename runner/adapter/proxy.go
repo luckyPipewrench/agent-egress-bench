@@ -633,7 +633,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		return Result{Err: fmt.Errorf("case %s: ws upgrade response: %w", c.ID, err)}
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
-		body, err := readCappedResponse(resp.Body, 4096)
+		body, _, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
 		_ = resp.Body.Close()
 		if err != nil {
 			return Result{
@@ -1105,7 +1105,7 @@ func (p *ProxyAdapter) runFetchProxy(c Case, timeout time.Duration) Result {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := readCappedResponse(resp.Body, 4096)
+	body, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: read fetch proxy response: %w", c.ID, err),
@@ -1384,14 +1384,16 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := readCappedResponse(resp.Body, 4096)
+	body, bodyTruncated, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: read proxy response: %w", c.ID, err),
 			Evidence: cappedResponseEvidence(err),
 		}
 	}
-	return observedProxyVerdict(classifyResponse(resp.StatusCode, string(body)))
+	proxyResult := observedProxyVerdict(classifyResponse(resp.StatusCode, string(body)))
+	proxyResult.Evidence = noteObservedTruncation(proxyResult.Evidence, bodyTruncated, observationBodyCap)
+	return proxyResult
 }
 
 func (p *ProxyAdapter) runResponseContentViaTLSIntercept(c Case, timeout time.Duration, responseBody string) Result {
@@ -1584,7 +1586,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 		}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBody, err := readCappedResponse(resp.Body, 4096)
+	respBody, _, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: read HTTP proxy response: %w", caseID, err),
@@ -1673,7 +1675,7 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := readCappedResponse(resp.Body, 4096)
+	body, _, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
 	_ = resp.Body.Close()
 	if err != nil {
 		return Result{
@@ -2892,7 +2894,7 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 		if err != nil {
 			return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
 		}
-		body, err := readCappedResponse(resp.Body, 4096)
+		body, err := readCappedResponse(resp.Body, decisionBodyCap)
 		_ = resp.Body.Close()
 		if err != nil {
 			return Result{
@@ -3250,7 +3252,7 @@ func (p *ProxyAdapter) sendMCPHTTPGatewayRequest(ctx context.Context, client *ht
 		return mcpHTTPGatewayResponse{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := readCappedResponse(resp.Body, 1<<20)
+	responseBody, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
 		return mcpHTTPGatewayResponse{}, fmt.Errorf("read response: %w", err)
 	}
@@ -3335,7 +3337,7 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 	defer func() { _ = resp.Body.Close() }()
 	// The body is drained and discarded. Only the issued token matters here,
 	// and leaving it unread would strand the connection.
-	if _, err := readCappedResponse(resp.Body, 1<<20); err != nil {
+	if _, err := readCappedResponse(resp.Body, decisionBodyCap); err != nil {
 		return "", fmt.Errorf("read listener session response: %w", err)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -3559,7 +3561,7 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 		return Result{Err: fmt.Errorf("case %s: MCP HTTP request: %w", c.ID, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := readCappedResponse(resp.Body, 1<<20)
+	responseBody, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: read MCP HTTP response: %w", c.ID, err),
@@ -3658,7 +3660,7 @@ func (p *ProxyAdapter) primeMCPHTTPToolResultBaseline(ctx context.Context, sessi
 		return &Result{Err: fmt.Errorf("send tool-result baseline request: %w", err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := readCappedResponse(resp.Body, 1<<20)
+	responseBody, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
 		return &Result{
 			Err:      fmt.Errorf("read tool-result baseline response: %w", err),
@@ -3799,7 +3801,7 @@ func (p *ProxyAdapter) runScanAPITextWithKind(caseID, text string, timeout time.
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := readCappedResponse(resp.Body, 4096)
+	respBody, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: read scan API (%s) response: %w", caseID, kind, err),
