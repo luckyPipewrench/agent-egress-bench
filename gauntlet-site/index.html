@@ -32,6 +32,7 @@ a:hover { text-decoration: underline; }
 .tool-meta { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; }
 .tool-version { font-family: var(--mono); font-size: 0.85rem; color: var(--muted); margin-right: 0.5rem; }
 .denominator { font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; }
+.ordering-disclosure { font-size: 0.8rem; color: var(--muted); margin: 0 0 1rem; }
 .scores-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .score-box { background: var(--bg); border: 1px solid var(--border); border-radius: 0.375rem; padding: 1rem; text-align: center; }
 .score-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
@@ -71,6 +72,7 @@ pre { background: var(--bg); border: 1px solid var(--border); border-radius: 0.3
 
 <h1>Pipelock Gauntlet</h1>
 <p class="subtitle">Agent egress security benchmark. Tests the security tool, not the agent.</p>
+<p class="ordering-disclosure">Results are listed alphabetically by tool name; entries without a usable name are listed as unknown. This order is not a ranking.</p>
 <div id="results"></div>
 
 <h2>How to Run</h2>
@@ -107,13 +109,17 @@ go build -o aeb-gauntlet .
     return e;
   }
 
+  function isScoreNumber(v) {
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+  }
+
   function pctCls(v) {
-    if (v === null || v === undefined) return 'score-na';
+    if (!isScoreNumber(v)) return 'score-na';
     return '';
   }
 
   function fmtPct(v) {
-    if (v === null || v === undefined) return 'N/A';
+    if (!isScoreNumber(v)) return 'N/A';
     return (v * 100).toFixed(1) + '%';
   }
 
@@ -197,7 +203,7 @@ go build -o aeb-gauntlet .
   function renderTool(r, verified) {
     var card = el('div', 'tool-card');
     var hdr = el('div', 'tool-header');
-    hdr.appendChild(txt('span', r.tool || 'Unknown', 'tool-name'));
+    hdr.appendChild(txt('span', toolName(r), 'tool-name'));
 
     var meta = el('div', 'tool-meta');
     meta.appendChild(txt('span', r.tool_version || '', 'tool-version'));
@@ -273,21 +279,45 @@ go build -o aeb-gauntlet .
     return card;
   }
 
+  function toolName(result) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return 'Unknown result';
+    if (typeof result.tool !== 'string' || !result.tool.trim()) return 'Unknown tool';
+    return result.tool.trim();
+  }
+
+  function malformedResultCard(result) {
+    var card = el('div', 'tool-card');
+    var hdr = el('div', 'tool-header');
+    var isObject = result && typeof result === 'object' && !Array.isArray(result);
+    var name = isObject ? toolName(result) : '';
+    hdr.appendChild(txt('span', name && name !== 'Unknown tool' ? 'Malformed result record: ' + name : 'Malformed result record', 'tool-name'));
+    card.appendChild(hdr);
+    var message = isObject ? 'This result object has malformed fields. Its measurements are unavailable.' :
+      'This entry is ' + (result === null ? 'null' : Array.isArray(result) ? 'array' : typeof result) + ', not a result object. Its measurements are unavailable.';
+    card.appendChild(txt('div', message, 'denominator'));
+    return card;
+  }
+
+  function renderResult(result, verified) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return malformedResultCard(result);
+    try {
+      return renderTool(result, verified);
+    } catch (err) {
+      return malformedResultCard(result);
+    }
+  }
+
   function render(results, verified) {
     while (container.firstChild) container.removeChild(container.firstChild);
-    if (!results || results.length === 0) {
+    var entries = Array.isArray(results) ? results.slice() : results ? [results] : [];
+    if (entries.length === 0) {
       container.appendChild(txt('div', 'No results yet. Be the first to run the Gauntlet.', 'empty-state'));
       return;
     }
-    results.sort(function(a, b) {
-      var s = function(r) {
-        var sc = r.scores || {};
-        var f = sc.full || sc;
-        return (f && f.containment) || 0;
-      };
-      return s(b) - s(a);
+    entries.sort(function(a, b) {
+      return toolName(a).localeCompare(toolName(b));
     });
-    results.forEach(function(r) { container.appendChild(renderTool(r, verified)); });
+    entries.forEach(function(r) { container.appendChild(renderResult(r, verified)); });
   }
 
   function loadLegacyResult() {

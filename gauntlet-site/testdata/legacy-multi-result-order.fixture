@@ -1,0 +1,80 @@
+[
+  {
+    "tool": "Zulu",
+    "tool_version": "1.0.0",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "containment": 1, "false_positive_rate": 0 }
+  },
+  {
+    "tool": "Alpha",
+    "tool_version": "1.0.0",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "containment": 0, "false_positive_rate": 0 }
+  },
+  {
+    "tool": "Bravo",
+    "tool_version": "1.0.0",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "containment": null, "false_positive_rate": 0 }
+  },
+  {
+    "tool": "Charlie",
+    "tool_version": "1.0.0",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "false_positive_rate": 0 }
+  },
+  {
+    "tool": "Delta",
+    "tool_version": "1.0.0",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "containment": "not measured", "false_positive_rate": 0 }
+  },
+  {
+    "tool": "Echo",
+    "tool_version": "1.0.0",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "containment": {}, "false_positive_rate": 0 }
+  },
+  {
+    "tool": "Foxtrot",
+    "schema_version": 6,
+    "measurement_status": "unknown"
+  },
+  {
+    "tool": "Hotel",
+    "tool_version": "first",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "containment": 0, "false_positive_rate": 0 }
+  },
+  {
+    "tool": "Hotel",
+    "tool_version": "second",
+    "sufficient": true,
+    "corpus_version": "v2.4.0",
+    "scoring_version": "2.8",
+    "case_count": { "applicable": 1, "total": 1, "not_applicable": 0, "errors": 0 },
+    "scores": { "containment": 1, "false_positive_rate": 0 }
+  },
+  null
+]
