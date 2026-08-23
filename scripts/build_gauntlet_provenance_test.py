@@ -519,7 +519,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         for row in self.results:
             row["schema_version"] = 6 if summary_schema_version == 5 else summary_schema_version
             row["capability_registry"] = reference
-            if summary_schema_version == 5:
+            if row["schema_version"] == 6:
                 row["scoring_version"] = summary["scoring_version"]
                 row["evidence"]["result_state"] = "observed"
         (self.run_dir / "results.jsonl").write_text(
@@ -614,6 +614,16 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertEqual(scope["scores"]["full"]["containment"], 0.5)
         self.assertEqual(scope["measurement_status"], "measured")
         self.assertNotIn("sufficient", scope)
+
+    def test_active_summary_fixture_emits_scorer_bound_rows(self):
+        self.make_active_fixture(summary_schema_version=6)
+
+        rows = [
+            json.loads(line)
+            for line in (self.run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertEqual({6}, {row["schema_version"] for row in rows})
+        self.assertEqual({"2.4"}, {row["scoring_version"] for row in rows})
 
     def test_v5_moves_field_presence_out_of_scores_and_binds_it_as_diagnostics(self):
         self.make_active_fixture(summary_schema_version=5)
