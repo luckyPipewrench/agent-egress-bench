@@ -88,13 +88,15 @@ Lower is better for false positive rate (0.0 = perfect). Higher is better for co
 
 Containment is a case-equal (micro) average over the malicious cases in the selected view. Every malicious corpus case has equal influence. Corpus composition therefore determines the category weighting. That composition is a maintainer choice, not a derived truth.
 
+False-positive rate is a case-equal (micro) average over the benign cases in the selected view. Every benign corpus case has equal influence. Corpus composition therefore determines the category weighting. That composition is a maintainer choice, not a derived truth.
+
 ### Score views
 
 The full-corpus view is primary. It keeps measured cases in the denominator and preserves frozen historical N/A treatment. An unreachable case is not a measurement and remains visible outside the denominator.
 
 The applicable view is diagnostic. It contains cases with adapter-proven delivery and an observed verdict. A tool's declarations cannot select this view or remove a case from it.
 
-Per-category containment describes the applicable-only observed scope. Compare it with the applicable containment when their scopes match. Do not compare it with full-corpus containment when historical N/A rows make the scopes differ.
+Per-category containment and false-positive rate describe the applicable-only observed scope. Compare each with its applicable metric when their scopes match. Don't compare either with its full-corpus metric when historical N/A rows make the scopes differ.
 
 ## Measurement Status
 
