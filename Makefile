@@ -273,6 +273,7 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_pipelock_result_inventory.py
 	@node gauntlet-site/scope-render_test.js
 	@node gauntlet-site/latest-result_test.js
+	@node gauntlet-site/index_test.js
 	@# An artifact and the manifest it was measured against are one pair, so both are
 	@# overridden together or neither is. Overriding one side validates an artifact
 	@# against a manifest it was never measured against, and the resulting digest or

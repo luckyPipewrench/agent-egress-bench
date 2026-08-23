@@ -32,6 +32,7 @@ a:hover { text-decoration: underline; }
 .tool-meta { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; }
 .tool-version { font-family: var(--mono); font-size: 0.85rem; color: var(--muted); margin-right: 0.5rem; }
 .denominator { font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; }
+.ordering-disclosure { font-size: 0.8rem; color: var(--muted); margin: 0 0 1rem; }
 .scores-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .score-box { background: var(--bg); border: 1px solid var(--border); border-radius: 0.375rem; padding: 1rem; text-align: center; }
 .score-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
@@ -71,6 +72,7 @@ pre { background: var(--bg); border: 1px solid var(--border); border-radius: 0.3
 
 <h1>Pipelock Gauntlet</h1>
 <p class="subtitle">Agent egress security benchmark. Tests the security tool, not the agent.</p>
+<p class="ordering-disclosure">Results are listed alphabetically by tool name; entries without a usable name are listed as unknown. This order is not a ranking.</p>
 <div id="results"></div>
 
 <h2>How to Run</h2>
@@ -107,13 +109,27 @@ go build -o aeb-gauntlet .
     return e;
   }
 
+  function isScoreNumber(v) {
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+  }
+
+  // Absent counts must read as absent. Coercing a missing count to 0 publishes
+  // a number the artifact never carried, which is the same defect as scoring a
+  // null containment as zero.
+  function fmtCount(v) {
+    // Integer, because a case count is a count of cases. A fractional value is
+    // not a smaller count, it is evidence the artifact is wrong, and printing
+    // it would present that as a real total.
+    return (typeof v === 'number' && Number.isInteger(v) && v >= 0) ? String(v) : 'unknown';
+  }
+
   function pctCls(v) {
-    if (v === null || v === undefined) return 'score-na';
+    if (!isScoreNumber(v)) return 'score-na';
     return '';
   }
 
   function fmtPct(v) {
-    if (v === null || v === undefined) return 'N/A';
+    if (!isScoreNumber(v)) return 'N/A';
     return (v * 100).toFixed(1) + '%';
   }
 
@@ -197,7 +213,7 @@ go build -o aeb-gauntlet .
   function renderTool(r, verified) {
     var card = el('div', 'tool-card');
     var hdr = el('div', 'tool-header');
-    hdr.appendChild(txt('span', r.tool || 'Unknown', 'tool-name'));
+    hdr.appendChild(txt('span', toolName(r), 'tool-name'));
 
     var meta = el('div', 'tool-meta');
     meta.appendChild(txt('span', r.tool_version || '', 'tool-version'));
@@ -218,8 +234,8 @@ go build -o aeb-gauntlet .
       card.appendChild(window.renderGauntletScope(r));
       card.appendChild(window.renderGauntletControlCoverage(r));
     } else {
-      var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? (cc.unreachable || 0) + ' unreachable, ' : '';
-      card.appendChild(txt('div', 'Routed ' + (cc.applicable || 0) + ' / ' + (cc.total || 0) + ' cases (' + unreachable + (cc.not_applicable || 0) + ' N/A, ' + (cc.errors || 0) + ' errors)', 'denominator'));
+      var unreachable = Object.prototype.hasOwnProperty.call(cc, 'unreachable') ? fmtCount(cc.unreachable) + ' unreachable, ' : '';
+      card.appendChild(txt('div', 'Routed ' + fmtCount(cc.applicable) + ' / ' + fmtCount(cc.total) + ' cases (' + unreachable + fmtCount(cc.not_applicable) + ' N/A, ' + fmtCount(cc.errors) + ' errors)', 'denominator'));
     }
 
     var scores = r.scores || {};
@@ -233,7 +249,7 @@ go build -o aeb-gauntlet .
       // Full corpus is the primary view. Applicable-only is a diagnostic of the
       // cases this adapter routed, rather than the whole corpus. Routed is not
       // the same as observed: the count includes rows that ended in error.
-      card.appendChild(txt('div', 'Full Corpus Scores (' + (cc.total || 0) + ' cases)', 'section-label'));
+      card.appendChild(txt('div', 'Full Corpus Scores (' + fmtCount(cc.total) + ' cases)', 'section-label'));
       card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version));
 
       // A real button, not a click-handled div: the control is keyboard
@@ -243,7 +259,7 @@ go build -o aeb-gauntlet .
       aToggle.type = 'button';
       var aWrap = el('div', 'hidden');
       aToggle.setAttribute('aria-expanded', 'false');
-      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + (cc.applicable || 0) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
+      aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + fmtCount(cc.applicable) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
       aWrap.appendChild(makeScoresGrid(applicable, applicableDiagnostics, r.schema_version));
       aToggle.addEventListener('click', function() {
         aWrap.classList.toggle('hidden');
@@ -273,21 +289,70 @@ go build -o aeb-gauntlet .
     return card;
   }
 
+  function toolName(result) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return 'Unknown result';
+    if (typeof result.tool !== 'string' || !result.tool.trim()) return 'Unknown tool';
+    return result.tool.trim();
+  }
+
+  // Two distinct cards, because the page must not assert more than it knows.
+  // notAResultCard states a determination we actually made: the entry is not a
+  // result object. undisplayableResultCard covers a render that threw, where
+  // the cause is unknown: bad data and a bug in this page produce the identical
+  // exception, so naming a tool's record malformed would publish a claim about
+  // that vendor which we cannot support.
+  function notAResultCard(result) {
+    var card = el('div', 'tool-card');
+    var hdr = el('div', 'tool-header');
+    hdr.appendChild(txt('span', 'Not a result record', 'tool-name'));
+    card.appendChild(hdr);
+    card.appendChild(txt('div', 'This entry is ' + (result === null ? 'null' : Array.isArray(result) ? 'array' : typeof result) + ', not a result object. Its measurements are unavailable.', 'denominator'));
+    return card;
+  }
+
+  function undisplayableResultCard(result) {
+    var card = el('div', 'tool-card');
+    var hdr = el('div', 'tool-header');
+    var name = toolName(result);
+    hdr.appendChild(txt('span', name && name !== 'Unknown tool' ? 'Result unavailable: ' + name : 'Result unavailable', 'tool-name'));
+    card.appendChild(hdr);
+    card.appendChild(txt('div', 'This result could not be displayed. The cause is not established here, so no claim is made about the record itself. Its measurements are unavailable.', 'denominator'));
+    return card;
+  }
+
+  function renderResult(result, verified) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return notAResultCard(result);
+    try {
+      return renderTool(result, verified);
+    } catch (err) {
+      return undisplayableResultCard(result);
+    }
+  }
+
   function render(results, verified) {
     while (container.firstChild) container.removeChild(container.firstChild);
-    if (!results || results.length === 0) {
+    // Only null and undefined mean "nothing was published". A payload of
+    // false, 0, or "" is a value that is not a result object, and rendering it
+    // as an empty page would report absence when the truth is malformed input.
+    var entries = Array.isArray(results) ? results.slice() : results == null ? [] : [results];
+    if (entries.length === 0) {
       container.appendChild(txt('div', 'No results yet. Be the first to run the Gauntlet.', 'empty-state'));
       return;
     }
-    results.sort(function(a, b) {
-      var s = function(r) {
-        var sc = r.scores || {};
-        var f = sc.full || sc;
-        return (f && f.containment) || 0;
-      };
-      return s(b) - s(a);
+    // Code-point order, not localeCompare, which varies by browser locale and
+    // would make the order this page discloses non-reproducible for a reader
+    // checking it. The original index breaks ties so equal names keep their
+    // source order rather than being reordered by the sort.
+    entries = entries.map(function(entry, index) { return {entry: entry, index: index}; });
+    entries.sort(function(a, b) {
+      var an = toolName(a.entry);
+      var bn = toolName(b.entry);
+      if (an < bn) return -1;
+      if (an > bn) return 1;
+      return a.index - b.index;
     });
-    results.forEach(function(r) { container.appendChild(renderTool(r, verified)); });
+    entries = entries.map(function(item) { return item.entry; });
+    entries.forEach(function(r) { container.appendChild(renderResult(r, verified)); });
   }
 
   function loadLegacyResult() {
