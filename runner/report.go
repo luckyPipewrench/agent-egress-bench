@@ -307,7 +307,7 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 		}
 		line("")
 	}
-	line("%s total · %s applicable · %s unreachable · %s not applicable · %s errors · containment %s · false-positive rate %s", required["total"], required["applicable"], required["unreachable"], required["not applicable"], required["errors"], required["containment"], required["false-positive rate"])
+	line("%s total · %s applicable · %s unreachable · %s not applicable · %s errors · containment %s (%d/%d malicious cases; case-equal weighting from corpus composition) · false-positive rate %s", required["total"], required["applicable"], required["unreachable"], required["not applicable"], required["errors"], required["containment"], report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal, required["false-positive rate"])
 	if len(naReasons) > 0 {
 		line("Not-applicable reasons: %s", markdownInline(strings.Join(naReasons, ", ")))
 	}

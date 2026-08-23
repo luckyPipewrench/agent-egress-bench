@@ -518,7 +518,7 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		"Publisher-declared assurance: **self run**",
 		"example/agent-egress-bench@cccccccccccccccccccccccccccccccccccccccc",
 		"2 total · 2 applicable · 0 unreachable · 0 not applicable · 0 errors",
-		"containment 100.00% · false-positive rate 0.00%",
+		"containment 100.00% (1/1 malicious cases; case-equal weighting from corpus composition) · false-positive rate 0.00%",
 		"Corpus Git observation: `clean` · tool version observation: `observed`",
 		"Exercised transports: http\\_proxy",
 		"internal consistency only",
@@ -748,7 +748,7 @@ func TestPublicationLockupFullScoreRetainsNotApplicableRows(t *testing.T) {
 		"notes": "not applicable: missing_requires",
 	})
 	fixture.summary["case_count"] = map[string]interface{}{
-		"total": 3, "applicable": 2, "not_applicable": 1,
+		"total": 3, "applicable": 2, "unreachable": 0, "not_applicable": 1,
 		"not_applicable_reasons": map[string]interface{}{"missing_requires": 1}, "errors": 0,
 	}
 	fixture.summary["scores"].(map[string]interface{})["full"] = map[string]interface{}{
@@ -766,6 +766,17 @@ func TestPublicationLockupFullScoreRetainsNotApplicableRows(t *testing.T) {
 	if report.rowCounts.maliciousBlocked != 1 || report.rowCounts.maliciousTotal != 2 {
 		t.Fatalf("full containment counts = %d/%d, want 1/2",
 			report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal)
+	}
+	output := filepath.Join(t.TempDir(), "result-lockup.md")
+	if err := generatePublicationLockup(dir, output, []string{"self-run"}, "https://lab.example/results/run-1"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "containment 50.00% (1/2 malicious cases; case-equal weighting from corpus composition)") {
+		t.Fatalf("lockup omitted the full-corpus containment denominator:\n%s", data)
 	}
 }
 
