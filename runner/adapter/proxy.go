@@ -633,7 +633,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		return Result{Err: fmt.Errorf("case %s: ws upgrade response: %w", c.ID, err)}
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
-		body, _, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
+		body, bodyTruncated, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
 		_ = resp.Body.Close()
 		if err != nil {
 			return Result{
@@ -647,6 +647,7 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		// response (including a proxy-local 200) is unproven and must fail closed
 		// to skip, not allow.
 		res := classifyResponse(resp.StatusCode, bodyStr)
+		res.Evidence = noteObservedTruncation(res.Evidence, bodyTruncated, observationBodyCap)
 		if res.Verdict == "allow" {
 			return Result{
 				Verdict: "skip",
@@ -1586,7 +1587,7 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 		}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBody, _, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
+	respBody, respTruncated, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: read HTTP proxy response: %w", caseID, err),
@@ -1598,9 +1599,12 @@ func (p *ProxyAdapter) doHTTPProxyRequest(caseID, method, targetURL string, body
 	// can synthesize a response after CONNECT without ever forwarding. Credit a
 	// passthrough allow only when the runner-managed fixture counter advanced.
 	if caFile != "" && p.tlsFixtureServed(fixtureBaseline) {
-		return observedProxyVerdict(classifyUpstreamResponse(resp.StatusCode, string(respBody)))
+		upstreamResult := observedProxyVerdict(classifyUpstreamResponse(resp.StatusCode, string(respBody)))
+		upstreamResult.Evidence = noteObservedTruncation(upstreamResult.Evidence, respTruncated, observationBodyCap)
+		return upstreamResult
 	}
 	result := classifyResponse(resp.StatusCode, string(respBody))
+	result.Evidence = noteObservedTruncation(result.Evidence, respTruncated, observationBodyCap)
 	if caFile != "" && result.Verdict == "allow" {
 		result.Verdict = "skip"
 		if result.Evidence == nil {
@@ -1675,7 +1679,7 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
+	body, wsTruncated, err := readClassifiedResponse(resp.Body, resp.StatusCode, observationBodyCap)
 	_ = resp.Body.Close()
 	if err != nil {
 		return Result{
@@ -1688,6 +1692,7 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 	// about whether an upstream frame was actually forwarded. Require real frame
 	// proof by re-running the same target through the frame-oriented path.
 	res := classifyResponse(resp.StatusCode, string(body))
+	res.Evidence = noteObservedTruncation(res.Evidence, wsTruncated, observationBodyCap)
 	if res.Verdict == "allow" {
 		// Route through runWebSocketFrameViaProxy so that only a genuine
 		// 101 upgrade and upstream frame echo can score allow.
@@ -3336,8 +3341,11 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// The body is drained and discarded. Only the issued token matters here,
-	// and leaving it unread would strand the connection.
-	if _, err := readCappedResponse(resp.Body, decisionBodyCap); err != nil {
+	// and leaving it unread would strand the connection. Setup is decided by the
+	// status and the declared token header alone, so truncating this drain cannot
+	// change the outcome and must not fail an otherwise valid session: a large
+	// 2xx setup response would otherwise error every MCP case in the run.
+	if _, _, err := readObservedResponse(resp.Body, observationBodyCap); err != nil {
 		return "", fmt.Errorf("read listener session response: %w", err)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {

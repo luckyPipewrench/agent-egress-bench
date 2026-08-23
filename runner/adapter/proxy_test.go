@@ -77,7 +77,7 @@ func TestRunFetchProxyRejectsTruncatedResponseBeforePrefixVerdict(t *testing.T) 
 	// A decoy that no classifier recognises would make this test pass whether or
 	// not truncation actually hid a decision, which proves the guard fires but
 	// not that it protects anything.
-	suffix := []byte(`,"blocked":true,"block_reason":"dlp","scanner":"dlp"}`)
+	suffix := []byte(`","blocked":true,"block_reason":"dlp","scanner":"dlp"}`)
 	filler := bytes.Repeat([]byte("a"), decisionBodyCap)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(append(append([]byte(`{"padding":"`), filler...), suffix...))

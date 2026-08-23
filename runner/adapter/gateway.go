@@ -903,7 +903,7 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 		return a.classifyGatewayResponse(nil, nil, err, requireResponse, emptyResponseReason, request, expectation, caseID)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := readCappedResponse(resp.Body, 1<<20)
+	responseBody, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
 		return nil, &Result{
 			Err:      fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err),

@@ -1599,7 +1599,11 @@ func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httpt
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := readCappedResponse(r.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1640,7 +1644,11 @@ func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httpt
 		defer func() { _ = resp.Body.Close() }()
 		respBody, err := readCappedResponse(resp.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_, _ = w.Write(respBody)
 	}))
@@ -1682,7 +1690,11 @@ func lateSessionGateway(t *testing.T, upstreamURL string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := readCappedResponse(r.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1722,7 +1734,11 @@ func lateSessionGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		defer func() { _ = resp.Body.Close() }()
 		respBody, err := readCappedResponse(resp.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_, _ = w.Write(respBody)
 	}))
@@ -1744,7 +1760,11 @@ func TestMCPGatewayAdapterDrivesMultiCallSequenceAndBlocksForbiddenCall(t *testi
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, readErr := readCappedResponse(r.Body, 1<<20)
 		if readErr != nil {
-			t.Fatal(readErr)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", readErr)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1783,7 +1803,11 @@ func TestMCPGatewayAdapterDrivesMultiCallSequenceAndBlocksForbiddenCall(t *testi
 		defer func() { _ = resp.Body.Close() }()
 		respBody, err := readCappedResponse(resp.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_, _ = w.Write(respBody)
 	}))
@@ -1867,7 +1891,11 @@ func TestMCPGatewayAdapterSkipsSequenceWhenNotAllCallsReachUpstream(t *testing.T
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, readErr := readCappedResponse(r.Body, 1<<20)
 		if readErr != nil {
-			t.Fatal(readErr)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", readErr)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1907,7 +1935,11 @@ func TestMCPGatewayAdapterSkipsSequenceWhenNotAllCallsReachUpstream(t *testing.T
 		defer func() { _ = resp.Body.Close() }()
 		respBody, err := readCappedResponse(resp.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_, _ = w.Write(respBody)
 	}))
