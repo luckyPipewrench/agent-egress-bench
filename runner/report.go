@@ -1318,6 +1318,55 @@ func reportPercent(doc reportDocument, path ...string) string {
 	return strconv.FormatFloat(f*100, 'f', 2, 64) + "%"
 }
 
+// reportPercentWithDenominator adds a fraction only when it reconstructs the
+// rendered score. A plausible-looking denominator beside a different rate is
+// a false claim, so unavailable, zero, and mismatched inputs keep the score
+// useful but bare.
+func reportPercentWithDenominator(doc reportDocument, numerator, denominator int, caseKind string, path ...string) string {
+	percent := reportPercent(doc, path...)
+	if numerator < 0 || denominator <= 0 || numerator > denominator {
+		return percent
+	}
+	value, present := nestedValue(doc.data, path...)
+	observed, numberOK := value.(json.Number)
+	if !present || !numberOK {
+		return percent
+	}
+	ratio, err := observed.Float64()
+	expected := float64(numerator) / float64(denominator)
+	if err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || math.Abs(ratio-expected) > 1e-12 {
+		return percent
+	}
+	return fmt.Sprintf("%s (%d/%d %s cases; case-equal weighting from corpus composition)", percent, numerator, denominator, caseKind)
+}
+
+func (r *buyerReport) fullCorpusPercent(numerator, denominator int, caseKind string, path ...string) string {
+	if r.resultErr != "Readable" {
+		return reportPercent(r.summary, path...)
+	}
+	return reportPercentWithDenominator(r.summary, numerator, denominator, caseKind, path...)
+}
+
+func reportApplicablePercent(doc reportDocument, profile reportCategoryProfile, denominator int, caseKind string, path ...string) string {
+	if profile.unavailable != "" {
+		return reportPercent(doc, path...)
+	}
+	return reportPercentWithDenominator(doc, profileMetricNumerator(profile, caseKind), denominator, caseKind, path...)
+}
+
+func profileMetricNumerator(profile reportCategoryProfile, caseKind string) int {
+	var numerator int
+	for _, row := range profile.rows {
+		switch caseKind {
+		case "malicious":
+			numerator += row.blocked
+		case "benign":
+			numerator += row.falseBlocked
+		}
+	}
+	return numerator
+}
+
 func reportStringList(doc reportDocument, path ...string) []string {
 	if doc.data == nil {
 		return []string{absentFact}
@@ -1477,18 +1526,19 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 	line("")
 	line("## Metric vector")
 	line("")
+	profile := r.categoryProfile()
 	if reportNumber(r.summary, "schema_version") == "5" {
 		line("Each score stands on its own. Full-corpus scores retain historical N/A rows as misses; error and unreachable rows are excluded and make the measurement incomplete. Applicable-only scores cover only the routed cases this adapter delivered AND observed, so error rows are counted as routed but are excluded from every score denominator.")
 		line("")
 		line("### Full corpus")
 		line("")
-		bullet("Containment", reportPercent(r.summary, "scores", "full", "containment"))
-		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
+		bullet("Containment", r.fullCorpusPercent(r.rowCounts.maliciousBlocked, r.rowCounts.maliciousTotal, "malicious", "scores", "full", "containment"))
+		bullet("False-positive rate", r.fullCorpusPercent(r.rowCounts.benignFalsePositives, r.rowCounts.benignTotal, "benign", "scores", "full", "false_positive_rate"))
 		line("")
 		line("### Applicable-only observed cases")
 		line("")
-		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
-		bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
+		bullet("Containment", reportApplicablePercent(r.summary, profile, profile.maliciousTotal, "malicious", "scores", "applicable", "containment"))
+		bullet("False-positive rate", reportApplicablePercent(r.summary, profile, profile.benignTotal, "benign", "scores", "applicable", "false_positive_rate"))
 		line("")
 		line("### Non-scoring field-presence diagnostics")
 		line("")
@@ -1503,24 +1553,23 @@ func (r *buyerReport) renderMarkdown(w io.Writer) {
 		line("")
 		line("### Full corpus")
 		line("")
-		bullet("Containment", reportPercent(r.summary, "scores", "full", "containment"))
+		bullet("Containment", r.fullCorpusPercent(r.rowCounts.maliciousBlocked, r.rowCounts.maliciousTotal, "malicious", "scores", "full", "containment"))
 		bullet("Detection", reportPercent(r.summary, "scores", "full", "detection"))
 		bullet("Evidence", reportPercent(r.summary, "scores", "full", "evidence"))
-		bullet("False-positive rate", reportPercent(r.summary, "scores", "full", "false_positive_rate"))
+		bullet("False-positive rate", r.fullCorpusPercent(r.rowCounts.benignFalsePositives, r.rowCounts.benignTotal, "benign", "scores", "full", "false_positive_rate"))
 		line("")
 		line("### Applicable-only observed cases")
 		line("")
-		bullet("Containment", reportPercent(r.summary, "scores", "applicable", "containment"))
+		bullet("Containment", reportApplicablePercent(r.summary, profile, profile.maliciousTotal, "malicious", "scores", "applicable", "containment"))
 		bullet("Detection", reportPercent(r.summary, "scores", "applicable", "detection"))
 		bullet("Evidence", reportPercent(r.summary, "scores", "applicable", "evidence"))
-		bullet("False-positive rate", reportPercent(r.summary, "scores", "applicable", "false_positive_rate"))
+		bullet("False-positive rate", reportApplicablePercent(r.summary, profile, profile.benignTotal, "benign", "scores", "applicable", "false_positive_rate"))
 	}
 	line("")
 	line("### Applicable-only malicious category profile")
 	line("")
 	line("This profile is evidence of category coverage and concentration, not a score or ranking. It uses observed malicious rows only. Containment gives every observed malicious case equal influence, and the share column shows how corpus composition sets the category weighting. Do not compare this profile with full-corpus containment when their scopes differ.")
 	line("")
-	profile := r.categoryProfile()
 	if profile.unavailable != "" {
 		line("Unavailable: %s.", markdownInline(profile.unavailable))
 	} else {
