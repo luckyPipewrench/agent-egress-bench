@@ -651,12 +651,12 @@ func (p *ProxyAdapter) runWebSocketFrameViaProxy(c Case, timeout time.Duration) 
 		if res.Verdict == "allow" {
 			return Result{
 				Verdict: "skip",
-				Evidence: map[string]interface{}{
+				Evidence: noteObservedTruncation(map[string]interface{}{
 					"reason":           "ws_upgrade_not_101",
 					"status_code":      resp.StatusCode,
 					"upstream_reached": false,
 					"detail":           truncate(bodyStr, 120),
-				},
+				}, bodyTruncated, observationBodyCap),
 			}
 		}
 		return res
@@ -1710,7 +1710,9 @@ func (p *ProxyAdapter) runWebSocket(c Case, timeout time.Duration) Result {
 				"payload": "benchmark websocket probe",
 			},
 		}
-		return p.runWebSocketFrameViaProxy(probe, timeout)
+		probeResult := p.runWebSocketFrameViaProxy(probe, timeout)
+		probeResult.Evidence = noteObservedTruncation(probeResult.Evidence, wsTruncated, observationBodyCap)
+		return probeResult
 	}
 	return res
 }
@@ -2843,7 +2845,7 @@ func jsonRPCIDString(id interface{}) string {
 	}
 }
 
-func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
+func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) (mcpResult Result) {
 	if p.mcpHTTPURL == "" {
 		return Result{
 			Verdict:  "skip",
@@ -2870,7 +2872,12 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) Result {
 	// Establish the session before the case's own messages so a target that
 	// requires an issued token evaluates them, rather than refusing every one
 	// for want of a session and turning that refusal into a scored block.
-	sessionToken, err := p.establishMCPHTTPListenerSession(context.Background(), client)
+	sessionToken, setupTruncated, err := p.establishMCPHTTPListenerSession(context.Background(), client)
+	// Every return below must carry this, so merge on the way out rather than at
+	// each exit: a single missed path drops the evidence silently.
+	defer func() {
+		mcpResult.Evidence = noteObservedTruncation(mcpResult.Evidence, setupTruncated, observationBodyCap)
+	}()
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: establish MCP HTTP listener session: %w", c.ID, err),
@@ -3314,7 +3321,10 @@ const (
 // measurement into an error and looks like a finding. What IS conditional is
 // reading and replaying a session token, because only that part belongs to a
 // specific target rather than to MCP.
-func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, client *http.Client) (string, error) {
+// The bool reports that the drained setup body was truncated. Setup does not
+// depend on that body, so it is not an error, but the eventual case result must
+// still say the observation was partial rather than silently complete.
+func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, client *http.Client) (string, bool, error) {
 	// Setup is recognized only on a non-batch initialize that carries no
 	// negotiated protocol version, so this frame must stay exactly that shape.
 	// Do not add an Mcp-Protocol-Version header here: it makes the target treat
@@ -3327,17 +3337,17 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 	}
 	body, err := json.Marshal(message)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// The body is drained and discarded. Only the issued token matters here,
@@ -3345,15 +3355,16 @@ func (p *ProxyAdapter) establishMCPHTTPListenerSession(ctx context.Context, clie
 	// status and the declared token header alone, so truncating this drain cannot
 	// change the outcome and must not fail an otherwise valid session: a large
 	// 2xx setup response would otherwise error every MCP case in the run.
-	if _, _, err := readObservedResponse(resp.Body, observationBodyCap); err != nil {
-		return "", fmt.Errorf("read listener session response: %w", err)
+	_, setupTruncated, err := readObservedResponse(resp.Body, observationBodyCap)
+	if err != nil {
+		return "", false, fmt.Errorf("read listener session response: %w", err)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", nil
+		return "", setupTruncated, nil
 	}
 	// Read the token only from a declared header. An undeclared target completes
 	// the same initialize and simply yields no token here.
-	return p.declaredSessionToken(resp.Header), nil
+	return p.declaredSessionToken(resp.Header), setupTruncated, nil
 }
 
 // declaredSessionToken reads an issued token from the declared header only.
@@ -3471,7 +3482,7 @@ func validMCPInitializeResponse(body []byte) bool {
 // then the adapter sends the corresponding client request through the product.
 // Posting a JSON-RPC response to the product's listener would test only that a
 // listener rejects an invalid client request, not response scanning.
-func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Result {
+func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) (responseResult Result) {
 	if p.mcpHTTPFixture == nil {
 		return Result{Verdict: "skip", Evidence: map[string]interface{}{
 			"reason": "no MCP HTTP upstream fixture configured for response case",
@@ -3489,7 +3500,10 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) Res
 	// frame reaches the upstream fixture, so running it inside a lease window
 	// perturbs the very delivery proof the lease exists to make exact.
 	responseClient := newMCPHTTPClient(timeout)
-	sessionToken, err := p.establishMCPHTTPListenerSession(ctx, responseClient)
+	sessionToken, responseSetupTruncated, err := p.establishMCPHTTPListenerSession(ctx, responseClient)
+	defer func() {
+		responseResult.Evidence = noteObservedTruncation(responseResult.Evidence, responseSetupTruncated, observationBodyCap)
+	}()
 	if err != nil {
 		return Result{
 			Err:      fmt.Errorf("case %s: establish MCP HTTP listener session: %w", c.ID, err),
