@@ -72,6 +72,113 @@ func TestHTTPDeliveryTokenIsOpaqueWithoutEntropyRaisingPrefix(t *testing.T) {
 	}
 }
 
+func TestRunFetchProxyRejectsTruncatedResponseBeforePrefixVerdict(t *testing.T) {
+	// The suffix is a real fetch-endpoint block field rather than a bare marker.
+	// A decoy that no classifier recognises would make this test pass whether or
+	// not truncation actually hid a decision, which proves the guard fires but
+	// not that it protects anything.
+	suffix := []byte(`","blocked":true,"block_reason":"dlp","scanner":"dlp"}`)
+	filler := bytes.Repeat([]byte("a"), decisionBodyCap)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(append(append([]byte(`{"padding":"`), filler...), suffix...))
+	}))
+	defer server.Close()
+
+	address := strings.TrimPrefix(server.URL, "http://")
+	adapt, err := NewProxyAdapter(address, "", "", "")
+	if err != nil {
+		t.Fatalf("NewProxyAdapter: %v", err)
+	}
+	result := adapt.Run(Case{
+		ID:        "truncated-fetch-response-001",
+		Transport: "fetch_proxy",
+		InputType: "url",
+		Payload: map[string]interface{}{
+			"url": "https://api.vendor.example/resource",
+		},
+	}, 10*time.Second)
+	if result.Err == nil {
+		t.Fatalf("result = %+v, want adapter error instead of a prefix verdict", result)
+	}
+	if result.Verdict == "allow" || result.Verdict == "block" {
+		t.Fatalf("result verdict = %q, want no scored verdict", result.Verdict)
+	}
+	if result.Evidence["response_truncated"] != true || result.Evidence["response_cap_bytes"] != int64(decisionBodyCap) {
+		t.Fatalf("truncation evidence = %#v, want cap and observed byte count", result.Evidence)
+	}
+}
+
+// A body the verdict does not depend on must not invalidate the run. The
+// benchmark's own example target permits fetch responses far above any cap the
+// runner sets, so failing a large successful response would refuse legitimate
+// traffic and make an otherwise complete corpus unpublishable.
+func TestForwardProxyToleratesLargeSuccessfulBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(bytes.Repeat([]byte("a"), observationBodyCap+1024))
+	}))
+	defer server.Close()
+
+	address := strings.TrimPrefix(server.URL, "http://")
+	adapt, err := NewProxyAdapter(address, "", "", "")
+	if err != nil {
+		t.Fatalf("NewProxyAdapter: %v", err)
+	}
+	result := adapt.Run(Case{
+		ID:        "large-allow-body-001",
+		Transport: "http_proxy",
+		InputType: "url",
+		Payload: map[string]interface{}{
+			"url": "http://api.vendor.example/resource",
+		},
+	}, 10*time.Second)
+	if result.Err != nil {
+		t.Fatalf("result.Err = %v, want a scored verdict for a large successful body", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("result verdict = %q, want allow decided by status alone", result.Verdict)
+	}
+	if result.Evidence["observation_truncated"] != true {
+		t.Fatalf("evidence = %#v, want the truncated observation recorded", result.Evidence)
+	}
+	if result.Evidence["observation_cap_bytes"] != int64(observationBodyCap) {
+		t.Fatalf("evidence = %#v, want the observation cap recorded", result.Evidence)
+	}
+}
+
+// Truncation stays fatal for the statuses whose verdict depends on the body. A
+// deny marker past the cap would otherwise be missed and the target would take
+// a miss it did not earn.
+func TestBodyDecidesVerdictCoversDenyMarkerStatuses(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusForbidden, http.StatusBadGateway} {
+		if !bodyDecidesVerdict(status) {
+			t.Fatalf("bodyDecidesVerdict(%d) = false, want true", status)
+		}
+	}
+	for _, status := range []int{http.StatusOK, http.StatusFound, http.StatusMethodNotAllowed, http.StatusInternalServerError} {
+		if bodyDecidesVerdict(status) {
+			t.Fatalf("bodyDecidesVerdict(%d) = true, want false", status)
+		}
+	}
+}
+
+func TestReadClassifiedResponseFailsOnlyWhenBodyDecides(t *testing.T) {
+	oversized := bytes.Repeat([]byte("a"), 64)
+	if _, _, err := readClassifiedResponse(bytes.NewReader(oversized), http.StatusForbidden, 8); err == nil {
+		t.Fatal("truncated 403 returned no error, want a refusal to score from a prefix")
+	}
+	body, truncated, err := readClassifiedResponse(bytes.NewReader(oversized), http.StatusOK, 8)
+	if err != nil {
+		t.Fatalf("truncated 200 returned %v, want tolerance", err)
+	}
+	if !truncated {
+		t.Fatal("truncated 200 reported truncated = false, want the observation recorded")
+	}
+	if len(body) != 8 {
+		t.Fatalf("len(body) = %d, want the capped prefix", len(body))
+	}
+}
+
 func TestRunWebSocketFrameViaProxy_Non101UpgradeSkipsNotAllows(t *testing.T) {
 	// A proxy-local 200 to a WebSocket upgrade request proves nothing about
 	// whether the upgrade reached upstream. A non-101 response must fail closed

@@ -903,9 +903,12 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 		return a.classifyGatewayResponse(nil, nil, err, requireResponse, emptyResponseReason, request, expectation, caseID)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	responseBody, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
-		return nil, &Result{Err: fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err)}
+		return nil, &Result{
+			Err:      fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err),
+			Evidence: cappedResponseEvidence(err),
+		}
 	}
 	response, result := a.classifyGatewayResponse(resp, responseBody, nil, requireResponse, emptyResponseReason, request, expectation, caseID)
 	if result != nil {

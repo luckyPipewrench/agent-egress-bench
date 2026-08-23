@@ -1597,9 +1597,13 @@ func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httpt
 	t.Helper()
 	client := &http.Client{Timeout: time.Second}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, err := readCappedResponse(r.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1638,7 +1642,14 @@ func sessionEnforcingGateway(t *testing.T, upstreamURL, sessionID string) *httpt
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		respBody, err := readCappedResponse(resp.Body, 1<<20)
+		if err != nil {
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
+		}
 		_, _ = w.Write(respBody)
 	}))
 }
@@ -1677,9 +1688,13 @@ func lateSessionGateway(t *testing.T, upstreamURL string) *httptest.Server {
 	t.Helper()
 	client := &http.Client{Timeout: time.Second}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, err := readCappedResponse(r.Body, 1<<20)
 		if err != nil {
-			t.Fatal(err)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1717,7 +1732,14 @@ func lateSessionGateway(t *testing.T, upstreamURL string) *httptest.Server {
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		respBody, err := readCappedResponse(resp.Body, 1<<20)
+		if err != nil {
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
+		}
 		_, _ = w.Write(respBody)
 	}))
 }
@@ -1736,9 +1758,13 @@ func TestMCPGatewayAdapterDrivesMultiCallSequenceAndBlocksForbiddenCall(t *testi
 	toolsCalls := 0
 	client := &http.Client{Timeout: time.Second}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, readErr := readCappedResponse(r.Body, 1<<20)
 		if readErr != nil {
-			t.Fatal(readErr)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", readErr)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1775,7 +1801,14 @@ func TestMCPGatewayAdapterDrivesMultiCallSequenceAndBlocksForbiddenCall(t *testi
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		respBody, err := readCappedResponse(resp.Body, 1<<20)
+		if err != nil {
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
+		}
 		_, _ = w.Write(respBody)
 	}))
 	defer server.Close()
@@ -1856,9 +1889,13 @@ func TestMCPGatewayAdapterSkipsSequenceWhenNotAllCallsReachUpstream(t *testing.T
 	toolsCalls := 0
 	client := &http.Client{Timeout: time.Second}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, readErr := readCappedResponse(r.Body, 1<<20)
 		if readErr != nil {
-			t.Fatal(readErr)
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", readErr)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var req struct {
@@ -1896,7 +1933,14 @@ func TestMCPGatewayAdapterSkipsSequenceWhenNotAllCallsReachUpstream(t *testing.T
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		respBody, err := readCappedResponse(resp.Body, 1<<20)
+		if err != nil {
+			// t.Fatal only unwinds this handler goroutine, so the client would
+			// block on a response that never arrives.
+			t.Errorf("capped read: %v", err)
+			http.Error(w, "capped read", http.StatusInternalServerError)
+			return
+		}
 		_, _ = w.Write(respBody)
 	}))
 	defer server.Close()
