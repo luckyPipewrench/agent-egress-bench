@@ -150,9 +150,9 @@ These constraints bind this repository and its maintainer, not just outside publ
 - no private preview of an adverse result to the affected vendor before publication;
 - no retroactive scoring change to move a published number. Scoring changes get a version.
 
-The maintainer builds Pipelock, and the Pipelock reference lane in this repository publishes
-first-party regression evidence under `gauntlet-site/results/pipelock/`. That lane is disclosed
-self-run and artifact-validated evidence. It carries no independence claim.
+The maintainer builds Pipelock. Retained Pipelock records under
+`gauntlet-site/results/pipelock/` are archived first-party regression evidence. They are not the
+live product schedule or public score, and they carry no independence claim.
 
 See [GOVERNANCE.md](GOVERNANCE.md) for neutrality and contribution rules, and
 [gauntlet.md](gauntlet.md) for how results are produced and published.

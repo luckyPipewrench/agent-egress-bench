@@ -6,9 +6,9 @@
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml/badge.svg" alt="Validate Cases"></a>
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml/badge.svg" alt="Security"></a>
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" alt="Pipelock Scan"></a>
-  <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/continuous-gauntlet.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/continuous-gauntlet.yaml/badge.svg" alt="Continuous Gauntlet"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/agent-egress-bench"><img src="https://api.scorecard.dev/projects/github.com/luckyPipewrench/agent-egress-bench/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://goreportcard.com/report/github.com/luckyPipewrench/agent-egress-bench"><img src="https://goreportcard.com/badge/github.com/luckyPipewrench/agent-egress-bench" alt="Go Report Card"></a>
+  <a href="https://codecov.io/gh/luckyPipewrench/agent-egress-bench"><img src="https://codecov.io/gh/luckyPipewrench/agent-egress-bench/graph/badge.svg" alt="codecov"></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <a href="https://discord.gg/badNfhGKTc"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white"></a>
 </p>
@@ -114,7 +114,7 @@ It requires Linux, Go 1.25 or newer, Python 3, Git, curl, jq, tar, GNU timeout, 
 
 The raw directory intentionally has no made-up public URL. GitHub Actions or another retaining platform adds its real artifact ID and HTTPS location later, without modifying the evidence bytes. Creating a schedule and publishing a result are separate operator decisions.
 
-The repository's scheduled Pipelock lane is read-only and produces review candidates, not automatic public claims. Approved candidates are retained as digest-addressed, hash-linked evidence directories, and a reviewed pull request advances the `latest-verified` pointer. The included reference renderer verifies and displays score, scope, N/A reasons, false-positive rate, and the canonical run URL together. It renders this repository's first-party Pipelock history and ranks nothing. See [Continuous Gauntlet Results](docs/CONTINUOUS-RESULTS.md) for the repository review and publication contract.
+The corpus, runner, and portable command live in this repository. The product's scheduled candidate currently runs in [`luckyPipewrench/pipelock`](https://github.com/luckyPipewrench/pipelock). Public scores are selected and published. They are not automatic. First-party published history is at [pipelab.org/gauntlet/results](https://pipelab.org/gauntlet/results/). Approved records retained here are digest-addressed, hash-linked evidence directories, and a reviewed pull request advances the `latest-verified` pointer. The included reference renderer verifies and displays score, scope, N/A reasons, false-positive rate, and the canonical run URL together. It ranks nothing. See [Continuous Gauntlet Results](docs/CONTINUOUS-RESULTS.md) for the review and publication contract.
 
 For other tools, the runner writes per-case JSONL results to stdout (one object per case, see [docs/RUNNER.md](docs/RUNNER.md)) and a Gauntlet summary JSON to the path passed via `--output` (containment, false-positive rate, non-scoring output-field diagnostics, and per-category results, see [docs/gauntlet.md](docs/gauntlet.md)). `--emit-receipt-profile` additionally writes a reproducible receipt-scoring profile with retained corpus and tool-version observations (see [docs/RECEIPT-SCORING.md](docs/RECEIPT-SCORING.md)).
 
@@ -124,7 +124,7 @@ For other tools, the runner writes per-case JSONL results to stdout (one object 
 
 The Gauntlet reports containment and false-positive rate separately, plus non-scoring field-presence diagnostics. [docs/gauntlet.md](docs/gauntlet.md) owns metric definitions, result states, denominators, and measurement status. [Results Use and Attribution](docs/RESULTS-USE.md) owns the claims and disclosures that travel with a public result.
 
-The maintainer's disclosed first-party Pipelock history is published at [pipelab.org/gauntlet](https://pipelab.org/gauntlet/). Every other publisher owns its results.
+The maintainer's disclosed first-party Pipelock history is published at [pipelab.org/gauntlet/results](https://pipelab.org/gauntlet/results/). Every other publisher owns its results.
 
 ## What this does NOT test
 
@@ -230,7 +230,7 @@ Full governance policy: [docs/GOVERNANCE.md](docs/GOVERNANCE.md).
 - [What is an Agent Firewall?](https://pipelab.org/agent-firewall/) — the security architecture this corpus tests
 - [AI Agent Security: Three Layers](https://pipelab.org/learn/ai-agent-security/) — hooks, guardrails, and egress inspection explained
 - [MCP Vulnerabilities](https://pipelab.org/learn/mcp-vulnerabilities/) — the MCP attack surface mapped
-- [Pipelock Gauntlet history](https://pipelab.org/gauntlet/) — the maintainer's disclosed first-party run history
+- [Pipelock Gauntlet history](https://pipelab.org/gauntlet/results/): the maintainer's disclosed first-party run history
 
 ## License
 

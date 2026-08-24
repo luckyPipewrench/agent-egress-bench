@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail the build when documentation makes a claim the method cannot support.
 
-Three checks run together:
+Five checks run together:
 
 1. Banned claim terms. Certification, ranking, and absolute-security language
    must not appear in contributor-facing documentation. A line that needs the
@@ -12,6 +12,12 @@ Three checks run together:
    results. Deleting either is the failure mode this check exists to catch.
 3. Target review stays public and limited to setup. Documentation must not
    promise private notice or a prepublication result preview to a target.
+4. Exam home. README must not badge this repository's Continuous Gauntlet
+   workflow, and ``docs/CONTINUOUS-RESULTS.md`` must not read as if that
+   workflow is still the live public Pipelock execution.
+5. No leftover daily exam. ``.github/workflows/continuous-gauntlet.yaml``
+   must not schedule a Pipelock run. The product schedule lives in
+   luckyPipewrench/pipelock.
 """
 
 import re
@@ -23,6 +29,33 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # The definitions document names the terms it forbids, so the banned-term scan
 # skips it. Its own required content is asserted separately below.
 DEFINITIONS_DOC = Path("docs/RESULTS-USE.md")
+README_FILE = Path("README.md")
+CONTINUOUS_RESULTS_DOC = Path("docs/CONTINUOUS-RESULTS.md")
+CONTINUOUS_WORKFLOW = Path(".github/workflows/continuous-gauntlet.yaml")
+
+# A README badge image for this repository's Continuous Gauntlet workflow
+# implies this repo is still the live product exam. A prose link to the
+# workflow file is not that claim. The Pipelock Scan badge (pipelock.yaml)
+# is this repo being scanned, which is a different thing.
+GAUNTLET_WORKFLOW_BADGE = re.compile(
+    r"actions/workflows/continuous-gauntlet\.yaml/badge\.svg",
+    re.IGNORECASE,
+)
+PIPELOCK_SCAN_BADGE = "actions/workflows/pipelock.yaml"
+CODECOV_BADGE_IMG = (
+    "https://codecov.io/gh/luckyPipewrench/agent-egress-bench/graph/badge.svg"
+)
+LIVE_PUBLIC_EXAM_CLAIM = re.compile(
+    r"this repository'?s?.{0,160}continuous gauntlet.{0,80}is the live public",
+    re.IGNORECASE | re.DOTALL,
+)
+REFERENCE_LANE_CLAIM = re.compile(
+    r"(?:"
+    r"pipelock reference lane in this repository"
+    r"|this repository is pipelock'?s?(?: live)? reference lane"
+    r")",
+    re.IGNORECASE,
+)
 
 SCAN_ROOTS = (
     Path("README.md"),
@@ -91,6 +124,14 @@ BANNED = (
         r"\b(?:received|obtained|accessed)\b",
         "targets get no private or prepublication result review",
     ),
+    (
+        r"(?:this |the )?repository's scheduled Pipelock lane",
+        "this repository is not the live Pipelock schedule; the corpus and runner live here",
+    ),
+    (
+        r"this repository's self-operated Pipelock lane",
+        "do not describe this repository as operating the live Pipelock lane",
+    ),
 )
 
 COMPILED = tuple((re.compile(pattern, re.IGNORECASE), reason) for pattern, reason in BANNED)
@@ -153,12 +194,77 @@ def section_text(text: str, heading: str):
     return "\n".join(body) if inside or body else None
 
 
+def check_readme_exam_home(text: str):
+    """Report a README that still treats this repo as the live product exam."""
+    findings = []
+    if GAUNTLET_WORKFLOW_BADGE.search(text):
+        findings.append(
+            f"{README_FILE}: Continuous Gauntlet badge still points at this "
+            "repository's continuous-gauntlet.yaml; this repository is not "
+            "the live product schedule"
+        )
+    if PIPELOCK_SCAN_BADGE not in text:
+        findings.append(
+            f"{README_FILE}: missing the Pipelock Scan badge for pipelock.yaml"
+        )
+    if CODECOV_BADGE_IMG not in text:
+        findings.append(
+            f"{README_FILE}: missing the codecov coverage badge"
+        )
+    return findings
+
+
+def check_continuous_results(text: str):
+    """Report a continuous-results doc that still reads as the live public exam."""
+    findings = []
+    if "luckyPipewrench/pipelock" not in text:
+        findings.append(
+            f"{CONTINUOUS_RESULTS_DOC}: must name luckyPipewrench/pipelock as "
+            "the product's scheduled candidate"
+        )
+    if "https://pipelab.org/gauntlet/results/" not in text:
+        findings.append(
+            f"{CONTINUOUS_RESULTS_DOC}: must point at "
+            "https://pipelab.org/gauntlet/results/ for first-party published history"
+        )
+    if "./scripts/run-pipelock-gauntlet.sh" not in text:
+        findings.append(f"{CONTINUOUS_RESULTS_DOC}: missing the portable command")
+    collapsed = " ".join(text.split()).lower()
+    if "independent" not in collapsed or "operator" not in collapsed:
+        findings.append(
+            f"{CONTINUOUS_RESULTS_DOC}: missing independent-operator language"
+        )
+    if LIVE_PUBLIC_EXAM_CLAIM.search(text):
+        findings.append(
+            f"{CONTINUOUS_RESULTS_DOC}: must not call this repository's "
+            "Continuous Gauntlet workflow the live public Pipelock exam"
+        )
+    return findings
+
+
+def check_workflow_not_scheduled(text: str):
+    """Report a Continuous Gauntlet workflow that still runs on a schedule."""
+    findings = []
+    if re.search(r"(?m)^\s+schedule:", text) or re.search(r"(?m)^\s+-\s*cron:", text):
+        findings.append(
+            f"{CONTINUOUS_WORKFLOW}: this repository must not schedule a daily "
+            "Pipelock exam; the product schedule lives in luckyPipewrench/pipelock"
+        )
+    return findings
+
+
 def check_definitions(text: str):
     """Report missing required content in the definitions document."""
     findings = []
     for label in REQUIRED_DEFINITIONS:
         if label not in text:
             findings.append(f"{DEFINITIONS_DOC}: missing the {label} assurance label")
+
+    if REFERENCE_LANE_CLAIM.search(text):
+        findings.append(
+            f"{DEFINITIONS_DOC}: must not present this repository as Pipelock's "
+            "live reference lane or publication home"
+        )
 
     # The permission has to live in its own section. Matching the phrase anywhere
     # in the document would pass while the adverse-results section itself said
@@ -207,6 +313,24 @@ def main():
         findings.append(f"{DEFINITIONS_DOC}: missing")
     else:
         findings.extend(check_definitions(definitions_path.read_text(encoding="utf-8")))
+
+    readme_path = REPO_ROOT / README_FILE
+    if not readme_path.is_file():
+        findings.append(f"{README_FILE}: missing")
+    else:
+        findings.extend(check_readme_exam_home(readme_path.read_text(encoding="utf-8")))
+
+    continuous_path = REPO_ROOT / CONTINUOUS_RESULTS_DOC
+    if not continuous_path.is_file():
+        findings.append(f"{CONTINUOUS_RESULTS_DOC}: missing")
+    else:
+        findings.extend(check_continuous_results(continuous_path.read_text(encoding="utf-8")))
+
+    workflow_path = REPO_ROOT / CONTINUOUS_WORKFLOW
+    if not workflow_path.is_file():
+        findings.append(f"{CONTINUOUS_WORKFLOW}: missing")
+    else:
+        findings.extend(check_workflow_not_scheduled(workflow_path.read_text(encoding="utf-8")))
 
     if findings:
         print("check-claim-language: FAIL")

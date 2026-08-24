@@ -1,0 +1,20 @@
+codecov:
+  notify:
+    # One coverage job uploads the three Go modules as a single report.
+    after_n_builds: 1
+    wait_for_ci: false
+
+parsers:
+  go:
+    # Go profiles are statement-based. Counting Codecov partials as hits keeps
+    # the badge aligned with Go's own coverage model.
+    partials_as_hits: true
+
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
