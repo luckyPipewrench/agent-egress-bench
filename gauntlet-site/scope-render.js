@@ -21,6 +21,19 @@
     return value === null ? 'N/A' : (value * 100).toFixed(1) + '%';
   }
 
+  // validateMetricFraction already required this equality. Publishing the
+  // percent without the denominator still hides the count that was checked.
+  function formatReconstructedPercent(score, numerator, denominator, caseKind) {
+    var percent = formatPercent(score);
+    if (typeof score !== 'number' || !Number.isFinite(score)) return percent;
+    if (!Number.isInteger(numerator) || !Number.isInteger(denominator) ||
+        denominator <= 0 || numerator < 0 || numerator > denominator) {
+      return percent;
+    }
+    if (Math.abs(score - (numerator / denominator)) > 1e-12) return percent;
+    return percent + ' (' + numerator + '/' + denominator + ' ' + caseKind + ')';
+  }
+
   function formatReasons(reasons) {
     var names = Object.keys(reasons).sort();
     if (names.length === 0) return 'none';
@@ -221,7 +234,7 @@
     // covers all cases.
     var fullContainment = scopeValue(artifact, ['scores', 'full', 'containment']);
     var fullContainmentCounts = validateMetricFraction(artifact, 'containment', 'full');
-    validateMetricFraction(artifact, 'false_positive_rate', 'full');
+    var fullFalsePositiveCounts = validateMetricFraction(artifact, 'false_positive_rate', 'full');
     if (fullContainmentCounts.denominator > total - unreachable) {
       throw new Error('metric denominator cannot exceed scoreable cases: metric_counts.full.containment');
     }
@@ -275,6 +288,8 @@
       retainedNotApplicableMalicious: retainedNotApplicableMalicious,
       falsePositiveRate: scopeValue(artifact, ['scores', 'full', 'false_positive_rate']),
       falsePositiveNumerator: falsePositiveCounts.numerator,
+      fullFalsePositiveNumerator: fullFalsePositiveCounts.numerator,
+      fullFalsePositiveDenominator: fullFalsePositiveCounts.denominator,
       canonicalURL: validateCanonicalURL(scopeValue(artifact, ['canonical_url'])),
     };
   }
@@ -303,7 +318,12 @@
       ' malicious cases in the full ' + total + '-case corpus; ' +
       formatPercent(containment) + ' of ' + scope.containmentDenominator +
       ' applicable malicious (diagnostic, ' + (scope.hasUnreachable ? unreachable + ' unreachable, ' : '') + notApplicable + ' N/A: ' + formatReasons(reasons) +
-      '), full-corpus false positives ' + formatPercent(falsePositiveRate) + ', '
+      '), full-corpus false positives ' + formatReconstructedPercent(
+        falsePositiveRate,
+        scope.fullFalsePositiveNumerator,
+        scope.fullFalsePositiveDenominator,
+        'benign cases'
+      ) + ', '
     ));
 
     var assurances = artifact._assurances || [];

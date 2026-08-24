@@ -82,13 +82,13 @@ assert.equal(rendered.className, 'denominator');
 // subset would be false, which is the same class of error as leading with the
 // applicable score in the first place.
 assert.match(rendered.children[0].textContent,
-  /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic.*full-corpus false positives 0\.0%/);
+  /Containment 99\.4% of 158 malicious cases in the full 213-case corpus; 100\.0% of 1 applicable malicious \(diagnostic.*full-corpus false positives 0\.0% \(0\/1 benign cases\)/);
 
 const distinctFullFalsePositiveRate = completeArtifact();
 distinctFullFalsePositiveRate.metric_counts.full.false_positive_rate = { numerator: 1, denominator: 2 };
 distinctFullFalsePositiveRate.scores.full.false_positive_rate = 0.5;
 assert.match(window.renderGauntletScope(distinctFullFalsePositiveRate).children[0].textContent,
-  /full-corpus false positives 50\.0%/);
+  /full-corpus false positives 50\.0% \(1\/2 benign cases\)/);
 assert.equal(rendered.children[1].textContent, 'self-run');
 assert.equal(rendered.children[2].textContent, 'artifact-validated');
 assert.equal(rendered.children[4].href, completeArtifact().canonical_url);
