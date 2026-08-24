@@ -561,6 +561,29 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertLess(self.entrypoint.index('curl -fsSL "$asset_url"'), self.entrypoint.index(digest_check))
         self.assertLess(self.entrypoint.index(digest_check), self.entrypoint.index('tar -xzf "$work_dir/$asset"'))
 
+    def test_validate_workflow_uploads_go_coverage(self):
+        validate_workflow = (
+            Path(__file__).resolve().parent.parent / ".github" / "workflows" / "validate.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("coverage:", validate_workflow)
+        self.assertIn("-coverprofile=coverage.out", validate_workflow)
+        self.assertIn(
+            "codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f",
+            validate_workflow,
+        )
+        self.assertIn("fail_ci_if_error: false", validate_workflow)
+        self.assertIn("continue-on-error: true", validate_workflow)
+        self.assertIn("runner/coverage.out", validate_workflow)
+        self.assertIn("validate/coverage.out", validate_workflow)
+        self.assertIn("capability-registry/coverage.out", validate_workflow)
+        self.assertIn("github.event_name != 'workflow_dispatch'", validate_workflow)
+        scanned = re.findall(r'go-version: "(\d+\.\d+\.\d+)"', validate_workflow)
+        self.assertEqual(
+            len(scanned),
+            1,
+            f"coverage job must not add a second exact-patch Go pin, found {scanned}",
+        )
+
     def test_workflow_is_not_scheduled(self):
         trigger = self.workflow[self.workflow.index("on:") : self.workflow.index("concurrency:")]
         self.assertIn("workflow_dispatch:", trigger)

@@ -42,6 +42,9 @@ GAUNTLET_WORKFLOW_BADGE = re.compile(
     re.IGNORECASE,
 )
 PIPELOCK_SCAN_BADGE = "actions/workflows/pipelock.yaml"
+CODECOV_BADGE_IMG = (
+    "https://codecov.io/gh/luckyPipewrench/agent-egress-bench/graph/badge.svg"
+)
 LIVE_PUBLIC_EXAM_CLAIM = re.compile(
     r"this repository'?s?.{0,160}continuous gauntlet.{0,80}is the live public",
     re.IGNORECASE | re.DOTALL,
@@ -203,6 +206,10 @@ def check_readme_exam_home(text: str):
     if PIPELOCK_SCAN_BADGE not in text:
         findings.append(
             f"{README_FILE}: missing the Pipelock Scan badge for pipelock.yaml"
+        )
+    if CODECOV_BADGE_IMG not in text:
+        findings.append(
+            f"{README_FILE}: missing the codecov coverage badge"
         )
     return findings
 

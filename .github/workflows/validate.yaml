@@ -89,6 +89,45 @@ jobs:
       - name: Run runner tests
         run: cd runner && go test -race -count=1 ./...
 
+  # Coverage is telemetry for the README badge. It must not become a required
+  # status check: an uploader hiccup cannot block a green validate/runner job.
+  # Promotion dispatches this workflow with GITHUB_TOKEN; skip coverage there.
+  coverage:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+
+      - name: Collect Go coverage
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/pipelock-tmp" "$HOME/.cache/go-build"
+          export TMPDIR="$HOME/.cache/pipelock-tmp"
+          export GOCACHE="$HOME/.cache/go-build"
+          for module in runner validate capability-registry; do
+            ( cd "$module" && go test -race -count=1 -coverprofile=coverage.out ./... )
+          done
+
+      - name: Upload coverage
+        # Best-effort telemetry. The Codecov uploader's integrity check can
+        # fail independently of the tests, and coverage is not a merge gate.
+        continue-on-error: true
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
+        with:
+          files: runner/coverage.out,validate/coverage.out,capability-registry/coverage.out
+          disable_search: true
+          fail_ci_if_error: false
+
   # The shared gate above is the normal push contract. Keep this narrower job
   # solely for the validate module's declared minimum Go compatibility, which
   # the Go 1.25 preflight cannot prove.

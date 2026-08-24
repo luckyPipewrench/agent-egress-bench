@@ -135,21 +135,35 @@ class DefinitionsDocumentTest(unittest.TestCase):
 
 
 class GauntletExamHomeTest(unittest.TestCase):
+    SCAN_AND_COVERAGE = (
+        '<a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml">'
+        '<img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" '
+        'alt="Pipelock Scan"></a>\n'
+        '<a href="https://codecov.io/gh/luckyPipewrench/agent-egress-bench">'
+        '<img src="https://codecov.io/gh/luckyPipewrench/agent-egress-bench/graph/badge.svg" '
+        'alt="codecov"></a>\n'
+    )
+
     def test_prose_workflow_link_is_not_a_badge_finding(self):
         text = (
-            '<a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml">'
-            '<img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" '
-            'alt="Pipelock Scan"></a>\n'
-            "See .github/workflows/continuous-gauntlet.yaml for the optional manual workflow.\n"
+            self.SCAN_AND_COVERAGE
+            + "See .github/workflows/continuous-gauntlet.yaml for the optional manual workflow.\n"
         )
         self.assertEqual(check.check_readme_exam_home(text), [])
 
-    def test_continuous_gauntlet_readme_badge_is_reported(self):
+    def test_codecov_badge_is_required(self):
         text = (
             '<a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml">'
             '<img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" '
             'alt="Pipelock Scan"></a>\n'
-            '<a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/continuous-gauntlet.yaml">'
+        )
+        findings = check.check_readme_exam_home(text)
+        self.assertTrue(any("codecov" in finding for finding in findings))
+
+    def test_continuous_gauntlet_readme_badge_is_reported(self):
+        text = (
+            self.SCAN_AND_COVERAGE
+            + '<a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/continuous-gauntlet.yaml">'
             '<img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/continuous-gauntlet.yaml/badge.svg" '
             'alt="Continuous Gauntlet"></a>\n'
         )

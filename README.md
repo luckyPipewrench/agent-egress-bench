@@ -8,6 +8,7 @@
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" alt="Pipelock Scan"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/agent-egress-bench"><img src="https://api.scorecard.dev/projects/github.com/luckyPipewrench/agent-egress-bench/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://goreportcard.com/report/github.com/luckyPipewrench/agent-egress-bench"><img src="https://goreportcard.com/badge/github.com/luckyPipewrench/agent-egress-bench" alt="Go Report Card"></a>
+  <a href="https://codecov.io/gh/luckyPipewrench/agent-egress-bench"><img src="https://codecov.io/gh/luckyPipewrench/agent-egress-bench/graph/badge.svg" alt="codecov"></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <a href="https://discord.gg/badNfhGKTc"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white"></a>
 </p>
