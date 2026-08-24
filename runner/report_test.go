@@ -852,6 +852,139 @@ func TestBuyerReportMarksInvalidCategoryProfileUnavailable(t *testing.T) {
 	}
 }
 
+func TestBuyerReportHeadlinesCarryApplicableProfileDenominators(t *testing.T) {
+	fixture := categoryProfileFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	writeCategoryProfileIndex(t, fixture, dir, categoryProfileIndex())
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	for _, want := range []string{
+		"- Containment: 50.00% (1/2 malicious cases; case-equal weighting from corpus composition)",
+		"- False-positive rate: 50.00% (1/2 benign cases; case-equal weighting from corpus composition)",
+	} {
+		if strings.Count(got, want) != 2 {
+			t.Fatalf("headline denominator %q did not appear in both metric scopes:\n%s", want, got)
+		}
+	}
+}
+
+func TestBuyerReportHeadlinesDoNotBorrowFullCorpusDenominators(t *testing.T) {
+	fixture := newReportFixture()
+	fixture.summary["case_count"] = map[string]interface{}{
+		"total": 3, "applicable": 2, "not_applicable": 1,
+		"not_applicable_reasons": map[string]interface{}{"missing_requires": 1}, "errors": 0,
+	}
+	fixture.summary["scores"] = map[string]interface{}{
+		"full":       map[string]interface{}{"containment": 0.5, "detection": 0.5, "evidence": 0.25, "false_positive_rate": 0.0},
+		"applicable": map[string]interface{}{"containment": 1.0, "detection": 0.6, "evidence": 0.4, "false_positive_rate": 0.0},
+	}
+	fixture.results = append(fixture.results, map[string]interface{}{
+		"schema_version": 4, "case_id": "mcp-chain-budget-003", "tool": "example-tool", "tool_version": "1.2.3",
+		"expected_verdict": "block", "actual_verdict": "not_applicable", "score": "not_applicable",
+		"evidence": map[string]interface{}{}, "notes": "not applicable: missing_requires",
+	})
+	dir := t.TempDir()
+	fixture.write(t, dir)
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	full := "### Full corpus\n\n- Containment: 50.00% (1/2 malicious cases; case-equal weighting from corpus composition)\n- Detection: 50.00%\n- Evidence: 25.00%\n- False-positive rate: 0.00% (0/1 benign cases; case-equal weighting from corpus composition)"
+	if !strings.Contains(got, full) {
+		t.Fatalf("full-corpus headlines =\n%s\nwant %q", got, full)
+	}
+	applicable := "### Applicable-only observed cases\n\n- Containment: 100.00%\n- Detection: 60.00%\n- Evidence: 40.00%\n- False-positive rate: 0.00%"
+	if !strings.Contains(got, applicable) {
+		t.Fatalf("applicable headlines borrowed a denominator or changed retired metrics:\n%s", got)
+	}
+}
+
+func TestBuyerReportHeadlinesOmitCountsForUnreadableResults(t *testing.T) {
+	fixture := newReportFixture()
+	fixture.summary["scores"] = map[string]interface{}{
+		"full":       map[string]interface{}{"containment": 1.0, "detection": 0.5, "evidence": 0.25, "false_positive_rate": 0.0},
+		"applicable": map[string]interface{}{"containment": 1.0, "detection": 0.6, "evidence": 0.4, "false_positive_rate": 0.0},
+	}
+	dir := t.TempDir()
+	fixture.write(t, dir)
+	firstRow, err := json.Marshal(fixture.results[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), append(firstRow, []byte("\n{\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	if !strings.Contains(got, "- Containment: 100.00%\n") {
+		t.Fatalf("unreadable results hid the percentage:\n%s", got)
+	}
+	if strings.Contains(got, "- Containment: 100.00% (1/1 malicious cases;") {
+		t.Fatalf("unreadable results produced a confident-looking partial fraction:\n%s", got)
+	}
+}
+
+func TestBuyerReportHeadlinesOmitMismatchedFractions(t *testing.T) {
+	fixture := newReportFixture()
+	dir := t.TempDir()
+	fixture.write(t, dir)
+
+	report, err := loadBuyerReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	report.renderMarkdown(&output)
+	got := output.String()
+	if !strings.Contains(got, "- Containment: 75.00%\n") {
+		t.Fatalf("mismatched rows hid the percentage:\n%s", got)
+	}
+	if strings.Contains(got, "- Containment: 75.00% (1/1 malicious cases;") {
+		t.Fatalf("mismatched numerator and denominator were rendered beside the percentage:\n%s", got)
+	}
+}
+
+func TestReportApplicablePercentRequiresAvailableProfile(t *testing.T) {
+	doc := reportDocument{data: map[string]interface{}{
+		"scores": map[string]interface{}{"applicable": map[string]interface{}{"containment": json.Number("0.5")}},
+	}}
+	profile := reportCategoryProfile{
+		rows:        []reportCategoryProfileRow{{blocked: 1, malicious: 2}},
+		unavailable: "the retained evidence is unavailable",
+	}
+	got := reportApplicablePercent(doc, profile, 2, "malicious", "scores", "applicable", "containment")
+	if got != "50.00%" {
+		t.Fatalf("unavailable profile rendered denominator %q", got)
+	}
+}
+
+func TestReportPercentWithDenominatorOmitsZeroDenominator(t *testing.T) {
+	doc := reportDocument{data: map[string]interface{}{
+		"scores": map[string]interface{}{"applicable": map[string]interface{}{"containment": json.Number("0")}},
+	}}
+	got := reportPercentWithDenominator(doc, 0, 0, "malicious", "scores", "applicable", "containment")
+	if got != "0.00%" {
+		t.Fatalf("zero denominator rendered as a measurement %q", got)
+	}
+}
+
 func TestPublicationLockupListsFailuresBeforeScores(t *testing.T) {
 	fixture := publicationFixture()
 	fixture.results[0]["actual_verdict"] = "allow"
