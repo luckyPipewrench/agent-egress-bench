@@ -244,6 +244,9 @@
     if (fullFalsePositiveCounts.denominator < falsePositiveCounts.denominator) {
       throw new Error('full false-positive denominator cannot be smaller than the applicable denominator');
     }
+    if (fullFalsePositiveCounts.numerator < falsePositiveCounts.numerator) {
+      throw new Error('full false-positive numerator cannot be smaller than the applicable numerator');
+    }
     if (fullContainmentCounts.denominator < containmentCounts.denominator) {
       throw new Error('full containment denominator cannot be smaller than the applicable denominator');
     }
@@ -260,6 +263,10 @@
     if (artifact.schema_version === 6 &&
         fullContainmentCounts.numerator !== containmentCounts.numerator) {
       throw new Error('full containment numerator must equal the applicable numerator');
+    }
+    if (artifact.schema_version === 6 &&
+        fullFalsePositiveCounts.numerator !== falsePositiveCounts.numerator) {
+      throw new Error('full false-positive numerator must equal the applicable numerator');
     }
     if (containmentCounts.denominator > applicable || falsePositiveCounts.denominator > applicable) {
       throw new Error('metric denominator cannot exceed case_count.applicable');

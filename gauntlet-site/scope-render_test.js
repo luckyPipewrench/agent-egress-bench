@@ -356,6 +356,12 @@ expectReject((artifact) => {
   artifact.metric_counts.full.false_positive_rate = { numerator: 0, denominator: 1 };
 }, 'full false-positive denominator narrower than applicable');
 expectReject((artifact) => {
+  artifact.metric_counts.applicable.false_positive_rate = { numerator: 1, denominator: 2 };
+  artifact.scores.applicable.false_positive_rate = 0.5;
+  artifact.metric_counts.full.false_positive_rate = { numerator: 0, denominator: 2 };
+  artifact.scores.full.false_positive_rate = 0;
+}, /full false-positive numerator cannot be smaller than the applicable numerator/);
+expectReject((artifact) => {
   artifact.metric_counts.applicable.containment = { numerator: 200, denominator: 200 };
   artifact.metric_counts.full.containment = { numerator: 150, denominator: 150 };
   artifact.scores.full.containment = 1;
