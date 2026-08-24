@@ -162,6 +162,8 @@ mcp-tool-http-result-resource-injection-012
 mcp-tool-http-schema-benign-anyof-015
 mcp-tool-http-schema-poison-008
 mcp-tool-http-schema-type-confusion-014
+mcp-tool-instructions-benign-018
+mcp-tool-instructions-exfil-017
 mcp-tool-poison-001
 mcp-tool-priority-006
 mcp-tool-result-credential-014
@@ -170,6 +172,8 @@ mcp-tool-result-credential-hex-016
 mcp-tool-rugpull-002
 mcp-tool-schema-inject-004
 mcp-tool-shadow-003
+mcp-tool-title-benign-020
+mcp-tool-title-override-019
 response-benign-cli-help-003
 response-benign-code-snippet-001
 response-benign-security-article-002

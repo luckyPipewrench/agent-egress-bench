@@ -47,6 +47,7 @@ func main() {
 	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile-v5.schema.json) to this path alongside the Gauntlet summary")
 	toolVersionCommand := flag.String("tool-version-command", "", "JSON array argv used to ask the tool for its version when emitting a receipt profile; executed without a shell")
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
+	retainReturnedContent := flag.String("retain-returned-content", "", "directory for opt-in private copies of returned MCP content; excluded from public artifacts")
 	multiFileCases := flag.String("multifile-cases", "", "override the auto-discovered multi-file case directory. The selected case IDs must equal the loader-backed corpus.")
 	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
 	caseIndex := flag.Bool("case-index", false, "print loader-normalized case IDs and expected verdicts as JSON (requires --cases; ignores runner profile flags)")
@@ -169,6 +170,7 @@ func main() {
 	prov.MCPHTTPSessionRefusalValue = *mcpHTTPSessionRefusalValue
 	prov.RequireComplete = *requireComplete
 	prov.ToolVersionCommand = *toolVersionCommand
+	prov.ReturnedContentDir = *retainReturnedContent
 
 	if err := runWithGatewayPluginOptions(*casesDir, *profilePath, *outputPath, *timeout, *adapterName, *proxyAddr, *scanAddr, *scanToken, *mcpCmd, *mcpHTTPURL, *managedProxyCmd, *managedMCPHTTPCmd, *gatewayPluginPath, *fixtures, *emitReceiptProfile, *receiptVerifierFile, *multiFileCases, debug, *toolVersion, prov, seededBlocklist); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -321,6 +323,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		routableSinks = proxyRoutableSinks(true)
 	}
 	setup := newRunSetup(seededBlocklist, routableSinks)
+	setup.returnedContentDir = prov.ReturnedContentDir
 	applicableResults, unreachableResults, unreachableIDs, naReasons, runErr := runCasesWithSetup(cases, profile, adapt, timeout, debug, os.Stdout, setup)
 	if runErr != nil {
 		return runErr
@@ -480,6 +483,12 @@ func runCasesWithSetup(cases []Case, profile Profile, adapt adapter.Adapter, tim
 		}
 
 		adapterResult := adapt.Run(adapterCase, timeout)
+		if adapterResult.Evidence == nil {
+			adapterResult.Evidence = map[string]interface{}{}
+		}
+		if err := retainReturnedContent(setup.returnedContentDir, c.ID, adapterResult.Evidence, adapterResult.ReturnedContent); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("case %s: retain returned content: %w", c.ID, err)
+		}
 		state, notes := resultStateFor(adapterResult)
 		if state != ResultStateObserved {
 			result := caseResultForState(profile, c, state, adapterResult.Evidence, notes)

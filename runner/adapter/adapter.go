@@ -24,11 +24,24 @@ type DeliveryTuple struct {
 
 // Result is what an adapter returns after running a case.
 type Result struct {
-	Verdict         string
-	Evidence        map[string]interface{}
+	Verdict  string
+	Evidence map[string]interface{}
+	// ReturnedContent is kept out of Evidence so raw bytes can only be retained
+	// by an explicit runner-side opt-in. It must never be serialized directly.
+	ReturnedContent []ReturnedContent `json:"-"`
 	Err             error
 	DeliveryProven  bool
 	VerdictObserved bool
+}
+
+// ReturnedContent describes bytes received from a content-bearing response.
+// Path is a closed protocol-path label; Metadata contains only bounded shape
+// facts and never payload strings.
+type ReturnedContent struct {
+	Bytes     []byte
+	MediaType string
+	Path      string
+	Metadata  map[string]interface{}
 }
 
 // Adapter runs a single benchmark case against a tool and returns the verdict.

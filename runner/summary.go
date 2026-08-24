@@ -132,6 +132,9 @@ type RunProvenance struct {
 	// contain a local binary path; the receipt profile records only the tool's
 	// bounded self-report or an explicit unavailable status.
 	ToolVersionCommand string
+	// ReturnedContentDir is an opt-in private sidecar location. It is not
+	// summary provenance because public bundles must not discover it.
+	ReturnedContentDir string
 }
 
 // CaseCount tracks routed, historical N/A, and adapter-unreachable rows. The

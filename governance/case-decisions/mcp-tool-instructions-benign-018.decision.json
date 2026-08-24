@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-tool-instructions-benign-018",
+  "case_sha256": "b210185e8c7f2a786094bfa244c429d840918f664d7a7e30a3e059015784fd1f",
+  "case_description": "An MCP initialize response carries ordinary usage instructions alongside a safe tool inventory.",
+  "expected_verdict": "allow",
+  "why_expected": "ordinary_server_instructions",
+  "source": "synthetic: benign MCP server instructions",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

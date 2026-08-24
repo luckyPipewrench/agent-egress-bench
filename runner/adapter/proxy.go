@@ -2267,7 +2267,7 @@ func mcpStdioUpstreamCommandEnv(addr string) []string {
 // a runner-owned upstream listener that returns the poisoned payload only
 // after observing the corresponding client request. The evaluated command opts
 // into that neutral endpoint contract; the runner never rewrites its command.
-func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
+func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) (returned Result) {
 	if p.mcpCmd == "" {
 		return Result{
 			Verdict:  "skip",
@@ -2396,6 +2396,11 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) Result {
 		return Result{Err: mcpStdioSubprocessError(c, waitErr, stderrOutput)}
 	}
 	output := <-outputCh
+	defer func() {
+		if len(output) > 0 {
+			returned.ReturnedContent = append(returned.ReturnedContent, returnedContent(output, "text/plain", "mcp_stdio_result"))
+		}
+	}()
 	if observer != nil {
 		observer.Drain(mcpStdioObserverDrainTimeout)
 	}
@@ -3590,6 +3595,15 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) (re
 			Evidence: cappedResponseEvidence(err),
 		}
 	}
+	defer func() {
+		if len(responseBody) > 0 {
+			path := "mcp_tools_call_result"
+			if c.InputType == "mcp_tool_definition" {
+				path = "mcp_tools_list"
+			}
+			responseResult.ReturnedContent = append(responseResult.ReturnedContent, returnedContent(responseBody, resp.Header.Get("Content-Type"), path))
+		}
+	}()
 
 	delivered := proxyMCPHTTPDelivered(p.mcpHTTPFixture, gatewayReq)
 	evidence := map[string]interface{}{

@@ -83,6 +83,30 @@ One JSON object per case, written to stdout (one per line, JSONL):
 | `evidence` | object | Evidence with required `result_state`; other fields are tool-specific |
 | `notes` | string | Optional context |
 
+### Returned-content diagnostics
+
+When an adapter receives bytes on a content-bearing MCP response path, its row
+may include `returned_content_sha256`, `returned_content_bytes`,
+`returned_content_media_type`, and `returned_content_path`. The digest covers
+the original received bytes, before any JSON decoding or text conversion.
+`returned_content_path` is one of `mcp_tools_list`,
+`mcp_tools_call_result`, `mcp_initialize_instructions`, or
+`mcp_stdio_result`. Adapters may also report bounded shape facts such as a tool
+count or the presence of `instructions`, `title`, `inputSchema`,
+`outputSchema`, or `annotations`.
+
+These are diagnostics only. They never enter the score or change what
+`block` means. The runner still scores the channel decision using the existing
+case contract. The proxy HTTP listener-session initialize is transport setup,
+not case input, and is not retained.
+
+`--retain-returned-content DIR` is an explicit local-only opt-in. It stores
+the original bytes and a per-response manifest in `DIR` with private file
+permissions. It is off by default. The Action publisher copies a closed list
+of public artifacts and does not include that directory, even when it sits
+beside a run. Public JSONL, summaries, reports, provenance, candidate
+evaluation, and buyer reports receive no payload snippets from this feature.
+
 ## Runner Setup
 
 Some cases require tool-specific configuration before running. These requirements are documented in each case's `notes` field and in this section.
