@@ -2398,7 +2398,7 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) (returned Resu
 	output := <-outputCh
 	defer func() {
 		if len(output) > 0 {
-			returned.ReturnedContent = append(returned.ReturnedContent, returnedContent(output, "application/json", "mcp_stdio_result"))
+			returned.ReturnedContent = append(returned.ReturnedContent, returnedContent(output, "text/plain", "mcp_stdio_result"))
 		}
 	}()
 	if observer != nil {

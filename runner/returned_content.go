@@ -126,18 +126,56 @@ func writeReturnedContentSidecarFile(root *os.Root, name string, data []byte) er
 	} else if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("inspect returned-content sidecar %q: %w", name, err)
 	}
-	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	tmpName := name + ".tmp"
+	if err := removeReturnedContentIfRegular(root, tmpName); err != nil {
+		return err
+	}
+	file, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = file.Close() }()
+	writeErr := writeReturnedContentExclusive(file, data)
+	if closeErr := file.Close(); writeErr == nil {
+		writeErr = closeErr
+	}
+	if writeErr != nil {
+		_ = root.Remove(tmpName)
+		return writeErr
+	}
+	if err := root.Rename(tmpName, name); err != nil {
+		_ = root.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+func writeReturnedContentExclusive(file *os.File, data []byte) error {
 	if err := file.Chmod(0o600); err != nil {
 		return err
 	}
-	if written, err := file.Write(data); err != nil {
+	written, err := file.Write(data)
+	if err != nil {
 		return err
-	} else if written != len(data) {
+	}
+	if written != len(data) {
 		return fmt.Errorf("wrote %d of %d returned-content bytes", written, len(data))
+	}
+	return nil
+}
+
+func removeReturnedContentIfRegular(root *os.Root, name string) error {
+	info, err := root.Lstat(name)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect returned-content sidecar %q: %w", name, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("returned-content sidecar %q is not a regular file", name)
+	}
+	if err := root.Remove(name); err != nil {
+		return fmt.Errorf("remove returned-content sidecar %q: %w", name, err)
 	}
 	return nil
 }

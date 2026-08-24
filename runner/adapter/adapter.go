@@ -28,7 +28,7 @@ type Result struct {
 	Evidence map[string]interface{}
 	// ReturnedContent is kept out of Evidence so raw bytes can only be retained
 	// by an explicit runner-side opt-in. It must never be serialized directly.
-	ReturnedContent []ReturnedContent
+	ReturnedContent []ReturnedContent `json:"-"`
 	Err             error
 	DeliveryProven  bool
 	VerdictObserved bool
