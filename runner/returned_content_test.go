@@ -225,6 +225,56 @@ func TestReturnedContentSidecarRefusesPreexistingSymlink(t *testing.T) {
 	}
 }
 
+func TestReturnedContentSidecarConcurrentWritesKeepWholePayloads(t *testing.T) {
+	dir := t.TempDir()
+	first := bytes.Repeat([]byte("A"), 64*1024)
+	second := bytes.Repeat([]byte("B"), 64*1024)
+	errs := make(chan error, 2)
+	go func() {
+		errs <- retainReturnedContent(dir, "returned-content-race", map[string]interface{}{}, []adapter.ReturnedContent{{
+			Bytes: first, MediaType: "application/json", Path: "mcp_stdio_result",
+		}})
+	}()
+	go func() {
+		errs <- retainReturnedContent(dir, "returned-content-race", map[string]interface{}{}, []adapter.ReturnedContent{{
+			Bytes: second, MediaType: "application/json", Path: "mcp_stdio_result",
+		}})
+	}()
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	stored, err := os.ReadFile(filepath.Join(dir, "returned-content-race-0.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, first) && !bytes.Equal(stored, second) {
+		t.Fatalf("sidecar mixed or truncated: len=%d", len(stored))
+	}
+}
+
+func TestReturnedContentSidecarLeavesForeignTempIntact(t *testing.T) {
+	dir := t.TempDir()
+	tmp := filepath.Join(dir, "returned-content-temp-0.bin.tmp")
+	if err := os.WriteFile(tmp, []byte("foreign"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := retainReturnedContent(dir, "returned-content-temp", map[string]interface{}{}, []adapter.ReturnedContent{{
+		Bytes: []byte("replacement"), MediaType: "application/json", Path: "mcp_stdio_result",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := os.ReadFile(tmp)
+	if err != nil || string(stored) != "foreign" {
+		t.Fatalf("predictable leftover temp = %q, err=%v", stored, err)
+	}
+	sidecar, err := os.ReadFile(filepath.Join(dir, "returned-content-temp-0.bin"))
+	if err != nil || string(sidecar) != "replacement" {
+		t.Fatalf("sidecar = %q, err=%v", sidecar, err)
+	}
+}
+
 func mustMarshalJSON(t *testing.T, value interface{}) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)
