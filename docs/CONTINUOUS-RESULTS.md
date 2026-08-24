@@ -1,17 +1,19 @@
 # Continuous Gauntlet Results
 
-The Pipelock reference lane separates execution, review, and publication.
+This repository owns the corpus, the runner, and the portable command. Public scores are selected and published. A completed run is not a public claim by itself. First-party published Pipelock history is at [pipelab.org/gauntlet/results](https://pipelab.org/gauntlet/results/). The product's scheduled candidate currently runs in [luckyPipewrench/pipelock](https://github.com/luckyPipewrench/pipelock).
 
-1. The read-only `Continuous Gauntlet` workflow runs the portable benchmark and retains a candidate evidence bundle.
+This repository still has a read-only `Continuous Gauntlet` workflow and a promotion path that accepts only a completed run of that workflow from this repository. That remaining path is not the live public exam.
+
+1. A completed run of this repository's read-only `Continuous Gauntlet` workflow retains a candidate evidence bundle. That workflow is not the product's public schedule.
 2. A maintainer chooses a completed run in the `Prepare Gauntlet result promotion` workflow.
 3. The promotion workflow downloads that exact bundle, recomputes its decision, and opens a pull request.
 4. Merging the pull request is the repository publication approval. It adds an immutable record and advances `latest-verified`.
 
-The scheduled workflow cannot write repository contents or open a pull request. A raw run never moves the committed pointer by itself. Candidate Actions artifacts are retained for 14 days, so a maintainer must prepare the promotion before that download window closes.
+The remaining scheduled workflow cannot write repository contents or open a pull request. A raw run never moves the committed pointer by itself. Candidate Actions artifacts are retained for 14 days, so a maintainer must prepare the promotion before that download window closes.
 
-Daily runs do not create pull requests. The workflow summary says **PASS — NO ACTION REQUIRED** when the candidate matches the approved scope. Owner action is needed only when it says **REVIEW REQUIRED** for a scope or policy change, or **BLOCKED** for an incomplete or failed run.
+Scheduled runs of that remaining workflow do not create pull requests. The workflow summary says **PASS — NO ACTION REQUIRED** when the candidate matches the approved scope. Owner action is needed only when it says **REVIEW REQUIRED** for a scope or policy change, or **BLOCKED** for an incomplete or failed run.
 
-Clean runs finish green. Review-required and blocked runs finish red so the Actions badge and normal failed-workflow notifications surface the action; the first line of the run summary distinguishes a review from a broken run. Email delivery still depends on the owner's GitHub notification settings.
+Clean runs finish green. Review-required and blocked runs finish red so GitHub's workflow run and ordinary failed-workflow notifications surface the action; the first line of the run summary distinguishes a review from a broken run. Email delivery still depends on the owner's GitHub notification settings.
 
 ## Append-only layout
 
@@ -63,6 +65,6 @@ The portable command is not tied to GitHub Actions:
 ./scripts/run-pipelock-gauntlet.sh
 ```
 
-An independent lab can repeat that command with its own scheduler and retain the same portable bundle. Its platform supplies its own real artifact ID and HTTPS URL during finalization. Its publication policy remains independent from this repository's self-operated Pipelock lane. Matching the Pipelock release, corpus commit and digest, runner version, fixtures, and applicable/N/A denominator makes the two results directly reconcilable without pretending they share an operator.
+An independent lab can repeat that command with its own scheduler and retain the same portable bundle. Its platform supplies its own real artifact ID and HTTPS URL during finalization. Its publication policy remains independent from the product's scheduled candidate. Matching the Pipelock release, corpus commit and digest, runner version, fixtures, and applicable/N/A denominator makes the two results directly reconcilable without pretending they share an operator.
 
 An operator calling its program continuous declares the publication selection rule before execution, keeps each completed scored result in scope, and shows the run date beside every displayed score. Superseding records link to retained predecessors. An error, incomplete measurement, or unknown state stays visibly non-successful instead of leaving the last successful result looking current. The neutral publication lockup described in [RESULTS-USE.md](RESULTS-USE.md) makes the reproducibility facts portable across the operator's report, badge data, website, and social presentation without transferring ownership of the method or the operator's brand.
