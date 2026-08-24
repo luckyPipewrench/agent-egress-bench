@@ -201,6 +201,9 @@ func TestMCPGatewayAdapterAllowsOnlyWhenFixtureReceivedToolsCall(t *testing.T) {
 	if !result.DeliveryProven || !result.VerdictObserved {
 		t.Fatalf("result = %+v, want explicit delivery and verdict proof", result)
 	}
+	if !hasReturnedContentPath(result.ReturnedContent, "mcp_tools_call_result") {
+		t.Fatalf("returned paths = %v, want the tools/call response", returnedContentPaths(result.ReturnedContent))
+	}
 }
 
 func TestMCPGatewayAdapterExecutesToolResultResponse(t *testing.T) {
@@ -367,6 +370,9 @@ func TestMCPGatewayAdapterInitializationDenyIsAdapterError(t *testing.T) {
 	result := a.Run(gatewayToolsCallCase("gateway-stale-initialize-deny"), time.Second)
 	if result.Err == nil || result.Verdict != "" || result.DeliveryProven || result.VerdictObserved || !strings.Contains(result.Err.Error(), "MCP gateway initialize") {
 		t.Fatalf("result = %+v, want initialize adapter error rather than a scored verdict", result)
+	}
+	if len(result.ReturnedContent) != 1 || !bytes.Contains(result.ReturnedContent[0].Bytes, []byte("stale initialization deny")) {
+		t.Fatalf("returned content = %#v, want the initialize error response", result.ReturnedContent)
 	}
 }
 
@@ -915,6 +921,12 @@ func TestMCPGatewayAdapterAllowsSSEProgressAndUnrelatedEvents(t *testing.T) {
 	if result.Err != nil || result.Verdict != "allow" {
 		t.Fatalf("result = %+v, want SSE tools/list allow after progress and unrelated events", result)
 	}
+	if len(result.ReturnedContent) == 0 {
+		t.Fatal("returned content is empty, want the tools/list SSE response")
+	}
+	if got := result.ReturnedContent[0].MediaType; got != "text/event-stream" {
+		t.Fatalf("returned content media type = %q, want original SSE media type", got)
+	}
 }
 
 func TestJSONRPCMessageFromSSERejectsDuplicateResponseForRequest(t *testing.T) {
@@ -1421,6 +1433,32 @@ func TestMCPGatewayAdapterAllowsExactTemporalInventoryOnOneBoundSession(t *testi
 			t.Fatalf("%s = %v, want true; evidence=%+v", key, result.Evidence[key], result.Evidence)
 		}
 	}
+	count := 0
+	for _, observation := range result.ReturnedContent {
+		if observation.Path == "mcp_tools_list" {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Fatalf("returned paths have %d tools/list responses, want 2: %v", count, returnedContentPaths(result.ReturnedContent))
+	}
+}
+
+func hasReturnedContentPath(observations []ReturnedContent, path string) bool {
+	for _, returnedPath := range returnedContentPaths(observations) {
+		if returnedPath == path {
+			return true
+		}
+	}
+	return false
+}
+
+func returnedContentPaths(observations []ReturnedContent) []string {
+	paths := make([]string, 0, len(observations))
+	for _, observation := range observations {
+		paths = append(paths, observation.Path)
+	}
+	return paths
 }
 
 func TestMCPGatewayAdapterRejectsUnboundTemporalInventory(t *testing.T) {
@@ -2770,7 +2808,7 @@ func TestMCPGatewaySendRejectsIDAndCorrelationDisagreement(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			_, result := a.sendResponse(ctx, &http.Client{}, "case-id", tt.message, false,
+			_, _, _, result := a.sendResponse(ctx, &http.Client{}, "case-id", tt.message, false,
 				"empty", &gatewaySession{}, tt.request, deliveryAbsent)
 			if result == nil || result.Err == nil {
 				t.Fatalf("result = %+v, want a loud error rather than an unvalidated response", result)

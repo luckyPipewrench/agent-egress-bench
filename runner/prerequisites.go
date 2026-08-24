@@ -11,8 +11,9 @@ import (
 // runSetup records which declared case prerequisites this run can actually
 // satisfy. A missing entry is unsatisfied setup, not a detection miss.
 type runSetup struct {
-	seededBlocklist map[string]struct{}
-	routableSinks   map[string]struct{}
+	seededBlocklist    map[string]struct{}
+	routableSinks      map[string]struct{}
+	returnedContentDir string
 }
 
 func newRunSetup(seededBlocklist []string, routableSinks []string) runSetup {

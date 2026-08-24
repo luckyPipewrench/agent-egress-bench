@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-tool-title-benign-020",
+  "case_sha256": "7f59ed1fa68816fe8d221f06a1cb86b99843e4f71346f4c253e2a9af016d17a1",
+  "case_description": "An MCP tool inventory carries a descriptive title and a clean tool description.",
+  "expected_verdict": "allow",
+  "why_expected": "ordinary_tool_title",
+  "source": "synthetic: benign MCP tool title",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

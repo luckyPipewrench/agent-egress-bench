@@ -208,7 +208,7 @@ type temporalInventoryStep struct {
 	canonical []byte
 }
 
-func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) Result {
+func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) (returned Result) {
 	steps, err := temporalInventorySteps(c)
 	if err != nil {
 		return gatewaySkip(c, "gateway temporal inventory requires one before/after tools/list pair: "+err.Error())
@@ -222,6 +222,11 @@ func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) 
 
 	client := &http.Client{}
 	sess := &gatewaySession{}
+	var responseContent []ReturnedContent
+	defer func() {
+		returned.ReturnedContent = append(returned.ReturnedContent, responseContent...)
+		returned.ReturnedContent = append(returned.ReturnedContent, sess.returnedContent...)
+	}()
 	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
 		return *result
 	}
@@ -248,7 +253,10 @@ func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) 
 	}
 	requests = append(requests, baselineRequest)
 
-	baselineBody, baselineResult := a.sendResponse(ctx, client, c.ID, baselineMessage, true, "empty_baseline_tools_list_response", sess, &requests[0], deliveryRequired)
+	baselineBody, baselineRawBody, baselineMediaType, baselineResult := a.sendResponse(ctx, client, c.ID, baselineMessage, true, "empty_baseline_tools_list_response", sess, &requests[0], deliveryRequired)
+	if len(baselineRawBody) > 0 {
+		responseContent = append(responseContent, returnedContent(baselineRawBody, baselineMediaType, "mcp_tools_list"))
+	}
 	baselineRelease()
 	evidence["inventory_request_identities"] = []string{requests[0].identity}
 	if baselineResult != nil {
@@ -287,7 +295,10 @@ func (a *MCPGatewayAdapter) runTemporalInventory(c Case, timeout time.Duration) 
 	}
 	requests = append(requests, changedRequest)
 	evidence["inventory_request_identities"] = []string{requests[0].identity, requests[1].identity}
-	changedBody, changedResult := a.sendResponse(ctx, client, c.ID, changedMessage, true, "empty_changed_tools_list_response", sess, &requests[1], deliveryRequired)
+	changedBody, changedRawBody, changedMediaType, changedResult := a.sendResponse(ctx, client, c.ID, changedMessage, true, "empty_changed_tools_list_response", sess, &requests[1], deliveryRequired)
+	if len(changedRawBody) > 0 {
+		responseContent = append(responseContent, returnedContent(changedRawBody, changedMediaType, "mcp_tools_list"))
+	}
 	changedRelease()
 	changedDelivered, changedProof := a.requestDelivered(requests[1])
 	evidence["changed_inventory_reached_upstream"] = changedProof && changedDelivered
@@ -406,7 +417,7 @@ func canonicalJSON(value interface{}) ([]byte, error) {
 	return json.Marshal(normalized)
 }
 
-func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result {
+func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) (returned Result) {
 	resultPayload, err := declaredToolResult(c)
 	if err != nil {
 		return gatewaySkip(c, "gateway tool-result response requires one JSON-RPC result: "+err.Error())
@@ -439,11 +450,21 @@ func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result 
 
 	client := &http.Client{}
 	sess := &gatewaySession{}
+	var responseBody []byte
+	var responseMediaType string
+	defer func() {
+		if len(responseBody) > 0 {
+			returned.ReturnedContent = append(returned.ReturnedContent, returnedContent(responseBody, responseMediaType, "mcp_tools_call_result"))
+		}
+		returned.ReturnedContent = append(returned.ReturnedContent, sess.returnedContent...)
+	}()
 	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
 		return *result
 	}
 
-	_, observed := a.sendResponse(ctx, client, c.ID, call, true, "empty_tool_result_response", sess, &request, deliveryRequired)
+	_, rawBody, rawMediaType, observed := a.sendResponse(ctx, client, c.ID, call, true, "empty_tool_result_response", sess, &request, deliveryRequired)
+	responseBody = rawBody
+	responseMediaType = rawMediaType
 	delivered, proofAvailable := a.requestDelivered(request)
 	if observed != nil {
 		return *observed
@@ -463,7 +484,7 @@ func (a *MCPGatewayAdapter) runToolResult(c Case, timeout time.Duration) Result 
 	}}
 }
 
-func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration, requireFinalSink bool) Result {
+func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration, requireFinalSink bool) (returned Result) {
 	toolsCalls, err := toolsCallMessages(c)
 	if err != nil {
 		return Result{Err: err}
@@ -493,6 +514,11 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration, requireF
 
 	client := &http.Client{}
 	sess := &gatewaySession{}
+	var responseContent []ReturnedContent
+	defer func() {
+		returned.ReturnedContent = append(returned.ReturnedContent, responseContent...)
+		returned.ReturnedContent = append(returned.ReturnedContent, sess.returnedContent...)
+	}()
 	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
 		return *result
 	}
@@ -516,7 +542,10 @@ func (a *MCPGatewayAdapter) runToolsCall(c Case, timeout time.Duration, requireF
 				return gatewaySkip(c, "gateway final-sink lease failed: "+err.Error())
 			}
 		}
-		result := a.send(ctx, client, c.ID, message, true, sess, &request, deliveryAbsent)
+		_, rawBody, rawMediaType, result := a.sendResponse(ctx, client, c.ID, message, true, "empty_tools_call_response", sess, &request, deliveryAbsent)
+		if len(rawBody) > 0 {
+			responseContent = append(responseContent, returnedContent(rawBody, rawMediaType, "mcp_tools_call_result"))
+		}
 		if releaseFinalSink != nil {
 			releaseFinalSink()
 		}
@@ -613,7 +642,7 @@ func (a *MCPGatewayAdapter) finalSinkExecuted(request gatewayRequest) bool {
 	})
 }
 
-func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Result {
+func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) (returned Result) {
 	tools, declaredNames, err := declaredTools(c)
 	if err != nil {
 		return gatewaySkip(c, "gateway tools/list requires one tools/list-style tool definition: "+err.Error())
@@ -646,11 +675,21 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 
 	client := &http.Client{}
 	sess := &gatewaySession{}
+	var responseBody []byte
+	var responseMediaType string
+	defer func() {
+		if len(responseBody) > 0 {
+			returned.ReturnedContent = append(returned.ReturnedContent, returnedContent(responseBody, responseMediaType, "mcp_tools_list"))
+		}
+		returned.ReturnedContent = append(returned.ReturnedContent, sess.returnedContent...)
+	}()
 	if result := a.initialize(ctx, client, c.ID, sess); result != nil {
 		return *result
 	}
 
-	responseBody, result := a.sendResponse(ctx, client, c.ID, toolsList, true, "empty_tools_list_response", sess, &request, deliveryRequired)
+	decodedBody, rawBody, rawMediaType, result := a.sendResponse(ctx, client, c.ID, toolsList, true, "empty_tools_list_response", sess, &request, deliveryRequired)
+	responseBody = rawBody
+	responseMediaType = rawMediaType
 	if result != nil {
 		return *result
 	}
@@ -667,7 +706,7 @@ func (a *MCPGatewayAdapter) runToolDefinition(c Case, timeout time.Duration) Res
 		return Result{Verdict: "skip", Evidence: evidence}
 	}
 
-	returnedNames, validInventory := toolsListNames(responseBody)
+	returnedNames, validInventory := toolsListNames(decodedBody)
 	if !validInventory {
 		evidence["upstream_reached"] = true
 		evidence["reason"] = "malformed_tools_list"
@@ -716,7 +755,11 @@ func (a *MCPGatewayAdapter) initialize(ctx context.Context, client *http.Client,
 	// correlated and validated like any other. notifications/initialized below
 	// carries none, so it stays a notification judged on HTTP status.
 	initializeRequest := &gatewayRequest{identity: identity, method: "initialize"}
-	if result := a.send(ctx, client, caseID, initialize, false, sess, initializeRequest, deliveryAbsent); result != nil {
+	_, initializeResponse, initializeMediaType, result := a.sendResponse(ctx, client, caseID, initialize, false, "empty_initialize_response", sess, initializeRequest, deliveryAbsent)
+	if len(initializeResponse) > 0 {
+		sess.returnedContent = append(sess.returnedContent, returnedContent(initializeResponse, initializeMediaType, "mcp_initialize_instructions"))
+	}
+	if result != nil {
 		return result
 	}
 	initialized := map[string]interface{}{
@@ -855,7 +898,7 @@ func containsNormalizedToolName(names []string, wanted string) bool {
 }
 
 func (a *MCPGatewayAdapter) send(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, sess *gatewaySession, request *gatewayRequest, expectation deliveryExpectation) *Result {
-	_, result := a.sendResponse(ctx, client, caseID, message, requireResponse, "empty_tools_call_response", sess, request, expectation)
+	_, _, _, result := a.sendResponse(ctx, client, caseID, message, requireResponse, "empty_tools_call_response", sess, request, expectation)
 	return result
 }
 
@@ -863,10 +906,11 @@ func (a *MCPGatewayAdapter) send(ctx context.Context, client *http.Client, caseI
 // initialize across the remaining requests of a single case. It is created per
 // case so a session never leaks between cases or races across concurrent runs.
 type gatewaySession struct {
-	id string
+	id              string
+	returnedContent []ReturnedContent
 }
 
-func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, emptyResponseReason string, sess *gatewaySession, request *gatewayRequest, expectation deliveryExpectation) ([]byte, *Result) {
+func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Client, caseID string, message map[string]interface{}, requireResponse bool, emptyResponseReason string, sess *gatewaySession, request *gatewayRequest, expectation deliveryExpectation) ([]byte, []byte, string, *Result) {
 	// Response validation is selected by whether a gatewayRequest was supplied,
 	// so a caller that forgets one on a message carrying an id would silently
 	// take the notification path and skip correlation entirely. That is a guard
@@ -875,17 +919,17 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 	// between the message and the caller is a programming error, so it fails
 	// loudly here rather than degrading to an unvalidated response.
 	if _, carriesID := message["id"]; carriesID != (request != nil) {
-		return nil, &Result{Err: fmt.Errorf(
+		return nil, nil, "", &Result{Err: fmt.Errorf(
 			"case %s: MCP message %v carries id=%t but gatewayRequest supplied=%t; a request must be correlated and a notification must not be",
 			caseID, message["method"], carriesID, request != nil)}
 	}
 	body, err := json.Marshal(message)
 	if err != nil {
-		return nil, &Result{Err: fmt.Errorf("case %s: marshal MCP message: %w", caseID, err)}
+		return nil, nil, "", &Result{Err: fmt.Errorf("case %s: marshal MCP message: %w", caseID, err)}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.plugin.Client.Endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, &Result{Err: fmt.Errorf("case %s: build MCP gateway request: %w", caseID, err)}
+		return nil, nil, "", &Result{Err: fmt.Errorf("case %s: build MCP gateway request: %w", caseID, err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -900,19 +944,20 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return a.classifyGatewayResponse(nil, nil, err, requireResponse, emptyResponseReason, request, expectation, caseID)
+		response, result := a.classifyGatewayResponse(nil, nil, err, requireResponse, emptyResponseReason, request, expectation, caseID)
+		return response, nil, "", result
 	}
 	defer func() { _ = resp.Body.Close() }()
 	responseBody, err := readCappedResponse(resp.Body, decisionBodyCap)
 	if err != nil {
-		return nil, &Result{
+		return nil, nil, "", &Result{
 			Err:      fmt.Errorf("case %s: read MCP gateway response: %w", caseID, err),
 			Evidence: cappedResponseEvidence(err),
 		}
 	}
 	response, result := a.classifyGatewayResponse(resp, responseBody, nil, requireResponse, emptyResponseReason, request, expectation, caseID)
 	if result != nil {
-		return nil, result
+		return nil, responseBody, resp.Header.Get("Content-Type"), result
 	}
 	// Capture the session id only after a valid initialize response. A header on
 	// a rejected or malformed handshake is not a negotiated binding and must not
@@ -922,7 +967,7 @@ func (a *MCPGatewayAdapter) sendResponse(ctx context.Context, client *http.Clien
 			sess.id = assigned
 		}
 	}
-	return response, nil
+	return response, responseBody, resp.Header.Get("Content-Type"), nil
 }
 
 type deliveryExpectation bool
