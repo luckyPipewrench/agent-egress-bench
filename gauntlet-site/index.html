@@ -37,6 +37,7 @@ a:hover { text-decoration: underline; }
 .score-box { background: var(--bg); border: 1px solid var(--border); border-radius: 0.375rem; padding: 1rem; text-align: center; }
 .score-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
 .score-value { font-size: 1.8rem; font-weight: 700; font-family: var(--mono); }
+.score-fraction { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
 .score-na { color: var(--muted); font-size: 1.2rem; }
 .section-label { font-size: 0.85rem; color: var(--muted); margin: 1rem 0 0.5rem; font-weight: 600; }
 .failure-summary { border-left: 3px solid var(--red); margin: 0.75rem 0 1rem; padding: 0.25rem 0 0.25rem 0.75rem; color: var(--text); }
@@ -133,10 +134,24 @@ go build -o aeb-gauntlet .
     return (v * 100).toFixed(1) + '%';
   }
 
-  function makeScoreBox(label, val) {
+  // A fraction is published only when it reconstructs the score beside it.
+  // Missing, malformed, zero, and mismatched counts keep the percent bare.
+  function formatScoreFraction(score, counts, caseKind) {
+    if (!isScoreNumber(score) || !counts || typeof counts !== 'object') return '';
+    var numerator = counts.numerator;
+    var denominator = counts.denominator;
+    if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) return '';
+    if (numerator < 0 || denominator <= 0 || numerator > denominator) return '';
+    if (Math.abs(score - (numerator / denominator)) > 1e-12) return '';
+    return numerator + '/' + denominator + ' ' + caseKind;
+  }
+
+  function makeScoreBox(label, val, counts, caseKind) {
     var box = el('div', 'score-box');
     box.appendChild(txt('div', label, 'score-label'));
     box.appendChild(txt('div', fmtPct(val), 'score-value ' + pctCls(val)));
+    var fraction = formatScoreFraction(val, counts, caseKind);
+    if (fraction) box.appendChild(txt('div', fraction, 'score-fraction'));
     return box;
   }
 
@@ -144,18 +159,19 @@ go build -o aeb-gauntlet .
     return txt('span', text, 'badge badge-' + cls);
   }
 
-  function makeScoresGrid(scores, diagnostics, schemaVersion) {
+  function makeScoresGrid(scores, diagnostics, schemaVersion, metricCounts) {
+    metricCounts = metricCounts || {};
     var grid = el('div', 'scores-grid');
-    grid.appendChild(makeScoreBox('Containment', scores.containment));
-    grid.appendChild(makeScoreBox('False Positive', scores.false_positive_rate));
+    grid.appendChild(makeScoreBox('Containment', scores.containment, metricCounts.containment, 'malicious cases'));
+    grid.appendChild(makeScoreBox('False Positive', scores.false_positive_rate, metricCounts.false_positive_rate, 'benign cases'));
     if (schemaVersion === 5 || schemaVersion === 6) {
       diagnostics = diagnostics || {};
       grid.appendChild(makeScoreBox('Label present (diagnostic)', diagnostics.classification_present_rate));
       grid.appendChild(makeScoreBox('Structured field present (diagnostic)', diagnostics.structured_evidence_present_rate));
     } else {
       // Frozen v2 records retain their original published field names.
-      grid.appendChild(makeScoreBox('Detection', scores.detection));
-      grid.appendChild(makeScoreBox('Evidence', scores.evidence));
+      grid.appendChild(makeScoreBox('Detection', scores.detection, metricCounts.detection, 'cases'));
+      grid.appendChild(makeScoreBox('Evidence', scores.evidence, metricCounts.evidence, 'cases'));
     }
     return grid;
   }
@@ -249,8 +265,8 @@ go build -o aeb-gauntlet .
       // Full corpus is the primary view. Applicable-only is a diagnostic of the
       // cases this adapter routed, rather than the whole corpus. Routed is not
       // the same as observed: the count includes rows that ended in error.
-      card.appendChild(txt('div', 'Full Corpus Scores (' + fmtCount(cc.total) + ' cases)', 'section-label'));
-      card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version));
+      card.appendChild(txt('div', 'Full Corpus Scores', 'section-label'));
+      card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version, (r.metric_counts || {}).full));
 
       // A real button, not a click-handled div: the control is keyboard
       // operable and announced as a control, and aria-expanded is derived from
@@ -260,7 +276,7 @@ go build -o aeb-gauntlet .
       var aWrap = el('div', 'hidden');
       aToggle.setAttribute('aria-expanded', 'false');
       aWrap.appendChild(txt('div', 'Diagnostic only. Covers the ' + fmtCount(cc.applicable) + ' cases this adapter routed, which includes any that ended in error, not the complete corpus.', 'denominator'));
-      aWrap.appendChild(makeScoresGrid(applicable, applicableDiagnostics, r.schema_version));
+      aWrap.appendChild(makeScoresGrid(applicable, applicableDiagnostics, r.schema_version, (r.metric_counts || {}).applicable));
       aToggle.addEventListener('click', function() {
         aWrap.classList.toggle('hidden');
         aToggle.setAttribute('aria-expanded', aWrap.classList.contains('hidden') ? 'false' : 'true');
@@ -269,7 +285,7 @@ go build -o aeb-gauntlet .
       card.appendChild(aWrap);
     } else {
       card.appendChild(txt('div', 'Scores', 'section-label'));
-      card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version));
+      card.appendChild(makeScoresGrid(full, fullDiagnostics, r.schema_version, (r.metric_counts || {}).full));
     }
 
     var cats = makeCategories(r.per_category, r.schema_version);

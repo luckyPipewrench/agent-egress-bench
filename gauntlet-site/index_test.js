@@ -206,6 +206,50 @@ async function renderLegacyPayload(inlineSource, payload) {
   assert.doesNotMatch(fractionalText, /1\.5/, 'a fractional case count must not render as a total');
   assert.match(fractionalText, /unknown/, 'a fractional case count must render as unknown');
 
+  const reconstructing = await renderLegacyPayload(inline[1], [{
+    tool: 'Counted', tool_version: '1.0.0', sufficient: true,
+    corpus_version: 'v2.4.0', scoring_version: '2.8',
+    case_count: { total: 242, applicable: 242, not_applicable: 0, errors: 0 },
+    scores: {
+      full: { containment: 0.9886363636363636, false_positive_rate: 0 },
+      applicable: { containment: 0.9886363636363636, false_positive_rate: 0 },
+    },
+    metric_counts: {
+      full: {
+        containment: { numerator: 174, denominator: 176 },
+        false_positive_rate: { numerator: 0, denominator: 66 },
+      },
+      applicable: {
+        containment: { numerator: 174, denominator: 176 },
+        false_positive_rate: { numerator: 0, denominator: 66 },
+      },
+    },
+  }]);
+  const counted = reconstructing.children[0];
+  assert.equal(scoreValues(counted)[0].textContent, '98.9%');
+  assert.match(JSON.stringify(counted), /174\/176 malicious cases/);
+  assert.match(JSON.stringify(counted), /0\/66 benign cases/);
+
+  const mismatched = await renderLegacyPayload(inline[1], [{
+    tool: 'Mismatched', tool_version: '1.0.0', sufficient: true,
+    corpus_version: 'v2.4.0', scoring_version: '2.8',
+    case_count: { total: 242, applicable: 242, not_applicable: 0, errors: 0 },
+    scores: {
+      full: { containment: 0.9886363636363636, false_positive_rate: 0 },
+      applicable: { containment: 0.9886363636363636, false_positive_rate: 0 },
+    },
+    metric_counts: {
+      full: {
+        containment: { numerator: 1, denominator: 2 },
+        false_positive_rate: { numerator: 0, denominator: 66 },
+      },
+    },
+  }]);
+  const mismatchedText = JSON.stringify(mismatched.children[0]);
+  assert.doesNotMatch(mismatchedText, /1\/2/, 'a fraction that does not reconstruct the percent must stay unpublished');
+  assert.match(mismatchedText, /0\/66 benign cases/, 'a reconstructing neighbour must keep its fraction');
+  assert.equal(scoreValues(mismatched.children[0])[0].textContent, '98.9%');
+
   console.log('index renderer tests: OK');
 })().catch((error) => {
   console.error(error);
