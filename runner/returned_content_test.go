@@ -227,20 +227,21 @@ func TestReturnedContentSidecarRefusesPreexistingSymlink(t *testing.T) {
 
 func TestReturnedContentSidecarConcurrentWritesKeepWholePayloads(t *testing.T) {
 	dir := t.TempDir()
-	first := bytes.Repeat([]byte("A"), 64*1024)
-	second := bytes.Repeat([]byte("B"), 64*1024)
-	errs := make(chan error, 2)
-	go func() {
-		errs <- retainReturnedContent(dir, "returned-content-race", map[string]interface{}{}, []adapter.ReturnedContent{{
-			Bytes: first, MediaType: "application/json", Path: "mcp_stdio_result",
-		}})
-	}()
-	go func() {
-		errs <- retainReturnedContent(dir, "returned-content-race", map[string]interface{}{}, []adapter.ReturnedContent{{
-			Bytes: second, MediaType: "application/json", Path: "mcp_stdio_result",
-		}})
-	}()
-	for i := 0; i < 2; i++ {
+	payloads := [][]byte{
+		bytes.Repeat([]byte("A"), 64*1024),
+		bytes.Repeat([]byte("B"), 64*1024),
+		bytes.Repeat([]byte("C"), 64*1024),
+		bytes.Repeat([]byte("D"), 64*1024),
+	}
+	errs := make(chan error, len(payloads))
+	for _, payload := range payloads {
+		go func(content []byte) {
+			errs <- retainReturnedContent(dir, "returned-content-race", map[string]interface{}{}, []adapter.ReturnedContent{{
+				Bytes: content, MediaType: "application/json", Path: "mcp_stdio_result",
+			}})
+		}(payload)
+	}
+	for range payloads {
 		if err := <-errs; err != nil {
 			t.Fatal(err)
 		}
@@ -249,8 +250,27 @@ func TestReturnedContentSidecarConcurrentWritesKeepWholePayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(stored, first) && !bytes.Equal(stored, second) {
+	matched := false
+	for _, payload := range payloads {
+		if bytes.Equal(stored, payload) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		t.Fatalf("sidecar mixed or truncated: len=%d", len(stored))
+	}
+	encodedManifest, err := os.ReadFile(filepath.Join(dir, "returned-content-race-0.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var published returnedContentManifest
+	if err := json.Unmarshal(encodedManifest, &published); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(stored)
+	if published.SHA256 != hex.EncodeToString(digest[:]) || published.Bytes != len(stored) {
+		t.Fatalf("manifest sha=%s bytes=%d does not match sidecar len=%d", published.SHA256, published.Bytes, len(stored))
 	}
 }
 

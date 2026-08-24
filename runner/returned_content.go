@@ -7,9 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/luckyPipewrench/agent-egress-bench/runner/adapter"
 )
+
+var returnedContentSidecarLocks sync.Map
 
 const (
 	returnedContentSHA256    = "returned_content_sha256"
@@ -93,6 +96,9 @@ func retainReturnedContent(dir, caseID string, evidence map[string]interface{}, 
 }
 
 func writeReturnedContentSidecar(dir, name string, content []byte, manifest returnedContentManifest) error {
+	unlock := lockReturnedContentSidecar(dir, name)
+	defer unlock()
+
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return fmt.Errorf("open returned-content directory: %w", err)
@@ -100,6 +106,7 @@ func writeReturnedContentSidecar(dir, name string, content []byte, manifest retu
 	defer func() { _ = root.Close() }()
 
 	binName := name + ".bin"
+	jsonName := name + ".json"
 	if err := writeReturnedContentSidecarFile(root, binName, content); err != nil {
 		return fmt.Errorf("write returned-content sidecar: %w", err)
 	}
@@ -115,8 +122,39 @@ func writeReturnedContentSidecar(dir, name string, content []byte, manifest retu
 	if err != nil {
 		return fmt.Errorf("encode returned-content manifest: %w", err)
 	}
-	if err := writeReturnedContentSidecarFile(root, name+".json", append(encodedManifest, '\n')); err != nil {
+	if err := writeReturnedContentSidecarFile(root, jsonName, append(encodedManifest, '\n')); err != nil {
 		return fmt.Errorf("write returned-content manifest: %w", err)
+	}
+	return verifyReturnedContentSidecarPair(root, binName, jsonName, manifest)
+}
+
+func lockReturnedContentSidecar(dir, name string) func() {
+	mu, _ := returnedContentSidecarLocks.LoadOrStore(dir+"\x00"+name, new(sync.Mutex))
+	lock := mu.(*sync.Mutex)
+	lock.Lock()
+	return lock.Unlock
+}
+
+func verifyReturnedContentSidecarPair(root *os.Root, binName, jsonName string, manifest returnedContentManifest) error {
+	stored, err := root.ReadFile(binName)
+	if err != nil {
+		return fmt.Errorf("reread returned-content sidecar: %w", err)
+	}
+	encodedManifest, err := root.ReadFile(jsonName)
+	if err != nil {
+		return fmt.Errorf("reread returned-content manifest: %w", err)
+	}
+	var published returnedContentManifest
+	if err := json.Unmarshal(encodedManifest, &published); err != nil {
+		return fmt.Errorf("decode returned-content manifest: %w", err)
+	}
+	storedDigest := sha256.Sum256(stored)
+	digestText := hex.EncodeToString(storedDigest[:])
+	if published.SHA256 != digestText || published.Bytes != len(stored) {
+		return fmt.Errorf("returned-content sidecar digest does not match published manifest")
+	}
+	if published.SHA256 != manifest.SHA256 || published.Bytes != manifest.Bytes {
+		return fmt.Errorf("returned-content sidecar digest does not match public evidence")
 	}
 	return nil
 }
