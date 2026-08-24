@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail the build when documentation makes a claim the method cannot support.
 
-Four checks run together:
+Five checks run together:
 
 1. Banned claim terms. Certification, ranking, and absolute-security language
    must not appear in contributor-facing documentation. A line that needs the
@@ -15,6 +15,9 @@ Four checks run together:
 4. Exam home. README must not badge this repository's Continuous Gauntlet
    workflow, and ``docs/CONTINUOUS-RESULTS.md`` must not read as if that
    workflow is still the live public Pipelock execution.
+5. No leftover daily exam. ``.github/workflows/continuous-gauntlet.yaml``
+   must not schedule a Pipelock run. The product schedule lives in
+   luckyPipewrench/pipelock.
 """
 
 import re
@@ -28,15 +31,28 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFINITIONS_DOC = Path("docs/RESULTS-USE.md")
 README_FILE = Path("README.md")
 CONTINUOUS_RESULTS_DOC = Path("docs/CONTINUOUS-RESULTS.md")
+CONTINUOUS_WORKFLOW = Path(".github/workflows/continuous-gauntlet.yaml")
 
-# A README badge whose href is this repository's Continuous Gauntlet workflow
-# implies this repo is still the live product exam. The Pipelock Scan badge
-# (pipelock.yaml) is this repo being scanned, which is a different thing.
+# A README badge image for this repository's Continuous Gauntlet workflow
+# implies this repo is still the live product exam. A prose link to the
+# workflow file is not that claim. The Pipelock Scan badge (pipelock.yaml)
+# is this repo being scanned, which is a different thing.
 GAUNTLET_WORKFLOW_BADGE = re.compile(
-    r"actions/workflows/continuous-gauntlet\.yaml",
+    r"actions/workflows/continuous-gauntlet\.yaml/badge\.svg",
     re.IGNORECASE,
 )
 PIPELOCK_SCAN_BADGE = "actions/workflows/pipelock.yaml"
+LIVE_PUBLIC_EXAM_CLAIM = re.compile(
+    r"this repository'?s?.{0,160}continuous gauntlet.{0,80}is the live public",
+    re.IGNORECASE | re.DOTALL,
+)
+REFERENCE_LANE_CLAIM = re.compile(
+    r"(?:"
+    r"pipelock reference lane in this repository"
+    r"|this repository is pipelock'?s?(?: live)? reference lane"
+    r")",
+    re.IGNORECASE,
+)
 
 SCAN_ROOTS = (
     Path("README.md"),
@@ -211,6 +227,22 @@ def check_continuous_results(text: str):
         findings.append(
             f"{CONTINUOUS_RESULTS_DOC}: missing independent-operator language"
         )
+    if LIVE_PUBLIC_EXAM_CLAIM.search(text):
+        findings.append(
+            f"{CONTINUOUS_RESULTS_DOC}: must not call this repository's "
+            "Continuous Gauntlet workflow the live public Pipelock exam"
+        )
+    return findings
+
+
+def check_workflow_not_scheduled(text: str):
+    """Report a Continuous Gauntlet workflow that still runs on a schedule."""
+    findings = []
+    if re.search(r"(?m)^\s+schedule:", text) or re.search(r"(?m)^\s+-\s*cron:", text):
+        findings.append(
+            f"{CONTINUOUS_WORKFLOW}: this repository must not schedule a daily "
+            "Pipelock exam; the product schedule lives in luckyPipewrench/pipelock"
+        )
     return findings
 
 
@@ -221,7 +253,7 @@ def check_definitions(text: str):
         if label not in text:
             findings.append(f"{DEFINITIONS_DOC}: missing the {label} assurance label")
 
-    if re.search(r"\bPipelock reference lane in this repository\b", text, re.IGNORECASE):
+    if REFERENCE_LANE_CLAIM.search(text):
         findings.append(
             f"{DEFINITIONS_DOC}: must not present this repository as Pipelock's "
             "live reference lane or publication home"
@@ -286,6 +318,12 @@ def main():
         findings.append(f"{CONTINUOUS_RESULTS_DOC}: missing")
     else:
         findings.extend(check_continuous_results(continuous_path.read_text(encoding="utf-8")))
+
+    workflow_path = REPO_ROOT / CONTINUOUS_WORKFLOW
+    if not workflow_path.is_file():
+        findings.append(f"{CONTINUOUS_WORKFLOW}: missing")
+    else:
+        findings.extend(check_workflow_not_scheduled(workflow_path.read_text(encoding="utf-8")))
 
     if findings:
         print("check-claim-language: FAIL")

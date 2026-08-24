@@ -561,6 +561,12 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertLess(self.entrypoint.index('curl -fsSL "$asset_url"'), self.entrypoint.index(digest_check))
         self.assertLess(self.entrypoint.index(digest_check), self.entrypoint.index('tar -xzf "$work_dir/$asset"'))
 
+    def test_workflow_is_not_scheduled(self):
+        trigger = self.workflow[self.workflow.index("on:") : self.workflow.index("concurrency:")]
+        self.assertIn("workflow_dispatch:", trigger)
+        self.assertNotIn("schedule:", trigger)
+        self.assertNotIn("cron:", trigger)
+
     def test_scheduled_lane_has_no_public_write_permission(self):
         self.assertRegex(self.workflow, r"(?m)^permissions:\n  contents: read$")
         self.assertNotIn("contents: write", self.workflow)

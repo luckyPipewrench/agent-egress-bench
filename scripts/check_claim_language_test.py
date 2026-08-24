@@ -82,6 +82,13 @@ class DefinitionsDocumentTest(unittest.TestCase):
         findings = check.check_definitions(damaged)
         self.assertTrue(any("live reference lane" in finding for finding in findings))
 
+    def test_reversed_reference_lane_claim_is_reported(self):
+        damaged = self.text + (
+            "\nThis repository is Pipelock's reference lane and publication home.\n"
+        )
+        findings = check.check_definitions(damaged)
+        self.assertTrue(any("live reference lane" in finding for finding in findings))
+
     def reverse_the_permission(self):
         """Return the document with the adverse-results permission taken away."""
         body = check.section_text(self.text, check.ADVERSE_SECTION)
@@ -128,6 +135,15 @@ class DefinitionsDocumentTest(unittest.TestCase):
 
 
 class GauntletExamHomeTest(unittest.TestCase):
+    def test_prose_workflow_link_is_not_a_badge_finding(self):
+        text = (
+            '<a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml">'
+            '<img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" '
+            'alt="Pipelock Scan"></a>\n'
+            "See .github/workflows/continuous-gauntlet.yaml for the optional manual workflow.\n"
+        )
+        self.assertEqual(check.check_readme_exam_home(text), [])
+
     def test_continuous_gauntlet_readme_badge_is_reported(self):
         text = (
             '<a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml">'
@@ -186,9 +202,32 @@ class GauntletExamHomeTest(unittest.TestCase):
         self.assertTrue(any("luckyPipewrench/pipelock" in finding for finding in findings))
         self.assertTrue(any("pipelab.org/gauntlet/results" in finding for finding in findings))
 
+    def test_live_public_exam_claim_is_reported_with_required_strings(self):
+        text = (
+            "The product's scheduled candidate currently runs in luckyPipewrench/pipelock.\n"
+            "https://pipelab.org/gauntlet/results/\n"
+            "./scripts/run-pipelock-gauntlet.sh\n"
+            "An independent lab can repeat that command with its own scheduler. "
+            "An operator calling its program continuous declares the publication selection rule.\n"
+            "This repository's Continuous Gauntlet workflow is the live public Pipelock execution.\n"
+        )
+        findings = check.check_continuous_results(text)
+        self.assertTrue(any("live public Pipelock exam" in finding for finding in findings))
+
     def test_live_continuous_results_passes(self):
         text = (REPO_ROOT / check.CONTINUOUS_RESULTS_DOC).read_text(encoding="utf-8")
         self.assertEqual(check.check_continuous_results(text), [])
+
+    def test_scheduled_workflow_is_reported(self):
+        findings = check.check_workflow_not_scheduled(
+            "on:\n  workflow_dispatch:\n  schedule:\n    - cron: '17 6 * * *'\n"
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn("must not schedule a daily", findings[0])
+
+    def test_live_workflow_is_not_scheduled(self):
+        text = (REPO_ROOT / check.CONTINUOUS_WORKFLOW).read_text(encoding="utf-8")
+        self.assertEqual(check.check_workflow_not_scheduled(text), [])
 
 
 class RepositoryTest(unittest.TestCase):

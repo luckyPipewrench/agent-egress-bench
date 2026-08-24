@@ -9,8 +9,6 @@ on:
         description: "Corpus ref to benchmark. Must resolve to origin/main or a tag."
         required: false
         default: main
-  schedule:
-    - cron: '17 6 * * *'
 
 concurrency:
   group: continuous-gauntlet-${{ github.event.inputs.corpus_ref || 'main' }}

@@ -229,7 +229,7 @@ Full governance policy: [docs/GOVERNANCE.md](docs/GOVERNANCE.md).
 - [What is an Agent Firewall?](https://pipelab.org/agent-firewall/) — the security architecture this corpus tests
 - [AI Agent Security: Three Layers](https://pipelab.org/learn/ai-agent-security/) — hooks, guardrails, and egress inspection explained
 - [MCP Vulnerabilities](https://pipelab.org/learn/mcp-vulnerabilities/) — the MCP attack surface mapped
-- [Pipelock Gauntlet history](https://pipelab.org/gauntlet/) — the maintainer's disclosed first-party run history
+- [Pipelock Gauntlet history](https://pipelab.org/gauntlet/results/): the maintainer's disclosed first-party run history
 
 ## License
 

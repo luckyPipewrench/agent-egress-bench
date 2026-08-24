@@ -2,16 +2,16 @@
 
 This repository owns the corpus, the runner, and the portable command. Public scores are selected and published. A completed run is not a public claim by itself. First-party published Pipelock history is at [pipelab.org/gauntlet/results](https://pipelab.org/gauntlet/results/). The product's scheduled candidate currently runs in [luckyPipewrench/pipelock](https://github.com/luckyPipewrench/pipelock).
 
-This repository still has a read-only `Continuous Gauntlet` workflow and a promotion path that accepts only a completed run of that workflow from this repository. That remaining path is not the live public exam.
+This repository's `Continuous Gauntlet` workflow is not scheduled. A maintainer can dispatch it by hand. That path is not the live public exam.
 
 1. A completed run of this repository's read-only `Continuous Gauntlet` workflow retains a candidate evidence bundle. That workflow is not the product's public schedule.
 2. A maintainer chooses a completed run in the `Prepare Gauntlet result promotion` workflow.
 3. The promotion workflow downloads that exact bundle, recomputes its decision, and opens a pull request.
 4. Merging the pull request is the repository publication approval. It adds an immutable record and advances `latest-verified`.
 
-The remaining scheduled workflow cannot write repository contents or open a pull request. A raw run never moves the committed pointer by itself. Candidate Actions artifacts are retained for 14 days, so a maintainer must prepare the promotion before that download window closes.
+That workflow cannot write repository contents or open a pull request. A raw run never moves the committed pointer by itself. Candidate Actions artifacts are retained for 14 days, so a maintainer must prepare the promotion before that download window closes.
 
-Scheduled runs of that remaining workflow do not create pull requests. The workflow summary says **PASS — NO ACTION REQUIRED** when the candidate matches the approved scope. Owner action is needed only when it says **REVIEW REQUIRED** for a scope or policy change, or **BLOCKED** for an incomplete or failed run.
+Manual runs of that workflow do not create pull requests. The workflow summary says **PASS — NO ACTION REQUIRED** when the candidate matches the approved scope. Owner action is needed only when it says **REVIEW REQUIRED** for a scope or policy change, or **BLOCKED** for an incomplete or failed run.
 
 Clean runs finish green. Review-required and blocked runs finish red so GitHub's workflow run and ordinary failed-workflow notifications surface the action; the first line of the run summary distinguishes a review from a broken run. Email delivery still depends on the owner's GitHub notification settings.
 
