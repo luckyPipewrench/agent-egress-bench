@@ -238,6 +238,12 @@
     if (fullContainmentCounts.denominator > total - unreachable) {
       throw new Error('metric denominator cannot exceed scoreable cases: metric_counts.full.containment');
     }
+    if (fullFalsePositiveCounts.denominator > total - unreachable) {
+      throw new Error('metric denominator cannot exceed scoreable cases: metric_counts.full.false_positive_rate');
+    }
+    if (fullFalsePositiveCounts.denominator < falsePositiveCounts.denominator) {
+      throw new Error('full false-positive denominator cannot be smaller than the applicable denominator');
+    }
     if (fullContainmentCounts.denominator < containmentCounts.denominator) {
       throw new Error('full containment denominator cannot be smaller than the applicable denominator');
     }
