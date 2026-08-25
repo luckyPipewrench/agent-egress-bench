@@ -6,6 +6,9 @@ umask 077
 
 github_api_token="${GH_TOKEN:-}"
 unset GH_TOKEN GITHUB_TOKEN
+# Doctor checks this process's `go`. GOTOOLCHAIN=auto would let later
+# go build/run download a different toolchain than the one just checked.
+export GOTOOLCHAIN=local
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 provenance_script="$repo_root/scripts/build_gauntlet_provenance.py"

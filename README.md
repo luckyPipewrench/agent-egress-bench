@@ -79,7 +79,7 @@ The offline validation walkthrough and copy/paste commands live in [Schema ident
 **Prerequisites:** [Go 1.25+](https://go.dev/dl/) from that page for the validator and portable runner. A distribution `golang` package can install a `go` command older than 1.25. The portable Pipelock Gauntlet also needs Linux, Python 3, Git, curl, jq, Make, tar, GNU timeout, SHA-256 utilities, and one of `socat`, `ncat`, or `nc`. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
 
 ```bash
-git clone https://github.com/luckyPipewrench/agent-egress-bench.git
+git clone --branch main https://github.com/luckyPipewrench/agent-egress-bench.git
 cd agent-egress-bench
 ./scripts/run-pipelock-gauntlet.sh --doctor
 ```

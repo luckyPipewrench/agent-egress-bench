@@ -58,6 +58,13 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.workflow = WORKFLOW.read_text(encoding="utf-8")
         self.entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
 
+    def test_entrypoint_pins_local_go_toolchain(self):
+        self.assertIn("export GOTOOLCHAIN=local", self.entrypoint)
+        self.assertLess(
+            self.entrypoint.index("export GOTOOLCHAIN=local"),
+            self.entrypoint.index("installed_go_version()"),
+        )
+
     def test_portable_entrypoint_is_the_only_canonical_invocation(self):
         run_block = step_block(self.workflow, "Run portable canonical benchmark")
         self.assertIn("./scripts/run-pipelock-gauntlet.sh", run_block)
@@ -302,6 +309,10 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("the installed Go version", readme)
         self.assertIn("distribution `golang` package", readme)
         self.assertIn("Make", readme)
+        self.assertIn(
+            "git clone --branch main https://github.com/luckyPipewrench/agent-egress-bench.git",
+            readme,
+        )
 
     def test_doctor_keeps_json_contract_when_release_pin_is_unreadable(self):
         with tempfile.TemporaryDirectory() as temporary:

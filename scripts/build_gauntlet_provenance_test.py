@@ -1418,6 +1418,10 @@ printf '%s\\n' 'pipelock version {PIN_VERSION}'
         fake_go.write_text(
             """#!/bin/sh
 set -eu
+if [ "${1:-}" = "version" ]; then
+  printf '%s\\n' 'go version go1.25.0 linux/amd64'
+  exit 0
+fi
 if [ "$1" = "build" ]; then
   shift
   [ "$1" = "-o" ]
