@@ -140,10 +140,19 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
 
 
-def read_bounded(raw, limit):
+def remaining_timeout(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        fail("pointer evidence fetch deadline exceeded")
+    return min(FETCH_TIMEOUT_SECONDS, remaining)
+
+
+def read_bounded(raw, limit, deadline=None):
     chunks = []
     seen = 0
     while True:
+        if deadline is not None and time.monotonic() >= deadline:
+            fail("pointer evidence fetch deadline exceeded")
         chunk = raw.read(65536)
         if not chunk:
             break
@@ -154,11 +163,13 @@ def read_bounded(raw, limit):
     return b"".join(chunks)
 
 
-def default_fetch(url):
+def default_fetch(url, timeout=FETCH_TIMEOUT_SECONDS, deadline=None):
+    if timeout <= 0:
+        fail("pointer evidence fetch deadline exceeded")
     parsed = require_https_url(url, "evidence_url")
     port = 443
     address = resolve_public_address(parsed.hostname, port)
-    connection = PinnedHTTPSConnection(parsed.hostname, address, port, timeout=FETCH_TIMEOUT_SECONDS)
+    connection = PinnedHTTPSConnection(parsed.hostname, address, port, timeout=timeout)
     try:
         connection.request("GET", parsed.path)
         response = connection.getresponse()
@@ -169,11 +180,22 @@ def default_fetch(url):
             fail("pointer evidence redirects are not allowed")
         if not 200 <= response.status < 300:
             fail(f"pointer evidence returned HTTP {response.status}")
-        return read_bounded(response, MAX_EVIDENCE_BYTES)
+        return read_bounded(response, MAX_EVIDENCE_BYTES, deadline=deadline)
     except (OSError, http.client.HTTPException) as exc:
         fail(f"cannot fetch pointer evidence: {exc}")
     finally:
         connection.close()
+
+
+def invoke_fetch(fetch, url, deadline):
+    timeout = remaining_timeout(deadline)
+    if fetch is default_fetch:
+        body = default_fetch(url, timeout=timeout, deadline=deadline)
+    else:
+        body = fetch(url)
+    if time.monotonic() >= deadline:
+        fail("pointer evidence fetch deadline exceeded")
+    return body
 
 
 def check_index(index):
@@ -322,9 +344,7 @@ def check(root=ROOT, fetch=default_fetch, baseline=None):
             live_fetches += 1
             if live_fetches > MAX_LIVE_FETCHES:
                 fail(f"live pointer fetches exceed {MAX_LIVE_FETCHES}")
-            if time.monotonic() >= deadline:
-                fail("pointer evidence fetch deadline exceeded")
-            body = fetch(url)
+            body = invoke_fetch(fetch, url, deadline)
             if not body:
                 label = "manifest" if url != pointer["evidence_url"] else "evidence"
                 fail(f"{pointer_id_value} {label} is empty")

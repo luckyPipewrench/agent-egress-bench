@@ -1,6 +1,6 @@
 # Result pointers
 
-This directory lists pointers at evidence some other publisher hosts.
+This directory lists pointers to evidence that another publisher hosts.
 
 **Listing is not approval.** It is not a rank, a mark, a badge, a certification,
 or a claim that Agent Egress Bench ran or scored the product. Alphabetical

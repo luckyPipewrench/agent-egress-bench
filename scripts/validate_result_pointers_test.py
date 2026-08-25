@@ -256,7 +256,7 @@ class ValidateResultPointersTest(unittest.TestCase):
         connection._context = context
         with mock.patch.object(pointers.socket, "create_connection", return_value=raw_socket) as create:
             connection.connect()
-        create.assert_called_once_with(("8.8.8.8", 443), 20, None)
+        create.assert_called_once_with(("8.8.8.8", 443), pointers.FETCH_TIMEOUT_SECONDS, None)
         context.wrap_socket.assert_called_once_with(raw_socket, server_hostname="results.example")
 
     def test_fetch_refuses_redirect_without_reading_the_response(self):
@@ -306,6 +306,55 @@ class ValidateResultPointersTest(unittest.TestCase):
         with mock.patch.object(pointers, "MAX_FETCH_DEADLINE_SECONDS", 0):
             with self.assertRaisesRegex(ValueError, "fetch deadline exceeded"):
                 pointers.check(self.temp, fetch=lambda url: FIXTURE_BODY)
+
+    def test_fetch_that_overruns_the_deadline_is_refused(self):
+        pointer = pointer_object()
+        digest = pointers.pointer_id(pointer)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": [digest]},
+            [pointer],
+        )
+        clock = {"now": 0.0}
+
+        def monotonic():
+            return clock["now"]
+
+        def slow_fetch(url):
+            clock["now"] += 200
+            return FIXTURE_BODY
+
+        with mock.patch.object(pointers.time, "monotonic", monotonic):
+            with mock.patch.object(pointers, "MAX_FETCH_DEADLINE_SECONDS", 120):
+                with self.assertRaisesRegex(ValueError, "fetch deadline exceeded"):
+                    pointers.check(self.temp, fetch=slow_fetch)
+
+    def test_default_fetch_uses_the_remaining_timeout(self):
+        connection = FakeConnection(FakeResponse(200, FIXTURE_BODY))
+        with mock.patch.object(pointers, "resolve_public_address", return_value="8.8.8.8"):
+            with mock.patch.object(pointers, "PinnedHTTPSConnection", return_value=connection) as connect:
+                pointers.default_fetch(
+                    "https://results.example/lab/evidence.tar",
+                    timeout=3.5,
+                    deadline=pointers.time.monotonic() + 10,
+                )
+        connect.assert_called_once_with("results.example", "8.8.8.8", 443, timeout=3.5)
+
+    def test_check_bounds_default_fetch_to_remaining_deadline(self):
+        pointer = pointer_object()
+        digest = pointers.pointer_id(pointer)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": [digest]},
+            [pointer],
+        )
+        connection = FakeConnection(FakeResponse(200, FIXTURE_BODY))
+        with mock.patch.object(pointers.time, "monotonic", return_value=100.0):
+            with mock.patch.object(pointers, "MAX_FETCH_DEADLINE_SECONDS", 8):
+                with mock.patch.object(pointers, "resolve_public_address", return_value="8.8.8.8"):
+                    with mock.patch.object(pointers, "PinnedHTTPSConnection", return_value=connection) as connect:
+                        self.assertEqual(pointers.check(self.temp, fetch=pointers.default_fetch), 1)
+        connect.assert_called_once_with("results.example", "8.8.8.8", 443, timeout=8)
 
     def test_history_rejects_deleted_pointer(self):
         pointer = pointer_object()
