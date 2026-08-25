@@ -44,7 +44,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
                 build_gauntlet_provenance, "ACTIVE_SUMMARY_SCHEMA_VERSIONS", frozenset({4, 5, 6, 7})
             ),
         ):
-            self.assertEqual(6, build_gauntlet_provenance.provenance_candidate_schema_version(7))
+            self.assertEqual(7, build_gauntlet_provenance.provenance_candidate_schema_version(7))
             self.assertEqual(4, build_gauntlet_provenance.provenance_candidate_schema_version(4))
 
     def test_active_result_score_enforces_budget_timing(self):
@@ -634,7 +634,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         scope = json.loads(
             (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
         )["candidate_scope"]
-        self.assertEqual(scope["schema_version"], 6)
+        self.assertEqual(scope["schema_version"], 7)
         self.assertEqual(scope["benchmark_manifest_sha256"], "c" * 64)
         self.assertEqual(set(scope["scores"]["applicable"]), {"containment", "false_positive_rate"})
         self.assertEqual(
@@ -718,7 +718,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         scope = json.loads(
             (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
         )["candidate_scope"]
-        self.assertEqual(scope["schema_version"], 6)
+        self.assertEqual(scope["schema_version"], 7)
         for field in (
             "method_repository",
             "method_commit",

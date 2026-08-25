@@ -91,7 +91,7 @@ def parse_timestamp(value, label):
 
 def evidence_files_for(candidate):
     files = dict(EVIDENCE_FILES)
-    if candidate.get("schema_version") in {4, 5, 6}:
+    if candidate.get("schema_version") in {4, 5, 6, 7}:
         files.update(provenance.V4_RAW_EVIDENCE)
     return files
 
@@ -157,13 +157,13 @@ def validate_candidate_origin(
 
 
 def validate_reference_candidate(candidate):
-    if candidate.get("schema_version") not in {2, 4, 5, 6}:
+    if candidate.get("schema_version") not in {2, 4, 5, 6, 7}:
         raise ValueError("candidate schema_version must be 2, 4, 5, or 6")
-    if candidate.get("schema_version") in {4, 5, 6}:
+    if candidate.get("schema_version") in {4, 5, 6, 7}:
         evaluator.require_capability_registry(candidate)
-    if candidate.get("schema_version") in {5, 6}:
+    if candidate.get("schema_version") in {5, 6, 7}:
         evaluator.validate_v5_candidate_contract(candidate)
-    if candidate.get("schema_version") == 6:
+    if candidate.get("schema_version") in {6, 7}:
         for field in (
             "method_repository",
             "method_commit",
@@ -281,7 +281,7 @@ def proposed_baseline(candidate, candidate_sha256):
             "applicable": {"false_positive_rate": applicable_scores.get("false_positive_rate")}
         },
     }
-    if candidate.get("schema_version") in {5, 6}:
+    if candidate.get("schema_version") in {5, 6, 7}:
         baseline["summary_schema_version"] = 5
         baseline["benchmark_manifest_sha256"] = require_sha256(
             candidate.get("benchmark_manifest_sha256"), "benchmark_manifest_sha256"

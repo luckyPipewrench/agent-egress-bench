@@ -1255,6 +1255,7 @@ def build_complete_bundle(repo_root, run_dir, allow_frozen_result_rows=False):
     if summary.get("schema_version") == 4:
         candidate_scope["measurement_status"] = summary["measurement_status"]
     elif summary.get("schema_version") == 5:
+        candidate_scope["per_category"] = summary["per_category"]
         candidate_scope["measurement_status"] = summary["measurement_status"]
         candidate_scope["benchmark_manifest_sha256"] = summary["benchmark_manifest_sha256"]
         candidate_scope["diagnostics"] = summary["diagnostics"]

@@ -322,6 +322,8 @@ def validate_scope(document, manifest_identity, manifest_label):
         validate_scope_v5(document, manifest_identity, manifest_label)
     elif version == 6:
         validate_scope_v5(document, manifest_identity, manifest_label, expected_version=6)
+    elif version == 7:
+        validate_scope_v5(document, manifest_identity, manifest_label, expected_version=7)
     else:
         raise ValueError(f"unsupported schema_version: {version!r}")
     return artifact_schema.validate_file(

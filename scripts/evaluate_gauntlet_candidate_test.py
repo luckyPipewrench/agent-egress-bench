@@ -222,6 +222,23 @@ def v6_candidate():
     return value
 
 
+def v7_candidate():
+    value = v6_candidate()
+    value["schema_version"] = 7
+    value["per_category"] = {
+        "test": {
+            "applicable": 212,
+            "containment": 1.0,
+            "false_positive_rate": 0.0,
+            "diagnostics": {
+                "classification_present_rate": 1.0,
+                "structured_evidence_present_rate": 1.0,
+            },
+        }
+    }
+    return value
+
+
 def baseline():
     return {
         "_comment": "Reviewed baseline for the continuous Gauntlet lane.",
@@ -279,7 +296,7 @@ class CandidateEvaluationTest(unittest.TestCase):
         baseline_path = root / "baseline.json"
         decision_path = root / "decision.json"
         candidate_document = candidate_value or candidate()
-        if results_bytes is not None and candidate_document.get("schema_version") in {4, 5, 6}:
+        if results_bytes is not None and candidate_document.get("schema_version") in {4, 5, 6, 7}:
             candidate_document = json.loads(json.dumps(candidate_document))
             candidate_document.setdefault("evidence_sha256", {})["results"] = hashlib.sha256(
                 results_bytes
@@ -294,7 +311,7 @@ class CandidateEvaluationTest(unittest.TestCase):
         evidence_path = root / "results.jsonl"
         if results_bytes is not None:
             evidence_path.write_bytes(results_bytes)
-        elif (candidate_value or {}).get("schema_version") in {5, 6}:
+        elif (candidate_value or {}).get("schema_version") in {5, 6, 7}:
             evidence_path.write_bytes(V5_RESULTS_BYTES)
         else:
             evidence_path.write_bytes(LEGACY_RESULTS_BYTES)
@@ -395,6 +412,16 @@ class CandidateEvaluationTest(unittest.TestCase):
         accepted, *_ = self.run_evaluate(v6_candidate(), v5_baseline())
 
         self.assertFalse(accepted["blocked"], accepted["failures"])
+
+    def test_v7_candidate_requires_per_category_to_match_bound_rows(self):
+        accepted, *_ = self.run_evaluate(v7_candidate(), v5_baseline())
+        self.assertFalse(accepted["blocked"], accepted["failures"])
+
+        forged = v7_candidate()
+        forged["per_category"]["test"]["containment"] = 0.0
+        rejected, *_ = self.run_evaluate(forged, v5_baseline())
+        self.assertTrue(rejected["blocked"])
+        self.assertTrue(any("per_category does not match" in failure for failure in rejected["failures"]))
 
     def test_v6_result_rows_must_match_candidate_scoring_version(self):
         rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]

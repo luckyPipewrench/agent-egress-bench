@@ -132,7 +132,7 @@ def require_sha256(value, label):
 
 
 def metric_contract_for(schema_version):
-    if schema_version in {5, 6}:
+    if schema_version in {5, 6, 7}:
         return ACTIVE_V5_REQUIRED_FLOORS, ACTIVE_V5_REQUIRED_CEILINGS
     return LEGACY_REQUIRED_FLOORS, LEGACY_REQUIRED_CEILINGS
 
@@ -368,6 +368,7 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
     # the coverage labels cannot support the derivation; that case returns None
     # and the caller decides whether an unverifiable claim may still promote.
     exercised = None
+    per_category = None
     if case_index["schema_version"] == 3:
         observed = [row for row in rows if _observed_row(row)]
         labels = [_case_labels(indexed[row["case_id"]], row["case_id"]) for row in observed]
@@ -376,6 +377,22 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
             "categories": sorted({category for _, category, _ in labels}),
             "capability_tags": sorted({tag for _, _, tags in labels for tag in tags}),
         }
+        per_category = {}
+        for category in sorted({indexed[row["case_id"]]["category"] for row in applicable}):
+            category_rows = [row for row in applicable if indexed[row["case_id"]]["category"] == category]
+            malicious_rows = [row for row in category_rows if row["expected_verdict"] == "block"]
+            benign_rows = [row for row in category_rows if row["expected_verdict"] == "allow"]
+            blocked_rows = [row for row in malicious_rows if row["actual_verdict"] == "block"]
+            correct_category_blocks = [row for row in blocked_rows if row.get("score") == "pass"]
+            per_category[category] = {
+                "applicable": len(category_rows),
+                "containment": None if not malicious_rows else len(blocked_rows) / len(malicious_rows),
+                "false_positive_rate": None if not benign_rows else sum(row["actual_verdict"] == "block" for row in benign_rows) / len(benign_rows),
+                "diagnostics": {
+                    "classification_present_rate": None if not correct_category_blocks else sum(_has_classification(row.get("evidence")) for row in correct_category_blocks) / len(correct_category_blocks),
+                    "structured_evidence_present_rate": None if not correct_category_blocks else sum(_has_structured_evidence(row.get("evidence")) for row in correct_category_blocks) / len(correct_category_blocks),
+                },
+            }
     return {
         "case_count": {
             "total": len(rows),
@@ -387,6 +404,7 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
         "metric_counts": outcome_counts,
         "diagnostic_counts": diagnostic_counts,
         "exercised": exercised,
+        "per_category": per_category,
     }
 
 
@@ -450,6 +468,8 @@ def verify_v5_measurements(candidate, evidence_paths, candidate_schema_version):
             )
     elif candidate.get("exercised") != derived["exercised"]:
         raise ValueError("candidate exercised does not match the case index and raw results")
+    if candidate_schema_version >= 7 and candidate.get("per_category") != derived["per_category"]:
+        raise ValueError("candidate per_category does not match the case index and raw results")
     for field, expected in derived["case_count"].items():
         if candidate["case_count"].get(field) != expected:
             raise ValueError(f"candidate case_count.{field} does not match the case index and raw results")
@@ -514,13 +534,13 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
         baseline = load_object(baseline_path)
 
         candidate_schema_version = candidate.get("schema_version")
-        if candidate_schema_version not in {2, 4, 5, 6}:
-            raise ValueError("candidate schema_version must be 2, 4, 5, or 6")
-        if candidate_schema_version in {4, 5, 6}:
+        if candidate_schema_version not in {2, 4, 5, 6, 7}:
+            raise ValueError("candidate schema_version must be 2, 4, 5, 6, or 7")
+        if candidate_schema_version in {4, 5, 6, 7}:
             require_capability_registry(candidate)
             verify_bound_results(candidate, evidence_paths, decision["evidence_sha256"])
             verify_observed_results(evidence_paths)
-        if candidate_schema_version in {5, 6}:
+        if candidate_schema_version in {5, 6, 7}:
             require_sha256(
                 candidate.get("benchmark_manifest_sha256"),
                 "candidate benchmark_manifest_sha256",
@@ -551,7 +571,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
                     f"candidate {candidate_key} does not match {evidence_label} evidence"
                 )
 
-        if candidate_schema_version in {4, 5, 6}:
+        if candidate_schema_version in {4, 5, 6, 7}:
             if candidate.get("measurement_status") != "measured":
                 decision["failures"].append(
                     "measurement_status="
@@ -593,7 +613,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             )
 
         required_floors, required_ceilings = metric_contract_for(candidate_schema_version)
-        if candidate_schema_version in {5, 6} and baseline.get("summary_schema_version") != 5:
+        if candidate_schema_version in {5, 6, 7} and baseline.get("summary_schema_version") != 5:
             raise ValueError(
                 f"v{candidate_schema_version} candidate requires a reviewed baseline with "
                 "summary_schema_version=5"
@@ -767,7 +787,7 @@ def evaluate(candidate_path, baseline_path, evidence_paths=None):
             )
 
         identity_keys = (
-            V5_REQUIRED_IDENTITIES if candidate_schema_version in {5, 6} else REQUIRED_IDENTITIES
+            V5_REQUIRED_IDENTITIES if candidate_schema_version in {5, 6, 7} else REQUIRED_IDENTITIES
         )
         for identity_key in identity_keys:
             previous = baseline.get(identity_key)

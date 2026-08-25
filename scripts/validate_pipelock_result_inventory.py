@@ -354,7 +354,7 @@ def validate_public_result_contract(repo_root, inventory, recorded_paths):
         candidate_path = manifest_path.parent / promotion.CANDIDATE_FILENAME
         candidate = json.loads(git_file_bytes(repo_root, inventory["source_commit"], candidate_path))
         record_required_files = set(required_files)
-        if isinstance(candidate, dict) and candidate.get("schema_version") in {4, 5, 6}:
+        if isinstance(candidate, dict) and candidate.get("schema_version") in {4, 5, 6, 7}:
             record_required_files.update(active_files)
         missing = sorted(record_required_files - set(files))
         if missing:
@@ -378,7 +378,7 @@ def validate_public_result_contract(repo_root, inventory, recorded_paths):
             (repo_root / manifest_path.parent / promotion.CANDIDATE_FILENAME).read_text(encoding="utf-8")
         )
         record_required_files = set(required_files)
-        if isinstance(candidate, dict) and candidate.get("schema_version") in {4, 5, 6}:
+        if isinstance(candidate, dict) and candidate.get("schema_version") in {4, 5, 6, 7}:
             record_required_files.update(active_files)
         missing = sorted(record_required_files - set(files))
         if missing:

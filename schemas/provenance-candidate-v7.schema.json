@@ -1,0 +1,596 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/provenance-candidate-v7.schema.json",
+  "title": "agent-egress-bench Provenance Candidate v7",
+  "x-aeb-nullable-required": [
+    "pipelock_asset_sha256"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "canonical_url",
+    "local_run_id",
+    "generated_at",
+    "corpus_ref_kind",
+    "corpus_git_sha",
+    "corpus_commit_url",
+    "dirty",
+    "pipelock_tag",
+    "pipelock_version",
+    "pipelock_asset",
+    "pipelock_asset_sha256",
+    "pipelock_binary_sha256",
+    "pipelock_release_url",
+    "gauntlet_version",
+    "scoring_version",
+    "runner_version",
+    "tool",
+    "tool_version",
+    "corpus_version",
+    "corpus_sha256",
+    "corpus_manifest_sha256",
+    "case_index_sha256",
+    "logical_case_count",
+    "tool_profile_sha256",
+    "case_count",
+    "scores",
+    "per_category",
+    "metric_counts",
+    "fixtures",
+    "multifile_cases",
+    "command",
+    "make_stats",
+    "evidence_sha256",
+    "measurement_status",
+    "benchmark_manifest_sha256",
+    "diagnostics",
+    "diagnostic_counts",
+    "capability_registry",
+    "reported_claims",
+    "exercised",
+    "portable_bundle_sha256",
+    "method_repository",
+    "method_commit",
+    "adapter_id",
+    "adapter_owner",
+    "target_config_ref",
+    "target_config_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 7
+    },
+    "artifact_id": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "canonical_url": {
+      "type": "string",
+      "pattern": "^https://[^?#]+$"
+    },
+    "local_run_id": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "corpus_ref_kind": {
+      "type": "string",
+      "enum": [
+        "origin/main",
+        "tag",
+        "development"
+      ]
+    },
+    "corpus_git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "corpus_commit_url": {
+      "type": "string",
+      "pattern": "^https://[^?#]+/commit/[0-9a-f]{40}$"
+    },
+    "dirty": {
+      "type": "boolean"
+    },
+    "pipelock_tag": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "pipelock_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "pipelock_asset": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "pipelock_asset_sha256": {
+      "$ref": "#/$defs/nullable_sha256"
+    },
+    "pipelock_binary_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "pipelock_release_url": {
+      "type": "string",
+      "pattern": "^https://[^?#]+$"
+    },
+    "gauntlet_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "scoring_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "runner_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "tool": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "tool_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "corpus_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "corpus_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "corpus_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "case_index_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "logical_case_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tool_profile_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "case_count": {
+      "$ref": "#/$defs/case_count"
+    },
+    "scores": {
+      "$ref": "#/$defs/dual_outcome_scores"
+    },
+    "per_category": {
+      "$ref": "#/$defs/per_category"
+    },
+    "metric_counts": {
+      "$ref": "#/$defs/dual_outcome_counts"
+    },
+    "fixtures": {
+      "type": "boolean",
+      "const": true
+    },
+    "multifile_cases": {
+      "type": "boolean",
+      "const": true
+    },
+    "command": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "make_stats": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "evidence_sha256": {
+      "$ref": "#/$defs/evidence"
+    },
+    "measurement_status": {
+      "type": "string",
+      "enum": [
+        "measured",
+        "incomplete"
+      ]
+    },
+    "benchmark_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "diagnostics": {
+      "$ref": "#/$defs/dual_diagnostics"
+    },
+    "diagnostic_counts": {
+      "$ref": "#/$defs/dual_diagnostic_counts"
+    },
+    "capability_registry": {
+      "$ref": "#/$defs/capability_registry"
+    },
+    "reported_claims": {
+      "$ref": "#/$defs/string_set"
+    },
+    "exercised": {
+      "$ref": "#/$defs/exercised"
+    },
+    "portable_bundle_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "method_repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "method_commit": {
+      "$ref": "#/$defs/git_commit"
+    },
+    "adapter_id": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "adapter_owner": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "target_config_ref": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "target_config_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "nonempty": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullable_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rate_or_null": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "count_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "case_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "applicable",
+        "unreachable",
+        "not_applicable",
+        "not_applicable_reasons",
+        "errors"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "applicable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unreachable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_applicable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_applicable_reasons": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/nonempty"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "outcome_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containment",
+        "false_positive_rate"
+      ],
+      "properties": {
+        "containment": {
+          "$ref": "#/$defs/rate_or_null"
+        },
+        "false_positive_rate": {
+          "$ref": "#/$defs/rate_or_null"
+        }
+      }
+    },
+    "dual_outcome_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "full",
+        "applicable"
+      ],
+      "properties": {
+        "full": {
+          "$ref": "#/$defs/outcome_scores"
+        },
+        "applicable": {
+          "$ref": "#/$defs/outcome_scores"
+        }
+      }
+    },
+    "per_category": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/nonempty"},
+      "additionalProperties": {"$ref": "#/$defs/category_scores"}
+    },
+    "category_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicable", "containment", "false_positive_rate", "diagnostics"],
+      "properties": {
+        "applicable": {"type": "integer", "minimum": 0},
+        "containment": {"$ref": "#/$defs/rate_or_null"},
+        "false_positive_rate": {"$ref": "#/$defs/rate_or_null"},
+        "diagnostics": {"$ref": "#/$defs/diagnostics"}
+      }
+    },
+    "outcome_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containment",
+        "false_positive_rate"
+      ],
+      "properties": {
+        "containment": {
+          "$ref": "#/$defs/count_pair"
+        },
+        "false_positive_rate": {
+          "$ref": "#/$defs/count_pair"
+        }
+      }
+    },
+    "dual_outcome_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "full",
+        "applicable"
+      ],
+      "properties": {
+        "full": {
+          "$ref": "#/$defs/outcome_counts"
+        },
+        "applicable": {
+          "$ref": "#/$defs/outcome_counts"
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classification_present_rate",
+        "structured_evidence_present_rate"
+      ],
+      "properties": {
+        "classification_present_rate": {
+          "$ref": "#/$defs/rate_or_null"
+        },
+        "structured_evidence_present_rate": {
+          "$ref": "#/$defs/rate_or_null"
+        }
+      }
+    },
+    "dual_diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "full",
+        "applicable"
+      ],
+      "properties": {
+        "full": {
+          "$ref": "#/$defs/diagnostics"
+        },
+        "applicable": {
+          "$ref": "#/$defs/diagnostics"
+        }
+      }
+    },
+    "diagnostic_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classification_present_rate",
+        "structured_evidence_present_rate"
+      ],
+      "properties": {
+        "classification_present_rate": {
+          "$ref": "#/$defs/count_pair"
+        },
+        "structured_evidence_present_rate": {
+          "$ref": "#/$defs/count_pair"
+        }
+      }
+    },
+    "dual_diagnostic_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "full",
+        "applicable"
+      ],
+      "properties": {
+        "full": {
+          "$ref": "#/$defs/diagnostic_counts"
+        },
+        "applicable": {
+          "$ref": "#/$defs/diagnostic_counts"
+        }
+      }
+    },
+    "capability_registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "format",
+        "revision",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "format": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "string_set": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/nonempty"
+      }
+    },
+    "nonempty_string_set": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/nonempty"
+      }
+    },
+    "exercised": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transports",
+        "categories",
+        "capability_tags"
+      ],
+      "properties": {
+        "transports": {
+          "$ref": "#/$defs/nonempty_string_set"
+        },
+        "categories": {
+          "$ref": "#/$defs/nonempty_string_set"
+        },
+        "capability_tags": {
+          "$ref": "#/$defs/string_set"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_registry",
+        "case_index",
+        "command",
+        "corpus_manifest",
+        "entrypoint_command",
+        "pipelock_release",
+        "pipelock_version_output",
+        "raw_summary",
+        "receipt_profile",
+        "release_checksums",
+        "results",
+        "run_metadata",
+        "runner_stderr",
+        "stats",
+        "tool_profile"
+      ],
+      "properties": {
+        "capability_registry": {
+          "$ref": "#/$defs/sha256"
+        },
+        "case_index": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command": {
+          "$ref": "#/$defs/sha256"
+        },
+        "corpus_manifest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "entrypoint_command": {
+          "$ref": "#/$defs/sha256"
+        },
+        "pipelock_release": {
+          "$ref": "#/$defs/sha256"
+        },
+        "pipelock_version_output": {
+          "$ref": "#/$defs/sha256"
+        },
+        "raw_summary": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receipt_profile": {
+          "$ref": "#/$defs/sha256"
+        },
+        "release_checksums": {
+          "$ref": "#/$defs/sha256"
+        },
+        "results": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_metadata": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runner_stderr": {
+          "$ref": "#/$defs/sha256"
+        },
+        "stats": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tool_profile": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(?:/(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))+$"
+    },
+    "git_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    }
+  }
+}
