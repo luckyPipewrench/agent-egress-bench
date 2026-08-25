@@ -72,4 +72,12 @@ make stats-update
 make preflight
 ```
 
+For a result-pointer change:
+
+```bash
+make check-result-pointers
+```
+
+That target compares listed pointer IDs against `AEB_IMMUTABILITY_BASE` (default `origin/main`). Fetch that ref first.
+
 Use [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution steps. Run `make stats` before citing corpus counts. Run `make preflight` before proposing a public commit or pull request.

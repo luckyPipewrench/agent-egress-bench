@@ -238,25 +238,48 @@ class ReleaseBuildTest(unittest.TestCase):
         extracted.mkdir()
         with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
             archive.extractall(extracted, filter="data")
-        pointers_root = extracted / "result-pointers"
-        if pointers_root.exists():
-            shutil.rmtree(pointers_root)
-        pointers_root.mkdir()
-        (pointers_root / "README.md").write_text(
-            "Listing is not approval.\n",
-            encoding="utf-8",
-        )
-        (pointers_root / "index.json").write_text(
-            json.dumps(
-                {"schema_version": 1, "listed_is_not_approved": True, "entries": []},
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        source_index = json.loads((self.root / "result-pointers/index.json").read_text(encoding="utf-8"))
+        extracted_index = json.loads((extracted / "result-pointers/index.json").read_text(encoding="utf-8"))
+        self.assertEqual(extracted_index, source_index)
         result = subprocess.run(
             [sys.executable, str(extracted / "scripts/validate_result_pointers.py")],
             cwd=extracted,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(
+            result.stdout.strip(),
+            f"validate-result-pointers: {len(source_index['entries'])} pointer(s)",
+        )
+
+    def test_bundled_pointer_validator_runs_on_an_empty_fixture(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        extracted = self.root / "pointer-validator-source"
+        extracted.mkdir()
+        with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
+            archive.extractall(extracted, filter="data")
+        fixture = self.root / "empty-pointer-fixture"
+        (fixture / "scripts").mkdir(parents=True)
+        (fixture / "schemas").mkdir(parents=True)
+        shutil.copyfile(extracted / "scripts/artifact_schema.py", fixture / "scripts/artifact_schema.py")
+        shutil.copyfile(extracted / "scripts/validate_result_pointers.py", fixture / "scripts/validate_result_pointers.py")
+        shutil.copyfile(
+            extracted / "schemas/result-pointer-v1.schema.json",
+            fixture / "schemas/result-pointer-v1.schema.json",
+        )
+        pointers_root = fixture / "result-pointers"
+        pointers_root.mkdir()
+        (pointers_root / "README.md").write_text("Listing is not approval.\n", encoding="utf-8")
+        (pointers_root / "index.json").write_text(
+            json.dumps({"schema_version": 1, "listed_is_not_approved": True, "entries": []}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, str(fixture / "scripts/validate_result_pointers.py")],
+            cwd=fixture,
             text=True,
             capture_output=True,
         )

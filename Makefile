@@ -13,6 +13,9 @@ GAUNTLET_SCOPE_ARTIFACT ?= gauntlet-site/testdata/complete-provenance-artifact.j
 # published record carries its own retained corpus-manifest.txt and is verified against
 # that by validate_gauntlet_records.py.
 GAUNTLET_SCOPE_MANIFEST ?= gauntlet-site/testdata/complete-provenance-corpus-manifest.txt
+# Merge-base for case, schema, registry-history, and result-pointer
+# immutability. Unset means origin/main. Fetch that ref before the target;
+# an unfetched base fails closed instead of skipping history.
 AEB_IMMUTABILITY_BASE ?= origin/main
 
 # Pre-push gate. Race coverage remains here because the Go modules exercised
@@ -136,9 +139,9 @@ test-runner-parity:
 test-runner-image:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/runner_image_test.py scripts/action_artifacts_test.py
 
-# Reject documentation that makes a claim the method cannot support, and keep
-# docs/RESULTS-USE.md defining the assurance labels and the adverse-result
-# permission it grants.
+# Listed pointer IDs on AEB_IMMUTABILITY_BASE must remain. New listings are
+# allowed. The only permitted mutation of an existing pointer is adding
+# withdrawn. Fetch the base ref first; this target does not skip history.
 check-result-pointers:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_result_pointers_test.py
 	@base="$$(git merge-base "$(AEB_IMMUTABILITY_BASE)" HEAD 2>/dev/null)"; \
