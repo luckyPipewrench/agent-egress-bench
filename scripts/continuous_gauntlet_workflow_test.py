@@ -149,16 +149,20 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         codes = {check["code"] for check in report["checks"]}
         self.assertIn("platform_linux", codes)
         self.assertIn("command_jq", codes)
+        self.assertIn("command_make", codes)
+        self.assertIn("go_version", codes)
         self.assertIn("mcp_stdio_bridge", codes)
         self.assertIn("repository_root", codes)
         self.assertIn("release_pin", codes)
+        go_version = next(check for check in report["checks"] if check["code"] == "go_version")
+        self.assertEqual(go_version["status"], "ok")
         self.assertEqual(before, set((REPO_ROOT / "continuous-gauntlet-runs").glob("*")))
 
     def test_doctor_collects_all_missing_prerequisites_before_failing(self):
         with tempfile.TemporaryDirectory() as temporary:
             fake_path = Path(temporary)
             for name in (
-                "dirname", "uname", "git", "python3", "go", "curl",
+                "dirname", "uname", "git", "python3", "curl",
                 "sha256sum", "tar", "timeout", "realpath", "make",
             ):
                 target = "/usr/bin/uname" if name == "uname" else "/usr/bin/true"
@@ -177,8 +181,10 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         report = json.loads(result.stdout)
         statuses = {check["code"]: check["status"] for check in report["checks"]}
         self.assertFalse(report["ready"])
+        self.assertEqual(statuses["command_go"], "missing")
         self.assertEqual(statuses["command_jq"], "missing")
         self.assertEqual(statuses["mcp_stdio_bridge"], "missing")
+        self.assertEqual(statuses["go_version"], "missing")
         self.assertIn("release_pin", statuses)
 
     def test_doctor_rejects_a_malformed_release_pin(self):
@@ -202,6 +208,100 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         release_pin = next(check for check in report["checks"] if check["code"] == "release_pin")
         self.assertEqual(release_pin["status"], "invalid")
         self.assertTrue(release_pin["remediation"])
+
+    def test_doctor_rejects_an_older_go_toolchain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fake_go = Path(temporary) / "go"
+            fake_go.write_text(
+                "#!/bin/sh\nprintf 'go version go1.24.0 linux/amd64\\n'\n",
+                encoding="utf-8",
+            )
+            fake_go.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        go_version = next(check for check in report["checks"] if check["code"] == "go_version")
+        self.assertFalse(report["ready"])
+        self.assertEqual(go_version["status"], "too_old")
+        self.assertIn("go.dev/dl", go_version["remediation"])
+
+    def test_doctor_rejects_prerelease_go_toolchain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fake_go = Path(temporary) / "go"
+            fake_go.write_text(
+                "#!/bin/sh\nprintf 'go version go1.25rc1 linux/amd64\\n'\n",
+                encoding="utf-8",
+            )
+            fake_go.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        go_version = next(check for check in report["checks"] if check["code"] == "go_version")
+        self.assertFalse(report["ready"])
+        self.assertEqual(go_version["status"], "unreadable")
+        self.assertIn("go.dev/dl", go_version["remediation"])
+
+    def test_doctor_rejects_devel_go_toolchain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fake_go = Path(temporary) / "go"
+            fake_go.write_text(
+                "#!/bin/sh\nprintf 'go version devel go1.26-abcdef linux/amd64\\n'\n",
+                encoding="utf-8",
+            )
+            fake_go.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        go_version = next(check for check in report["checks"] if check["code"] == "go_version")
+        self.assertFalse(report["ready"])
+        self.assertEqual(go_version["status"], "unreadable")
+
+    def test_doctor_rejects_an_unreadable_go_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fake_go = Path(temporary) / "go"
+            fake_go.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_go.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        go_version = next(check for check in report["checks"] if check["code"] == "go_version")
+        self.assertFalse(report["ready"])
+        self.assertEqual(go_version["status"], "unreadable")
+
+    def test_readme_tells_operators_doctor_checks_go_version(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("does not check the installed Go version", readme)
+        self.assertIn("the installed Go version", readme)
+        self.assertIn("distribution `golang` package", readme)
+        self.assertIn("Make", readme)
 
     def test_doctor_keeps_json_contract_when_release_pin_is_unreadable(self):
         with tempfile.TemporaryDirectory() as temporary:
