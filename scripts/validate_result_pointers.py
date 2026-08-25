@@ -14,7 +14,9 @@ import http.client
 import ipaddress
 import json
 import socket
+import subprocess
 import sys
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -31,6 +33,12 @@ ENTRIES_ROOT = POINTERS_ROOT / "entries"
 SCHEMA_PATH = ROOT / "schemas" / "result-pointer-v1.schema.json"
 README_PATH = POINTERS_ROOT / "README.md"
 MAX_EVIDENCE_BYTES = 8 << 20
+# Preflight fetches every live pointer. An unbounded index can stall CI
+# (timeout times N URLs) or pull large bodies. Cap both.
+MAX_POINTER_ENTRIES = 128
+MAX_LIVE_FETCHES = 64
+FETCH_TIMEOUT_SECONDS = 20
+MAX_FETCH_DEADLINE_SECONDS = 120
 FORBIDDEN_POINTER_KEYS = frozenset(
     {
         "containment",
@@ -150,7 +158,7 @@ def default_fetch(url):
     parsed = require_https_url(url, "evidence_url")
     port = 443
     address = resolve_public_address(parsed.hostname, port)
-    connection = PinnedHTTPSConnection(parsed.hostname, address, port, timeout=20)
+    connection = PinnedHTTPSConnection(parsed.hostname, address, port, timeout=FETCH_TIMEOUT_SECONDS)
     try:
         connection.request("GET", parsed.path)
         response = connection.getresponse()
@@ -183,6 +191,8 @@ def check_index(index):
         fail("result-pointers/index.json entries must be in code-point order")
     if len(entries) != len(set(entries)):
         fail("result-pointers/index.json entries must be unique")
+    if len(entries) > MAX_POINTER_ENTRIES:
+        fail(f"result-pointers/index.json exceeds {MAX_POINTER_ENTRIES} entries")
     return entries
 
 
@@ -208,7 +218,74 @@ def check_pointer(path, schema, expected_id):
     return pointer
 
 
-def check(root=ROOT, fetch=default_fetch):
+def git(root, *args):
+    result = subprocess.run(
+        ["git", "-C", str(root), *args],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        fail(f"git {' '.join(args)} failed: {detail or 'no diagnostic'}")
+    return result.stdout
+
+
+def load_baseline_from_git(root, base):
+    """Return pointer objects listed under result-pointers/entries at base.
+
+    An empty tree is a valid first baseline: there is no history to retain yet.
+    """
+    if not isinstance(base, str) or not base.strip():
+        fail("base revision is required and must be non-empty")
+    resolved = git(root, "rev-parse", "--verify", f"{base}^{{commit}}").decode("ascii").strip()
+    if not resolved:
+        fail("base revision resolved to an empty value")
+    ancestor = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", resolved, "HEAD"],
+        check=False,
+        capture_output=True,
+    )
+    if ancestor.returncode != 0:
+        fail(f"base revision is not an ancestor of HEAD: {resolved}")
+    paths = git(root, "ls-tree", "-r", "--name-only", resolved, "--", "result-pointers/entries").decode().splitlines()
+    baseline = {}
+    for path in paths:
+        if not path.endswith(".json"):
+            continue
+        raw = git(root, "show", f"{resolved}:{path}")
+        try:
+            pointer = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            fail(f"cannot read baseline pointer {path}: {exc}")
+        if not isinstance(pointer, dict):
+            fail(f"baseline pointer must be a JSON object: {path}")
+        baseline[Path(path).stem] = pointer
+    return baseline
+
+
+def check_history(current, baseline):
+    """Reject deletion or rewrite of pointers already on the immutable base.
+
+    Adding a listing is allowed. The only permitted mutation of an existing
+    pointer is adding a withdrawn object. Identity fields cannot change
+    because they are the pointer id; this still rejects a delete-plus-add
+    rewrite that would drop the old id.
+    """
+    if not baseline:
+        return
+    for pointer_id_value, old in baseline.items():
+        if pointer_id_value not in current:
+            fail(f"cannot remove listed pointer {pointer_id_value}")
+        new = current[pointer_id_value]
+        if canonical_pointer_identity(old) != canonical_pointer_identity(new):
+            fail(f"cannot rewrite evidence identity of pointer {pointer_id_value}")
+        old_withdrawn = old.get("withdrawn")
+        new_withdrawn = new.get("withdrawn")
+        if old_withdrawn and new_withdrawn != old_withdrawn:
+            fail(f"cannot rewrite withdrawal of pointer {pointer_id_value}")
+
+
+def check(root=ROOT, fetch=default_fetch, baseline=None):
     schema = load_schema(SCHEMA_PATH if root == ROOT else root / "schemas" / "result-pointer-v1.schema.json")
     pointers_root = root / "result-pointers"
     index = load_json(pointers_root / "index.json", "result pointer index")
@@ -227,31 +304,51 @@ def check(root=ROOT, fetch=default_fetch):
             on_disk.append(path.stem)
     if on_disk != ids:
         fail("result-pointers/index.json entries must match entries/*.json")
+    current = {}
     for pointer_id_value in ids:
-        pointer = check_pointer(entries_root / f"{pointer_id_value}.json", schema, pointer_id_value)
+        current[pointer_id_value] = check_pointer(
+            entries_root / f"{pointer_id_value}.json", schema, pointer_id_value
+        )
+    check_history(current, baseline)
+    live_fetches = 0
+    deadline = time.monotonic() + MAX_FETCH_DEADLINE_SECONDS
+    for pointer_id_value, pointer in current.items():
         if pointer.get("withdrawn"):
             continue
-        body = fetch(pointer["evidence_url"])
-        if not body:
-            fail(f"{pointer_id_value} evidence is empty")
-        digest = hashlib.sha256(body).hexdigest()
-        if digest != pointer["evidence_sha256"]:
-            fail(f"{pointer_id_value} evidence digest mismatch")
+        urls = [pointer["evidence_url"]]
         if "manifest_url" in pointer:
-            manifest = fetch(pointer["manifest_url"])
-            if not manifest:
-                fail(f"{pointer_id_value} manifest is empty")
-            if hashlib.sha256(manifest).hexdigest() != pointer["manifest_sha256"]:
-                fail(f"{pointer_id_value} manifest digest mismatch")
+            urls.append(pointer["manifest_url"])
+        for url in urls:
+            live_fetches += 1
+            if live_fetches > MAX_LIVE_FETCHES:
+                fail(f"live pointer fetches exceed {MAX_LIVE_FETCHES}")
+            if time.monotonic() >= deadline:
+                fail("pointer evidence fetch deadline exceeded")
+            body = fetch(url)
+            if not body:
+                label = "manifest" if url != pointer["evidence_url"] else "evidence"
+                fail(f"{pointer_id_value} {label} is empty")
+            digest = hashlib.sha256(body).hexdigest()
+            expected = pointer["manifest_sha256"] if url != pointer["evidence_url"] else pointer["evidence_sha256"]
+            if digest != expected:
+                label = "manifest" if url != pointer["evidence_url"] else "evidence"
+                fail(f"{pointer_id_value} {label} digest mismatch")
     return len(ids)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=str(ROOT))
+    parser.add_argument(
+        "--base",
+        default="",
+        help="git revision whose result-pointers/entries must be retained",
+    )
     args = parser.parse_args()
     try:
-        count = check(Path(args.root))
+        root = Path(args.root)
+        baseline = load_baseline_from_git(root, args.base) if args.base else None
+        count = check(root, baseline=baseline)
     except ValueError as exc:
         print(f"validate-result-pointers: {exc}", file=sys.stderr)
         return 1

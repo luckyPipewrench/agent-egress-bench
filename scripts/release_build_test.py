@@ -238,6 +238,22 @@ class ReleaseBuildTest(unittest.TestCase):
         extracted.mkdir()
         with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
             archive.extractall(extracted, filter="data")
+        pointers_root = extracted / "result-pointers"
+        if pointers_root.exists():
+            shutil.rmtree(pointers_root)
+        pointers_root.mkdir()
+        (pointers_root / "README.md").write_text(
+            "Listing is not approval.\n",
+            encoding="utf-8",
+        )
+        (pointers_root / "index.json").write_text(
+            json.dumps(
+                {"schema_version": 1, "listed_is_not_approved": True, "entries": []},
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         result = subprocess.run(
             [sys.executable, str(extracted / "scripts/validate_result_pointers.py")],
             cwd=extracted,

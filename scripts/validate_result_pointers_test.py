@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -239,12 +240,16 @@ class ValidateResultPointersTest(unittest.TestCase):
                     FIXTURE_BODY,
                 )
         resolve.assert_called_once_with("results.example", 443)
-        connect.assert_called_once_with("results.example", "8.8.8.8", 443, timeout=20)
+        connect.assert_called_once_with(
+            "results.example", "8.8.8.8", 443, timeout=pointers.FETCH_TIMEOUT_SECONDS
+        )
         self.assertEqual(connection.requested, [("GET", "/lab/evidence.tar")])
         self.assertTrue(connection.closed)
 
     def test_pinned_connection_uses_the_checked_address_with_the_url_host_for_tls(self):
-        connection = pointers.PinnedHTTPSConnection("results.example", "8.8.8.8", 443, timeout=20)
+        connection = pointers.PinnedHTTPSConnection(
+            "results.example", "8.8.8.8", 443, timeout=pointers.FETCH_TIMEOUT_SECONDS
+        )
         raw_socket = object()
         context = mock.Mock()
         context.wrap_socket.return_value = object()
@@ -263,6 +268,168 @@ class ValidateResultPointersTest(unittest.TestCase):
                     pointers.default_fetch("https://results.example/lab/evidence.tar")
         self.assertEqual(response.read_calls, 0)
         self.assertTrue(connection.closed)
+
+    def test_too_many_index_entries_are_refused(self):
+        first = pointer_object(publisher="lab-a")
+        second = pointer_object(publisher="lab-b")
+        ids = sorted([pointers.pointer_id(first), pointers.pointer_id(second)])
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": ids},
+            [first, second],
+        )
+        with mock.patch.object(pointers, "MAX_POINTER_ENTRIES", 1):
+            with self.assertRaisesRegex(ValueError, "exceeds 1 entries"):
+                pointers.check(self.temp, fetch=lambda url: FIXTURE_BODY)
+
+    def test_too_many_live_fetches_are_refused(self):
+        first = pointer_object(publisher="lab-a")
+        second = pointer_object(publisher="lab-b")
+        ids = sorted([pointers.pointer_id(first), pointers.pointer_id(second)])
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": ids},
+            [first, second],
+        )
+        with mock.patch.object(pointers, "MAX_LIVE_FETCHES", 1):
+            with self.assertRaisesRegex(ValueError, "live pointer fetches exceed 1"):
+                pointers.check(self.temp, fetch=lambda url: FIXTURE_BODY)
+
+    def test_fetch_deadline_is_refused(self):
+        pointer = pointer_object()
+        digest = pointers.pointer_id(pointer)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": [digest]},
+            [pointer],
+        )
+        with mock.patch.object(pointers, "MAX_FETCH_DEADLINE_SECONDS", 0):
+            with self.assertRaisesRegex(ValueError, "fetch deadline exceeded"):
+                pointers.check(self.temp, fetch=lambda url: FIXTURE_BODY)
+
+    def test_history_rejects_deleted_pointer(self):
+        pointer = pointer_object()
+        digest = pointers.pointer_id(pointer)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": []},
+            [],
+        )
+        with self.assertRaisesRegex(ValueError, "cannot remove listed pointer"):
+            pointers.check(self.temp, fetch=self.fail_fetch, baseline={digest: pointer})
+
+    def test_history_rejects_unwithdrawal(self):
+        live = pointer_object()
+        withdrawn = pointer_object(withdrawn={"reason": "dead_url"})
+        digest = pointers.pointer_id(withdrawn)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": [digest]},
+            [live],
+        )
+        with self.assertRaisesRegex(ValueError, "cannot rewrite withdrawal"):
+            pointers.check(self.temp, fetch=lambda url: FIXTURE_BODY, baseline={digest: withdrawn})
+
+    def test_history_rejects_rewritten_withdrawal_reason(self):
+        old = pointer_object(withdrawn={"reason": "dead_url"})
+        new = pointer_object(withdrawn={"reason": "publisher_request"})
+        digest = pointers.pointer_id(new)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": [digest]},
+            [new],
+        )
+        with self.assertRaisesRegex(ValueError, "cannot rewrite withdrawal"):
+            pointers.check(self.temp, fetch=self.fail_fetch, baseline={digest: old})
+
+    def test_history_allows_adding_withdrawn(self):
+        live = pointer_object()
+        withdrawn = pointer_object(withdrawn={"reason": "publisher_request"})
+        digest = pointers.pointer_id(withdrawn)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": [digest]},
+            [withdrawn],
+        )
+        self.assertEqual(
+            pointers.check(self.temp, fetch=self.fail_fetch, baseline={digest: live}),
+            1,
+        )
+
+    def fail_fetch(self, url):
+        self.fail(f"fetch should not run: {url}")
+
+
+class PointerHistoryGitTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.temp, True)
+        self.git("init", "-q")
+        self.git("config", "user.email", "pointer-test@example.invalid")
+        self.git("config", "user.name", "Pointer Test")
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", "-C", str(self.temp), *args],
+            check=True,
+            capture_output=True,
+        ).stdout
+
+    def test_empty_base_tree_is_a_valid_baseline(self):
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": []},
+            [],
+        )
+        self.git("add", ".")
+        self.git("commit", "-qm", "empty pointers")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.assertEqual(pointers.load_baseline_from_git(self.temp, base), {})
+        self.assertEqual(pointers.check(self.temp, fetch=self.fail_fetch, baseline={}), 0)
+
+    def test_git_baseline_rejects_deleted_pointer(self):
+        pointer = pointer_object()
+        digest = pointers.pointer_id(pointer)
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": [digest]},
+            [pointer],
+        )
+        self.git("add", ".")
+        self.git("commit", "-qm", "listed pointer")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        shutil.rmtree(self.temp / "result-pointers" / "entries")
+        (self.temp / "result-pointers" / "index.json").write_text(
+            json.dumps({"schema_version": 1, "listed_is_not_approved": True, "entries": []}, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+        self.git("add", ".")
+        self.git("commit", "-qm", "deleted pointer")
+        baseline = pointers.load_baseline_from_git(self.temp, base)
+        self.assertEqual(list(baseline), [digest])
+        with self.assertRaisesRegex(ValueError, "cannot remove listed pointer"):
+            pointers.check(self.temp, fetch=self.fail_fetch, baseline=baseline)
+
+    def test_git_base_must_be_an_ancestor(self):
+        write_tree(
+            self.temp,
+            {"schema_version": 1, "listed_is_not_approved": True, "entries": []},
+            [],
+        )
+        self.git("add", ".")
+        self.git("commit", "-qm", "main")
+        self.git("checkout", "-q", "-b", "side")
+        (self.temp / "result-pointers" / "README.md").write_text(
+            "Listed pointers are findable evidence. Listing is not approval.\nside\n",
+            encoding="utf-8",
+        )
+        self.git("add", ".")
+        self.git("commit", "-qm", "side")
+        self.git("checkout", "-q", "-")
+        side = self.git("rev-parse", "side").decode().strip()
+        with self.assertRaisesRegex(ValueError, "not an ancestor of HEAD"):
+            pointers.load_baseline_from_git(self.temp, side)
 
     def fail_fetch(self, url):
         self.fail(f"fetch should not run: {url}")

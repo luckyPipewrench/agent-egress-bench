@@ -141,7 +141,12 @@ test-runner-image:
 # permission it grants.
 check-result-pointers:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_result_pointers_test.py
-	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_result_pointers.py
+	@base="$$(git merge-base "$(AEB_IMMUTABILITY_BASE)" HEAD 2>/dev/null)"; \
+	if [ -z "$$base" ]; then \
+		echo "check-result-pointers: FAIL - cannot resolve a merge base with $(AEB_IMMUTABILITY_BASE); fetch that ref first" >&2; \
+		exit 1; \
+	fi; \
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_result_pointers.py --base "$$base"
 
 check-claim-language:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_claim_language_test.py

@@ -55,6 +55,6 @@ CI runs this automatically on every pull request along with CodeQL security anal
 
 ## Governance
 
-This repo is maintained by the Pipelock author. Contributions from any vendor or individual are welcome. This repo does not produce rankings or cross-tool comparisons. Each tool hosts its own evidence; a mechanically admitted pointer may be listed under `result-pointers/`. Listing is not approval.
+This repo is maintained by the Pipelock author. Contributions from any vendor or individual are welcome. This repo does not produce rankings or cross-tool comparisons. Each publisher hosts its own evidence; a mechanically admitted pointer may be listed under `result-pointers/`. Listing is not approval.
 
 Full governance policy: [docs/GOVERNANCE.md](docs/GOVERNANCE.md). Vendor adoption guide: [docs/ADOPTION.md](docs/ADOPTION.md).
