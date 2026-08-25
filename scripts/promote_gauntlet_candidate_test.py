@@ -292,7 +292,10 @@ class PromotionFixture:
                         "schema_version": 1,
                         "bundle_status": "complete",
                         "candidate_scope": {
-                            field: value[field] for field in publication_fields if field in value
+                            field: field_value
+                            for field, field_value in value.items()
+                            if field
+                            not in {"artifact_id", "canonical_url", "portable_bundle_sha256"}
                         },
                     },
                 )
@@ -374,9 +377,9 @@ class PromotionFixture:
 
         self.candidate_value = value
         self.candidate_path = self.artifact_dir / promotion.CANDIDATE_FILENAME
-        self.refresh_candidate_integrity()
+        self.refresh_candidate_integrity(rebuild_bundle_scope=True)
 
-    def refresh_candidate_integrity(self):
+    def refresh_candidate_integrity(self, rebuild_bundle_scope=False):
         self.candidate_value["case_index_sha256"] = hashlib.sha256(
             self.evidence["case_index"].read_bytes()
         ).hexdigest()
@@ -397,6 +400,17 @@ class PromotionFixture:
                 self.evidence["results"],
                 self.candidate_value["scoring_version"],
             )["per_category"]
+        if rebuild_bundle_scope:
+            bundle = evaluator.load_object(self.evidence["run_bundle"])
+            bundle["candidate_scope"] = {
+                field: value
+                for field, value in self.candidate_value.items()
+                if field not in {"artifact_id", "canonical_url", "portable_bundle_sha256"}
+            }
+            write_json(self.evidence["run_bundle"], bundle)
+            self.candidate_value["portable_bundle_sha256"] = hashlib.sha256(
+                self.evidence["run_bundle"].read_bytes()
+            ).hexdigest()
         write_json(self.candidate_path, self.candidate_value)
         self.write_source_decision()
 
@@ -456,6 +470,11 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         self.assertTrue(
             promotion.reviewable_policy_failure(
                 "v6 candidate requires a reviewed baseline with summary_schema_version=5"
+            )
+        )
+        self.assertTrue(
+            promotion.reviewable_policy_failure(
+                "v7 candidate requires a reviewed baseline with summary_schema_version=5"
             )
         )
 
@@ -531,6 +550,31 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("run bundle adapter_owner does not match retained run evidence", result.stdout)
+
+    def test_v7_promotion_rejects_a_downgraded_run_bundle_scope(self):
+        fixture = self.fixture()
+        bundle = evaluator.load_object(fixture.evidence["run_bundle"])
+        bundle["candidate_scope"]["schema_version"] = 6
+        bundle["candidate_scope"].pop("per_category")
+        write_json(fixture.evidence["run_bundle"], bundle)
+        fixture.refresh_candidate_integrity()
+
+        result = fixture.run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("candidate does not match the retained run bundle scope", result.stdout)
+
+    def test_v7_baseline_contract_change_can_be_explicitly_reviewed(self):
+        legacy_baseline = baseline()
+        legacy_baseline.pop("summary_schema_version")
+        fixture = self.fixture(baseline_value=legacy_baseline)
+
+        blocked = fixture.run()
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("explicit reviewed policy-change", blocked.stdout)
+
+        accepted = fixture.run(accept_policy_change=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
 
     def test_legacy_candidate_baseline_round_trips_through_evaluation(self):
         fixture = self.fixture(candidate())
@@ -831,7 +875,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        fixture.refresh_candidate_integrity()
+        fixture.refresh_candidate_integrity(rebuild_bundle_scope=True)
         result = fixture.run(accept_policy_change=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = fixture.summary.read_text(encoding="utf-8")
@@ -1098,9 +1142,6 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         newer["case_index_sha256"] = hashlib.sha256(
             (second_artifact / promotion.EVIDENCE_FILES["case_index"]).read_bytes()
         ).hexdigest()
-        newer["portable_bundle_sha256"] = hashlib.sha256(
-            (second_artifact / promotion.EVIDENCE_FILES["run_bundle"]).read_bytes()
-        ).hexdigest()
         # Same evidence bytes as the first artifact, so the same derived block.
         newer["per_category"] = fixture.candidate_value["per_category"]
         newer["evidence_sha256"] = {
@@ -1110,6 +1151,15 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
                 **provenance.V4_RAW_EVIDENCE,
             }.items()
         }
+        bundle_path = second_artifact / promotion.EVIDENCE_FILES["run_bundle"]
+        bundle = evaluator.load_object(bundle_path)
+        bundle["candidate_scope"] = {
+            field: value
+            for field, value in newer.items()
+            if field not in {"artifact_id", "canonical_url", "portable_bundle_sha256"}
+        }
+        write_json(bundle_path, bundle)
+        newer["portable_bundle_sha256"] = hashlib.sha256(bundle_path.read_bytes()).hexdigest()
         write_json(second_artifact / promotion.CANDIDATE_FILENAME, newer)
         second_paths = {
             label: second_artifact / filename

@@ -223,6 +223,16 @@ def validate_new_candidate_evidence(candidate, paths):
     for field, expected in bound.items():
         if scope.get(field) != expected:
             raise ValueError(f"run bundle {field} does not match retained run evidence")
+    rebuilt = dict(scope)
+    rebuilt.update(
+        {
+            "artifact_id": candidate.get("artifact_id"),
+            "canonical_url": candidate.get("canonical_url"),
+            "portable_bundle_sha256": candidate.get("portable_bundle_sha256"),
+        }
+    )
+    if rebuilt != candidate:
+        raise ValueError("candidate does not match the retained run bundle scope")
 
 
 def reviewable_policy_failure(failure):
@@ -233,6 +243,8 @@ def reviewable_policy_failure(failure):
     if failure == "v5 candidate requires a reviewed baseline with summary_schema_version=5":
         return True
     if failure == "v6 candidate requires a reviewed baseline with summary_schema_version=5":
+        return True
+    if failure == "v7 candidate requires a reviewed baseline with summary_schema_version=5":
         return True
     return failure.startswith("pipelock_version=") and ", baseline is " in failure
 
