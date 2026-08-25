@@ -9,6 +9,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -55,18 +56,12 @@ class FakeConnection:
         self.closed = True
 
 
+CONFORMANCE = json.loads((ROOT / "schemas/conformance/result-pointer-v1.json").read_text(encoding="utf-8"))
+
+
 def pointer_object(**overrides):
-    value = {
-        "schema_version": 1,
-        "publisher": "example-lab",
-        "tool": "example-gateway",
-        "tool_version": "1.0.0",
-        "method_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
-        "method_commit": "9ba2d4040b14c8f1d2e3a4b5c6d7e8f901234567",
-        "report_family": "gateway-inspectable",
-        "evidence_url": "https://results.example/lab/example-gateway/1.0.0/evidence.tar",
-        "evidence_sha256": hashlib.sha256(FIXTURE_BODY).hexdigest(),
-    }
+    value = dict(CONFORMANCE["accepted"][0]["instance"])
+    value["evidence_sha256"] = hashlib.sha256(FIXTURE_BODY).hexdigest()
     value.update(overrides)
     return value
 
@@ -220,6 +215,25 @@ class ValidateResultPointersTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "non-global address"):
                 pointers.resolve_public_address("results.example", 443)
 
+    def test_stalled_resolver_is_bound_by_the_fetch_timeout(self):
+        release = threading.Event()
+
+        def stall(*args, **kwargs):
+            release.wait(timeout=5)
+            return [
+                (pointers.socket.AF_INET, pointers.socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))
+            ]
+
+        try:
+            with mock.patch.object(pointers.socket, "getaddrinfo", stall):
+                with self.assertRaisesRegex(ValueError, "timed out"):
+                    pointers.default_fetch(
+                        "https://results.example/lab/evidence.tar",
+                        timeout=0.15,
+                    )
+        finally:
+            release.set()
+
     def test_fetch_refuses_a_private_resolution_before_connecting(self):
         with mock.patch.object(
             pointers.socket,
@@ -239,7 +253,9 @@ class ValidateResultPointersTest(unittest.TestCase):
                     pointers.default_fetch("https://results.example/lab/evidence.tar"),
                     FIXTURE_BODY,
                 )
-        resolve.assert_called_once_with("results.example", 443)
+        resolve.assert_called_once_with(
+            "results.example", 443, timeout=pointers.FETCH_TIMEOUT_SECONDS
+        )
         connect.assert_called_once_with(
             "results.example", "8.8.8.8", 443, timeout=pointers.FETCH_TIMEOUT_SECONDS
         )

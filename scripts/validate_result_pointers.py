@@ -16,6 +16,7 @@ import json
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -112,11 +113,36 @@ def require_https_url(url, label):
     fail(f"{label} must not use a literal IP host")
 
 
-def resolve_public_address(host, port):
-    try:
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        fail(f"cannot resolve pointer evidence host {host}: {exc}")
+def empty_index():
+    return {
+        "schema_version": 1,
+        "listed_is_not_approved": True,
+        "entries": [],
+    }
+
+
+def resolve_public_address(host, port, timeout=FETCH_TIMEOUT_SECONDS):
+    # socket.getaddrinfo has no timeout. A stalled resolver would otherwise
+    # hold the validator past MAX_FETCH_DEADLINE_SECONDS before connect/read
+    # timeouts apply. A daemon thread lets the process exit if lookup hangs.
+    if timeout <= 0:
+        fail("pointer evidence fetch deadline exceeded")
+    holder = {}
+
+    def lookup():
+        try:
+            holder["infos"] = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            holder["error"] = exc
+
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        fail(f"cannot resolve pointer evidence host {host}: timed out")
+    if "error" in holder:
+        fail(f"cannot resolve pointer evidence host {host}: {holder['error']}")
+    infos = holder.get("infos")
     if not infos:
         fail(f"cannot resolve pointer evidence host {host}")
     addresses = []
@@ -168,7 +194,7 @@ def default_fetch(url, timeout=FETCH_TIMEOUT_SECONDS, deadline=None):
         fail("pointer evidence fetch deadline exceeded")
     parsed = require_https_url(url, "evidence_url")
     port = 443
-    address = resolve_public_address(parsed.hostname, port)
+    address = resolve_public_address(parsed.hostname, port, timeout=timeout)
     connection = PinnedHTTPSConnection(parsed.hostname, address, port, timeout=timeout)
     try:
         connection.request("GET", parsed.path)

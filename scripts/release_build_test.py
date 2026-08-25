@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -20,6 +21,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts/release_build.py"
+POINTERS_SPEC = importlib.util.spec_from_file_location(
+    "validate_result_pointers", REPO / "scripts/validate_result_pointers.py"
+)
+pointers = importlib.util.module_from_spec(POINTERS_SPEC)
+assert POINTERS_SPEC.loader is not None
+POINTERS_SPEC.loader.exec_module(pointers)
 
 
 class ReleaseBuildTest(unittest.TestCase):
@@ -274,7 +281,7 @@ class ReleaseBuildTest(unittest.TestCase):
         pointers_root.mkdir()
         (pointers_root / "README.md").write_text("Listing is not approval.\n", encoding="utf-8")
         (pointers_root / "index.json").write_text(
-            json.dumps({"schema_version": 1, "listed_is_not_approved": True, "entries": []}, indent=2) + "\n",
+            json.dumps(pointers.empty_index(), indent=2) + "\n",
             encoding="utf-8",
         )
         result = subprocess.run(
