@@ -302,8 +302,14 @@ def _validate_result_measurement(row, expected, case_id):
     if not isinstance(evidence, dict):
         raise ValueError(f"result {case_id!r} evidence must be an object")
     # Historical frozen evidence, not an active result state. Keep it so v5
-    # evidence reconstructs, but only with its single valid score pairing.
+    # evidence reconstructs, but only on a frozen row and only with its single
+    # valid score pairing. An ACTIVE row must never be not-applicable: the
+    # derivation drops those rows before counting, so marking one malicious row
+    # not-applicable would shrink the containment denominator while every
+    # published count still reconciled.
     if actual == "not_applicable":
+        if row.get("schema_version") != 5:
+            raise ValueError(f"result {case_id!r} active result cannot be not_applicable")
         if score != "not_applicable":
             raise ValueError(f"result {case_id!r} not-applicable result is inconsistent")
         return
@@ -313,8 +319,13 @@ def _validate_result_measurement(row, expected, case_id):
     if state == "observed":
         if actual not in {"allow", "block"} or score not in {"pass", "fail"}:
             raise ValueError(f"result {case_id!r} observed result is not a measurement")
-        if score == "pass" and actual != expected:
-            raise ValueError(f"result {case_id!r} observed pass result does not match expected_verdict")
+        # Both directions, not just the false pass. An observed row that scores
+        # "fail" while its verdict MATCHES the expectation still counts toward
+        # containment but is excluded from correct_blocks, which would let a
+        # candidate shrink the diagnostic denominators with every count still
+        # reconciling.
+        if (score == "pass") != (actual == expected):
+            raise ValueError(f"result {case_id!r} observed score does not match expected_verdict")
         return
     if state == "unreachable" and (actual != "unreachable" or score != "error"):
         raise ValueError(f"result {case_id!r} unreachable result is inconsistent")

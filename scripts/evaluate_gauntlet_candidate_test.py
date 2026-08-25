@@ -1085,6 +1085,42 @@ class CandidateEvaluationTest(unittest.TestCase):
                 self.assertTrue(decision["blocked"])
                 self.assertTrue(any("case index entry 'malicious-000'" in failure for failure in decision["failures"]), decision["failures"])
 
+    def test_candidate_rejects_not_applicable_on_an_active_row(self):
+        # Active rows are dropped from the applicable set before counting, so a
+        # malicious row flipped to not_applicable would leave the containment
+        # denominator one smaller with every published count still reconciling.
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        # Rows cannot mix schemas, so promote the whole file to the active row
+        # schema, which is the state a real active candidate ships.
+        scoring_version = v6_candidate()["scoring_version"]
+        for row in rows:
+            row["schema_version"] = 6
+            row["scoring_version"] = scoring_version
+        rows[0]["actual_verdict"] = "not_applicable"
+        rows[0]["score"] = "not_applicable"
+        results_bytes = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+        decision, *_ = self.run_evaluate(v6_candidate(), v5_baseline(), results_bytes=results_bytes)
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(
+            any("active result cannot be not_applicable" in failure for failure in decision["failures"]),
+            decision["failures"],
+        )
+
+    def test_candidate_rejects_an_observed_fail_that_matched_expectation(self):
+        # The mirror of the false pass: scoring "fail" on a row whose verdict
+        # matched still counts toward containment but drops out of
+        # correct_blocks, shrinking the diagnostic denominators.
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        assert rows[0]["expected_verdict"] == rows[0]["actual_verdict"] == "block"
+        rows[0]["score"] = "fail"
+        results_bytes = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+        decision, *_ = self.run_evaluate(v6_candidate(), v5_baseline(), results_bytes=results_bytes)
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(
+            any("observed score does not match expected_verdict" in failure for failure in decision["failures"]),
+            decision["failures"],
+        )
+
     def test_candidate_rejects_a_false_observed_pass(self):
         # A row that keeps score=pass while its verdict flips to the wrong
         # side would raise containment with every aggregate still reconciled.
@@ -1094,7 +1130,7 @@ class CandidateEvaluationTest(unittest.TestCase):
         results_bytes = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
         decision, *_ = self.run_evaluate(v6_candidate(), v5_baseline(), results_bytes=results_bytes)
         self.assertTrue(decision["blocked"])
-        self.assertTrue(any("observed pass result does not match expected_verdict" in failure for failure in decision["failures"]), decision["failures"])
+        self.assertTrue(any("observed score does not match expected_verdict" in failure for failure in decision["failures"]), decision["failures"])
 
 if __name__ == "__main__":
     unittest.main()
