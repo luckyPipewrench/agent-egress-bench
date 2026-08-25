@@ -96,6 +96,20 @@ Every versioned schema has an explicit `-vN` filename and matching `$id`. Result
 
 The summary stays on v5 because it already has optional fields for the publication facts. Provenance candidate v6 makes those fields mandatory and verifies them before publication. Keeping the requirement in that artifact family avoids changing the local-run summary or the promotion baseline when their meaning hasn't changed.
 
+### Mixed-release readers
+
+A lab that keeps an artifact from tagged release N-1 and later opens it with a reader from N should expect the behavior below. These are the current readers, not a promise that a future bump will keep every listed version.
+
+Verify a downloaded release package against the tag that produced it. `python3 scripts/release_build.py verify --release-dir DIR --repo-root .` rebuilds `release-identity.json` from the checked-out tree and refuses a mismatch with `release identity disagrees with the checked-out source tree`. Pointing an N checkout at N-1 archives fails that check. It is not a schema-family read.
+
+Saved run artifacts are per family, and the accepted version list for every family is owned by [`contracts/artifacts.json`](../contracts/artifacts.json), not this page. The behavior is uniform: a reader either accepts the versions that manifest declares for it or refuses with a `schema_version` error that names the accepted versions and the value it got. Copying those version lists here has already drifted once, so this page states only the behaviors that are version-free:
+
+- Frozen result rows cannot share a file with rows of the active result schema; the validator refuses the mixed file with `frozen result rows cannot share a file with active schema_version 6 rows` style errors that name both sides.
+- Control Evidence v0 and v1 are separate verifiers. A v1 verifier given a v0 requirement envelope fails closed with `requirement_payload_type_mismatch`, and historical v0 packages cannot be normalized into v1; use the v0 verifier for v0 packages.
+- Retained historical schemas keep validating the packages recorded under them, but a retained schema is never a scoring input.
+
+If release N does not bump a family, an N-1 artifact of that family still verifies under the same reader. If it does bump a family, keep the frozen reader that the current program actually implements, or expect the refusal error above.
+
 ## Contribution acceptance
 
 Cases from any vendor, researcher, or individual are welcome. Every submitted case must include:

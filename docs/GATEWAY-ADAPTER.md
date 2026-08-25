@@ -188,3 +188,7 @@ runner process environment. Do not reference `$AEB_GATEWAY_ADDR` or
 in that case.
 
 Start from [gateway-plugin-template.json](../examples/gateway-plugin-template.json).
+
+## Author disclosure
+
+A submitted plugin or custom adapter must name its author (person or organization) in the pull request. Record the same owner at run time with `--adapter-owner`. A plugin cannot choose routes or scoring policy: the delivery-tuple route list is compiled into the adapter and the result-state machine owns every verdict, so a plugin field cannot shrink the denominator. The plugin names only the protocol surface and the deny signals that feed the result-state machine's deny classification; the compiled boundary lives in the adapter contract in `runner/adapter/`.

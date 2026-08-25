@@ -14,9 +14,15 @@ runs at pull-request preflight. It is not a later availability guarantee.
 A consumer that needs current bytes fetches and hashes them.
 
 Do not put result JSONL, summaries, or scores in this repository. Submit a
-pointer pull request. To withdraw a listing, add a `withdrawn` object. Do not
-delete history to hide a miss. Withdrawal keeps the filename and the original
-evidence identity.
+pointer pull request. The admission checker fetches evidence only to hash it
+and does not write those bytes into this repository.
+
+The listing is append-only. Adding a pointer is allowed. An existing pointer
+cannot be deleted, and its evidence identity cannot be rewritten. To withdraw a
+listing, open a pull request that adds a `withdrawn` object. Withdrawal keeps
+the filename and the original evidence identity. A vendor that wants a listing
+removed uses `withdrawn.reason` `publisher_request`. The other closed reasons
+are `dead_url` and `digest_mismatch`. Do not delete history to hide a miss.
 
 `report_family` names the kind of packet the URL holds. It is not a grade.
 Allowed values live in the schema.
