@@ -6,6 +6,9 @@ umask 077
 
 github_api_token="${GH_TOKEN:-}"
 unset GH_TOKEN GITHUB_TOKEN
+# Doctor checks this process's `go`. GOTOOLCHAIN=auto would let later
+# go build/run download a different toolchain than the one just checked.
+export GOTOOLCHAIN=local
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 provenance_script="$repo_root/scripts/build_gauntlet_provenance.py"
@@ -36,8 +39,8 @@ Options:
   --release-pin FILE               Read the reviewed Pipelock release identity from FILE.
   --development                    Allow a dirty or unreviewed corpus and mark the run noncanonical.
   --development-binary PATH        Use PATH instead of a released binary and mark the run noncanonical.
-  --doctor                         Check local prerequisites without starting a run.
-  --doctor-json                    Check prerequisites and emit machine-readable JSON.
+  --doctor                         Check commands, runner Go version, and other local prerequisites without starting a run.
+  --doctor-json                    Emit the same prerequisite checks as JSON.
   -h, --help                       Show this help.
 EOF
 }
@@ -86,6 +89,60 @@ require_uint() {
   local label="$1"
   local value="$2"
   [[ "$value" =~ ^[0-9]+$ ]] || die "$label must be a non-negative integer"
+}
+
+required_go_version() {
+  local go_mod="$repo_root/runner/go.mod"
+  local line=""
+  [[ -f "$go_mod" && ! -L "$go_mod" ]] || return 1
+  line="$(awk '/^go / { print $2; exit }' "$go_mod" 2>/dev/null || true)"
+  [[ "$line" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || return 1
+  printf '%s\n' "$line"
+}
+
+go_version_triple() {
+  local version="$1"
+  if [[ "$version" =~ ^([0-9]+)\.([0-9]+)(\.([0-9]+))?$ ]]; then
+    printf '%s %s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[4]:-0}"
+    return 0
+  fi
+  return 1
+}
+
+go_version_ge() {
+  local have="$1"
+  local need="$2"
+  local have_maj have_min have_pat need_maj need_min need_pat
+  read -r have_maj have_min have_pat < <(go_version_triple "$have") || return 1
+  read -r need_maj need_min need_pat < <(go_version_triple "$need") || return 1
+  ((have_maj > need_maj)) && return 0
+  ((have_maj < need_maj)) && return 1
+  ((have_min > need_min)) && return 0
+  ((have_min < need_min)) && return 1
+  ((have_pat >= need_pat))
+}
+
+installed_go_version() {
+  local line=""
+  local version_re='^go version go([0-9]+\.[0-9]+(\.[0-9]+)?)[[:space:]]'
+  line="$(command go version 2>/dev/null || true)"
+  # Released toolchains print "go version go1.25.0 linux/amd64". A substring
+  # match would treat go1.25rc1 as 1.25 and devel go1.26-... as 1.26.
+  if [[ "$line" =~ $version_re ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+require_go_toolchain() {
+  local required_go=""
+  local installed_go=""
+  required_go="$(required_go_version)" || die "runner Go requirement is unreadable"
+  command -v go >/dev/null 2>&1 || die "required command is unavailable: go"
+  installed_go="$(installed_go_version)" || die "go version is unreadable"
+  go_version_ge "$installed_go" "$required_go" || \
+    die "Go ${required_go} or newer is required; installed ${installed_go}"
 }
 
 while (($#)); do
@@ -148,6 +205,8 @@ run_doctor() {
   local bridge_found=false
   local repo_ok=false
   local pin_ok=false
+  local required_go=""
+  local installed_go=""
   local -a codes=()
   local -a details=()
   local -a remediations=()
@@ -171,6 +230,21 @@ run_doctor() {
       add_doctor_result "command_${command_name//-/_}" "missing" "install $command_name and retry"
     fi
   done
+  required_go="$(required_go_version || true)"
+  if ! command -v go >/dev/null 2>&1; then
+    add_doctor_result "go_version" "missing" \
+      "install Go ${required_go:-1.25} or newer from https://go.dev/dl/ and retry"
+  elif ! installed_go="$(installed_go_version)"; then
+    add_doctor_result "go_version" "unreadable" \
+      "install Go ${required_go:-1.25} or newer from https://go.dev/dl/ and retry"
+  elif [[ -z "$required_go" ]]; then
+    add_doctor_result "go_version" "unreadable" "restore runner/go.mod and retry"
+  elif go_version_ge "$installed_go" "$required_go"; then
+    add_doctor_result "go_version" "ok" ""
+  else
+    add_doctor_result "go_version" "too_old" \
+      "install Go ${required_go} or newer from https://go.dev/dl/ and retry"
+  fi
   for command_name in socat ncat nc; do
     if command -v "$command_name" >/dev/null 2>&1; then
       bridge_found=true
@@ -306,6 +380,7 @@ trap on_exit EXIT
 for command_name in git python3 go curl jq sha256sum tar timeout realpath make; do
   command -v "$command_name" >/dev/null || die "required command is unavailable: $command_name"
 done
+require_go_toolchain
 command -v socat >/dev/null || command -v ncat >/dev/null || command -v nc >/dev/null || \
   die "MCP stdio bridge requires socat, ncat, or nc"
 

@@ -12,9 +12,10 @@ This directory contains the Pipelock-specific artifacts the Go runner needs to s
 
 ## Portable release run
 
-From a clean Linux clone on `origin/main` or a repository tag:
+From a clean Linux clone of `origin/main`:
 
 ```bash
+./scripts/run-pipelock-gauntlet.sh --doctor
 ./scripts/run-pipelock-gauntlet.sh
 ```
 

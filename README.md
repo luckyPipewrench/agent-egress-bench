@@ -76,7 +76,13 @@ The offline validation walkthrough and copy/paste commands live in [Schema ident
 
 ## Quick start
 
-**Prerequisites:** [Go 1.25+](https://go.dev/dl/) for the validator and portable runner. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
+**Prerequisites:** [Go 1.25+](https://go.dev/dl/) from that page for the validator and portable runner. A distribution `golang` package can install a `go` command older than 1.25. The portable Pipelock Gauntlet also needs Linux, Python 3, Git, curl, jq, Make, tar, GNU timeout, SHA-256 utilities, and one of `socat`, `ncat`, or `nc`. The runner uses its own Go module dependencies for fixtures and multi-file case parsing.
+
+```bash
+git clone --branch main https://github.com/luckyPipewrench/agent-egress-bench.git
+cd agent-egress-bench
+./scripts/run-pipelock-gauntlet.sh --doctor
+```
 
 **Build the validator:**
 
@@ -99,7 +105,7 @@ cd validate && go build -o aeb-validate .
 
 **Run against a tool.** Each tool ships its own runner. The Go program in [`runner/`](runner/) is the reference implementation; it brings up HTTP, TLS, WebSocket, DNS, and MCP HTTP fixtures, executes declared transports through the selected adapter, and emits the Gauntlet summary and an optional receipt-scoring profile.
 
-For the pinned Pipelock release, use the portable entry point from a clean Linux clone on `origin/main` or a tag:
+For the pinned Pipelock release, use the portable entry point from a clean Linux clone of `origin/main`:
 
 ```bash
 ./scripts/run-pipelock-gauntlet.sh --doctor
@@ -108,11 +114,11 @@ For the pinned Pipelock release, use the portable entry point from a clean Linux
 
 `scripts/run-pipelock-gauntlet.sh` is the official Pipelock Gauntlet entrypoint and is Linux-only. On any other OS the doctor reports `platform_linux` as `unsupported` ("run this reference lane on Linux"), and the run exits with `the portable Pipelock runner currently supports Linux only`. Tagged `aeb-gauntlet` and `aeb-validate` archives also build for macOS amd64/arm64 (and Windows amd64/arm64). A macOS operator can inspect the corpus and check saved artifacts with those binaries, and must not treat that as the full Pipelock Gauntlet running on the laptop.
 
-Run `--doctor` before the benchmark. It checks the platform, the required commands, an MCP stdio bridge, the working directory, and the reviewed release pin, without starting a run or writing an evidence directory. `--doctor-json` returns the same checks as JSON. Both commands exit nonzero when a check fails. A ready result is not a prediction that the run will succeed: it does not check the installed Go version, the `origin` remote, whether the checkout is clean, or network reachability, and the run itself still fails on each of those.
+Run `--doctor` before the benchmark. It checks the platform, the required commands, the installed Go version, an MCP stdio bridge, the working directory, and the reviewed release pin, without starting a run or writing an evidence directory. `--doctor-json` returns the same checks as JSON. Both commands exit nonzero when a check fails. A ready result is not a prediction that the run will succeed: it does not check the `origin` remote, whether the checkout is clean, or network reachability, and the run itself still fails on each of those.
 
 The command downloads the reviewed Pipelock release, verifies its pinned asset digest, published checksum, and reported version, then confines target writes with Landlock and denies Unix-domain sockets with seccomp. It starts the required local fixtures and managed Pipelock processes, runs the single-file and multi-file cases, and leaves one timestamped directory under `continuous-gauntlet-runs/`. That directory contains the exact internal command, stdout results, stderr, summary, case index, corpus stats, release identity, file digests, and a machine-readable execution decision.
 
-It requires Linux, Go 1.25 or newer, Python 3, Git, curl, jq, tar, GNU timeout, SHA-256 utilities, and one of `socat`, `ncat`, or `nc`. Use `--output-dir` to place the self-contained run directory somewhere else. The [Pipelock reference-runner guide](examples/pipelock/README.md) documents the evidence files, explicit development mode, the underlying long-form command, and a neutral scheduling example. The [release archives](docs/RELEASES.md) document the same Linux-only Pipelock entrypoint beside the multi-OS bench binaries.
+It requires Linux, Go 1.25 or newer, Python 3, Git, curl, jq, Make, tar, GNU timeout, SHA-256 utilities, and one of `socat`, `ncat`, or `nc`. Use `--output-dir` to place the self-contained run directory somewhere else. The [Pipelock reference-runner guide](examples/pipelock/README.md) documents the evidence files, explicit development mode, the underlying long-form command, and a neutral scheduling example. The [release archives](docs/RELEASES.md) document the same Linux-only Pipelock entrypoint beside the multi-OS bench binaries.
 
 The raw directory intentionally has no made-up public URL. GitHub Actions or another retaining platform adds its real artifact ID and HTTPS location later, without modifying the evidence bytes. Creating a schedule and publishing a result are separate operator decisions.
 
