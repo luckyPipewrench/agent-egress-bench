@@ -625,6 +625,39 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertEqual({6}, {row["schema_version"] for row in rows})
         self.assertEqual({"2.4"}, {row["scoring_version"] for row in rows})
 
+    def test_retained_v6_bundle_reconstructs_without_per_category(self):
+        # The two published records were bundled at candidate schema 6, before
+        # per_category existed. A schema bump must not change the bytes a
+        # retained bundle reproduces, or record validation fails on every
+        # record written before the bump.
+        self.make_active_fixture(summary_schema_version=5)
+        result = self.bundle()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bundle_path = self.run_dir / "run-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["candidate_scope"]["schema_version"] = 6
+        del bundle["candidate_scope"]["per_category"]
+        bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        result = self.finalize()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        candidate = json.loads((self.run_dir / "candidate.json").read_text(encoding="utf-8"))
+        self.assertEqual(candidate["schema_version"], 6)
+        self.assertNotIn("per_category", candidate)
+
+    def test_bundle_claiming_a_newer_schema_than_its_evidence_is_refused(self):
+        self.make_active_fixture(summary_schema_version=5)
+        result = self.bundle()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bundle_path = self.run_dir / "run-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["candidate_scope"]["schema_version"] = 8
+        bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        result = self.finalize()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("newer than its evidence supports", result.stderr)
+
     def test_v5_producer_carries_per_category_into_bundle_and_candidate(self):
         # The evaluator tests hand it a candidate that already contains
         # per_category, so they cannot tell whether the PRODUCER emits it. This

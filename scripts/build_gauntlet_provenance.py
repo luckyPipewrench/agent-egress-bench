@@ -1180,7 +1180,16 @@ def validate_release(release, metadata, run_dir):
             raise ValueError("release checksums do not bind the recorded Pipelock asset digest")
 
 
-def build_complete_bundle(repo_root, run_dir, allow_frozen_result_rows=False):
+def build_complete_bundle(
+    repo_root, run_dir, allow_frozen_result_rows=False, candidate_schema_version=None
+):
+    """Build the portable bundle from retained evidence.
+
+    A new bundle is written at the active candidate schema. A retained bundle is
+    reconstructed at the schema it was written with, so a later schema bump
+    cannot change the bytes a published record must reproduce. Fields a newer
+    schema adds are only emitted at or above the version that introduced them.
+    """
     metadata = load_object(run_dir / RAW_EVIDENCE["run_metadata"])
     release = load_object(run_dir / RAW_EVIDENCE["pipelock_release"])
     validate_metadata(metadata)
@@ -1216,8 +1225,15 @@ def build_complete_bundle(repo_root, run_dir, allow_frozen_result_rows=False):
     if "unreachable" in summary["case_count"]:
         candidate_case_count["unreachable"] = summary["case_count"]["unreachable"]
 
+    derived_schema_version = provenance_candidate_schema_version(summary.get("schema_version"))
+    if candidate_schema_version is None:
+        candidate_schema_version = derived_schema_version
+    elif candidate_schema_version > derived_schema_version:
+        raise ValueError(
+            "portable run bundle records a candidate schema newer than its evidence supports"
+        )
     candidate_scope = {
-        "schema_version": provenance_candidate_schema_version(summary.get("schema_version")),
+        "schema_version": candidate_schema_version,
         "local_run_id": metadata["local_run_id"],
         "generated_at": metadata["generated_at"],
         "corpus_ref_kind": metadata["corpus_ref_kind"],
@@ -1255,7 +1271,10 @@ def build_complete_bundle(repo_root, run_dir, allow_frozen_result_rows=False):
     if summary.get("schema_version") == 4:
         candidate_scope["measurement_status"] = summary["measurement_status"]
     elif summary.get("schema_version") == 5:
-        candidate_scope["per_category"] = summary["per_category"]
+        # per_category entered the candidate at schema 7; older retained
+        # bundles must reconstruct without it.
+        if candidate_schema_version >= 7:
+            candidate_scope["per_category"] = summary["per_category"]
         candidate_scope["measurement_status"] = summary["measurement_status"]
         candidate_scope["benchmark_manifest_sha256"] = summary["benchmark_manifest_sha256"]
         candidate_scope["diagnostics"] = summary["diagnostics"]
@@ -1355,10 +1374,17 @@ def finalize_command(args):
     for label in sorted(evidence_spec):
         if recorded_hashes.get(label) != current_hashes[label]:
             raise ValueError(f"evidence {label} changed after the portable bundle was created")
+    recorded_scope = bundle.get("candidate_scope")
+    recorded_schema_version = (
+        recorded_scope.get("schema_version") if isinstance(recorded_scope, dict) else None
+    )
+    if not isinstance(recorded_schema_version, int) or isinstance(recorded_schema_version, bool):
+        raise ValueError("portable run bundle candidate scope must record an integer schema_version")
     recomputed_bundle = build_complete_bundle(
         args.repo_root.resolve(),
         run_dir,
         allow_frozen_result_rows=getattr(args, "allow_frozen_result_rows", False),
+        candidate_schema_version=recorded_schema_version,
     )
     if bundle != recomputed_bundle:
         raise ValueError("portable run bundle does not match a fresh reconstruction from evidence")
