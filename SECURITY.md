@@ -10,6 +10,10 @@ If you find a real security issue in this repository (e.g., an accidentally comm
 
 Do not open a public issue for security vulnerabilities.
 
+## Support
+
+Vulnerability reports belong in GitHub Security Advisories, as above. Questions about benchmark method, scoring, or case meaning can go in a public Issue; maintainers answer those on a best-effort basis. There is no SLA, and there is no private implementation support for an external lab's runner, adapter, or product.
+
 ## What Is NOT a Security Issue
 
 - Fake API keys, tokens, or credentials in `cases/` directory (these are intentional test data)
