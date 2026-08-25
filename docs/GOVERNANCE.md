@@ -70,7 +70,7 @@ Internal code changes still require a bump when they produce one of those effect
 
 A version freezes when the repository commits an immutable public record that declares it. Frozen readers keep that version's exact behavior. A new reader may support a new version, but it must not normalize old bytes into the new definition. Case semantics freeze per case when the case reaches `main`, independent of the artifact-family version.
 
-Retained v1 and v2 evidence records are frozen. The v4 case and tool-profile formats remain active. Receipt profiles write v5 and retain v1, v3, and v4 readers. Result rows write v6 and retain frozen v4 and v5 readers; summaries still write v5 and retain their frozen v4 reader. Provenance candidates write v6 while retaining their v5 reader. A local v5 summary may omit publication provenance, but a v6 provenance candidate can't cross the promotion boundary without the method repository and commit, adapter identity and owner, and target configuration reference and digest. Promotion baselines remain on v1 because v6 candidates still carry v5 summary and scoring semantics.
+Retained v1 and v2 evidence records are frozen. The v4 case and tool-profile formats remain active. Receipt profiles write v5 and retain v1, v3, and v4 readers. Result rows write v6 and retain frozen v4 and v5 readers; summaries still write v5 and retain their frozen v4 reader. Provenance candidates write v7 while retaining their older readers. A local v5 summary may omit publication provenance, but a v7 provenance candidate can't cross the promotion boundary without the method repository and commit, adapter identity and owner, target configuration reference and digest, and the category measurements derived from the pinned case index and raw rows. Promotion baselines remain on v1 because v7 candidates still carry v5 summary and scoring semantics.
 
 Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not an artifact schema bump.
 
@@ -92,9 +92,9 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Promotion baseline | 1 | 1 | 1 | [`promotion-baseline-v1.schema.json`](../schemas/promotion-baseline-v1.schema.json) |
 | Result pointer | 1 | 1 | none | [`result-pointer-v1.schema.json`](../schemas/result-pointer-v1.schema.json) |
 
-Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows retain frozen v4 and v5 beside active v6; summaries retain frozen v4 beside active v5. Provenance candidates retain every accepted version beside active v6. A path can't silently retarget a historical contract, and the repository provides no unsuffixed compatibility aliases.
+Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows retain frozen v4 and v5 beside active v6; summaries retain frozen v4 beside active v5. Provenance candidates retain every accepted version beside active v7. A path can't silently retarget a historical contract, and the repository provides no unsuffixed compatibility aliases.
 
-The summary stays on v5 because it already has optional fields for the publication facts. Provenance candidate v6 makes those fields mandatory and verifies them before publication. Keeping the requirement in that artifact family avoids changing the local-run summary or the promotion baseline when their meaning hasn't changed.
+The summary stays on v5 because it already has optional fields for the publication facts and category measurements. Provenance candidate v7 makes the publication facts mandatory and binds the category measurements to the case index and raw rows before publication. Keeping the requirement in that artifact family avoids changing the local-run summary or the promotion baseline when their meaning hasn't changed.
 
 ## Contribution acceptance
 

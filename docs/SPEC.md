@@ -128,7 +128,7 @@ sufficiency, change a score, or gate publication.
 
 Delivery, fixture, and base-observation prerequisites only. `requires` must never encode attack difficulty, evasion resistance, or an enforcement claim (for example `encoding_evasion_scanning`, `ssrf_bypass_scanning`, or `budget_enforcement`); those belong in `capability_tags` or result evidence. The validator rejects those tokens for both single-file and multi-file cases.
 
-Live cases, profiles, and receipt artifacts use schema v4. Result rows and summaries use schema v5, while provenance candidates use schema v6. Each reader checks the active version for its own artifact family. Each active profile and result names the exact capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Historical result rows and summaries remain readable through their frozen schemas and aren't normalized into newer semantics. See [Capability Vocabulary and Profile Evolution](CAPABILITY-VOCABULARY.md).
+Live cases, profiles, and receipt artifacts use schema v4. Result rows use schema v6, summaries use schema v5, and provenance candidates use schema v7. Each reader checks the active version for its own artifact family. Each active profile and result names the exact capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Historical result rows and summaries remain readable through their frozen schemas and aren't normalized into newer semantics. See [Capability Vocabulary and Profile Evolution](CAPABILITY-VOCABULARY.md).
 
 ## Payload Formats
 

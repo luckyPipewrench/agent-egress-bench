@@ -158,7 +158,7 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
     details = {}
     if candidate is not None:
         if candidate.get("schema_version") not in {2, 4, 5, 6, 7}:
-            failures.append("candidate schema_version must be 2, 4, 5, or 6")
+            failures.append("candidate schema_version must be 2, 4, 5, 6, or 7")
         elif candidate.get("schema_version") in {4, 5, 6, 7}:
             try:
                 import evaluate_gauntlet_candidate as evaluator

@@ -132,10 +132,10 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
             artifact_schema.validate({"value": "too long"}, schema, "unsupported keyword")
 
     def test_active_provenance_required_fields_are_individually_non_vacuous(self):
-        vector_path = VECTOR_ROOT / "provenance-candidate-v6.json"
+        vector_path = VECTOR_ROOT / "provenance-candidate-v7.json"
         vector = json.loads(vector_path.read_text(encoding="utf-8"))
         instance = materialize(vector["accepted"][0], vector_path)
-        schema = artifact_schema.load_schema(ROOT / "schemas" / "provenance-candidate-v6.schema.json")
+        schema = artifact_schema.load_schema(ROOT / "schemas" / "provenance-candidate-v7.schema.json")
         checks = []
 
         def walk(value, node, schema_path, instance_path):
@@ -173,10 +173,10 @@ class ArtifactSchemaConformanceTest(unittest.TestCase):
                     artifact_schema.validate(corrupted, schema, field)
 
     def test_active_provenance_object_closures_are_individually_non_vacuous(self):
-        vector_path = VECTOR_ROOT / "provenance-candidate-v6.json"
+        vector_path = VECTOR_ROOT / "provenance-candidate-v7.json"
         vector = json.loads(vector_path.read_text(encoding="utf-8"))
         instance = materialize(vector["accepted"][0], vector_path)
-        schema = artifact_schema.load_schema(ROOT / "schemas" / "provenance-candidate-v6.schema.json")
+        schema = artifact_schema.load_schema(ROOT / "schemas" / "provenance-candidate-v7.schema.json")
         checks = []
 
         def walk(value, node, schema_path, instance_path):
