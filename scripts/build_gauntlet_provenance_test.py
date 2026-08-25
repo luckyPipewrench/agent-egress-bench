@@ -625,6 +625,35 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertEqual({6}, {row["schema_version"] for row in rows})
         self.assertEqual({"2.4"}, {row["scoring_version"] for row in rows})
 
+    def test_v5_producer_carries_per_category_into_bundle_and_candidate(self):
+        # The evaluator tests hand it a candidate that already contains
+        # per_category, so they cannot tell whether the PRODUCER emits it. This
+        # runs the real bundle and finalize steps and checks the block survives
+        # both, value for value. Removing the copy in build_complete_bundle must
+        # fail this test; a version that still passed would prove nothing.
+        self.make_active_fixture(summary_schema_version=5)
+        expected = json.loads(
+            (self.run_dir / "raw-summary.json").read_text(encoding="utf-8")
+        )["per_category"]
+        self.assertIn("test", expected)
+
+        result = self.bundle()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads(
+            (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+        )["candidate_scope"]
+        self.assertEqual(scope["schema_version"], 7)
+        self.assertEqual(scope["per_category"], expected)
+
+        result = self.finalize()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        candidate = json.loads(
+            (self.run_dir / "candidate.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(candidate["per_category"], expected)
+        # A rate-or-null field must keep its type through both steps.
+        self.assertIsInstance(candidate["per_category"]["test"]["containment"], float)
+
     def test_v5_moves_field_presence_out_of_scores_and_binds_it_as_diagnostics(self):
         self.make_active_fixture(summary_schema_version=5)
 
