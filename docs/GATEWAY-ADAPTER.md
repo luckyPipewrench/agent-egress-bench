@@ -188,3 +188,7 @@ runner process environment. Do not reference `$AEB_GATEWAY_ADDR` or
 in that case.
 
 Start from [gateway-plugin-template.json](../examples/gateway-plugin-template.json).
+
+## Author disclosure
+
+A submitted plugin or custom adapter must name its author (person or organization) in the pull request. Record the same owner at run time with `--adapter-owner`. A plugin cannot declare applicability or scoring. `MCPGatewayAdapter.DeliveryTuples` is compiled in `runner/adapter/gateway.go` and is the only route list this adapter will attempt. Scoring belongs to the result-state machine: `DeliveryPlanner` is a query surface only (`runner/adapter/adapter.go`), and a plugin field cannot shrink the denominator or change a verdict. The plugin names the protocol surface and deny signals.
