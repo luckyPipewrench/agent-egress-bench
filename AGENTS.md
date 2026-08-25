@@ -30,6 +30,7 @@ agent-egress-bench is a public, tool-neutral corpus for testing AI agent egress 
 | Receipt-scoring profiles | [`docs/RECEIPT-SCORING.md`](docs/RECEIPT-SCORING.md) |
 | Capability labels | [`docs/CAPABILITY-VOCABULARY.md`](docs/CAPABILITY-VOCABULARY.md) |
 | Public result claims | [`docs/RESULTS-USE.md`](docs/RESULTS-USE.md) |
+| External result pointers | [`result-pointers/README.md`](result-pointers/README.md) |
 
 Do not copy field lists, enum values, version numbers, profile fields, or scoring rules into this file. Update the owner document and its executable gate.
 
@@ -70,5 +71,13 @@ make cases-manifest
 make stats-update
 make preflight
 ```
+
+For a result-pointer change:
+
+```bash
+make check-result-pointers
+```
+
+That target compares listed pointer IDs against `AEB_IMMUTABILITY_BASE` (default `origin/main`). Fetch that ref first.
 
 Use [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution steps. Run `make stats` before citing corpus counts. Run `make preflight` before proposing a public commit or pull request.

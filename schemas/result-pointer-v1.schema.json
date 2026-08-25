@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-pointer-v1.schema.json",
+  "title": "agent-egress-bench Result Pointer v1",
+  "description": "A mechanically admitted pointer at publisher-hosted evidence. Listing is not approval, ranking, certification, or a verification mark. This object stores no result bytes and no score.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "publisher",
+    "tool",
+    "tool_version",
+    "method_repository",
+    "method_commit",
+    "report_family",
+    "evidence_url",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "publisher": {"$ref": "#/$defs/nonempty"},
+    "tool": {"$ref": "#/$defs/nonempty"},
+    "tool_version": {"$ref": "#/$defs/nonempty"},
+    "method_repository": {"$ref": "#/$defs/nonempty"},
+    "method_commit": {"$ref": "#/$defs/commit"},
+    "report_family": {
+      "type": "string",
+      "enum": ["gauntlet", "pass-fail", "gateway-inspectable"]
+    },
+    "assurance": {
+      "type": "string",
+      "enum": [
+        "self-run",
+        "artifact-validated",
+        "independently-executed",
+        "transparency-registered",
+        "challenge-verified"
+      ]
+    },
+    "evidence_url": {"$ref": "#/$defs/https_url"},
+    "evidence_sha256": {"$ref": "#/$defs/sha256"},
+    "manifest_url": {"$ref": "#/$defs/https_url"},
+    "manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "withdrawn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": ["dead_url", "publisher_request", "digest_mismatch"]
+        }
+      }
+    }
+  },
+  "dependentRequired": {
+    "manifest_url": ["manifest_sha256"],
+    "manifest_sha256": ["manifest_url"]
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "https_url": {"type": "string", "pattern": "^https://[^/?#]+/[^?#]+$"}
+  }
+}

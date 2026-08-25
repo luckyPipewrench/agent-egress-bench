@@ -321,7 +321,7 @@ For another tool or adapter development, use the Go runner. It writes JSONL resu
 
 ## Publishing a result
 
-Each vendor, lab, or customer runs the Gauntlet against its own target and owns the result it publishes. This repository stores no third-party result and awards no verification mark. [`RESULTS-USE.md`](RESULTS-USE.md) defines the permitted assurance labels and the identifying facts that must travel with a public result.
+Each vendor, lab, or customer runs the method against its own target and hosts the evidence it publishes. This repository may list a mechanically admitted pointer at that evidence. Listing is not approval, a rank, or a verification mark, and the pointer stores no result bytes. Full-corpus Gauntlet containment is only for products that sit on the whole egress path this corpus defines; other product classes publish a scoped report. [`RESULTS-USE.md`](RESULTS-USE.md) defines the permitted assurance labels and the identifying facts that must travel with a public result. Submit pointers under [`result-pointers/`](../result-pointers/). The closed schema is [`result-pointer-v1.schema.json`](../schemas/result-pointer-v1.schema.json). [`result-pointers/README.md`](../result-pointers/README.md) owns submission, withdrawal, and consumer-fetch rules. Run `python3 scripts/validate_result_pointers.py` to repeat the admission check.
 
 The maintainer-operated Pipelock records under `gauntlet-site/results/pipelock/` are disclosed first-party regression evidence. The append-only record chain and `latest-verified` pointer do not create an independence claim.
 

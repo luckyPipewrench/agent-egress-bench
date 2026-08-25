@@ -1,0 +1,48 @@
+{
+  "schema": "../result-pointer-v1.schema.json",
+  "accepted": [
+    {
+      "description": "closed pointer with no optional fields",
+      "instance": {
+        "schema_version": 1,
+        "publisher": "example-lab",
+        "tool": "example-gateway",
+        "tool_version": "1.0.0",
+        "method_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
+        "method_commit": "9ba2d4040b14c8f1d2e3a4b5c6d7e8f901234567",
+        "report_family": "gateway-inspectable",
+        "evidence_url": "https://results.example/lab/example-gateway/1.0.0/evidence.tar",
+        "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "description": "pointer with publisher-declared assurance and withdrawn record",
+      "instance": {
+        "schema_version": 1,
+        "publisher": "example-lab",
+        "tool": "example-gateway",
+        "tool_version": "1.0.0",
+        "method_repository": "https://github.com/luckyPipewrench/agent-egress-bench",
+        "method_commit": "9ba2d4040b14c8f1d2e3a4b5c6d7e8f901234567",
+        "report_family": "pass-fail",
+        "assurance": "independently-executed",
+        "evidence_url": "https://results.example/lab/example-gateway/1.0.0/evidence.tar",
+        "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifest_url": "https://results.example/lab/example-gateway/1.0.0/manifest.json",
+        "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "withdrawn": {"reason": "publisher_request"}
+      }
+    }
+  ],
+  "rejected": [
+    {"description": "wrong version", "mutation": {"replace": ["schema_version"], "value": 2}},
+    {"description": "unknown field", "mutation": {"add": ["containment"], "value": 0.98}},
+    {"description": "score field", "mutation": {"add": ["score"], "value": 1}},
+    {"description": "http url", "mutation": {"replace": ["evidence_url"], "value": "http://results.example/lab/evidence.tar"}},
+    {"description": "url with query", "mutation": {"replace": ["evidence_url"], "value": "https://results.example/lab/evidence.tar?sig=1"}},
+    {"description": "short digest", "mutation": {"replace": ["evidence_sha256"], "value": "abc"}},
+    {"description": "missing publisher", "mutation": {"remove": ["publisher"]}},
+    {"description": "manifest url without digest", "mutation": {"add": ["manifest_url"], "value": "https://results.example/lab/manifest.json"}},
+    {"description": "human ranking reason", "mutation": {"add": ["withdrawn"], "value": {"reason": "inaccurate"}}}
+  ]
+}

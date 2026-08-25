@@ -38,7 +38,7 @@ RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress
 # requires, the gateway plugin template, the runner skeleton, and the reference
 # harness. Without it a downloaded release can report the corpus but cannot run
 # it, because --profile is mandatory and nothing in the release satisfied it.
-DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities", "examples")
+DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities", "examples", "result-pointers")
 DATA_FILES = (
     "README.md",
     "LICENSE",
@@ -50,9 +50,11 @@ DATA_FILES = (
     "docs/OCI-RUNNER.md",
     "docs/RESULTS-USE.md",
     "scripts/action_artifacts.py",
+    "scripts/artifact_schema.py",
     "scripts/release_build.py",
     "scripts/run-oci-action.sh",
     "scripts/schema_catalog.py",
+    "scripts/validate_result_pointers.py",
 )
 PLATFORMS = tuple((goos, arch) for goos in ("linux", "darwin", "windows") for arch in ("amd64", "arm64"))
 # Both tools ride in one platform archive. A release that shipped only the

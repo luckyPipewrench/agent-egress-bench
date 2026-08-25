@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -20,6 +21,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts/release_build.py"
+POINTERS_SPEC = importlib.util.spec_from_file_location(
+    "validate_result_pointers", REPO / "scripts/validate_result_pointers.py"
+)
+pointers = importlib.util.module_from_spec(POINTERS_SPEC)
+assert POINTERS_SPEC.loader is not None
+POINTERS_SPEC.loader.exec_module(pointers)
 
 
 class ReleaseBuildTest(unittest.TestCase):
@@ -39,6 +46,8 @@ class ReleaseBuildTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(self.root), "config", "user.email", "release-test@example.invalid"], check=True)
         subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Release Test"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "commit.gpgsign", "false"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "tag.gpgSign", "false"], check=True)
         subprocess.run(["git", "-C", str(self.root), "config", "core.hooksPath", "/dev/null"], check=True)
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "test fixture"], check=True)
@@ -223,6 +232,66 @@ class ReleaseBuildTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), "check-identity", "--repo-root", str(self.root), "--identity", str(self.identity)], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("schema_contract.families[0] digest disagrees with data_files", result.stderr)
+
+    def test_identity_carries_result_pointer_validator_and_schema_engine(self) -> None:
+        self.prepare()
+        data_files = json.loads(self.identity.read_text(encoding="utf-8"))["data_files"]
+        self.assertTrue(
+            {"scripts/artifact_schema.py", "scripts/validate_result_pointers.py"}.issubset(data_files)
+        )
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        extracted = self.root / "pointer-validator"
+        extracted.mkdir()
+        with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
+            archive.extractall(extracted, filter="data")
+        source_index = json.loads((self.root / "result-pointers/index.json").read_text(encoding="utf-8"))
+        extracted_index = json.loads((extracted / "result-pointers/index.json").read_text(encoding="utf-8"))
+        self.assertEqual(extracted_index, source_index)
+        result = subprocess.run(
+            [sys.executable, str(extracted / "scripts/validate_result_pointers.py")],
+            cwd=extracted,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(
+            result.stdout.strip(),
+            f"validate-result-pointers: {len(source_index['entries'])} pointer(s)",
+        )
+
+    def test_bundled_pointer_validator_runs_on_an_empty_fixture(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        extracted = self.root / "pointer-validator-source"
+        extracted.mkdir()
+        with tarfile.open(next(dist.glob("*_data.tar.gz")), "r:gz") as archive:
+            archive.extractall(extracted, filter="data")
+        fixture = self.root / "empty-pointer-fixture"
+        (fixture / "scripts").mkdir(parents=True)
+        (fixture / "schemas").mkdir(parents=True)
+        shutil.copyfile(extracted / "scripts/artifact_schema.py", fixture / "scripts/artifact_schema.py")
+        shutil.copyfile(extracted / "scripts/validate_result_pointers.py", fixture / "scripts/validate_result_pointers.py")
+        shutil.copyfile(
+            extracted / "schemas/result-pointer-v1.schema.json",
+            fixture / "schemas/result-pointer-v1.schema.json",
+        )
+        pointers_root = fixture / "result-pointers"
+        pointers_root.mkdir()
+        (pointers_root / "README.md").write_text("Listing is not approval.\n", encoding="utf-8")
+        (pointers_root / "index.json").write_text(
+            json.dumps(pointers.empty_index(), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, str(fixture / "scripts/validate_result_pointers.py")],
+            cwd=fixture,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), "validate-result-pointers: 0 pointer(s)")
 
     def test_identity_rejects_changed_corpus_version(self) -> None:
         self.prepare()

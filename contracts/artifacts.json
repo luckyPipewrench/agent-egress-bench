@@ -504,6 +504,31 @@
       ],
       "source_versions": [],
       "gate": "make check-contracts"
+    },
+    {
+      "family": "result_pointer",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/result-pointer-v1.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "active",
+          "path": "schemas/result-pointer-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/result-pointer-v1.schema.json"
+        }
+      ],
+      "writer": [
+        "result-pointers/"
+      ],
+      "reader": [
+        "scripts/validate_result_pointers.py"
+      ],
+      "source_versions": [],
+      "gate": "make check-contracts"
     }
   ],
   "retained_public_records": {
