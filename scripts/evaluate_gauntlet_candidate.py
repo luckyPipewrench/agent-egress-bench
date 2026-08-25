@@ -276,12 +276,65 @@ def _case_labels(entry, case_id):
     return transport, category, tags
 
 
+RESULT_STATES = frozenset(
+    {
+        "observed",
+        "unreachable",
+        "adapter_error",
+        "delivery_unavailable",
+        "verdict_unobservable",
+        "invalid_verdict",
+    }
+)
+
+
+def _validate_result_measurement(row, expected, case_id):
+    """Refuse a row whose score, state, or verdict cannot be a measurement.
+
+    The aggregate counts below are derived from these rows, so a row that
+    claims a passing score against the opposite verdict, or an observed
+    state with no verdict, would inflate containment or hide a failure
+    while every aggregate still reconciled.
+    """
+    actual = row.get("actual_verdict")
+    score = row.get("score")
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict):
+        raise ValueError(f"result {case_id!r} evidence must be an object")
+    # Historical frozen evidence, not an active result state. Keep it so v5
+    # evidence reconstructs, but only with its single valid score pairing.
+    if actual == "not_applicable":
+        if score != "not_applicable":
+            raise ValueError(f"result {case_id!r} not-applicable result is inconsistent")
+        return
+    state = evidence.get("result_state")
+    if not isinstance(state, str) or state not in RESULT_STATES:
+        raise ValueError(f"result {case_id!r} has invalid or missing evidence.result_state")
+    if state == "observed":
+        if actual not in {"allow", "block"} or score not in {"pass", "fail"}:
+            raise ValueError(f"result {case_id!r} observed result is not a measurement")
+        if score == "pass" and actual != expected:
+            raise ValueError(f"result {case_id!r} observed pass result does not match expected_verdict")
+        return
+    if state == "unreachable" and (actual != "unreachable" or score != "error"):
+        raise ValueError(f"result {case_id!r} unreachable result is inconsistent")
+    if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
+        raise ValueError(f"result {case_id!r} unobserved failure result is inconsistent")
+
+
 def recompute_v5_measurements(case_index_path, results_path, scoring_version):
     """Derive promotion measurements from the bound case index and raw result rows."""
     case_index = load_object(case_index_path)
     if case_index.get("schema_version") not in {2, 3} or not isinstance(case_index.get("cases"), dict):
         raise ValueError("v5 metric recomputation requires a case-index-v2 or v3 object")
     indexed = case_index["cases"]
+    for case_id, entry in indexed.items():
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError("case index has an invalid case ID")
+        if not isinstance(entry, dict):
+            raise ValueError(f"case index entry {case_id!r} must be an object")
+        if entry.get("expected_verdict") not in {"allow", "block"}:
+            raise ValueError(f"case index entry {case_id!r} has an invalid expected_verdict")
     rows = []
     with results_path.open(encoding="utf-8") as handle:
         for row_number, line in enumerate(handle, 1):
@@ -327,6 +380,7 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
             raise ValueError(f"result {row['case_id']!r} expected_verdict does not match the case index")
         if row.get("actual_verdict") not in {"block", "allow", "not_applicable", "unreachable", "error"}:
             raise ValueError(f"result {row['case_id']!r} has an invalid actual_verdict")
+        _validate_result_measurement(row, expected, row["case_id"])
 
     unreachable = [row for row in rows if row["actual_verdict"] == "unreachable"]
     applicable = [row for row in rows if row["actual_verdict"] not in {"not_applicable", "unreachable"}]

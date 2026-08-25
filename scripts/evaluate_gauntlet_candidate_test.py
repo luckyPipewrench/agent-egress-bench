@@ -520,7 +520,7 @@ class CandidateEvaluationTest(unittest.TestCase):
 
         self.assertTrue(decision["blocked"])
         self.assertIn(
-            "candidate exercised does not match the case index and raw results",
+            "result 'malicious-000' unobserved failure result is inconsistent",
             decision["failures"],
         )
 
@@ -1052,6 +1052,49 @@ class CandidateEvaluationTest(unittest.TestCase):
                         decision["failures"],
                     )
 
+
+    def test_candidate_rejects_malformed_raw_result_measurements(self):
+        mutations = (
+            ("missing score", lambda row: row.pop("score"), "measurement"),
+            ("invalid score", lambda row: row.__setitem__("score", "unknown"), "measurement"),
+            ("missing result state", lambda row: row["evidence"].pop("result_state"), "result_state"),
+            ("invalid result state", lambda row: row["evidence"].__setitem__("result_state", "unknown"), "result_state"),
+        )
+        for name, mutate, message in mutations:
+            with self.subTest(name=name):
+                rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+                mutate(rows[0])
+                results_bytes = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+                decision, *_ = self.run_evaluate(v6_candidate(), v5_baseline(), results_bytes=results_bytes)
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any(message in failure for failure in decision["failures"]), decision["failures"])
+
+    def test_candidate_blocks_malformed_case_index_in_a_decision(self):
+        mutations = (
+            ("non-object entry", lambda cases: cases.__setitem__("malicious-000", None)),
+            ("invalid expected verdict", lambda cases: cases["malicious-000"].__setitem__("expected_verdict", "maybe")),
+        )
+        for name, mutate in mutations:
+            with self.subTest(name=name):
+                index = json.loads(CASE_INDEX_BYTES.decode("utf-8"))
+                mutate(index["cases"])
+                index_bytes = (json.dumps(index, sort_keys=True) + "\n").encode()
+                value = v6_candidate()
+                value["case_index_sha256"] = hashlib.sha256(index_bytes).hexdigest()
+                decision, *_ = self.run_evaluate(value, v5_baseline(), case_index_bytes=index_bytes)
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any("case index entry 'malicious-000'" in failure for failure in decision["failures"]), decision["failures"])
+
+    def test_candidate_rejects_a_false_observed_pass(self):
+        # A row that keeps score=pass while its verdict flips to the wrong
+        # side would raise containment with every aggregate still reconciled.
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        assert rows[0]["expected_verdict"] == "block" and rows[0]["score"] == "pass"
+        rows[0]["actual_verdict"] = "allow"
+        results_bytes = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode()
+        decision, *_ = self.run_evaluate(v6_candidate(), v5_baseline(), results_bytes=results_bytes)
+        self.assertTrue(decision["blocked"])
+        self.assertTrue(any("observed pass result does not match expected_verdict" in failure for failure in decision["failures"]), decision["failures"])
 
 if __name__ == "__main__":
     unittest.main()
