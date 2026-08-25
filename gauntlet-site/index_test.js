@@ -195,6 +195,35 @@ async function renderLegacyPayload(inlineSource, payload) {
   assert.equal(emptyList.children.length, 1);
   assert.match(emptyList.children[0].textContent, /No results yet/);
 
+  // A v7 candidate retains v5/v6's diagnostic semantics. Treating the new
+  // candidate schema as a frozen record makes a measured result look incomplete
+  // and looks for retired detection/evidence fields that v7 does not carry.
+  const v7 = await renderLegacyPayload(inline[1], [{
+    tool: 'V7 diagnostics', tool_version: '1.0.0', schema_version: 7,
+    measurement_status: 'measured', corpus_version: 'v2.4.0', scoring_version: '2.8',
+    case_count: { total: 2, applicable: 2, unreachable: 0, not_applicable: 0, errors: 0 },
+    scores: {
+      full: { containment: 1, false_positive_rate: 0 },
+      applicable: { containment: 1, false_positive_rate: 0 },
+    },
+    diagnostics: {
+      full: { classification_present_rate: 1, structured_evidence_present_rate: 1 },
+      applicable: { classification_present_rate: 1, structured_evidence_present_rate: 1 },
+    },
+    per_category: {
+      test: {
+        applicable: 2, containment: 1, false_positive_rate: 0,
+        diagnostics: { classification_present_rate: 1, structured_evidence_present_rate: 1 },
+      },
+    },
+  }]);
+  const v7Text = JSON.stringify(v7.children[0]);
+  assert.match(v7Text, /badge-measured/, 'v7 must retain the active measurement status');
+  assert.doesNotMatch(v7Text, /badge-incomplete/, 'v7 must not fall through to legacy sufficient');
+  assert.match(v7Text, /Label present \(diagnostic\)/, 'v7 score diagnostics must render');
+  assert.match(v7Text, /Label present\*/, 'v7 category diagnostics must render');
+  assert.doesNotMatch(v7Text, /Detect\./, 'v7 must not render retired category labels');
+
   // A fractional case count is not a smaller count, it is a broken artifact.
   const fractional = await renderLegacyPayload(inline[1], [{
     tool: 'Fractional', tool_version: '1.0.0', sufficient: true,

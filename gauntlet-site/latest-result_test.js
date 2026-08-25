@@ -299,6 +299,56 @@ function fetcher(pointerValue = pointer, recordText = artifactText, recordManife
   assert.equal(v6Loaded._failedCases[0].actual_verdict, 'block');
   assert.deepEqual(v6Loaded._assurances, ['self-run', 'artifact-validated']);
 
+  // Schema v7 keeps the registry and row-bound evidence contract from v6 while
+  // adding per-category measurements. A valid v7 record must reach the page
+  // with the same digest-bound failed-case data.
+  const v7Artifact = {
+    ...v6Artifact,
+    schema_version: 7,
+    per_category: {
+      url: {
+        applicable: 2,
+        containment: 1,
+        false_positive_rate: 0,
+        diagnostics: {
+          classification_present_rate: 1,
+          structured_evidence_present_rate: 1,
+        },
+      },
+    },
+  };
+  const v7ArtifactText = JSON.stringify(v7Artifact) + '\n';
+  const v7Digest = nodeCrypto.createHash('sha256').update(v7ArtifactText).digest('hex');
+  const v7Manifest = {
+    ...v6Manifest,
+    candidate_sha256: v7Digest,
+    files: { ...v6Manifest.files, 'continuous-gauntlet-pipelock.json': v7Digest },
+  };
+  const v7ManifestText = JSON.stringify(v7Manifest) + '\n';
+  const v7Pointer = {
+    ...v6Pointer,
+    candidate_sha256: v7Digest,
+    record_manifest_sha256: nodeCrypto.createHash('sha256').update(v7ManifestText).digest('hex'),
+    record_path: './results/pipelock/' + v7Digest + '/continuous-gauntlet-pipelock.json',
+    record_manifest_path: './results/pipelock/' + v7Digest + '/record-manifest.json',
+  };
+  const v7Fetch = async (url) => {
+    const prefix = './results/pipelock/' + v7Digest + '/';
+    if (url === './latest-verified.json') return response(JSON.stringify(v7Pointer));
+    if (url === v7Pointer.record_manifest_path) return response(v7ManifestText);
+    if (url === v7Pointer.record_path) return response(v7ArtifactText);
+    if (url === prefix + 'capability-registry.json') return response(snapshotText);
+    if (url === prefix + 'tool-profile.json') return response(profileText);
+    if (url === prefix + 'results.jsonl') return response(v6ResultsText);
+    if (url === prefix + 'case-index.json') return response(v6CaseIndexText);
+    if (url === prefix + 'corpus-manifest.txt') return response(v6CorpusManifestText);
+    return response('', 404);
+  };
+  const v7Loaded = await window.loadLatestVerifiedResult('./latest-verified.json', v7Fetch, crypto);
+  assert.equal(v7Loaded.schema_version, 7);
+  assert.equal(v7Loaded._failedCases.length, 1);
+  assert.equal(v7Loaded._failedCases[0].case_id, 'url-attack-001');
+
   async function assertV6ResultsRejected(resultsText, pattern) {
     const resultsManifest = {
       ...v6Manifest,

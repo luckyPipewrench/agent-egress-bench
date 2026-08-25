@@ -5,6 +5,14 @@
 (function(root) {
   'use strict';
 
+  function isActiveCandidateSchema(schemaVersion) {
+    return schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7;
+  }
+
+  function hasBoundResultRows(schemaVersion) {
+    return schemaVersion === 6 || schemaVersion === 7;
+  }
+
   function scopeValue(artifact, path) {
     var value = artifact;
     for (var i = 0; i < path.length; i++) {
@@ -135,20 +143,20 @@
     if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
       throw new Error('artifact must be an object');
     }
-    if ((artifact.schema_version === 4 || artifact.schema_version === 5 || artifact.schema_version === 6) && (!artifact._capabilityRegistry ||
+    if (isActiveCandidateSchema(artifact.schema_version) && (!artifact._capabilityRegistry ||
         artifact._capabilityRegistry.id !== scopeValue(artifact, ['capability_registry', 'id']))) {
       throw new Error('active artifact is uninterpretable without its verified capability registry snapshot');
     }
 
     nonEmptyString(scopeValue(artifact, ['artifact_id']), 'artifact_id');
     validateManifestDigest(scopeValue(artifact, ['corpus_manifest_sha256']), 'corpus_manifest_sha256');
-    if (artifact.schema_version === 5 || artifact.schema_version === 6) {
+    if (artifact.schema_version === 5 || artifact.schema_version === 6 || artifact.schema_version === 7) {
       validateManifestDigest(
         scopeValue(artifact, ['benchmark_manifest_sha256']),
         'benchmark_manifest_sha256'
       );
     }
-    if (artifact.schema_version === 6) {
+    if (hasBoundResultRows(artifact.schema_version)) {
       nonEmptyString(scopeValue(artifact, ['method_repository']), 'method_repository');
       var repositoryParts = artifact.method_repository.split('/');
       if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(artifact.method_repository) ||
@@ -190,7 +198,7 @@
       throw new Error('case_count.applicable, unreachable, and not_applicable must equal case_count.total');
     }
     var measurementStatus;
-    if (artifact.schema_version === 4 || artifact.schema_version === 5 || artifact.schema_version === 6) {
+    if (isActiveCandidateSchema(artifact.schema_version)) {
       measurementStatus = scopeValue(artifact, ['measurement_status']);
       if (measurementStatus !== 'measured' && measurementStatus !== 'incomplete') {
         throw new Error('measurement_status must be measured or incomplete');
@@ -252,19 +260,19 @@
     }
     var retainedNotApplicableMalicious =
       fullContainmentCounts.denominator - containmentCounts.denominator;
-    if (artifact.schema_version === 6 && retainedNotApplicableMalicious > notApplicable) {
+    if (hasBoundResultRows(artifact.schema_version) && retainedNotApplicableMalicious > notApplicable) {
       throw new Error('full containment denominator gap exceeds retained not-applicable cases');
     }
-    // Schema 6 is rebuilt from retained rows. The producer uses the same
+    // Schemas 6 and 7 are rebuilt from retained rows. The producer uses the same
     // observed blocked-malicious count for both scopes and changes only the
     // denominator by retaining historical N/A rows in the full view. Without
     // this binding, a digest-valid artifact could claim a perfect full-corpus
     // headline directly above applicable failures that contradict it.
-    if (artifact.schema_version === 6 &&
+    if (hasBoundResultRows(artifact.schema_version) &&
         fullContainmentCounts.numerator !== containmentCounts.numerator) {
       throw new Error('full containment numerator must equal the applicable numerator');
     }
-    if (artifact.schema_version === 6 &&
+    if (hasBoundResultRows(artifact.schema_version) &&
         fullFalsePositiveCounts.numerator !== falsePositiveCounts.numerator) {
       throw new Error('full false-positive numerator must equal the applicable numerator');
     }
@@ -373,7 +381,7 @@
     title.className = 'section-label failure-title';
     title.textContent = 'Failed cases';
     block.appendChild(title);
-    if (artifact.schema_version !== 6) {
+    if (!hasBoundResultRows(artifact.schema_version)) {
       var unavailable = document.createElement('div');
       unavailable.className = 'failure-context';
       unavailable.textContent = 'Per-case loss details were not retained in this frozen result format.';
@@ -476,18 +484,18 @@
     validateScope(artifact);
     var block = document.createElement('div');
     block.className = 'exercised-coverage';
-    if (artifact.schema_version !== 4 && artifact.schema_version !== 5 && artifact.schema_version !== 6) {
+    if (!isActiveCandidateSchema(artifact.schema_version)) {
       block.textContent = 'Exercised-control coverage: not recorded in this frozen result.';
       return block;
     }
     var transports = sortedStringSet(scopeValue(artifact, ['exercised', 'transports']), 'exercised.transports');
     var categories = sortedStringSet(scopeValue(artifact, ['exercised', 'categories']), 'exercised.categories');
     var tags = sortedStringSet(scopeValue(artifact, ['exercised', 'capability_tags']), 'exercised.capability_tags');
-    // Only a v6 artifact has had this object re-derived from the raw rows and
+    // Only v6 and v7 artifacts have had this object re-derived from the raw rows and
     // the pinned case index, by the builder and again by the promotion gate. An
     // earlier artifact carries whatever its runner recorded, and saying "from
     // observed rows" there would claim a derivation nothing performed.
-    var origin = artifact.schema_version === 6
+    var origin = hasBoundResultRows(artifact.schema_version)
       ? 'Exercised-control coverage from observed rows: transports '
       : 'Exercised-control coverage as recorded by the runner: transports ';
     block.textContent = origin +

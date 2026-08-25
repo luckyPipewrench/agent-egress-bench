@@ -62,6 +62,14 @@
       left.revision === right.revision && left.sha256 === right.sha256;
   }
 
+  function isActiveCandidateSchema(schemaVersion) {
+    return schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7;
+  }
+
+  function hasBoundResultRows(schemaVersion) {
+    return schemaVersion === 6 || schemaVersion === 7;
+  }
+
   async function responseBytes(response, label, resource) {
     if (!response.ok) {
       var error = new Error(label + ' returned HTTP ' + response.status);
@@ -320,9 +328,9 @@
       value: pointer.assurances ? pointer.assurances.slice() : [], enumerable: false,
     });
     // V2 records predate registry bytes and remain readable as frozen history.
-    // A supported v4/v5/v6 result is not rendered until its pinned raw profile and raw
+    // A supported active result is not rendered until its pinned raw profile and raw
     // registry snapshot have both been fetched and bound to the candidate.
-    if (artifact.schema_version === 4 || artifact.schema_version === 5 || artifact.schema_version === 6) {
+    if (isActiveCandidateSchema(artifact.schema_version)) {
       var reference = registryReference(artifact.capability_registry);
       if (!artifact.tool_profile_sha256 || !SHA256.test(artifact.tool_profile_sha256)) {
         throw new Error('active result has no valid tool_profile_sha256');
@@ -367,7 +375,7 @@
       Object.defineProperty(artifact, '_capabilityRegistry', { value: snapshot, enumerable: false });
       Object.defineProperty(artifact, '_capabilityLabels', { value: entries, enumerable: false });
       Object.defineProperty(artifact, '_exercisedCapabilityTags', { value: exercisedTags, enumerable: false });
-      if (artifact.schema_version === 6) {
+      if (hasBoundResultRows(artifact.schema_version)) {
         var resultsBytes = await boundRecordFile(prefix, 'results.jsonl', manifest, fetchImpl, cryptoImpl);
         var caseIndexBytes = await boundRecordFile(prefix, 'case-index.json', manifest, fetchImpl, cryptoImpl);
         var corpusManifestBytes = await boundRecordFile(prefix, 'corpus-manifest.txt', manifest, fetchImpl, cryptoImpl);
@@ -377,7 +385,7 @@
         });
       }
     } else if (artifact.schema_version !== 2) {
-      throw new Error('result record must be frozen schema v2 or supported schema v4/v5/v6');
+      throw new Error('result record must be frozen schema v2 or supported active schema');
     }
     return artifact;
   }

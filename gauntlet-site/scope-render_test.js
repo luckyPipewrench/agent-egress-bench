@@ -195,6 +195,34 @@ assert.equal(failures.children[2].children[0].children[0].textContent, 'url-atta
 assert.match(failures.children[2].children[0].children[0].href, /cases\/MANIFEST\.txt#L1$/);
 assert.equal(failures.children[2].children[0].children[1].textContent, ': expected block, observed allow.');
 
+// Candidate schema v7 adds per-category measurements but keeps the v6 evidence
+// binding and active-result semantics. It must retain the verified scope,
+// failed-case, and exercised-coverage views rather than falling through to the
+// frozen-record path.
+const activeV7Failures = JSON.parse(JSON.stringify(activeV6Failures));
+activeV7Failures.schema_version = 7;
+activeV7Failures.per_category = {
+  url: {
+    applicable: 2,
+    containment: 0.5,
+    false_positive_rate: 0,
+    diagnostics: {
+      classification_present_rate: 1,
+      structured_evidence_present_rate: 1,
+    },
+  },
+};
+assert.match(window.renderGauntletScope(activeV7Failures).children[0].textContent,
+  /Containment 33\.3% of 3 malicious cases/);
+assert.equal(window.renderGauntletFailures(activeV7Failures).children[2].children[0].children[0].textContent,
+  'url-attack-001');
+assert.equal(
+  window.renderGauntletControlCoverage(activeV7Failures).textContent.startsWith(
+    'Exercised-control coverage from observed rows:'
+  ),
+  true
+);
+
 // A malicious case can block and still fail: a budget block only passes when
 // timing evidence proves it landed on the first over-budget call. The producer
 // counts that row as contained, so it belongs in the loss list WITHOUT widening
