@@ -30,6 +30,8 @@ Each release contains:
 - `runner-image.ref` with the full digest-pinned OCI image reference.
 - GitHub Artifact Attestations for every release asset.
 
+The platform archives are the bench tools (`aeb-gauntlet` and `aeb-validate`). The official Pipelock Gauntlet entrypoint is `scripts/run-pipelock-gauntlet.sh`, and that script is Linux-only: it downloads Linux Pipelock assets, uses Landlock and seccomp, and refuses any other kernel with `the portable Pipelock runner currently supports Linux only`. A macOS archive lets you inspect cases and validate saved artifacts on that host. It does not mean the full Pipelock Gauntlet runs on a Mac.
+
 ## Verify a downloaded release
 
 Pick the immutable release tag that a result cites and use that same tag in every command below. This example uses `v0.1.0` only as a command shape. It does not refer to a published release.
