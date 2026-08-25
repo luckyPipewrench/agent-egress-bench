@@ -77,7 +77,7 @@ class CheckContractsTest(unittest.TestCase):
         manifest = ROOT / "contracts" / "artifacts.json"
         families = json.loads(manifest.read_text(encoding="utf-8"))["artifact_families"]
         self.assertEqual(
-            {"promoted_record", "promotion_baseline", "provenance_candidate"},
+            {"promoted_record", "promotion_baseline", "provenance_candidate", "result_pointer"},
             {family["family"] for family in families if not family["source_versions"]},
         )
         check_contracts.check(ROOT, manifest)

@@ -1,4 +1,4 @@
-.PHONY: check-test-layout preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
+.PHONY: check-test-layout preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site check-result-pointers test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -19,7 +19,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-test-layout check-contracts check-schema-catalog check-schema-discovery-feed check-public-contracts check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-claim-language check-readme-categories
+preflight: check-test-layout check-contracts check-schema-catalog check-schema-discovery-feed check-public-contracts check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-result-pointers check-claim-language check-readme-categories
 
 # A test module that defines a class BELOW its __main__ guard still reports success:
 # under direct execution those classes do not exist yet when unittest.main() collects,
@@ -139,6 +139,10 @@ test-runner-image:
 # Reject documentation that makes a claim the method cannot support, and keep
 # docs/RESULTS-USE.md defining the assurance labels and the adverse-result
 # permission it grants.
+check-result-pointers:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_result_pointers_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_result_pointers.py
+
 check-claim-language:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_claim_language_test.py
 	@python3 scripts/check_claim_language.py

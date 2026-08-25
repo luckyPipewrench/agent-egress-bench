@@ -147,6 +147,7 @@ These constraints bind this repository and its maintainer, not just outside publ
 
 - no ranking, leaderboard, or cross-tool comparison table in this repository;
 - no maintainer-awarded verification mark, badge, or pass label attached to somebody else's result;
+- listing an unwithdrawn [`result-pointers/`](../result-pointers/) entry means the pointer validated, not that the maintainer approved the product or the score; a withdrawn entry remains listed as historical evidence and is not fetched;
 - no private preview of an adverse result to the affected vendor before publication;
 - no retroactive scoring change to move a published number. Scoring changes get a version.
 

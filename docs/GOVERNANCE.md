@@ -90,6 +90,7 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Case index | 3 | 1, 2, 3 | 1, 2 | [`case-index-v3.schema.json`](../schemas/case-index-v3.schema.json) |
 | Promoted record | 2 | 1, 2 | 1 | [`promoted-record-v2.schema.json`](../schemas/promoted-record-v2.schema.json) |
 | Promotion baseline | 1 | 1 | 1 | [`promotion-baseline-v1.schema.json`](../schemas/promotion-baseline-v1.schema.json) |
+| Result pointer | 1 | 1 | none | [`result-pointer-v1.schema.json`](../schemas/result-pointer-v1.schema.json) |
 
 Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows retain frozen v4 and v5 beside active v6; summaries retain frozen v4 beside active v5. Provenance candidates retain every accepted version beside active v6. A path can't silently retarget a historical contract, and the repository provides no unsuffixed compatibility aliases.
 

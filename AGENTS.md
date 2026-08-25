@@ -30,6 +30,7 @@ agent-egress-bench is a public, tool-neutral corpus for testing AI agent egress 
 | Receipt-scoring profiles | [`docs/RECEIPT-SCORING.md`](docs/RECEIPT-SCORING.md) |
 | Capability labels | [`docs/CAPABILITY-VOCABULARY.md`](docs/CAPABILITY-VOCABULARY.md) |
 | Public result claims | [`docs/RESULTS-USE.md`](docs/RESULTS-USE.md) |
+| External result pointers | [`result-pointers/README.md`](result-pointers/README.md) |
 
 Do not copy field lists, enum values, version numbers, profile fields, or scoring rules into this file. Update the owner document and its executable gate.
 

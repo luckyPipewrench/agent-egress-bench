@@ -37,7 +37,7 @@ Run your runner and save the JSONL output. How you share results is up to you. S
 - A separate GitHub repo with versioned results (tagged per tool version)
 - A blog post walking through your results
 
-**Do not submit Gauntlet results to this repo.** This repo contains attack cases, scoring methodology, and optional receipt profiles under `profiles/`. There is no in-repo results table and no maintainer-awarded mark. Each vendor publishes and owns its own results.
+**Do not submit result bytes to this repo.** Host the evidence yourself. You may open a pull request that adds a pointer under [`result-pointers/`](../result-pointers/). Admission is mechanical: the object matches the closed schema and the bytes at the URL match the declared digest. Listing is not approval, a rank, or a maintainer-awarded mark.
 
 Label the run and publish every identifying fact required by [RESULTS-USE.md](RESULTS-USE.md).
 The [operator kit](../examples/operator-kit/) provides the custody checklist and report template. Use it before execution so target identity, configuration, clocks, and artifact ownership aren't reconstructed from memory afterward.
