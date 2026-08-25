@@ -14,7 +14,8 @@ runs at pull-request preflight. It is not a later availability guarantee.
 A consumer that needs current bytes fetches and hashes them.
 
 Do not put result JSONL, summaries, or scores in this repository. Submit a
-pointer pull request.
+pointer pull request. The admission checker fetches evidence only to hash it
+and does not write those bytes into this repository.
 
 The listing is append-only. Adding a pointer is allowed. An existing pointer
 cannot be deleted, and its evidence identity cannot be rewritten. To withdraw a
