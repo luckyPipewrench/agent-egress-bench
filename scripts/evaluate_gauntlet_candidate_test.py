@@ -491,8 +491,11 @@ class CandidateEvaluationTest(unittest.TestCase):
                     "denominator": 156,
                 }
         value["per_category"]["test"]["containment"] = 156 / 157
+        policy = v5_baseline()
+        policy["score_floors"]["full"]["containment"] = 156 / 158
+        policy["score_floors"]["applicable"]["containment"] = 156 / 157
 
-        decision, *_ = self.run_evaluate(value, v5_baseline(), results_bytes=results_bytes)
+        decision, *_ = self.run_evaluate(value, policy, results_bytes=results_bytes)
 
         self.assertTrue(decision["blocked"])
         self.assertIn(
