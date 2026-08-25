@@ -62,6 +62,16 @@ V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
 V5_DIAGNOSTIC_FIELDS = frozenset(
     {"classification_present_rate", "structured_evidence_present_rate"}
 )
+RESULT_STATES = frozenset(
+    {
+        "observed",
+        "unreachable",
+        "adapter_error",
+        "delivery_unavailable",
+        "verdict_unobservable",
+        "invalid_verdict",
+    }
+)
 
 
 def load_object(path):
@@ -276,6 +286,31 @@ def _case_labels(entry, case_id):
     return transport, category, tags
 
 
+def _validate_result_measurement(row, case_id):
+    """Refuse a row whose score or result state cannot be a measurement."""
+    actual = row.get("actual_verdict")
+    score = row.get("score")
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict):
+        raise ValueError(f"result {case_id!r} evidence must be an object")
+    # This is historical frozen evidence, not an active result state. Retain
+    # it so v5 evidence can be reconstructed, while requiring its only valid
+    # score pairing before it can affect the derived counts.
+    if actual == "not_applicable":
+        if score != "not_applicable":
+            raise ValueError(f"result {case_id!r} not-applicable result is inconsistent")
+        return
+    state = evidence.get("result_state")
+    if not isinstance(state, str) or state not in RESULT_STATES:
+        raise ValueError(f"result {case_id!r} has invalid or missing evidence.result_state")
+    if state == "observed" and (actual not in {"allow", "block"} or score not in {"pass", "fail"}):
+        raise ValueError(f"result {case_id!r} observed result is not a measurement")
+    if state == "unreachable" and (actual != "unreachable" or score != "error"):
+        raise ValueError(f"result {case_id!r} unreachable result is inconsistent")
+    if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
+        raise ValueError(f"result {case_id!r} unobserved failure result is inconsistent")
+
+
 def recompute_v5_measurements(case_index_path, results_path, scoring_version):
     """Derive promotion measurements from the bound case index and raw result rows."""
     case_index = load_object(case_index_path)
@@ -298,6 +333,19 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
         raise ValueError("results contain duplicate case IDs")
     if set(ids) != set(indexed):
         raise ValueError("results case IDs do not match the case index")
+    expected_by_case_id = {}
+    labels_by_case_id = {}
+    for case_id, entry in indexed.items():
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError("case index has an invalid case ID")
+        if not isinstance(entry, dict):
+            raise ValueError(f"case index entry {case_id!r} must be an object")
+        expected = entry.get("expected_verdict")
+        if expected not in {"allow", "block"}:
+            raise ValueError(f"case index entry {case_id!r} has an invalid expected_verdict")
+        expected_by_case_id[case_id] = expected
+        if case_index["schema_version"] == 3:
+            labels_by_case_id[case_id] = _case_labels(entry, case_id)
     active_rows_seen = any(row.get("schema_version") == 6 for row in rows)
     if active_rows_seen:
         for row in rows:
@@ -322,11 +370,12 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
             raise ValueError(
                 f"result {row['case_id']!r} scoring_version does not match the candidate"
             )
-        expected = indexed[row["case_id"]].get("expected_verdict")
+        expected = expected_by_case_id[row["case_id"]]
         if row.get("expected_verdict") != expected:
             raise ValueError(f"result {row['case_id']!r} expected_verdict does not match the case index")
         if row.get("actual_verdict") not in {"block", "allow", "not_applicable", "unreachable", "error"}:
             raise ValueError(f"result {row['case_id']!r} has an invalid actual_verdict")
+        _validate_result_measurement(row, row["case_id"])
 
     unreachable = [row for row in rows if row["actual_verdict"] == "unreachable"]
     applicable = [row for row in rows if row["actual_verdict"] not in {"not_applicable", "unreachable"}]
@@ -371,15 +420,17 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
     per_category = None
     if case_index["schema_version"] == 3:
         observed = [row for row in rows if _observed_row(row)]
-        labels = [_case_labels(indexed[row["case_id"]], row["case_id"]) for row in observed]
+        labels = [labels_by_case_id[row["case_id"]] for row in observed]
         exercised = {
             "transports": sorted({transport for transport, _, _ in labels}),
             "categories": sorted({category for _, category, _ in labels}),
             "capability_tags": sorted({tag for _, _, tags in labels for tag in tags}),
         }
         per_category = {}
-        for category in sorted({indexed[row["case_id"]]["category"] for row in applicable}):
-            category_rows = [row for row in applicable if indexed[row["case_id"]]["category"] == category]
+        for category in sorted({labels_by_case_id[row["case_id"]][1] for row in applicable}):
+            category_rows = [
+                row for row in applicable if labels_by_case_id[row["case_id"]][1] == category
+            ]
             malicious_rows = [row for row in category_rows if row["expected_verdict"] == "block"]
             benign_rows = [row for row in category_rows if row["expected_verdict"] == "allow"]
             blocked_rows = [row for row in malicious_rows if row["actual_verdict"] == "block"]

@@ -423,6 +423,67 @@ class CandidateEvaluationTest(unittest.TestCase):
         self.assertTrue(rejected["blocked"])
         self.assertTrue(any("per_category does not match" in failure for failure in rejected["failures"]))
 
+    def test_v7_candidate_rejects_malformed_raw_result_measurements(self):
+        mutations = (
+            ("missing score", lambda row: row.pop("score"), "measurement"),
+            ("invalid score", lambda row: row.__setitem__("score", "unknown"), "measurement"),
+            (
+                "missing result state",
+                lambda row: row["evidence"].pop("result_state"),
+                "result_state",
+            ),
+            (
+                "invalid result state",
+                lambda row: row["evidence"].__setitem__("result_state", "unknown"),
+                "result_state",
+            ),
+        )
+        for name, mutate, message in mutations:
+            with self.subTest(name=name):
+                rows = [
+                    json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()
+                ]
+                mutate(rows[0])
+                results_bytes = "".join(
+                    json.dumps(row, sort_keys=True) + "\n" for row in rows
+                ).encode()
+                value = v7_candidate()
+                if "score" in name:
+                    for scope in ("full", "applicable"):
+                        for diagnostic in (
+                            "classification_present_rate",
+                            "structured_evidence_present_rate",
+                        ):
+                            value["diagnostic_counts"][scope][diagnostic] = {
+                                "numerator": 156,
+                                "denominator": 156,
+                            }
+
+                decision, *_ = self.run_evaluate(value, v5_baseline(), results_bytes=results_bytes)
+
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any(message in failure for failure in decision["failures"]))
+
+    def test_v7_candidate_blocks_malformed_case_index_in_a_decision(self):
+        mutations = (
+            ("non-object entry", lambda cases: cases.__setitem__("malicious-000", None)),
+            ("missing category", lambda cases: cases["malicious-000"].pop("category")),
+        )
+        for name, mutate in mutations:
+            with self.subTest(name=name):
+                index = json.loads(CASE_INDEX_BYTES.decode("utf-8"))
+                mutate(index["cases"])
+                index_bytes = (json.dumps(index, sort_keys=True) + "\n").encode()
+                value = v7_candidate()
+                value["case_index_sha256"] = hashlib.sha256(index_bytes).hexdigest()
+
+                decision, *_ = self.run_evaluate(
+                    value, v5_baseline(), case_index_bytes=index_bytes
+                )
+
+                self.assertTrue(decision["blocked"])
+                self.assertTrue(any("case index entry 'malicious-000'" in failure for failure in decision["failures"]))
+
     def test_v6_result_rows_must_match_candidate_scoring_version(self):
         rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
         for row in rows:
@@ -547,7 +608,7 @@ class CandidateEvaluationTest(unittest.TestCase):
 
         self.assertTrue(decision["blocked"])
         self.assertIn(
-            "candidate exercised does not match the case index and raw results",
+            "result 'malicious-000' unobserved failure result is inconsistent",
             decision["failures"],
         )
 
