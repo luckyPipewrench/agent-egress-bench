@@ -102,16 +102,13 @@ A lab that keeps an artifact from tagged release N-1 and later opens it with a r
 
 Verify a downloaded release package against the tag that produced it. `python3 scripts/release_build.py verify --release-dir DIR --repo-root .` rebuilds `release-identity.json` from the checked-out tree and refuses a mismatch with `release identity disagrees with the checked-out source tree`. Pointing an N checkout at N-1 archives fails that check. It is not a schema-family read.
 
-Saved run artifacts are per family:
+Saved run artifacts are per family, and the accepted version list for every family is owned by [`contracts/artifacts.json`](../contracts/artifacts.json), not this page. The behavior is uniform: a reader either accepts the versions that manifest declares for it or refuses with a `schema_version` error that names the accepted versions and the value it got. Copying those version lists here has already drifted once, so this page states only the behaviors that are version-free:
 
-- Result JSONL: `aeb-validate results` accepts `schema_version` 4, 5, or 6. Any other value is refused with `schema_version must be 4, 5, or 6, got N`. Frozen v4 or v5 rows cannot share a file with active v6 rows (`frozen result rows cannot share a file with active schema_version 6 rows`).
-- Cases: the validator and scorer require `schema_version` 4 (`schema_version must be 4, got N`).
-- Tool profiles used for scoring: `aeb-validate profile` and the runner require `schema_version` 4 (`schema_version must be 4, got N` and `profile schema_version must be 4 for scoring, got N`). Control Evidence schema-valid still compiles the retained v1 profile schema so a historical package can keep validating against the contract it was recorded under. That path is not a scoring input.
-- Summaries: `aeb-gauntlet --report` still reads a v4 or v5 summary for some facts. Publication lockup requires v5 (`publication lockup requires a v5 summary`).
-- Receipt-scoring profiles: the current reader accepts 1, 3, 4, and 5. Other versions fail with `schema_version must be 5 for scoring, or a readable historical version, got N`.
-- Control Evidence: v0 and v1 are separate verifiers. A v1 verifier given a v0 requirement envelope fails closed with `requirement_payload_type_mismatch`. Historical v0 packages cannot be normalized into v1. Use the v0 verifier for v0 packages.
+- Frozen result rows cannot share a file with rows of the active result schema; the validator refuses the mixed file with `frozen result rows cannot share a file with active schema_version 6 rows` style errors that name both sides.
+- Control Evidence v0 and v1 are separate verifiers. A v1 verifier given a v0 requirement envelope fails closed with `requirement_payload_type_mismatch`, and historical v0 packages cannot be normalized into v1; use the v0 verifier for v0 packages.
+- Retained historical schemas keep validating the packages recorded under them, but a retained schema is never a scoring input.
 
-If release N does not bump a family, an N-1 artifact of that family still verifies under the same reader. If it does bump a family, keep the frozen reader that the current program actually implements, or expect the refusal string above.
+If release N does not bump a family, an N-1 artifact of that family still verifies under the same reader. If it does bump a family, keep the frozen reader that the current program actually implements, or expect the refusal error above.
 
 ## Contribution acceptance
 

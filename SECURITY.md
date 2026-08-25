@@ -12,7 +12,7 @@ Do not open a public issue for security vulnerabilities.
 
 ## Support
 
-Vulnerability reports belong in GitHub Security Advisories, as above. Questions about benchmark method, scoring, or case meaning can go in a public Issue; maintainers answer those on a best-effort basis. There is no SLA, and there is no private implementation support for an external lab's runner, adapter, or product.
+Vulnerability reports belong in GitHub Security Advisories, as above. General questions about benchmark method, scoring, or case meaning can go in a public Issue; maintainers answer those on a best-effort basis. A DISPUTE about scoring or method application goes to a GitHub Discussion instead, per [docs/GOVERNANCE.md](docs/GOVERNANCE.md). There is no SLA, and there is no private implementation support for an external lab's runner, adapter, or product.
 
 ## What Is NOT a Security Issue
 
