@@ -286,7 +286,7 @@ def _case_labels(entry, case_id):
     return transport, category, tags
 
 
-def _validate_result_measurement(row, case_id):
+def _validate_result_measurement(row, expected, case_id):
     """Refuse a row whose score or result state cannot be a measurement."""
     actual = row.get("actual_verdict")
     score = row.get("score")
@@ -305,6 +305,8 @@ def _validate_result_measurement(row, case_id):
         raise ValueError(f"result {case_id!r} has invalid or missing evidence.result_state")
     if state == "observed" and (actual not in {"allow", "block"} or score not in {"pass", "fail"}):
         raise ValueError(f"result {case_id!r} observed result is not a measurement")
+    if state == "observed" and score == "pass" and actual != expected:
+        raise ValueError(f"result {case_id!r} observed pass result does not match expected_verdict")
     if state == "unreachable" and (actual != "unreachable" or score != "error"):
         raise ValueError(f"result {case_id!r} unreachable result is inconsistent")
     if state not in {"observed", "unreachable"} and (actual != "error" or score != "error"):
@@ -375,7 +377,7 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
             raise ValueError(f"result {row['case_id']!r} expected_verdict does not match the case index")
         if row.get("actual_verdict") not in {"block", "allow", "not_applicable", "unreachable", "error"}:
             raise ValueError(f"result {row['case_id']!r} has an invalid actual_verdict")
-        _validate_result_measurement(row, row["case_id"])
+        _validate_result_measurement(row, expected, row["case_id"])
 
     unreachable = [row for row in rows if row["actual_verdict"] == "unreachable"]
     applicable = [row for row in rows if row["actual_verdict"] not in {"not_applicable", "unreachable"}]

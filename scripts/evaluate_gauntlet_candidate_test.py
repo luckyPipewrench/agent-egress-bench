@@ -464,6 +464,42 @@ class CandidateEvaluationTest(unittest.TestCase):
                 self.assertTrue(decision["blocked"])
                 self.assertTrue(any(message in failure for failure in decision["failures"]))
 
+    def test_v7_candidate_rejects_a_false_observed_pass(self):
+        rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+        rows[0]["actual_verdict"] = "allow"
+        results_bytes = "".join(
+            json.dumps(row, sort_keys=True) + "\n" for row in rows
+        ).encode()
+        value = v7_candidate()
+        value["metric_counts"]["full"]["containment"] = {
+            "numerator": 156,
+            "denominator": 158,
+        }
+        value["metric_counts"]["applicable"]["containment"] = {
+            "numerator": 156,
+            "denominator": 157,
+        }
+        value["scores"]["full"]["containment"] = 156 / 158
+        value["scores"]["applicable"]["containment"] = 156 / 157
+        for scope in ("full", "applicable"):
+            for diagnostic in (
+                "classification_present_rate",
+                "structured_evidence_present_rate",
+            ):
+                value["diagnostic_counts"][scope][diagnostic] = {
+                    "numerator": 156,
+                    "denominator": 156,
+                }
+        value["per_category"]["test"]["containment"] = 156 / 157
+
+        decision, *_ = self.run_evaluate(value, v5_baseline(), results_bytes=results_bytes)
+
+        self.assertTrue(decision["blocked"])
+        self.assertIn(
+            "result 'malicious-000' observed pass result does not match expected_verdict",
+            decision["failures"],
+        )
+
     def test_v7_candidate_blocks_malformed_case_index_in_a_decision(self):
         mutations = (
             ("non-object entry", lambda cases: cases.__setitem__("malicious-000", None)),
