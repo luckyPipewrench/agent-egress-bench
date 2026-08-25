@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="110" viewBox="0 0 1200 110" role="img" aria-label="Corpus stats: 246 cases, 18 categories, 6 transports, 5 assurance labels.">
+  <text x="150.0" y="58" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" fill="#00e5a0" font-weight="700" text-anchor="middle">246</text>
+  <text x="150.0" y="86" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#64748b" font-weight="600" text-anchor="middle" letter-spacing="0.15em">CASES</text>
+  <text x="450.0" y="58" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" fill="#00e5a0" font-weight="700" text-anchor="middle">18</text>
+  <text x="450.0" y="86" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#64748b" font-weight="600" text-anchor="middle" letter-spacing="0.15em">CATEGORIES</text>
+  <path d="M 300.0 24 L 300.0 92" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1" stroke-linecap="butt" fill="none"/>
+  <text x="750.0" y="58" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" fill="#00e5a0" font-weight="700" text-anchor="middle">6</text>
+  <text x="750.0" y="86" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#64748b" font-weight="600" text-anchor="middle" letter-spacing="0.15em">TRANSPORTS</text>
+  <path d="M 600.0 24 L 600.0 92" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1" stroke-linecap="butt" fill="none"/>
+  <text x="1050.0" y="58" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" fill="#00e5a0" font-weight="700" text-anchor="middle">5</text>
+  <text x="1050.0" y="86" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#64748b" font-weight="600" text-anchor="middle" letter-spacing="0.15em">ASSURANCE LABELS</text>
+  <path d="M 900.0 24 L 900.0 92" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1" stroke-linecap="butt" fill="none"/>
+</svg>
