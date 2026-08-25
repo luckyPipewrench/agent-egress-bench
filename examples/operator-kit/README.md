@@ -55,6 +55,8 @@ Follow [`docs/RESULTS-USE.md`](../../docs/RESULTS-USE.md) for assurance labels a
 
 The completed checklist records what the operator declares happened. It doesn't prove the declaration or create an assurance label by itself. The retained bytes, digests, validator result, and execution arrangement determine which statements the publisher can support.
 
+A later tagged reader does not treat every saved artifact the same way. Pin package verification to the tag that produced the run, and read [GOVERNANCE.md](../../docs/GOVERNANCE.md#mixed-release-readers) before opening an older JSONL, profile, summary, or Control Evidence package with a newer `aeb-validate` or verifier.
+
 ## Corrections and appeals
 
 Use the public route that matches the disagreement:

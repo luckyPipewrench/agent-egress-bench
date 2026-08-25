@@ -32,6 +32,8 @@ Each release contains:
 
 The platform archives are the bench tools (`aeb-gauntlet` and `aeb-validate`). The official Pipelock Gauntlet entrypoint is `scripts/run-pipelock-gauntlet.sh`, and that script is Linux-only: it downloads Linux Pipelock assets, uses Landlock and seccomp, and refuses any other kernel with `the portable Pipelock runner currently supports Linux only`. A macOS archive lets you inspect cases and validate saved artifacts on that host. It does not mean the full Pipelock Gauntlet runs on a Mac.
 
+Opening an N-1 artifact with a reader from tagged release N is family-specific. Pin package verification to the tag that produced the archives. [GOVERNANCE.md](GOVERNANCE.md#mixed-release-readers) records which saved run artifacts still verify and which fail with a named machine-readable error.
+
 ## Verify a downloaded release
 
 Pick the immutable release tag that a result cites and use that same tag in every command below. This example uses `v0.1.0` only as a command shape. It does not refer to a published release.
