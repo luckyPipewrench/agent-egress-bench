@@ -131,7 +131,7 @@ def v6_candidate(
 ):
     artifact_suffix = run_id if run_attempt is None else f"{run_id}:{run_attempt}"
     value = {
-        "schema_version": 6,
+        "schema_version": 7,
         "artifact_id": f"github-actions:luckyPipewrench/agent-egress-bench:{artifact_suffix}",
         "canonical_url": "https://github.com/luckyPipewrench/agent-egress-bench/actions/runs/"
         + run_id
@@ -319,7 +319,7 @@ class PromotionFixture:
                 )
             elif label == "results":
                 result_identity = {"schema_version": 5}
-                if value.get("schema_version") == 6:
+                if value.get("schema_version") >= 6:
                     result_identity = {
                         "schema_version": 6,
                         "scoring_version": value["scoring_version"],
@@ -383,11 +383,20 @@ class PromotionFixture:
         self.candidate_value["portable_bundle_sha256"] = hashlib.sha256(
             self.evidence["run_bundle"].read_bytes()
         ).hexdigest()
-        if self.candidate_value.get("schema_version") == 6:
+        if self.candidate_value.get("schema_version") >= 6:
             self.candidate_value["evidence_sha256"] = {
                 label: hashlib.sha256(self.evidence[label].read_bytes()).hexdigest()
                 for label in self.candidate_value["evidence_sha256"]
             }
+        if self.candidate_value.get("schema_version") >= 7:
+            # A v7 candidate must carry the per-category block the promoter
+            # re-derives from the pinned case index and raw rows; derive it
+            # from the evidence just written so every fixture variant matches.
+            self.candidate_value["per_category"] = evaluator.recompute_v5_measurements(
+                self.evidence["case_index"],
+                self.evidence["results"],
+                self.candidate_value["scoring_version"],
+            )["per_category"]
         write_json(self.candidate_path, self.candidate_value)
         self.write_source_decision()
 
@@ -675,7 +684,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         result = fixture.run()
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("new promotions require active provenance candidate schema_version 6", result.stdout)
+        self.assertIn("new promotions require active provenance candidate schema_version 7", result.stdout)
 
     def test_exact_legacy_promotion_repeat_remains_idempotent(self):
         fixture = self.fixture(candidate())
@@ -1046,6 +1055,8 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         older["portable_bundle_sha256"] = hashlib.sha256(
             (second_artifact / promotion.EVIDENCE_FILES["run_bundle"]).read_bytes()
         ).hexdigest()
+        # Same evidence bytes as the first artifact, so the same derived block.
+        older["per_category"] = fixture.candidate_value["per_category"]
         older["evidence_sha256"] = {
             label: hashlib.sha256((second_artifact / filename).read_bytes()).hexdigest()
             for label, filename in (provenance.RAW_EVIDENCE | provenance.V4_RAW_EVIDENCE).items()
@@ -1090,6 +1101,8 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         newer["portable_bundle_sha256"] = hashlib.sha256(
             (second_artifact / promotion.EVIDENCE_FILES["run_bundle"]).read_bytes()
         ).hexdigest()
+        # Same evidence bytes as the first artifact, so the same derived block.
+        newer["per_category"] = fixture.candidate_value["per_category"]
         newer["evidence_sha256"] = {
             label: hashlib.sha256((second_artifact / filename).read_bytes()).hexdigest()
             for label, filename in {

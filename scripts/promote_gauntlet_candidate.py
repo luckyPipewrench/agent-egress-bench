@@ -158,7 +158,7 @@ def validate_candidate_origin(
 
 def validate_reference_candidate(candidate):
     if candidate.get("schema_version") not in {2, 4, 5, 6, 7}:
-        raise ValueError("candidate schema_version must be 2, 4, 5, or 6")
+        raise ValueError("candidate schema_version must be 2, 4, 5, 6, or 7")
     if candidate.get("schema_version") in {4, 5, 6, 7}:
         evaluator.require_capability_registry(candidate)
     if candidate.get("schema_version") in {5, 6, 7}:
@@ -175,8 +175,8 @@ def validate_reference_candidate(candidate):
         require_sha256(candidate.get("target_config_sha256"), "target_config_sha256")
         candidate = artifact_schema.validate_file(
             candidate,
-            evaluator.PROVENANCE_SCHEMAS[6],
-            "provenance candidate v6",
+            evaluator.PROVENANCE_SCHEMAS[candidate["schema_version"]],
+            f"provenance candidate v{candidate['schema_version']}",
         )
     if candidate.get("tool") != "pipelock":
         raise ValueError("reference promotion candidate tool must be pipelock")
