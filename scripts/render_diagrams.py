@@ -411,6 +411,14 @@ def social_preview() -> str:
     Dark in both themes: it is also the Open Graph card on link unfurls, where
     the reader's GitHub theme does not apply. It carries no count, because a
     number in a hand-exported raster rots silently.
+
+    Vertical rhythm, and it is deliberate: 96 top margin, identity block to 262,
+    gap, ruler at 412, verdict labels to 446, gap, footer at 566. The two gaps
+    are matched on purpose. An earlier version left a single 190px void between
+    the tagline and the ruler -- 30% of the canvas -- with a 126 top margin
+    against a 70 bottom. Layouts that moved the ruler or the tagline were built
+    and rendered, and each one simply relocated the void; growing the elements
+    is what absorbs it.
     """
     a, w, h = BRAND["accent"], 1280, 640
     out = [
@@ -450,32 +458,41 @@ def social_preview() -> str:
     net.append("  </g>")
     out += net
 
-    # Logomark, scaled 64 -> 112.
-    out.append('  <g transform="translate(96 126) scale(1.9)">')
+    # Logomark, scaled 64 -> 154. See the vertical rhythm note in social_preview.
+    out.append('  <g transform="translate(96 104) scale(2.4)">')
     out.append(f'    <rect width="64" height="64" rx="12" fill="{BRAND["bg"]}" stroke="#ffffff" stroke-opacity="0.10"/>')
     out.append('    <rect width="64" height="64" rx="12" fill="url(#mark)"/>')
     out += ["  " + line for line in _ruler_glyph(a, BRAND["bg_elevated"])]
     out.append("  </g>")
 
-    # "Agent Egress" at 70px mono is 12 glyphs of ~0.6em; "Bench" sits centered under it.
-    title_x, title_size = 250, 70
-    title_w = 12 * title_size * 0.6
-    out.append(_text(title_x, 192, "Agent Egress", fill=BRAND["text"], size=title_size, family=MONO, weight=700,
-                     spacing="-0.02em"))
-    out.append(_text(title_x + title_w / 2, 254, "Bench", fill=a, size=title_size, family=MONO, weight=700,
-                     spacing="-0.02em", anchor="middle"))
-    out.append(_text(250, 298, "OPEN YARDSTICK FOR AGENT EGRESS CONTROL", fill=BRAND["muted"], size=15,
+    # The wordmark is ONE line, in ONE text element, coloured with tspans.
+    #
+    # It used to be two lines with "Bench" centred under "Agent Egress" using a
+    # width computed as 12 glyphs times 0.6em. That estimate does not match the
+    # font's real advance, so the second line sat visibly off-centre while the
+    # arithmetic looked correct. Letting the text engine lay out one run removes
+    # the estimate rather than correcting it, and there is nothing left to
+    # centre by hand.
+    title_x, title_size = 280, 64
+    # xml:space="preserve" is load-bearing: without it the renderer collapses the
+    # trailing space inside the first tspan and the wordmark reads "EgressBench".
+    out.append(f'  <text x="{title_x}" y="206" font-family="{MONO}" '
+               f'font-size="{title_size}" font-weight="700" letter-spacing="-0.02em" '
+               f'xml:space="preserve">'
+               f'<tspan fill="{BRAND["text"]}">Agent Egress </tspan>'
+               f'<tspan fill="{a}">Bench</tspan></text>')
+    out.append(_text(282, 254, "OPEN YARDSTICK FOR AGENT EGRESS CONTROL", fill=BRAND["muted"], size=15,
                      family=SANS, spacing="0.286em"))
 
-    out += _ruler(96, 1184, 456, a, divisions=50, major_every=5, tick=10, big=22, width=4, cap_h=26, bold=True, labels=(
+    out += _ruler(96, 1184, 412, a, divisions=50, major_every=5, tick=10, big=22, width=4, cap_h=26, bold=True, labels=(
         (0.2, "allow", a),
         (0.4, "block", BRAND["danger"]),
         (0.6, "unreachable", BRAND["warn"]),
         (0.8, "error", BRAND["muted"]),
     ))
 
-    out.append(_text(96, 560, "A PipeLab open project", fill=BRAND["muted"], size=15, family=SANS, weight=500))
-    out.append(_text(1184, 560, "pipelab.org  ·  Apache-2.0", fill=BRAND["dim"], size=14, family=MONO,
+    out.append(_text(96, 566, "A PipeLab open project", fill=BRAND["muted"], size=15, family=SANS, weight=500))
+    out.append(_text(1184, 566, "pipelab.org  ·  Apache-2.0", fill=BRAND["dim"], size=14, family=MONO,
                      anchor="end"))
     out.append(_text(96, 590, "github.com/luckyPipewrench/agent-egress-bench", fill=BRAND["dim"], size=13,
                      family=MONO))

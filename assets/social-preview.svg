@@ -170,7 +170,7 @@
     <circle cx="420.5" cy="67.4" r="1.6"/>
     <circle cx="579.5" cy="595.0" r="1.6"/>
   </g>
-  <g transform="translate(96 126) scale(1.9)">
+  <g transform="translate(96 104) scale(2.4)">
     <rect width="64" height="64" rx="12" fill="#09090b" stroke="#ffffff" stroke-opacity="0.10"/>
     <rect width="64" height="64" rx="12" fill="url(#mark)"/>
     <g transform="rotate(-45 32 32)">
@@ -185,80 +185,79 @@
       <path d="M 31 39 L 25.5 48 L 36.5 48 Z" fill="#00e5a0"/>
     </g>
   </g>
-  <text x="250" y="192" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="70" fill="#e2e8f0" font-weight="700" letter-spacing="-0.02em">Agent Egress</text>
-  <text x="502.0" y="254" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="70" fill="#00e5a0" font-weight="700" text-anchor="middle" letter-spacing="-0.02em">Bench</text>
-  <text x="250" y="298" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#94a3b8" letter-spacing="0.286em">OPEN YARDSTICK FOR AGENT EGRESS CONTROL</text>
-  <path d="M 96 456 L 1184 456" stroke="#00e5a0" stroke-width="18" stroke-linecap="round" fill="none" opacity="0.1"/>
-  <path d="M 96 456 L 1184 456" stroke="#00e5a0" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.18"/>
-  <path d="M 96 456 L 1184 456" stroke="#00e5a0" stroke-width="4" stroke-linecap="round" fill="none"/>
-  <path d="M 96 430 L 96 456" stroke="#00e5a0" stroke-width="4" stroke-linecap="round" fill="none"/>
-  <path d="M 1184 430 L 1184 456" stroke="#00e5a0" stroke-width="4" stroke-linecap="round" fill="none"/>
-  <path d="M 117.76 446 L 117.76 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 139.52 446 L 139.52 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 161.28 446 L 161.28 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 183.04000000000002 446 L 183.04000000000002 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 204.8 434 L 204.8 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 226.56 446 L 226.56 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 248.32000000000002 446 L 248.32000000000002 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 270.08000000000004 446 L 270.08000000000004 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 291.84000000000003 446 L 291.84000000000003 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 313.6 434 L 313.6 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 335.36 446 L 335.36 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 357.12 446 L 357.12 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 378.88 446 L 378.88 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 400.64000000000004 446 L 400.64000000000004 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 422.40000000000003 434 L 422.40000000000003 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 444.16 446 L 444.16 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 465.92 446 L 465.92 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 487.68 446 L 487.68 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 509.44000000000005 446 L 509.44000000000005 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 531.2 434 L 531.2 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 552.96 446 L 552.96 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 574.72 446 L 574.72 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 596.48 446 L 596.48 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 618.24 446 L 618.24 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 640.0 434 L 640.0 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 661.76 446 L 661.76 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 683.5200000000001 446 L 683.5200000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 705.2800000000001 446 L 705.2800000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 727.0400000000001 446 L 727.0400000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 748.8000000000001 434 L 748.8000000000001 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 770.5600000000001 446 L 770.5600000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 792.32 446 L 792.32 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 814.08 446 L 814.08 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 835.84 446 L 835.84 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 857.6 434 L 857.6 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 879.36 446 L 879.36 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 901.12 446 L 901.12 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 922.8800000000001 446 L 922.8800000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 944.6400000000001 446 L 944.6400000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 966.4000000000001 434 L 966.4000000000001 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 988.1600000000001 446 L 988.1600000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 1009.9200000000001 446 L 1009.9200000000001 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 1031.68 446 L 1031.68 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 1053.44 446 L 1053.44 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 1075.2 434 L 1075.2 456" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
-  <path d="M 1096.96 446 L 1096.96 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 1118.72 446 L 1118.72 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 1140.48 446 L 1140.48 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 1162.24 446 L 1162.24 456" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
-  <path d="M 313.6 424 L 313.6 456" stroke="#00e5a0" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <circle cx="313.6" cy="418" r="11" fill="#00e5a0" opacity="0.18"/>
-  <circle cx="313.6" cy="418" r="5" fill="#00e5a0"/>
-  <text x="313.6" y="482" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#00e5a0" font-weight="700" text-anchor="middle">allow</text>
-  <path d="M 531.2 424 L 531.2 456" stroke="#ef4444" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <circle cx="531.2" cy="418" r="11" fill="#ef4444" opacity="0.18"/>
-  <circle cx="531.2" cy="418" r="5" fill="#ef4444"/>
-  <text x="531.2" y="482" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#ef4444" font-weight="700" text-anchor="middle">block</text>
-  <path d="M 748.8 424 L 748.8 456" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <circle cx="748.8" cy="418" r="11" fill="#f59e0b" opacity="0.18"/>
-  <circle cx="748.8" cy="418" r="5" fill="#f59e0b"/>
-  <text x="748.8" y="482" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#f59e0b" font-weight="700" text-anchor="middle">unreachable</text>
-  <path d="M 966.4000000000001 424 L 966.4000000000001 456" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <circle cx="966.4000000000001" cy="418" r="11" fill="#94a3b8" opacity="0.18"/>
-  <circle cx="966.4000000000001" cy="418" r="5" fill="#94a3b8"/>
-  <text x="966.4000000000001" y="482" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#94a3b8" font-weight="700" text-anchor="middle">error</text>
-  <text x="96" y="560" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#94a3b8" font-weight="500">A PipeLab open project</text>
-  <text x="1184" y="560" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#64748b" text-anchor="end">pipelab.org  ·  Apache-2.0</text>
+  <text x="280" y="206" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="64" font-weight="700" letter-spacing="-0.02em" xml:space="preserve"><tspan fill="#e2e8f0">Agent Egress </tspan><tspan fill="#00e5a0">Bench</tspan></text>
+  <text x="282" y="254" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#94a3b8" letter-spacing="0.286em">OPEN YARDSTICK FOR AGENT EGRESS CONTROL</text>
+  <path d="M 96 412 L 1184 412" stroke="#00e5a0" stroke-width="18" stroke-linecap="round" fill="none" opacity="0.1"/>
+  <path d="M 96 412 L 1184 412" stroke="#00e5a0" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.18"/>
+  <path d="M 96 412 L 1184 412" stroke="#00e5a0" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M 96 386 L 96 412" stroke="#00e5a0" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M 1184 386 L 1184 412" stroke="#00e5a0" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M 117.76 402 L 117.76 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 139.52 402 L 139.52 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 161.28 402 L 161.28 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 183.04000000000002 402 L 183.04000000000002 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 204.8 390 L 204.8 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 226.56 402 L 226.56 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 248.32000000000002 402 L 248.32000000000002 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 270.08000000000004 402 L 270.08000000000004 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 291.84000000000003 402 L 291.84000000000003 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 313.6 390 L 313.6 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 335.36 402 L 335.36 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 357.12 402 L 357.12 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 378.88 402 L 378.88 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 400.64000000000004 402 L 400.64000000000004 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 422.40000000000003 390 L 422.40000000000003 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 444.16 402 L 444.16 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 465.92 402 L 465.92 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 487.68 402 L 487.68 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 509.44000000000005 402 L 509.44000000000005 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 531.2 390 L 531.2 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 552.96 402 L 552.96 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 574.72 402 L 574.72 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 596.48 402 L 596.48 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 618.24 402 L 618.24 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 640.0 390 L 640.0 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 661.76 402 L 661.76 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 683.5200000000001 402 L 683.5200000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 705.2800000000001 402 L 705.2800000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 727.0400000000001 402 L 727.0400000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 748.8000000000001 390 L 748.8000000000001 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 770.5600000000001 402 L 770.5600000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 792.32 402 L 792.32 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 814.08 402 L 814.08 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 835.84 402 L 835.84 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 857.6 390 L 857.6 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 879.36 402 L 879.36 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 901.12 402 L 901.12 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 922.8800000000001 402 L 922.8800000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 944.6400000000001 402 L 944.6400000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 966.4000000000001 390 L 966.4000000000001 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 988.1600000000001 402 L 988.1600000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 1009.9200000000001 402 L 1009.9200000000001 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 1031.68 402 L 1031.68 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 1053.44 402 L 1053.44 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 1075.2 390 L 1075.2 412" stroke="#00e5a0" stroke-width="2" stroke-linecap="butt" fill="none" opacity="0.95"/>
+  <path d="M 1096.96 402 L 1096.96 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 1118.72 402 L 1118.72 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 1140.48 402 L 1140.48 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 1162.24 402 L 1162.24 412" stroke="#00e5a0" stroke-width="1" stroke-linecap="butt" fill="none" opacity="0.45"/>
+  <path d="M 313.6 380 L 313.6 412" stroke="#00e5a0" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="313.6" cy="374" r="11" fill="#00e5a0" opacity="0.18"/>
+  <circle cx="313.6" cy="374" r="5" fill="#00e5a0"/>
+  <text x="313.6" y="438" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#00e5a0" font-weight="700" text-anchor="middle">allow</text>
+  <path d="M 531.2 380 L 531.2 412" stroke="#ef4444" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="531.2" cy="374" r="11" fill="#ef4444" opacity="0.18"/>
+  <circle cx="531.2" cy="374" r="5" fill="#ef4444"/>
+  <text x="531.2" y="438" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#ef4444" font-weight="700" text-anchor="middle">block</text>
+  <path d="M 748.8 380 L 748.8 412" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="748.8" cy="374" r="11" fill="#f59e0b" opacity="0.18"/>
+  <circle cx="748.8" cy="374" r="5" fill="#f59e0b"/>
+  <text x="748.8" y="438" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#f59e0b" font-weight="700" text-anchor="middle">unreachable</text>
+  <path d="M 966.4000000000001 380 L 966.4000000000001 412" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="966.4000000000001" cy="374" r="11" fill="#94a3b8" opacity="0.18"/>
+  <circle cx="966.4000000000001" cy="374" r="5" fill="#94a3b8"/>
+  <text x="966.4000000000001" y="438" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#94a3b8" font-weight="700" text-anchor="middle">error</text>
+  <text x="96" y="566" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#94a3b8" font-weight="500">A PipeLab open project</text>
+  <text x="1184" y="566" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#64748b" text-anchor="end">pipelab.org  ·  Apache-2.0</text>
   <text x="96" y="590" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#64748b">github.com/luckyPipewrench/agent-egress-bench</text>
 </svg>

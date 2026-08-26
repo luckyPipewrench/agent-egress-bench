@@ -154,6 +154,34 @@ class WellFormedTest(unittest.TestCase):
         self.assertIn("PipeLab", hero)
         self.assertNotIn("Pipelab", hero)
 
+    def test_the_hero_wordmark_reads_as_three_separate_words(self):
+        """The wordmark is one text run coloured with tspans, so spacing is fragile.
+
+        Without xml:space="preserve" the renderer collapses the trailing space
+        inside the first tspan and the mark reads "EgressBench". Concatenating
+        the tspan text is what catches that; checking the source string would
+        pass, because the space is present in the file either way.
+        """
+        root = ElementTree.fromstring(generator.social_preview())
+        runs = ["".join(node.itertext()) for node in root.iter(SVG + "text")]
+        wordmark = next((run for run in runs if "Bench" in run and "Agent" in run), None)
+        self.assertIsNotNone(wordmark, f"no wordmark run found in {runs}")
+        self.assertEqual(wordmark.split(), ["Agent", "Egress", "Bench"])
+        self.assertIn("Agent Egress Bench", wordmark)
+
+    def test_the_hero_wordmark_is_a_single_line(self):
+        """One line, so there is no second line to centre and mis-centre.
+
+        The two-line version positioned "Bench" using a width computed from an
+        assumed glyph advance, which did not match the font, so it sat visibly
+        off-centre while the arithmetic looked right.
+        """
+        root = ElementTree.fromstring(generator.social_preview())
+        carrying = [node for node in root.iter(SVG + "text")
+                    if "Bench" in "".join(node.itertext())
+                    or "Agent Egress" in "".join(node.itertext())]
+        self.assertEqual(len(carrying), 1, "the wordmark spans more than one text element")
+
     def test_every_explicit_asset_color_is_a_brand_token_or_light_adaptation(self):
         approved = (set(generator.BRAND.values()) | generator.LIGHT_THEME_DERIVATIVES
                     | generator.OVERLAY_BASES)
