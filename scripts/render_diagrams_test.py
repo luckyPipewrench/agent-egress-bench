@@ -626,5 +626,40 @@ class CoordinatePrecisionTest(unittest.TestCase):
         self.assertEqual(generator._n("auto"), "auto")
 
 
+class WhitespacePreservationTest(unittest.TestCase):
+    """A word gap carried by a tspan boundary needs the attribute that keeps it.
+
+    The wordmark is one text element coloured with two tspans, so the space in
+    "Agent Egress Bench" sits at the end of the first tspan. Without
+    ``xml:space="preserve"`` a renderer collapses that trailing run and draws
+    "EgressBench". The existing spacing tests parse the DOM, where the space
+    survives regardless, so they passed with the attribute removed and proved
+    nothing. This one reads the attribute itself, because the attribute is the
+    behaviour.
+    """
+
+    def test_text_with_a_boundary_space_declares_that_it_preserves_it(self):
+        for path, body in generator.build().items():
+            if path.suffix != ".svg":
+                continue
+            root = ElementTree.fromstring(body)
+            for node in root.iter(SVG + "text"):
+                spans = list(node.iter(SVG + "tspan"))
+                if len(spans) < 2:
+                    continue
+                boundary = any((span.text or "").endswith(" ")
+                               or (span.text or "").startswith(" ")
+                               for span in spans)
+                if not boundary:
+                    continue
+                preserve = node.get("{http://www.w3.org/XML/1998/namespace}space")
+                with self.subTest(asset=path.name, text="".join(
+                        span.text or "" for span in spans)):
+                    self.assertEqual(
+                        preserve, "preserve",
+                        "this text carries a word gap on a tspan boundary, so a "
+                        "renderer will collapse it without xml:space=preserve")
+
+
 if __name__ == "__main__":
     unittest.main()
