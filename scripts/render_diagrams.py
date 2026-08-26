@@ -63,6 +63,12 @@ BRAND = {
 # canvas. Filled bars keep the locked accent, with dark token text on top.
 LIGHT_THEME_DERIVATIVES = {"#008f66", "#dc2626", "#b45309", "#0284c7"}
 
+# White is not a paint color here. The brand defines translucent surfaces as
+# rgba(255,255,255,...) card and border tokens, and _paint splits those into a
+# hex base plus an opacity attribute, so the base is what lands in the file.
+# Named here so the color gate stays a real check rather than being widened.
+OVERLAY_BASES = {"#ffffff"}
+
 # README palettes. Both canvases are transparent so a diagram sits on GitHub's
 # own page color instead of arriving as a pasted rectangle.
 PALETTES = {
@@ -569,6 +575,26 @@ def showcase_case() -> dict:
     return data
 
 
+def _elide_credential(query: str) -> str:
+    """Shorten a credential-shaped query value so the asset carries no key.
+
+    The scene draws a real case, and that case's payload is an AWS example key.
+    A committed SVG holding the full token trips this repository's own secret
+    scan, correctly: the fix is to stop carrying the token, not to exclude the
+    directory from scanning. Enough of the value survives to read as a key.
+    """
+    name, sep, value = query.partition("=")
+    if not sep or len(value) <= 12:
+        return query
+    return f"{name}={value[:4]}\u2026{value[-7:]}"
+
+
+def _elide_url(url: str) -> str:
+    """The full URL with any credential-shaped query value shortened."""
+    head, sep, query = url.partition("?")
+    return f"{head}?{_elide_credential(query)}" if sep else url
+
+
 def _verdict_pill(x, y, label, p, tone, width=None):
     """A verdict tag. A fixed width makes a column of pills line up."""
     color = p["accent_text"] if tone == "accent" else p[tone]
@@ -591,7 +617,8 @@ def architecture(p) -> str:
     w, h = 1200, 412
     out = _svg_open(w, h, f"One case, end to end. Left, the case {case['id']} from the corpus: category "
                     f"{case.get('category', '')}, transport {case['transport']}, severity {case.get('severity', '')}, "
-                    f"payload {method} {url}, expected verdict {expected}. Middle, the egress control under test, "
+                    f"payload {method} {_elide_url(url)}, expected verdict {expected}. Middle, the egress "
+                    "control under test, "
                     "sitting between the agent and the network. Right, the recorded outcome compared with the "
                     f"expected one: {expected} scores pass, {other} scores fail, and unreachable and error rows "
                     "are shown but never scored. Agent Egress Bench does this for every case.", p)
@@ -612,6 +639,7 @@ def architecture(p) -> str:
     out.append(_text(lx + lw - 24, y, method, fill=p["text"], size=13, family=MONO, anchor="end"))
     y += 26
     head, _, query = url.partition("?")
+    query = _elide_credential(query)
     out.append(_text(lx + 24, y, "url", fill=p["dim"], size=12, family=MONO))
     out.append(_text(lx + lw - 24, y, head, fill=p["text"], size=13, family=MONO, anchor="end"))
     y += 22
@@ -1241,6 +1269,9 @@ def png_problems() -> list[str]:
             continue
         if not sidecar(png).exists():
             problems.append(f"assets/{png}.source: missing; run scripts/render_diagrams.py --stamp-png")
+            continue
+        if not (ASSET_DIR / svg).exists():
+            problems.append(f"assets/{svg}: missing; run scripts/render_diagrams.py")
             continue
         want = hashlib.sha256((ASSET_DIR / svg).read_bytes()).hexdigest()
         if sidecar(png).read_text(encoding="utf-8").strip() != want:

@@ -40,6 +40,46 @@ def _strings(svg: str) -> list[str]:
     return [(node.text or "").strip() for node in ElementTree.fromstring(svg).iter(SVG + "text")]
 
 
+def _extents(node) -> list:
+    """Bounding boxes for the primitives this generator draws.
+
+    Rects and circles have exact boxes. Paths, polygons and text do not without
+    a full SVG engine, so they are left out rather than approximated: a wrong
+    box would either fire falsely or hide a real overrun.
+    """
+    tag = node.tag.rsplit("}", 1)[-1]
+    try:
+        if tag == "rect":
+            x, y = float(node.get("x", 0)), float(node.get("y", 0))
+            return [(x, y, x + float(node.get("width", 0)), y + float(node.get("height", 0)))]
+        if tag == "circle":
+            cx, cy, r = float(node.get("cx", 0)), float(node.get("cy", 0)), float(node.get("r", 0))
+            return [(cx - r, cy - r, cx + r, cy + r)]
+        if tag == "ellipse":
+            cx, cy = float(node.get("cx", 0)), float(node.get("cy", 0))
+            rx, ry = float(node.get("rx", 0)), float(node.get("ry", 0))
+            return [(cx - rx, cy - ry, cx + rx, cy + ry)]
+    except (TypeError, ValueError):
+        return []
+    return []
+
+
+GEOMETRY_ATTRS = ("x", "y", "width", "height", "cx", "cy", "r", "rx", "ry",
+                  "x1", "y1", "x2", "y2", "d", "points", "transform", "text-anchor")
+
+
+def _geometry(root) -> list:
+    """Tag plus every position-bearing attribute, ignoring color and opacity.
+
+    Comparing tag sequences alone let a light and dark pair differ in every
+    coordinate while the parity gate passed.
+    """
+    return [
+        (node.tag, tuple((a, node.get(a)) for a in GEOMETRY_ATTRS if node.get(a) is not None))
+        for node in root.iter()
+    ]
+
+
 class _swap:
     """Temporarily replace a generator attribute; restores on exit."""
 
@@ -89,10 +129,13 @@ class WellFormedTest(unittest.TestCase):
         for path, content in generator.build().items():
             with self.subTest(asset=path.name):
                 root = ElementTree.fromstring(content)
-                width = float(root.get("viewBox").split()[2])
-                for rect in root.iter(SVG + "rect"):
-                    right = float(rect.get("x", 0)) + float(rect.get("width", 0))
-                    self.assertLessEqual(right, width + 0.5, f"{path.name}: a rect overruns the canvas")
+                _, _, width, height = (float(v) for v in root.get("viewBox").split())
+                for node in root.iter():
+                    for x0, y0, x1, y1 in _extents(node):
+                        self.assertGreaterEqual(x0, -0.5, f"{path.name}: {node.tag} is left of the canvas")
+                        self.assertGreaterEqual(y0, -0.5, f"{path.name}: {node.tag} is above the canvas")
+                        self.assertLessEqual(x1, width + 0.5, f"{path.name}: {node.tag} overruns the right edge")
+                        self.assertLessEqual(y1, height + 0.5, f"{path.name}: {node.tag} overruns the bottom edge")
 
     def test_the_hero_and_logo_carry_no_corpus_count(self):
         # They are hand-exported rasters that change rarely, so a number in
@@ -112,10 +155,15 @@ class WellFormedTest(unittest.TestCase):
         self.assertNotIn("Pipelab", hero)
 
     def test_every_explicit_asset_color_is_a_brand_token_or_light_adaptation(self):
-        approved = set(generator.BRAND.values()) | generator.LIGHT_THEME_DERIVATIVES
+        approved = (set(generator.BRAND.values()) | generator.LIGHT_THEME_DERIVATIVES
+                    | generator.OVERLAY_BASES)
         for path, content in generator.build().items():
             with self.subTest(asset=path.name):
-                colors = set(re.findall(r"#[0-9a-fA-F]{6}\\b", content.lower()))
+                colors = set(re.findall(r"#[0-9a-f]{6}\b", content.lower()))
+                # Without this the regex could match nothing and the subset
+                # check below would pass while proving nothing, which is how
+                # this gate shipped vacuous the first time.
+                self.assertTrue(colors, f"{path.name}: the color scan matched nothing")
                 self.assertTrue(colors <= approved, colors - approved)
 
 
@@ -133,7 +181,7 @@ class ThemeParityTest(unittest.TestCase):
             with self.subTest(diagram=name):
                 light = ElementTree.fromstring(render(generator.PALETTES["light"]))
                 dark = ElementTree.fromstring(render(generator.PALETTES["dark"]))
-                self.assertEqual([n.tag for n in light.iter()], [n.tag for n in dark.iter()])
+                self.assertEqual(_geometry(light), _geometry(dark))
 
     def test_the_two_palettes_actually_differ(self):
         light, dark = generator.PALETTES["light"], generator.PALETTES["dark"]
@@ -424,7 +472,13 @@ class OneCaseSceneTest(unittest.TestCase):
         self.assertIn(case["expected_verdict"], text)
         self.assertIn(case["payload"]["method"], text)
         self.assertIn(case["payload"]["url"].partition("?")[0], text)
-        self.assertIn("?" + case["payload"]["url"].partition("?")[2], text)
+        # The drawing elides the credential value on purpose: a committed SVG
+        # carrying the case's AWS example key trips this repository's own
+        # secret scan. The assertion still derives from the case file, so the
+        # scene cannot drift away from the corpus.
+        query = case["payload"]["url"].partition("?")[2]
+        self.assertIn("?" + generator._elide_credential(query), text)
+        self.assertNotIn(query, text, "the scene must not carry the full credential")
 
     def test_the_scene_scores_both_outcomes_against_the_expected_verdict(self):
         case = json.loads(generator.SHOWCASE_CASE.read_text(encoding="utf-8"))

@@ -66,7 +66,7 @@ cd validate && go build -o aeb-validate . && cd ..
 That builds the validator and checks every case against the schema. The reference lane goes one step further and measures a real product. It preflights the host first, and the preflight refuses to guess:
 
 <p align="center">
-  <img src="assets/terminal-doctor.svg" alt="Two terminals. Left: ./scripts/run-pipelock-gauntlet.sh --doctor reports every prerequisite check as ok and ends with ready: local prerequisites are satisfied. Right: the evidence directory one run leaves behind, listing all sixteen retained files." width="100%">
+  <img src="assets/terminal-doctor.svg" alt="Two terminals. Left: ./scripts/run-pipelock-gauntlet.sh --doctor reports every prerequisite check as ok and ends with ready: local prerequisites are satisfied. Right: the evidence directory one run leaves behind, listing every retained file." width="100%">
 </p>
 
 ```bash

@@ -165,6 +165,7 @@ check-readme-categories:
 # diagram must say the same thing, and the hand-exported hero PNG must come
 # from the committed SVG.
 check-diagrams:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/render_diagrams_test.py
 	@python3 scripts/render_diagrams.py --check
 
