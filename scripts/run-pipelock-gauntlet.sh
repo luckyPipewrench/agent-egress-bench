@@ -6,8 +6,9 @@ umask 077
 
 github_api_token="${GH_TOKEN:-}"
 unset GH_TOKEN GITHUB_TOKEN
-# Doctor checks this process's `go`. GOTOOLCHAIN=auto would let later
-# go build/run download a different toolchain than the one just checked.
+# Doctor checks the same resolved go binary the builds use. GOTOOLCHAIN=auto
+# would let later go build/run download a different toolchain than the one just
+# checked, so selecting a toolchain is deliberate through --go or AEB_GO.
 export GOTOOLCHAIN=local
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -16,6 +17,12 @@ release_pin="$repo_root/examples/pipelock/release.env"
 corpus_repository="luckyPipewrench/agent-egress-bench"
 
 output_dir=""
+# The Go toolchain every go invocation below uses. Defaults to the `go` on PATH.
+# AEB_GO or --go selects a toolchain installed elsewhere, so an evaluator whose
+# distribution ships an older Go does not have to rewrite PATH on every
+# invocation. Doctor checks this same resolved binary, so the toolchain that is
+# verified and the toolchain that builds cannot diverge.
+go_bin="${AEB_GO:-go}"
 development_mode=false
 development_binary=""
 doctor_mode=""
@@ -37,6 +44,7 @@ Options:
   --reserve-seconds SECONDS        Keep this many seconds before the deadline (default: 360).
   --benchmark-timeout-seconds N    Maximum runner time without a deadline (default: 1440).
   --release-pin FILE               Read the reviewed Pipelock release identity from FILE.
+  --go BINARY                      Use this Go toolchain instead of the `go` on PATH (env: AEB_GO).
   --development                    Allow a dirty or unreviewed corpus and mark the run noncanonical.
   --development-binary PATH        Use PATH instead of a released binary and mark the run noncanonical.
   --doctor                         Check commands, runner Go version, and other local prerequisites without starting a run.
@@ -122,10 +130,23 @@ go_version_ge() {
   ((have_pat >= need_pat))
 }
 
+go_bin_available() {
+  # A bare name resolves through PATH; anything containing a slash must be an
+  # executable file at that exact path. Reject a directory explicitly: pointing
+  # --go at a toolchain's bin directory instead of its go binary is the likeliest
+  # operator mistake, and `-x` alone is true for directories.
+  if [[ "$go_bin" == */* ]]; then
+    [[ -f "$go_bin" && -x "$go_bin" ]]
+    return
+  fi
+  command -v "$go_bin" >/dev/null 2>&1
+}
+
 installed_go_version() {
   local line=""
   local version_re='^go version go([0-9]+\.[0-9]+(\.[0-9]+)?)[[:space:]]'
-  line="$(command go version 2>/dev/null || true)"
+  go_bin_available || return 1
+  line="$("$go_bin" version 2>/dev/null || true)"
   # Released toolchains print "go version go1.25.0 linux/amd64". A substring
   # match would treat go1.25rc1 as 1.25 and devel go1.26-... as 1.26.
   if [[ "$line" =~ $version_re ]]; then
@@ -139,10 +160,10 @@ require_go_toolchain() {
   local required_go=""
   local installed_go=""
   required_go="$(required_go_version)" || die "runner Go requirement is unreadable"
-  command -v go >/dev/null 2>&1 || die "required command is unavailable: go"
+  go_bin_available || die "required command is unavailable: ${go_bin}"
   installed_go="$(installed_go_version)" || die "go version is unreadable"
   go_version_ge "$installed_go" "$required_go" || \
-    die "Go ${required_go} or newer is required; installed ${installed_go}"
+    die "Go ${required_go} or newer is required; ${go_bin} is ${installed_go}. Select another toolchain with --go BINARY or AEB_GO."
 }
 
 while (($#)); do
@@ -165,6 +186,12 @@ while (($#)); do
     --benchmark-timeout-seconds)
       (($# >= 2)) || die "--benchmark-timeout-seconds requires a value"
       benchmark_timeout_seconds="$2"
+      shift 2
+      ;;
+    --go)
+      (($# >= 2)) || die "--go requires a value"
+      [[ -n "$2" ]] || die "--go requires a non-empty value"
+      go_bin="$2"
       shift 2
       ;;
     --release-pin)
@@ -199,6 +226,22 @@ while (($#)); do
   esac
 done
 
+# Canonicalize a path-shaped toolchain selection to an absolute path before
+# anything validates or runs it. The build and validation steps cd into
+# runner/ and validate/, so a relative selection would be checked against one
+# directory and executed from another: doctor would report ready and the run
+# would then fail, or worse, resolve a different file that happens to sit at
+# the same relative path. A bare name is left alone so it keeps resolving
+# through PATH.
+if [[ "$go_bin" == */* ]]; then
+  # Best-effort on purpose. An unresolvable selection is left as written so the
+  # doctor still reports it as a missing prerequisite alongside everything else
+  # it found; dying here would collapse the whole prerequisite report into one
+  # error, which is the opposite of what --doctor-json exists to produce.
+  go_bin_resolved="$(realpath -e -- "$go_bin" 2>/dev/null || true)"
+  [[ -n "$go_bin_resolved" ]] && go_bin="$go_bin_resolved"
+fi
+
 run_doctor() {
   local failed=0
   local command_name
@@ -223,7 +266,38 @@ run_doctor() {
   else
     add_doctor_result "platform_linux" "unsupported" "run this reference lane on Linux"
   fi
+  # `go` keeps its position in this list. The doctor terminal drawing in the
+  # README is generated from the reported check order, so reordering here silently
+  # invalidates a published asset. It resolves through go_bin rather than PATH so
+  # the check follows --go and AEB_GO.
   for command_name in git python3 go curl jq sha256sum tar timeout realpath make; do
+    if [[ "$command_name" == "go" ]]; then
+      if go_bin_available; then
+        add_doctor_result "command_go" "ok" ""
+      else
+        add_doctor_result "command_go" "missing" \
+          "install go, or select a toolchain with --go BINARY or AEB_GO, and retry"
+      fi
+      continue
+    fi
+    if [[ "$command_name" == "realpath" ]]; then
+      # Presence is not enough. This script resolves paths with GNU options
+      # (-e, -m, and --), and the BusyBox realpath common on minimal images
+      # takes no options at all: it would treat them as filenames. Without this
+      # probe the doctor reports ready and the run fails later, during
+      # release-pin resolution, which is the failure the doctor exists to
+      # prevent. Reported under the same command_realpath code so the check
+      # list, and the terminal drawing generated from it, are unchanged.
+      if ! command -v realpath >/dev/null 2>&1; then
+        add_doctor_result "command_realpath" "missing" "install realpath and retry"
+      elif realpath -e -- "$repo_root" >/dev/null 2>&1 && realpath -m -- "$repo_root" >/dev/null 2>&1; then
+        add_doctor_result "command_realpath" "ok" ""
+      else
+        add_doctor_result "command_realpath" "unsupported" \
+          "install GNU coreutils realpath: this realpath does not accept -e, -m and --"
+      fi
+      continue
+    fi
     if command -v "$command_name" >/dev/null 2>&1; then
       add_doctor_result "command_${command_name//-/_}" "ok" ""
     else
@@ -231,9 +305,9 @@ run_doctor() {
     fi
   done
   required_go="$(required_go_version || true)"
-  if ! command -v go >/dev/null 2>&1; then
+  if ! go_bin_available; then
     add_doctor_result "go_version" "missing" \
-      "install Go ${required_go:-1.25} or newer from https://go.dev/dl/ and retry"
+      "install Go ${required_go:-1.25} or newer from https://go.dev/dl/, or select an installed toolchain with --go BINARY or AEB_GO, and retry"
   elif ! installed_go="$(installed_go_version)"; then
     add_doctor_result "go_version" "unreadable" \
       "install Go ${required_go:-1.25} or newer from https://go.dev/dl/ and retry"
@@ -243,7 +317,7 @@ run_doctor() {
     add_doctor_result "go_version" "ok" ""
   else
     add_doctor_result "go_version" "too_old" \
-      "install Go ${required_go} or newer from https://go.dev/dl/ and retry"
+      "install Go ${required_go} or newer from https://go.dev/dl/, or select an installed Go ${required_go} toolchain with --go BINARY or AEB_GO, and retry"
   fi
   for command_name in socat ncat nc; do
     if command -v "$command_name" >/dev/null 2>&1; then
@@ -574,7 +648,7 @@ export TMPDIR GOCACHE
 mkdir -p "$TMPDIR" "$GOCACHE"
 (
   cd "$repo_root/runner"
-  go build -o "$target_sandbox" ./cmd/target-sandbox
+  "$go_bin" build -o "$target_sandbox" ./cmd/target-sandbox
 )
 mkdir "$target_state"
 chmod 0700 "$target_state"
@@ -628,7 +702,7 @@ failure_reason="Gauntlet runner build failed"
 gauntlet_bin="$work_dir/aeb-gauntlet"
 (
   cd "$repo_root/runner"
-  go build -o "$gauntlet_bin" .
+  "$go_bin" build -o "$gauntlet_bin" .
 )
 
 export PIPELOCK_BIN="$pipelock_bin"
@@ -732,7 +806,7 @@ results_abs="$(realpath "$results_path")"
 # claiming a denial-of-wallet block it could not evidence went unnoticed.
 (
   cd "$repo_root/validate"
-  AEB_CAPABILITY_REGISTRY="$repo_root/capability-registry" go run . results "$results_abs" "$repo_root/cases"
+  AEB_CAPABILITY_REGISTRY="$repo_root/capability-registry" "$go_bin" run . results "$results_abs" "$repo_root/cases"
 )
 jq -e '.case_count.errors == 0' "$summary_path" >/dev/null || \
   die "runner summary contains errors"
