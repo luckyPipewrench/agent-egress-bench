@@ -379,44 +379,82 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             "a consumer that changes directory would resolve the un-canonicalized value",
         )
 
-    def _kernel_sandbox_state(self, lsm_contents, seccomp=True):
-        """Run the entrypoint's kernel_sandbox_state helper against a fake LSM list."""
-        script = ENTRYPOINT.read_text(encoding="utf-8")
-        start = script.index("kernel_sandbox_state() {")
-        end = script.index("\n}\n", start) + 3
-        helper = script[start:end]
+    def _kernel_sandbox_probe(self, lsm_contents, seccomp_field=True, seccomp_filter=True):
+        """Drive the whole doctor with substituted kernel probe paths.
+
+        Exercises run_doctor rather than kernel_sandbox_state alone. Testing the
+        classifier in isolation verified the label and not its consequence, and
+        that is exactly how an inconclusive result shipped while still failing
+        the doctor: the helper said unknown, which was correct, and the doctor
+        counted it as a failed prerequisite, which was not.
+        """
         with tempfile.TemporaryDirectory() as temporary:
-            if lsm_contents is None:
-                lsm_path = str(Path(temporary) / "absent")
-            else:
-                lsm_path = str(Path(temporary) / "lsm")
-                Path(lsm_path).write_text(lsm_contents, encoding="utf-8")
-            status_path = str(Path(temporary) / "status")
-            Path(status_path).write_text("Seccomp:\t2\n" if seccomp else "Name:\tsh\n", encoding="utf-8")
-            program = helper.replace("/sys/kernel/security/lsm", lsm_path)
-            program = program.replace("/proc/self/status", status_path)
-            return subprocess.run(
-                ["bash", "-c", program + "\nkernel_sandbox_state"],
-                text=True, capture_output=True, check=False,
-            ).stdout.strip()
+            root = Path(temporary)
+            lsm_path = root / ("lsm" if lsm_contents is not None else "absent-lsm")
+            if lsm_contents is not None:
+                lsm_path.write_text(lsm_contents, encoding="utf-8")
+            status_path = root / "status"
+            status_path.write_text("Seccomp:\t2\n" if seccomp_field else "Name:\tsh\n", encoding="utf-8")
+            filter_path = root / ("actions_avail" if seccomp_filter else "absent-filter")
+            if seccomp_filter:
+                filter_path.write_text("kill_process filter\n", encoding="utf-8")
+
+            # The entrypoint derives repo_root from its own location, so the
+            # patched copy has to live beside the original. Running it from a
+            # temp directory makes repo_root resolve to that directory and the
+            # repository-root and release-pin checks fail for reasons that have
+            # nothing to do with the kernel probe.
+            patched = ENTRYPOINT.parent / "run-pipelock-gauntlet.kernelprobe-test.sh"
+            script = ENTRYPOINT.read_text(encoding="utf-8")
+            script = script.replace('"/sys/kernel/security/lsm"', f'"{lsm_path}"')
+            script = script.replace('"/proc/self/status"', f'"{status_path}"')
+            script = script.replace('"/proc/sys/kernel/seccomp/actions_avail"', f'"{filter_path}"')
+            patched.write_text(script, encoding="utf-8")
+            try:
+                result = subprocess.run(
+                    ["bash", str(patched), "--doctor-json"],
+                    cwd=REPO_ROOT,
+                    env={**os.environ, "AEB_GO": ""},
+                    text=True, capture_output=True, check=False,
+                )
+            finally:
+                patched.unlink(missing_ok=True)
+            report = json.loads(result.stdout)
+            check = next(c for c in report["checks"] if c["code"] == "kernel_sandbox")
+            return check["status"], report["ready"], result.returncode
 
     def test_kernel_sandbox_probe_classifies_each_state(self):
         # The target runs under Landlock and seccomp. Before this check the
         # doctor reported ready and the run died on `query Landlock ABI:
         # function not implemented`, after the evaluator had paid for a release
         # download and a toolchain build.
-        self.assertEqual(self._kernel_sandbox_state("capability,yama,landlock,bpf"), "ok")
-        self.assertEqual(self._kernel_sandbox_state("landlock"), "ok")
-        self.assertEqual(self._kernel_sandbox_state("capability,landlock"), "ok")
-        self.assertEqual(self._kernel_sandbox_state("capability,yama,apparmor"), "no_landlock")
-        self.assertEqual(self._kernel_sandbox_state("capability,yama", seccomp=False), "no_seccomp")
+        for name, kwargs, want in (
+            ("landlock present", {"lsm_contents": "capability,yama,landlock,bpf"}, "ok"),
+            ("landlock alone", {"lsm_contents": "landlock"}, "ok"),
+            ("landlock last", {"lsm_contents": "capability,landlock"}, "ok"),
+            ("landlock absent", {"lsm_contents": "capability,yama,apparmor"}, "unavailable"),
+            ("no seccomp field", {"lsm_contents": "capability,landlock", "seccomp_field": False}, "unavailable"),
+        ):
+            with self.subTest(name):
+                status, _, _ = self._kernel_sandbox_probe(**kwargs)
+                self.assertEqual(status, want)
 
-    def test_kernel_sandbox_probe_does_not_refuse_when_it_cannot_tell(self):
-        # An unreadable LSM list means securityfs is not mounted, which says
-        # nothing about the kernel. Reporting that as unavailable would refuse a
-        # machine that would have worked, which is its own failure: the operator
-        # whose run is blocked for no reason turns the check off.
-        self.assertEqual(self._kernel_sandbox_state(None), "unknown")
+    def test_kernel_sandbox_unknown_does_not_fail_the_doctor(self):
+        # The availability half, and the one that shipped wrong. An unreadable
+        # LSM list means securityfs is not mounted, which says nothing about the
+        # kernel. Reporting it and refusing the machine are different things:
+        # the operator whose run is blocked for no reason turns the check off.
+        # Assert on `ready` and the exit code, not just the reported status,
+        # because the status was already right while the verdict was wrong.
+        for name, kwargs in (
+            ("unreadable LSM list", {"lsm_contents": None}),
+            ("seccomp filter support unprovable", {"lsm_contents": "capability,landlock", "seccomp_filter": False}),
+        ):
+            with self.subTest(name):
+                status, ready, code = self._kernel_sandbox_probe(**kwargs)
+                self.assertEqual(status, "unknown")
+                self.assertTrue(ready, "an inconclusive probe must not refuse the machine")
+                self.assertEqual(code, 0, "an inconclusive probe must not fail the doctor")
 
     def test_doctor_rejects_a_realpath_without_the_required_gnu_options(self):
         # Presence is not capability. BusyBox realpath takes no options, so a

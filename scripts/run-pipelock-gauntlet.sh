@@ -249,9 +249,26 @@ fi
 # that would have worked.
 kernel_sandbox_state() {
   local lsm_path="/sys/kernel/security/lsm"
+  local status_path="/proc/self/status"
+  local seccomp_filter_path="/proc/sys/kernel/seccomp/actions_avail"
   local lsm=""
-  if ! grep -q '^Seccomp:' /proc/self/status 2>/dev/null; then
+  # The Seccomp field in procfs reports the calling process's seccomp MODE. Its
+  # presence means the kernel was built with CONFIG_SECCOMP, which does not imply
+  # CONFIG_SECCOMP_FILTER, and the target installs a filter. Treating the field
+  # as proof of capability would report ok and let the run die installing that
+  # filter, which is the failure this whole check exists to prevent.
+  #
+  # seccomp_filter appears in /proc/sys/kernel/ only when filter support is
+  # compiled in, so it is positive evidence where the procfs field is not.
+  # Absent field means no seccomp at all and is definitive. Field present but no
+  # filter evidence is inconclusive rather than a refusal, because a kernel can
+  # withhold that sysctl without lacking the capability.
+  if ! grep -q '^Seccomp:' "$status_path" 2>/dev/null; then
     printf '%s\n' "no_seccomp"
+    return 0
+  fi
+  if [[ ! -e "$seccomp_filter_path" ]]; then
+    printf '%s\n' "unknown"
     return 0
   fi
   if [[ ! -r "$lsm_path" ]]; then
@@ -289,6 +306,17 @@ run_doctor() {
     details+=("$2")
     remediations+=("$3")
     [[ "$2" == "ok" ]] || failed=$((failed + 1))
+  }
+
+  # An advisory result is reported and does NOT count as a failed prerequisite.
+  # It exists for a probe that cannot reach a verdict, where the honest answer is
+  # "I could not tell" rather than "this machine is unusable". Routing that
+  # through add_doctor_result would refuse the machine, because everything other
+  # than ok is counted as a failure there.
+  add_doctor_advisory() {
+    codes+=("$1")
+    details+=("$2")
+    remediations+=("$3")
   }
 
   if [[ "$(uname -s 2>/dev/null || true)" == "Linux" ]]; then
@@ -380,8 +408,8 @@ run_doctor() {
       "this kernel reports no seccomp support and the target sandbox requires it; use a kernel built with CONFIG_SECCOMP_FILTER"
     ;;
   *)
-    add_doctor_result "kernel_sandbox" "unknown" \
-      "could not determine Landlock support because the kernel LSM list is unreadable; the run will fail early if it is absent"
+    add_doctor_advisory "kernel_sandbox" "unknown" \
+      "could not determine kernel sandbox support because the LSM list is unreadable or seccomp filter support could not be established; the run fails early if either is absent"
     ;;
   esac
   if [[ "$(pwd -P)" == "$repo_root" ]]; then
