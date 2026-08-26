@@ -179,7 +179,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             result = subprocess.run(
                 ["/bin/bash", str(ENTRYPOINT), "--doctor-json"],
                 cwd=REPO_ROOT,
-                env={**os.environ, "PATH": str(fake_path)},
+                env={**os.environ, "AEB_GO": "", "PATH": str(fake_path)},
                 text=True,
                 capture_output=True,
                 check=False,
@@ -227,7 +227,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             result = subprocess.run(
                 ["bash", str(ENTRYPOINT), "--doctor-json"],
                 cwd=REPO_ROOT,
-                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                env={**os.environ, "AEB_GO": "", "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
                 text=True,
                 capture_output=True,
                 check=False,
@@ -238,6 +238,116 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertFalse(report["ready"])
         self.assertEqual(go_version["status"], "too_old")
         self.assertIn("go.dev/dl", go_version["remediation"])
+
+    def test_every_go_invocation_honors_the_selected_toolchain(self):
+        # A bare `go build` or `go run` added later would silently ignore --go and
+        # AEB_GO, so the run would use a toolchain the doctor never checked. Parse
+        # the command position rather than searching for a substring.
+        offenders = []
+        for number, line in enumerate(self.entrypoint.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            # Strip leading VAR=value assignments, which precede the command.
+            words = stripped.split()
+            index = 0
+            while index < len(words) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[index]):
+                index += 1
+            if index < len(words) - 1 and words[index] == "go" and words[index + 1] in {
+                "build", "run", "test", "install", "vet", "version", "env", "mod",
+            }:
+                offenders.append(f"{number}: {stripped}")
+        self.assertEqual(offenders, [], "bare go invocations bypass --go/AEB_GO")
+
+    def _stub_go(self, directory, version_line, name="go"):
+        stub = Path(directory) / name
+        stub.write_text(
+            f"#!/bin/sh\nprintf '{version_line}\\n'\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        return stub
+
+    def test_doctor_checks_the_selected_go_binary_rather_than_path(self):
+        # An evaluator on a distribution that ships an older Go points --go at a
+        # newer toolchain installed elsewhere. The selected binary must be the one
+        # reported, not whichever `go` happens to be first on PATH.
+        with tempfile.TemporaryDirectory() as temporary:
+            stale = self._stub_go(temporary, "go version go1.24.0 linux/amd64")
+            selected_dir = Path(temporary) / "selected"
+            selected_dir.mkdir()
+            selected = self._stub_go(selected_dir, "go version go1.25.0 linux/amd64")
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--go", str(selected), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "AEB_GO": "", "PATH": f"{stale.parent}:{os.environ.get('PATH', '')}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        report = json.loads(result.stdout)
+        statuses = {check["code"]: check["status"] for check in report["checks"]}
+        self.assertEqual(statuses["command_go"], "ok")
+        self.assertEqual(statuses["go_version"], "ok")
+
+    def test_go_override_cannot_bypass_the_minimum_version(self):
+        # The override selects a toolchain; it must never waive the floor. A
+        # too-old --go has to fail exactly like a too-old PATH toolchain.
+        with tempfile.TemporaryDirectory() as temporary:
+            selected = self._stub_go(temporary, "go version go1.24.0 linux/amd64")
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--go", str(selected), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "AEB_GO": ""},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        go_version = next(check for check in report["checks"] if check["code"] == "go_version")
+        self.assertFalse(report["ready"])
+        self.assertEqual(go_version["status"], "too_old")
+
+    def test_aeb_go_environment_variable_selects_the_toolchain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stale = self._stub_go(temporary, "go version go1.24.0 linux/amd64")
+            selected_dir = Path(temporary) / "selected"
+            selected_dir.mkdir()
+            selected = self._stub_go(selected_dir, "go version go1.25.0 linux/amd64")
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={
+                    **os.environ,
+                    "AEB_GO": str(selected),
+                    "PATH": f"{stale.parent}:{os.environ.get('PATH', '')}",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        report = json.loads(result.stdout)
+        statuses = {check["code"]: check["status"] for check in report["checks"]}
+        self.assertEqual(statuses["go_version"], "ok")
+
+    def test_go_override_rejects_a_directory_and_a_missing_path(self):
+        # Pointing --go at a toolchain's bin directory instead of its go binary is
+        # the likeliest operator mistake, and a directory is executable.
+        with tempfile.TemporaryDirectory() as temporary:
+            for candidate in (temporary, str(Path(temporary) / "absent" / "go")):
+                result = subprocess.run(
+                    ["bash", str(ENTRYPOINT), "--go", candidate, "--doctor-json"],
+                    cwd=REPO_ROOT,
+                    env={**os.environ, "AEB_GO": ""},
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0, candidate)
+                report = json.loads(result.stdout)
+                statuses = {check["code"]: check["status"] for check in report["checks"]}
+                self.assertEqual(statuses["command_go"], "missing", candidate)
 
     def test_doctor_rejects_prerelease_go_toolchain(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -250,7 +360,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             result = subprocess.run(
                 ["bash", str(ENTRYPOINT), "--doctor-json"],
                 cwd=REPO_ROOT,
-                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                env={**os.environ, "AEB_GO": "", "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
                 text=True,
                 capture_output=True,
                 check=False,
@@ -273,7 +383,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             result = subprocess.run(
                 ["bash", str(ENTRYPOINT), "--doctor-json"],
                 cwd=REPO_ROOT,
-                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                env={**os.environ, "AEB_GO": "", "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
                 text=True,
                 capture_output=True,
                 check=False,
@@ -292,7 +402,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             result = subprocess.run(
                 ["bash", str(ENTRYPOINT), "--doctor-json"],
                 cwd=REPO_ROOT,
-                env={**os.environ, "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                env={**os.environ, "AEB_GO": "", "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
                 text=True,
                 capture_output=True,
                 check=False,
@@ -306,8 +416,19 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
     def test_readme_tells_operators_doctor_checks_go_version(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("does not check the installed Go version", readme)
-        self.assertIn("the installed Go version", readme)
+        self.assertNotIn("does not check the selected Go version", readme)
+        # "selected" rather than "installed" since --go and AEB_GO can choose a
+        # toolchain that is not the one on PATH. Either wording satisfies the
+        # operator-facing promise this guard exists to protect.
+        self.assertTrue(
+            "the installed Go version" in readme or "the selected Go version" in readme,
+            "README must tell operators that doctor checks the Go version",
+        )
         self.assertIn("distribution `golang` package", readme)
+        # The override has to be discoverable, or an evaluator on a distribution
+        # with an older Go concludes the benchmark simply will not run.
+        self.assertIn("--go", readme)
+        self.assertIn("AEB_GO", readme)
         self.assertIn("Make", readme)
         self.assertIn(
             "git clone --branch main https://github.com/luckyPipewrench/agent-egress-bench.git",
@@ -375,7 +496,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn("canonical receipt does not bind the clean corpus commit", self.entrypoint)
 
     def test_target_runs_under_a_filesystem_restricted_environment(self):
-        self.assertIn("go build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
+        self.assertIn("\"$go_bin\" build -o \"$target_sandbox\" ./cmd/target-sandbox", self.entrypoint)
         self.assertIn('pipelock_bin="$target_wrapper"', self.entrypoint)
         self.assertIn(
             'PIPELOCK_POSTURE_PROOF=$work_dir/absent-posture-proof.json',

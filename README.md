@@ -53,7 +53,13 @@ Tools already sit in that path. What a buyer usually gets is each vendor's own e
 
 ## Quick start
 
-You need [Go 1.25 or newer](https://go.dev/dl/) from that page. A distribution `golang` package often installs something older and the runner won't build on it. The reference lane below also needs Linux, Git, Python 3, curl, jq, Make, tar, GNU timeout, a SHA-256 utility, and one of `socat`, `ncat`, or `nc`. Its `--doctor` checks each of those along with the installed Go version, and rejects a stale or prerelease toolchain rather than guessing.
+You need [Go 1.25 or newer](https://go.dev/dl/) from that page. A distribution `golang` package often installs something older and the runner won't build on it; Debian and Ubuntu both currently ship an older Go. The floor is not ours to lower, because `golang.org/x/sys` sets it. If a new enough toolchain is already installed somewhere else, point the reference lane at it instead of changing `PATH`:
+
+```bash
+./scripts/run-pipelock-gauntlet.sh --go /path/to/go1.25/bin/go --doctor   # or: export AEB_GO=/path/to/go1.25/bin/go
+```
+
+That selects the toolchain; it never waives the minimum version. A toolchain below the floor is still refused. The reference lane also needs Linux, Git, Python 3, curl, jq, Make, tar, GNU timeout, a SHA-256 utility, and one of `socat`, `ncat`, or `nc`. Its `--doctor` checks each of those along with the selected Go version, and rejects a stale or prerelease toolchain rather than guessing.
 
 ```bash
 git clone --branch main https://github.com/luckyPipewrench/agent-egress-bench.git
