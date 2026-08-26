@@ -242,6 +242,36 @@ if [[ "$go_bin" == */* ]]; then
   [[ -n "$go_bin_resolved" ]] && go_bin="$go_bin_resolved"
 fi
 
+# kernel_sandbox_state reports whether this kernel can host the target sandbox.
+# Echoes ok, no_landlock, no_seccomp, or unknown. Only a readable LSM list that
+# omits landlock is treated as definitive: an unreadable one means securityfs is
+# not mounted, which says nothing about the kernel and must not refuse a machine
+# that would have worked.
+kernel_sandbox_state() {
+  local lsm_path="/sys/kernel/security/lsm"
+  local lsm=""
+  if ! grep -q '^Seccomp:' /proc/self/status 2>/dev/null; then
+    printf '%s\n' "no_seccomp"
+    return 0
+  fi
+  if [[ ! -r "$lsm_path" ]]; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+  lsm="$(<"$lsm_path")" || {
+    printf '%s\n' "unknown"
+    return 0
+  }
+  case ",$lsm," in
+  *,landlock,*)
+    printf '%s\n' "ok"
+    ;;
+  *)
+    printf '%s\n' "no_landlock"
+    ;;
+  esac
+}
+
 run_doctor() {
   local failed=0
   local command_name
@@ -330,6 +360,30 @@ run_doctor() {
   else
     add_doctor_result "mcp_stdio_bridge" "missing" "install socat, ncat, or nc and retry"
   fi
+  # The target runs under Landlock and seccomp, so a kernel built without either
+  # cannot host a run. Without this check the doctor reported every prerequisite
+  # satisfied and the run then died on `query Landlock ABI: function not
+  # implemented`, after the evaluator had already paid for a release download
+  # and a toolchain build. Observed on an arm64 board whose kernel omits
+  # Landlock. A definitive negative fails; an inconclusive probe does not,
+  # because refusing a machine that would have worked is its own failure.
+  case "$(kernel_sandbox_state)" in
+  ok)
+    add_doctor_result "kernel_sandbox" "ok" ""
+    ;;
+  no_landlock)
+    add_doctor_result "kernel_sandbox" "unavailable" \
+      "this kernel reports no Landlock support and the target sandbox requires it; use a kernel built with CONFIG_SECURITY_LANDLOCK and landlock in its active LSM list"
+    ;;
+  no_seccomp)
+    add_doctor_result "kernel_sandbox" "unavailable" \
+      "this kernel reports no seccomp support and the target sandbox requires it; use a kernel built with CONFIG_SECCOMP_FILTER"
+    ;;
+  *)
+    add_doctor_result "kernel_sandbox" "unknown" \
+      "could not determine Landlock support because the kernel LSM list is unreadable; the run will fail early if it is absent"
+    ;;
+  esac
   if [[ "$(pwd -P)" == "$repo_root" ]]; then
     repo_ok=true
   fi
