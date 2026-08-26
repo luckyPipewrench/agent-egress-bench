@@ -586,5 +586,45 @@ class EvidenceTerminalTest(unittest.TestCase):
                 self.assertEqual(round(tick) % major_every, 0)
 
 
+class CoordinatePrecisionTest(unittest.TestCase):
+    """Generated art must not read as a secret to this repository's own scanner.
+
+    Binary floating point printed a ruler tick at ``966.4000000000001``. Sixteen
+    digits in a row match the Credit Card Number pattern, so the committed card
+    failed the diff scan this repository runs against itself, and a legitimate
+    drawing was rejected as an exfiltrated card number. Refusing a real secret
+    is the point of that scan; refusing a rectangle is the failure this guards.
+
+    The same defect was fixed in the sibling rules repository first and did not
+    travel, which is why the check lives with the generator rather than in a
+    reviewer's memory.
+    """
+
+    def _vectors(self):
+        """Every generated vector, taken from the writer rather than from disk.
+
+        Reading the committed files would let a stale asset pass while the
+        generator emits noise, which is the wrong direction: the check exists to
+        stop the next render from producing it.
+        """
+        for path, body in generator.build().items():
+            if path.suffix == ".svg":
+                yield path.name, body
+
+    def test_no_coordinate_prints_a_long_digit_run(self):
+        for name, body in self._vectors():
+            with self.subTest(asset=name):
+                run = re.search(r"[0-9]{7,}", body)
+                self.assertIsNone(
+                    run, f"{name} emits {run.group(0) if run else ''!r}, "
+                    "which the repository's own DLP scan reads as a credential")
+
+    def test_the_formatter_removes_the_noise_it_was_written_for(self):
+        # 966.4 is the ruler position that produced the original failure.
+        self.assertEqual(generator._n(1184 - 50 * 4.352), "966.4")
+        self.assertEqual(generator._n(418.0), "418")
+        self.assertEqual(generator._n("auto"), "auto")
+
+
 if __name__ == "__main__":
     unittest.main()

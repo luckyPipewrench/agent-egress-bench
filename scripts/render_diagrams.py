@@ -242,6 +242,25 @@ def doctor_check_names() -> list[str]:
 _RGBA = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)")
 
 
+def _n(value) -> str:
+    """Format a coordinate: integers bare, everything else to two decimals.
+
+    Binary floating point turns a ruler position of 966.4 into the printed
+    coordinate `966.4000000000001`. Sixteen digits in a row is not merely
+    untidy: this repository scans its own diff with Pipelock, and that run
+    matches the Credit Card Number pattern, so the generated card blocks its own
+    pull request. Rounding here removes the noise at its source, and a test
+    holds path data to short digit runs so it cannot come back.
+
+    The same fix exists in pipelock-rules. Both repositories generate art that
+    their own scanners read, so both need it.
+    """
+    if isinstance(value, str):
+        return value
+    rounded = round(float(value), 2)
+    return str(int(rounded)) if rounded == int(rounded) else f"{rounded:g}"
+
+
 def _paint(attribute: str, value: str) -> str:
     """Emit a paint as hex plus a separate opacity attribute.
 
@@ -267,7 +286,7 @@ def _text(x, y, content, *, fill, size=13, family=SANS, weight=400, anchor="star
           spacing=None, opacity=None, upper=False):
     if upper:
         content = content.upper()
-    attrs = [f'x="{x}"', f'y="{y}"', f'font-family="{family}"', f'font-size="{size}"', f'fill="{fill}"']
+    attrs = [f'x="{_n(x)}"', f'y="{_n(y)}"', f'font-family="{family}"', f'font-size="{size}"', f'fill="{fill}"']
     if weight != 400:
         attrs.append(f'font-weight="{weight}"')
     if anchor != "start":
@@ -287,30 +306,30 @@ def _eyebrow(x, y, content, *, fill, size=10, anchor="start"):
 
 def _card(x, y, w, h, *, fill, stroke, width=1, radius=12, dash=None):
     extra = f' stroke-dasharray="{dash}"' if dash else ""
-    return (f'  <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{radius}" '
-            f'{_paint("fill", fill)} {_paint("stroke", stroke)} stroke-width="{width}"{extra}/>')
+    return (f'  <rect x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" rx="{_n(radius)}" '
+            f'{_paint("fill", fill)} {_paint("stroke", stroke)} stroke-width="{_n(width)}"{extra}/>')
 
 
 def _opacity_card(x, y, w, h, *, fill, fill_opacity, stroke, width=1, radius=12, extra=""):
     """A card whose translucent fill survives SVG renderers that reject rgba()."""
-    return (f'  <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{radius}" '
+    return (f'  <rect x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" rx="{_n(radius)}" '
             f'fill="{fill}" fill-opacity="{fill_opacity}" {_paint("stroke", stroke)} '
-            f'stroke-width="{width}"{extra}/>')
+            f'stroke-width="{_n(width)}"{extra}/>')
 
 
 def _line(x1, y1, x2, y2, color, *, width=2, dash=None, cap="butt", opacity=None):
     extra = f' stroke-dasharray="{dash}"' if dash else ""
     if opacity is not None:
         extra += f' opacity="{opacity}"'
-    return (f'  <path d="M {x1} {y1} L {x2} {y2}" {_paint("stroke", color)} stroke-width="{width}" '
-            f'stroke-linecap="{cap}" fill="none"{extra}/>')
+    return (f'  <path d="M {_n(x1)} {_n(y1)} L {_n(x2)} {_n(y2)}" {_paint("stroke", color)} '
+            f'stroke-width="{_n(width)}" stroke-linecap="{cap}" fill="none"{extra}/>')
 
 
 def _svg_open(w, h, label, p):
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_n(w)}" height="{_n(h)}" viewBox="0 0 {w} {h}" '
            f'role="img" aria-label="{_esc(label)}">']
     if p["canvas"] != "none":
-        out.append(f'  <rect width="{w}" height="{h}" fill="{p["canvas"]}"/>')
+        out.append(f'  <rect width="{_n(w)}" height="{_n(h)}" fill="{p["canvas"]}"/>')
     return out
 
 
@@ -340,8 +359,8 @@ def _ruler(x1, x2, y, color, *, divisions=50, major_every=5, tick=8, big=16, wid
         lx = x1 + (x2 - x1) * fraction
         out.append(_line(lx, y - big - 10, lx, y, label_color, width=3, cap="round"))
         if bold:
-            out.append(f'  <circle cx="{lx}" cy="{y - big - 16}" r="11" fill="{label_color}" opacity="0.18"/>')
-        out.append(f'  <circle cx="{lx}" cy="{y - big - 16}" r="5" fill="{label_color}"/>')
+            out.append(f'  <circle cx="{_n(lx)}" cy="{_n(y - big - 16)}" r="11" fill="{label_color}" opacity="0.18"/>')
+        out.append(f'  <circle cx="{_n(lx)}" cy="{_n(y - big - 16)}" r="5" fill="{label_color}"/>')
         out.append(_text(lx, y + 26, label, fill=label_color, size=13, family=MONO, weight=700, anchor="middle"))
     return out
 
@@ -422,7 +441,7 @@ def social_preview() -> str:
     """
     a, w, h = BRAND["accent"], 1280, 640
     out = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{_n(w)}" height="{_n(h)}" viewBox="0 0 {w} {h}" '
         'role="img" aria-label="Agent Egress Bench, the open yardstick for agent egress control. '
         'A PipeLab open project.">',
         "  <defs>",
@@ -439,9 +458,9 @@ def social_preview() -> str:
         f'      <stop offset="100%" stop-color="{a}" stop-opacity="0"/>',
         "    </radialGradient>",
         "  </defs>",
-        f'  <rect width="{w}" height="{h}" fill="{BRAND["bg"]}"/>',
-        f'  <rect width="{w}" height="{h}" fill="url(#teal)"/>',
-        f'  <rect width="{w}" height="{h}" fill="url(#purple)"/>',
+        f'  <rect width="{_n(w)}" height="{_n(h)}" fill="{BRAND["bg"]}"/>',
+        f'  <rect width="{_n(w)}" height="{_n(h)}" fill="url(#teal)"/>',
+        f'  <rect width="{_n(w)}" height="{_n(h)}" fill="url(#purple)"/>',
     ]
 
     points = _particles(44, w, h)
@@ -450,11 +469,11 @@ def social_preview() -> str:
         for x2, y2 in points[i + 1:]:
             d = math.hypot(x2 - x1, y2 - y1)
             if d < 150:
-                net.append(f'    <line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" '
+                net.append(f'    <line x1="{_n(x1)}" y1="{_n(y1)}" x2="{_n(x2)}" y2="{_n(y2)}" '
                            f'opacity="{round(0.16 * (1 - d / 150), 3)}"/>')
     net.append("  </g>")
     net.append(f'  <g fill="{a}" opacity="0.5">')
-    net += [f'    <circle cx="{x}" cy="{y}" r="1.6"/>' for x, y in points]
+    net += [f'    <circle cx="{_n(x)}" cy="{_n(y)}" r="1.6"/>' for x, y in points]
     net.append("  </g>")
     out += net
 
@@ -476,7 +495,7 @@ def social_preview() -> str:
     title_x, title_size = 280, 64
     # xml:space="preserve" is load-bearing: without it the renderer collapses the
     # trailing space inside the first tspan and the wordmark reads "EgressBench".
-    out.append(f'  <text x="{title_x}" y="206" font-family="{MONO}" '
+    out.append(f'  <text x="{_n(title_x)}" y="206" font-family="{MONO}" '
                f'font-size="{title_size}" font-weight="700" letter-spacing="-0.02em" '
                f'xml:space="preserve">'
                f'<tspan fill="{BRAND["text"]}">Agent Egress </tspan>'
@@ -672,8 +691,8 @@ def architecture(p) -> str:
     ax, nx = cx - 122, cx + 122   # glyph centers
     for x1, x2 in ((lx + lw, ax - 30), (ax + 30, cx - 60), (cx + 60, nx - 30), (nx + 30, 788)):
         out.append(_line(x1, cy, x2, cy, p["border_strong"], width=1.5, dash="4 5"))
-    out.append(f'  <circle cx="{cx}" cy="{cy}" r="74" fill="{p["accent"]}" opacity="0.06"/>')
-    out.append(f'  <circle cx="{cx}" cy="{cy}" r="58" fill="{p["terminal"]}" stroke="{p["accent"]}" stroke-width="2"/>')
+    out.append(f'  <circle cx="{_n(cx)}" cy="{_n(cy)}" r="74" fill="{p["accent"]}" opacity="0.06"/>')
+    out.append(f'  <circle cx="{_n(cx)}" cy="{_n(cy)}" r="58" fill="{p["terminal"]}" stroke="{p["accent"]}" stroke-width="2"/>')
     out.append(f'  <g transform="translate({cx - 29} {cy - 31}) scale(0.92)">')
     out += ["  " + line for line in _ruler_glyph(p["accent"], p["terminal"])]
     out.append("  </g>")
@@ -686,8 +705,8 @@ def architecture(p) -> str:
                      anchor="middle"))
     out.append(_text(ax, cy + 6, ">_", fill=p["dim"], size=17, family=MONO, weight=700, anchor="middle"))
     out.append(_text(ax, cy + 30, "agent", fill=p["dim"], size=10, family=MONO, anchor="middle"))
-    out.append(f'  <circle cx="{nx}" cy="{cy}" r="10" fill="none" stroke="{p["dim"]}" stroke-width="1.3"/>')
-    out.append(f'  <ellipse cx="{nx}" cy="{cy}" rx="4.5" ry="10" fill="none" stroke="{p["dim"]}" stroke-width="1.1"/>')
+    out.append(f'  <circle cx="{_n(nx)}" cy="{_n(cy)}" r="10" fill="none" stroke="{p["dim"]}" stroke-width="1.3"/>')
+    out.append(f'  <ellipse cx="{_n(nx)}" cy="{_n(cy)}" rx="4.5" ry="10" fill="none" stroke="{p["dim"]}" stroke-width="1.1"/>')
     out.append(_line(nx - 10, cy, nx + 10, cy, p["dim"], width=1.1))
     out.append(_text(nx, cy + 30, "network", fill=p["dim"], size=10, family=MONO, anchor="middle"))
 
@@ -753,8 +772,8 @@ def system(p) -> str:
         cx = x1 + i * step
         tone = OWNER_TONES[owner]
         color = p["accent_text"] if tone == "accent" else (p["text"] if tone == "text" else p[tone])
-        out.append(f'  <circle cx="{cx}" cy="{y}" r="9" fill="{p["terminal"]}" stroke="{color}" stroke-width="2.5"/>')
-        out.append(f'  <circle cx="{cx}" cy="{y}" r="3" fill="{color}"/>')
+        out.append(f'  <circle cx="{_n(cx)}" cy="{_n(y)}" r="9" fill="{p["terminal"]}" stroke="{color}" stroke-width="2.5"/>')
+        out.append(f'  <circle cx="{_n(cx)}" cy="{_n(y)}" r="3" fill="{color}"/>')
         anchor = "start" if i == 0 else ("end" if i == len(SYSTEM_STAGES) - 1 else "middle")
         tx = cx if anchor == "middle" else (cx - 9 if anchor == "start" else cx + 9)
         out.append(_eyebrow(tx, y - 70, eyebrow, fill=color, anchor=anchor))
@@ -775,7 +794,7 @@ def system(p) -> str:
                         ("publisher", "whoever ran it")):
         tone = OWNER_TONES[owner]
         color = p["accent_text"] if tone == "accent" else (p["text"] if tone == "text" else p[tone])
-        out.append(f'  <circle cx="{lx + 6}" cy="{ly + 24}" r="5" fill="{color}"/>')
+        out.append(f'  <circle cx="{_n(lx + 6)}" cy="{_n(ly + 24)}" r="5" fill="{color}"/>')
         out.append(_text(lx + 18, ly + 28, f"{owner}: {note}", fill=p["muted"], size=12, family=MONO))
         lx += 228
     out.append(_text(60, 404, "The benchmark supplies the ruler and the validator. It never touches the target, "
@@ -840,13 +859,13 @@ def result_states(p) -> str:
     # Header strip: one edge with the band.
     out.append(_card(left, 24, right - left, 52, fill=p["card"], stroke=p["border"], width=1, radius=10))
     for i, (gx, question, _, tone, _) in enumerate(gates):
-        out.append(f'  <circle cx="{gx}" cy="42" r="10" fill="{p["terminal"]}" stroke="{p["accent"]}" stroke-width="1.5"/>')
+        out.append(f'  <circle cx="{_n(gx)}" cy="42" r="10" fill="{p["terminal"]}" stroke="{p["accent"]}" stroke-width="1.5"/>')
         out.append(_text(gx, 46, str(i + 1), fill=p["accent_text"], size=11, family=MONO, weight=700, anchor="middle"))
         out.append(_text(gx + 18, 46, question, fill=p["text"], size=13, weight=600))
         out.append(_text(gx + 18, 64, "no", fill=p[tone], size=11, family=MONO, weight=700))
         # A gate line from the strip down to the band's top edge, and no further.
         out.append(_line(gx, 76, gx, top - 6, p["border_strong"], width=1, dash="3 4"))
-    out.append(f'  <circle cx="{fork_x}" cy="42" r="10" fill="{p["terminal"]}" stroke="{p["accent"]}" stroke-width="1.5"/>')
+    out.append(f'  <circle cx="{_n(fork_x)}" cy="42" r="10" fill="{p["terminal"]}" stroke="{p["accent"]}" stroke-width="1.5"/>')
     out.append(_text(fork_x, 46, "4", fill=p["accent_text"], size=11, family=MONO, weight=700, anchor="middle"))
     out.append(_text(fork_x + 18, 46, "Scored", fill=p["text"], size=13, weight=600))
     out.append(_text(fork_x + 18, 64, "vs expected", fill=p["accent_text"], size=11, family=MONO, weight=700))
@@ -1155,7 +1174,7 @@ def _terminal_frame(x, w, h, title):
            f'A 12 12 0 0 1 {x + 12} 0.5 Z" fill="#ffffff" fill-opacity="0.03"/>',
            _line(x + 0.5, 40, x + w - 0.5, 40, "rgba(255,255,255,0.06)", width=1)]
     for i, c in enumerate((BRAND["danger"], BRAND["warn"], BRAND["accent"])):
-        out.append(f'  <circle cx="{x + 22 + i * 20}" cy="20" r="6" fill="{c}" opacity="0.85"/>')
+        out.append(f'  <circle cx="{_n(x + 22 + i * 20)}" cy="20" r="6" fill="{c}" opacity="0.85"/>')
     out.append(_text(x + w / 2, 25, title, fill=BRAND["dim"], size=12, family=MONO, anchor="middle"))
     return out
 
@@ -1166,7 +1185,7 @@ def terminal_doctor() -> str:
     rows = max(len(DOCTOR_LINES) + 3, len(EVIDENCE_FILES) + 2)
     w, h = 1200, 96 + rows * line_h + 30
     lw, rw, gap = 590, 590, 20
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" '
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_n(w)}" height="{_n(h)}" viewBox="0 0 {w} {h}" role="img" '
            'aria-label="Two terminals. Left: ./scripts/run-pipelock-gauntlet.sh --doctor reports every prerequisite '
            'check as ok and ends with ready: local prerequisites are satisfied. Right: the evidence directory one '
            'run leaves behind, listing every retained file.">']
