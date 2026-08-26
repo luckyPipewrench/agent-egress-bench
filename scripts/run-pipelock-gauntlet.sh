@@ -280,6 +280,24 @@ run_doctor() {
       fi
       continue
     fi
+    if [[ "$command_name" == "realpath" ]]; then
+      # Presence is not enough. This script resolves paths with GNU options
+      # (-e, -m, and --), and the BusyBox realpath common on minimal images
+      # takes no options at all: it would treat them as filenames. Without this
+      # probe the doctor reports ready and the run fails later, during
+      # release-pin resolution, which is the failure the doctor exists to
+      # prevent. Reported under the same command_realpath code so the check
+      # list, and the terminal drawing generated from it, are unchanged.
+      if ! command -v realpath >/dev/null 2>&1; then
+        add_doctor_result "command_realpath" "missing" "install realpath and retry"
+      elif realpath -e -- "$repo_root" >/dev/null 2>&1 && realpath -m -- "$repo_root" >/dev/null 2>&1; then
+        add_doctor_result "command_realpath" "ok" ""
+      else
+        add_doctor_result "command_realpath" "unsupported" \
+          "install GNU coreutils realpath: this realpath does not accept -e, -m and --"
+      fi
+      continue
+    fi
     if command -v "$command_name" >/dev/null 2>&1; then
       add_doctor_result "command_${command_name//-/_}" "ok" ""
     else

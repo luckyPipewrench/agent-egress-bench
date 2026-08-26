@@ -349,6 +349,67 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                 "differently after the script changes directory",
             )
 
+    def test_the_selected_toolchain_is_never_reassigned_after_canonicalization(self):
+        # The doctor cannot prove this on its own: it validates the selection
+        # without entering runner/ or validate/, so a test that only runs
+        # --doctor-json would still pass if a later execution path re-derived a
+        # relative value. Combined with the bare-go-invocation guard, asserting
+        # that go_bin is assigned only before canonicalization means every
+        # consumer, including the ones that change directory, sees the absolute
+        # path.
+        lines = self.entrypoint.splitlines()
+        canonicalize_at = None
+        assignments = []
+        for number, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            # Anchor on the resolution itself. The same shape test appears in the
+            # availability helper, so matching that would anchor too early and
+            # flag the legitimate --go flag assignment.
+            if canonicalize_at is None and re.match(r"^go_bin_resolved=", stripped):
+                canonicalize_at = number
+            if re.match(r"^go_bin=", stripped):
+                assignments.append(number)
+        self.assertIsNotNone(canonicalize_at, "the canonicalization block is gone")
+        late = [n for n in assignments if n > canonicalize_at]
+        self.assertEqual(
+            late, [],
+            f"go_bin reassigned at {late} after canonicalization at line {canonicalize_at}; "
+            "a consumer that changes directory would resolve the un-canonicalized value",
+        )
+
+    def test_doctor_rejects_a_realpath_without_the_required_gnu_options(self):
+        # Presence is not capability. BusyBox realpath takes no options, so a
+        # doctor that only checks for the command reports ready and the run then
+        # fails during release-pin resolution.
+        with tempfile.TemporaryDirectory() as temporary:
+            stub = Path(temporary) / "realpath"
+            stub.write_text(
+                "#!/bin/sh\n"
+                'for a in "$@"; do\n'
+                '  case "$a" in\n'
+                '    -*) echo "realpath: $a: No such file or directory" >&2; exit 1 ;;\n'
+                "  esac\n"
+                "done\n"
+                'printf "%s\\n" "$@"\n',
+                encoding="utf-8",
+            )
+            stub.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(ENTRYPOINT), "--doctor-json"],
+                cwd=REPO_ROOT,
+                env={**os.environ, "AEB_GO": "", "PATH": f"{temporary}:{os.environ.get('PATH', '')}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        check = next(c for c in report["checks"] if c["code"] == "command_realpath")
+        self.assertEqual(check["status"], "unsupported")
+        self.assertTrue(check["remediation"])
+
     def test_aeb_go_environment_variable_selects_the_toolchain(self):
         with tempfile.TemporaryDirectory() as temporary:
             stale = self._stub_go(temporary, "go version go1.24.0 linux/amd64")
