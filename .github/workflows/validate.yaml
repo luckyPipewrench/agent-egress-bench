@@ -127,6 +127,12 @@ jobs:
           files: runner/coverage.out,validate/coverage.out,capability-registry/coverage.out
           disable_search: true
           fail_ci_if_error: false
+          # Codecov stopped accepting unauthenticated uploads from this repo:
+          # every push logged "Token required - not valid tokenless upload" and
+          # the README badge read "unknown" while the tests were green. The job
+          # already requests `id-token: write`, so OIDC authenticates the upload
+          # without storing a long-lived secret.
+          use_oidc: true
 
   # The shared gate above is the normal push contract. Keep this narrower job
   # solely for the validate module's declared minimum Go compatibility, which

@@ -1,4 +1,4 @@
-.PHONY: check-test-layout preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site check-result-pointers test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
+.PHONY: check-test-layout preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-diagrams check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site check-result-pointers test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -22,7 +22,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
 # toolchain needed by runner/go.mod (currently Go 1.25 or newer).
-preflight: check-test-layout check-contracts check-schema-catalog check-schema-discovery-feed check-public-contracts check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-result-pointers check-claim-language check-readme-categories
+preflight: check-test-layout check-contracts check-schema-catalog check-schema-discovery-feed check-public-contracts check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-result-pointers check-claim-language check-readme-categories check-diagrams
 
 # A test module that defines a class BELOW its __main__ guard still reports success:
 # under direct execution those classes do not exist yet when unittest.main() collects,
@@ -159,6 +159,16 @@ check-readme-categories:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_readme_categories_test.py
 	@python3 scripts/check_readme_categories.py --repo-root .
 
+# README assets are generated, not drawn: the hero, every diagram pair, the
+# count badges, and the doctor terminal. Committed SVGs must match what the
+# generator produces from the live corpus, light and dark variants of one
+# diagram must say the same thing, and the hand-exported hero PNG must come
+# from the committed SVG.
+check-diagrams:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/render_diagrams_test.py
+	@python3 scripts/render_diagrams.py --check
+
 test-validate:
 	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
 	@cd validate && go test -race -count=1 ./...
@@ -231,7 +241,12 @@ stats:
 # succeeds with output. Redirecting straight into cases/STATS.md truncates it
 # when the shell opens it, so a runner that then failed left an EMPTY snapshot.
 stats-update:
-	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	@command -v python3 >/dev/null 2>&1 || { \
+		echo "stats-update: FAIL - Python 3 is required to regenerate README assets"; \
+		echo "  cases/STATS.md is unchanged; install Python 3, then run 'make stats-update'"; \
+		exit 1; \
+	}; \
+	tmp=$$(mktemp); prior=$$(mktemp); trap 'rm -f "$$tmp" "$$prior"' EXIT; \
 	if ! (cd runner && go run . --stats --cases ../cases) > "$$tmp"; then \
 		echo "stats-update: FAIL - the runner could not load the corpus"; \
 		echo "  cases/STATS.md is unchanged; repair the corpus, then run 'make stats-update'"; \
@@ -242,8 +257,17 @@ stats-update:
 		echo "  cases/STATS.md is unchanged"; \
 		exit 1; \
 	fi; \
+	if ! cp cases/STATS.md "$$prior"; then \
+		echo "stats-update: FAIL - could not preserve cases/STATS.md before regeneration"; \
+		exit 1; \
+	fi; \
 	cp "$$tmp" cases/STATS.md; \
-	echo "stats-update: OK (cases/STATS.md refreshed from the runner-loaded corpus)"
+	if ! python3 scripts/render_diagrams.py; then \
+		cp "$$prior" cases/STATS.md; \
+		echo "stats-update: FAIL - asset regeneration failed; cases/STATS.md was restored"; \
+		exit 1; \
+	fi; \
+	echo "stats-update: OK (cases/STATS.md and README assets refreshed from the runner-loaded corpus)"
 
 # Fail when the reader-facing stats snapshot no longer matches the corpus that
 # the runner actually loads. This compares the whole generated report, not a
