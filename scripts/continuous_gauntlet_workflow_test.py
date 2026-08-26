@@ -309,6 +309,46 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertFalse(report["ready"])
         self.assertEqual(go_version["status"], "too_old")
 
+    def test_a_relative_go_selection_is_canonicalized_before_use(self):
+        # The build and validation steps cd into runner/ and validate/, so a
+        # relative selection validated from the repository root would resolve
+        # somewhere else once they run: doctor reports ready and the run then
+        # fails, or silently picks a different file at the same relative path.
+        # Assert on the path the toolchain is actually INVOKED as, not on the
+        # doctor verdict, which passes either way and would make this vacuous.
+        with tempfile.TemporaryDirectory() as temporary:
+            recorded = Path(temporary) / "invoked-as"
+            stub_dir = REPO_ROOT / "_reltest_toolchain"
+            stub_dir.mkdir(exist_ok=True)
+            stub = stub_dir / "go"
+            stub.write_text(
+                "#!/bin/sh\n"
+                f'printf "%s\\n" "$0" >> {recorded}\n'
+                "printf 'go version go1.25.0 linux/amd64\\n'\n",
+                encoding="utf-8",
+            )
+            stub.chmod(0o755)
+            try:
+                subprocess.run(
+                    ["bash", str(ENTRYPOINT), "--go", "./_reltest_toolchain/go", "--doctor-json"],
+                    cwd=REPO_ROOT,
+                    env={**os.environ, "AEB_GO": ""},
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                invocations = recorded.read_text(encoding="utf-8").split()
+            finally:
+                stub.unlink(missing_ok=True)
+                stub_dir.rmdir()
+        self.assertTrue(invocations, "the selected toolchain was never invoked")
+        for path in invocations:
+            self.assertTrue(
+                path.startswith("/"),
+                f"toolchain invoked by relative path {path!r}; it would resolve "
+                "differently after the script changes directory",
+            )
+
     def test_aeb_go_environment_variable_selects_the_toolchain(self):
         with tempfile.TemporaryDirectory() as temporary:
             stale = self._stub_go(temporary, "go version go1.24.0 linux/amd64")

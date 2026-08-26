@@ -226,6 +226,22 @@ while (($#)); do
   esac
 done
 
+# Canonicalize a path-shaped toolchain selection to an absolute path before
+# anything validates or runs it. The build and validation steps cd into
+# runner/ and validate/, so a relative selection would be checked against one
+# directory and executed from another: doctor would report ready and the run
+# would then fail, or worse, resolve a different file that happens to sit at
+# the same relative path. A bare name is left alone so it keeps resolving
+# through PATH.
+if [[ "$go_bin" == */* ]]; then
+  # Best-effort on purpose. An unresolvable selection is left as written so the
+  # doctor still reports it as a missing prerequisite alongside everything else
+  # it found; dying here would collapse the whole prerequisite report into one
+  # error, which is the opposite of what --doctor-json exists to produce.
+  go_bin_resolved="$(realpath -e -- "$go_bin" 2>/dev/null || true)"
+  [[ -n "$go_bin_resolved" ]] && go_bin="$go_bin_resolved"
+fi
+
 run_doctor() {
   local failed=0
   local command_name

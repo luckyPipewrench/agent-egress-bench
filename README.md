@@ -53,7 +53,7 @@ Tools already sit in that path. What a buyer usually gets is each vendor's own e
 
 ## Quick start
 
-You need [Go 1.25 or newer](https://go.dev/dl/) from that page. A distribution `golang` package often installs something older and the runner won't build on it; Debian and Ubuntu both currently ship an older Go. The floor is not ours to lower, because `golang.org/x/sys` sets it. If a new enough toolchain is already installed somewhere else, point the reference lane at it instead of changing `PATH`:
+You need [Go 1.25 or newer](https://go.dev/dl/) from that page. A distribution `golang` package can be older than that, depending on the release you are on, and the runner won't build on it. Run `go version` to see what you have. The floor is not ours to lower, because `golang.org/x/sys` sets it. If a new enough toolchain is already installed somewhere else, point the reference lane at it instead of changing `PATH`:
 
 ```bash
 ./scripts/run-pipelock-gauntlet.sh --go /path/to/go1.25/bin/go --doctor   # or: export AEB_GO=/path/to/go1.25/bin/go
