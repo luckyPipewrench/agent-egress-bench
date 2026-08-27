@@ -182,6 +182,42 @@ class WellFormedTest(unittest.TestCase):
                     or "Agent Egress" in "".join(node.itertext())]
         self.assertEqual(len(carrying), 1, "the wordmark spans more than one text element")
 
+    def test_the_hero_wordmark_is_sized_to_the_family_card(self):
+        # 72 is the optical match to Pipelock Rules at 86: this name is longer,
+        # so the same point size would dominate a card whose hero is the ruler.
+        root = ElementTree.fromstring(generator.social_preview())
+        wordmark = next(
+            node for node in root.iter(SVG + "text")
+            if "Agent Egress" in "".join(node.itertext())
+        )
+        self.assertEqual(wordmark.get("font-size"), "72")
+
+    def test_the_hero_footer_is_the_family_line(self):
+        """License and maintainer sit in one place, same as the sibling card.
+
+        An earlier layout split those across left, right, and a GitHub URL
+        under them, so three cards from one house did not share a footer.
+        """
+        hero = generator.social_preview()
+        self.assertIn(generator.CARD_FOOTER, hero)
+        self.assertNotIn("A PipeLab open project", hero)
+        self.assertNotIn("pipelab.org  ·  Apache-2.0", hero)
+        self.assertNotIn("github.com/luckyPipewrench/agent-egress-bench",
+                         re.sub(r"<[^>]+>", " ", hero))
+        root = ElementTree.fromstring(hero)
+        footers = [
+            node for node in root.iter(SVG + "text")
+            if generator.CARD_FOOTER in "".join(node.itertext())
+        ]
+        self.assertEqual(len(footers), 1)
+        footer = footers[0]
+        self.assertEqual(footer.get("x"), str(generator.CARD_FOOTER_X))
+        self.assertEqual(footer.get("y"), str(generator.CARD_FOOTER_Y))
+        self.assertEqual(footer.get("font-size"), str(generator.CARD_FOOTER_SIZE))
+        self.assertEqual(footer.get("font-family"), generator.MONO)
+        self.assertEqual(footer.get("letter-spacing"), "0.12em")
+        self.assertEqual(footer.get("fill"), generator.BRAND["dim"])
+
     def test_every_explicit_asset_color_is_a_brand_token_or_light_adaptation(self):
         approved = (set(generator.BRAND.values()) | generator.LIGHT_THEME_DERIVATIVES
                     | generator.OVERLAY_BASES)
@@ -355,9 +391,30 @@ class CommittedAssetTest(unittest.TestCase):
                 self.assertIn(f"assets/diagram-{name}-dark.svg", self.readme)
                 self.assertIn(f"assets/diagram-{name}-light.svg", self.readme)
 
-    def test_the_readme_embeds_the_hero_and_terminal(self):
-        self.assertIn("assets/social-preview.svg", self.readme)
+    def test_the_readme_leads_with_the_lockup_not_the_social_card(self):
+        """The header is a mark and a wordmark, matching the sibling repository.
+
+        A social card is built for a link preview, where it stands alone at a
+        fixed size with nothing around it. Leading the README with it makes a
+        large image do the job a single line should do, and it was why the two
+        sibling repositories introduced themselves differently. The card is
+        still generated and still uploaded as the repository's social preview;
+        it is simply not the page header.
+        """
+        self.assertIn("assets/lockup.svg", self.readme)
+        self.assertNotIn("assets/social-preview.svg", self.readme)
+        header = self.readme.split("</p>", 1)[0]
+        self.assertIn("assets/lockup.svg", header,
+                      "the lockup must be the first thing on the page")
+
+    def test_the_readme_embeds_the_terminal(self):
         self.assertIn("assets/terminal-doctor.svg", self.readme)
+
+    def test_the_social_card_is_still_produced(self):
+        # No longer embedded, but still the repository's link preview, so a
+        # change that stopped generating it should fail rather than pass
+        # quietly now that no README reference points at it.
+        self.assertIn("social-preview.svg", {path.name for path in generator.build()})
 
     def test_every_png_matches_its_source(self):
         self.assertEqual(generator.png_problems(), [])

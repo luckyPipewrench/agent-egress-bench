@@ -59,6 +59,13 @@ BRAND = {
     "info": "#38bdf8",
 }
 
+# Family social-card footer. Same string, type, and position as Pipelock Rules,
+# so the three cards read as one house rather than three layouts.
+CARD_FOOTER = "Apache 2.0  ·  maintained by PipeLab"
+CARD_FOOTER_X = 120
+CARD_FOOTER_Y = 566
+CARD_FOOTER_SIZE = 16
+
 # These are contrast adaptations for text and status marks on GitHub's white
 # canvas. Filled bars keep the locked accent, with dark token text on top.
 LIGHT_THEME_DERIVATIVES = {"#008f66", "#dc2626", "#b45309", "#0284c7"}
@@ -390,6 +397,60 @@ def _ruler_glyph(a, bg):
     out.append("  </g>")
     return out
 
+# Type metrics for the monospace wordmark. Every glyph advances the same width,
+# so the wordmark's extent is exact. TRACKING is subtracted because the text is
+# set with negative letter-spacing.
+MONO_ADVANCE = 0.6
+TRACKING = 0.02
+ASCENDER = 0.75
+DESCENDER = 0.21
+
+WORDMARK_LEAD = "Agent Egress "
+WORDMARK_ACCENT = "Bench"
+
+
+def lockup() -> str:
+    """Mark and wordmark on one line, for the README header.
+
+    Sized from the wordmark rather than a typed canvas width. A canvas wider
+    than its artwork looks off-centre the moment the image is centred on a
+    page, because the empty margin is centred along with the ink.
+    """
+    a = BRAND["accent"]
+    margin, mark_size, gap, size = 20, 96, 26, 44
+    text_x = margin + mark_size + gap
+    word = WORDMARK_LEAD + WORDMARK_ACCENT
+    text_w = round(len(word) * size * (MONO_ADVANCE - TRACKING), 2)
+    w = round(text_x + text_w + margin, 2)
+    h = margin * 2 + mark_size - 24
+
+    # Centre the wordmark's visual band on the mark's centre. Aligning the
+    # baseline instead would hang the word low, because a baseline sits under
+    # the letters rather than through them.
+    mark_centre = 10 + mark_size / 2
+    baseline = round(mark_centre - (ASCENDER + DESCENDER) * size / 2 + ASCENDER * size, 2)
+    scale = round(mark_size / 64, 6)
+
+    # No tile behind the mark. A rounded tile gives a mark a defined edge where
+    # it lands on a background nobody controls, which is an avatar or a
+    # favicon. On a page the tile boxes the mark in beside a bare wordmark, and
+    # the sibling repository's lockup carries no tile either.
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+           f'viewBox="0 0 {w} {h}" role="img" '
+           f'aria-label="Agent Egress Bench logo lockup">',
+           f'  <g transform="translate({margin} 10) scale({scale})">']
+    out += [f"  {line}" for line in _ruler_glyph(a, BRAND["bg_elevated"])]
+    out.append("  </g>")
+    # Two-tone: the accent lands on the word that distinguishes this repository
+    # from its siblings, matching pipelock-rules next door.
+    out.append(f'  <text x="{text_x}" y="{baseline}" font-family="{MONO}" font-size="{size}" '
+               f'font-weight="700" letter-spacing="-{TRACKING}em" xml:space="preserve">'
+               f'<tspan fill="{BRAND["text"]}">{WORDMARK_LEAD}</tspan>'
+               f'<tspan fill="{a}">{WORDMARK_ACCENT}</tspan></text>')
+    out.append("</svg>")
+    return "\n".join(out) + "\n"
+
+
 def logo() -> str:
     a = BRAND["accent"]
     out = ['<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" '
@@ -438,12 +499,16 @@ def social_preview() -> str:
     against a 70 bottom. Layouts that moved the ruler or the tagline were built
     and rendered, and each one simply relocated the void; growing the elements
     is what absorbs it.
+
+    The footer is the family line, left, one place: license then maintainer.
+    An earlier card split those across left, right, and a second row, so this
+    card and its sibling did not read as one house.
     """
     a, w, h = BRAND["accent"], 1280, 640
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{_n(w)}" height="{_n(h)}" viewBox="0 0 {w} {h}" '
         'role="img" aria-label="Agent Egress Bench, the open yardstick for agent egress control. '
-        'A PipeLab open project.">',
+        f'{CARD_FOOTER}.">',
         "  <defs>",
         '    <radialGradient id="teal" cx="30%" cy="20%" r="55%">',
         f'      <stop offset="0%" stop-color="{a}" stop-opacity="0.22"/>',
@@ -477,10 +542,29 @@ def social_preview() -> str:
     net.append("  </g>")
     out += net
 
-    # Logomark, scaled 64 -> 154. See the vertical rhythm note in social_preview.
-    out.append('  <g transform="translate(96 104) scale(2.4)">')
-    out.append(f'    <rect width="64" height="64" rx="12" fill="{BRAND["bg"]}" stroke="#ffffff" stroke-opacity="0.10"/>')
-    out.append('    <rect width="64" height="64" rx="12" fill="url(#mark)"/>')
+    # Identity block: mark, then wordmark, centred on the card as a unit.
+    #
+    # Both used to start at a fixed x=96, which left the block sitting left of
+    # centre while the sibling card centred its own. The wordmark is monospace,
+    # so its width is arithmetic rather than an estimate, and the block can be
+    # placed from the centre outward.
+    #
+    # No tile behind the mark. A rounded tile gives a mark an edge where it
+    # lands on a background nobody controls, which is an avatar or a favicon.
+    # Here the background is the card's own, so the tile only boxed the mark in.
+    mark_scale = 3.2
+    mark_w = 64 * mark_scale
+    mark_gap = 30.4
+    # 72, not 86: the sibling card's name is shorter, so the same point size
+    # would make this line the loudest thing on a card whose hero is the ruler.
+    # 72 is the step that matches optical weight without crowding the ticks.
+    title_size = 72
+    word = "Agent Egress Bench"
+    title_w = len(word) * title_size * 0.58
+    block_x = round((1280 - (mark_w + mark_gap + title_w)) / 2, 2)
+    title_x = round(block_x + mark_w + mark_gap, 2)
+
+    out.append(f'  <g transform="translate({_n(block_x)} 104) scale({mark_scale})">')
     out += ["  " + line for line in _ruler_glyph(a, BRAND["bg_elevated"])]
     out.append("  </g>")
 
@@ -492,7 +576,6 @@ def social_preview() -> str:
     # arithmetic looked correct. Letting the text engine lay out one run removes
     # the estimate rather than correcting it, and there is nothing left to
     # centre by hand.
-    title_x, title_size = 280, 64
     # xml:space="preserve" is load-bearing: without it the renderer collapses the
     # trailing space inside the first tspan and the wordmark reads "EgressBench".
     out.append(f'  <text x="{_n(title_x)}" y="206" font-family="{MONO}" '
@@ -500,8 +583,8 @@ def social_preview() -> str:
                f'xml:space="preserve">'
                f'<tspan fill="{BRAND["text"]}">Agent Egress </tspan>'
                f'<tspan fill="{a}">Bench</tspan></text>')
-    out.append(_text(282, 254, "OPEN YARDSTICK FOR AGENT EGRESS CONTROL", fill=BRAND["muted"], size=15,
-                     family=SANS, spacing="0.286em"))
+    out.append(_text(title_x + 2, 254, "OPEN YARDSTICK FOR AGENT EGRESS CONTROL", fill=BRAND["muted"], size=18,
+                     family=SANS, spacing="0.20em"))
 
     out += _ruler(96, 1184, 412, a, divisions=50, major_every=5, tick=10, big=22, width=4, cap_h=26, bold=True, labels=(
         (0.2, "allow", a),
@@ -510,11 +593,8 @@ def social_preview() -> str:
         (0.8, "error", BRAND["muted"]),
     ))
 
-    out.append(_text(96, 566, "A PipeLab open project", fill=BRAND["muted"], size=15, family=SANS, weight=500))
-    out.append(_text(1184, 566, "pipelab.org  ·  Apache-2.0", fill=BRAND["dim"], size=14, family=MONO,
-                     anchor="end"))
-    out.append(_text(96, 590, "github.com/luckyPipewrench/agent-egress-bench", fill=BRAND["dim"], size=13,
-                     family=MONO))
+    out.append(_text(CARD_FOOTER_X, CARD_FOOTER_Y, CARD_FOOTER, fill=BRAND["dim"],
+                     size=CARD_FOOTER_SIZE, family=MONO, spacing="0.12em"))
     out.append("</svg>")
     return "\n".join(out) + "\n"
 
@@ -1235,6 +1315,7 @@ DIAGRAMS = {
 SINGLES = {
     "social-preview.svg": social_preview,
     "logo.svg": logo,
+    "lockup.svg": lockup,
     "terminal-doctor.svg": terminal_doctor,
 }
 # Hand-exported rasters, each pinned to the SVG it came from.
