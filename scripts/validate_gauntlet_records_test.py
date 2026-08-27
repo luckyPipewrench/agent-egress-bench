@@ -254,7 +254,7 @@ class ValidRecordFixture:
         write_json(
             self.artifact_dir / "run-metadata.json",
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "local_run_id": "local:test:1",
                 "generated_at": "2026-08-05T00:10:08Z",
                 "corpus_repository": "luckyPipewrench/agent-egress-bench",
@@ -263,6 +263,7 @@ class ValidRecordFixture:
                 "dirty": False,
                 "canonical_execution": True,
                 "noncanonical_reasons": [],
+                "runner_go_version": "go version go1.25.0 linux/amd64",
             },
         )
         write_json(

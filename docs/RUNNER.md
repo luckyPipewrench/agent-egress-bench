@@ -390,7 +390,7 @@ The renderer reads these artifacts when present:
 |---|---|
 | `raw-summary.json` | Method versions, target product and version, profile digest, exact registry reference, reporting labels, scope counts, two outcome metrics, and two diagnostic rates |
 | `results.jsonl` | Every historical not-applicable or unreachable case ID and its recorded reason |
-| `run-metadata.json` | Repository and exact method commit |
+| `run-metadata.json` | Repository, exact method commit, and the Go toolchain's own reported version, since the runner is compiled from source on every run and the compiler is part of what produced the measuring instrument. Records at `schema_version: 2` and above carry `runner_go_version`; records at version 1 predate the field and cannot have it reconstructed |
 | `run-bundle.json` | Bundle status, publication eligibility, retained material digests, and candidate bindings |
 | `execution-decision.json` | Execution status, failures, review notes, and publication eligibility |
 | `entrypoint-command.txt` and `command.txt` | The retained reproduction commands |
