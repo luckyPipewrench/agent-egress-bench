@@ -1533,7 +1533,7 @@ func validateProfile(p Profile) []string {
 	var errors []string
 
 	if p.SchemaVersion != activeToolProfileSchemaVersion {
-		errors = append(errors, fmt.Sprintf("schema_version must be %d, got %d", activeToolProfileSchemaVersion, p.SchemaVersion))
+		errors = append(errors, fmt.Sprintf("incompatible_schema_version: family=tool_profile accepted=[%d] got=%d", activeToolProfileSchemaVersion, p.SchemaVersion))
 	}
 	if p.Tool == "" {
 		errors = append(errors, "missing tool")
@@ -1723,6 +1723,16 @@ func validateProfileFile(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return []string{fmt.Sprintf("%s: read error: %v", path, err)}
+	}
+
+	var header struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return []string{fmt.Sprintf("%s: JSON parse error: %v", path, err)}
+	}
+	if header.SchemaVersion != activeToolProfileSchemaVersion {
+		return []string{fmt.Sprintf("incompatible_schema_version: family=tool_profile accepted=[%d] got=%d", activeToolProfileSchemaVersion, header.SchemaVersion)}
 	}
 
 	var p Profile

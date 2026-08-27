@@ -4,12 +4,49 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
+
+type readerContract struct {
+	Consumer         string `json:"consumer"`
+	Role             string `json:"role"`
+	Path             string `json:"path"`
+	AcceptedVersions []int  `json:"accepted_versions"`
+}
+
+func toolProfileReaderContract(t *testing.T, consumer string) readerContract {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "contracts", "artifacts.json"))
+	if err != nil {
+		t.Fatalf("read compatibility manifest: %v", err)
+	}
+	var manifest struct {
+		ArtifactFamilies []struct {
+			Family          string           `json:"family"`
+			ReaderContracts []readerContract `json:"reader_contracts"`
+		} `json:"artifact_families"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("decode compatibility manifest: %v", err)
+	}
+	for _, family := range manifest.ArtifactFamilies {
+		if family.Family != "tool_profile" {
+			continue
+		}
+		for _, contract := range family.ReaderContracts {
+			if contract.Consumer == consumer {
+				return contract
+			}
+		}
+	}
+	t.Fatalf("compatibility manifest has no tool_profile reader contract for %q", consumer)
+	return readerContract{}
+}
 
 var testRegistryReference = capabilityregistry.Reference{
 	ID:       "aeb.core-capabilities",
@@ -65,6 +102,22 @@ func TestLoadProfileRejectsRetiredScopeDeclaration(t *testing.T) {
 	}
 	if _, err := loadProfile(path); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("loadProfile error = %v, want strict rejection of retired supports", err)
+	}
+}
+
+func TestLoadProfileRefusesNMinusOneProfileWithMachineReadableVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile-v3.json")
+	data := `{"schema_version":3,"tool":"test","tool_version":"1","runner_version":"v1","claims":[],"supports":{}}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadProfile(path)
+	if err == nil || err.Error() != "incompatible_schema_version: family=tool_profile accepted=[4] got=3" {
+		t.Fatalf("loadProfile error = %v, want machine-readable v3 incompatibility", err)
+	}
+	contract := toolProfileReaderContract(t, "runner_scoring")
+	if contract.Role != "scoring" || contract.Path != "runner/case.go" || !reflect.DeepEqual(contract.AcceptedVersions, []int{activeToolProfileSchemaVersion}) {
+		t.Fatalf("runner reader contract = %#v, want scoring runner/case.go v%d", contract, activeToolProfileSchemaVersion)
 	}
 }
 

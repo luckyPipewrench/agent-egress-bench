@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -13,6 +14,42 @@ import (
 )
 
 var testRegistryReference = capabilityregistry.Reference{ID: "aeb.core-capabilities", Format: 1, Revision: 1, SHA256: "f5ae9fa9cbb79e8539d50f0284e584eb6ea834232e801d3e1c269411a9527e9b"}
+
+type readerContract struct {
+	Consumer         string `json:"consumer"`
+	Role             string `json:"role"`
+	Path             string `json:"path"`
+	AcceptedVersions []int  `json:"accepted_versions"`
+}
+
+func toolProfileReaderContract(t *testing.T, consumer string) readerContract {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "contracts", "artifacts.json"))
+	if err != nil {
+		t.Fatalf("read compatibility manifest: %v", err)
+	}
+	var manifest struct {
+		ArtifactFamilies []struct {
+			Family          string           `json:"family"`
+			ReaderContracts []readerContract `json:"reader_contracts"`
+		} `json:"artifact_families"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("decode compatibility manifest: %v", err)
+	}
+	for _, family := range manifest.ArtifactFamilies {
+		if family.Family != "tool_profile" {
+			continue
+		}
+		for _, contract := range family.ReaderContracts {
+			if contract.Consumer == consumer {
+				return contract
+			}
+		}
+	}
+	t.Fatalf("compatibility manifest has no tool_profile reader contract for %q", consumer)
+	return readerContract{}
+}
 
 // writeCase writes a JSON case file and returns the path.
 func writeCase(t *testing.T, dir, subdir, filename, content string) string {
@@ -1435,7 +1472,19 @@ func TestResultValidationRejectsPreV3Schema(t *testing.T) {
 
 func TestProfileValidationRejectsPreV3Schema(t *testing.T) {
 	p := Profile{SchemaVersion: 2, Tool: "test", ToolVersion: "1", RunnerVersion: "v1", Claims: []string{}, CapabilityRegistry: testRegistryReference}
-	assertContainsError(t, validateProfile(p), "schema_version must be 4")
+	assertContainsError(t, validateProfile(p), "incompatible_schema_version: family=tool_profile accepted=[4] got=2")
+}
+
+func TestProfileFileRefusesNMinusOneSchemaBeforeLegacyFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile-v3.json")
+	if err := os.WriteFile(path, []byte(`{"schema_version":3,"tool":"test","tool_version":"1","runner_version":"v1","claims":[],"supports":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertContainsError(t, validateProfileFile(path), "incompatible_schema_version: family=tool_profile accepted=[4] got=3")
+	contract := toolProfileReaderContract(t, "validator_scoring")
+	if contract.Role != "scoring" || contract.Path != "validate/main.go" || !reflect.DeepEqual(contract.AcceptedVersions, []int{activeToolProfileSchemaVersion}) {
+		t.Fatalf("validator reader contract = %#v, want scoring validate/main.go v%d", contract, activeToolProfileSchemaVersion)
+	}
 }
 
 func TestResultValidation_MissingFields(t *testing.T) {

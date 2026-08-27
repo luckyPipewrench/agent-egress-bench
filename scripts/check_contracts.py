@@ -545,6 +545,47 @@ def check(root, manifest_path):
             fail(f"{name}: frozen versions must be accepted by a reader")
         require_path_list(root, family.get("writer"), f"{name}.writer", allow_glob=True)
         require_path_list(root, family.get("reader"), f"{name}.reader")
+        reader_contracts = family.get("reader_contracts")
+        if reader_contracts is not None:
+            if not isinstance(reader_contracts, list) or not reader_contracts:
+                fail(f"{name}.reader_contracts must be a non-empty array when declared")
+            consumers = set()
+            reader_paths = set(family["reader"])
+            contract_paths = set()
+            covered_versions = set()
+            scoring_versions = set()
+            for contract in reader_contracts:
+                if not isinstance(contract, dict):
+                    fail(f"{name}.reader_contracts entries must be objects")
+                consumer = contract.get("consumer")
+                if not isinstance(consumer, str) or not consumer or consumer in consumers:
+                    fail(f"{name}.reader_contracts consumers must be unique non-empty strings")
+                consumers.add(consumer)
+                path = contract.get("path")
+                if not isinstance(path, str) or path not in reader_paths:
+                    fail(f"{name}.reader_contracts path must be listed in reader")
+                contract_paths.add(path)
+                role = contract.get("role")
+                if role not in {"scoring", "retained_evidence"}:
+                    fail(
+                        f"{name}.reader_contracts[{consumer}].role must be one of "
+                        "['retained_evidence', 'scoring']"
+                    )
+                versions = require_int_list(contract.get("accepted_versions"), f"{name}.reader_contracts[{consumer}].accepted_versions")
+                if not set(versions).issubset(accepted):
+                    fail(f"{name}.reader_contracts[{consumer}] accepts a version absent from accepted_reader_versions")
+                covered_versions.update(versions)
+                if role == "scoring":
+                    scoring_versions.update(versions)
+            if contract_paths != reader_paths:
+                fail(f"{name}.reader_contracts must bind every reader path")
+            if covered_versions != set(accepted):
+                fail(f"{name}.reader_contracts must cover accepted_reader_versions")
+            declared_scoring = family.get("scoring_reader_versions")
+            if declared_scoring is None:
+                fail(f"{name}.scoring_reader_versions is required with reader_contracts")
+            if set(require_int_list(declared_scoring, f"{name}.scoring_reader_versions")) != scoring_versions:
+                fail(f"{name}.scoring_reader_versions does not match scoring reader contracts")
         if family.get("gate") != "make check-contracts":
             fail(f"{name}: gate must be 'make check-contracts'")
 

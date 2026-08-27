@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,67 @@ func TestV0VerifierRejectsActiveV4ToolProfile(t *testing.T) {
 	if validToolProfileSchema(profile, schemas) {
 		t.Fatal("frozen v0 verifier accepted an active v4 tool profile")
 	}
+}
+
+func TestV0VerifierRetainsToolProfileV1AndV3Readers(t *testing.T) {
+	schemas, err := loadSchemas()
+	if err != nil {
+		t.Fatalf("load schemas: %v", err)
+	}
+	v1Profile := mustRead(t, filepath.Join("..", "conformance", "golden", "g01-vendor-time", "tool-profile.json"))
+	v3Profile := bytes.Replace(v1Profile, []byte(`"schema_version": 1`), []byte(`"schema_version": 3`), 1)
+	if bytes.Equal(v1Profile, v3Profile) {
+		t.Fatal("retained v1 profile did not yield a schema-valid v3 fixture")
+	}
+	for version, profile := range map[int][]byte{1: v1Profile, 3: v3Profile} {
+		if !validToolProfileSchema(profile, schemas) {
+			t.Fatalf("v%d retained/schema-valid tool profile was rejected", version)
+		}
+	}
+	contract := toolProfileReaderContract(t, "control_evidence_v0")
+	if contract.Role != "retained_evidence" || contract.Path != "control-evidence/v0/verifier" || !reflect.DeepEqual(contract.AcceptedVersions, toolProfileSchemaVersions(schemas)) {
+		t.Fatalf("v0 reader contract = %#v, want retained_evidence control-evidence/v0/verifier versions %v", contract, toolProfileSchemaVersions(schemas))
+	}
+}
+
+type readerContract struct {
+	Consumer         string `json:"consumer"`
+	Role             string `json:"role"`
+	Path             string `json:"path"`
+	AcceptedVersions []int  `json:"accepted_versions"`
+}
+
+func toolProfileReaderContract(t *testing.T, consumer string) readerContract {
+	t.Helper()
+	data := mustRead(t, filepath.Join("..", "..", "..", "contracts", "artifacts.json"))
+	var manifest struct {
+		ArtifactFamilies []struct {
+			Family          string           `json:"family"`
+			ReaderContracts []readerContract `json:"reader_contracts"`
+		} `json:"artifact_families"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("decode compatibility manifest: %v", err)
+	}
+	for _, family := range manifest.ArtifactFamilies {
+		if family.Family != "tool_profile" {
+			continue
+		}
+		for _, contract := range family.ReaderContracts {
+			if contract.Consumer == consumer {
+				return contract
+			}
+		}
+	}
+	t.Fatalf("compatibility manifest has no tool_profile reader contract for %q", consumer)
+	return readerContract{}
+}
+
+func toolProfileSchemaVersions(schemas *schemaSet) []int {
+	if len(schemas.toolProfiles) != 2 || schemas.toolProfiles[1] == nil || schemas.toolProfiles[3] == nil {
+		return nil
+	}
+	return []int{1, 3}
 }
 
 func TestAssessSchemaAcceptsAllGoldenAndEdgePackages(t *testing.T) {

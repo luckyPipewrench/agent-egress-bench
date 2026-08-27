@@ -163,6 +163,17 @@ def require_sha256(value, label):
     return value
 
 
+def render_version_options(versions):
+    rendered = [str(version) for version in sorted(versions)]
+    if not rendered:
+        return "no accepted versions"
+    if len(rendered) == 1:
+        return rendered[0]
+    if len(rendered) == 2:
+        return " or ".join(rendered)
+    return ", ".join(rendered[:-1]) + f", or {rendered[-1]}"
+
+
 def archive_manifest_identity(artifact_path, record_dir, expected_record_manifest_sha256):
     """Verify a retained manifest against a caller-authenticated immutable record."""
     record_dir = record_dir.resolve()
@@ -191,7 +202,8 @@ def archive_manifest_identity(artifact_path, record_dir, expected_record_manifes
         raise ValueError("archive record manifest must be an object")
     record_schema_version = record_manifest.get("schema_version")
     if record_schema_version not in PROMOTED_RECORD_SCHEMAS:
-        raise ValueError("archive record manifest schema_version must be 1 or 2")
+        rendered = render_version_options(PROMOTED_RECORD_SCHEMAS)
+        raise ValueError(f"archive record manifest schema_version must be {rendered}")
     artifact_schema.validate_file(
         record_manifest,
         PROMOTED_RECORD_SCHEMAS[record_schema_version],

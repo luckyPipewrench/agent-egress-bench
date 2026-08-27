@@ -35,6 +35,19 @@ def load_scope_validator_module():
 scope_validator = load_scope_validator_module()
 
 
+class RenderVersionOptionsTests(unittest.TestCase):
+    def test_renders_all_supported_cardinalities(self):
+        cases = (
+            ([], "no accepted versions"),
+            ([4], "4"),
+            ([4, 1], "1 or 4"),
+            ([4, 1, 3], "1, 3, or 4"),
+        )
+        for versions, expected in cases:
+            with self.subTest(versions=versions):
+                self.assertEqual(scope_validator.render_version_options(versions), expected)
+
+
 def corpus_manifest_sha256():
     return hashlib.sha256(MANIFEST.read_bytes()).hexdigest()
 
@@ -344,6 +357,33 @@ class ValidateGauntletScopeTest(unittest.TestCase):
                 check=False,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_archive_record_refusal_names_all_accepted_record_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = Path(directory) / FROZEN_RECORD.name
+            shutil.copytree(FROZEN_RECORD, record)
+            manifest_path = record / "record-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 99
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            expected_manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(VALIDATOR),
+                    "--archive-record",
+                    str(record),
+                    "--expected-record-manifest-sha256",
+                    expected_manifest_digest,
+                    str(record / "continuous-gauntlet-pipelock.json"),
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schema_version must be 1, 2, or 3", result.stderr)
 
     def test_archive_record_rejects_an_untrusted_record_manifest_digest(self):
         artifact_path = FROZEN_RECORD / "continuous-gauntlet-pipelock.json"
