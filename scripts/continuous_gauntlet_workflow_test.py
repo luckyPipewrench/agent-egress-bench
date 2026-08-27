@@ -404,7 +404,16 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             # temp directory makes repo_root resolve to that directory and the
             # repository-root and release-pin checks fail for reasons that have
             # nothing to do with the kernel probe.
-            patched = ENTRYPOINT.parent / "run-pipelock-gauntlet.kernelprobe-test.sh"
+            #
+            # The name is unique per invocation. A fixed one let two concurrent
+            # invocations write and unlink each other's copy, which fails
+            # nondeterministically and can leave the file behind after an
+            # interrupt.
+            handle, patched_name = tempfile.mkstemp(
+                dir=ENTRYPOINT.parent, prefix="run-pipelock-gauntlet.kernelprobe-", suffix=".sh"
+            )
+            os.close(handle)
+            patched = Path(patched_name)
             script = ENTRYPOINT.read_text(encoding="utf-8")
             script = script.replace('"/sys/kernel/security/lsm"', f'"{lsm_path}"')
             script = script.replace('"/proc/self/status"', f'"{status_path}"')
