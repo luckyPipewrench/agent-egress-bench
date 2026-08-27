@@ -73,6 +73,11 @@ ACTIVE_SUMMARY_SCHEMA_VERSIONS = frozenset({4, 5})
 ACTIVE_SUMMARY_SCHEMA_VERSION = 5
 ACTIVE_PROVENANCE_CANDIDATE_SCHEMA_VERSION = artifact_contracts.active_version("provenance_candidate")
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+# A go toolchain's own version line, bounded so an arbitrary string cannot ride
+# into recorded evidence. Accepts released, release-candidate, beta and devel
+# self-reports, and the optional GOEXPERIMENT field real toolchains emit, for
+# example "go version go1.25.12 X:nodwarf5 linux/amd64".
+GO_VERSION_REPORT = re.compile(r"go version go[0-9A-Za-z.\-+]{1,40}( X:[0-9A-Za-z,_\-]{1,80})? [a-z0-9]{1,20}/[a-z0-9]{1,20}")
 V5_SCOPES = frozenset({"full", "applicable"})
 V5_OUTCOME_SCORE_FIELDS = frozenset({"containment", "false_positive_rate"})
 V5_DIAGNOSTIC_FIELDS = frozenset(
@@ -1113,8 +1118,14 @@ def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
 
 
 def validate_metadata(metadata):
-    if metadata.get("schema_version") != 1:
-        raise ValueError("run metadata schema_version must be 1")
+    # Version 2 adds runner_go_version. Version 1 is retained because published
+    # records carry it and are append-only: their toolchain was never recorded and
+    # cannot be reconstructed, so requiring the field of them would either
+    # invalidate real evidence or invite a fabricated value. New runs are written
+    # as version 2, so the requirement binds every run from here on.
+    metadata_version = metadata.get("schema_version")
+    if metadata_version not in (1, 2):
+        raise ValueError("run metadata schema_version must be 1 or 2")
     for key in (
         "local_run_id",
         "generated_at",
@@ -1130,6 +1141,18 @@ def validate_metadata(metadata):
     reasons = metadata.get("noncanonical_reasons")
     if not isinstance(reasons, list) or any(not isinstance(item, str) or not item for item in reasons):
         raise ValueError("run metadata noncanonical_reasons must be an array of strings")
+    # Required at version 2 rather than optional there. An optional field would let
+    # a new run publish with the toolchain simply absent, which is the
+    # unrecorded-compiler state this records in order to end. A version 1 record
+    # that carries the field anyway is still checked, so a malformed value cannot
+    # ride in under the older version.
+    if metadata_version >= 2 or "runner_go_version" in metadata:
+        go_version = require_non_empty_string(metadata, "runner_go_version", "run metadata runner_go_version")
+        if not GO_VERSION_REPORT.fullmatch(go_version):
+            raise ValueError(
+                "run metadata runner_go_version must be a go toolchain self-report such as "
+                "'go version go1.25.12 linux/amd64'"
+            )
     if metadata["canonical_execution"] and (metadata["dirty"] or reasons):
         raise ValueError("canonical execution cannot be dirty or have noncanonical reasons")
     if not re.fullmatch(r"[0-9a-f]{40}", metadata["corpus_git_sha"]):
@@ -1390,7 +1413,7 @@ def finalize_command(args):
 
 def start_command(args):
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "local_run_id": args.local_run_id,
         "generated_at": args.generated_at,
         "corpus_repository": args.corpus_repository,
@@ -1399,6 +1422,14 @@ def start_command(args):
         "dirty": args.dirty,
         "canonical_execution": args.canonical_execution,
         "noncanonical_reasons": args.noncanonical_reason,
+        # The compiler that built the measuring instrument. The runner is
+        # compiled from source on every run, so two runs can otherwise publish
+        # identical provenance from different toolchains. This records the go
+        # binary's own self-report rather than a version parsed from go.mod,
+        # which states a floor and not what ran. The resolved binary's PATH is
+        # deliberately not recorded: it can be a private local path, and the
+        # version is the fact a reader needs.
+        "runner_go_version": args.runner_go_version,
     }
     validate_metadata(metadata)
     atomic_json_write(args.output, metadata)
@@ -1442,6 +1473,7 @@ def parse_args():
     start.add_argument("--dirty", type=bool_value, required=True)
     start.add_argument("--canonical-execution", type=bool_value, required=True)
     start.add_argument("--noncanonical-reason", action="append", default=[])
+    start.add_argument("--runner-go-version", required=True)
 
     release = subparsers.add_parser("release")
     release.add_argument("--output", type=Path, required=True)

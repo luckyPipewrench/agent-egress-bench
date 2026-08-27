@@ -355,7 +355,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
         (self.run_dir / "run-metadata.json").write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "local_run_id": "local:test:1",
                     "generated_at": "2026-08-04T00:00:00Z",
                     "corpus_repository": "luckyPipewrench/agent-egress-bench",
@@ -364,6 +364,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
                     "dirty": False,
                     "canonical_execution": True,
                     "noncanonical_reasons": [],
+                    "runner_go_version": "go version go1.25.0 linux/amd64",
                 }
             ),
             encoding="utf-8",
@@ -1312,6 +1313,61 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("version output does not match", result.stderr)
 
+    def test_version_one_metadata_stays_valid_without_a_toolchain(self):
+        # Published records are append-only and were written before this field
+        # existed. Their toolchain was never recorded and cannot be reconstructed,
+        # so requiring it of them would either invalidate real evidence or invite a
+        # fabricated value. Version 1 therefore keeps its original contract, and the
+        # requirement binds version 2, which is what new runs write.
+        metadata_path = self.run_dir / "run-metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["schema_version"] = 1
+        del metadata["runner_go_version"]
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+        result = self.bundle()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_version_one_metadata_still_checks_a_malformed_toolchain(self):
+        # Retaining version 1 must not create a lane where an unchecked value rides
+        # in under the older label.
+        metadata_path = self.run_dir / "run-metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["schema_version"] = 1
+        metadata["runner_go_version"] = "not a go version"
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner_go_version", result.stderr)
+        self.write_fixture()
+
+    def test_metadata_without_a_recorded_toolchain_is_refused(self):
+        # The runner is compiled from source on every run, so the compiler is part
+        # of what produced the measuring instrument. An absent field is refused
+        # rather than tolerated: tolerating it is the unrecorded-toolchain state
+        # this field exists to end, and it would fail silently.
+        metadata_path = self.run_dir / "run-metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        del metadata["runner_go_version"]
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner_go_version", result.stderr)
+
+    def test_metadata_toolchain_must_be_a_go_self_report(self):
+        # Bounded on purpose. The value is copied from a subprocess into recorded
+        # evidence, so an arbitrary string would be an unvalidated passthrough
+        # into an artifact readers are asked to trust.
+        metadata_path = self.run_dir / "run-metadata.json"
+        for invalid in ("1.25.0", "go1.25.0", "definitely not a version", ""):
+            with self.subTest(invalid=invalid):
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                metadata["runner_go_version"] = invalid
+                metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+                result = self.bundle()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("runner_go_version", result.stderr)
+        self.write_fixture()
+
     def test_canonical_metadata_cannot_claim_a_development_ref(self):
         metadata_path = self.run_dir / "run-metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -1521,6 +1577,26 @@ exec git "$@"
             "origin did not match luckyPipewrench/agent-egress-bench",
             metadata["noncanonical_reasons"],
         )
+
+    def test_run_metadata_records_the_toolchain_that_builds_the_runner(self):
+        # Drives the real script, so this covers the shell-to-provenance wiring
+        # rather than only the validator. The expected value comes from asking the
+        # go binary, not from a literal, because a literal would pass on a machine
+        # whose toolchain was never consulted.
+        # The harness puts a stub go on PATH that reports go1.25.0. Asserting that
+        # exact line proves the recorded value comes from the toolchain that will
+        # build the runner rather than from whatever go the machine happens to
+        # have, which is the whole point of recording it.
+        expected = "go version go1.25.0 linux/amd64"
+        result, output_dir, _ = self.run_with_fake_runner("error")
+        self.assertEqual(result.returncode, 23, result.stderr)
+        metadata = json.loads((output_dir / "run-metadata.json").read_text(encoding="utf-8"))
+        self.assertEqual(expected, metadata["runner_go_version"])
+        # No ambient `go version` call: the stub IS the contract. The harness puts a
+        # go on PATH that reports a version no real toolchain here reports, so the
+        # equality above already proves the recorded value came from the resolved
+        # binary rather than from whatever go the host happens to have. Asking the
+        # host as well would make this test depend on the machine it runs on.
 
     def test_github_tokens_are_not_inherited_by_the_tool_under_test(self):
         result, _, _ = self.run_with_fake_runner("error", inject_tokens=True)
