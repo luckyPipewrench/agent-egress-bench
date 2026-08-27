@@ -380,7 +380,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         )
 
     def _kernel_sandbox_probe(self, lsm_contents, seccomp_field=True, seccomp_filter=True,
-                              status_readable=True):
+                              status_readable=True, status_denied=False):
         """Drive the whole doctor with substituted kernel probe paths.
 
         Exercises run_doctor rather than kernel_sandbox_state alone. Testing the
@@ -399,6 +399,10 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
                 status_path.write_text(
                     "Seccomp:\t2\n" if seccomp_field else "Name:\tsh\n", encoding="utf-8"
                 )
+                if status_denied:
+                    # A present-but-unreadable file is a different errno from a
+                    # missing one, and the two can take different branches.
+                    status_path.chmod(0o000)
             filter_path = root / ("actions_avail" if seccomp_filter else "absent-filter")
             if seccomp_filter:
                 filter_path.write_text("kill_process filter\n", encoding="utf-8")
@@ -465,9 +469,12 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             # One grep exits nonzero for both "no Seccomp: field" and "could not
             # read the file", and folding them together refused a machine over
             # an unreadable procfs rather than over evidence.
-            ("unreadable process status", {"lsm_contents": "capability,landlock", "status_readable": False}),
+            ("missing process status", {"lsm_contents": "capability,landlock", "status_readable": False}),
+            ("unreadable process status", {"lsm_contents": "capability,landlock", "status_denied": True}),
         ):
             with self.subTest(name):
+                if kwargs.get("status_denied") and os.geteuid() == 0:
+                    self.skipTest("root reads through a denied mode, so this case proves nothing")
                 status, ready, code = self._kernel_sandbox_probe(**kwargs)
                 self.assertEqual(status, "unknown")
                 self.assertTrue(ready, "an inconclusive probe must not refuse the machine")
