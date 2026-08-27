@@ -451,9 +451,32 @@ def lockup() -> str:
     return "\n".join(out) + "\n"
 
 
-def logo() -> str:
+def stacked_lockup() -> str:
+    """Mark above the wordmark for square and narrow placements."""
     a = BRAND["accent"]
-    out = ['<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" '
+    margin, mark_size, size = 24, 96, 38
+    word = WORDMARK_LEAD + WORDMARK_ACCENT
+    text_w = round(len(word) * size * (MONO_ADVANCE - TRACKING), 2)
+    width = round(text_w + margin * 2, 2)
+    mark_x = round((width - mark_size) / 2, 2)
+    text_y = 166
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="196" '
+           f'viewBox="0 0 {width} 196" role="img" '
+           f'aria-label="Agent Egress Bench stacked logo lockup">',
+           f'  <g transform="translate({mark_x} 18) scale({round(mark_size / 64, 6)})">']
+    out += [f"  {line}" for line in _ruler_glyph(a, BRAND["bg_elevated"])]
+    out.append("  </g>")
+    out.append(f'  <text x="{width / 2}" y="{text_y}" text-anchor="middle" font-family="{MONO}" '
+               f'font-size="{size}" font-weight="700" letter-spacing="-{TRACKING}em" xml:space="preserve">'
+               f'<tspan fill="{BRAND["text"]}">{WORDMARK_LEAD}</tspan>'
+               f'<tspan fill="{a}">{WORDMARK_ACCENT}</tspan></text>')
+    out.append("</svg>")
+    return "\n".join(out) + "\n"
+
+
+def logo(size: int = 256) -> str:
+    a = BRAND["accent"]
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 64 64" role="img" '
            'aria-label="Agent Egress Bench logomark: a combination square set at forty-five degrees.">',
            "  <defs>",
            '    <radialGradient id="glow" cx="50%" cy="55%" r="55%">',
@@ -1315,7 +1338,9 @@ DIAGRAMS = {
 SINGLES = {
     "social-preview.svg": social_preview,
     "logo.svg": logo,
+    "favicon.svg": lambda: logo(64),
     "lockup.svg": lockup,
+    "lockup-stacked.svg": stacked_lockup,
     "terminal-doctor.svg": terminal_doctor,
 }
 # Hand-exported rasters, each pinned to the SVG it came from.
