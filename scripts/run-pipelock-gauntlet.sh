@@ -242,6 +242,63 @@ if [[ "$go_bin" == */* ]]; then
   [[ -n "$go_bin_resolved" ]] && go_bin="$go_bin_resolved"
 fi
 
+# kernel_sandbox_state reports whether this kernel can host the target sandbox.
+# Echoes ok, no_landlock, no_seccomp, or unknown. Only a readable LSM list that
+# omits landlock is treated as definitive: an unreadable one means securityfs is
+# not mounted, which says nothing about the kernel and must not refuse a machine
+# that would have worked.
+kernel_sandbox_state() {
+  local lsm_path="/sys/kernel/security/lsm"
+  local status_path="/proc/self/status"
+  local seccomp_filter_path="/proc/sys/kernel/seccomp/actions_avail"
+  local lsm=""
+  # The Seccomp field in procfs reports the calling process's seccomp MODE. Its
+  # presence means the kernel was built with CONFIG_SECCOMP, which does not imply
+  # CONFIG_SECCOMP_FILTER, and the target installs a filter. Treating the field
+  # as proof of capability would report ok and let the run die installing that
+  # filter, which is the failure this whole check exists to prevent.
+  #
+  # seccomp_filter appears in /proc/sys/kernel/ only when filter support is
+  # compiled in, so it is positive evidence where the procfs field is not.
+  # Absent field means no seccomp at all and is definitive. Field present but no
+  # filter evidence is inconclusive rather than a refusal, because a kernel can
+  # withhold that sysctl without lacking the capability.
+  # Read before judging. A single grep cannot tell "the field is absent" from
+  # "the file could not be read", and it exits nonzero for both, so folding
+  # them together refused a machine whose procfs was merely unreadable. That is
+  # the definitive-negative treatment this function reserves for evidence, and
+  # it contradicts the rule stated above.
+  local status_contents=""
+  if ! status_contents="$(<"$status_path")"; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+  if ! printf '%s\n' "$status_contents" | grep -q '^Seccomp:'; then
+    printf '%s\n' "no_seccomp"
+    return 0
+  fi
+  if [[ ! -e "$seccomp_filter_path" ]]; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+  if [[ ! -r "$lsm_path" ]]; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+  lsm="$(<"$lsm_path")" || {
+    printf '%s\n' "unknown"
+    return 0
+  }
+  case ",$lsm," in
+  *,landlock,*)
+    printf '%s\n' "ok"
+    ;;
+  *)
+    printf '%s\n' "no_landlock"
+    ;;
+  esac
+}
+
 run_doctor() {
   local failed=0
   local command_name
@@ -259,6 +316,17 @@ run_doctor() {
     details+=("$2")
     remediations+=("$3")
     [[ "$2" == "ok" ]] || failed=$((failed + 1))
+  }
+
+  # An advisory result is reported and does NOT count as a failed prerequisite.
+  # It exists for a probe that cannot reach a verdict, where the honest answer is
+  # "I could not tell" rather than "this machine is unusable". Routing that
+  # through add_doctor_result would refuse the machine, because everything other
+  # than ok is counted as a failure there.
+  add_doctor_advisory() {
+    codes+=("$1")
+    details+=("$2")
+    remediations+=("$3")
   }
 
   if [[ "$(uname -s 2>/dev/null || true)" == "Linux" ]]; then
@@ -330,6 +398,30 @@ run_doctor() {
   else
     add_doctor_result "mcp_stdio_bridge" "missing" "install socat, ncat, or nc and retry"
   fi
+  # The target runs under Landlock and seccomp, so a kernel built without either
+  # cannot host a run. Without this check the doctor reported every prerequisite
+  # satisfied and the run then died on `query Landlock ABI: function not
+  # implemented`, after the evaluator had already paid for a release download
+  # and a toolchain build. Observed on an arm64 board whose kernel omits
+  # Landlock. A definitive negative fails; an inconclusive probe does not,
+  # because refusing a machine that would have worked is its own failure.
+  case "$(kernel_sandbox_state)" in
+  ok)
+    add_doctor_result "kernel_sandbox" "ok" ""
+    ;;
+  no_landlock)
+    add_doctor_result "kernel_sandbox" "unavailable" \
+      "this kernel reports no Landlock support and the target sandbox requires it; use a kernel built with CONFIG_SECURITY_LANDLOCK and landlock in its active LSM list"
+    ;;
+  no_seccomp)
+    add_doctor_result "kernel_sandbox" "unavailable" \
+      "this kernel reports no seccomp support and the target sandbox requires it; use a kernel built with CONFIG_SECCOMP_FILTER"
+    ;;
+  *)
+    add_doctor_advisory "kernel_sandbox" "unknown" \
+      "could not determine kernel sandbox support because the LSM list is unreadable or seccomp filter support could not be established; the run fails early if either is absent"
+    ;;
+  esac
   if [[ "$(pwd -P)" == "$repo_root" ]]; then
     repo_ok=true
   fi

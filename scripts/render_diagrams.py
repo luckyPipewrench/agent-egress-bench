@@ -1107,7 +1107,7 @@ def coverage(p) -> str:
 DOCTOR_LINES = tuple((name, "ok") for name in (
     "platform_linux", "command_git", "command_python3", "command_go", "command_curl", "command_jq",
     "command_sha256sum", "command_tar", "command_timeout", "command_realpath", "command_make",
-    "go_version", "mcp_stdio_bridge", "repository_root", "release_pin",
+    "go_version", "mcp_stdio_bridge", "kernel_sandbox", "repository_root", "release_pin",
 ))
 DOCTOR_READY = "ready: local prerequisites are satisfied"
 
