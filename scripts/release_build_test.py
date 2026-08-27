@@ -8,6 +8,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -311,14 +312,43 @@ class ReleaseBuildTest(unittest.TestCase):
         identity = self.root / ".release/comment-identity.json"
         version = f"1.0.0-SNAPSHOT-{self.git_short(commit)}"
         self.invoke("prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", version, "--commit", commit, "--snapshot", "--output", str(identity))
-        # Expected from the append-only corpus ledger rather than a literal, so a
-        # corpus bump does not have to edit this test, and rather than from
-        # runner/summary.go, which is the file under test here. Reading the
-        # constant back out of its own source would pass even if the extractor
-        # returned the commented-out decoy.
+        # The oracle is the runner's CONFIGURED constant, read here by an
+        # independent strict parse that skips comment lines. Using the ledger's
+        # final entry alone would make an incorrectly appended entry the oracle,
+        # and using the extractor's own output would prove nothing. Both are
+        # checked: the ledger must agree with the configured constant, and the
+        # release identity must equal that same value. The strict parse is what
+        # keeps the decoy meaningful, since a parse that accepted the commented
+        # line would report v999.0.0 and fail here rather than pass quietly.
+        configured_version = self.configured_corpus_version(summary)
+        self.assertNotEqual("v999.0.0", configured_version, "the parse accepted the commented decoy")
         ledger = json.loads((self.root / "ci/corpus-versions.json").read_text(encoding="utf-8"))
-        expected_version = ledger["versions"][-1]["corpus_version"]
-        self.assertEqual(expected_version, json.loads(identity.read_text(encoding="utf-8"))["corpus"]["version"])
+        self.assertEqual(
+            configured_version,
+            ledger["versions"][-1]["corpus_version"],
+            "the corpus ledger's final entry must name the runner's configured corpus_version",
+        )
+        self.assertEqual(configured_version, json.loads(identity.read_text(encoding="utf-8"))["corpus"]["version"])
+
+    @staticmethod
+    def configured_corpus_version(summary_path: Path) -> str:
+        """Return the corpusVersion constant configured in runner/summary.go.
+
+        Deliberately strict and comment-blind: a commented-out declaration is not
+        configuration, and treating one as configuration is the exact defect the
+        release extractor is tested against.
+        """
+        pattern = re.compile(r'^\s*corpusVersion\s*=\s*"([^"]+)"')
+        found = [
+            match.group(1)
+            for line in summary_path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("//")
+            for match in [pattern.match(line)]
+            if match
+        ]
+        if len(found) != 1:
+            raise AssertionError(f"expected exactly one configured corpusVersion, found {found}")
+        return found[0]
 
     def test_snapshot_version_uses_the_configured_goreleaser_template(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.1.0-snaptest", "-m", "snapshot base", self.commit], check=True)
