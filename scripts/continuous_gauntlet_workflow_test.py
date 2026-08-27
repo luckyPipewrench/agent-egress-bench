@@ -379,7 +379,8 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             "a consumer that changes directory would resolve the un-canonicalized value",
         )
 
-    def _kernel_sandbox_probe(self, lsm_contents, seccomp_field=True, seccomp_filter=True):
+    def _kernel_sandbox_probe(self, lsm_contents, seccomp_field=True, seccomp_filter=True,
+                              status_readable=True):
         """Drive the whole doctor with substituted kernel probe paths.
 
         Exercises run_doctor rather than kernel_sandbox_state alone. Testing the
@@ -393,8 +394,11 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             lsm_path = root / ("lsm" if lsm_contents is not None else "absent-lsm")
             if lsm_contents is not None:
                 lsm_path.write_text(lsm_contents, encoding="utf-8")
-            status_path = root / "status"
-            status_path.write_text("Seccomp:\t2\n" if seccomp_field else "Name:\tsh\n", encoding="utf-8")
+            status_path = root / ("status" if status_readable else "absent-status")
+            if status_readable:
+                status_path.write_text(
+                    "Seccomp:\t2\n" if seccomp_field else "Name:\tsh\n", encoding="utf-8"
+                )
             filter_path = root / ("actions_avail" if seccomp_filter else "absent-filter")
             if seccomp_filter:
                 filter_path.write_text("kill_process filter\n", encoding="utf-8")
@@ -458,6 +462,10 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         for name, kwargs in (
             ("unreadable LSM list", {"lsm_contents": None}),
             ("seccomp filter support unprovable", {"lsm_contents": "capability,landlock", "seccomp_filter": False}),
+            # One grep exits nonzero for both "no Seccomp: field" and "could not
+            # read the file", and folding them together refused a machine over
+            # an unreadable procfs rather than over evidence.
+            ("unreadable process status", {"lsm_contents": "capability,landlock", "status_readable": False}),
         ):
             with self.subTest(name):
                 status, ready, code = self._kernel_sandbox_probe(**kwargs)

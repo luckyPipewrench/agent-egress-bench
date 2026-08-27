@@ -263,7 +263,17 @@ kernel_sandbox_state() {
   # Absent field means no seccomp at all and is definitive. Field present but no
   # filter evidence is inconclusive rather than a refusal, because a kernel can
   # withhold that sysctl without lacking the capability.
-  if ! grep -q '^Seccomp:' "$status_path" 2>/dev/null; then
+  # Read before judging. A single grep cannot tell "the field is absent" from
+  # "the file could not be read", and it exits nonzero for both, so folding
+  # them together refused a machine whose procfs was merely unreadable. That is
+  # the definitive-negative treatment this function reserves for evidence, and
+  # it contradicts the rule stated above.
+  local status_contents=""
+  if ! status_contents="$(<"$status_path")"; then
+    printf '%s\n' "unknown"
+    return 0
+  fi
+  if ! printf '%s\n' "$status_contents" | grep -q '^Seccomp:'; then
     printf '%s\n' "no_seccomp"
     return 0
   fi
