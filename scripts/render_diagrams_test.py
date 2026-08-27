@@ -416,6 +416,16 @@ class CommittedAssetTest(unittest.TestCase):
         # quietly now that no README reference points at it.
         self.assertIn("social-preview.svg", {path.name for path in generator.build()})
 
+    def test_the_complete_brand_asset_set_is_produced(self):
+        produced = {path.name for path in generator.build()}
+        self.assertTrue({
+            "favicon.svg",
+            "lockup.svg",
+            "lockup-stacked.svg",
+            "logo.svg",
+            "social-preview.svg",
+        }.issubset(produced))
+
     def test_every_png_matches_its_source(self):
         self.assertEqual(generator.png_problems(), [])
         for png in generator.PNG_EXPORTS:

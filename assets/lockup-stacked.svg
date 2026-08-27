@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="444.72" height="196" viewBox="0 0 444.72 196" role="img" aria-label="Agent Egress Bench stacked logo lockup">
+  <g transform="translate(174.36 18) scale(1.5)">
+    <g transform="rotate(-45 32 32)">
+      <rect x="7" y="22" width="50" height="15" rx="3" fill="#0e0e11" stroke="#00e5a0" stroke-width="2.6"/>
+      <path d="M 13 37 L 13 30" stroke="#00e5a0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 19 37 L 19 33" stroke="#00e5a0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 25 37 L 25 30" stroke="#00e5a0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 31 37 L 31 33" stroke="#00e5a0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 37 37 L 37 30" stroke="#00e5a0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 43 37 L 43 33" stroke="#00e5a0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 49 37 L 49 30" stroke="#00e5a0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M 31 39 L 25.5 48 L 36.5 48 Z" fill="#00e5a0"/>
+    </g>
+  </g>
+  <text x="222.36" y="166" text-anchor="middle" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="38" font-weight="700" letter-spacing="-0.02em" xml:space="preserve"><tspan fill="#e2e8f0">Agent Egress </tspan><tspan fill="#00e5a0">Bench</tspan></text>
+</svg>
