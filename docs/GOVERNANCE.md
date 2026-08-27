@@ -74,6 +74,14 @@ Retained v1 and v2 evidence records are frozen. The v4 case and tool-profile for
 
 Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not an artifact schema bump.
 
+### Corpus version identity
+
+`corpus_version` names one exact corpus and is bound to it. [`ci/corpus-versions.json`](../ci/corpus-versions.json) records, for each label, the scored case count and the `benchmark_manifest_sha256` of the corpus that label names, and `runner/corpus_version_test.go` fails when the corpus on disk is not the corpus the current label names. Adding, removing, or re-expecting a scored case therefore requires a new label and a new ledger entry in the same change. The current label must be the ledger's final entry.
+
+Ledger entries are append-only. Published results carry the label, so rewriting an entry retroactively changes what an already-published number was measured over. Documentation and unreferenced files are excluded from the digest, so editorial work on the corpus does not force a bump.
+
+The requirement exists because a label that does not move is indistinguishable from a corpus that did not change. Four scored cases were added on 2026-08-24 without a bump, so one label named both a 242-case and a 246-case corpus while every check that compared labels reported agreement.
+
 ### Compatibility matrix
 
 The table summarizes the manifest. `make check-contracts` checks the full machine-readable inventory against schema files, `$id` values, Go constants, and retained public records.
