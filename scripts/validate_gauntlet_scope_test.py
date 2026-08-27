@@ -35,6 +35,19 @@ def load_scope_validator_module():
 scope_validator = load_scope_validator_module()
 
 
+class RenderVersionOptionsTests(unittest.TestCase):
+    def test_renders_all_supported_cardinalities(self):
+        cases = (
+            ([], "no accepted versions"),
+            ([4], "4"),
+            ([4, 1], "1 or 4"),
+            ([4, 1, 3], "1, 3, or 4"),
+        )
+        for versions, expected in cases:
+            with self.subTest(versions=versions):
+                self.assertEqual(scope_validator.render_version_options(versions), expected)
+
+
 def corpus_manifest_sha256():
     return hashlib.sha256(MANIFEST.read_bytes()).hexdigest()
 
