@@ -37,7 +37,14 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
-	corpusVersion  = "v2.4.0"
+	// v2.5.0 moves the label onto the corpus that has actually been executing
+	// since four scored cases were added on 2026-08-24 without a bump. v2.4.0
+	// therefore named two different corpora, one with 242 scored cases and one
+	// with 246, and every staleness check downstream compares the label rather
+	// than the corpus, so none of them could see it. ci/corpus-versions.json now
+	// binds each label to the executed-corpus digest it names and
+	// runner/corpus_version_test.go refuses to run when the two disagree.
+	corpusVersion  = "v2.5.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"

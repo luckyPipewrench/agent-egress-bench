@@ -293,7 +293,7 @@ The Go validator in `validate/` is the authoritative checker for active case fil
 
 | Field | What it tracks | Source |
 | --- | --- | --- |
-| `corpus_version` | Tag or commit of the case corpus | Repository tag or commit |
+| `corpus_version` | Label naming one exact corpus, bound to that corpus by `ci/corpus-versions.json` | Runner constant, checked against the executed corpus |
 | `scoring_version` | Scoring, applicability, and publication rules | Runner constant |
 | `corpus_sha256` | Retained legacy content digest; not exact corpus identity | Computed at runtime |
 | `benchmark_manifest_sha256` | Exact loaded case paths, boundaries, and bytes | Computed at runtime |
@@ -302,6 +302,10 @@ The Go validator in `validate/` is the authoritative checker for active case fil
 | `capability_registry` | Exact reporting-label registry snapshot | Profile and active results |
 
 `corpus_version` and `scoring_version` decide whether a result is stale. The remaining fields make a run reproducible and auditable.
+
+A label only decides staleness if it moves when the thing it names moves, and `corpus_version` is a runner constant rather than anything derived from the corpus. It has already failed that way once: four scored cases were added on 2026-08-24 without a bump, so v2.4.0 named both a 242-case and a 246-case corpus, and every check that compared the label saw agreement while `benchmark_manifest_sha256` had changed underneath. `ci/corpus-versions.json` now records, for each label, the case count and `benchmark_manifest_sha256` of the corpus that label names, and `runner/corpus_version_test.go` fails when the corpus on disk is not that corpus. Adding, removing, or re-expecting a scored case therefore requires a new label and a new ledger entry in the same change. Entries are append-only: published results carry the label, so rewriting an entry changes what an already-published number was measured over. Documentation and unreferenced files are excluded from the digest, so editorial work on the corpus does not force a bump.
+
+A consumer comparing two results should still compare `benchmark_manifest_sha256` rather than the label alone. The ledger makes the label trustworthy for runs produced after it existed; the digest is trustworthy for every run.
 
 Scoring version 2.8 moves classification and evidence field-presence rates out of `scores` and into non-scoring diagnostics. Scoring version 2.7 removed the hidden containment threshold from publication decisions. Scoring version 2.6 moved applicability from profile claims to adapter-proven delivery and verdict observation. Results on opposite sides of those boundaries remain records of their own rules, but they are not interchangeable.
 

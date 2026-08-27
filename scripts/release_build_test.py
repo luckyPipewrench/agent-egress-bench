@@ -311,7 +311,14 @@ class ReleaseBuildTest(unittest.TestCase):
         identity = self.root / ".release/comment-identity.json"
         version = f"1.0.0-SNAPSHOT-{self.git_short(commit)}"
         self.invoke("prepare", "--repo-root", str(self.root), "--tag", "snapshot", "--version", version, "--commit", commit, "--snapshot", "--output", str(identity))
-        self.assertEqual("v2.4.0", json.loads(identity.read_text(encoding="utf-8"))["corpus"]["version"])
+        # Expected from the append-only corpus ledger rather than a literal, so a
+        # corpus bump does not have to edit this test, and rather than from
+        # runner/summary.go, which is the file under test here. Reading the
+        # constant back out of its own source would pass even if the extractor
+        # returned the commented-out decoy.
+        ledger = json.loads((self.root / "ci/corpus-versions.json").read_text(encoding="utf-8"))
+        expected_version = ledger["versions"][-1]["corpus_version"]
+        self.assertEqual(expected_version, json.loads(identity.read_text(encoding="utf-8"))["corpus"]["version"])
 
     def test_snapshot_version_uses_the_configured_goreleaser_template(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "tag", "-a", "v1.1.0-snaptest", "-m", "snapshot base", self.commit], check=True)
