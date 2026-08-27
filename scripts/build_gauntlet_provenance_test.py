@@ -1592,15 +1592,11 @@ exec git "$@"
         self.assertEqual(result.returncode, 23, result.stderr)
         metadata = json.loads((output_dir / "run-metadata.json").read_text(encoding="utf-8"))
         self.assertEqual(expected, metadata["runner_go_version"])
-        ambient = subprocess.run(
-            ["go", "version"], text=True, capture_output=True, check=True
-        ).stdout.splitlines()[0]
-        if ambient != expected:
-            self.assertNotEqual(
-                ambient,
-                metadata["runner_go_version"],
-                "recorded toolchain tracked the ambient go rather than the resolved one",
-            )
+        # No ambient `go version` call: the stub IS the contract. The harness puts a
+        # go on PATH that reports a version no real toolchain here reports, so the
+        # equality above already proves the recorded value came from the resolved
+        # binary rather than from whatever go the host happens to have. Asking the
+        # host as well would make this test depend on the machine it runs on.
 
     def test_github_tokens_are_not_inherited_by_the_tool_under_test(self):
         result, _, _ = self.run_with_fake_runner("error", inject_tokens=True)
