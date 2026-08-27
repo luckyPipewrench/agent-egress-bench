@@ -293,7 +293,7 @@ The Go validator in `validate/` is the authoritative checker for active case fil
 
 | Field | What it tracks | Source |
 | --- | --- | --- |
-| `corpus_version` | Tag or commit of the case corpus | Repository tag or commit |
+| `corpus_version` | Label naming one exact corpus, bound to that corpus by `ci/corpus-versions.json` | Runner constant, checked against the executed corpus |
 | `scoring_version` | Scoring, applicability, and publication rules | Runner constant |
 | `corpus_sha256` | Retained legacy content digest; not exact corpus identity | Computed at runtime |
 | `benchmark_manifest_sha256` | Exact loaded case paths, boundaries, and bytes | Computed at runtime |
@@ -302,6 +302,8 @@ The Go validator in `validate/` is the authoritative checker for active case fil
 | `capability_registry` | Exact reporting-label registry snapshot | Profile and active results |
 
 `corpus_version` and `scoring_version` decide whether a result is stale. The remaining fields make a run reproducible and auditable.
+
+A label only decides staleness if it moves when the thing it names moves, and `corpus_version` is a runner constant rather than anything derived from the corpus. It is bound to the corpus it names by an append-only ledger and an executable check that refuses a mismatch; [`GOVERNANCE.md`](GOVERNANCE.md) states that requirement and owns it. A consumer comparing two results should still compare `benchmark_manifest_sha256` rather than the label alone: the binding makes the label trustworthy for runs produced after it existed, while the digest is trustworthy for every run.
 
 Scoring version 2.8 moves classification and evidence field-presence rates out of `scores` and into non-scoring diagnostics. Scoring version 2.7 removed the hidden containment threshold from publication decisions. Scoring version 2.6 moved applicability from profile claims to adapter-proven delivery and verdict observation. Results on opposite sides of those boundaries remain records of their own rules, but they are not interchangeable.
 
