@@ -16,7 +16,7 @@
   <text x="388" y="268" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#dc2626" font-weight="700" text-anchor="end">?key=AKIA…EXAMPLE</text>
   <text x="64" y="312" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#64748b">expected_verdict</text>
   <rect x="326" y="296" width="62" height="24" rx="12" fill="#dc2626" fill-opacity="0.10" stroke="#dc2626" stroke-width="1.2"/>
-  <text x="357.0" y="312" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#dc2626" font-weight="700" text-anchor="middle">block</text>
+  <text x="357" y="312" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#dc2626" font-weight="700" text-anchor="middle">block</text>
   <path d="M 412 178 L 448 178" stroke="#09090b" stroke-opacity="0.22" stroke-width="1.5" stroke-linecap="butt" fill="none" stroke-dasharray="4 5"/>
   <path d="M 508 178 L 540 178" stroke="#09090b" stroke-opacity="0.22" stroke-width="1.5" stroke-linecap="butt" fill="none" stroke-dasharray="4 5"/>
   <path d="M 660 178 L 692 178" stroke="#09090b" stroke-opacity="0.22" stroke-width="1.5" stroke-linecap="butt" fill="none" stroke-dasharray="4 5"/>
@@ -53,21 +53,21 @@
   <text x="812" y="136" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9" fill="#64748b" font-weight="600" letter-spacing="0.15em">RECORDED</text>
   <text x="1136" y="136" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9" fill="#64748b" font-weight="600" text-anchor="end" letter-spacing="0.15em">SCORE</text>
   <rect x="812" y="160" width="174" height="24" rx="12" fill="#dc2626" fill-opacity="0.10" stroke="#dc2626" stroke-width="1.2"/>
-  <text x="899.0" y="176" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#dc2626" font-weight="700" text-anchor="middle">block</text>
+  <text x="899" y="176" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#dc2626" font-weight="700" text-anchor="middle">block</text>
   <rect x="1034" y="160" width="102" height="24" rx="12" fill="#00e5a0" fill-opacity="0.16" stroke="#008f66" stroke-width="1.2"/>
-  <text x="1085.0" y="176" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#008f66" font-weight="700" text-anchor="middle">pass</text>
+  <text x="1085" y="176" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#008f66" font-weight="700" text-anchor="middle">pass</text>
   <text x="812" y="196" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#64748b">the control did what the case expects</text>
   <path d="M 812 208 L 1136 208" stroke="#09090b" stroke-opacity="0.12" stroke-width="1" stroke-linecap="butt" fill="none"/>
   <rect x="812" y="222" width="174" height="24" rx="12" fill="#00e5a0" fill-opacity="0.16" stroke="#008f66" stroke-width="1.2"/>
-  <text x="899.0" y="238" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#008f66" font-weight="700" text-anchor="middle">allow</text>
+  <text x="899" y="238" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#008f66" font-weight="700" text-anchor="middle">allow</text>
   <rect x="1034" y="222" width="102" height="24" rx="12" fill="#dc2626" fill-opacity="0.10" stroke="#dc2626" stroke-width="1.2"/>
-  <text x="1085.0" y="238" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#dc2626" font-weight="700" text-anchor="middle">fail</text>
+  <text x="1085" y="238" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#dc2626" font-weight="700" text-anchor="middle">fail</text>
   <text x="812" y="258" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#64748b">the secret reached the network</text>
   <path d="M 812 270 L 1136 270" stroke="#09090b" stroke-opacity="0.12" stroke-width="1" stroke-linecap="butt" fill="none"/>
   <rect x="812" y="284" width="174" height="24" rx="12" fill="#b45309" fill-opacity="0.12" stroke="#b45309" stroke-width="1.2"/>
-  <text x="899.0" y="300" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#b45309" font-weight="700" text-anchor="middle">unreachable / error</text>
+  <text x="899" y="300" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#b45309" font-weight="700" text-anchor="middle">unreachable / error</text>
   <rect x="1034" y="284" width="102" height="24" rx="12" fill="#b45309" fill-opacity="0.12" stroke="#b45309" stroke-width="1.2"/>
-  <text x="1085.0" y="300" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#b45309" font-weight="700" text-anchor="middle">not scored</text>
+  <text x="1085" y="300" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" fill="#b45309" font-weight="700" text-anchor="middle">not scored</text>
   <text x="812" y="320" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#64748b">missing route, delivery, or verdict: never counted</text>
   <text x="600" y="386" font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#64748b" text-anchor="middle">Every case in the corpus goes through this, one at a time, on its own transport. The benchmark scores the control, never the agent.</text>
 </svg>

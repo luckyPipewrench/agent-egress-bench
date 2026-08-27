@@ -154,6 +154,70 @@ class WellFormedTest(unittest.TestCase):
         self.assertIn("PipeLab", hero)
         self.assertNotIn("Pipelab", hero)
 
+    def test_the_hero_wordmark_reads_as_three_separate_words(self):
+        """The wordmark is one text run coloured with tspans, so spacing is fragile.
+
+        Without xml:space="preserve" the renderer collapses the trailing space
+        inside the first tspan and the mark reads "EgressBench". Concatenating
+        the tspan text is what catches that; checking the source string would
+        pass, because the space is present in the file either way.
+        """
+        root = ElementTree.fromstring(generator.social_preview())
+        runs = ["".join(node.itertext()) for node in root.iter(SVG + "text")]
+        wordmark = next((run for run in runs if "Bench" in run and "Agent" in run), None)
+        self.assertIsNotNone(wordmark, f"no wordmark run found in {runs}")
+        self.assertEqual(wordmark.split(), ["Agent", "Egress", "Bench"])
+        self.assertIn("Agent Egress Bench", wordmark)
+
+    def test_the_hero_wordmark_is_a_single_line(self):
+        """One line, so there is no second line to centre and mis-centre.
+
+        The two-line version positioned "Bench" using a width computed from an
+        assumed glyph advance, which did not match the font, so it sat visibly
+        off-centre while the arithmetic looked right.
+        """
+        root = ElementTree.fromstring(generator.social_preview())
+        carrying = [node for node in root.iter(SVG + "text")
+                    if "Bench" in "".join(node.itertext())
+                    or "Agent Egress" in "".join(node.itertext())]
+        self.assertEqual(len(carrying), 1, "the wordmark spans more than one text element")
+
+    def test_the_hero_wordmark_is_sized_to_the_family_card(self):
+        # 72 is the optical match to Pipelock Rules at 86: this name is longer,
+        # so the same point size would dominate a card whose hero is the ruler.
+        root = ElementTree.fromstring(generator.social_preview())
+        wordmark = next(
+            node for node in root.iter(SVG + "text")
+            if "Agent Egress" in "".join(node.itertext())
+        )
+        self.assertEqual(wordmark.get("font-size"), "72")
+
+    def test_the_hero_footer_is_the_family_line(self):
+        """License and maintainer sit in one place, same as the sibling card.
+
+        An earlier layout split those across left, right, and a GitHub URL
+        under them, so three cards from one house did not share a footer.
+        """
+        hero = generator.social_preview()
+        self.assertIn(generator.CARD_FOOTER, hero)
+        self.assertNotIn("A PipeLab open project", hero)
+        self.assertNotIn("pipelab.org  ·  Apache-2.0", hero)
+        self.assertNotIn("github.com/luckyPipewrench/agent-egress-bench",
+                         re.sub(r"<[^>]+>", " ", hero))
+        root = ElementTree.fromstring(hero)
+        footers = [
+            node for node in root.iter(SVG + "text")
+            if generator.CARD_FOOTER in "".join(node.itertext())
+        ]
+        self.assertEqual(len(footers), 1)
+        footer = footers[0]
+        self.assertEqual(footer.get("x"), str(generator.CARD_FOOTER_X))
+        self.assertEqual(footer.get("y"), str(generator.CARD_FOOTER_Y))
+        self.assertEqual(footer.get("font-size"), str(generator.CARD_FOOTER_SIZE))
+        self.assertEqual(footer.get("font-family"), generator.MONO)
+        self.assertEqual(footer.get("letter-spacing"), "0.12em")
+        self.assertEqual(footer.get("fill"), generator.BRAND["dim"])
+
     def test_every_explicit_asset_color_is_a_brand_token_or_light_adaptation(self):
         approved = (set(generator.BRAND.values()) | generator.LIGHT_THEME_DERIVATIVES
                     | generator.OVERLAY_BASES)
@@ -327,9 +391,30 @@ class CommittedAssetTest(unittest.TestCase):
                 self.assertIn(f"assets/diagram-{name}-dark.svg", self.readme)
                 self.assertIn(f"assets/diagram-{name}-light.svg", self.readme)
 
-    def test_the_readme_embeds_the_hero_and_terminal(self):
-        self.assertIn("assets/social-preview.svg", self.readme)
+    def test_the_readme_leads_with_the_lockup_not_the_social_card(self):
+        """The header is a mark and a wordmark, matching the sibling repository.
+
+        A social card is built for a link preview, where it stands alone at a
+        fixed size with nothing around it. Leading the README with it makes a
+        large image do the job a single line should do, and it was why the two
+        sibling repositories introduced themselves differently. The card is
+        still generated and still uploaded as the repository's social preview;
+        it is simply not the page header.
+        """
+        self.assertIn("assets/lockup.svg", self.readme)
+        self.assertNotIn("assets/social-preview.svg", self.readme)
+        header = self.readme.split("</p>", 1)[0]
+        self.assertIn("assets/lockup.svg", header,
+                      "the lockup must be the first thing on the page")
+
+    def test_the_readme_embeds_the_terminal(self):
         self.assertIn("assets/terminal-doctor.svg", self.readme)
+
+    def test_the_social_card_is_still_produced(self):
+        # No longer embedded, but still the repository's link preview, so a
+        # change that stopped generating it should fail rather than pass
+        # quietly now that no README reference points at it.
+        self.assertIn("social-preview.svg", {path.name for path in generator.build()})
 
     def test_every_png_matches_its_source(self):
         self.assertEqual(generator.png_problems(), [])
@@ -556,6 +641,81 @@ class EvidenceTerminalTest(unittest.TestCase):
                 tick = (position - start) / pitch
                 self.assertAlmostEqual(tick, round(tick), places=6)
                 self.assertEqual(round(tick) % major_every, 0)
+
+
+class CoordinatePrecisionTest(unittest.TestCase):
+    """Generated art must not read as a secret to this repository's own scanner.
+
+    Binary floating point printed a ruler tick at ``966.4000000000001``. Sixteen
+    digits in a row match the Credit Card Number pattern, so the committed card
+    failed the diff scan this repository runs against itself, and a legitimate
+    drawing was rejected as an exfiltrated card number. Refusing a real secret
+    is the point of that scan; refusing a rectangle is the failure this guards.
+
+    The same defect was fixed in the sibling rules repository first and did not
+    travel, which is why the check lives with the generator rather than in a
+    reviewer's memory.
+    """
+
+    def _vectors(self):
+        """Every generated vector, taken from the writer rather than from disk.
+
+        Reading the committed files would let a stale asset pass while the
+        generator emits noise, which is the wrong direction: the check exists to
+        stop the next render from producing it.
+        """
+        for path, body in generator.build().items():
+            if path.suffix == ".svg":
+                yield path.name, body
+
+    def test_no_coordinate_prints_a_long_digit_run(self):
+        for name, body in self._vectors():
+            with self.subTest(asset=name):
+                run = re.search(r"[0-9]{7,}", body)
+                self.assertIsNone(
+                    run, f"{name} emits {run.group(0) if run else ''!r}, "
+                    "which the repository's own DLP scan reads as a credential")
+
+    def test_the_formatter_removes_the_noise_it_was_written_for(self):
+        # 966.4 is the ruler position that produced the original failure.
+        self.assertEqual(generator._n(1184 - 50 * 4.352), "966.4")
+        self.assertEqual(generator._n(418.0), "418")
+        self.assertEqual(generator._n("auto"), "auto")
+
+
+class WhitespacePreservationTest(unittest.TestCase):
+    """A word gap carried by a tspan boundary needs the attribute that keeps it.
+
+    The wordmark is one text element coloured with two tspans, so the space in
+    "Agent Egress Bench" sits at the end of the first tspan. Without
+    ``xml:space="preserve"`` a renderer collapses that trailing run and draws
+    "EgressBench". The existing spacing tests parse the DOM, where the space
+    survives regardless, so they passed with the attribute removed and proved
+    nothing. This one reads the attribute itself, because the attribute is the
+    behaviour.
+    """
+
+    def test_text_with_a_boundary_space_declares_that_it_preserves_it(self):
+        for path, body in generator.build().items():
+            if path.suffix != ".svg":
+                continue
+            root = ElementTree.fromstring(body)
+            for node in root.iter(SVG + "text"):
+                spans = list(node.iter(SVG + "tspan"))
+                if len(spans) < 2:
+                    continue
+                boundary = any((span.text or "").endswith(" ")
+                               or (span.text or "").startswith(" ")
+                               for span in spans)
+                if not boundary:
+                    continue
+                preserve = node.get("{http://www.w3.org/XML/1998/namespace}space")
+                with self.subTest(asset=path.name, text="".join(
+                        span.text or "" for span in spans)):
+                    self.assertEqual(
+                        preserve, "preserve",
+                        "this text carries a word gap on a tspan boundary, so a "
+                        "renderer will collapse it without xml:space=preserve")
 
 
 if __name__ == "__main__":

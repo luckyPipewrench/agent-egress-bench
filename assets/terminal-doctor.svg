@@ -5,14 +5,14 @@
   <circle cx="22" cy="20" r="6" fill="#ef4444" opacity="0.85"/>
   <circle cx="42" cy="20" r="6" fill="#f59e0b" opacity="0.85"/>
   <circle cx="62" cy="20" r="6" fill="#00e5a0" opacity="0.85"/>
-  <text x="295.0" y="25" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#64748b" text-anchor="middle">preflight</text>
+  <text x="295" y="25" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#64748b" text-anchor="middle">preflight</text>
   <rect x="610.5" y="0.5" width="589" height="524" rx="12" fill="#0e0e11" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1"/>
   <path d="M 622 0.5 H 1188 A 12 12 0 0 1 1199.5 12 V 40 H 610.5 V 12 A 12 12 0 0 1 622 0.5 Z" fill="#ffffff" fill-opacity="0.03"/>
   <path d="M 610.5 40 L 1199.5 40" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1" stroke-linecap="butt" fill="none"/>
   <circle cx="632" cy="20" r="6" fill="#ef4444" opacity="0.85"/>
   <circle cx="652" cy="20" r="6" fill="#f59e0b" opacity="0.85"/>
   <circle cx="672" cy="20" r="6" fill="#00e5a0" opacity="0.85"/>
-  <text x="905.0" y="25" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#64748b" text-anchor="middle">one run, one evidence directory</text>
+  <text x="905" y="25" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#64748b" text-anchor="middle">one run, one evidence directory</text>
   <text x="24" y="70" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13.5" fill="#64748b">$</text>
   <text x="40" y="70" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13.5" fill="#e2e8f0">./scripts/run-pipelock-gauntlet.sh --doctor</text>
   <text x="24" y="100" font-family="'JetBrains Mono', 'JetBrainsMono Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13.5" fill="#94a3b8">platform_linux</text>

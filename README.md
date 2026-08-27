@@ -1,16 +1,21 @@
-<p align="center">
-  <img src="assets/social-preview.svg" alt="Agent Egress Bench: the open yardstick for agent egress control. A PipeLab open project." width="100%">
-</p>
+<h1 align="center">
+  <img src="assets/lockup.svg" alt="Agent Egress Bench" width="440">
+</h1>
 
 <p align="center">
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/validate.yaml/badge.svg" alt="Validate Cases"></a>
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/security.yaml/badge.svg" alt="Security"></a>
-  <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" alt="Pipelock Scan"></a>
+  <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" alt="Pipelock self-scan"></a>
   <a href="https://codecov.io/gh/luckyPipewrench/agent-egress-bench"><img src="https://codecov.io/gh/luckyPipewrench/agent-egress-bench/graph/badge.svg" alt="Coverage"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/agent-egress-bench"><img src="https://api.scorecard.dev/projects/github.com/luckyPipewrench/agent-egress-bench/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://go.dev/dl/"><img src="https://img.shields.io/badge/Go-1.25%2B-00e5a0?logo=go&logoColor=white&labelColor=0e0e11" alt="Go 1.25+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-00e5a0?labelColor=0e0e11" alt="License: Apache 2.0"></a>
   <a href="https://discord.gg/badNfhGKTc"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white&labelColor=0e0e11" alt="Discord"></a>
+</p>
+
+<p align="center">
+  An open, tool-neutral yardstick maintained by <a href="https://pipelab.org">PipeLab</a>, who also build <a href="https://github.com/luckyPipewrench/pipelock">Pipelock</a>.
+  It publishes no ranking and awards no mark, and anyone may publish a result that reflects badly on Pipelock. See <a href="#governance">Governance</a>.
 </p>
 
 <picture>

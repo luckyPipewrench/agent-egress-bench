@@ -1,4 +1,4 @@
-name: Pipelock Security Scan
+name: Pipelock self-scan
 
 on:
   # Promotion pull requests are created with GITHUB_TOKEN, which intentionally
