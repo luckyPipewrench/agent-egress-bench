@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -174,14 +175,20 @@ func loadProfile(path string) (Profile, error) {
 	if err != nil {
 		return Profile{}, fmt.Errorf("reading profile: %w", err)
 	}
+	var header struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return Profile{}, fmt.Errorf("parsing profile: %w", err)
+	}
+	if header.SchemaVersion != activeToolProfileSchemaVersion {
+		return Profile{}, fmt.Errorf("incompatible_schema_version: family=tool_profile accepted=[%d] got=%d", activeToolProfileSchemaVersion, header.SchemaVersion)
+	}
 	var p Profile
 	if err := decodeStrictJSON(data, &p); err != nil {
 		return Profile{}, fmt.Errorf("parsing profile: %w", err)
 	}
 	p.profileDir = filepath.Dir(path)
-	if p.SchemaVersion != activeToolProfileSchemaVersion {
-		return Profile{}, fmt.Errorf("profile schema_version must be %d for scoring, got %d", activeToolProfileSchemaVersion, p.SchemaVersion)
-	}
 	if err := validateProfileForRun(p); err != nil {
 		return Profile{}, fmt.Errorf("invalid profile: %w", err)
 	}

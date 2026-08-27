@@ -191,7 +191,9 @@ def archive_manifest_identity(artifact_path, record_dir, expected_record_manifes
         raise ValueError("archive record manifest must be an object")
     record_schema_version = record_manifest.get("schema_version")
     if record_schema_version not in PROMOTED_RECORD_SCHEMAS:
-        raise ValueError("archive record manifest schema_version must be 1 or 2")
+        accepted = sorted(PROMOTED_RECORD_SCHEMAS)
+        rendered = ", ".join(str(version) for version in accepted[:-1]) + f", or {accepted[-1]}"
+        raise ValueError(f"archive record manifest schema_version must be {rendered}")
     artifact_schema.validate_file(
         record_manifest,
         PROMOTED_RECORD_SCHEMAS[record_schema_version],

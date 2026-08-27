@@ -88,11 +88,13 @@ The table summarizes the manifest. `make check-contracts` checks the full machin
 | Summary | 5 | 4, 5 | 4 | [`summary-v5.schema.json`](../schemas/summary-v5.schema.json) |
 | Provenance candidate | 6 | 1, 2, 4, 5, 6 | 1, 2, 5 | [`provenance-candidate-v6.schema.json`](../schemas/provenance-candidate-v6.schema.json) |
 | Case index | 3 | 1, 2, 3 | 1, 2 | [`case-index-v3.schema.json`](../schemas/case-index-v3.schema.json) |
-| Promoted record | 2 | 1, 2 | 1 | [`promoted-record-v2.schema.json`](../schemas/promoted-record-v2.schema.json) |
+| Promoted record | 3 | 1, 2, 3 | 1, 2 | [`promoted-record-v3.schema.json`](../schemas/promoted-record-v3.schema.json) |
 | Promotion baseline | 1 | 1 | 1 | [`promotion-baseline-v1.schema.json`](../schemas/promotion-baseline-v1.schema.json) |
 | Result pointer | 1 | 1 | none | [`result-pointer-v1.schema.json`](../schemas/result-pointer-v1.schema.json) |
 
 Every versioned schema has an explicit `-vN` filename and matching `$id`. Result rows retain frozen v4 and v5 beside active v6; summaries retain frozen v4 beside active v5. Provenance candidates retain every accepted version beside active v6. A path can't silently retarget a historical contract, and the repository provides no unsuffixed compatibility aliases.
+
+Tool-profile reader support depends on the consumer. The runner and validator score only v4 and refuse older profiles with `incompatible_schema_version`. Control Evidence v0 retains v1 and v3 readers, while Control Evidence v1 retains v1 and v4 readers. `contracts/artifacts.json` records that consumer map and its union in `accepted_reader_versions`.
 
 The summary stays on v5 because it already has optional fields for the publication facts. Provenance candidate v6 makes those fields mandatory and verifies them before publication. Keeping the requirement in that artifact family avoids changing the local-run summary or the promotion baseline when their meaning hasn't changed.
 

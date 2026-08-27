@@ -1,4 +1,4 @@
-.PHONY: check-test-layout preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-diagrams check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image stats stats-update check-stats cases-manifest check-gauntlet-site check-result-pointers test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
+.PHONY: check-test-layout preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-diagrams check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-tool-profile-reader-contracts stats stats-update check-stats cases-manifest check-gauntlet-site check-result-pointers test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -38,9 +38,18 @@ check-scorecard-workflow:
 # producer or an empty record tree cannot turn this into a false green.
 check-contracts:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_contracts_test.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_go_consumer_tests_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/artifact_schema_conformance_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_schema_closure_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_contracts.py
+	@$(MAKE) --no-print-directory test-tool-profile-reader-contracts
+
+test-tool-profile-reader-contracts:
+	@mkdir -p "$(TMPDIR)" "$(GOCACHE)"
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_go_consumer_tests.py runner TestLoadProfileRefusesNMinusOneProfileWithMachineReadableVersion
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_go_consumer_tests.py validate TestProfileFileRefusesNMinusOneSchemaBeforeLegacyFields
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_go_consumer_tests.py control-evidence/v0/verifier TestV0VerifierRetainsToolProfileV1AndV3Readers
+	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_go_consumer_tests.py control-evidence/v1/verifier TestV1VerifierRetainsToolProfileV1AndV4Readers
 
 # The discovery document is generated from the canonical schema files. It pins
 # every versioned schema's resolving identifier and current bytes without

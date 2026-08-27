@@ -95,6 +95,100 @@ class CheckContractsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "schemas do not cover accepted reader versions"):
                 check_contracts.check(ROOT, path)
 
+    def test_tool_profile_reader_contracts_distinguish_scoring_from_retained_readers(self):
+        manifest = ROOT / "contracts" / "artifacts.json"
+        tool_profile = next(
+            family
+            for family in json.loads(manifest.read_text(encoding="utf-8"))["artifact_families"]
+            if family["family"] == "tool_profile"
+        )
+        self.assertEqual([1, 3, 4], tool_profile["accepted_reader_versions"])
+        self.assertEqual([4], tool_profile["scoring_reader_versions"])
+        self.assertEqual(
+            {
+                "runner_scoring": ("scoring", [4]),
+                "validator_scoring": ("scoring", [4]),
+                "control_evidence_v0": ("retained_evidence", [1, 3]),
+                "control_evidence_v1": ("retained_evidence", [1, 4]),
+            },
+            {
+                entry["consumer"]: (entry["role"], entry["accepted_versions"])
+                for entry in tool_profile["reader_contracts"]
+            },
+        )
+        check_contracts.check(ROOT, manifest)
+
+    def test_rejects_reader_contract_that_omits_an_accepted_version(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        tool_profile = next(family for family in manifest["artifact_families"] if family["family"] == "tool_profile")
+        tool_profile["reader_contracts"][2]["accepted_versions"] = [1]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must cover accepted_reader_versions"):
+                check_contracts.check(ROOT, path)
+
+    def test_rejects_scoring_reader_version_mismatch(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        tool_profile = next(family for family in manifest["artifact_families"] if family["family"] == "tool_profile")
+        tool_profile["scoring_reader_versions"] = [1]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "does not match scoring reader contracts"):
+                check_contracts.check(ROOT, path)
+
+    def test_rejects_duplicate_reader_contract_consumer(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        tool_profile = next(family for family in manifest["artifact_families"] if family["family"] == "tool_profile")
+        tool_profile["reader_contracts"][1]["consumer"] = "runner_scoring"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "consumers must be unique"):
+                check_contracts.check(ROOT, path)
+
+    def test_rejects_reader_contract_path_mismatch(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        tool_profile = next(family for family in manifest["artifact_families"] if family["family"] == "tool_profile")
+        tool_profile["reader_contracts"][0]["path"] = "runner/not-a-reader.go"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "path must be listed in reader"):
+                check_contracts.check(ROOT, path)
+
+    def test_rejects_reader_contract_version_outside_family_support(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        tool_profile = next(family for family in manifest["artifact_families"] if family["family"] == "tool_profile")
+        tool_profile["reader_contracts"][2]["accepted_versions"] = [99]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "accepts a version absent"):
+                check_contracts.check(ROOT, path)
+
+    def test_rejects_reader_contract_role_mismatch(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        tool_profile = next(family for family in manifest["artifact_families"] if family["family"] == "tool_profile")
+        tool_profile["reader_contracts"][0]["role"] = "retained_evidence"
+        tool_profile["reader_contracts"][2]["role"] = "scoring"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "does not match scoring reader contracts"):
+                check_contracts.check(ROOT, path)
+
+    def test_rejects_unknown_reader_contract_role(self):
+        manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
+        tool_profile = next(family for family in manifest["artifact_families"] if family["family"] == "tool_profile")
+        tool_profile["reader_contracts"][0]["role"] = "unrecognized"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifacts.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "role must be one of"):
+                check_contracts.check(ROOT, path)
+
     def test_rejects_changed_frozen_schema_bytes(self):
         manifest = json.loads((ROOT / "contracts" / "artifacts.json").read_text(encoding="utf-8"))
         frozen = next(
