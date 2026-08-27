@@ -1,4 +1,20 @@
-name: Pipelock self-scan
+name: Repository secret scan (self-run)
+
+# Named for what it does rather than for the product that does it. This
+# repository maintains a corpus used to evaluate agent egress tools, and the
+# scanner here is the maintainer's own product, so a check reading
+# "Pipelock self-scan / security-scan" on every pull request invites the
+# conclusion that the evaluated tool gates the evaluation. It does not: this job
+# is repository hygiene, it scans this repository's own files for secrets, and it
+# awards nothing to any tool including the one it runs. The scanner's identity is
+# visible in the job log and pinned in the step below rather than announced in
+# the check name.
+#
+# The job id stays `security-scan` deliberately. It is the required-status-check
+# context in this repository's `main` ruleset, so renaming it here without editing
+# that ruleset first would leave every pull request waiting on a context that can
+# never report. Changing it is a two-step repository-admin operation: add the new
+# context, land the rename, then drop the old one.
 
 on:
   # Promotion pull requests are created with GITHUB_TOKEN, which intentionally
