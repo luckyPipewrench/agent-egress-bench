@@ -156,6 +156,27 @@ installed_go_version() {
   return 1
 }
 
+# go_version_report returns the toolchain's own version line, which is what run
+# provenance records. installed_go_version above returns only the parsed
+# semantic version because comparisons need it; a reader of the evidence wants
+# the full self-report, including platform and any GOEXPERIMENT field. The line
+# is emitted by the go binary that will actually build the runner, so it is the
+# artifact's own claim rather than the floor stated in go.mod.
+go_version_report() {
+  local line=""
+  go_bin_available || return 1
+  line="$("$go_bin" version 2>/dev/null | head -n 1 || true)"
+  # Anything this function cannot recognize would be rejected downstream by the
+  # provenance validator. Refuse here so the failure names the toolchain instead
+  # of surfacing as an invalid metadata field. require_go_toolchain already
+  # refuses a devel or otherwise unparseable toolchain for the same reason.
+  if [[ "$line" =~ ^go\ version\ go[0-9] ]]; then
+    printf '%s\n' "$line"
+    return 0
+  fi
+  return 1
+}
+
 require_go_toolchain() {
   local required_go=""
   local installed_go=""
@@ -623,8 +644,11 @@ if [[ -n "$development_binary" ]]; then
   add_noncanonical_reason "development Pipelock binary was requested"
 fi
 
+runner_go_version="$(go_version_report)" || die "go version is unreadable; the toolchain that builds the runner must report its own version so the run records which compiler produced the measuring instrument"
+
 start_args=(
   start
+  --runner-go-version "$runner_go_version"
   --output "$output_dir/run-metadata.json"
   --local-run-id "$local_run_id"
   --generated-at "$started_at"
