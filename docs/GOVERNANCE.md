@@ -7,6 +7,8 @@ How this corpus is maintained, how decisions are made, and how conflicts are han
 Case design is tool-neutral: no case targets a product. The project itself is not independent yet. PipeLab maintains the corpus and holds decision rights over case semantics and scoring, and says so rather than calling itself neutral. It was created by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author and is designed for any agent egress security tool. This repository publishes no ranking, leaderboard, or cross-tool comparison table, awards no badge, and certifies nothing. <!-- claim-ok: states the non-claim -->
 Optional receipt profiles under `profiles/` are maintainer-published evidence artifacts, not corpus-issued endorsements. [RESULTS-USE.md](RESULTS-USE.md) defines the labels a publisher may use, the facts that travel with a public result, and the limits this policy places on the maintainer.
 
+This repository's own continuous integration runs the maintainer's product against this repository's files to check for committed secrets. That is repository hygiene and a self-run check, not a security audit, not an endorsement, and not evidence about that product or any other. It gates changes to this repository only, it awards nothing, and no result it produces may be cited as a corpus outcome. <!-- claim-ok: states the non-claim -->
+
 No case is written to favor or penalize a specific tool. Cases test observable behavior on the wire (did the request get blocked?), not implementation internals.
 
 ## Case ID immutability
