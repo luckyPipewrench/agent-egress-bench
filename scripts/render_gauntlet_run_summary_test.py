@@ -152,6 +152,7 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
         )
         self.assertIn("REVIEW REQUIRED — ARCHIVED RECORD UNCHANGED", output)
         self.assertIn("case_count.total moved 213 -&gt; 214", output)
+        self.assertIn("Review and publish new Pipelock results from the product-owned lane.", output)
         self.assertNotIn("Prepare a promotion", output)
         self.assertNotIn("promote-gauntlet-result.yaml", output)
 
