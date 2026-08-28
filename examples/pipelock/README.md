@@ -59,7 +59,7 @@ Important files in the completed directory:
 
 A runner error or timeout still leaves a blocked decision plus whatever evidence was produced. A successful portable run still is not a published result. A platform must retain the directory, assign a real artifact ID and HTTPS URL, finalize the candidate, and apply its reviewed publication policy.
 
-Older candidates whose artifact IDs contain only a workflow run ID remain valid for offline record validation. New Pipelock results use the product-owned publication process.
+Older candidates whose artifact IDs contain only a workflow run ID remain valid for offline record validation. This repository doesn't publish new Pipelock results. [`docs/CONTINUOUS-RESULTS.md`](../../docs/CONTINUOUS-RESULTS.md) explains who publishes them and which evidence and failure states the published result must retain.
 
 ### Explicit development mode
 
