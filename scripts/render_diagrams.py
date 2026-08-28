@@ -38,7 +38,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = REPO_ROOT / "assets"
 STATS_FILE = REPO_ROOT / "cases" / "STATS.md"
-DOCTOR_SCRIPT = REPO_ROOT / "scripts" / "run-pipelock-gauntlet.sh"
 
 # Brand font stacks. GitHub renders README images without web fonts, so the
 # fallbacks matter; the PNG exports are made on a host with the brand fonts.
@@ -206,39 +205,6 @@ def live_transports() -> set[str]:
     if not found:
         raise SystemExit("render_diagrams: FAIL - no transports found under cases/")
     return found
-
-
-def doctor_check_names() -> list[str]:
-    """Read the doctor codes from its real machine-readable output.
-
-    A regex over shell source treated commented-out checks as live and could
-    leave the terminal asset green after the doctor stopped reporting a check.
-    The doctor emits its complete code list even when prerequisites are absent,
-    so its JSON output is the producer this drawing needs to follow.
-    """
-    try:
-        run = subprocess.run(
-            [str(DOCTOR_SCRIPT), "--doctor-json"],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError as exc:
-        raise SystemExit(f"render_diagrams: FAIL - cannot run doctor: {exc}") from exc
-    try:
-        report = json.loads(run.stdout)
-        checks = report["checks"]
-        names = [check["code"] for check in checks]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise SystemExit(
-            "render_diagrams: FAIL - doctor did not emit its expected JSON check list"
-        ) from exc
-    if not names or any(not isinstance(name, str) or not name for name in names):
-        raise SystemExit("render_diagrams: FAIL - doctor emitted an invalid check name")
-    if len(names) != len(set(names)):
-        raise SystemExit("render_diagrams: FAIL - doctor emitted duplicate check names")
-    return names
 
 
 # --------------------------------------------------------------------------
@@ -1240,88 +1206,6 @@ def coverage(p) -> str:
     return "\n".join(out) + "\n"
 
 # --------------------------------------------------------------------------
-# Terminal: the doctor. Brand terminal block; one variant for both themes.
-# --------------------------------------------------------------------------
-
-DOCTOR_LINES = tuple((name, "ok") for name in (
-    "platform_linux", "command_git", "command_python3", "command_go", "command_curl", "command_jq",
-    "command_sha256sum", "command_tar", "command_timeout", "command_realpath", "command_make",
-    "go_version", "mcp_stdio_bridge", "kernel_sandbox", "repository_root", "release_pin",
-))
-DOCTOR_READY = "ready: local prerequisites are satisfied"
-
-
-
-EVIDENCE_README = REPO_ROOT / "examples" / "pipelock" / "README.md"
-EVIDENCE_FILES = (
-    "execution-decision.json", "run-bundle.json", "raw-summary.json", "results.jsonl",
-    "tool-profile.json", "capability-registry.json", "runner.stderr", "command.txt",
-    "case-index.json", "corpus-manifest.txt", "make-stats.txt", "pipelock-release.json",
-    "checksums.txt", "pipelock-version.txt", "run-metadata.json", "entrypoint-command.txt",
-)
-
-
-def documented_evidence_files() -> set[str]:
-    """File names the reference-runner guide documents for one run directory."""
-    text = EVIDENCE_README.read_text(encoding="utf-8")
-    start = text.find("`execution-decision.json`")
-    if start < 0:
-        raise SystemExit("render_diagrams: FAIL - examples/pipelock/README.md no longer documents the run directory")
-    block = text[start:text.find("\n\n", start)]
-    return set(re.findall(r"`([a-z0-9._-]+\.(?:json|jsonl|txt|stderr))`", block))
-
-
-def _terminal_frame(x, w, h, title):
-    out = [_card(x + 0.5, 0.5, w - 1, h - 1, fill=BRAND["bg_elevated"], stroke="rgba(255,255,255,0.10)", radius=12),
-           f'  <path d="M {x + 12} 0.5 H {x + w - 12} A 12 12 0 0 1 {x + w - 0.5} 12 V 40 H {x + 0.5} V 12 '
-           f'A 12 12 0 0 1 {x + 12} 0.5 Z" fill="#ffffff" fill-opacity="0.03"/>',
-           _line(x + 0.5, 40, x + w - 0.5, 40, "rgba(255,255,255,0.06)", width=1)]
-    for i, c in enumerate((BRAND["danger"], BRAND["warn"], BRAND["accent"])):
-        out.append(f'  <circle cx="{_n(x + 22 + i * 20)}" cy="20" r="6" fill="{c}" opacity="0.85"/>')
-    out.append(_text(x + w / 2, 25, title, fill=BRAND["dim"], size=12, family=MONO, anchor="middle"))
-    return out
-
-
-def terminal_doctor() -> str:
-    """Two panels: the preflight on the left, what a run leaves behind on the right."""
-    a, line_h = BRAND["accent"], 21
-    rows = max(len(DOCTOR_LINES) + 3, len(EVIDENCE_FILES) + 2)
-    w, h = 1200, 96 + rows * line_h + 30
-    lw, rw, gap = 590, 590, 20
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_n(w)}" height="{_n(h)}" viewBox="0 0 {w} {h}" role="img" '
-           'aria-label="Two terminals. Left: ./scripts/run-pipelock-gauntlet.sh --doctor reports every prerequisite '
-           'check as ok and ends with ready: local prerequisites are satisfied. Right: the evidence directory one '
-           'run leaves behind, listing every retained file.">']
-    out += _terminal_frame(0, lw, h, "preflight")
-    out += _terminal_frame(lw + gap, rw, h, "one run, one evidence directory")
-    y = 70
-    out.append(_text(24, y, "$", fill=BRAND["dim"], size=13.5, family=MONO))
-    out.append(_text(40, y, "./scripts/run-pipelock-gauntlet.sh --doctor", fill=BRAND["text"], size=13.5, family=MONO))
-    y += 30
-    for name, value in DOCTOR_LINES:
-        out.append(_text(24, y, name, fill=BRAND["muted"], size=13.5, family=MONO))
-        out.append(_text(240, y, value, fill=a, size=13.5, family=MONO, weight=700))
-        y += line_h
-    y += 8
-    out.append(_text(24, y, DOCTOR_READY, fill=a, size=13.5, family=MONO, weight=700))
-
-    rx, y = lw + gap + 24, 70
-    out.append(_text(rx, y, "$", fill=BRAND["dim"], size=13.5, family=MONO))
-    out.append(_text(rx + 16, y, "./scripts/run-pipelock-gauntlet.sh", fill=BRAND["text"], size=13.5, family=MONO))
-    y += line_h
-    out.append(_text(rx, y, "$", fill=BRAND["dim"], size=13.5, family=MONO))
-    out.append(_text(rx + 16, y, "ls continuous-gauntlet-runs/<timestamp>/", fill=BRAND["text"], size=13.5, family=MONO))
-    y += 30
-    for name in EVIDENCE_FILES:
-        out.append(_text(rx, y, name, fill=BRAND["muted"], size=13.5, family=MONO))
-        y += line_h
-    y += 8
-    out.append(_text(rx, y, f"{len(EVIDENCE_FILES)} files. Exact command, raw rows, digests, release identity.",
-                     fill=a, size=12.5, family=MONO, weight=700))
-    out.append("</svg>")
-    return "\n".join(out) + "\n"
-
-# --------------------------------------------------------------------------
 # Build, verify, write.
 # --------------------------------------------------------------------------
 
@@ -1341,7 +1225,6 @@ SINGLES = {
     "favicon.svg": lambda: logo(64),
     "lockup.svg": lockup,
     "lockup-stacked.svg": stacked_lockup,
-    "terminal-doctor.svg": terminal_doctor,
 }
 # Hand-exported rasters, each pinned to the SVG it came from.
 PNG_EXPORTS = {
@@ -1370,21 +1253,6 @@ def verify_against_corpus() -> list[str]:
     # The one-case scene reads its case at render time, so the byte comparison in
     # --check is what catches a drawing that fell behind the corpus.
 
-    documented = documented_evidence_files()
-    for name in EVIDENCE_FILES:
-        if name not in documented:
-            problems.append(f"terminal: lists {name!r}, which examples/pipelock/README.md no longer documents")
-    for name in sorted(documented - set(EVIDENCE_FILES)):
-        problems.append(f"terminal: examples/pipelock/README.md documents {name!r}, which the drawing omits")
-
-    script_checks = doctor_check_names()
-    drawn = [name for name, _ in DOCTOR_LINES]
-    for name in drawn:
-        if name not in script_checks:
-            problems.append(f"terminal-doctor: shows check {name!r}, which the portable entrypoint no longer reports")
-    for name in script_checks:
-        if name not in drawn:
-            problems.append(f"terminal-doctor: the portable entrypoint reports {name!r}, which the drawing omits")
     return problems
 
 

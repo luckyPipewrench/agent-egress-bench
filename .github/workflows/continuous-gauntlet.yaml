@@ -290,7 +290,7 @@ jobs:
             {
               echo '## Continuous Gauntlet: BLOCKED — ACTION REQUIRED'
               echo
-              echo 'The owner summary could not be rendered after an earlier workflow failure. The public record is unchanged.'
+              echo 'The owner summary could not be rendered after an earlier workflow failure. The archived record in this repository is unchanged.'
             } > "$summary_path"
           fi
           cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"

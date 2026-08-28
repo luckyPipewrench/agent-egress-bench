@@ -150,9 +150,11 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
             decision_value=decision("scope_changed_requires_review", review_notes=["case_count.total moved 213 -> 214"]),
             enforcement_exit=2,
         )
-        self.assertIn("REVIEW REQUIRED — PUBLIC RECORD UNCHANGED", output)
+        self.assertIn("REVIEW REQUIRED — ARCHIVED RECORD UNCHANGED", output)
         self.assertIn("case_count.total moved 213 -&gt; 214", output)
-        self.assertIn("Prepare a promotion", output)
+        self.assertIn("Review and publish new Pipelock results from the product-owned lane.", output)
+        self.assertNotIn("Prepare a promotion", output)
+        self.assertNotIn("promote-gauntlet-result.yaml", output)
 
     def test_unreachable_count_is_rendered_as_a_coverage_gap(self):
         value = candidate()
@@ -168,7 +170,7 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
         output = self.render(decision_value=decision("blocked", True, ["case_count.errors=1, want 0"]), enforcement_exit=1)
         self.assertIn("BLOCKED — ACTION REQUIRED", output)
         self.assertIn("case_count.errors=1, want 0", output)
-        self.assertIn("The public record is unchanged.", output)
+        self.assertIn("The archived record in this repository is unchanged.", output)
 
     def test_missing_candidate_never_passes(self):
         output = self.render(missing_candidate=True, enforcement_exit=1)

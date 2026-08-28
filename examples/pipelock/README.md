@@ -1,6 +1,6 @@
 # Pipelock Reference Runner
 
-> **For benchmark development use the Go runner in [`../../runner/`](../../runner/).** It executes the declared fetch, forward-proxy, WebSocket, MCP stdio, MCP HTTP, A2A, and TLS-intercepted request/response transports without substituting scan APIs or other surfaces. The shell `harness.sh` remains a fetch-only illustration, not a scoring runner.
+> **For benchmark development use the Go runner in [`../../runner/`](../../runner/).** It executes the declared fetch, forward-proxy, WebSocket, MCP stdio, MCP HTTP, A2A, and TLS-intercepted request/response transports without substituting scan APIs or other surfaces.
 
 This directory contains the Pipelock-specific artifacts the Go runner needs to score Pipelock:
 
@@ -8,7 +8,6 @@ This directory contains the Pipelock-specific artifacts the Go runner needs to s
 - [`pipelock-benchmark.yaml`](pipelock-benchmark.yaml): bench-only config (every scanner enabled, action=block, test blocklist domain included).
 - [`receipt-verifier.json`](receipt-verifier.json): Pipelock's verifier metadata for the optional receipt-scoring profile.
 - [`release.env`](release.env): the single reviewed Pipelock release tag and version used by the portable runner and GitHub workflow.
-- [`harness.sh`](harness.sh): legacy fetch-only example, kept for illustration.
 
 ## Portable release run
 
@@ -60,7 +59,7 @@ Important files in the completed directory:
 
 A runner error or timeout still leaves a blocked decision plus whatever evidence was produced. A successful portable run still is not a published result. A platform must retain the directory, assign a real artifact ID and HTTPS URL, finalize the candidate, and apply its reviewed publication policy.
 
-The current GitHub promotion workflow binds an artifact to both its workflow run ID and run attempt. Older candidates whose artifact IDs contain only a run ID remain valid for offline record validation, but they cannot be promoted through the attempt-bound workflow.
+Older candidates whose artifact IDs contain only a workflow run ID remain valid for offline record validation. This repository doesn't publish new Pipelock results. [`docs/CONTINUOUS-RESULTS.md`](../../docs/CONTINUOUS-RESULTS.md) explains who publishes them and which evidence and failure states the published result must retain.
 
 ### Explicit development mode
 
@@ -166,14 +165,3 @@ export PIPELOCK_BENCH_CONFIG="$PWD/examples/pipelock/pipelock-benchmark.yaml"
 The example profile may be set to a release-candidate version while validating a
 candidate binary. Published score reports should name the exact released binary
 or candidate commit they executed.
-
-## Legacy fetch-only harness
-
-`harness.sh` runs URL cases through Pipelock's `/fetch?url=...` GET endpoint. It is preserved as a minimal worked example of the runner contract for tools that only implement a fetch-style proxy. **It is not the Gauntlet**: body, header (POST), WebSocket, MCP, and response-content cases are not exercised, and any tool whose containment is reported off this harness alone will be undersold. Use the Go runner for any published score.
-
-```bash
-# Minimal fetch-only run (illustration, not a benchmark)
-bash harness.sh /path/to/pipelock
-```
-
-Output is JSONL on stdout, summary on stderr.

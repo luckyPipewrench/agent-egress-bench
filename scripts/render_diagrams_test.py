@@ -230,6 +230,24 @@ class WellFormedTest(unittest.TestCase):
                 self.assertTrue(colors, f"{path.name}: the color scan matched nothing")
                 self.assertTrue(colors <= approved, colors - approved)
 
+    def test_the_hero_ruler_marks_sit_on_major_ticks(self):
+        # Read the emitted positions. Checking the source fractions here would
+        # pass even if the drawing stopped putting its marks on major ticks.
+        root = ElementTree.fromstring(generator.social_preview())
+        positions = {
+            (node.text or "").strip(): float(node.get("x"))
+            for node in root.iter(SVG + "text")
+            if (node.text or "").strip() in {"allow", "block", "unreachable", "error"}
+        }
+        self.assertEqual(set(positions), {"allow", "block", "unreachable", "error"})
+        start, divisions, major_every = 96, 50, 5
+        pitch = (1184 - start) / divisions
+        for label, position in positions.items():
+            with self.subTest(label=label):
+                tick = (position - start) / pitch
+                self.assertAlmostEqual(tick, round(tick), places=6)
+                self.assertEqual(round(tick) % major_every, 0)
+
 
 class ThemeParityTest(unittest.TestCase):
     """A pair that says different things is the failure the generator prevents."""
@@ -316,59 +334,6 @@ class CorpusAgreementTest(unittest.TestCase):
         self.assertTrue(found <= generator.live_transports())
 
 
-class DoctorTerminalTest(unittest.TestCase):
-    def test_the_drawing_lists_exactly_the_checks_the_script_reports(self):
-        self.assertEqual([name for name, _ in generator.DOCTOR_LINES], generator.doctor_check_names())
-
-    def test_the_script_parser_expands_the_command_loop(self):
-        names = generator.doctor_check_names()
-        self.assertIn("platform_linux", names)
-        self.assertIn("command_git", names)
-        self.assertIn("release_pin", names)
-        self.assertNotIn("command_socat", names)  # bridge probe reports one literal name
-        self.assertIn("mcp_stdio_bridge", names)
-
-    def test_the_doctor_output_not_shell_comments_drives_the_drawing(self):
-        with tempfile.TemporaryDirectory() as directory:
-            doctor = Path(directory) / "doctor"
-            doctor.write_text(
-                "#!/bin/sh\n"
-                "# add_doctor_result \"stale_comment\" ok\n"
-                "printf '%s\\n' '{\"checks\":[{\"code\":\"real_check\"}]}'\n",
-                encoding="utf-8",
-            )
-            doctor.chmod(0o755)
-            with _swap("DOCTOR_SCRIPT", doctor):
-                self.assertEqual(generator.doctor_check_names(), ["real_check"])
-
-    def test_the_doctor_json_list_is_usable_when_prerequisites_fail(self):
-        # --doctor-json deliberately exits nonzero when a host is missing a
-        # prerequisite. It must still provide the complete check vocabulary so
-        # the generated terminal can describe a host even when jq is absent.
-        with tempfile.TemporaryDirectory() as directory:
-            doctor = Path(directory) / "doctor"
-            doctor.write_text(
-                "#!/bin/sh\n"
-                "printf '%s\\n' '{\"checks\":[{\"code\":\"command_jq\"}]}'\n"
-                "exit 1\n",
-                encoding="utf-8",
-            )
-            doctor.chmod(0o755)
-            with _swap("DOCTOR_SCRIPT", doctor):
-                self.assertEqual(generator.doctor_check_names(), ["command_jq"])
-
-    def test_a_check_the_script_dropped_is_reported(self):
-        with _swap("doctor_check_names", lambda: ["platform_linux"]):
-            problems = generator.verify_against_corpus()
-        self.assertTrue(any("no longer reports" in p for p in problems), problems)
-
-    def test_a_check_the_script_grew_is_reported(self):
-        grown = generator.doctor_check_names() + ["disk_space"]
-        with _swap("doctor_check_names", lambda: grown):
-            problems = generator.verify_against_corpus()
-        self.assertTrue(any("disk_space" in p for p in problems), problems)
-
-
 class CommittedAssetTest(unittest.TestCase):
     def setUp(self) -> None:
         self.readme = (generator.REPO_ROOT / "README.md").read_text(encoding="utf-8")
@@ -406,9 +371,6 @@ class CommittedAssetTest(unittest.TestCase):
         header = self.readme.split("</p>", 1)[0]
         self.assertIn("assets/lockup.svg", header,
                       "the lockup must be the first thing on the page")
-
-    def test_the_readme_embeds_the_terminal(self):
-        self.assertIn("assets/terminal-doctor.svg", self.readme)
 
     def test_the_social_card_is_still_produced(self):
         # No longer embedded, but still the repository's link preview, so a
@@ -614,43 +576,6 @@ class ResultStateFlowTest(unittest.TestCase):
         text = _strings(generator.result_states(generator.PALETTES["dark"]))
         self.assertIn("pass", text)
         self.assertIn("fail", text)
-
-
-class EvidenceTerminalTest(unittest.TestCase):
-    """The run-directory panel lists real files, gated against the guide that documents them."""
-
-    def test_the_drawing_lists_exactly_the_documented_files(self):
-        self.assertEqual(set(generator.EVIDENCE_FILES), generator.documented_evidence_files())
-
-    def test_a_file_the_guide_dropped_is_reported(self):
-        documented = generator.documented_evidence_files() - {"results.jsonl"}
-        with _swap("documented_evidence_files", lambda: documented):
-            problems = generator.verify_against_corpus()
-        self.assertTrue(any("results.jsonl" in p and "no longer documents" in p for p in problems), problems)
-
-    def test_a_file_the_guide_added_is_reported(self):
-        documented = generator.documented_evidence_files() | {"brand-new-file.json"}
-        with _swap("documented_evidence_files", lambda: documented):
-            problems = generator.verify_against_corpus()
-        self.assertTrue(any("brand-new-file.json" in p for p in problems), problems)
-
-    def test_the_hero_ruler_marks_sit_on_major_ticks(self):
-        # Read the emitted positions. Checking the source fractions here would
-        # pass even if the drawing stopped putting its marks on major ticks.
-        root = ElementTree.fromstring(generator.social_preview())
-        positions = {
-            (node.text or "").strip(): float(node.get("x"))
-            for node in root.iter(SVG + "text")
-            if (node.text or "").strip() in {"allow", "block", "unreachable", "error"}
-        }
-        self.assertEqual(set(positions), {"allow", "block", "unreachable", "error"})
-        start, divisions, major_every = 96, 50, 5
-        pitch = (1184 - start) / divisions
-        for label, position in positions.items():
-            with self.subTest(label=label):
-                tick = (position - start) / pitch
-                self.assertAlmostEqual(tick, round(tick), places=6)
-                self.assertEqual(round(tick) % major_every, 0)
 
 
 class CoordinatePrecisionTest(unittest.TestCase):

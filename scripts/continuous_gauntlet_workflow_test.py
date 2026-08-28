@@ -888,7 +888,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertIn('--enforcement-result "$artifact_dir/enforcement-result.json"', block)
         self.assertIn("BLOCKED — ACTION REQUIRED", block)
         self.assertIn("summary could not be rendered", block)
-        self.assertIn("public record is unchanged", block)
+        self.assertIn("archived record in this repository is unchanged", block)
         self.assertIn('> "$summary_path" || summary_exit=$?', block)
         self.assertIn('} > "$summary_path"', block)
         self.assertIn('cat "$summary_path" >> "$GITHUB_STEP_SUMMARY"', block)
