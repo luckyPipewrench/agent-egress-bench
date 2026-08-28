@@ -41,8 +41,6 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertIn("contracts/method-independence-v1.json", files)
         for name in filter(None, files):
             source, destination = REPO / name, self.root / name
-            if not source.exists():
-                continue
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
             shutil.copymode(source, destination)

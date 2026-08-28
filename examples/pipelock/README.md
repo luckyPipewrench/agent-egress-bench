@@ -59,7 +59,7 @@ Important files in the completed directory:
 
 A runner error or timeout still leaves a blocked decision plus whatever evidence was produced. A successful portable run still is not a published result. A platform must retain the directory, assign a real artifact ID and HTTPS URL, finalize the candidate, and apply its reviewed publication policy.
 
-The current GitHub promotion workflow binds an artifact to both its workflow run ID and run attempt. Older candidates whose artifact IDs contain only a run ID remain valid for offline record validation, but they cannot be promoted through the attempt-bound workflow.
+Older candidates whose artifact IDs contain only a workflow run ID remain valid for offline record validation. New Pipelock results use the product-owned publication process.
 
 ### Explicit development mode
 

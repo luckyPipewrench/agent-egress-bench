@@ -150,7 +150,7 @@ class RenderGauntletRunSummaryTest(unittest.TestCase):
             decision_value=decision("scope_changed_requires_review", review_notes=["case_count.total moved 213 -> 214"]),
             enforcement_exit=2,
         )
-        self.assertIn("REVIEW REQUIRED — PUBLIC RECORD UNCHANGED", output)
+        self.assertIn("REVIEW REQUIRED — ARCHIVED RECORD UNCHANGED", output)
         self.assertIn("case_count.total moved 213 -&gt; 214", output)
         self.assertNotIn("Prepare a promotion", output)
         self.assertNotIn("promote-gauntlet-result.yaml", output)

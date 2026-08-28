@@ -231,7 +231,7 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
         and decision is not None
         and decision.get("blocked") is False
     ):
-        state = "REVIEW REQUIRED — PUBLIC RECORD UNCHANGED"
+        state = "REVIEW REQUIRED — ARCHIVED RECORD UNCHANGED"
     elif (
         not failures
         and verdict == "pass"
