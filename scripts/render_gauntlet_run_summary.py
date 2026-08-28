@@ -251,14 +251,13 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
         state = "BLOCKED — ACTION REQUIRED"
 
     latest_url = f"https://github.com/{repository}/blob/main/gauntlet-site/latest-verified.json" if repository_valid else None
-    promote_url = f"https://github.com/{repository}/actions/workflows/promote-gauntlet-result.yaml" if repository_valid else None
     lines = [f"## Continuous Gauntlet: {state}", ""]
     if state == "PASS — NO ACTION REQUIRED":
         lines.extend(["The candidate is complete and matches the approved scope. No PR was created; permanent publication was not requested.", ""])
     elif state.startswith("REVIEW REQUIRED"):
-        lines.extend(["The candidate is complete, but its approved scope changed. The public record is unchanged. Review the reasons below, then use the manual promotion workflow if a new checkpoint is wanted.", ""])
+        lines.extend(["The candidate is complete, but its approved scope changed. The archived record in this repository is unchanged. Review and publish new Pipelock results from the product-owned lane.", ""])
     else:
-        lines.extend(["The candidate, decision, or enforcement result is incomplete, blocked, or malformed. The public record is unchanged. Fix or inspect the failures below before considering promotion.", ""])
+        lines.extend(["The candidate, decision, or enforcement result is incomplete, blocked, or malformed. The archived record in this repository is unchanged. Fix or inspect the failures before publishing the run elsewhere.", ""])
 
     lines.extend(["### Run details", ""])
     if candidate is not None:
@@ -289,7 +288,6 @@ def build_summary(candidate_path, decision_path, baseline_path, enforcement_path
     lines.extend(["", "### Links", ""])
     lines.append(f"- [Current workflow run]({run_url})" if run_url_valid else "- Current workflow run: (unavailable)")
     lines.append(f"- [Current verified pointer]({latest_url})" if latest_url else "- Current verified pointer: (unavailable)")
-    lines.append(f"- [Prepare a promotion]({promote_url})" if promote_url else "- Prepare a promotion: (unavailable)")
     lines.append("")
     return "\n".join(lines), state
 

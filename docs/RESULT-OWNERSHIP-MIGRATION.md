@@ -10,13 +10,6 @@ planned PipeLab destination, and the repository responsible for retention. `make
 rejects changed, missing, reordered, or symlinked snapshot evidence. It also reruns the existing
 record verifier against the live result chain.
 
-The inventory stays pinned to its recorded source commit if the old lane promotes another result
-before cutover. After migration, this repository keeps the listed bytes and the generic readers, but
-it no longer schedules Pipelock or publishes new Pipelock results.
-
-To cut a later snapshot, commit the reviewed record first, then regenerate the inventory from that
-commit:
-
-```bash
-python3 scripts/validate_pipelock_result_inventory.py --write
-```
+The migration is complete. This repository keeps the listed bytes and the readers needed to verify
+them, but it doesn't accept or publish new Pipelock result records. New Pipelock runs belong in the
+product repository, and PipeLab owns their public pages and retained bundles.

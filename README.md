@@ -58,13 +58,7 @@ Tools already sit in that path. What a buyer usually gets is each vendor's own e
 
 ## Quick start
 
-You need [Go 1.25 or newer](https://go.dev/dl/) from that page. A distribution `golang` package can be older than that, depending on the release you are on, and the runner won't build on it. Run `go version` to see what you have. The floor is not ours to lower, because `golang.org/x/sys` sets it. If a new enough toolchain is already installed somewhere else, point the reference lane at it instead of changing `PATH`:
-
-```bash
-./scripts/run-pipelock-gauntlet.sh --go /path/to/go1.25/bin/go --doctor   # or: export AEB_GO=/path/to/go1.25/bin/go
-```
-
-That selects the toolchain; it never waives the minimum version. A toolchain below the floor is still refused. The reference lane also needs Linux, Git, Python 3, curl, jq, Make, tar, GNU timeout, a SHA-256 utility, and one of `socat`, `ncat`, or `nc`. Its `--doctor` checks each of those along with the selected Go version, and rejects a stale or prerelease toolchain rather than guessing.
+You need [Go 1.25 or newer](https://go.dev/dl/). A distribution `golang` package may install an older release, so run `go version` before building.
 
 ```bash
 git clone --branch main https://github.com/luckyPipewrench/agent-egress-bench.git
@@ -74,18 +68,21 @@ cd validate && go build -o aeb-validate . && cd ..
 ./validate/aeb-validate ./cases
 ```
 
-That builds the validator and checks every case against the schema. The reference lane goes one step further and measures a real product. It preflights the host first, and the preflight refuses to guess:
+That builds the validator and checks every case against the schema.
 
-<p align="center">
-  <img src="assets/terminal-doctor.svg" alt="Two terminals. Left: ./scripts/run-pipelock-gauntlet.sh --doctor reports every prerequisite check as ok and ends with ready: local prerequisites are satisfied. Right: the evidence directory one run leaves behind, listing every retained file." width="100%">
-</p>
+<details>
+<summary><strong>Run the Pipelock reference adapter</strong></summary>
+
+The repository includes Pipelock as one complete adapter example. This path needs Linux, Git, Python 3, curl, jq, Make, tar, GNU timeout, a SHA-256 utility, and one of `socat`, `ncat`, or `nc`. The doctor checks the selected Go version with the other prerequisites.
 
 ```bash
-./scripts/run-pipelock-gauntlet.sh --doctor   # read-only preflight, exits nonzero on any failed check
-./scripts/run-pipelock-gauntlet.sh            # full run, leaves one evidence directory behind
+./scripts/run-pipelock-gauntlet.sh --doctor   # read-only preflight
+./scripts/run-pipelock-gauntlet.sh            # run the corpus and retain the evidence
 ```
 
-The run downloads the pinned Pipelock release, verifies its digest and reported version, confines the target with Landlock and seccomp, starts the fixtures, and runs every case. It leaves one timestamped directory under `continuous-gauntlet-runs/` holding the exact command, results, summary, corpus stats, release identity, file digests, and a machine-readable execution decision. It's Linux-only by design; the [reference-runner guide](examples/pipelock/README.md) has the long-form command and the evidence file map.
+The command downloads the pinned Pipelock release, verifies its digest and reported version, confines the target with Landlock and seccomp, starts the fixtures, and runs the corpus. Set `AEB_GO=/opt/go1.25/bin/go` or pass `--go /opt/go1.25/bin/go` to select a toolchain outside `PATH`. The [reference adapter guide](examples/pipelock/README.md) documents the evidence files.
+
+</details>
 
 <details>
 <summary><strong>Run it in CI with the reusable Action</strong></summary>
@@ -223,7 +220,7 @@ A score on its own is a claim. The benchmark defines what has to travel with it 
 - [`docs/RECEIPT-SCORING.md`](docs/RECEIPT-SCORING.md) is a separate axis for products that emit independently verifiable per-action receipts.
 - [`result-pointers/`](result-pointers/) is the admission-gated registry of pointers at third-party results. It stores pointers, never result bytes; admission means the manifest validated and the bytes matched the declared digest, nothing more.
 
-The maintainer publishes Pipelock's own history at [pipelab.org/gauntlet/results](https://pipelab.org/gauntlet/results/), labeled as first-party evidence. Retained records under [`gauntlet-site/results/`](gauntlet-site/results/) are hash-linked, and a reviewed pull request advances the `latest-verified` pointer; nothing there is a live score or a comparison.
+The maintainer publishes Pipelock's own history at [pipelab.org/gauntlet/results](https://pipelab.org/gauntlet/results/), labeled as first-party evidence. This repository keeps the older records under [`gauntlet-site/results/`](gauntlet-site/results/) as a read-only restore copy. Nothing there is a live score or a comparison.
 
 ## Run it against your own tool
 
@@ -357,8 +354,6 @@ Cases, adapters, runners, and documentation fixes are all welcome. Read [CONTRIB
 - A disputed case verdict or other case-semantics question is a [GitHub Issue](https://github.com/luckyPipewrench/agent-egress-bench/issues).
 - A scoring question, an adapter or method question, or a result that appears to misstate the method is a [GitHub Discussion](https://github.com/luckyPipewrench/agent-egress-bench/discussions).
 - Chat lives on [Discord](https://discord.gg/badNfhGKTc). Security reports follow [SECURITY.md](SECURITY.md).
-
-Repository assets are generated, not drawn. `scripts/render_diagrams.py` writes the hero, the logomark, the stats strip, the doctor terminal, and every diagram pair from one source on the [PipeLab design system](https://pipelab.org), and `make check-diagrams` fails when a committed asset no longer matches the corpus. `make stats-update` refreshes the stats and the assets in one step when a case lands, so the numbers on this page can't go stale. It requires Python 3 as well as Go and stops before changing `cases/STATS.md` if Python is unavailable. The hero and logomark carry no counts on purpose. The logomark is [`assets/logo.svg`](assets/logo.svg) if you need it for a talk, a doc, or a result page.
 
 ## Citing
 

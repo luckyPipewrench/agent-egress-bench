@@ -168,8 +168,8 @@ check-readme-categories:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/check_readme_categories_test.py
 	@python3 scripts/check_readme_categories.py --repo-root .
 
-# README assets are generated, not drawn: the hero, every diagram pair, the
-# count badges, and the doctor terminal. Committed SVGs must match what the
+# README assets are generated, not drawn: the hero, every diagram pair, and the
+# count badges. Committed SVGs must match what the
 # generator produces from the live corpus, light and dark variants of one
 # diagram must say the same thing, and the hand-exported hero PNG must come
 # from the committed SVG.
@@ -316,7 +316,6 @@ check-gauntlet-site:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/continuous_gauntlet_workflow_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/render_gauntlet_run_summary_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/promote_gauntlet_candidate_test.py
-	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/promote_gauntlet_workflow_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/gauntlet_site_index_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/validate_gauntlet_records_test.py
 	@PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_gauntlet_records.py

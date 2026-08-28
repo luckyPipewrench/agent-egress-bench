@@ -16,7 +16,7 @@ The skeleton gives you JSONL emission and the main loop. You fill in three
 things: starting your tool, proving an exact delivery route, and feeding cases
 to your tool while observing a verdict.
 
-The [Pipelock reference runner](../examples/pipelock/) is a complete example. The fetch-only `harness.sh` beside it is a legacy illustration and is not a Gauntlet runner.
+The [Pipelock reference adapter](../examples/pipelock/) is one complete example. It uses the same public runner and evidence contracts as every other target.
 
 ### What to claim
 
@@ -100,4 +100,4 @@ Do not open issues asking to change a case ID. IDs are immutable. Semantic chang
 
 ## Questions
 
-Open a GitHub issue or discussion. The project is maintained by the [Pipelock](https://github.com/luckyPipewrench/pipelock) author, but contributions from any vendor or individual are welcome.
+Open a GitHub issue or discussion. [PipeLab](https://pipelab.org) maintains the project and also builds [Pipelock](https://github.com/luckyPipewrench/pipelock). Contributions from any vendor or individual are welcome.
