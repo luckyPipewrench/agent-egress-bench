@@ -8,6 +8,13 @@
       "benchmark_manifest_sha256": "30a808ddecfa87cbe92059df04b74f1cf150b61d78e1cff6fe60d71db10f1c98",
       "recorded_on": "2026-08-27",
       "note": "First ledger entry. Same corpus content that had been publishing under v2.4.0 since the four cases added on 2026-08-24; the label moves so the content and the label stop disagreeing."
+    },
+    {
+      "corpus_version": "v2.6.0",
+      "case_count": 249,
+      "benchmark_manifest_sha256": "51b5d2fca8462d3b0cf115930cb4900a6b960df778e7c5bb5439f937e6e8f8c7",
+      "recorded_on": "2026-08-27",
+      "note": "Adds MCP tool-definition cases for visible metadata, opaque media, and unnamed hostile entries."
     }
   ]
 }
