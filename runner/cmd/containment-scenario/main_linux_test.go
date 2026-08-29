@@ -9,8 +9,10 @@ import (
 	"context"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -75,16 +77,33 @@ func TestValidateProfile(t *testing.T) {
 	if err := validateProfile(invalid); err == nil {
 		t.Fatal("relative probe path was accepted")
 	}
+	invalid = valid
+	invalid.LaunchPrefix = []string{"sudo", "/opt/tool", "contain", "run"}
+	if err := validateProfile(invalid); err == nil {
+		t.Fatal("relative launcher path was accepted")
+	}
 }
 
-func TestValidateObserverRejectsIPv6(t *testing.T) {
-	t.Parallel()
-	if err := validateObserver("2001:db8::1"); err == nil {
-		t.Fatal("IPv6 observer was accepted by IPv4-only witnesses")
+func TestValidateObserverRequiresHostIPv4(t *testing.T) {
+	for _, observer := range []string{"2001:db8::1", "192.0.2.10", "224.0.0.1", "255.255.255.255", "169.254.1.1"} {
+		if err := validateObserver(observer); err == nil {
+			t.Fatalf("invalid observer %q was accepted", observer)
+		}
 	}
-	if err := validateObserver("192.0.2.10"); err != nil {
-		t.Fatalf("valid IPv4 observer rejected: %v", err)
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatal(err)
 	}
+	for _, addr := range addrs {
+		ip, _, parseErr := net.ParseCIDR(addr.String())
+		if parseErr == nil && ip.To4() != nil && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() {
+			if err := validateObserver(ip.String()); err != nil {
+				t.Fatalf("host IPv4 observer rejected: %v", err)
+			}
+			return
+		}
+	}
+	t.Skip("host has no non-loopback IPv4 address")
 }
 
 func TestIncompleteNeverPasses(t *testing.T) {
@@ -164,6 +183,30 @@ func TestRunAttemptBoundsBlockingLauncher(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("blocking launcher exceeded deadline: %v", elapsed)
+	}
+}
+
+func TestTerminateDetachedSession(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(context.Background(), self, "__blocking_launcher")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	terminateDetachedSession(cmd.Process.Pid)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("detached session survived cleanup")
 	}
 }
 

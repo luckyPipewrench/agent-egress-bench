@@ -147,6 +147,9 @@ func run(scenarioPath, profilePath, observer string) (result, error) {
 	if err := requireRootPinnedExecutable(p.TargetBinary); err != nil {
 		return result{}, fmt.Errorf("target identity: %w", err)
 	}
+	if err := requireRootPinnedExecutable(p.LaunchPrefix[0]); err != nil {
+		return result{}, fmt.Errorf("launcher integrity: %w", err)
+	}
 	if err := sameFileHash(self, p.ProbePath); err != nil {
 		return result{}, fmt.Errorf("probe integrity: %w", err)
 	}
@@ -202,10 +205,20 @@ func run(scenarioPath, profilePath, observer string) (result, error) {
 
 func validateObserver(observer string) error {
 	ip := net.ParseIP(observer)
-	if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsUnspecified() {
-		return errors.New("observer-ip must be numeric, IPv4, non-loopback, and non-unspecified")
+	if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.Equal(net.IPv4bcast) {
+		return errors.New("observer-ip must be a unicast, non-loopback IPv4 address assigned to this host")
 	}
-	return nil
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return fmt.Errorf("list host addresses: %w", err)
+	}
+	for _, addr := range addrs {
+		host, _, splitErr := net.ParseCIDR(addr.String())
+		if splitErr == nil && host.Equal(ip) {
+			return nil
+		}
+	}
+	return errors.New("observer-ip is not assigned to this host")
 }
 
 func incomplete(sc scenario, p targetProfile, why string, a attempt) result {
@@ -332,17 +345,38 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	if err := verifyLiveProbeProcess(a, executable, token, reportedHash); err != nil {
 		return attempt{}, err
 	}
+	completed := false
+	defer func() {
+		if !completed {
+			terminateDetachedSession(a.PID)
+		}
+	}()
 	if err := os.WriteFile(markerPath(dir, token, "identity-checked"), []byte("checked"), 0o644); err != nil {
 		return attempt{}, err
 	}
-	_ = requireMarker(dir, token, "finished", timeout)
+	finishedErr := requireMarker(dir, token, "finished", timeout)
 	tcpArrived, udpArrived := requireBothTokens(tcpIn, udpIn, token, timeout)
 	a.TCP, a.UDP = tcpArrived, udpArrived
 	a.Started = markerExists(dir, token, "started")
 	a.TCPAttempted = markerExists(dir, token, "tcp-attempted")
 	a.UDPAttempted = markerExists(dir, token, "udp-attempted")
 	a.Finished = markerExists(dir, token, "finished")
+	if finishedErr != nil {
+		return a, finishedErr
+	}
+	completed = true
 	return a, nil
+}
+
+func terminateDetachedSession(pid int) {
+	if pid <= 0 {
+		return
+	}
+	sid, err := unix.Getsid(pid)
+	if err != nil || sid != pid {
+		return
+	}
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
 }
 
 func runProbeParent(args []string) error {
@@ -567,7 +601,7 @@ func validateProfile(p targetProfile) error {
 	if p.SchemaVersion != profileSchemaVersion || p.Tool == "" || p.ToolVersion == "" || p.Mode == "" || p.ExpectedUser == "" || !filepath.IsAbs(p.ProbePath) || !filepath.IsAbs(p.TargetBinary) || len(p.VersionCommand) == 0 || p.ExpectedVersionOutput == "" || len(p.LaunchPrefix) == 0 {
 		return errors.New("invalid profile")
 	}
-	if p.VersionCommand[0] != p.TargetBinary || !containsArg(p.LaunchPrefix, p.TargetBinary) {
+	if p.VersionCommand[0] != p.TargetBinary || !filepath.IsAbs(p.LaunchPrefix[0]) || !containsArg(p.LaunchPrefix, p.TargetBinary) {
 		return errors.New("profile commands must invoke target_binary")
 	}
 	for _, a := range append(append([]string{}, p.VersionCommand...), p.LaunchPrefix...) {

@@ -185,7 +185,7 @@
     {
       "path": "schemas/endpoint-containment-profile-v1.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-profile-v1.schema.json",
-      "sha256": "5be3a4b09b97b290f633f85214111059323d76a1c7f1ad847d23e91900a1b980"
+      "sha256": "58f861742d8e8f33b582e71567e7d0324bd6c921ae2aaae7cda5b5c617aaf1d2"
     },
     {
       "path": "schemas/endpoint-containment-result-v1.schema.json",

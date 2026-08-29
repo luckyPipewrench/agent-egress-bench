@@ -36,7 +36,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.root = Path(self.temp.name) / "repo"
         self.root.mkdir()
         files = subprocess.run(
-            ["git", "-C", str(REPO), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            ["git", "-C", str(REPO), "ls-files", "-z", "--cached"],
             check=True,
             capture_output=True,
         ).stdout.decode("utf-8").split("\0")
