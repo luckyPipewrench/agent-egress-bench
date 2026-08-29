@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"os"
 	"strconv"
@@ -205,14 +206,14 @@ func TestRequireRootPinnedExecutable(t *testing.T) {
 }
 
 func TestWitnessReceiversIgnoreFloodWithoutBlocking(t *testing.T) {
-	tcpLn, err := net.Listen("tcp4", "127.0.0.1:0")
+	tcpLn, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tcpLn.Close()
+	defer func() { _ = tcpLn.Close() }()
 	tcpIn := receiveTCP(tcpLn, "wanted")
 	for i := range 32 {
-		conn, dialErr := net.Dial("tcp4", tcpLn.Addr().String())
+		conn, dialErr := (&net.Dialer{}).DialContext(context.Background(), "tcp4", tcpLn.Addr().String())
 		if dialErr != nil {
 			t.Fatal(dialErr)
 		}
@@ -220,7 +221,7 @@ func TestWitnessReceiversIgnoreFloodWithoutBlocking(t *testing.T) {
 		_ = conn.Close()
 	}
 	assertNoWitness(t, tcpIn, "TCP")
-	conn, err := net.Dial("tcp4", tcpLn.Addr().String())
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp4", tcpLn.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,13 +240,13 @@ func TestWitnessReceiversIgnoreFloodWithoutBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer udpConn.Close()
+	defer func() { _ = udpConn.Close() }()
 	udpIn := receiveUDP(udpConn, "wanted")
 	sender, err := net.DialUDP("udp4", nil, udpConn.LocalAddr().(*net.UDPAddr))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sender.Close()
+	defer func() { _ = sender.Close() }()
 	for i := range 32 {
 		_, _ = sender.Write([]byte("noise-" + strconv.Itoa(i)))
 	}

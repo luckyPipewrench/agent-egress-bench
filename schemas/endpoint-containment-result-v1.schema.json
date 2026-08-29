@@ -22,7 +22,7 @@
     }
   },
   "allOf": [
-    {"if": {"properties": {"actual_outcome": {"const": "contained"}}}, "then": {"properties": {"score": {"const": "pass"}, "evidence": {"allOf": [{"$ref": "#/$defs/complete_evidence"}, {"properties": {"contained_attempt": {"$ref": "#/$defs/contained_attempt"}}}]}}}},
+    {"if": {"properties": {"actual_outcome": {"const": "contained"}}}, "then": {"properties": {"score": {"const": "pass"}, "evidence": {"allOf": [{"$ref": "#/$defs/complete_evidence"}, {"properties": {"before_control": {"$ref": "#/$defs/control_attempt"}, "contained_attempt": {"$ref": "#/$defs/contained_attempt"}, "after_control": {"$ref": "#/$defs/control_attempt"}}}]}}}},
     {"if": {"properties": {"actual_outcome": {"const": "escaped"}}}, "then": {"properties": {"score": {"const": "fail"}, "evidence": {"$ref": "#/$defs/complete_evidence"}}}},
     {"if": {"properties": {"actual_outcome": {"const": "incomplete"}}}, "then": {"properties": {"score": {"const": "fail"}, "evidence": {"$ref": "#/$defs/incomplete_evidence"}}}}
   ],
@@ -57,6 +57,22 @@
         "uid": {"type": "integer", "minimum": 0},
         "pid": {"type": "integer", "minimum": 1},
         "sid": {"type": "integer", "minimum": 1}
+      }
+    },
+    "control_attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tcp_arrived", "udp_arrived", "started", "tcp_attempted", "udp_attempted", "finished", "uid", "pid", "sid"],
+      "properties": {
+        "tcp_arrived": {"const": true},
+        "udp_arrived": {"const": true},
+        "started": {"type": "boolean"},
+        "tcp_attempted": {"type": "boolean"},
+        "udp_attempted": {"type": "boolean"},
+        "finished": {"type": "boolean"},
+        "uid": {"type": "integer", "minimum": 0},
+        "pid": {"type": "integer", "minimum": 0},
+        "sid": {"type": "integer", "minimum": 0}
       }
     },
     "complete_evidence": {

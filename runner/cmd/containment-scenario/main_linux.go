@@ -169,7 +169,7 @@ func run(scenarioPath, profilePath, observer string) (result, error) {
 	if err != nil {
 		return result{}, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	if err := grantEvidenceDirAccess(dir, wantUID); err != nil {
 		return result{}, err
 	}
@@ -219,7 +219,7 @@ func grantEvidenceDirAccess(dir string, uid int) error {
 	if uid == os.Geteuid() {
 		return nil
 	}
-	cmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%d:rwx,m::rwx", uid), dir)
+	cmd := exec.CommandContext(context.Background(), "setfacl", "-m", fmt.Sprintf("u:%d:rwx,m::rwx", uid), dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("grant evidence ACL to uid %d: %w: %s", uid, err, strings.TrimSpace(string(out)))
 	}
@@ -275,12 +275,12 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	if err != nil {
 		return attempt{}, fmt.Errorf("listen TCP witness: %w", err)
 	}
-	defer tcpLn.Close()
+	defer func() { _ = tcpLn.Close() }()
 	udpConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
 	if err != nil {
 		return attempt{}, fmt.Errorf("listen UDP witness: %w", err)
 	}
-	defer udpConn.Close()
+	defer func() { _ = udpConn.Close() }()
 	tcpPort := tcpLn.Addr().(*net.TCPAddr).Port
 	udpPort := udpConn.LocalAddr().(*net.UDPAddr).Port
 	token, err := randomToken()
@@ -350,7 +350,7 @@ func runProbeParent(args []string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(executable, append([]string{childCommand}, common...)...)
+	cmd := exec.CommandContext(context.Background(), executable, append([]string{childCommand}, common...)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd.Start()
@@ -377,12 +377,9 @@ func runProbeChild(args []string) error {
 	if *dir == "" || *token == "" || net.ParseIP(*host) == nil || *tcpPort < 1 || *udpPort < 1 || *timeoutMS < 1000 || *timeoutMS > 30000 {
 		return errors.New("invalid child arguments")
 	}
-	deadline := time.Now().Add(time.Duration(*timeoutMS) * time.Millisecond)
-	for !markerExists(*dir, *token, "release") {
-		if time.Now().After(deadline) {
-			return errors.New("release timeout")
-		}
-		time.Sleep(10 * time.Millisecond)
+	phaseTimeout := time.Duration(*timeoutMS) * time.Millisecond
+	if err := waitForMarker(*dir, *token, "release", phaseTimeout); err != nil {
+		return errors.New("release timeout")
 	}
 	pid := os.Getpid()
 	sid, err := unix.Getsid(pid)
@@ -397,11 +394,8 @@ func runProbeChild(args []string) error {
 	if err := writeAtomicReadableReceipt(*dir, *token, identity); err != nil {
 		return err
 	}
-	for !markerExists(*dir, *token, "identity-checked") {
-		if time.Now().After(deadline) {
-			return errors.New("identity verification timeout")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := waitForMarker(*dir, *token, "identity-checked", phaseTimeout); err != nil {
+		return errors.New("identity verification timeout")
 	}
 	if err := writeMarker(*dir, *token, "started"); err != nil {
 		return err
@@ -415,7 +409,9 @@ func runProbeChild(args []string) error {
 		_ = conn.Close()
 	}
 	_ = writeMarker(*dir, *token, "udp-attempted")
-	conn, _ = net.DialTimeout("udp4", net.JoinHostPort(*host, strconv.Itoa(*udpPort)), time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	conn, _ = (&net.Dialer{}).DialContext(ctx, "udp4", net.JoinHostPort(*host, strconv.Itoa(*udpPort)))
+	cancel()
 	if conn != nil {
 		for range 3 {
 			_, _ = io.WriteString(conn, *token)
@@ -425,13 +421,24 @@ func runProbeChild(args []string) error {
 	return writeMarker(*dir, *token, "finished")
 }
 
+func waitForMarker(dir, token, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for !markerExists(dir, token, name) {
+		if time.Now().After(deadline) {
+			return context.DeadlineExceeded
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
+}
+
 func writeAtomicReadableReceipt(dir, token string, contents []byte) error {
 	tmp, err := os.CreateTemp(dir, ".identity-*")
 	if err != nil {
 		return fmt.Errorf("create identity receipt: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	if _, err := tmp.Write(contents); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write identity receipt: %w", err)
@@ -469,7 +476,7 @@ func verifyTargetIdentity(p targetProfile) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(p.VersionCommand[0], p.VersionCommand[1:]...)
+	cmd := exec.CommandContext(context.Background(), p.VersionCommand[0], p.VersionCommand[1:]...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("version command: %w: %s", err, strings.TrimSpace(string(out)))
@@ -515,7 +522,7 @@ func fileHash(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -528,7 +535,7 @@ func decodeStrictJSON(path string, dst any) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	d := json.NewDecoder(f)
 	d.DisallowUnknownFields()
 	if err := d.Decode(dst); err != nil {

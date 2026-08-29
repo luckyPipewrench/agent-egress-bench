@@ -29,6 +29,14 @@
     {
       "description": "contained result requires completed lifecycle",
       "mutation": {"replace": ["evidence", "contained_attempt", "finished"], "value": false}
+    },
+    {
+      "description": "contained result requires successful before control",
+      "mutation": {"replace": ["evidence", "before_control", "tcp_arrived"], "value": false}
+    },
+    {
+      "description": "contained result requires successful after control",
+      "mutation": {"replace": ["evidence", "after_control", "udp_arrived"], "value": false}
     }
   ]
 }
