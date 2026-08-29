@@ -230,8 +230,24 @@ func TestVerifyTargetIdentityRejectsVersionMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := targetProfile{TargetBinary: path, VersionCommand: []string{path, "--version"}, ExpectedVersionOutput: "tool 1.0.0"}
-	if _, err := verifyTargetIdentity(p); err == nil {
+	if _, err := verifyTargetIdentity(p, time.Second); err == nil {
 		t.Fatal("mismatched target version was accepted")
+	}
+}
+
+func TestVerifyTargetIdentityTimesOutProcessGroup(t *testing.T) {
+	path := t.TempDir() + "/tool"
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n(sleep 30) &\nwait\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p := targetProfile{TargetBinary: path, VersionCommand: []string{path, "--version"}, ExpectedVersionOutput: "tool 1.0.0"}
+	started := time.Now()
+	_, err := verifyTargetIdentity(p, 100*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("hanging version command error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("hanging version command returned after %v", elapsed)
 	}
 }
 
@@ -302,6 +318,36 @@ func TestWitnessReceiversIgnoreFloodWithoutBlocking(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("UDP witness blocked after unsolicited traffic")
+	}
+}
+
+func TestTCPWitnessDoesNotSerializeSilentConnections(t *testing.T) {
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	in := receiveTCP(ln, "wanted")
+	for range 4 {
+		conn, dialErr := (&net.Dialer{}).DialContext(context.Background(), "tcp4", ln.Addr().String())
+		if dialErr != nil {
+			t.Fatal(dialErr)
+		}
+		defer func() { _ = conn.Close() }()
+	}
+	valid, err := (&net.Dialer{}).DialContext(context.Background(), "tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = valid.Write([]byte("wanted\n"))
+	_ = valid.Close()
+	select {
+	case got := <-in:
+		if got != "wanted" {
+			t.Fatalf("TCP witness = %q", got)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("valid TCP witness blocked behind silent connections")
 	}
 }
 

@@ -153,7 +153,7 @@ func run(scenarioPath, profilePath, observer string) (result, error) {
 	if err := sameFileHash(self, p.ProbePath); err != nil {
 		return result{}, fmt.Errorf("probe integrity: %w", err)
 	}
-	targetDigest, err := verifyTargetIdentity(p)
+	targetDigest, err := verifyTargetIdentity(p, time.Duration(sc.TimeoutMS)*time.Millisecond)
 	if err != nil {
 		return result{}, fmt.Errorf("target identity: %w", err)
 	}
@@ -505,14 +505,31 @@ func sameFileHash(a, b string) error {
 	return nil
 }
 
-func verifyTargetIdentity(p targetProfile) (string, error) {
+func verifyTargetIdentity(p targetProfile, timeout time.Duration) (string, error) {
 	digest, err := fileHash(p.TargetBinary)
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(context.Background(), p.VersionCommand[0], p.VersionCommand[1:]...)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, p.VersionCommand[0], p.VersionCommand[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		return err
+	}
+	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", errors.New("version command timed out")
+		}
 		return "", fmt.Errorf("version command: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	if got := strings.TrimSpace(string(out)); got != p.ExpectedVersionOutput {
@@ -657,12 +674,14 @@ func receiveTCP(ln net.Listener, token string) <-chan string {
 			if err != nil {
 				return
 			}
-			_ = conn.SetReadDeadline(time.Now().Add(time.Second))
-			b, _ := io.ReadAll(io.LimitReader(conn, 128))
-			_ = conn.Close()
-			if strings.TrimSpace(string(b)) == token {
-				offerWitness(c, token)
-			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+				b, _ := io.ReadAll(io.LimitReader(conn, 128))
+				if strings.TrimSpace(string(b)) == token {
+					offerWitness(c, token)
+				}
+			}()
 		}
 	}()
 	return c
