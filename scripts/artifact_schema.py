@@ -12,7 +12,7 @@ SUPPORTED_SCHEMA_KEYWORDS = {
     "x-aeb-nullable-required", "type", "const", "enum", "required",
     "dependentRequired", "minProperties", "properties", "additionalProperties",
     "propertyNames", "minItems", "uniqueItems", "items", "minLength", "pattern",
-    "format", "minimum", "maximum",
+    "format", "minimum", "maximum", "allOf", "oneOf", "if", "then", "else",
 }
 
 
@@ -43,6 +43,13 @@ def validate_schema_keywords(schema, label):
         for name, child in node.get("$defs", {}).items():
             walk(child, f"{path}.$defs.{name}")
         for keyword in ("additionalProperties", "propertyNames", "items"):
+            child = node.get(keyword)
+            if isinstance(child, dict):
+                walk(child, f"{path}.{keyword}")
+        for keyword in ("allOf", "oneOf"):
+            for index, child in enumerate(node.get(keyword, [])):
+                walk(child, f"{path}.{keyword}[{index}]")
+        for keyword in ("if", "then", "else"):
             child = node.get(keyword)
             if isinstance(child, dict):
                 walk(child, f"{path}.{keyword}")
@@ -81,6 +88,27 @@ def _type_matches(value, expected):
 def _validate(value, schema, root, path):
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError(f"{path} must be a finite JSON number")
+    for child in schema.get("allOf", []):
+        _validate(value, child, root, path)
+    if "oneOf" in schema:
+        matches = 0
+        for child in schema["oneOf"]:
+            try:
+                _validate(value, child, root, path)
+            except ValueError:
+                continue
+            matches += 1
+        if matches != 1:
+            raise ValueError(f"{path} must match exactly one oneOf branch")
+    if "if" in schema:
+        try:
+            _validate(value, schema["if"], root, path)
+        except ValueError:
+            branch = schema.get("else")
+        else:
+            branch = schema.get("then")
+        if branch is not None:
+            _validate(value, branch, root, path)
     if "$ref" in schema:
         _validate(value, _resolve(root, schema["$ref"]), root, path)
         return

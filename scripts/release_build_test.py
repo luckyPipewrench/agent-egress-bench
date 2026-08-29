@@ -36,7 +36,9 @@ class ReleaseBuildTest(unittest.TestCase):
         self.root = Path(self.temp.name) / "repo"
         self.root.mkdir()
         files = subprocess.run(
-            ["git", "-C", str(REPO), "ls-files", "-z"], check=True, capture_output=True
+            ["git", "-C", str(REPO), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            check=True,
+            capture_output=True,
         ).stdout.decode("utf-8").split("\0")
         self.assertIn("contracts/method-independence-v1.json", files)
         for name in filter(None, files):

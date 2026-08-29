@@ -1,7 +1,7 @@
 {
   "format": 1,
   "catalog": "schemas/index.json",
-  "catalog_sha256": "e47611e53252c3ea1adcfa6be5cd1af724014bca4e522dea71fa8ee3119bf1f4",
+  "catalog_sha256": "07d95c8f6deee2c248e5b4ec5ec80b6050fa76990fa4d3fdb44e3675a4459145",
   "schemas": [
     {
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-governance-decision-v1.schema.json",
@@ -230,6 +230,18 @@
     {
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/control-evidence-trust-policy-v1.schema.json",
       "path": "schemas/control-evidence-trust-policy-v1.schema.json"
+    },
+    {
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-profile-v1.schema.json",
+      "path": "schemas/endpoint-containment-profile-v1.schema.json"
+    },
+    {
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-result-v1.schema.json",
+      "path": "schemas/endpoint-containment-result-v1.schema.json"
+    },
+    {
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-scenario-v1.schema.json",
+      "path": "schemas/endpoint-containment-scenario-v1.schema.json"
     },
     {
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/multi-file-case-v4.schema.json",

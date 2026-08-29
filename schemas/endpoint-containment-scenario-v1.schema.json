@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-scenario-v1.schema.json",
+  "title": "Endpoint containment scenario v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "title", "description", "expected_outcome", "platform", "lifecycle", "attempts", "timeout_ms"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,127}$"},
+    "title": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "expected_outcome": {"type": "string", "const": "contained"},
+    "platform": {"type": "string", "const": "linux"},
+    "lifecycle": {"type": "string", "const": "detached_descendant"},
+    "attempts": {"type": "array", "prefixItems": [{"const": "tcp_non_loopback"}, {"const": "udp_non_loopback"}], "items": false, "minItems": 2, "maxItems": 2},
+    "timeout_ms": {"type": "integer", "minimum": 1000, "maximum": 30000}
+  }
+}

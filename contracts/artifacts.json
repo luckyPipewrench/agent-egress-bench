@@ -569,6 +569,96 @@
       ],
       "source_versions": [],
       "gate": "make check-contracts"
+    },
+    {
+      "family": "endpoint_containment_scenario",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/endpoint-containment-scenario-v1.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "active",
+          "path": "schemas/endpoint-containment-scenario-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-scenario-v1.schema.json"
+        }
+      ],
+      "writer": [
+        "containment/cases/"
+      ],
+      "reader": [
+        "runner/cmd/containment-scenario/main_linux.go"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/cmd/containment-scenario/main_linux.go",
+          "symbol": "scenarioSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "endpoint_containment_profile",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/endpoint-containment-profile-v1.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "active",
+          "path": "schemas/endpoint-containment-profile-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-profile-v1.schema.json"
+        }
+      ],
+      "writer": [
+        "examples/pipelock/"
+      ],
+      "reader": [
+        "runner/cmd/containment-scenario/main_linux.go"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/cmd/containment-scenario/main_linux.go",
+          "symbol": "profileSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
+    },
+    {
+      "family": "endpoint_containment_result",
+      "active_writer_version": 1,
+      "accepted_reader_versions": [
+        1
+      ],
+      "frozen_versions": [],
+      "canonical_schema_path": "schemas/endpoint-containment-result-v1.schema.json",
+      "schemas": [
+        {
+          "version": 1,
+          "status": "active",
+          "path": "schemas/endpoint-containment-result-v1.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-result-v1.schema.json"
+        }
+      ],
+      "writer": [
+        "runner/cmd/containment-scenario/main_linux.go"
+      ],
+      "reader": [
+        "runner/cmd/containment-scenario/main_linux.go"
+      ],
+      "source_versions": [
+        {
+          "path": "runner/cmd/containment-scenario/main_linux.go",
+          "symbol": "resultSchemaVersion"
+        }
+      ],
+      "gate": "make check-contracts"
     }
   ],
   "retained_public_records": {
