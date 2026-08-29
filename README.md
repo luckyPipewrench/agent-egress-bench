@@ -125,6 +125,8 @@ Counts are logical cases. Most are one JSON file carrying the payload, the expec
 
 The benign control group matters as much as the attacks. A tool that blocks everything scores perfectly on containment and is useless in production, so [`cases/false-positive/`](cases/false-positive/) is scored on its own axis and never folded into the containment number.
 
+Process and kernel boundaries use the separate [endpoint containment scenarios](docs/ENDPOINT-CONTAINMENT.md). Those scenarios test detached descendants and direct network attempts through a product's installed containment command. Their results don't enter the Gauntlet wire score.
+
 This is [`cases/url/url-dlp-aws-key-001.json`](cases/url/url-dlp-aws-key-001.json), trimmed to its scored fields:
 
 ```json

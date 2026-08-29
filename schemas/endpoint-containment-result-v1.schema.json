@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-result-v1.schema.json",
+  "title": "Endpoint containment result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenario_id", "tool", "tool_version", "mode", "expected_outcome", "actual_outcome", "score", "evidence"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "tool": {"type": "string", "minLength": 1},
+    "tool_version": {"type": "string", "minLength": 1},
+    "mode": {"type": "string", "minLength": 1},
+    "expected_outcome": {"type": "string", "const": "contained"},
+    "actual_outcome": {"type": "string", "enum": ["contained", "escaped", "incomplete"]},
+    "score": {"type": "string", "enum": ["pass", "fail"]},
+    "evidence": {
+      "oneOf": [
+        {"$ref": "#/$defs/complete_evidence"},
+        {"$ref": "#/$defs/incomplete_evidence"}
+      ]
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"actual_outcome": {"const": "contained"}}}, "then": {"properties": {"score": {"const": "pass"}, "evidence": {"allOf": [{"$ref": "#/$defs/complete_evidence"}, {"properties": {"before_control": {"$ref": "#/$defs/control_attempt"}, "contained_attempt": {"$ref": "#/$defs/contained_attempt"}, "after_control": {"$ref": "#/$defs/control_attempt"}}}]}}}},
+    {"if": {"properties": {"actual_outcome": {"const": "escaped"}}}, "then": {"properties": {"score": {"const": "fail"}, "evidence": {"$ref": "#/$defs/complete_evidence"}}}},
+    {"if": {"properties": {"actual_outcome": {"const": "incomplete"}}}, "then": {"properties": {"score": {"const": "fail"}, "evidence": {"$ref": "#/$defs/incomplete_evidence"}}}}
+  ],
+  "$defs": {
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tcp_arrived", "udp_arrived", "started", "tcp_attempted", "udp_attempted", "finished", "uid", "pid", "sid"],
+      "properties": {
+        "tcp_arrived": {"type": "boolean"},
+        "udp_arrived": {"type": "boolean"},
+        "started": {"type": "boolean"},
+        "tcp_attempted": {"type": "boolean"},
+        "udp_attempted": {"type": "boolean"},
+        "finished": {"type": "boolean"},
+        "uid": {"type": "integer", "minimum": 0},
+        "pid": {"type": "integer", "minimum": 0},
+        "sid": {"type": "integer", "minimum": 0}
+      }
+    },
+    "contained_attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tcp_arrived", "udp_arrived", "started", "tcp_attempted", "udp_attempted", "finished", "uid", "pid", "sid"],
+      "properties": {
+        "tcp_arrived": {"const": false},
+        "udp_arrived": {"const": false},
+        "started": {"const": true},
+        "tcp_attempted": {"const": true},
+        "udp_attempted": {"const": true},
+        "finished": {"const": true},
+        "uid": {"type": "integer", "minimum": 0},
+        "pid": {"type": "integer", "minimum": 1},
+        "sid": {"type": "integer", "minimum": 1}
+      }
+    },
+    "control_attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tcp_arrived", "udp_arrived", "started", "tcp_attempted", "udp_attempted", "finished", "uid", "pid", "sid"],
+      "properties": {
+        "tcp_arrived": {"const": true},
+        "udp_arrived": {"const": true},
+        "started": {"type": "boolean"},
+        "tcp_attempted": {"type": "boolean"},
+        "udp_attempted": {"type": "boolean"},
+        "finished": {"type": "boolean"},
+        "uid": {"type": "integer", "minimum": 0},
+        "pid": {"type": "integer", "minimum": 0},
+        "sid": {"type": "integer", "minimum": 0}
+      }
+    },
+    "complete_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_binary_sha256", "before_control", "contained_attempt", "after_control"],
+      "properties": {
+        "target_binary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "before_control": {"$ref": "#/$defs/attempt"},
+        "contained_attempt": {"$ref": "#/$defs/attempt"},
+        "after_control": {"$ref": "#/$defs/attempt"}
+      }
+    },
+    "incomplete_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "attempt"],
+      "properties": {
+        "reason": {"type": "string", "minLength": 1},
+        "attempt": {"$ref": "#/$defs/attempt"}
+      }
+    }
+  }
+}

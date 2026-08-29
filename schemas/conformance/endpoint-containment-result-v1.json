@@ -1,0 +1,42 @@
+{
+  "schema": "../endpoint-containment-result-v1.schema.json",
+  "accepted": [
+    {
+      "description": "valid contained result",
+      "instance": {
+        "schema_version": 1,
+        "scenario_id": "detached-second-stage-001",
+        "tool": "example",
+        "tool_version": "1.0.0",
+        "mode": "contain",
+        "expected_outcome": "contained",
+        "actual_outcome": "contained",
+        "score": "pass",
+        "evidence": {
+          "target_binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "before_control": {"tcp_arrived": true, "udp_arrived": true, "started": true, "tcp_attempted": true, "udp_attempted": true, "finished": true, "uid": 1000, "pid": 10, "sid": 10},
+          "contained_attempt": {"tcp_arrived": false, "udp_arrived": false, "started": true, "tcp_attempted": true, "udp_attempted": true, "finished": true, "uid": 966, "pid": 20, "sid": 20},
+          "after_control": {"tcp_arrived": true, "udp_arrived": true, "started": true, "tcp_attempted": true, "udp_attempted": true, "finished": true, "uid": 1000, "pid": 30, "sid": 30}
+        }
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "description": "contained result cannot include escaped TCP token",
+      "mutation": {"replace": ["evidence", "contained_attempt", "tcp_arrived"], "value": true}
+    },
+    {
+      "description": "contained result requires completed lifecycle",
+      "mutation": {"replace": ["evidence", "contained_attempt", "finished"], "value": false}
+    },
+    {
+      "description": "contained result requires successful before control",
+      "mutation": {"replace": ["evidence", "before_control", "tcp_arrived"], "value": false}
+    },
+    {
+      "description": "contained result requires successful after control",
+      "mutation": {"replace": ["evidence", "after_control", "udp_arrived"], "value": false}
+    }
+  ]
+}

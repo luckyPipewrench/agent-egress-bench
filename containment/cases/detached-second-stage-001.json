@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "detached-second-stage-001",
+  "title": "Detached second-stage process attempts direct egress",
+  "description": "A child process detaches from its launcher, then attempts direct TCP and UDP egress after the launcher has exited.",
+  "expected_outcome": "contained",
+  "platform": "linux",
+  "lifecycle": "detached_descendant",
+  "attempts": ["tcp_non_loopback", "udp_non_loopback"],
+  "timeout_ms": 5000
+}

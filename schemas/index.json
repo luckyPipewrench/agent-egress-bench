@@ -183,6 +183,21 @@
       "sha256": "48303a590f64f2d0b5e1d9a3e5c4473a2e608a76cd53c4d2bae8ea4301859bf3"
     },
     {
+      "path": "schemas/endpoint-containment-profile-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-profile-v1.schema.json",
+      "sha256": "58f861742d8e8f33b582e71567e7d0324bd6c921ae2aaae7cda5b5c617aaf1d2"
+    },
+    {
+      "path": "schemas/endpoint-containment-result-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-result-v1.schema.json",
+      "sha256": "a551fe571db169e3cc35d984c83fe6252e5ee599b3016e32ee6ebcbe3534d392"
+    },
+    {
+      "path": "schemas/endpoint-containment-scenario-v1.schema.json",
+      "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/endpoint-containment-scenario-v1.schema.json",
+      "sha256": "ea90330dda5e3e6ddb1fb83542ea961a9ffa17518ff74e72ecf94e6eb58484ae"
+    },
+    {
       "path": "schemas/multi-file-case-v4.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/multi-file-case-v4.schema.json",
       "sha256": "d8a8ee3491533a45359f9bb061aa113222c887ee3efb6022f8efb72fe850f9aa"

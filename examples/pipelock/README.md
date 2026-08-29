@@ -9,6 +9,8 @@ This directory contains the Pipelock-specific artifacts the Go runner needs to s
 - [`receipt-verifier.json`](receipt-verifier.json): Pipelock's verifier metadata for the optional receipt-scoring profile.
 - [`release.env`](release.env): the single reviewed Pipelock release tag and version used by the portable runner and GitHub workflow.
 
+The separate [`containment-profile.json`](containment-profile.json) launches [endpoint containment scenarios](../../docs/ENDPOINT-CONTAINMENT.md) through the installed `pipelock contain run` command. Endpoint results don't enter the Gauntlet wire score.
+
 ## Portable release run
 
 From a clean Linux clone of `origin/main`:
