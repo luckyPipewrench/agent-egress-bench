@@ -36,6 +36,7 @@ const (
 	maxTCPWitnessReaders  = 64
 	parentCommand         = "__probe_parent"
 	childCommand          = "__probe_child"
+	hashLiveExeCommand    = "__hash_live_exe"
 )
 
 var scenarioIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,127}$`)
@@ -94,6 +95,9 @@ func main() {
 			return
 		case childCommand:
 			must(runProbeChild(os.Args[2:]))
+			return
+		case hashLiveExeCommand:
+			must(runHashLiveExecutable(os.Args[2:]))
 			return
 		}
 	}
@@ -263,12 +267,19 @@ func verifyLiveProbeProcess(a attempt, executable, token, reportedHash string) e
 	if !containsArg(args, childCommand) || !containsArg(args, token) {
 		return errors.New("live probe command line is not bound to this attempt")
 	}
+	live, err := liveExecutableHash(a.PID, executable)
+	if err != nil {
+		return fmt.Errorf("hash live probe executable: %w", err)
+	}
 	want, err := fileHash(executable)
 	if err != nil {
 		return err
 	}
 	if reportedHash != want {
-		return errors.New("live probe executable differs from the verified probe")
+		return errors.New("probe receipt executable differs from the configured probe")
+	}
+	if live != want {
+		return errors.New("live probe executable differs from the configured probe")
 	}
 	return nil
 }
@@ -282,6 +293,52 @@ func procStatusHasUID(status []byte, want int) bool {
 		}
 	}
 	return false
+}
+
+func liveExecutableHash(pid int, verifierExecutable string) (string, error) {
+	path := fmt.Sprintf("/proc/%d/exe", pid)
+	hash, err := fileHash(path)
+	if err == nil {
+		return hash, nil
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		return "", err
+	}
+	const sudoPath = "/usr/bin/sudo"
+	if err := requireRootPinnedExecutable(sudoPath); err != nil {
+		return "", fmt.Errorf("validate privileged live-executable verifier: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, sudoPath, "-n", "--", verifierExecutable, hashLiveExeCommand, strconv.Itoa(pid))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("privileged live-executable verifier failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	hash = strings.TrimSpace(string(out))
+	if len(hash) != sha256.Size*2 {
+		return "", errors.New("privileged live-executable verifier returned an invalid SHA-256")
+	}
+	if _, err := hex.DecodeString(hash); err != nil {
+		return "", errors.New("privileged live-executable verifier returned an invalid SHA-256")
+	}
+	return hash, nil
+}
+
+func runHashLiveExecutable(args []string) error {
+	if os.Geteuid() != 0 || len(args) != 1 {
+		return errors.New("live-executable verifier requires root and one pid")
+	}
+	pid, err := strconv.Atoi(args[0])
+	if err != nil || pid <= 0 {
+		return errors.New("invalid live-executable pid")
+	}
+	hash, err := fileHash(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(os.Stdout, hash)
+	return err
 }
 
 func runAttempt(prefix []string, executable, dir, host string, timeout time.Duration) (attempt, error) {
@@ -332,7 +389,7 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	if markerExists(dir, token, "started") {
 		return attempt{}, errors.New("child started before launcher exited")
 	}
-	if err := os.WriteFile(markerPath(dir, token, "release"), []byte("release"), 0o644); err != nil {
+	if err := writeVerifierMarker(dir, token, "release", []byte("release")); err != nil {
 		return attempt{}, err
 	}
 	if err := requireMarker(dir, token, "identity", timeout); err != nil {
@@ -362,7 +419,7 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	if err := verifyLiveProbeProcess(a, executable, token, reportedHash); err != nil {
 		return attempt{}, err
 	}
-	if err := os.WriteFile(markerPath(dir, token, "identity-checked"), []byte("checked"), 0o644); err != nil {
+	if err := writeVerifierMarker(dir, token, "identity-checked", []byte("checked")); err != nil {
 		return attempt{}, err
 	}
 	finishedErr := requireMarker(dir, token, "finished", timeout)
@@ -701,6 +758,28 @@ func randomToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 func markerPath(d, token, name string) string { return filepath.Join(d, token+"-"+name) }
+
+func writeVerifierMarker(d, token, name string, contents []byte) error {
+	path := markerPath(d, token, name)
+	fd, err := unix.Open(path, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o644)
+	if err != nil {
+		return fmt.Errorf("create verifier marker %s: %w", name, err)
+	}
+	f := os.NewFile(uintptr(fd), path)
+	if f == nil {
+		_ = unix.Close(fd)
+		return fmt.Errorf("create verifier marker %s: invalid file descriptor", name)
+	}
+	if _, err := f.Write(contents); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("write verifier marker %s: %w", name, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close verifier marker %s: %w", name, err)
+	}
+	return nil
+}
+
 func writeMarker(d, token, name string) error {
 	return os.WriteFile(markerPath(d, token, name), []byte(name), 0o600)
 }

@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestMain(m *testing.M) {
@@ -31,6 +33,10 @@ func TestMain(m *testing.M) {
 			err = writeEarlyStartedMarker(os.Args[2:])
 		case "__blocking_launcher":
 			<-make(chan struct{})
+		case "__forged_launcher":
+			err = runForgedLauncher(os.Args[2:])
+		case "__forged_child":
+			err = runForgedChild(os.Args[2:])
 		default:
 			os.Exit(m.Run())
 		}
@@ -40,6 +46,56 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func runForgedLauncher(args []string) error {
+	if len(args) == 0 || args[0] != parentCommand {
+		return errors.New("missing forged parent command")
+	}
+	executable, common, err := parseParentArgs(args[1:])
+	if err != nil {
+		return err
+	}
+	dir := testArg(common, "--marker-dir")
+	token := testArg(common, "--token")
+	if dir == "" || token == "" {
+		return errors.New("missing forged launcher arguments")
+	}
+	cmd := exec.CommandContext(context.Background(), os.Args[0], "__forged_child", childCommand, token, executable, dir)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return cmd.Start()
+}
+
+func runForgedChild(args []string) error {
+	if len(args) != 4 || args[0] != childCommand {
+		return errors.New("invalid forged child arguments")
+	}
+	token, executable, dir := args[1], args[2], args[3]
+	if err := waitForMarker(dir, token, "release", 2*time.Second); err != nil {
+		return err
+	}
+	sid, err := unix.Getsid(os.Getpid())
+	if err != nil {
+		return err
+	}
+	hash, err := fileHash(executable)
+	if err != nil {
+		return err
+	}
+	receipt := []byte(strings.Join([]string{strconv.Itoa(os.Geteuid()), strconv.Itoa(os.Getpid()), strconv.Itoa(sid), hash}, ":"))
+	if err := writeAtomicReadableReceipt(dir, token, receipt); err != nil {
+		return err
+	}
+	return waitForMarker(dir, token, "identity-checked", 2*time.Second)
+}
+
+func testArg(args []string, name string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == name {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func writeEarlyStartedMarker(args []string) error {
@@ -159,6 +215,57 @@ func TestRunAttemptProvesDetachedLifecycle(t *testing.T) {
 	}
 	if got.UID != os.Geteuid() || got.PID == 0 || got.PID != got.SID {
 		t.Fatalf("wrong detached identity: %#v", got)
+	}
+}
+
+func TestRunAttemptRejectsForgedLiveExecutable(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := filepath.Join(t.TempDir(), "reported-probe")
+	if err := os.WriteFile(probe, []byte("not the live test executable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = runAttempt([]string{self, "__forged_launcher"}, probe, t.TempDir(), "127.0.0.1", 1200*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "live probe executable differs") {
+		t.Fatalf("forged live executable was not rejected: %v", err)
+	}
+}
+
+func TestWriteVerifierMarkerRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := markerPath(dir, "attempt", "identity-checked")
+	if err := os.Symlink(victim, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeVerifierMarker(dir, "attempt", "identity-checked", []byte("checked")); err == nil {
+		t.Fatal("symlinked verifier marker was accepted")
+	}
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "preserve" {
+		t.Fatalf("symlink target changed to %q", got)
+	}
+}
+
+func TestWriteVerifierMarkerPublishesReadableMarker(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeVerifierMarker(dir, "attempt", "release", []byte("release")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(markerPath(dir, "attempt", "release"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "release" {
+		t.Fatalf("release marker = %q", got)
 	}
 }
 
