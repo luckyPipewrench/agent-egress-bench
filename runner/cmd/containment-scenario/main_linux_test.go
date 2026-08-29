@@ -344,11 +344,9 @@ func waitForPIDFile(t *testing.T, path string) int {
 	defer ticker.Stop()
 	for {
 		if b, err := os.ReadFile(path); err == nil {
-			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(b)))
-			if parseErr != nil {
-				t.Fatal(parseErr)
+			if pid, parseErr := strconv.Atoi(strings.TrimSpace(string(b))); parseErr == nil {
+				return pid
 			}
-			return pid
 		}
 		select {
 		case <-deadline.C:

@@ -244,7 +244,7 @@ func grantEvidenceDirAccess(dir string, uid int) error {
 	return nil
 }
 
-func verifyLiveProbeProcess(a attempt, executable, token, reportedHash string) error {
+func verifyLiveProbeProcess(a attempt, executable, token, reportedHash string, timeout time.Duration) error {
 	if a.PID <= 0 || a.SID != a.PID {
 		return errors.New("probe is not a detached session leader")
 	}
@@ -267,7 +267,7 @@ func verifyLiveProbeProcess(a attempt, executable, token, reportedHash string) e
 	if !containsArg(args, childCommand) || !containsArg(args, token) {
 		return errors.New("live probe command line is not bound to this attempt")
 	}
-	live, err := liveExecutableHash(a.PID, executable)
+	live, err := liveExecutableHash(a.PID, executable, timeout)
 	if err != nil {
 		return fmt.Errorf("hash live probe executable: %w", err)
 	}
@@ -295,7 +295,7 @@ func procStatusHasUID(status []byte, want int) bool {
 	return false
 }
 
-func liveExecutableHash(pid int, verifierExecutable string) (string, error) {
+func liveExecutableHash(pid int, verifierExecutable string, timeout time.Duration) (string, error) {
 	path := fmt.Sprintf("/proc/%d/exe", pid)
 	hash, err := fileHash(path)
 	if err == nil {
@@ -308,7 +308,7 @@ func liveExecutableHash(pid int, verifierExecutable string) (string, error) {
 	if err := requireRootPinnedExecutable(sudoPath); err != nil {
 		return "", fmt.Errorf("validate privileged live-executable verifier: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, sudoPath, "-n", "--", verifierExecutable, hashLiveExeCommand, strconv.Itoa(pid))
 	out, err := cmd.CombinedOutput()
@@ -416,7 +416,7 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 			detached.terminate()
 		}
 	}()
-	if err := verifyLiveProbeProcess(a, executable, token, reportedHash); err != nil {
+	if err := verifyLiveProbeProcess(a, executable, token, reportedHash, timeout); err != nil {
 		return attempt{}, err
 	}
 	if err := writeVerifierMarker(dir, token, "identity-checked", []byte("checked")); err != nil {
