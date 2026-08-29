@@ -342,15 +342,20 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	if n, _ := fmt.Sscanf(string(b), "%d:%d:%d:%64s", &a.UID, &a.PID, &a.SID, &reportedHash); n != 4 {
 		return attempt{}, errors.New("invalid identity receipt")
 	}
-	if err := verifyLiveProbeProcess(a, executable, token, reportedHash); err != nil {
-		return attempt{}, err
+	detached, err := openDetachedProcess(a.PID)
+	if err != nil {
+		return attempt{}, fmt.Errorf("open detached process: %w", err)
 	}
+	defer detached.close()
 	completed := false
 	defer func() {
 		if !completed {
-			terminateDetachedSession(a.PID)
+			detached.terminate()
 		}
 	}()
+	if err := verifyLiveProbeProcess(a, executable, token, reportedHash); err != nil {
+		return attempt{}, err
+	}
 	if err := os.WriteFile(markerPath(dir, token, "identity-checked"), []byte("checked"), 0o644); err != nil {
 		return attempt{}, err
 	}
@@ -368,15 +373,32 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	return a, nil
 }
 
-func terminateDetachedSession(pid int) {
+type detachedProcess struct {
+	fd int
+}
+
+func openDetachedProcess(pid int) (*detachedProcess, error) {
 	if pid <= 0 {
-		return
+		return nil, errors.New("invalid detached process pid")
 	}
-	sid, err := unix.Getsid(pid)
-	if err != nil || sid != pid {
-		return
+	fd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		return nil, err
 	}
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	return &detachedProcess{fd: fd}, nil
+}
+
+func (p *detachedProcess) terminate() {
+	if p != nil && p.fd >= 0 {
+		_ = unix.PidfdSendSignal(p.fd, unix.SIGKILL, nil, 0)
+	}
+}
+
+func (p *detachedProcess) close() {
+	if p != nil && p.fd >= 0 {
+		_ = unix.Close(p.fd)
+		p.fd = -1
+	}
 }
 
 func runProbeParent(args []string) error {

@@ -186,7 +186,7 @@ func TestRunAttemptBoundsBlockingLauncher(t *testing.T) {
 	}
 }
 
-func TestTerminateDetachedSession(t *testing.T) {
+func TestTerminateDetachedProcess(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,12 @@ func TestTerminateDetachedSession(t *testing.T) {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	})
-	terminateDetachedSession(cmd.Process.Pid)
+	detached, err := openDetachedProcess(cmd.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer detached.close()
+	detached.terminate()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
