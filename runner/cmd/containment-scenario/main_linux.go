@@ -33,6 +33,7 @@ const (
 	scenarioSchemaVersion = 1
 	profileSchemaVersion  = 1
 	resultSchemaVersion   = 1
+	maxTCPWitnessReaders  = 64
 	parentCommand         = "__probe_parent"
 	childCommand          = "__probe_child"
 )
@@ -284,6 +285,9 @@ func procStatusHasUID(status []byte, want int) bool {
 }
 
 func runAttempt(prefix []string, executable, dir, host string, timeout time.Duration) (attempt, error) {
+	if err := requirePidfdSupport(); err != nil {
+		return attempt{}, fmt.Errorf("pidfd preflight: %w", err)
+	}
 	tcpLn, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp4", "0.0.0.0:0")
 	if err != nil {
 		return attempt{}, fmt.Errorf("listen TCP witness: %w", err)
@@ -300,7 +304,8 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	if err != nil {
 		return attempt{}, err
 	}
-	tcpIn, udpIn := receiveTCP(tcpLn, token), receiveUDP(udpConn, token)
+	tcpIn, tcpOverloaded := receiveTCP(tcpLn, token)
+	udpIn := receiveUDP(udpConn, token)
 	args := []string{parentCommand, "--executable", executable, "--marker-dir", dir, "--token", token, "--host", host, "--tcp-port", strconv.Itoa(tcpPort), "--udp-port", strconv.Itoa(udpPort), "--timeout-ms", strconv.FormatInt(timeout.Milliseconds(), 10)}
 	argv := append(append([]string{}, prefix...), args...)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -344,6 +349,7 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	}
 	detached, err := openDetachedProcess(a.PID)
 	if err != nil {
+		terminateDetachedSessionFallback(a.PID)
 		return attempt{}, fmt.Errorf("open detached process: %w", err)
 	}
 	defer detached.close()
@@ -360,7 +366,7 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 		return attempt{}, err
 	}
 	finishedErr := requireMarker(dir, token, "finished", timeout)
-	tcpArrived, udpArrived := requireBothTokens(tcpIn, udpIn, token, timeout)
+	tcpArrived, udpArrived, tokensErr := requireBothTokens(tcpIn, udpIn, tcpOverloaded, token, timeout)
 	a.TCP, a.UDP = tcpArrived, udpArrived
 	a.Started = markerExists(dir, token, "started")
 	a.TCPAttempted = markerExists(dir, token, "tcp-attempted")
@@ -369,12 +375,24 @@ func runAttempt(prefix []string, executable, dir, host string, timeout time.Dura
 	if finishedErr != nil {
 		return a, finishedErr
 	}
+	if tokensErr != nil {
+		return a, tokensErr
+	}
 	completed = true
 	return a, nil
 }
 
 type detachedProcess struct {
-	fd int
+	pid int
+	fd  int
+}
+
+func requirePidfdSupport() error {
+	fd, err := unix.PidfdOpen(os.Getpid(), 0)
+	if err != nil {
+		return err
+	}
+	return unix.Close(fd)
 }
 
 func openDetachedProcess(pid int) (*detachedProcess, error) {
@@ -385,12 +403,27 @@ func openDetachedProcess(pid int) (*detachedProcess, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &detachedProcess{fd: fd}, nil
+	return &detachedProcess{pid: pid, fd: fd}, nil
 }
 
 func (p *detachedProcess) terminate() {
 	if p != nil && p.fd >= 0 {
-		_ = unix.PidfdSendSignal(p.fd, unix.SIGKILL, nil, 0)
+		// Stop the pinned leader first so its PID cannot be recycled between
+		// the pidfd identity check and process-group termination.
+		if err := unix.PidfdSendSignal(p.fd, unix.SIGSTOP, nil, 0); err == nil {
+			_ = syscall.Kill(-p.pid, syscall.SIGKILL)
+			_ = unix.PidfdSendSignal(p.fd, unix.SIGKILL, nil, 0)
+		}
+	}
+}
+
+func terminateDetachedSessionFallback(pid int) {
+	if pid <= 0 {
+		return
+	}
+	sid, err := unix.Getsid(pid)
+	if err == nil && sid == pid {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 }
 
@@ -688,15 +721,28 @@ func requireMarker(d, token, name string, wait time.Duration) error {
 	return fmt.Errorf("missing %s marker", name)
 }
 
-func receiveTCP(ln net.Listener, token string) <-chan string {
+func receiveTCP(ln net.Listener, token string) (<-chan string, <-chan struct{}) {
 	c := make(chan string, 1)
+	overloaded := make(chan struct{}, 1)
+	slots := make(chan struct{}, maxTCPWitnessReaders)
 	go func() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				return
 			}
+			select {
+			case slots <- struct{}{}:
+			default:
+				_ = conn.Close()
+				select {
+				case overloaded <- struct{}{}:
+				default:
+				}
+				continue
+			}
 			go func() {
+				defer func() { <-slots }()
 				defer func() { _ = conn.Close() }()
 				_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 				b, _ := io.ReadAll(io.LimitReader(conn, 128))
@@ -706,7 +752,7 @@ func receiveTCP(ln net.Listener, token string) <-chan string {
 			}()
 		}
 	}()
-	return c
+	return c, overloaded
 }
 
 func receiveUDP(conn *net.UDPConn, token string) <-chan string {
@@ -733,7 +779,7 @@ func offerWitness(out chan<- string, token string) {
 	}
 }
 
-func requireBothTokens(tcpIn, udpIn <-chan string, token string, wait time.Duration) (bool, bool) {
+func requireBothTokens(tcpIn, udpIn <-chan string, tcpOverloaded <-chan struct{}, token string, wait time.Duration) (bool, bool, error) {
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	var tcpArrived, udpArrived bool
@@ -743,9 +789,11 @@ func requireBothTokens(tcpIn, udpIn <-chan string, token string, wait time.Durat
 			tcpArrived = tcpArrived || got == token
 		case got := <-udpIn:
 			udpArrived = udpArrived || got == token
+		case <-tcpOverloaded:
+			return tcpArrived, udpArrived, errors.New("TCP witness connection limit exceeded")
 		case <-timer.C:
-			return tcpArrived, udpArrived
+			return tcpArrived, udpArrived, nil
 		}
 	}
-	return true, true
+	return true, true, nil
 }

@@ -7,9 +7,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -187,11 +189,8 @@ func TestRunAttemptBoundsBlockingLauncher(t *testing.T) {
 }
 
 func TestTerminateDetachedProcess(t *testing.T) {
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.CommandContext(context.Background(), self, "__blocking_launcher")
+	pidFile := filepath.Join(t.TempDir(), "descendant.pid")
+	cmd := exec.CommandContext(context.Background(), "/bin/sh", "-c", "sleep 30 & echo $! > \"$1\"; wait", "sh", pidFile)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -205,6 +204,7 @@ func TestTerminateDetachedProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer detached.close()
+	descendantPID := waitForPIDFile(t, pidFile)
 	detached.terminate()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -212,6 +212,42 @@ func TestTerminateDetachedProcess(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("detached session survived cleanup")
+	}
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := syscall.Kill(descendantPID, 0); errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("detached descendant survived cleanup")
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitForPIDFile(t *testing.T, path string) int {
+	t.Helper()
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if b, err := os.ReadFile(path); err == nil {
+			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(b)))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			return pid
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("descendant pid was not published")
+		case <-ticker.C:
+		}
 	}
 }
 
@@ -275,7 +311,7 @@ func TestWitnessReceiversIgnoreFloodWithoutBlocking(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tcpLn.Close() }()
-	tcpIn := receiveTCP(tcpLn, "wanted")
+	tcpIn, _ := receiveTCP(tcpLn, "wanted")
 	for i := range 32 {
 		conn, dialErr := (&net.Dialer{}).DialContext(context.Background(), "tcp4", tcpLn.Addr().String())
 		if dialErr != nil {
@@ -332,7 +368,7 @@ func TestTCPWitnessDoesNotSerializeSilentConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
-	in := receiveTCP(ln, "wanted")
+	in, _ := receiveTCP(ln, "wanted")
 	for range 4 {
 		conn, dialErr := (&net.Dialer{}).DialContext(context.Background(), "tcp4", ln.Addr().String())
 		if dialErr != nil {
@@ -353,6 +389,33 @@ func TestTCPWitnessDoesNotSerializeSilentConnections(t *testing.T) {
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("valid TCP witness blocked behind silent connections")
+	}
+}
+
+func TestTCPWitnessFailsClosedOnHandlerLimit(t *testing.T) {
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	_, overloaded := receiveTCP(ln, "wanted")
+	connections := make([]net.Conn, 0, maxTCPWitnessReaders+1)
+	defer func() {
+		for _, conn := range connections {
+			_ = conn.Close()
+		}
+	}()
+	for range maxTCPWitnessReaders + 1 {
+		conn, dialErr := (&net.Dialer{}).DialContext(context.Background(), "tcp4", ln.Addr().String())
+		if dialErr != nil {
+			t.Fatal(dialErr)
+		}
+		connections = append(connections, conn)
+	}
+	select {
+	case <-overloaded:
+	case <-time.After(time.Second):
+		t.Fatal("TCP witness handler saturation was not reported")
 	}
 }
 
