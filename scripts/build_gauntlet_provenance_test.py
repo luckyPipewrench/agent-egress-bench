@@ -1313,6 +1313,40 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("version output does not match", result.stderr)
 
+    def test_development_release_accepts_binary_version_with_v_prefix(self):
+        metadata_path = self.run_dir / "run-metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["canonical_execution"] = False
+        metadata["noncanonical_reasons"] = ["development binary was requested"]
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+        release_path = self.run_dir / "pipelock-release.json"
+        release = json.loads(release_path.read_text(encoding="utf-8"))
+        release["asset"] = "development-binary"
+        release["asset_sha256"] = None
+        release["released_binary"] = False
+        release["version_output"] = f"pipelock version v{PIN_VERSION}"
+        release_path.write_text(json.dumps(release), encoding="utf-8")
+        (self.run_dir / "pipelock-version.txt").write_text(
+            release["version_output"] + "\n", encoding="utf-8"
+        )
+
+        result = self.bundle()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_released_binary_rejects_version_with_v_prefix(self):
+        release_path = self.run_dir / "pipelock-release.json"
+        release = json.loads(release_path.read_text(encoding="utf-8"))
+        release["version_output"] = f"pipelock version v{PIN_VERSION}"
+        release_path.write_text(json.dumps(release), encoding="utf-8")
+        (self.run_dir / "pipelock-version.txt").write_text(
+            release["version_output"] + "\n", encoding="utf-8"
+        )
+
+        result = self.bundle()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not report the pinned version", result.stderr)
+
     def test_version_one_metadata_stays_valid_without_a_toolchain(self):
         # Published records are append-only and were written before this field
         # existed. Their toolchain was never recorded and cannot be reconstructed,
@@ -1448,7 +1482,13 @@ class PortableRunnerFailureTest(unittest.TestCase):
         self.assertIn("must not already exist", result.stderr)
 
     def run_with_fake_runner(
-        self, mode, timeout_seconds="10", *, missing_origin=False, inject_tokens=False
+        self,
+        mode,
+        timeout_seconds="10",
+        *,
+        missing_origin=False,
+        inject_tokens=False,
+        version_prefix="",
     ):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -1464,7 +1504,7 @@ if [ -n "${{GH_TOKEN:-}}" ] || [ -n "${{GITHUB_TOKEN:-}}" ]; then
   printf '%s\\n' 'credential environment reached Pipelock' >&2
   exit 97
 fi
-printf '%s\\n' 'pipelock version {PIN_VERSION}'
+printf '%s\\n' 'pipelock version {version_prefix}{PIN_VERSION}'
 """,
             encoding="utf-8",
         )
@@ -1577,6 +1617,11 @@ exec git "$@"
             "origin did not match luckyPipewrench/agent-egress-bench",
             metadata["noncanonical_reasons"],
         )
+
+    def test_development_runner_accepts_binary_version_with_v_prefix(self):
+        result, _, _ = self.run_with_fake_runner("error", version_prefix="v")
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertIn("synthetic runner failure", result.stderr)
 
     def test_run_metadata_records_the_toolchain_that_builds_the_runner(self):
         # Drives the real script, so this covers the shell-to-provenance wiring

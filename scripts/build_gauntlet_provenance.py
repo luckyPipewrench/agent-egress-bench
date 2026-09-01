@@ -1181,8 +1181,10 @@ def validate_release(release, metadata, run_dir):
         raise ValueError("canonical execution names an unexpected Pipelock repository")
     if release["tag"] != "v" + release["version"]:
         raise ValueError("Pipelock release tag and version do not match")
-    expected_version_line = f"pipelock version {release['version']}"
-    if expected_version_line not in release["version_output"].splitlines():
+    expected_version_lines = {f"pipelock version {release['version']}"}
+    if not release["released_binary"]:
+        expected_version_lines.add(f"pipelock version v{release['version']}")
+    if expected_version_lines.isdisjoint(release["version_output"].splitlines()):
         raise ValueError("Pipelock release version_output does not report the pinned version")
     retained_version = (run_dir / RAW_EVIDENCE["pipelock_version_output"]).read_text(
         encoding="utf-8"
