@@ -395,6 +395,38 @@ func TestRunMCPStdio_ForwardedResponseWithRunnerOwnedObservationAllows(t *testin
 	}
 }
 
+func TestRunMCPStdio_InitializeResponseUsesInitializeWireMethod(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "expect-initialize")}).runMCPStdio(Case{
+		ID:        "mcp-initialize-wire-method",
+		Transport: "mcp_stdio",
+		InputType: "mcp_initialize_response",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test", "version": "1"}}},
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}, "instructions": "Use the catalog."}},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow; helper accepted only an initialize wire request", result.Verdict)
+	}
+}
+
+func TestMCPInitializeResponseRejectsToolsListAndAmbiguousResponse(t *testing.T) {
+	initialize := Case{ID: "initialize-as-tools-list", InputType: "mcp_initialize_response"}
+	response := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}, "instructions": "Use the catalog."}}}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}}, response); err == nil || !strings.Contains(err.Error(), "not tools/list") {
+		t.Fatalf("initialize delivered as tools/list error = %v, want rejection", err)
+	}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 2, "method": "initialize"}}, response); err == nil || !strings.Contains(err.Error(), "IDs must match") {
+		t.Fatalf("mismatched initialize response error = %v, want rejection", err)
+	}
+	if _, err := syntheticMCPResponseRequest(Case{ID: "ambiguous", InputType: "mcp_tool_call"}); err == nil || !strings.Contains(err.Error(), "cannot determine its actual request method") {
+		t.Fatalf("response-only ambiguous MCP case error = %v, want rejection", err)
+	}
+}
+
 func TestRunMCPStdio_ClientRequestForwardedToRunnerOwnedObservationAllows(t *testing.T) {
 	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}).runMCPStdio(Case{
 		ID:              "mcp-stdio-client-request-forwarded",
@@ -849,6 +881,15 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 	upstream := bufio.NewScanner(conn)
 	client := bufio.NewScanner(os.Stdin)
 	for call := 0; client.Scan(); call++ {
+		if mode == "expect-initialize" {
+			var request struct {
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(client.Bytes(), &request); err != nil || request.Method != "initialize" {
+				fmt.Fprintln(os.Stderr, "expected initialize request")
+				os.Exit(2)
+			}
+		}
 		if mode == "policy-deny-then-payload" || mode == "matched-response-then-payload" || mode == "mixed-stdout-then-match" {
 			var request struct {
 				ID json.RawMessage `json:"id"`
@@ -984,7 +1025,7 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 			// This is the pipelined forwarding shape the observer drain covers.
 			os.Exit(0)
 		}
-		if mode == "forward" || (mode == "forward-first" && call == 0) {
+		if mode == "forward" || mode == "expect-initialize" || (mode == "forward-first" && call == 0) {
 			if _, err := fmt.Fprintln(conn, client.Text()); err != nil {
 				fmt.Fprintf(os.Stderr, "forward request: %v\n", err)
 				os.Exit(2)
@@ -4194,7 +4235,8 @@ func TestRunMCPStdio_UnconfiguredUpstreamSkipsWithoutSeparator(t *testing.T) {
 	// explicit endpoint contract.
 	a := &ProxyAdapter{mcpCmd: "sh " + shellQuote(localSuccess)}
 	c := Case{
-		ID: "test-no-sep",
+		ID:        "test-no-sep",
+		InputType: "mcp_tool_definition",
 		Payload: map[string]interface{}{
 			"jsonrpc_messages": []interface{}{
 				map[string]interface{}{"result": map[string]interface{}{"tools": []interface{}{}}, "id": 1},

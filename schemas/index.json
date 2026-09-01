@@ -25,7 +25,7 @@
     {
       "path": "schemas/case-v4.schema.json",
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-v4.schema.json",
-      "sha256": "e17f79bf75925a830fe035a71e23b94ad69334d316b14a25220d34968bf4871e"
+      "sha256": "94ace32789e39882661a4c3fc61686dde2697dbb3e78637906e64c015cb17388"
     },
     {
       "path": "schemas/control-evidence-assessment-v1.schema.json",

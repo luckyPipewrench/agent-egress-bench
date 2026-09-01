@@ -632,10 +632,11 @@ func TestRunIntegratesMultiFileCases(t *testing.T) {
 		t.Fatalf("run wrote a receipt profile it was not asked for: %v", statErr)
 	}
 
-	expected, err := loadCorpus(casesDir)
+	expectedRun, err := loadRunCorpus(casesDir, "")
 	if err != nil {
-		t.Fatalf("loadCorpus: %v", err)
+		t.Fatalf("loadRunCorpus: %v", err)
 	}
+	expected := expectedRun.cases
 	summaryData, err := os.ReadFile(outputPath)
 	if err != nil {
 		t.Fatalf("read summary: %v", err)
@@ -820,7 +821,11 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load canonical corpus: %v", err)
 	}
-	if err := ensureExactRunCorpus(cases, canonical); err != nil {
+	activeIDs, err := loadActiveCaseIDs(casesDir, canonical)
+	if err != nil {
+		t.Fatalf("load active case IDs: %v", err)
+	}
+	if err := ensureExactRunCorpus(cases, canonical, activeIDs); err != nil {
 		t.Fatalf("relocated override changed corpus identity: %v", err)
 	}
 	if len(runCorpus.snapshot.files) == 0 {
@@ -846,8 +851,13 @@ func TestLoadRunCorpusAcceptsCompleteRelocatedMultiFileOverride(t *testing.T) {
 	if overrideHash != defaultHash {
 		t.Fatalf("relocated override hash = %s, want canonical %s", overrideHash, defaultHash)
 	}
-	if snapshotHash := corpusSHA256FromSnapshot(runCorpus.snapshot.files); snapshotHash != overrideHash {
-		t.Fatalf("snapshot hash = %s, want relocated override %s", snapshotHash, overrideHash)
+	defaultRun, err := loadRunCorpus(casesDir, "")
+	if err != nil {
+		t.Fatalf("load default active corpus: %v", err)
+	}
+	activeHash := corpusSHA256FromSnapshot(defaultRun.snapshot.files)
+	if snapshotHash := corpusSHA256FromSnapshot(runCorpus.snapshot.files); snapshotHash != activeHash {
+		t.Fatalf("active snapshot hash = %s, want canonical active %s", snapshotHash, activeHash)
 	}
 
 	notesPath := filepath.Join(override, "mcp-drift-benign-001", "notes.md")

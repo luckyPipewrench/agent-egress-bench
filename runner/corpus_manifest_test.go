@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -105,6 +106,41 @@ func TestCorpusCaseIDsAreUnique(t *testing.T) {
 	}
 }
 
+func TestActiveSetRejectsDifferentCorpusVersion(t *testing.T) {
+	root := t.TempDir()
+	casesRoot := filepath.Join(root, "cases")
+	if err := os.MkdirAll(casesRoot, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(casesRoot, "MANIFEST.txt"), []byte("case-001\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	setDir := filepath.Join(root, "corpora", "active-sets", "v1")
+	if err := os.MkdirAll(setDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(setDir, "v9.9.9.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadActiveCaseIDs(casesRoot, []Case{{ID: "case-001"}}); err == nil || !strings.Contains(err.Error(), "no selection for corpus_version") {
+		t.Fatalf("different active-set version error = %v, want rejection", err)
+	}
+}
+
+func TestCorpusVersionMarkerRequiresActiveSet(t *testing.T) {
+	root := t.TempDir()
+	casesRoot := filepath.Join(root, "cases")
+	if err := os.MkdirAll(casesRoot, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(casesRoot, corpusVersionMarker), []byte(corpusVersion+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadActiveCaseIDs(casesRoot, []Case{{ID: "case-001"}}); err == nil || !strings.Contains(err.Error(), "requires active set") {
+		t.Fatalf("missing active-set error = %v, want fail-closed marker rejection", err)
+	}
+}
+
 // firstDuplicateID returns the first ID that appears more than once. ids is
 // sorted by corpusCaseIDs, so duplicates are adjacent.
 func firstDuplicateID(ids []string) (string, bool) {
@@ -117,8 +153,9 @@ func firstDuplicateID(ids []string) (string, bool) {
 }
 
 // corpusCaseIDs returns every logical case ID, using the same loaders the
-// runner uses so the manifest reflects what would actually execute. Single-file
-// JSON cases and multi-file case directories are both included.
+// runner uses so the manifest remains a complete source catalog. Single-file
+// JSON cases and multi-file case directories are both included; a versioned
+// active set may select a scored subset without redefining this catalog.
 func corpusCaseIDs() ([]string, error) {
 	cases, err := loadCorpus("../cases")
 	if err != nil {

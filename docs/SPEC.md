@@ -57,7 +57,7 @@ Each case is a single JSON file in the `cases/` directory tree. Files are named 
 
 ### input_type
 
-`url`, `request_body`, `header`, `response_content`, `mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `mcp_tool_sequence`, `a2a_message`, `a2a_agent_card`, `websocket_frame`
+`url`, `request_body`, `header`, `response_content`, `mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `mcp_initialize_response`, `mcp_tool_sequence`, `a2a_message`, `a2a_agent_card`, `websocket_frame`
 
 ### transport
 
@@ -78,7 +78,7 @@ cannot enter through one reader.
 | `response_fetch` | `response_content` | `fetch_proxy`, `http_proxy`, `websocket` |
 | `response_mitm` | `response_content` | `http_proxy` |
 | `mcp_input` | `mcp_tool_call` | `mcp_stdio`, `mcp_http` |
-| `mcp_tool` | `mcp_tool_result`, `mcp_tool_definition` | `mcp_stdio`, `mcp_http` |
+| `mcp_tool` | `mcp_tool_result`, `mcp_tool_definition`, `mcp_initialize_response` | `mcp_stdio`, `mcp_http` |
 | `mcp_chain` | `mcp_tool_sequence` | `mcp_stdio`, `mcp_http` |
 | `a2a_message` | `a2a_message` | `a2a` |
 | `a2a_agent_card` | `a2a_agent_card` | `a2a` |
@@ -173,7 +173,7 @@ Live cases, profiles, and receipt artifacts use schema v4. Result rows and summa
 }
 ```
 
-### MCP cases (`input_type: mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `mcp_tool_sequence`)
+### MCP cases (`input_type: mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `mcp_initialize_response`, `mcp_tool_sequence`)
 
 ```json
 {

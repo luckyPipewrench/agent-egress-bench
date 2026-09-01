@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "mcp-initialize-instructions-benign-025",
+  "case_sha256": "5d374dcb743144b0a56328c6806d56da98e7563da8aebb5e41105fed0fe7ac7e",
+  "case_description": "A valid MCP initialize response carries ordinary usage instructions and declares tool capability.",
+  "expected_verdict": "allow",
+  "why_expected": "ordinary_server_instructions",
+  "source": "synthetic: benign MCP server instructions",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

@@ -874,6 +874,34 @@ func TestMCPToolDefinitionPayload(t *testing.T) {
 	}
 }
 
+func TestMCPInitializeResponsePayloadRequiresInitializeWireContract(t *testing.T) {
+	valid := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{}, "instructions": "Use the catalog."}},
+	}}
+	if errors := validatePayload("mcp_initialize_response", valid); len(errors) != 0 {
+		t.Fatalf("valid initialize response errors = %v", errors)
+	}
+
+	wrongMethod := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", wrongMethod), "initialize request, not tools/list")
+
+	malformedResult := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{}, "instructions": "Use the catalog.", "tools": []interface{}{}}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", malformedResult), "must not contain a tools/list inventory")
+
+	mismatchedID := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 2, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", mismatchedID), "request and result IDs must match")
+}
+
 func TestMCPChainPayload(t *testing.T) {
 	dir := t.TempDir()
 	writeCase(t, dir, "mcp-chain", "mcp-chain-valid-001.json", `{

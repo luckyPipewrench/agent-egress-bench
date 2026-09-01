@@ -15,6 +15,14 @@
       "benchmark_manifest_sha256": "51b5d2fca8462d3b0cf115930cb4900a6b960df778e7c5bb5439f937e6e8f8c7",
       "recorded_on": "2026-08-27",
       "note": "Adds MCP tool-definition cases for visible metadata, opaque media, and unnamed hostile entries."
+    },
+    {
+      "corpus_version": "v2.7.0",
+      "case_count": 249,
+      "benchmark_manifest_sha256": "577765ae387ee6cd166df8c3a52c3f7b7eedb7a589dce7a4d49fd6a07fd70f5d",
+      "active_set_sha256": "227b029758aa3e00a98045fe0062cdd2d70df29fd5ab25cace04564f33a89e65",
+      "recorded_on": "2026-09-01",
+      "note": "Replaces malformed mixed initialize/tools-list cases with valid typed initialize-response cases in the active score."
     }
   ]
 }

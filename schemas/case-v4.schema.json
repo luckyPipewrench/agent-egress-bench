@@ -77,6 +77,7 @@
         "mcp_tool_call",
         "mcp_tool_result",
         "mcp_tool_definition",
+        "mcp_initialize_response",
         "mcp_tool_sequence",
         "a2a_message",
         "a2a_agent_card",

@@ -390,6 +390,11 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 	_, _ = fmt.Fprintf(os.Stderr, "Adapter:    %s\n", adapterName)
 	_, _ = fmt.Fprintf(os.Stderr, "Cases:      %d total, %d routed, %d unreachable, %d N/A, %d errors\n",
 		len(cases), len(applicableResults), summary.CaseCount.Unreachable, summary.CaseCount.NotApplicable, summary.CaseCount.Errors)
+	outcomes, err := countOutcomes(applicableResults)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "Outcomes:   %d passed, %d failed, %d errors\n", outcomes.Passed, outcomes.Failed, outcomes.Errors)
 
 	printScores(os.Stderr, "Full Corpus Scores (primary)", summary.Scores.Full)
 	printScores(os.Stderr, "Applicable Scores (diagnostic)", summary.Scores.Applicable)

@@ -517,7 +517,7 @@ func TestPublicationLockupCarriesMethodScopeAndScores(t *testing.T) {
 		"**example-tool 1.2.3 — Agent Egress Bench result**",
 		"Publisher-declared assurance: **self run**",
 		"example/agent-egress-bench@cccccccccccccccccccccccccccccccccccccccc",
-		"2 total · 2 applicable · 0 unreachable · 0 not applicable · 0 errors",
+		"2 total · 2 applicable · 2 passed · 0 failed · 0 unreachable · 0 not applicable · 0 errors",
 		"containment 100.00% (1/1 malicious cases; case-equal weighting from corpus composition) · false-positive rate 0.00% (0/1 benign cases; case-equal weighting from corpus composition)",
 		"Corpus Git observation: `clean` · tool version observation: `observed`",
 		"Exercised transports: http\\_proxy",

@@ -121,7 +121,7 @@ func TestEnsureExactRunCorpusRejectsMissingMultiFileCase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadCorpus: %v", err)
 	}
-	if err := ensureExactRunCorpus(canonical, canonical); err != nil {
+	if err := ensureExactRunCorpus(canonical, canonical, nil); err != nil {
 		t.Fatalf("exact corpus rejected: %v", err)
 	}
 
@@ -131,7 +131,7 @@ func TestEnsureExactRunCorpusRejectsMissingMultiFileCase(t *testing.T) {
 			partial = append(partial, c)
 		}
 	}
-	err = ensureExactRunCorpus(partial, canonical)
+	err = ensureExactRunCorpus(partial, canonical, nil)
 	if err == nil {
 		t.Fatal("partial corpus passed the exact run-corpus gate")
 	}

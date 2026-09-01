@@ -1,7 +1,7 @@
 {
   "format": 1,
   "catalog": "schemas/index.json",
-  "catalog_sha256": "a6ec5ae156aaadd8a8011ff43dbfdd0a2871a380f39217d9da7e8d88b5d3bedb",
+  "catalog_sha256": "4b21f3ca93f25e11e5cb6fac558e55c5a11bdab1f9c75a1f694a21bd0817feb8",
   "schemas": [
     {
       "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/case-governance-decision-v1.schema.json",

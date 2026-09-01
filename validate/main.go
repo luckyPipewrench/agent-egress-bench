@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -54,7 +55,7 @@ var (
 	validInputTypes = map[string]bool{
 		"url": true, "request_body": true, "header": true,
 		"response_content": true, "mcp_tool_call": true, "mcp_tool_result": true,
-		"mcp_tool_definition": true, "mcp_tool_sequence": true,
+		"mcp_tool_definition": true, "mcp_initialize_response": true, "mcp_tool_sequence": true,
 		"a2a_message": true, "a2a_agent_card": true, "websocket_frame": true,
 	}
 
@@ -132,7 +133,7 @@ var (
 		"response_fetch": {"response_content"},
 		"response_mitm":  {"response_content"},
 		"mcp_input":      {"mcp_tool_call"},
-		"mcp_tool":       {"mcp_tool_result", "mcp_tool_definition"},
+		"mcp_tool":       {"mcp_tool_result", "mcp_tool_definition", "mcp_initialize_response"},
 		"mcp_chain":      {"mcp_tool_sequence"},
 		// Gauntlet categories:
 		"a2a_message":           {"a2a_message"},
@@ -932,7 +933,7 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		requireStringKey("url")
 		requireStringKey("response_body")
 
-	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence",
+	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_initialize_response", "mcp_tool_sequence",
 		"a2a_message":
 		// Required: jsonrpc_messages (array of objects with "jsonrpc" field)
 		requireKey("jsonrpc_messages")
@@ -953,6 +954,9 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 					if _, hasVersion := obj["jsonrpc"]; !hasVersion {
 						errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages[%d] missing required field \"jsonrpc\" for input_type %q", i, inputType))
 					}
+				}
+				if inputType == "mcp_initialize_response" {
+					errors = append(errors, validateInitializeResponsePayload(arr)...)
 				}
 			}
 		}
@@ -1000,6 +1004,44 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		}
 	}
 
+	return errors
+}
+
+func validateInitializeResponsePayload(messages []interface{}) []string {
+	var errors []string
+	if len(messages) != 2 {
+		return []string{"mcp_initialize_response requires exactly one initialize request and one initialize result"}
+	}
+	var request, response map[string]interface{}
+	for _, message := range messages {
+		obj, ok := message.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, hasResult := obj["result"]; hasResult {
+			response = obj
+		} else {
+			request = obj
+		}
+	}
+	if request == nil || request["method"] != "initialize" {
+		errors = append(errors, "mcp_initialize_response must be delivered with an initialize request, not tools/list")
+	}
+	if request != nil && response != nil && !reflect.DeepEqual(request["id"], response["id"]) {
+		errors = append(errors, "mcp_initialize_response request and result IDs must match")
+	}
+	result, ok := response["result"].(map[string]interface{})
+	if response == nil || !ok {
+		return append(errors, "mcp_initialize_response requires an initialize result")
+	}
+	for _, key := range []string{"protocolVersion", "capabilities", "serverInfo", "instructions"} {
+		if _, present := result[key]; !present {
+			errors = append(errors, fmt.Sprintf("mcp_initialize_response result missing %q", key))
+		}
+	}
+	if _, hasTools := result["tools"]; hasTools {
+		errors = append(errors, "mcp_initialize_response result must not contain a tools/list inventory")
+	}
 	return errors
 }
 

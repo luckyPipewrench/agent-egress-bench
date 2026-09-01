@@ -37,10 +37,11 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
-	// v2.6.0 adds three MCP tool-definition cases for visible metadata, opaque
-	// media, and unnamed hostile entries. The append-only corpus ledger binds
-	// this label to the new manifest instead of redefining v2.5.0.
-	corpusVersion  = "v2.6.0"
+	// v2.7.0 replaces two malformed mixed initialize/tools-list fixtures in the
+	// active score with two valid initialize-response cases. The retained source
+	// bytes stay outside the active set; the append-only ledger binds the
+	// changed denominator and wire contract to this label.
+	corpusVersion  = "v2.7.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"
@@ -513,6 +514,29 @@ func countErrors(results []CaseResult) (int, error) {
 		}
 	}
 	return count, nil
+}
+
+type outcomeCounts struct {
+	Passed int
+	Failed int
+	Errors int
+}
+
+func countOutcomes(results []CaseResult) (outcomeCounts, error) {
+	var counts outcomeCounts
+	for _, result := range results {
+		switch result.Score {
+		case "pass":
+			counts.Passed++
+		case "fail":
+			counts.Failed++
+		case "error":
+			counts.Errors++
+		default:
+			return outcomeCounts{}, fmt.Errorf("case %s has unexpected applicable score %q", result.CaseID, result.Score)
+		}
+	}
+	return counts, nil
 }
 
 // writeSummary writes the GauntletSummary as indented JSON to a file.

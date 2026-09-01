@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,6 +24,7 @@ type corpusVersionRecord struct {
 	CorpusVersion           string
 	CaseCount               int
 	BenchmarkManifestSHA256 string
+	ActiveSetSHA256         string
 }
 
 // TestCorpusVersionNamesThisCorpus is the guard that was missing when corpus
@@ -78,6 +81,12 @@ func TestCorpusVersionNamesThisCorpus(t *testing.T) {
 		t.Fatalf("compute benchmark manifest digest: %v", err)
 	}
 	count := len(loaded.cases)
+	activeSet, err := os.ReadFile(activeSetPath("../cases"))
+	if err != nil {
+		t.Fatalf("read active set: %v", err)
+	}
+	activeSetDigest := sha256.Sum256(activeSet)
+	activeSetSHA256 := hex.EncodeToString(activeSetDigest[:])
 
 	if current == nil {
 		t.Fatalf("runner corpusVersion is %q and %s has no entry for it. If the corpus changed, append a NEW entry under a bumped label rather than editing an existing one, using case_count=%d and benchmark_manifest_sha256=%s",
@@ -90,25 +99,24 @@ func TestCorpusVersionNamesThisCorpus(t *testing.T) {
 		t.Fatalf("the corpus on disk is not the corpus %q names.\n  recorded: case_count=%d benchmark_manifest_sha256=%s\n  on disk:  case_count=%d benchmark_manifest_sha256=%s\nBump corpusVersion in runner/summary.go and append a new ledger entry with the on-disk values. Do not edit the existing entry: published results already carry that label, and rewriting it changes what those numbers were measured over.",
 			corpusVersion, current.CaseCount, current.BenchmarkManifestSHA256, count, digest)
 	}
+	if current.ActiveSetSHA256 != activeSetSHA256 {
+		t.Fatalf("the active set on disk is not the active set corpus %q names. recorded=%s on disk=%s", corpusVersion, current.ActiveSetSHA256, activeSetSHA256)
+	}
 }
 
-// TestCorpusVersionLedgerCountMatchesManifest keeps the ledger's own case_count
-// honest against the committed case-ID list. Without it, case_count could drift
-// into decoration while only the digest carried meaning, and a reader comparing
-// two entries would be told a case-count delta that never happened.
+// TestCorpusVersionLedgerCountMatchesActiveSet keeps the ledger's case_count
+// honest against the selected scored corpus. The complete source manifest can
+// retain immutable superseded cases, so it is deliberately not the denominator.
+// Without this check, case_count could drift into decoration while only the
+// digest carried meaning.
 func TestCorpusVersionLedgerCountMatchesManifest(t *testing.T) {
 	records := readCorpusVersionLedger(t)
 
-	raw, err := os.ReadFile(manifestPath)
+	loaded, err := loadRunCorpus("../cases", "")
 	if err != nil {
-		t.Fatalf("read case manifest: %v", err)
+		t.Fatalf("load active corpus: %v", err)
 	}
-	manifestIDs := 0
-	for _, line := range strings.Split(string(raw), "\n") {
-		if strings.TrimSpace(line) != "" {
-			manifestIDs++
-		}
-	}
+	activeCaseCount := len(loaded.cases)
 
 	found := false
 	for _, record := range records {
@@ -116,8 +124,8 @@ func TestCorpusVersionLedgerCountMatchesManifest(t *testing.T) {
 			continue
 		}
 		found = true
-		if record.CaseCount != manifestIDs {
-			t.Fatalf("ledger entry %q records case_count=%d but %s lists %d case IDs", record.CorpusVersion, record.CaseCount, manifestPath, manifestIDs)
+		if record.CaseCount != activeCaseCount {
+			t.Fatalf("ledger entry %q records case_count=%d but the active set selects %d cases", record.CorpusVersion, record.CaseCount, activeCaseCount)
 		}
 	}
 	if !found {
@@ -160,7 +168,14 @@ func readCorpusVersionLedger(t *testing.T) []corpusVersionRecord {
 		if err != nil {
 			t.Fatalf("%s entry %d (%s): %v", corpusVersionLedgerPath, i, label, err)
 		}
-		records = append(records, corpusVersionRecord{CorpusVersion: label, CaseCount: count, BenchmarkManifestSHA256: digest})
+		activeSet, err := ledgerString(entry, "active_set_sha256")
+		if err != nil {
+			if label == corpusVersion {
+				t.Fatalf("%s entry %d (%s): %v", corpusVersionLedgerPath, i, label, err)
+			}
+			activeSet = ""
+		}
+		records = append(records, corpusVersionRecord{CorpusVersion: label, CaseCount: count, BenchmarkManifestSHA256: digest, ActiveSetSHA256: activeSet})
 	}
 	return records
 }

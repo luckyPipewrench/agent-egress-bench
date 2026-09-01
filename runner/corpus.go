@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +26,19 @@ type caseIndexEntry struct {
 }
 
 const activeCaseIndexSchemaVersion = 3
+
+const (
+	activeSetSchemaVersion = 1
+	corpusVersionMarker    = "CORPUS_VERSION"
+)
+
+type activeSetDocument struct {
+	SchemaVersion        int      `json:"schema_version"`
+	CorpusVersion        string   `json:"corpus_version"`
+	SourceManifestSHA256 string   `json:"source_manifest_sha256"`
+	ExcludedCaseIDs      []string `json:"excluded_case_ids"`
+	CaseCount            int      `json:"case_count"`
+}
 
 type corpusStatCase struct {
 	Category        string
@@ -225,10 +240,187 @@ func loadRunCorpus(root, multiFileOverride string) (runCorpus, error) {
 	if err != nil {
 		return runCorpus{}, err
 	}
-	if err := ensureExactRunCorpus(cases, canonical); err != nil {
+	activeIDs, err := loadActiveCaseIDs(root, canonical)
+	if err != nil {
+		return runCorpus{}, err
+	}
+	if activeIDs != nil {
+		cases = selectActiveCases(cases, activeIDs)
+		effectiveFiles, err = selectActiveCorpusFiles(effectiveFiles, activeIDs)
+		if err != nil {
+			return runCorpus{}, err
+		}
+	}
+	if err := ensureExactRunCorpus(cases, canonical, activeIDs); err != nil {
 		return runCorpus{}, err
 	}
 	return runCorpus{cases: cases, snapshot: corpusSnapshot{files: effectiveFiles}, gitProvenance: gitProvenance}, nil
+}
+
+// loadActiveCaseIDs reads the immutable selection for the current corpus
+// version. The source manifest remains a complete catalog; an active-set
+// artifact identifies the scored subset and binds itself to that exact catalog.
+// A missing artifact leaves isolated test corpora on their complete catalog.
+func loadActiveCaseIDs(root string, canonical []Case) (map[string]struct{}, error) {
+	markerPath := filepath.Join(root, corpusVersionMarker)
+	markerRaw, markerErr := os.ReadFile(markerPath)
+	markerFound := markerErr == nil
+	if markerErr != nil && !errors.Is(markerErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("read corpus version marker: %w", markerErr)
+	}
+	if markerFound && strings.TrimSpace(string(markerRaw)) != corpusVersion {
+		return nil, fmt.Errorf("corpus version marker names %q, runner requires %q", strings.TrimSpace(string(markerRaw)), corpusVersion)
+	}
+
+	path := activeSetPath(root)
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if markerFound {
+			return nil, fmt.Errorf("corpus version marker %s requires active set %s", markerPath, path)
+		}
+		entries, dirErr := os.ReadDir(filepath.Dir(path))
+		if errors.Is(dirErr, os.ErrNotExist) {
+			return nil, nil
+		}
+		if dirErr != nil {
+			return nil, fmt.Errorf("read active-set directory: %w", dirErr)
+		}
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".json") {
+				return nil, fmt.Errorf("active-set directory contains %s but no selection for corpus_version %q", entry.Name(), corpusVersion)
+			}
+		}
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read active set %s: %w", path, err)
+	}
+	if !markerFound {
+		return nil, fmt.Errorf("active set %s requires corpus version marker %s", path, markerPath)
+	}
+	var set activeSetDocument
+	if err := decodeStrictJSON(raw, &set); err != nil {
+		return nil, fmt.Errorf("parse active set %s: %w", path, err)
+	}
+	if set.SchemaVersion != activeSetSchemaVersion || set.CorpusVersion != corpusVersion {
+		return nil, fmt.Errorf("active set %s must name schema_version %d and corpus_version %q", path, activeSetSchemaVersion, corpusVersion)
+	}
+
+	manifestPath := filepath.Join(root, "MANIFEST.txt")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("read active-set source manifest: %w", err)
+	}
+	digest := sha256.Sum256(manifest)
+	if set.SourceManifestSHA256 != hex.EncodeToString(digest[:]) {
+		return nil, fmt.Errorf("active set %s does not bind the current %s", path, manifestPath)
+	}
+
+	ids := make(map[string]struct{})
+	for _, line := range strings.Split(string(manifest), "\n") {
+		id := strings.TrimSpace(line)
+		if id == "" {
+			continue
+		}
+		if _, exists := ids[id]; exists {
+			return nil, fmt.Errorf("active-set source manifest repeats case ID %q", id)
+		}
+		ids[id] = struct{}{}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("active-set source manifest is empty")
+	}
+	canonicalIDs := make(map[string]struct{}, len(canonical))
+	for _, c := range canonical {
+		if _, duplicate := canonicalIDs[c.ID]; duplicate {
+			return nil, fmt.Errorf("loader-backed corpus contains duplicate case ID %q", c.ID)
+		}
+		canonicalIDs[c.ID] = struct{}{}
+	}
+	if err := sameCaseIDSet(ids, canonicalIDs, "active-set source manifest"); err != nil {
+		return nil, err
+	}
+	excluded := make(map[string]struct{}, len(set.ExcludedCaseIDs))
+	for _, id := range set.ExcludedCaseIDs {
+		if _, duplicate := excluded[id]; duplicate {
+			return nil, fmt.Errorf("active set %s repeats excluded case ID %q", path, id)
+		}
+		excluded[id] = struct{}{}
+		if _, exists := ids[id]; !exists {
+			return nil, fmt.Errorf("active set %s excludes unknown case ID %q", path, id)
+		}
+		delete(ids, id)
+	}
+	if len(ids) != set.CaseCount || set.CaseCount == 0 {
+		return nil, fmt.Errorf("active set %s records case_count=%d, selected %d", path, set.CaseCount, len(ids))
+	}
+	return ids, nil
+}
+
+func activeSetPath(casesRoot string) string {
+	return filepath.Join(filepath.Dir(casesRoot), "corpora", "active-sets", "v1", corpusVersion+".json")
+}
+
+func sameCaseIDSet(got, want map[string]struct{}, label string) error {
+	missing := make([]string, 0)
+	extra := make([]string, 0)
+	for id := range want {
+		if _, ok := got[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	for id := range got {
+		if _, ok := want[id]; !ok {
+			extra = append(extra, id)
+		}
+	}
+	if len(missing) == 0 && len(extra) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	return fmt.Errorf("%s does not match loader-backed corpus: missing=%s extra=%s", label, strings.Join(missing, ","), strings.Join(extra, ","))
+}
+
+func selectActiveCases(cases []Case, active map[string]struct{}) []Case {
+	selected := make([]Case, 0, len(active))
+	for _, c := range cases {
+		if _, ok := active[c.ID]; ok {
+			selected = append(selected, c)
+		}
+	}
+	return selected
+}
+
+func selectActiveCorpusFiles(files []corpusFile, active map[string]struct{}) ([]corpusFile, error) {
+	selected := make([]corpusFile, 0, len(files))
+	for _, file := range files {
+		id, err := corpusFileCaseID(file)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := active[id]; ok {
+			selected = append(selected, file)
+		}
+	}
+	return selected, nil
+}
+
+func corpusFileCaseID(file corpusFile) (string, error) {
+	if file.family != "" {
+		prefix := "multifile/" + file.family + "/"
+		relative := strings.TrimPrefix(file.manifestKey, prefix)
+		id := strings.SplitN(relative, "/", 2)[0]
+		if id == "" || relative == file.manifestKey {
+			return "", fmt.Errorf("cannot identify multi-file case for %s", file.manifestKey)
+		}
+		return id, nil
+	}
+	var c Case
+	if err := json.Unmarshal(file.data, &c); err != nil {
+		return "", fmt.Errorf("parse active-set candidate %s: %w", file.path, err)
+	}
+	return c.ID, nil
 }
 
 func corpusSourceRoots(root string, multiFileDirs []multiFileCaseDir) []string {
@@ -303,7 +495,7 @@ func loadCasesFromSnapshot(files []corpusFile, multiFileDirs []multiFileCaseDir)
 	return cases, nil
 }
 
-func ensureExactRunCorpus(runCases, canonicalCases []Case) error {
+func ensureExactRunCorpus(runCases, canonicalCases []Case, activeIDs map[string]struct{}) error {
 	runIDs := make(map[string]struct{}, len(runCases))
 	for _, c := range runCases {
 		if _, duplicate := runIDs[c.ID]; duplicate {
@@ -316,7 +508,11 @@ func ensureExactRunCorpus(runCases, canonicalCases []Case) error {
 		if _, duplicate := canonicalIDs[c.ID]; duplicate {
 			return fmt.Errorf("loader-backed corpus contains duplicate case ID %q", c.ID)
 		}
-		canonicalIDs[c.ID] = struct{}{}
+		if activeIDs == nil {
+			canonicalIDs[c.ID] = struct{}{}
+		} else if _, active := activeIDs[c.ID]; active {
+			canonicalIDs[c.ID] = struct{}{}
+		}
 	}
 	missing := make([]string, 0)
 	for id := range canonicalIDs {
@@ -330,7 +526,7 @@ func ensureExactRunCorpus(runCases, canonicalCases []Case) error {
 			extra = append(extra, id)
 		}
 	}
-	if len(missing) == 0 && len(extra) == 0 && len(runCases) == len(canonicalCases) {
+	if len(missing) == 0 && len(extra) == 0 && len(runCases) == len(canonicalIDs) {
 		return nil
 	}
 	sort.Strings(missing)
