@@ -41,9 +41,9 @@ jobs:
       # scanner parses. Advance both producers through a reviewed change.
       - name: Pipelock Scan
         id: pipelock
-        uses: luckyPipewrench/pipelock@4c748ab986d611138ce202ab800b16eca6fb589f # v3.4.0
+        uses: luckyPipewrench/pipelock@ca05ed06f360f5aac5518ab6ea2b11d729b70bee # v3.5.0
         with:
-          version: '3.4.0'
+          version: '3.5.0'
           scan-diff: 'false'
           fail-on-findings: 'true'
           test-vectors: 'false'
@@ -70,11 +70,11 @@ jobs:
       # would let any later commit on Pipelock change or disable this
       # repository's secret gate with no reviewed change here. Advance this pin
       # through a normal reviewed pull request when a scanner fix is needed.
-      # This commit is the reviewed v3.4.0 release.
+      # This commit is the reviewed v3.5.0 release.
       - name: Build scanner from pinned Pipelock commit
         shell: bash
         env:
-          PIPELOCK_REV: 4c748ab986d611138ce202ab800b16eca6fb589f
+          PIPELOCK_REV: ca05ed06f360f5aac5518ab6ea2b11d729b70bee
         run: |
           set -euo pipefail
           GOBIN="${RUNNER_TEMP}/bin" go install "github.com/luckyPipewrench/pipelock/cmd/pipelock@${PIPELOCK_REV}"
