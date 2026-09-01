@@ -149,7 +149,7 @@ class PipelockScanWorkflowTest(unittest.TestCase):
         self.assertEqual(1, len(action_steps), "expected one Pipelock action step")
         version = str((action_steps[0].get("with") or {}).get("version") or "")
         self.assertEqual(
-            "3.4.0",
+            "3.5.0",
             version,
             "advance the audit config producer and source-pinned scanner together after proving compatibility",
         )

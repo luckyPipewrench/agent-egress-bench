@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "tool": "pipelock",
-  "tool_version": "3.4.0",
+  "tool_version": "3.5.0",
   "mode": "contain",
   "expected_user": "pipelock-agent",
   "probe_path": "/usr/local/libexec/aeb-containment-scenario",
   "target_binary": "/usr/local/bin/pipelock",
   "version_command": ["/usr/local/bin/pipelock", "--version"],
-  "expected_version_output": "pipelock version 3.4.0",
+  "expected_version_output": "pipelock version 3.5.0",
   "launch_prefix": ["/usr/bin/sudo", "-n", "/usr/local/bin/pipelock", "contain", "run", "--", "aeb-containment-scenario"]
 }
