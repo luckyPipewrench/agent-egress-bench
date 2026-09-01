@@ -422,6 +422,25 @@ func TestMCPInitializeResponseRejectsToolsListAndAmbiguousResponse(t *testing.T)
 	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 2, "method": "initialize"}}, response); err == nil || !strings.Contains(err.Error(), "IDs must match") {
 		t.Fatalf("mismatched initialize response error = %v, want rejection", err)
 	}
+	for name, ids := range map[string][2]interface{}{
+		"missing":     {nil, nil},
+		"null":        {nil, nil},
+		"empty":       {"", ""},
+		"unsupported": {true, true},
+	} {
+		t.Run(name+" IDs", func(t *testing.T) {
+			request := map[string]interface{}{"jsonrpc": "2.0", "method": "initialize"}
+			candidateResponse := map[string]interface{}{"jsonrpc": "2.0", "result": response[0].(map[string]interface{})["result"]}
+			if name != "missing" {
+				request["id"] = ids[0]
+				candidateResponse["id"] = ids[1]
+			}
+			err := validateMCPResponseCaseMethod(initialize, []interface{}{request}, []interface{}{candidateResponse})
+			if err == nil || !strings.Contains(err.Error(), "require supported non-empty IDs") {
+				t.Fatalf("invalid initialize IDs error = %v, want rejection", err)
+			}
+		})
+	}
 	if _, err := syntheticMCPResponseRequest(Case{ID: "ambiguous", InputType: "mcp_tool_call"}); err == nil || !strings.Contains(err.Error(), "cannot determine its actual request method") {
 		t.Fatalf("response-only ambiguous MCP case error = %v, want rejection", err)
 	}

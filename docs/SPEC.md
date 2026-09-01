@@ -178,7 +178,36 @@ Live cases, profiles, and receipt artifacts use schema v4. Result rows and summa
 ```json
 {
   "jsonrpc_messages": [
-    {"jsonrpc": "2.0", "method": "tools/call", "params": {...}, "id": 1}
+    {"jsonrpc": "2.0", "method": "tools/call", "params": {}, "id": 1}
+  ]
+}
+```
+
+An `mcp_initialize_response` case contains the request and its matching result:
+
+```json
+{
+  "jsonrpc_messages": [
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "example-client", "version": "1.0.0"}
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "serverInfo": {"name": "example-server", "version": "1.0.0"},
+        "instructions": "Use the catalog."
+      }
+    }
   ]
 }
 ```

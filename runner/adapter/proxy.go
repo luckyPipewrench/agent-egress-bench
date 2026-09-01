@@ -2549,7 +2549,12 @@ func validateMCPResponseCaseMethod(c Case, clientMsgs, serverResponses []interfa
 		return fmt.Errorf("case %s: mcp_initialize_response must be delivered as initialize, not tools/list", c.ID)
 	}
 	response, ok := serverResponses[0].(map[string]interface{})
-	if ok && messageIDCorrelationKey(request) != messageIDCorrelationKey(response) {
+	requestID, requestIDOK := requiredMessageIDCorrelationKey(request)
+	responseID, responseIDOK := requiredMessageIDCorrelationKey(response)
+	if !requestIDOK || !responseIDOK {
+		return fmt.Errorf("case %s: mcp_initialize_response request and result require supported non-empty IDs", c.ID)
+	}
+	if requestID != responseID {
 		return fmt.Errorf("case %s: mcp_initialize_response request and result IDs must match", c.ID)
 	}
 	result, ok := response["result"].(map[string]interface{})
@@ -2869,6 +2874,22 @@ func messageIDCorrelationKey(msg interface{}) string {
 		return ""
 	}
 	return jsonRPCIDCorrelationKey(m["id"])
+}
+
+func requiredMessageIDCorrelationKey(msg interface{}) (string, bool) {
+	m, ok := msg.(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	id, present := m["id"]
+	if !present || id == nil {
+		return "", false
+	}
+	if value, isString := id.(string); isString && value == "" {
+		return "", false
+	}
+	key := jsonRPCIDCorrelationKey(id)
+	return key, key != ""
 }
 
 func jsonRPCResponseIDCorrelationKey(line string) string {

@@ -1027,20 +1027,77 @@ func validateInitializeResponsePayload(messages []interface{}) []string {
 	if request == nil || request["method"] != "initialize" {
 		errors = append(errors, "mcp_initialize_response must be delivered with an initialize request, not tools/list")
 	}
-	if request != nil && response != nil && !reflect.DeepEqual(request["id"], response["id"]) {
-		errors = append(errors, "mcp_initialize_response request and result IDs must match")
+	if request != nil && request["jsonrpc"] != "2.0" {
+		errors = append(errors, "mcp_initialize_response initialize request requires jsonrpc 2.0")
+	}
+	if request != nil && response != nil {
+		requestID, hasRequestID := request["id"]
+		responseID, hasResponseID := response["id"]
+		if !hasRequestID || !hasResponseID || !validJSONRPCID(requestID) || !validJSONRPCID(responseID) {
+			errors = append(errors, "mcp_initialize_response request and result require supported non-empty IDs")
+		} else if !reflect.DeepEqual(requestID, responseID) {
+			errors = append(errors, "mcp_initialize_response request and result IDs must match")
+		}
+	}
+	if request != nil {
+		params, ok := request["params"].(map[string]interface{})
+		if !ok {
+			errors = append(errors, "mcp_initialize_response initialize request requires params")
+		} else {
+			if protocolVersion, ok := params["protocolVersion"].(string); !ok || protocolVersion == "" {
+				errors = append(errors, "mcp_initialize_response request params require protocolVersion")
+			}
+			if _, ok := params["capabilities"].(map[string]interface{}); !ok {
+				errors = append(errors, "mcp_initialize_response request params require capabilities")
+			}
+			errors = append(errors, validateMCPImplementationInfo(params["clientInfo"], "request params clientInfo")...)
+		}
 	}
 	result, ok := response["result"].(map[string]interface{})
 	if response == nil || !ok {
 		return append(errors, "mcp_initialize_response requires an initialize result")
 	}
-	for _, key := range []string{"protocolVersion", "capabilities", "serverInfo", "instructions"} {
-		if _, present := result[key]; !present {
-			errors = append(errors, fmt.Sprintf("mcp_initialize_response result missing %q", key))
-		}
+	if response["jsonrpc"] != "2.0" {
+		errors = append(errors, "mcp_initialize_response initialize result requires jsonrpc 2.0")
 	}
+	if protocolVersion, ok := result["protocolVersion"].(string); !ok || protocolVersion == "" {
+		errors = append(errors, "mcp_initialize_response result requires protocolVersion")
+	}
+	if _, ok := result["capabilities"].(map[string]interface{}); !ok {
+		errors = append(errors, "mcp_initialize_response result requires capabilities")
+	}
+	if instructions, ok := result["instructions"].(string); !ok || instructions == "" {
+		errors = append(errors, "mcp_initialize_response result requires instructions")
+	}
+	errors = append(errors, validateMCPImplementationInfo(result["serverInfo"], "result serverInfo")...)
 	if _, hasTools := result["tools"]; hasTools {
 		errors = append(errors, "mcp_initialize_response result must not contain a tools/list inventory")
+	}
+	return errors
+}
+
+func validJSONRPCID(id interface{}) bool {
+	switch value := id.(type) {
+	case string:
+		return value != ""
+	case float64, int, int64, json.Number:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateMCPImplementationInfo(value interface{}, field string) []string {
+	info, ok := value.(map[string]interface{})
+	if !ok {
+		return []string{fmt.Sprintf("mcp_initialize_response %s requires name and version", field)}
+	}
+	var errors []string
+	if name, ok := info["name"].(string); !ok || name == "" {
+		errors = append(errors, fmt.Sprintf("mcp_initialize_response %s requires name", field))
+	}
+	if version, ok := info["version"].(string); !ok || version == "" {
+		errors = append(errors, fmt.Sprintf("mcp_initialize_response %s requires version", field))
 	}
 	return errors
 }
