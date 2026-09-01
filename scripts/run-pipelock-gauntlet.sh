@@ -794,6 +794,9 @@ failure_reason="Pipelock version check failed inside the target sandbox"
 version_output="$("$pipelock_bin" --version)"
 printf '%s\n' "$version_output" > "$output_dir/pipelock-version.txt"
 reported_version="$(awk '/^pipelock version / { print $3 }' <<<"$version_output")"
+if [[ -n "$development_binary" && "$reported_version" == "v$PIPELOCK_VERSION" ]]; then
+  reported_version="${reported_version#v}"
+fi
 [[ "$reported_version" == "$PIPELOCK_VERSION" ]] || \
   die "Pipelock version mismatch: expected $PIPELOCK_VERSION, got ${reported_version:-<none>}"
 binary_sha256="$(sha256sum "$target_binary" | awk '{print $1}')"
