@@ -422,6 +422,9 @@ func TestMCPInitializeResponseRejectsToolsListAndAmbiguousResponse(t *testing.T)
 	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 2, "method": "initialize"}}, response); err == nil || !strings.Contains(err.Error(), "IDs must match") {
 		t.Fatalf("mismatched initialize response error = %v, want rejection", err)
 	}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, []interface{}{"invalid"}); err == nil || !strings.Contains(err.Error(), "valid initialize result") {
+		t.Fatalf("non-object initialize response error = %v, want rejection", err)
+	}
 	for name, ids := range map[string][2]interface{}{
 		"missing":     {nil, nil},
 		"null":        {nil, nil},

@@ -2549,6 +2549,9 @@ func validateMCPResponseCaseMethod(c Case, clientMsgs, serverResponses []interfa
 		return fmt.Errorf("case %s: mcp_initialize_response must be delivered as initialize, not tools/list", c.ID)
 	}
 	response, ok := serverResponses[0].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("case %s: mcp_initialize_response must carry a valid initialize result", c.ID)
+	}
 	requestID, requestIDOK := requiredMessageIDCorrelationKey(request)
 	responseID, responseIDOK := requiredMessageIDCorrelationKey(response)
 	if !requestIDOK || !responseIDOK {
