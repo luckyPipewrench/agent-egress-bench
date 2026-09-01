@@ -506,6 +506,7 @@ func validateFile(path string, ids map[string]string) []string {
 
 	var c Case
 	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.UseNumber()
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
 		addErr(fmt.Sprintf("JSON parse error: %v", err))
@@ -859,6 +860,9 @@ func positiveInt(v interface{}) (int, bool) {
 	case float64:
 		i := int(n)
 		return i, n > 0 && float64(i) == n
+	case json.Number:
+		i, err := n.Int64()
+		return int(i), err == nil && i > 0
 	default:
 		return 0, false
 	}
@@ -878,6 +882,8 @@ func jsonValueIDString(v interface{}) string {
 		return fmt.Sprint(id)
 	case int64:
 		return fmt.Sprint(id)
+	case json.Number:
+		return id.String()
 	default:
 		return ""
 	}
@@ -1039,6 +1045,13 @@ func validateInitializeResponsePayload(messages []interface{}) []string {
 			errors = append(errors, "mcp_initialize_response request and result IDs must match")
 		}
 	}
+	if response != nil {
+		_, hasResult := response["result"]
+		_, hasError := response["error"]
+		if hasResult && hasError {
+			errors = append(errors, "mcp_initialize_response result must not contain both result and error")
+		}
+	}
 	if request != nil {
 		params, ok := request["params"].(map[string]interface{})
 		if !ok {
@@ -1066,8 +1079,10 @@ func validateInitializeResponsePayload(messages []interface{}) []string {
 	if _, ok := result["capabilities"].(map[string]interface{}); !ok {
 		errors = append(errors, "mcp_initialize_response result requires capabilities")
 	}
-	if instructions, ok := result["instructions"].(string); !ok || instructions == "" {
-		errors = append(errors, "mcp_initialize_response result requires instructions")
+	if instructions, present := result["instructions"]; present {
+		if _, ok := instructions.(string); !ok {
+			errors = append(errors, "mcp_initialize_response result instructions must be a string when present")
+		}
 	}
 	errors = append(errors, validateMCPImplementationInfo(result["serverInfo"], "result serverInfo")...)
 	if _, hasTools := result["tools"]; hasTools {

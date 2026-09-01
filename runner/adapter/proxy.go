@@ -2552,6 +2552,11 @@ func validateMCPResponseCaseMethod(c Case, clientMsgs, serverResponses []interfa
 	if !ok {
 		return fmt.Errorf("case %s: mcp_initialize_response must carry a valid initialize result", c.ID)
 	}
+	_, hasResult := response["result"]
+	_, hasError := response["error"]
+	if hasResult && hasError {
+		return fmt.Errorf("case %s: mcp_initialize_response must not contain both result and error", c.ID)
+	}
 	requestID, requestIDOK := requiredMessageIDCorrelationKey(request)
 	responseID, responseIDOK := requiredMessageIDCorrelationKey(response)
 	if !requestIDOK || !responseIDOK {
@@ -2561,8 +2566,13 @@ func validateMCPResponseCaseMethod(c Case, clientMsgs, serverResponses []interfa
 		return fmt.Errorf("case %s: mcp_initialize_response request and result IDs must match", c.ID)
 	}
 	result, ok := response["result"].(map[string]interface{})
-	if !ok || result["instructions"] == nil || result["protocolVersion"] == nil || result["capabilities"] == nil || result["serverInfo"] == nil {
+	if !ok || result["protocolVersion"] == nil || result["capabilities"] == nil || result["serverInfo"] == nil {
 		return fmt.Errorf("case %s: mcp_initialize_response must carry a valid initialize result", c.ID)
+	}
+	if instructions, present := result["instructions"]; present {
+		if _, ok := instructions.(string); !ok {
+			return fmt.Errorf("case %s: mcp_initialize_response instructions must be a string when present", c.ID)
+		}
 	}
 	if _, hasTools := result["tools"]; hasTools {
 		return fmt.Errorf("case %s: mcp_initialize_response must not put a tools/list inventory in initialize result", c.ID)

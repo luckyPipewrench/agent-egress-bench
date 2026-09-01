@@ -416,6 +416,18 @@ func TestRunMCPStdio_InitializeResponseUsesInitializeWireMethod(t *testing.T) {
 func TestMCPInitializeResponseRejectsToolsListAndAmbiguousResponse(t *testing.T) {
 	initialize := Case{ID: "initialize-as-tools-list", InputType: "mcp_initialize_response"}
 	response := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}, "instructions": "Use the catalog."}}}
+	withoutInstructions := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}}}}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, withoutInstructions); err != nil {
+		t.Fatalf("initialize response without optional instructions error = %v, want acceptance", err)
+	}
+	withInvalidInstructions := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}, "instructions": true}}}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, withInvalidInstructions); err == nil || !strings.Contains(err.Error(), "instructions must be a string") {
+		t.Fatalf("initialize response with non-string instructions error = %v, want rejection", err)
+	}
+	withResultAndError := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": response[0].(map[string]interface{})["result"], "error": map[string]interface{}{"code": -32603, "message": "failure"}}}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, withResultAndError); err == nil || !strings.Contains(err.Error(), "both result and error") {
+		t.Fatalf("initialize response with result and error = %v, want rejection", err)
+	}
 	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}}, response); err == nil || !strings.Contains(err.Error(), "not tools/list") {
 		t.Fatalf("initialize delivered as tools/list error = %v, want rejection", err)
 	}
