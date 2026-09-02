@@ -461,6 +461,20 @@ func TestMCPInitializeResponseRejectsToolsListAndAmbiguousResponse(t *testing.T)
 	}
 }
 
+func TestMCPInitializeResponseNormalizesEquivalentNumericIDs(t *testing.T) {
+	initialize := Case{ID: "initialize-equivalent-numeric-ids", InputType: "mcp_initialize_response"}
+	request := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1"), "method": "initialize"}}
+	response := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1.0"), "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}}}}
+	if err := validateMCPResponseCaseMethod(initialize, request, response); err != nil {
+		t.Fatalf("equivalent numeric initialize IDs error = %v, want acceptance", err)
+	}
+
+	response[0].(map[string]interface{})["id"] = json.Number("1.5")
+	if err := validateMCPResponseCaseMethod(initialize, request, response); err == nil || !strings.Contains(err.Error(), "IDs must match") {
+		t.Fatalf("different numeric initialize IDs error = %v, want mismatch rejection", err)
+	}
+}
+
 func TestRunMCPStdio_ClientRequestForwardedToRunnerOwnedObservationAllows(t *testing.T) {
 	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}).runMCPStdio(Case{
 		ID:              "mcp-stdio-client-request-forwarded",

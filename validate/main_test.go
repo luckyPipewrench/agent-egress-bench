@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -970,6 +971,31 @@ func TestMCPInitializeResponsePayloadPreservesLargeNumericIDs(t *testing.T) {
 
 	path := filepath.Join(dir, "mcp-tool", "mcp-large-id-001.json")
 	assertContainsError(t, validateFile(path, make(map[string]string)), "request and result IDs must match")
+}
+
+func TestMCPInitializeResponsePayloadNormalizesEquivalentNumericIDs(t *testing.T) {
+	payload := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1"), "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1.0"), "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}}},
+	}}
+	if errors := validatePayload("mcp_initialize_response", payload); len(errors) != 0 {
+		t.Fatalf("equivalent numeric initialize IDs errors = %v, want acceptance", errors)
+	}
+
+	payload["jsonrpc_messages"].([]interface{})[1].(map[string]interface{})["id"] = json.Number("1.5")
+	assertContainsError(t, validatePayload("mcp_initialize_response", payload), "request and result IDs must match")
+}
+
+func TestPositiveIntChecksNativeIntBounds(t *testing.T) {
+	value, ok := positiveInt(int64(^uint(0) >> 1))
+	if !ok || value <= 0 {
+		t.Fatalf("native max int = (%d, %t), want positive accepted value", value, ok)
+	}
+	if strconv.IntSize == 32 {
+		if _, ok := positiveInt(int64(1) << 31); ok {
+			t.Fatal("value above 32-bit int range accepted")
+		}
+	}
 }
 
 func TestMCPChainPayload(t *testing.T) {

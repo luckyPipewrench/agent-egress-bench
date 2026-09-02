@@ -5,12 +5,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
@@ -856,13 +857,18 @@ func positiveInt(v interface{}) (int, bool) {
 	case int:
 		return n, n > 0
 	case int64:
-		return int(n), n > 0
+		i := int(n)
+		return i, n > 0 && int64(i) == n
 	case float64:
 		i := int(n)
 		return i, n > 0 && float64(i) == n
 	case json.Number:
 		i, err := n.Int64()
-		return int(i), err == nil && i > 0
+		if err != nil {
+			return 0, false
+		}
+		value := int(i)
+		return value, i > 0 && int64(value) == i
 	default:
 		return 0, false
 	}
@@ -873,20 +879,37 @@ func jsonValueIDString(v interface{}) string {
 	case string:
 		return id
 	case float64:
-		i := int(id)
-		if float64(i) == id {
-			return fmt.Sprint(i)
-		}
-		return fmt.Sprint(id)
+		return canonicalJSONNumber(strconv.FormatFloat(id, 'g', -1, 64))
 	case int:
-		return fmt.Sprint(id)
+		return strconv.Itoa(id)
 	case int64:
-		return fmt.Sprint(id)
+		return strconv.FormatInt(id, 10)
 	case json.Number:
-		return id.String()
+		return canonicalJSONNumber(id.String())
 	default:
 		return ""
 	}
+}
+
+func canonicalJSONNumber(value string) string {
+	number, ok := new(big.Rat).SetString(value)
+	if !ok {
+		return ""
+	}
+	return number.RatString()
+}
+
+func jsonValueIDCorrelationKey(id interface{}) string {
+	if value, ok := id.(string); ok {
+		if value == "" {
+			return ""
+		}
+		return "string:" + value
+	}
+	if value := jsonValueIDString(id); value != "" {
+		return "number:" + value
+	}
+	return ""
 }
 
 // validatePayload checks that the payload has the required fields for the given input_type.
@@ -1039,9 +1062,11 @@ func validateInitializeResponsePayload(messages []interface{}) []string {
 	if request != nil && response != nil {
 		requestID, hasRequestID := request["id"]
 		responseID, hasResponseID := response["id"]
-		if !hasRequestID || !hasResponseID || !validJSONRPCID(requestID) || !validJSONRPCID(responseID) {
+		requestKey := jsonValueIDCorrelationKey(requestID)
+		responseKey := jsonValueIDCorrelationKey(responseID)
+		if !hasRequestID || !hasResponseID || requestKey == "" || responseKey == "" {
 			errors = append(errors, "mcp_initialize_response request and result require supported non-empty IDs")
-		} else if !reflect.DeepEqual(requestID, responseID) {
+		} else if requestKey != responseKey {
 			errors = append(errors, "mcp_initialize_response request and result IDs must match")
 		}
 	}
@@ -1089,17 +1114,6 @@ func validateInitializeResponsePayload(messages []interface{}) []string {
 		errors = append(errors, "mcp_initialize_response result must not contain a tools/list inventory")
 	}
 	return errors
-}
-
-func validJSONRPCID(id interface{}) bool {
-	switch value := id.(type) {
-	case string:
-		return value != ""
-	case float64, int, int64, json.Number:
-		return true
-	default:
-		return false
-	}
 }
 
 func validateMCPImplementationInfo(value interface{}, field string) []string {

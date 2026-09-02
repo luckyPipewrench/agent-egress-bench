@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -44,6 +45,7 @@ import (
 	"os/exec"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2861,13 +2863,18 @@ func positivePayloadInt(v interface{}) (int, bool) {
 	case int:
 		return n, n > 0
 	case int64:
-		return int(n), n > 0
+		i := int(n)
+		return i, n > 0 && int64(i) == n
 	case float64:
 		i := int(n)
 		return i, n > 0 && float64(i) == n
 	case json.Number:
 		i, err := n.Int64()
-		return int(i), err == nil && i > 0
+		if err != nil {
+			return 0, false
+		}
+		value := int(i)
+		return value, i > 0 && int64(value) == i
 	default:
 		return 0, false
 	}
@@ -2932,20 +2939,24 @@ func jsonRPCIDString(id interface{}) string {
 	case string:
 		return v
 	case float64:
-		i := int(v)
-		if float64(i) == v {
-			return fmt.Sprint(i)
-		}
-		return fmt.Sprint(v)
+		return canonicalJSONRPCNumber(strconv.FormatFloat(v, 'g', -1, 64))
 	case int:
-		return fmt.Sprint(v)
+		return strconv.Itoa(v)
 	case int64:
-		return fmt.Sprint(v)
+		return strconv.FormatInt(v, 10)
 	case json.Number:
-		return v.String()
+		return canonicalJSONRPCNumber(v.String())
 	default:
 		return ""
 	}
+}
+
+func canonicalJSONRPCNumber(value string) string {
+	number, ok := new(big.Rat).SetString(value)
+	if !ok {
+		return ""
+	}
+	return number.RatString()
 }
 
 func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) (mcpResult Result) {
