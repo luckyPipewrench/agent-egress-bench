@@ -123,8 +123,8 @@ class ReleasePublishFixture(unittest.TestCase):
             assets=sorted(path.name for path in self.dist.iterdir() if path.is_file()),
         )
 
-    def publish(self, *, finalize: bool = False, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
-        args = [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(self.gh)]
+    def publish(self, *, tag: str = "v1.0.0", finalize: bool = False, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
+        args = [sys.executable, str(SCRIPT), "--tag", tag, "--dist", str(self.dist), "--gh", str(self.gh)]
         if finalize:
             args.append("--finalize")
         if dry_run:
@@ -176,6 +176,15 @@ class ReleasePublishTest(ReleasePublishFixture):
         self.assertIn("does not match the notes generated", result.stderr)
         self.assertEqual([], self.calls())
 
+    def test_malformed_catalog_is_a_controlled_publication_refusal(self) -> None:
+        catalog = self.dist / "agent-egress-bench_1.0.0_schema-catalog.json"
+        catalog.write_text('{"format": 1}', encoding="utf-8")
+        result = self.publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot regenerate release-notes.md", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual([], self.calls())
+
     def test_creates_marked_draft_with_exact_assets(self) -> None:
         result = self.publish()
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -196,6 +205,12 @@ class ReleasePublishTest(ReleasePublishFixture):
     def test_dry_run_verifies_without_calling_github(self) -> None:
         result = self.publish(dry_run=True)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_requested_tag_must_match_the_release_identity(self) -> None:
+        result = self.publish(tag="v2.0.0", finalize=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match release identity tag", result.stderr)
         self.assertEqual([], self.calls())
 
     def test_finalize_refuses_to_create_and_publish_in_one_invocation(self) -> None:

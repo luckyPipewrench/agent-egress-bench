@@ -25,7 +25,7 @@ def is_workflow_only(paths: list[str]) -> bool:
 
 def changed_paths(base: str, head: str) -> list[str]:
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMRTUXB", f"{base}...{head}"],
+        ["git", "diff", "--name-only", "--no-renames", "--diff-filter=ACDMTUXB", f"{base}...{head}"],
         check=True,
         text=True,
         capture_output=True,

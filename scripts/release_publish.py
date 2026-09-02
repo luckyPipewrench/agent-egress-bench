@@ -179,7 +179,7 @@ def _require_notes_match_release(dist: Path, raw: bytes) -> None:
         catalog_name, _ = release_build.schema_asset_names(identity)
         catalog_bytes = (dist / catalog_name).read_bytes()
         expected = release_build.rendered_release_notes(identity, catalog_bytes)
-    except (OSError, KeyError, TypeError, ValueError) as exc:
+    except (OSError, KeyError, TypeError, ValueError, release_build.ReleaseError) as exc:
         fail(f"cannot regenerate {RELEASE_NOTES_NAME} from the release catalog: {exc}")
     if raw != expected:
         fail(f"{RELEASE_NOTES_NAME} does not match the notes generated from this release")
@@ -327,9 +327,21 @@ def publish(tag: str, dist: Path, gh: str, *, finalize: bool = False, dry_run: b
         # the notes can describe identity A while the upload carries identity B.
         snapshot_dir, assets = _verified_asset_snapshot(sources, stack)
         notes, notes_text = _verified_notes_snapshot(snapshot_dir, stack)
+        _require_tag_matches_identity(snapshot_dir, tag)
         if dry_run:
             return
         _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text, finalize=finalize)
+
+
+def _require_tag_matches_identity(dist: Path, tag: str) -> None:
+    try:
+        identity = json.loads((dist / "release-identity.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        fail(f"cannot read release-identity.json to bind release tag: {exc}")
+    release = identity.get("release") if isinstance(identity, dict) else None
+    identity_tag = release.get("tag") if isinstance(release, dict) else None
+    if identity_tag != tag:
+        fail(f"release tag {tag} does not match release identity tag {identity_tag!r}")
 
 
 def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text, *, finalize=False) -> None:

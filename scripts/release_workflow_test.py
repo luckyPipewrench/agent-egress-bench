@@ -75,7 +75,7 @@ def check_workflow(path: Path) -> None:
         "release_build.py verify --release-dir dist/release --repo-root .",
         "agent-egress-bench-release-rehearsal-final-${{ github.sha }}",
     )
-    if any(value not in rehearse_image for value in rehearsal_required) or "--push" in rehearse_image:
+    if any(value not in rehearse_image for value in rehearsal_required) or "--push" in rehearse_image or "runner-image.ref" in rehearse_image:
         raise AssertionError("no-publish image rehearsal does not exercise the final asset handoff safely")
     if "needs: [release, rehearse-image]" not in rehearse_draft or "--dry-run" not in rehearse_draft or "contents: write" in rehearse_draft:
         raise AssertionError("no-publish draft rehearsal can mutate GitHub or skips the draft guard")
@@ -309,6 +309,16 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace(" --dry-run", "", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "no-publish draft rehearsal"):
+                check_workflow(candidate)
+
+    def test_no_publish_rehearsal_cannot_claim_a_registry_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            workflow = WORKFLOW.read_text(encoding="utf-8")
+            target = "          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .\n"
+            injected = "          printf 'ghcr.io/example.invalid/image@sha256:%064d\\n' 0 > dist/release/runner-image.ref\n"
+            candidate.write_text(workflow.replace(target, injected + target, 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "no-publish image rehearsal"):
                 check_workflow(candidate)
 
     def test_manual_publication_asset_attestation_is_load_bearing(self) -> None:

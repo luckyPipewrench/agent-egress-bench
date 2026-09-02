@@ -95,12 +95,6 @@ jobs:
             .
           reported_version="$(docker run --rm "$local_image" --version)"
           [[ "$reported_version" == "aeb-gauntlet $version $release_commit" ]]
-          image_id="$(docker image inspect --format '{{.Id}}' "$local_image")"
-          digest="${image_id#sha256:}"
-          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
-          printf 'ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:%s\n' "$digest" > dist/release/runner-image.ref
-          cp dist/release/release-identity.json "$RUNNER_TEMP/release-identity.json"
-          python3 scripts/release_build.py checksums --identity "$RUNNER_TEMP/release-identity.json" --dist dist/release
           python3 scripts/release_build.py verify --release-dir dist/release --repo-root .
 
       - name: Upload the no-publish final asset set
