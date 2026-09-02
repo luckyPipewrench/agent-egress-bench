@@ -9,6 +9,7 @@ import math
 import os
 import re
 import shlex
+import stat
 import sys
 import tempfile
 from collections import Counter
@@ -282,6 +283,48 @@ def load_object(path):
     return value
 
 
+def read_regular_bytes(path, label, allow_missing=False):
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise ValueError(f"cannot safely open {label}: O_NOFOLLOW is unavailable")
+    close_on_exec = getattr(os, "O_CLOEXEC", 0)
+    directory_flags = os.O_RDONLY | close_on_exec | getattr(os, "O_DIRECTORY", 0)
+    try:
+        directory = os.open(path.parent, directory_flags)
+    except OSError as exc:
+        raise ValueError(f"cannot open parent directory for {label}: {exc}") from exc
+    try:
+        try:
+            descriptor = os.open(
+                path.name,
+                os.O_RDONLY | close_on_exec | os.O_NOFOLLOW,
+                dir_fd=directory,
+            )
+        except FileNotFoundError:
+            if allow_missing:
+                return None
+            raise ValueError(f"required {label} is missing") from None
+        except OSError as exc:
+            raise ValueError(f"{label} must be a regular file") from exc
+    finally:
+        os.close(directory)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError(f"{label} must be a regular file")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            return handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def load_regular_object(path, label):
+    value = json.loads(read_regular_bytes(path, label))
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must contain a JSON object")
+    return value
+
+
 def file_sha256(path):
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -513,7 +556,9 @@ def read_results(path):
 def load_manifest(repo_root, run_dir):
     manifest_path = run_dir / RAW_EVIDENCE["corpus_manifest"]
     manifest = manifest_path.read_bytes()
-    checked_out_manifest = (repo_root / "cases" / "MANIFEST.txt").read_bytes()
+    checked_out_manifest = read_regular_bytes(
+        repo_root / "cases" / "MANIFEST.txt", "checked-out corpus manifest"
+    )
     if manifest != checked_out_manifest:
         raise ValueError("retained corpus manifest does not match the checked-out corpus manifest")
     id_list = [line.strip() for line in manifest.decode("utf-8").splitlines() if line.strip()]
@@ -527,22 +572,17 @@ def load_manifest(repo_root, run_dir):
 
 def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
     marker_path = repo_root / "cases" / "CORPUS_VERSION"
-    if marker_path.is_symlink():
-        raise ValueError("corpus version marker must be a regular file")
-    if not marker_path.exists():
+    marker_bytes = read_regular_bytes(marker_path, "corpus version marker", allow_missing=True)
+    if marker_bytes is None:
         return manifest_ids
-    if not marker_path.is_file():
-        raise ValueError("corpus version marker must be a regular file")
-    marker = marker_path.read_text(encoding="utf-8").strip()
+    marker = marker_bytes.decode("utf-8").strip()
     if marker != summary.get("corpus_version"):
         raise ValueError("corpus version marker does not match runner summary")
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", marker):
         raise ValueError("corpus version marker must be a v-prefixed semantic version")
 
     active_set_path = repo_root / "corpora" / "active-sets" / "v1" / f"{marker}.json"
-    if not active_set_path.is_file() or active_set_path.is_symlink():
-        raise ValueError(f"corpus version marker requires active set {active_set_path}")
-    active_set_bytes = active_set_path.read_bytes()
+    active_set_bytes = read_regular_bytes(active_set_path, f"active set {active_set_path}")
     active_set = json.loads(active_set_bytes)
     required_keys = {
         "schema_version",
@@ -582,7 +622,9 @@ def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
             f"active set records case_count={case_count}, selected {len(selected_ids)}"
         )
 
-    ledger = load_object(repo_root / "ci" / "corpus-versions.json")
+    ledger = load_regular_object(
+        repo_root / "ci" / "corpus-versions.json", "corpus version ledger"
+    )
     versions = ledger.get("versions")
     if not isinstance(versions, list) or not versions:
         raise ValueError("corpus version ledger has no versions")

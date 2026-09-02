@@ -160,6 +160,8 @@ Mandatory repository validation checks the shared corpus, evidence, runner, and 
 
 Reference adapters and manual examples may show how a product implements the shared contract, but they don't get a product into Bench's required preflight or release gate. `check-neutrality-boundary` follows mandatory validation dependencies and rejects product runner or product acceptance policy paths.
 
+Bench may verify a retained published result against the baseline archived with that result. That preserves public evidence history; it doesn't approve a product release or set the score required for one.
+
 ## Appeals
 
 If you disagree with a case's expected verdict, open a GitHub Issue. Include:

@@ -612,6 +612,30 @@ class ProvenanceBuilderTest(unittest.TestCase):
                 {"a"},
             )
 
+    def test_active_set_symlink_is_rejected(self):
+        self.make_active_set_fixture()
+        active_set_path = self.root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"
+        backing_path = active_set_path.with_name("active-set-backing.json")
+        active_set_path.replace(backing_path)
+        active_set_path.symlink_to(backing_path.name)
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be a regular file", result.stderr)
+
+    def test_corpus_version_ledger_symlink_is_rejected(self):
+        self.make_active_set_fixture()
+        ledger_path = self.root / "ci" / "corpus-versions.json"
+        backing_path = ledger_path.with_name("corpus-versions-backing.json")
+        ledger_path.replace(backing_path)
+        ledger_path.symlink_to(backing_path.name)
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("corpus version ledger must be a regular file", result.stderr)
+
     def add_publication_provenance(self):
         summary_path = self.run_dir / "raw-summary.json"
         summary = json.loads(summary_path.read_text(encoding="utf-8"))

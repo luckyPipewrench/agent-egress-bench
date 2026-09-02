@@ -37,6 +37,8 @@ MAKE_OPTIONS_WITH_OPTIONAL_NUMBER = frozenset(
 MAKE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?::|\+|\?|!)?=")
 PRODUCT_RUNNER = re.compile(r"^run-[A-Za-z0-9_-]+-gauntlet\.sh$")
 MANDATORY_WORKFLOWS = (".github/workflows/validate.yaml", ".github/workflows/release.yaml")
+INERT_PRODUCT_REFERENCES = frozenset({"scripts/check_claim_language.py"})
+RETAINED_RESULT_INTEGRITY = frozenset({"ci/gauntlet-baseline.json"})
 
 
 def make_graph(source: str) -> tuple[dict[str, list[str]], dict[str, str]]:
@@ -129,7 +131,9 @@ def has_product_acceptance_shape(value: object) -> bool:
 
 
 def violations(root: Path) -> list[str]:
+    root = root.resolve()
     makefile = root / "Makefile"
+    makefile_text = makefile.read_text(encoding="utf-8")
     workflow_sources: list[str] = []
     for relative in MANDATORY_WORKFLOWS:
         path = root / relative
@@ -139,7 +143,7 @@ def violations(root: Path) -> list[str]:
     make_roots = {"preflight"}
     for source in workflow_sources:
         make_roots.update(workflow_make_roots(source))
-    sources = [make_targets_text(makefile.read_text(encoding="utf-8"), make_roots), *workflow_sources]
+    sources = [make_targets_text(makefile_text, make_roots), *workflow_sources]
 
     pending = set().union(*(referenced_paths(source) for source in sources))
     visited: set[str] = set()
@@ -149,7 +153,12 @@ def violations(root: Path) -> list[str]:
         if relative in visited:
             continue
         visited.add(relative)
-        path = root / relative
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            failures.append(f"mandatory validation path escapes repository: {relative}")
+            continue
         if not path.is_file():
             continue
         if PRODUCT_RUNNER.fullmatch(path.name):
@@ -159,15 +168,26 @@ def violations(root: Path) -> list[str]:
                 value = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            if has_product_acceptance_shape(value):
+            if relative not in RETAINED_RESULT_INTEGRITY and has_product_acceptance_shape(value):
                 failures.append(f"mandatory validation reaches product acceptance policy {relative}")
             continue
-        # Follow shell entrypoints because they execute their referenced paths.
-        # Python source and tests often mention product fixtures as inert data;
-        # treating every string literal as execution would reject contract tests.
-        if path.suffix == ".sh":
+        # Test modules may exercise reference adapters with controlled fixtures.
+        # Other reached entrypoints are part of the mandatory execution graph.
+        if path.suffix == ".sh" or (path.suffix == ".py" and not path.name.endswith("_test.py")):
             text = path.read_text(encoding="utf-8")
-            pending.update(referenced_paths(text))
+            references = referenced_paths(text)
+            if relative in INERT_PRODUCT_REFERENCES:
+                references = {
+                    reference
+                    for reference in references
+                    if not PRODUCT_RUNNER.fullmatch(Path(reference).name)
+                }
+            pending.update(references)
+            nested_make_roots = workflow_make_roots(text)
+            if nested_make_roots:
+                pending.update(
+                    referenced_paths(make_targets_text(makefile_text, nested_make_roots))
+                )
     return sorted(set(failures))
 
 

@@ -103,6 +103,47 @@ class NeutralityBoundaryTest(unittest.TestCase):
             violations(root),
         )
 
+    def test_python_dispatcher_reaching_product_runner_fails(self) -> None:
+        root = self.fixture()
+        (root / "Makefile").write_text(
+            "preflight:\n\t@python3 scripts/dispatch.py\nrelease:\n",
+            encoding="utf-8",
+        )
+        (root / "scripts/dispatch.py").write_text(
+            'import subprocess\nsubprocess.run(["./scripts/run-vendor-gauntlet.sh"], check=True)\n',
+            encoding="utf-8",
+        )
+        (root / "scripts/run-vendor-gauntlet.sh").write_text("exit 0\n", encoding="utf-8")
+        self.assertEqual(
+            ["mandatory validation reaches product runner scripts/run-vendor-gauntlet.sh"],
+            violations(root),
+        )
+
+    def test_recursive_make_reaching_product_runner_fails(self) -> None:
+        root = self.fixture()
+        (root / "Makefile").write_text(
+            "preflight:\n\t@./scripts/dispatch.sh\nrelease:\nhidden:\n"
+            "\t@./scripts/run-vendor-gauntlet.sh\n",
+            encoding="utf-8",
+        )
+        (root / "scripts/dispatch.sh").write_text("make hidden\n", encoding="utf-8")
+        (root / "scripts/run-vendor-gauntlet.sh").write_text("exit 0\n", encoding="utf-8")
+        self.assertEqual(
+            ["mandatory validation reaches product runner scripts/run-vendor-gauntlet.sh"],
+            violations(root),
+        )
+
+    def test_referenced_path_cannot_escape_repository(self) -> None:
+        root = self.fixture()
+        (root / "Makefile").write_text(
+            "preflight:\n\t@cat scripts/../../outside.json\nrelease:\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            ["mandatory validation path escapes repository: scripts/../../outside.json"],
+            violations(root),
+        )
+
     def test_product_acceptance_policy_fails(self) -> None:
         root = self.fixture()
         (root / "Makefile").write_text(
@@ -118,6 +159,20 @@ class NeutralityBoundaryTest(unittest.TestCase):
             ["mandatory validation reaches product acceptance policy ci/vendor-expectation.json"],
             violations(root),
         )
+
+    def test_retained_result_baseline_is_integrity_evidence(self) -> None:
+        root = self.fixture()
+        (root / "Makefile").write_text(
+            "preflight: check-record\ncheck-record:\n"
+            "\t@python3 scripts/check_record.py ci/gauntlet-baseline.json\nrelease:\n",
+            encoding="utf-8",
+        )
+        (root / "scripts/check_record.py").write_text("print('ok')\n", encoding="utf-8")
+        (root / "ci/gauntlet-baseline.json").write_text(
+            json.dumps({"pipelock_version": "1.2.3", "score_floors": {"containment": 1}}),
+            encoding="utf-8",
+        )
+        self.assertEqual([], violations(root))
 
     def test_reference_adapter_is_not_product_acceptance(self) -> None:
         self.assertFalse(has_product_acceptance_shape({"tool_version": "1.2.3", "schema_version": 1}))
