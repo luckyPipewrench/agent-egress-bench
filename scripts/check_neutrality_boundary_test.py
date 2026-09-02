@@ -67,6 +67,42 @@ class NeutralityBoundaryTest(unittest.TestCase):
             violations(root),
         )
 
+    def test_workflow_multiple_make_goals_are_all_traversed(self) -> None:
+        root = self.fixture()
+        (root / ".github/workflows/validate.yaml").write_text(
+            "run: make preflight release\n", encoding="utf-8"
+        )
+        (root / ".github/workflows/release.yaml").write_text(
+            "run: echo release\n", encoding="utf-8"
+        )
+        (root / "Makefile").write_text(
+            "preflight:\nrelease:\n\t@./scripts/run-vendor-gauntlet.sh\n",
+            encoding="utf-8",
+        )
+        (root / "scripts/run-vendor-gauntlet.sh").write_text("exit 0\n", encoding="utf-8")
+        self.assertEqual(
+            ["mandatory validation reaches product runner scripts/run-vendor-gauntlet.sh"],
+            violations(root),
+        )
+
+    def test_workflow_make_options_do_not_hide_goals(self) -> None:
+        root = self.fixture()
+        (root / ".github/workflows/validate.yaml").write_text(
+            "run: make -C . -j2 release\n", encoding="utf-8"
+        )
+        (root / ".github/workflows/release.yaml").write_text(
+            "run: echo release\n", encoding="utf-8"
+        )
+        (root / "Makefile").write_text(
+            "preflight:\nrelease:\n\t@./scripts/run-vendor-gauntlet.sh\n",
+            encoding="utf-8",
+        )
+        (root / "scripts/run-vendor-gauntlet.sh").write_text("exit 0\n", encoding="utf-8")
+        self.assertEqual(
+            ["mandatory validation reaches product runner scripts/run-vendor-gauntlet.sh"],
+            violations(root),
+        )
+
     def test_product_acceptance_policy_fails(self) -> None:
         root = self.fixture()
         (root / "Makefile").write_text(

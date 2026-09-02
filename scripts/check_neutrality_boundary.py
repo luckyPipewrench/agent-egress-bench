@@ -5,12 +5,36 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
 MAKE_RULE = re.compile(r"^([A-Za-z0-9_.-]+)\s*:(?![=])\s*(.*)$")
 REPO_PATH = re.compile(r"(?<![A-Za-z0-9_.-])((?:scripts|ci|examples)/[A-Za-z0-9_./-]+)")
-MAKE_COMMAND = re.compile(r"\bmake(?:\s+--[^\s]+)*\s+([A-Za-z0-9_.-]+)")
+MAKE_COMMAND = re.compile(r"\bmake\b([^\n;&|]*)")
+MAKE_OPTIONS_WITH_VALUE = frozenset(
+    {
+        "-C",
+        "-f",
+        "-I",
+        "-o",
+        "-W",
+        "--directory",
+        "--eval",
+        "--file",
+        "--include-dir",
+        "--makefile",
+        "--new-file",
+        "--old-file",
+        "--assume-new",
+        "--assume-old",
+        "--what-if",
+    }
+)
+MAKE_OPTIONS_WITH_OPTIONAL_NUMBER = frozenset(
+    {"-j", "-l", "--jobs", "--load-average", "--max-load"}
+)
+MAKE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?::|\+|\?|!)?=")
 PRODUCT_RUNNER = re.compile(r"^run-[A-Za-z0-9_-]+-gauntlet\.sh$")
 MANDATORY_WORKFLOWS = (".github/workflows/validate.yaml", ".github/workflows/release.yaml")
 
@@ -53,7 +77,40 @@ def referenced_paths(source: str) -> set[str]:
 
 
 def workflow_make_roots(source: str) -> set[str]:
-    return {match.group(1) for match in MAKE_COMMAND.finditer(source)}
+    roots: set[str] = set()
+    for match in MAKE_COMMAND.finditer(source):
+        try:
+            tokens = shlex.split(match.group(1), comments=True)
+        except ValueError:
+            tokens = match.group(1).split()
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "--":
+                index += 1
+                continue
+            if token in MAKE_OPTIONS_WITH_VALUE:
+                index += 2
+                continue
+            if token in MAKE_OPTIONS_WITH_OPTIONAL_NUMBER:
+                index += 1
+                if index < len(tokens) and re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", tokens[index]):
+                    index += 1
+                continue
+            if any(token.startswith(f"{option}=") for option in MAKE_OPTIONS_WITH_VALUE):
+                index += 1
+                continue
+            if re.fullmatch(r"-(?:C|f|I|o|W).+", token) or re.fullmatch(
+                r"-(?:j|l)[0-9]+(?:\.[0-9]+)?", token
+            ):
+                index += 1
+                continue
+            if token.startswith("-") or MAKE_ASSIGNMENT.match(token):
+                index += 1
+                continue
+            roots.add(token)
+            index += 1
+    return roots
 
 
 def has_product_acceptance_shape(value: object) -> bool:

@@ -556,6 +556,7 @@ def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
     active_set_schema_version = active_set.get("schema_version")
     if (
         isinstance(active_set_schema_version, bool)
+        or not isinstance(active_set_schema_version, int)
         or active_set_schema_version != 1
         or active_set.get("corpus_version") != marker
     ):
@@ -597,7 +598,11 @@ def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
     if ledger_entry.get("active_set_sha256") != active_set_sha256:
         raise ValueError("corpus version ledger does not bind the active set bytes")
     ledger_case_count = ledger_entry.get("case_count")
-    if isinstance(ledger_case_count, bool) or ledger_case_count != len(selected_ids):
+    if (
+        isinstance(ledger_case_count, bool)
+        or not isinstance(ledger_case_count, int)
+        or ledger_case_count != len(selected_ids)
+    ):
         raise ValueError("corpus version ledger case_count does not match the active set")
     if ledger_entry.get("benchmark_manifest_sha256") != summary.get(
         "benchmark_manifest_sha256"

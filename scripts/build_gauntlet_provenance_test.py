@@ -726,11 +726,35 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("active set identity does not match", result.stderr)
 
+    def test_bundle_rejects_float_active_set_schema_version(self):
+        self.make_active_set_fixture()
+        active_set_path = self.root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"
+        active_set = json.loads(active_set_path.read_text(encoding="utf-8"))
+        active_set["schema_version"] = 1.0
+        active_set_path.write_text(json.dumps(active_set), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("active set identity does not match", result.stderr)
+
     def test_bundle_rejects_boolean_ledger_case_count(self):
         self.make_active_set_fixture()
         ledger_path = self.root / "ci" / "corpus-versions.json"
         ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
         ledger["versions"][0]["case_count"] = True
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ledger case_count does not match", result.stderr)
+
+    def test_bundle_rejects_float_ledger_case_count(self):
+        self.make_active_set_fixture()
+        ledger_path = self.root / "ci" / "corpus-versions.json"
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        ledger["versions"][0]["case_count"] = 2.0
         ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
 
         result = self.bundle()
