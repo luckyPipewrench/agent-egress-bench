@@ -106,6 +106,7 @@ func loadReceiptVerifier(path string) (ReceiptVerifier, error) {
 
 func decodeStrictJSON(data []byte, dst interface{}) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		return err

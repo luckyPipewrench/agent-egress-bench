@@ -470,7 +470,7 @@ func loadCasesFromSnapshot(files []corpusFile, multiFileDirs []multiFileCaseDir)
 			continue
 		}
 		var c Case
-		if err := json.Unmarshal(file.data, &c); err != nil {
+		if err := decodeStrictJSON(file.data, &c); err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", file.path, err)
 		}
 		if c.SchemaVersion != activeCaseSchemaVersion {

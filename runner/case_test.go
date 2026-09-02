@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,6 +47,66 @@ func TestLoadCases(t *testing.T) {
 	}
 	if cases[0].ExpectedVerdict != "block" {
 		t.Errorf("expected verdict block, got %s", cases[0].ExpectedVerdict)
+	}
+}
+
+func TestCaseLoadersPreserveLargeMCPInitializeIDs(t *testing.T) {
+	dir := t.TempDir()
+	caseJSON := []byte(`{
+		"schema_version": 4,
+		"id": "mcp-large-initialize-id-001",
+		"category": "mcp_tool",
+		"title": "Large initialize ID",
+		"description": "Preserves an exact JSON-RPC identifier",
+		"input_type": "mcp_initialize_response",
+		"transport": "mcp_stdio",
+		"payload": {"jsonrpc_messages": [
+			{"jsonrpc": "2.0", "id": 9007199254740993, "method": "initialize"},
+			{"jsonrpc": "2.0", "id": 9007199254740993, "result": {}}
+		]},
+		"expected_verdict": "allow",
+		"severity": "low",
+		"capability_tags": [],
+		"requires": [],
+		"false_positive_risk": "low",
+		"why_expected": "test",
+		"notes": "",
+		"source": "test"
+	}`)
+	path := filepath.Join(dir, "mcp-large-initialize-id-001.json")
+	if err := os.WriteFile(path, caseJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fromDisk, err := loadCases(dir)
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+	fromSnapshot, err := loadCasesFromSnapshot([]corpusFile{{hashPath: hashPath{path: "mcp-tool/mcp-large-initialize-id-001.json"}, data: caseJSON}}, nil)
+	if err != nil {
+		t.Fatalf("loadCasesFromSnapshot: %v", err)
+	}
+
+	for name, loaded := range map[string][]Case{"disk": fromDisk, "snapshot": fromSnapshot} {
+		t.Run(name, func(t *testing.T) {
+			if len(loaded) != 1 {
+				t.Fatalf("loaded cases = %d, want 1", len(loaded))
+			}
+			messages, ok := loaded[0].Payload["jsonrpc_messages"].([]interface{})
+			if !ok || len(messages) != 2 {
+				t.Fatalf("jsonrpc_messages = %#v, want request and response", loaded[0].Payload["jsonrpc_messages"])
+			}
+			for index, raw := range messages {
+				message, ok := raw.(map[string]interface{})
+				if !ok {
+					t.Fatalf("message %d = %#v, want object", index, raw)
+				}
+				id, ok := message["id"].(json.Number)
+				if !ok || id.String() != "9007199254740993" {
+					t.Fatalf("message %d id = %#v, want exact json.Number", index, message["id"])
+				}
+			}
+		})
 	}
 }
 
