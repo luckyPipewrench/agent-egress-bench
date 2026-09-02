@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish one verified release directory only into its own draft release."""
+"""Prepare or finalize one verified release directory through its owned draft."""
 
 from __future__ import annotations
 
@@ -97,6 +97,51 @@ def actual_asset_names(release: dict[str, Any]) -> list[str]:
     return sorted(names)
 
 
+def _asset_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        fail(f"cannot hash release asset {path.name}: {exc}")
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _bound_remote_assets(
+    release: dict[str, Any], expected_digests: dict[str, str]
+) -> dict[str, tuple[str, str]]:
+    """Bind the remote draft to stable asset IDs and the verified local bytes."""
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        fail("GitHub CLI returned release metadata without an asset list")
+    bound: dict[str, tuple[str, str]] = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            fail("GitHub CLI returned release metadata with an invalid asset")
+        name = asset.get("name")
+        asset_id = asset.get("id")
+        digest = asset.get("digest")
+        if not isinstance(name, str) or not name:
+            fail("GitHub CLI returned release metadata with an invalid asset name")
+        if not isinstance(asset_id, str) or not asset_id:
+            fail(f"GitHub CLI returned release asset {name} without a stable ID")
+        if not isinstance(digest, str) or not digest.startswith("sha256:"):
+            fail(f"GitHub CLI returned release asset {name} without a SHA-256 digest")
+        if name in bound:
+            fail(f"GitHub CLI returned more than one release asset named {name}")
+        bound[name] = (asset_id, digest)
+    if set(bound) != set(expected_digests):
+        fail(
+            "draft assets do not exactly match dist/release: "
+            f"expected={sorted(expected_digests)}, actual={sorted(bound)}"
+        )
+    for name, expected in expected_digests.items():
+        if bound[name][1] != expected:
+            fail(f"draft asset {name} digest does not match the verified local asset")
+    return bound
+
+
 def _require_opened_identity(source: Path, status: os.stat_result, label: str) -> None:
     """Refuse a pathname whose resolved target is not the object that was opened.
 
@@ -179,7 +224,7 @@ def _require_notes_match_release(dist: Path, raw: bytes) -> None:
         catalog_name, _ = release_build.schema_asset_names(identity)
         catalog_bytes = (dist / catalog_name).read_bytes()
         expected = release_build.rendered_release_notes(identity, catalog_bytes)
-    except (OSError, KeyError, TypeError, ValueError) as exc:
+    except (OSError, KeyError, TypeError, ValueError, release_build.ReleaseError) as exc:
         fail(f"cannot regenerate {RELEASE_NOTES_NAME} from the release catalog: {exc}")
     if raw != expected:
         fail(f"{RELEASE_NOTES_NAME} does not match the notes generated from this release")
@@ -318,7 +363,7 @@ def _require_stable_during_read(descriptor: int, before: os.stat_result, copied:
         fail(f"{label} was written while it was being read")
 
 
-def publish(tag: str, dist: Path, gh: str) -> None:
+def publish(tag: str, dist: Path, gh: str, *, finalize: bool = False, dry_run: bool = False) -> None:
     sources = release_assets(dist)
     expected_names = [asset.name for asset in sources]
     with contextlib.ExitStack() as stack:
@@ -327,19 +372,50 @@ def publish(tag: str, dist: Path, gh: str) -> None:
         # the notes can describe identity A while the upload carries identity B.
         snapshot_dir, assets = _verified_asset_snapshot(sources, stack)
         notes, notes_text = _verified_notes_snapshot(snapshot_dir, stack)
-        _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text)
+        _require_tag_matches_identity(snapshot_dir, tag)
+        if dry_run:
+            return
+        _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text, finalize=finalize)
 
 
-def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text) -> None:
+def _require_tag_matches_identity(dist: Path, tag: str) -> None:
+    try:
+        identity = json.loads((dist / "release-identity.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        fail(f"cannot read release-identity.json to bind release tag: {exc}")
+    release = identity.get("release") if isinstance(identity, dict) else None
+    identity_tag = release.get("tag") if isinstance(release, dict) else None
+    if identity_tag != tag:
+        fail(f"release tag {tag} does not match release identity tag {identity_tag!r}")
+
+
+def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text, *, finalize=False) -> None:
     release = inspect_draft(gh, tag)
     asset_arguments = [str(asset) for asset in assets]
-    if release is None:
-        command(gh, "release", "create", tag, *asset_arguments, "--title", tag, "--verify-tag", "--draft", "--notes-file", str(notes))
+    if finalize:
+        if release is None:
+            fail(f"refusing to publish {tag} without an existing owned draft")
+        require_owned_draft(release, tag)
+    elif release is None:
+        command(
+            gh,
+            "release",
+            "create",
+            tag,
+            *asset_arguments,
+            "--title",
+            tag,
+            "--verify-tag",
+            "--draft",
+            "--notes-file",
+            str(notes),
+        )
     else:
         require_owned_draft(release, tag)
         command(gh, "release", "upload", tag, *asset_arguments, "--clobber")
 
-    command(gh, "release", "edit", tag, "--notes-file", str(notes))
+    if not finalize:
+        command(gh, "release", "edit", tag, "--notes-file", str(notes))
 
     release = inspect_draft(gh, tag)
     if release is None:
@@ -360,6 +436,10 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # into "looks close enough", which is not what a published release body needs.
     if not isinstance(body, str) or body != notes_text:
         fail(f"draft {tag} body does not match the verified release notes")
+    if not finalize:
+        return
+    expected_digests = {asset.name: _asset_digest(asset) for asset in assets}
+    before_publish = _bound_remote_assets(release, expected_digests)
     # One update sets the verified body AND clears the draft. Doing those separately leaves a window
     # in which another editor can replace the body between the check and publication.
     command(gh, "release", "edit", tag, "--notes-file", str(notes), "--draft=false")
@@ -369,10 +449,9 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # not be read as a guarantee that the published release always matched.
     #
     # Residual, stated rather than implied: GitHub offers no compare-and-set on a release, so the
-    # asset set is verified and then undrafted as two operations. Another editor with write access
-    # can change assets in that window. The body is not exposed: one command sets the verified body
-    # and clears the draft together. Closing the asset window needs an API primitive that does not
-    # exist today; pretending otherwise would be the actual defect.
+    # asset IDs and digests are checked immediately before and after undrafting rather than under an
+    # atomic lock. Another editor with write access can still create a brief public divergence in
+    # that window. The post-check detects it and withdraws the release; it cannot undo exposure.
     try:
         published = inspect_draft(gh, tag)
         if published is None:
@@ -389,6 +468,9 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
             fail(
                 f"assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}"
             )
+        after_publish = _bound_remote_assets(published, expected_digests)
+        if after_publish != before_publish:
+            fail("release asset IDs changed during publication")
     except PublishError as exc:
         # Every failed post-publication check leaves the same state question: the release may be
         # public but no longer proved to match the verified snapshot. That includes malformed or
@@ -434,9 +516,21 @@ def main() -> int:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--dist", type=Path, required=True)
     parser.add_argument("--gh", default="gh")
+    parser.add_argument(
+        "--finalize",
+        action="store_true",
+        help="publish an existing owned draft after re-verifying its downloaded assets",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="verify and bind the local release directory without calling GitHub",
+    )
     args = parser.parse_args()
+    if args.finalize and args.dry_run:
+        parser.error("--finalize and --dry-run are mutually exclusive")
     try:
-        publish(args.tag, args.dist, args.gh)
+        publish(args.tag, args.dist, args.gh, finalize=args.finalize, dry_run=args.dry_run)
     except PublishError as exc:
         print(f"release publication failed: {exc}", file=sys.stderr)
         return 1

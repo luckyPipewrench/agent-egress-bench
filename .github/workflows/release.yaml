@@ -53,6 +53,80 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  rehearse-image:
+    needs: release
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up pinned Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.36.1
+
+      - name: Download the rehearsal release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-egress-bench-release-${{ github.sha }}
+          path: dist/release
+
+      - name: Build and bind the no-publish runner image
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("dist/release/release-identity.json"))["release"]["version"])')"
+          release_commit="$(python3 -c 'import json; print(json.load(open("dist/release/release-identity.json"))["source"]["commit"])')"
+          [[ "$release_commit" == "$GITHUB_SHA" ]]
+          local_image="aeb-release-rehearsal:$GITHUB_SHA"
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg "AEB_VERSION=$version" \
+            --build-arg "AEB_COMMIT=$release_commit" \
+            --label "org.opencontainers.image.version=$version" \
+            --label "org.opencontainers.image.revision=$release_commit" \
+            --load \
+            --tag "$local_image" \
+            .
+          reported_version="$(docker run --rm "$local_image" --version)"
+          [[ "$reported_version" == "aeb-gauntlet $version $release_commit" ]]
+          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .
+
+      - name: Upload the no-publish final asset set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agent-egress-bench-release-rehearsal-final-${{ github.sha }}
+          path: dist/release/
+          if-no-files-found: error
+          retention-days: 14
+
+  rehearse-draft:
+    needs: [release, rehearse-image]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download the no-publish final asset set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-egress-bench-release-rehearsal-final-${{ github.sha }}
+          path: dist/release
+
+      - name: Rehearse verified draft creation without calling GitHub
+        shell: bash
+        run: python3 scripts/release_publish.py --tag snapshot --dist dist/release --dry-run
+
   attest:
     needs: release
     if: github.event_name == 'push'
@@ -164,8 +238,25 @@ jobs:
         if: ${{ always() }}
         run: docker logout ghcr.io
 
-      - name: Verify the published image is anonymously pullable
-        run: docker pull "${{ steps.publish.outputs.ref }}"
+      - name: Verify the published image from an anonymous cold client
+        shell: bash
+        env:
+          RUNNER_IMAGE: ${{ steps.publish.outputs.ref }}
+        run: |
+          set -euo pipefail
+          anonymous_config="$RUNNER_TEMP/aeb-anonymous-docker"
+          mkdir -p "$anonymous_config"
+          printf '{}\n' > "$anonymous_config/config.json"
+          docker image rm "$RUNNER_IMAGE" >/dev/null 2>&1 || true
+          if docker image inspect "$RUNNER_IMAGE" >/dev/null 2>&1; then
+            echo "runner image remained in the local image store before the anonymous pull" >&2
+            exit 1
+          fi
+          DOCKER_CONFIG="$anonymous_config" docker pull "$RUNNER_IMAGE"
+          version="${GITHUB_REF_NAME#v}"
+          release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          reported_version="$(DOCKER_CONFIG="$anonymous_config" docker run --rm --platform linux/amd64 "$RUNNER_IMAGE" --version)"
+          [[ "$reported_version" == "aeb-gauntlet $version $release_commit" ]]
 
       - name: Download verified release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -196,20 +287,25 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  publish:
+  draft:
     needs: [release, attest, image]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Download verified release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: agent-egress-bench-release-final-${{ github.sha }}
           path: dist/release
 
-      - name: Create an owned draft release or resume one on workflow retry
+      - name: Create an owned verified draft or resume one on workflow retry
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

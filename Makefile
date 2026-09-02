@@ -1,4 +1,4 @@
-.PHONY: check-test-layout check-neutrality-boundary preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-diagrams check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-tool-profile-reader-contracts stats stats-update check-stats cases-manifest check-gauntlet-site check-result-pointers test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-release-snapshot release-snapshot validate-cases validate
+.PHONY: check-test-layout check-neutrality-boundary preflight check-citation check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-catalog check-schema-discovery-feed check-schema-copies check-docs check-operator-kit check-contracts check-public-contracts check-claim-language check-readme-categories check-diagrams check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-tool-profile-reader-contracts stats stats-update check-stats cases-manifest check-gauntlet-site check-result-pointers test-capability-registry test-validate test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow test-workflows test-release-snapshot release-snapshot validate-cases validate
 
 TMPDIR := $(HOME)/.cache/pipelock-tmp
 GOCACHE := $(HOME)/.cache/go-build
@@ -353,6 +353,11 @@ test-release-build:
 
 test-release-workflow:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/release_workflow_test.py scripts/release_publish_test.py
+
+# Workflow-only pull requests do not need to rebuild the corpus and runner, but they must exercise
+# every repository-owned workflow contract and the release publication state machine.
+test-workflows:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/ci_scope_test.py scripts/release_workflow_test.py scripts/release_publish_test.py scripts/continuous_gauntlet_workflow_test.py scripts/pipelock_scan_workflow_test.py scripts/scorecard_workflow_test.py
 
 # This integration test is deliberately separate from preflight because it
 # requires the pinned GoReleaser binary installed by the validation workflow.

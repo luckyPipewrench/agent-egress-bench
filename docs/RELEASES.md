@@ -13,9 +13,9 @@ Each release contains:
 - One commit-pinned schema catalog and schema bundle. The bundle contains the
   catalog and every schema it names, so a vendor can validate schema bytes
   after download without a network connection.
-- `release-notes.md`, used as the GitHub Release body. It lists every schema
-  identity and version carried by that release and links to the offline
-  validation walkthrough and adapter quickstarts.
+- `release-notes.md`, used as the GitHub Release body. It summarizes the corpus,
+  runner, scoring contract, verification commands, and downloadable schema
+  inventory without repeating every machine-readable schema row on the page.
 - Archives for Linux, macOS, and Windows on amd64 and arm64. Each one carries
   both `aeb-gauntlet`, which runs the corpus, and `aeb-validate`, which checks a
   result against the contracts. The release verifier refuses an archive missing
@@ -36,13 +36,13 @@ Opening an N-1 artifact with a reader from tagged release N is family-specific. 
 
 ## Verify a downloaded release
 
-Pick the immutable release tag that a result cites and use that same tag in every command below. This example uses `v0.1.0` only as a command shape. It does not refer to a published release.
+Pick the immutable release tag that a result cites and use that same tag in every command below. These examples use the first complete published release, `v0.1.1`.
 
 ```bash
 mkdir aeb-release
-gh release download v0.1.0 --repo luckyPipewrench/agent-egress-bench --dir aeb-release
+gh release download v0.1.1 --repo luckyPipewrench/agent-egress-bench --dir aeb-release
 mkdir aeb-release/extracted
-tar -xzf aeb-release/agent-egress-bench_0.1.0_data.tar.gz -C aeb-release/extracted
+tar -xzf aeb-release/agent-egress-bench_0.1.1_data.tar.gz -C aeb-release/extracted
 (cd aeb-release/extracted && python3 scripts/release_build.py verify --release-dir ..)
 ```
 
@@ -51,7 +51,7 @@ The verifier rejects a missing asset, a checksum mismatch, an archive whose embe
 To bind that package back to the cited source, clone the same tag and supply it to the verifier:
 
 ```bash
-git clone --depth 1 --branch v0.1.0 https://github.com/luckyPipewrench/agent-egress-bench.git aeb-source
+git clone --depth 1 --branch v0.1.1 https://github.com/luckyPipewrench/agent-egress-bench.git aeb-source
 (cd aeb-source && python3 scripts/release_build.py verify --release-dir ../aeb-release --repo-root .)
 ```
 
@@ -60,7 +60,7 @@ That command refuses when the release identity does not match the checked-out so
 An operator can also check the GitHub provenance attached to any release asset:
 
 ```bash
-gh attestation verify aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz --repo luckyPipewrench/agent-egress-bench
+gh attestation verify aeb-release/agent-egress-bench_0.1.1_linux_amd64.tar.gz --repo luckyPipewrench/agent-egress-bench
 ```
 
 After extracting the platform archive, run `aeb-gauntlet --version` and `aeb-validate --version`. A tagged binary prints its release version and exact source commit. When the archive matches the current host, hand both back to the verifier so it reads the identity out of the running programs rather than off their filenames:
@@ -88,7 +88,7 @@ What binds the bytes is `checksums.txt` over every asset, and the GitHub attesta
 The platform archive and the data bundle together are enough to inspect and run the corpus. Neither step needs a Go toolchain, a clone, or a network connection.
 
 ```bash
-tar -xzf aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz -C aeb-release/extracted
+tar -xzf aeb-release/agent-egress-bench_0.1.1_linux_amd64.tar.gz -C aeb-release/extracted
 cd aeb-release/extracted
 mkdir artifacts
 ./aeb-gauntlet --stats --cases cases
@@ -114,8 +114,14 @@ The template profile names no real product, so that run exercises the corpus and
 
 A run that reaches no target reports `measurement_status: incomplete`, and the score covers only the cases the adapter actually routed. Pass `--require-complete` to exit nonzero on an incomplete measurement instead of reading a partial run as a result.
 
+## Release publication boundary
+
+A version tag builds and attests the archives, publishes and anonymously verifies the digest-pinned runner image, and creates a verified draft GitHub Release. It does not make the release public.
+
+Publishing is a separate manual workflow. That workflow checks out the tag, downloads the existing draft assets, verifies the release package and every GitHub attestation again, and then binds the remote asset IDs and SHA-256 digests immediately around publication. One tag can have only one publication workflow at a time. The workflow refuses to create and publish a new release in one invocation, and it returns a release to draft if the body or assets change while it is being published.
+
 ## Build without publishing
 
-`make release-snapshot` builds the archive matrix, corpus data bundle, schema catalog and bundle, checksums, and identity verification under `dist/release`. It creates no tag and no GitHub release. The command requires a pinned GoReleaser installation. The release workflow installs GoReleaser v2.17.1 and runs this snapshot path for manual workflow dispatches.
+`make release-snapshot` builds the archive matrix, corpus data bundle, schema catalog and bundle, checksums, and identity verification under `dist/release`. It creates no tag and no GitHub release. The command requires a pinned GoReleaser installation. A manual release-workflow dispatch also builds a local runner image, verifies its embedded version and commit, and passes the unchanged snapshot assets through draft validation without inventing a registry digest, pushing an image, or calling the GitHub Release API.
 
 Tag pushes matching `v*` run the same gates against the tag, attach provenance to every release asset, upload the generated artifacts for inspection, and publish a draft only after those checks pass. If the publish job fails after creating a draft, rerunning that workflow resumes the existing draft and refuses to overwrite a published release. The workflow stops before publication when the release identity, corpus data, schema contract, archive layout, or checksum verification disagrees.
