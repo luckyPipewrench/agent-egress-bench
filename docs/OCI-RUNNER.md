@@ -78,11 +78,11 @@ On an Apple Silicon laptop, Docker builds the native `linux/arm64` target. The r
 
 ## Prepare an air-gapped run
 
-The connected staging machine must download `runner-image.ref`, its GitHub attestation bundle, and the current trusted root before the lab loses network access. This example uses `v0.1.0` only as a command shape:
+The connected staging machine must download `runner-image.ref`, its GitHub attestation bundle, and the current trusted root before the lab loses network access. This example uses the first complete published release, `v0.1.1`:
 
 ```bash
 mkdir -p benchmark/release
-gh release download v0.1.0 --repo luckyPipewrench/agent-egress-bench --pattern runner-image.ref --dir benchmark/release
+gh release download v0.1.1 --repo luckyPipewrench/agent-egress-bench --pattern runner-image.ref --dir benchmark/release
 (cd benchmark/release && gh attestation download runner-image.ref --repo luckyPipewrench/agent-egress-bench --limit 1)
 mv benchmark/release/sha256:*.jsonl benchmark/release/runner-image.attestation.jsonl
 gh attestation trusted-root > benchmark/release/runner-image.trusted-root.jsonl

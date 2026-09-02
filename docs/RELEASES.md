@@ -36,13 +36,13 @@ Opening an N-1 artifact with a reader from tagged release N is family-specific. 
 
 ## Verify a downloaded release
 
-Pick the immutable release tag that a result cites and use that same tag in every command below. This example uses `v0.1.0` only as a command shape. It does not refer to a published release.
+Pick the immutable release tag that a result cites and use that same tag in every command below. These examples use the first complete published release, `v0.1.1`.
 
 ```bash
 mkdir aeb-release
-gh release download v0.1.0 --repo luckyPipewrench/agent-egress-bench --dir aeb-release
+gh release download v0.1.1 --repo luckyPipewrench/agent-egress-bench --dir aeb-release
 mkdir aeb-release/extracted
-tar -xzf aeb-release/agent-egress-bench_0.1.0_data.tar.gz -C aeb-release/extracted
+tar -xzf aeb-release/agent-egress-bench_0.1.1_data.tar.gz -C aeb-release/extracted
 (cd aeb-release/extracted && python3 scripts/release_build.py verify --release-dir ..)
 ```
 
@@ -51,7 +51,7 @@ The verifier rejects a missing asset, a checksum mismatch, an archive whose embe
 To bind that package back to the cited source, clone the same tag and supply it to the verifier:
 
 ```bash
-git clone --depth 1 --branch v0.1.0 https://github.com/luckyPipewrench/agent-egress-bench.git aeb-source
+git clone --depth 1 --branch v0.1.1 https://github.com/luckyPipewrench/agent-egress-bench.git aeb-source
 (cd aeb-source && python3 scripts/release_build.py verify --release-dir ../aeb-release --repo-root .)
 ```
 
@@ -60,7 +60,7 @@ That command refuses when the release identity does not match the checked-out so
 An operator can also check the GitHub provenance attached to any release asset:
 
 ```bash
-gh attestation verify aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz --repo luckyPipewrench/agent-egress-bench
+gh attestation verify aeb-release/agent-egress-bench_0.1.1_linux_amd64.tar.gz --repo luckyPipewrench/agent-egress-bench
 ```
 
 After extracting the platform archive, run `aeb-gauntlet --version` and `aeb-validate --version`. A tagged binary prints its release version and exact source commit. When the archive matches the current host, hand both back to the verifier so it reads the identity out of the running programs rather than off their filenames:
@@ -88,7 +88,7 @@ What binds the bytes is `checksums.txt` over every asset, and the GitHub attesta
 The platform archive and the data bundle together are enough to inspect and run the corpus. Neither step needs a Go toolchain, a clone, or a network connection.
 
 ```bash
-tar -xzf aeb-release/agent-egress-bench_0.1.0_linux_amd64.tar.gz -C aeb-release/extracted
+tar -xzf aeb-release/agent-egress-bench_0.1.1_linux_amd64.tar.gz -C aeb-release/extracted
 cd aeb-release/extracted
 mkdir artifacts
 ./aeb-gauntlet --stats --cases cases
