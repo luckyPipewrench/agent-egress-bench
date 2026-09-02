@@ -211,13 +211,23 @@ def complete_v5_artifact():
 
 def complete_current_active_set_artifact():
     artifact = complete_v5_artifact()
-    artifact["corpus_version"] = (REPO_ROOT / "cases" / "CORPUS_VERSION").read_text(
-        encoding="utf-8"
-    ).strip()
-    artifact["logical_case_count"] = 249
+    corpus_version = (REPO_ROOT / "cases" / "CORPUS_VERSION").read_text(encoding="utf-8").strip()
+    active_set = json.loads(
+        (REPO_ROOT / "corpora" / "active-sets" / "v1" / f"{corpus_version}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    selected_count = active_set["case_count"]
+    if selected_count >= logical_case_count():
+        raise ValueError("active-set fixture must select fewer cases than the source catalog")
+    benign_count = 1
+    malicious_count = selected_count - benign_count
+    blocked_malicious = malicious_count
+    artifact["corpus_version"] = corpus_version
+    artifact["logical_case_count"] = selected_count
     artifact["case_count"] = {
-        "total": 249,
-        "applicable": 249,
+        "total": selected_count,
+        "applicable": selected_count,
         "unreachable": 0,
         "not_applicable": 0,
         "not_applicable_reasons": {},
@@ -225,20 +235,29 @@ def complete_current_active_set_artifact():
     }
     for scope in ("full", "applicable"):
         artifact["scores"][scope] = {
-            "containment": 178 / 181,
-            "false_positive_rate": 2 / 68,
+            "containment": 1.0,
+            "false_positive_rate": 0.0,
         }
         artifact["metric_counts"][scope] = {
-            "containment": {"numerator": 178, "denominator": 181},
-            "false_positive_rate": {"numerator": 2, "denominator": 68},
+            "containment": {
+                "numerator": blocked_malicious,
+                "denominator": malicious_count,
+            },
+            "false_positive_rate": {"numerator": 0, "denominator": benign_count},
         }
         artifact["diagnostics"][scope] = {
             "classification_present_rate": 1.0,
             "structured_evidence_present_rate": 1.0,
         }
         artifact["diagnostic_counts"][scope] = {
-            "classification_present_rate": {"numerator": 178, "denominator": 178},
-            "structured_evidence_present_rate": {"numerator": 178, "denominator": 178},
+            "classification_present_rate": {
+                "numerator": blocked_malicious,
+                "denominator": blocked_malicious,
+            },
+            "structured_evidence_present_rate": {
+                "numerator": blocked_malicious,
+                "denominator": blocked_malicious,
+            },
         }
     return artifact
 
@@ -325,13 +344,10 @@ class ValidateGauntletScopeTest(unittest.TestCase):
         result = self.run_validator(complete_artifact())
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_complete_v5_artifact_passes_with_presence_diagnostics(self):
-        result = self.run_validator(complete_current_active_set_artifact())
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_current_active_set_artifact_uses_selected_case_count(self):
-        result = self.run_validator(complete_current_active_set_artifact())
+    def test_complete_v5_active_set_artifact_passes_with_presence_diagnostics(self):
+        artifact = complete_current_active_set_artifact()
+        self.assertLess(artifact["logical_case_count"], logical_case_count())
+        result = self.run_validator(artifact)
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -368,6 +384,20 @@ class ValidateGauntletScopeTest(unittest.TestCase):
                     scope_validator.checked_out_corpus_authority(
                         artifact, root / "cases" / "MANIFEST.txt"
                     )
+
+    def test_current_candidate_rejects_a_symlinked_checked_out_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_active_authority_root(root)
+            manifest = root / "cases" / "MANIFEST.txt"
+            manifest.unlink()
+            manifest.symlink_to(MANIFEST)
+            artifact = complete_current_active_set_artifact()
+            with mock.patch.object(scope_validator, "REPO_ROOT", root), mock.patch.object(
+                scope_validator, "MANIFEST_PATH", manifest
+            ):
+                with self.assertRaisesRegex(ValueError, "must be a regular file"):
+                    scope_validator.checked_out_corpus_authority(artifact, manifest)
 
     def test_current_candidate_rejects_a_symlinked_active_set(self):
         with tempfile.TemporaryDirectory() as directory:

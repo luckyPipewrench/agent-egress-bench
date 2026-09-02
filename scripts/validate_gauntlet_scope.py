@@ -136,13 +136,8 @@ def non_empty_string(document, path):
     return value
 
 
-def corpus_manifest_identity(manifest_path, label="corpus manifest"):
-    """Return one manifest identity using the runner's non-empty/unique ID rules."""
-    try:
-        raw = manifest_path.read_bytes()
-    except OSError as exc:
-        raise ValueError(f"read {label} {manifest_path}: {exc}") from exc
-
+def corpus_manifest_authority(raw, label="corpus manifest"):
+    """Return one manifest identity and ID set from the same supplied bytes."""
     try:
         logical_ids = [line.strip() for line in raw.decode("utf-8").splitlines() if line.strip()]
     except UnicodeDecodeError as exc:
@@ -151,7 +146,17 @@ def corpus_manifest_identity(manifest_path, label="corpus manifest"):
         raise ValueError(f"{label} has no logical case IDs")
     if len(logical_ids) != len(set(logical_ids)):
         raise ValueError(f"{label} contains duplicate logical case IDs")
-    return hashlib.sha256(raw).hexdigest(), len(logical_ids)
+    return hashlib.sha256(raw).hexdigest(), len(logical_ids), set(logical_ids)
+
+
+def corpus_manifest_identity(manifest_path, label="corpus manifest"):
+    """Return one manifest identity using the runner's non-empty/unique ID rules."""
+    try:
+        raw = manifest_path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"read {label} {manifest_path}: {exc}") from exc
+    digest, count, _ = corpus_manifest_authority(raw, label)
+    return digest, count
 
 
 @dataclass(frozen=True)
@@ -282,9 +287,18 @@ def checked_out_corpus_authority(document, expected_manifest=MANIFEST_PATH):
     """Return source and logical corpus identities for candidate validation."""
     if expected_manifest == MANIFEST_PATH:
         source_label = "checked-out cases/MANIFEST.txt"
+        manifest_bytes = read_repo_regular_bytes(
+            REPO_ROOT, Path("cases") / "MANIFEST.txt", source_label
+        )
     else:
         source_label = "explicit expected corpus manifest"
-    (source_digest, source_count) = corpus_manifest_identity(expected_manifest, source_label)
+        try:
+            manifest_bytes = expected_manifest.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"read {source_label} {expected_manifest}: {exc}") from exc
+    source_digest, source_count, source_ids = corpus_manifest_authority(
+        manifest_bytes, source_label
+    )
     logical_count = source_count
     logical_label = source_label
 
@@ -302,11 +316,6 @@ def checked_out_corpus_authority(document, expected_manifest=MANIFEST_PATH):
             raise ValueError("checked-out corpus version must be a v-prefixed semantic version")
         if document["corpus_version"] != current_version:
             raise ValueError("artifact corpus_version does not match the checked-out corpus version")
-        source_ids = {
-            line.strip()
-            for line in expected_manifest.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        }
         logical_count = checked_out_active_set_count(source_digest, source_ids, current_version)
         logical_label = f"checked-out active set {current_version}"
     return CorpusAuthority(source_digest, source_count, logical_count, source_label, logical_label)
