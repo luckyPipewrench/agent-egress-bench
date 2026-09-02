@@ -1085,6 +1085,33 @@ class CandidateEvaluationTest(unittest.TestCase):
                 self.assertTrue(decision["blocked"])
                 self.assertTrue(any("case index entry 'malicious-000'" in failure for failure in decision["failures"]), decision["failures"])
 
+    def test_recomputation_accepts_only_the_selected_case_ids(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            case_index = root / "case-index.json"
+            results = root / "results.jsonl"
+            case_index.write_bytes(CASE_INDEX_BYTES)
+            rows = [json.loads(line) for line in V5_RESULTS_BYTES.decode("utf-8").splitlines()]
+            excluded = rows.pop()
+            results.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            selected = {row["case_id"] for row in rows}
+
+            derived = evaluator.recompute_v5_measurements(
+                case_index, results, "2.8", selected
+            )
+
+            self.assertEqual(derived["case_count"]["total"], len(selected))
+            with self.assertRaisesRegex(ValueError, "selected corpus"):
+                evaluator.recompute_v5_measurements(
+                    case_index,
+                    results,
+                    "2.8",
+                    selected | {excluded["case_id"]},
+                )
+
     def test_candidate_rejects_not_applicable_on_an_active_row(self):
         # Active rows are dropped from the applicable set before counting, so a
         # malicious row flipped to not_applicable would leave the containment

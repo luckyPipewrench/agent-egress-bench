@@ -26,6 +26,10 @@ try:
     from scripts.result_evidence import claims_synthetic
 except ModuleNotFoundError:
     from result_evidence import claims_synthetic
+try:
+    from scripts import validate_gauntlet_scope as scope_validator
+except ModuleNotFoundError:
+    import validate_gauntlet_scope as scope_validator
 
 
 LEGACY_REQUIRED_FLOORS = {
@@ -333,7 +337,9 @@ def _validate_result_measurement(row, expected, case_id):
         raise ValueError(f"result {case_id!r} unobserved failure result is inconsistent")
 
 
-def recompute_v5_measurements(case_index_path, results_path, scoring_version):
+def recompute_v5_measurements(
+    case_index_path, results_path, scoring_version, expected_case_ids=None
+):
     """Derive promotion measurements from the bound case index and raw result rows."""
     case_index = load_object(case_index_path)
     if case_index.get("schema_version") not in {2, 3} or not isinstance(case_index.get("cases"), dict):
@@ -360,8 +366,11 @@ def recompute_v5_measurements(case_index_path, results_path, scoring_version):
         raise ValueError("results rows must carry non-empty case_id values")
     if len(ids) != len(set(ids)):
         raise ValueError("results contain duplicate case IDs")
-    if set(ids) != set(indexed):
-        raise ValueError("results case IDs do not match the case index")
+    scored_ids = set(indexed) if expected_case_ids is None else set(expected_case_ids)
+    if not scored_ids.issubset(indexed):
+        raise ValueError("selected case IDs do not match the case index")
+    if set(ids) != scored_ids:
+        raise ValueError("results case IDs do not match the selected corpus")
     active_rows_seen = any(row.get("schema_version") == 6 for row in rows)
     if active_rows_seen:
         for row in rows:
@@ -494,10 +503,37 @@ def verify_v5_measurements(candidate, evidence_paths, candidate_schema_version):
     missing = sorted({"case_index", "results"} - set(evidence_paths))
     if missing:
         raise ValueError(f"v5 metric recomputation requires evidence: {missing!r}")
+    expected_case_ids = None
+    current_version = scope_validator.read_repo_regular_bytes(
+        scope_validator.REPO_ROOT,
+        scope_validator.CORPUS_VERSION_PATH,
+        "checked-out corpus version",
+    ).decode("utf-8").strip()
+    if candidate.get("corpus_version") == current_version:
+        manifest_bytes = scope_validator.read_repo_regular_bytes(
+            scope_validator.REPO_ROOT,
+            Path("cases") / "MANIFEST.txt",
+            "checked-out cases/MANIFEST.txt",
+        )
+        source_digest, _, source_ids = scope_validator.corpus_manifest_authority(
+            manifest_bytes, "checked-out cases/MANIFEST.txt"
+        )
+        if candidate.get("corpus_manifest_sha256") != source_digest:
+            raise ValueError(
+                "candidate corpus manifest does not match the checked-out source catalog"
+            )
+        case_index = load_object(evidence_paths["case_index"])
+        indexed = case_index.get("cases")
+        if not isinstance(indexed, dict) or set(indexed) != source_ids:
+            raise ValueError("case index IDs do not match the checked-out source catalog")
+        expected_case_ids = scope_validator.checked_out_active_set_ids(
+            source_digest, source_ids, current_version
+        )
     derived = recompute_v5_measurements(
         evidence_paths["case_index"],
         evidence_paths["results"],
         candidate.get("scoring_version"),
+        expected_case_ids,
     )
     for field in ("metric_counts", "diagnostic_counts"):
         if candidate.get(field) != derived[field]:
