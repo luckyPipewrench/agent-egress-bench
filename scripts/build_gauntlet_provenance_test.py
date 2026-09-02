@@ -529,6 +529,127 @@ class ProvenanceBuilderTest(unittest.TestCase):
         if summary_schema_version == 5:
             self.add_publication_provenance()
 
+    def make_active_set_fixture(self):
+        self.make_active_fixture(summary_schema_version=5)
+        self.results = self.results[:2]
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in self.results), encoding="utf-8"
+        )
+        summary_path = self.run_dir / "raw-summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["corpus_version"] = "v9.9.9"
+        summary["case_count"] = {
+            "total": 2,
+            "applicable": 2,
+            "unreachable": 0,
+            "not_applicable": 0,
+            "not_applicable_reasons": {},
+            "errors": 0,
+        }
+        summary["scores"] = {
+            "full": {"containment": 1.0, "false_positive_rate": 0.0},
+            "applicable": {"containment": 1.0, "false_positive_rate": 0.0},
+        }
+        summary["diagnostics"] = {
+            "full": {
+                "classification_present_rate": 1.0,
+                "structured_evidence_present_rate": 1.0,
+            },
+            "applicable": {
+                "classification_present_rate": 1.0,
+                "structured_evidence_present_rate": 1.0,
+            },
+        }
+        summary["per_category"]["test"]["applicable"] = 2
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+        receipt_path = self.run_dir / "receipt-profile.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["corpus_version"] = "v9.9.9"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+        (self.root / "cases" / "CORPUS_VERSION").write_text("v9.9.9\n", encoding="utf-8")
+        active_set_dir = self.root / "corpora" / "active-sets" / "v1"
+        active_set_dir.mkdir(parents=True)
+        manifest = (self.root / "cases" / "MANIFEST.txt").read_bytes()
+        active_set = {
+            "schema_version": 1,
+            "corpus_version": "v9.9.9",
+            "source_manifest_sha256": hashlib.sha256(manifest).hexdigest(),
+            "excluded_case_ids": ["c"],
+            "case_count": 2,
+        }
+        active_set_path = active_set_dir / "v9.9.9.json"
+        active_set_path.write_text(json.dumps(active_set), encoding="utf-8")
+        (self.root / "ci").mkdir()
+        (self.root / "ci" / "corpus-versions.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "versions": [
+                        {
+                            "corpus_version": "v9.9.9",
+                            "case_count": 2,
+                            "benchmark_manifest_sha256": summary["benchmark_manifest_sha256"],
+                            "active_set_sha256": hashlib.sha256(
+                                active_set_path.read_bytes()
+                            ).hexdigest(),
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_dangling_corpus_version_symlink_is_rejected(self):
+        marker_path = self.root / "cases" / "CORPUS_VERSION"
+        marker_path.symlink_to("missing-corpus-version")
+
+        with self.assertRaisesRegex(ValueError, "corpus version marker must be a regular file"):
+            build_gauntlet_provenance.load_active_case_ids(
+                self.root,
+                {"corpus_version": "v9.9.9"},
+                b"a\n",
+                {"a"},
+            )
+
+    def test_active_set_symlink_is_rejected(self):
+        self.make_active_set_fixture()
+        active_set_path = self.root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"
+        backing_path = active_set_path.with_name("active-set-backing.json")
+        active_set_path.replace(backing_path)
+        active_set_path.symlink_to(backing_path.name)
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be a regular file", result.stderr)
+
+    def test_manifest_parent_symlink_is_rejected(self):
+        cases_path = self.root / "cases"
+        backing_path = self.root / "cases-backing"
+        cases_path.replace(backing_path)
+        cases_path.symlink_to(backing_path.name, target_is_directory=True)
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "parent path for checked-out corpus manifest must contain only directories",
+            result.stderr,
+        )
+
+    def test_corpus_version_ledger_symlink_is_rejected(self):
+        self.make_active_set_fixture()
+        ledger_path = self.root / "ci" / "corpus-versions.json"
+        backing_path = ledger_path.with_name("corpus-versions-backing.json")
+        ledger_path.replace(backing_path)
+        ledger_path.symlink_to(backing_path.name)
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("corpus version ledger must be a regular file", result.stderr)
+
     def add_publication_provenance(self):
         summary_path = self.run_dir / "raw-summary.json"
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -602,6 +723,82 @@ class ProvenanceBuilderTest(unittest.TestCase):
             scope["metric_counts"]["full"]["containment"],
             {"numerator": 1, "denominator": 2},
         )
+
+    def test_bundle_uses_versioned_active_set_as_scored_corpus(self):
+        self.make_active_set_fixture()
+
+        result = self.bundle()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        scope = json.loads(
+            (self.run_dir / "run-bundle.json").read_text(encoding="utf-8")
+        )["candidate_scope"]
+        self.assertEqual(scope["logical_case_count"], 2)
+        self.assertEqual(scope["case_count"]["total"], 2)
+        self.assertEqual(
+            scope["corpus_manifest_sha256"],
+            hashlib.sha256((self.root / "cases" / "MANIFEST.txt").read_bytes()).hexdigest(),
+        )
+
+    def test_bundle_rejects_active_set_unknown_exclusion(self):
+        self.make_active_set_fixture()
+        active_set_path = self.root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"
+        active_set = json.loads(active_set_path.read_text(encoding="utf-8"))
+        active_set["excluded_case_ids"] = ["missing"]
+        active_set_path.write_text(json.dumps(active_set), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("active set excludes unknown case IDs", result.stderr)
+
+    def test_bundle_rejects_boolean_active_set_schema_version(self):
+        self.make_active_set_fixture()
+        active_set_path = self.root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"
+        active_set = json.loads(active_set_path.read_text(encoding="utf-8"))
+        active_set["schema_version"] = True
+        active_set_path.write_text(json.dumps(active_set), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("active set identity does not match", result.stderr)
+
+    def test_bundle_rejects_float_active_set_schema_version(self):
+        self.make_active_set_fixture()
+        active_set_path = self.root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"
+        active_set = json.loads(active_set_path.read_text(encoding="utf-8"))
+        active_set["schema_version"] = 1.0
+        active_set_path.write_text(json.dumps(active_set), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("active set identity does not match", result.stderr)
+
+    def test_bundle_rejects_boolean_ledger_case_count(self):
+        self.make_active_set_fixture()
+        ledger_path = self.root / "ci" / "corpus-versions.json"
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        ledger["versions"][0]["case_count"] = True
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ledger case_count does not match", result.stderr)
+
+    def test_bundle_rejects_float_ledger_case_count(self):
+        self.make_active_set_fixture()
+        ledger_path = self.root / "ci" / "corpus-versions.json"
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        ledger["versions"][0]["case_count"] = 2.0
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ledger case_count does not match", result.stderr)
 
     def test_active_complete_measurement_below_80_percent_is_retained(self):
         self.make_active_fixture()
@@ -1131,7 +1328,7 @@ class ProvenanceBuilderTest(unittest.TestCase):
             ),
             "unknown": (
                 [self.results[0], self.results[1], {**self.results[2], "case_id": "z"}],
-                "runner JSONL case IDs do not match cases/MANIFEST.txt",
+                "runner JSONL case IDs do not match the selected corpus",
             ),
             "swapped": (
                 [
