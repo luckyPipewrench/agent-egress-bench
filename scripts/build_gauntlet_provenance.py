@@ -525,7 +525,82 @@ def load_manifest(repo_root, run_dir):
     return manifest, ids
 
 
-def load_case_index(path, manifest_ids, expected_version):
+def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
+    marker_path = repo_root / "cases" / "CORPUS_VERSION"
+    if marker_path.is_symlink():
+        raise ValueError("corpus version marker must be a regular file")
+    if not marker_path.exists():
+        return manifest_ids
+    if not marker_path.is_file():
+        raise ValueError("corpus version marker must be a regular file")
+    marker = marker_path.read_text(encoding="utf-8").strip()
+    if marker != summary.get("corpus_version"):
+        raise ValueError("corpus version marker does not match runner summary")
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", marker):
+        raise ValueError("corpus version marker must be a v-prefixed semantic version")
+
+    active_set_path = repo_root / "corpora" / "active-sets" / "v1" / f"{marker}.json"
+    if not active_set_path.is_file() or active_set_path.is_symlink():
+        raise ValueError(f"corpus version marker requires active set {active_set_path}")
+    active_set_bytes = active_set_path.read_bytes()
+    active_set = json.loads(active_set_bytes)
+    required_keys = {
+        "schema_version",
+        "corpus_version",
+        "source_manifest_sha256",
+        "excluded_case_ids",
+        "case_count",
+    }
+    if not isinstance(active_set, dict) or set(active_set) != required_keys:
+        raise ValueError("active set must contain exactly the versioned selection fields")
+    if active_set.get("schema_version") != 1 or active_set.get("corpus_version") != marker:
+        raise ValueError("active set identity does not match the corpus version marker")
+    if active_set.get("source_manifest_sha256") != hashlib.sha256(manifest).hexdigest():
+        raise ValueError("active set does not bind the retained source manifest")
+    excluded = active_set.get("excluded_case_ids")
+    if (
+        not isinstance(excluded, list)
+        or any(not isinstance(case_id, str) or not case_id for case_id in excluded)
+        or len(excluded) != len(set(excluded))
+    ):
+        raise ValueError("active set excluded_case_ids must be a unique string array")
+    unknown = sorted(set(excluded) - manifest_ids)
+    if unknown:
+        raise ValueError(f"active set excludes unknown case IDs: {unknown!r}")
+    selected_ids = manifest_ids - set(excluded)
+    case_count = active_set.get("case_count")
+    if isinstance(case_count, bool) or not isinstance(case_count, int) or case_count < 1:
+        raise ValueError("active set case_count must be a positive integer")
+    if case_count != len(selected_ids):
+        raise ValueError(
+            f"active set records case_count={case_count}, selected {len(selected_ids)}"
+        )
+
+    ledger = load_object(repo_root / "ci" / "corpus-versions.json")
+    versions = ledger.get("versions")
+    if not isinstance(versions, list) or not versions:
+        raise ValueError("corpus version ledger has no versions")
+    matches = [
+        entry
+        for entry in versions
+        if isinstance(entry, dict) and entry.get("corpus_version") == marker
+    ]
+    if len(matches) != 1 or versions[-1] is not matches[0]:
+        raise ValueError("active corpus version must appear once as the final ledger entry")
+    ledger_entry = matches[0]
+    active_set_sha256 = hashlib.sha256(active_set_bytes).hexdigest()
+    if ledger_entry.get("active_set_sha256") != active_set_sha256:
+        raise ValueError("corpus version ledger does not bind the active set bytes")
+    if ledger_entry.get("case_count") != len(selected_ids):
+        raise ValueError("corpus version ledger case_count does not match the active set")
+    if ledger_entry.get("benchmark_manifest_sha256") != summary.get(
+        "benchmark_manifest_sha256"
+    ):
+        raise ValueError("corpus version ledger does not bind the executed benchmark manifest")
+    return selected_ids
+
+
+def load_case_index(path, manifest_ids, selected_ids, expected_version):
     case_index_bytes = path.read_bytes()
     case_index = json.loads(case_index_bytes)
     if not isinstance(case_index, dict):
@@ -587,6 +662,23 @@ def load_case_index(path, manifest_ids, expected_version):
             capability_tags_by_id[case_id] = capability_tags
     if set(expected_by_id) != manifest_ids:
         raise ValueError("loader case index IDs do not match cases/MANIFEST.txt")
+    selected_ids_sorted = sorted(selected_ids)
+    expected_by_id = {case_id: expected_by_id[case_id] for case_id in selected_ids_sorted}
+    category_by_id = {
+        case_id: category_by_id[case_id]
+        for case_id in selected_ids_sorted
+        if case_id in category_by_id
+    }
+    transport_by_id = {
+        case_id: transport_by_id[case_id]
+        for case_id in selected_ids_sorted
+        if case_id in transport_by_id
+    }
+    capability_tags_by_id = {
+        case_id: capability_tags_by_id[case_id]
+        for case_id in selected_ids_sorted
+        if case_id in capability_tags_by_id
+    }
     return (
         case_index_bytes,
         expected_by_id,
@@ -788,6 +880,7 @@ def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
     if summary_schema_version in ACTIVE_SUMMARY_SCHEMA_VERSIONS:
         registry = validate_active_registry_binding(run_dir, summary, results)
     manifest, manifest_ids = load_manifest(repo_root, run_dir)
+    selected_ids = load_active_case_ids(repo_root, summary, manifest, manifest_ids)
     (
         case_index_bytes,
         expected_by_id,
@@ -797,6 +890,7 @@ def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
     ) = load_case_index(
         run_dir / RAW_EVIDENCE["case_index"],
         manifest_ids,
+        selected_ids,
         ACTIVE_CASE_INDEX_SCHEMA_VERSION if summary_schema_version == 5 else 1,
     )
     budget_timing_case_ids = load_budget_timing_case_ids(repo_root)
@@ -820,11 +914,11 @@ def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
     if duplicate_ids:
         raise ValueError(f"runner JSONL contains duplicate case IDs: {duplicate_ids!r}")
     result_id_set = set(result_ids)
-    if result_id_set != manifest_ids:
-        missing = sorted(manifest_ids - result_id_set)
-        unknown = sorted(result_id_set - manifest_ids)
+    if result_id_set != selected_ids:
+        missing = sorted(selected_ids - result_id_set)
+        unknown = sorted(result_id_set - selected_ids)
         raise ValueError(
-            "runner JSONL case IDs do not match cases/MANIFEST.txt: "
+            "runner JSONL case IDs do not match the selected corpus: "
             f"missing={missing!r} unknown={unknown!r}"
         )
     for row_number, row in enumerate(results, 1):
@@ -959,7 +1053,7 @@ def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
     else:
         metric_counts = outcome_metric_counts
 
-    logical_case_count = len(manifest_ids)
+    logical_case_count = len(selected_ids)
     case_count = summary.get("case_count")
     if not isinstance(case_count, dict):
         raise ValueError("runner summary case_count must be an object")
@@ -973,8 +1067,8 @@ def measurements(repo_root, run_dir, allow_frozen_result_rows=False):
             "runner JSONL row count does not match the logical corpus: "
             f"{len(results)} != {logical_case_count}"
         )
-    if count_stat(make_stats, "block") + count_stat(make_stats, "allow") + count_stat(make_stats, "warn") != logical_case_count:
-        raise ValueError("make stats verdict counts do not match the logical corpus")
+    if count_stat(make_stats, "block") + count_stat(make_stats, "allow") + count_stat(make_stats, "warn") != len(manifest_ids):
+        raise ValueError("make stats verdict counts do not match the source manifest")
     if case_count.get("applicable") != len(applicable_results):
         raise ValueError("runner summary applicable count does not match runner JSONL")
     unreachable_count = len(unreachable_results)

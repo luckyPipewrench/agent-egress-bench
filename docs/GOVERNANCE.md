@@ -156,6 +156,10 @@ The corpus maintainer also builds a competing tool ([Pipelock](https://github.co
 2. **Reference, not privilege.** The [Pipelock runner](../examples/pipelock/) is a reference example showing how to build a runner. It has no special status. Any vendor can add a runner in `examples/`.
 3. **Open contribution.** Any vendor or individual can submit cases, runners, or spec changes through the normal PR process.
 
+Mandatory repository validation checks the shared corpus, evidence, runner, and scoring contracts. It doesn't run a named product or decide which scores and failed cases are acceptable for that product. Product repositories own their continuous runs and release acceptance policy.
+
+Reference adapters and manual examples may show how a product implements the shared contract, but they don't get a product into Bench's required preflight or release gate. `check-neutrality-boundary` follows mandatory validation dependencies and rejects product runner or product acceptance policy paths.
+
 ## Appeals
 
 If you disagree with a case's expected verdict, open a GitHub Issue. Include:
