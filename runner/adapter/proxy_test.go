@@ -5788,7 +5788,7 @@ func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
 	}{
 		{"request policy deny", "blocked by request policy: package registry is allowlisted for fetch only\n", true},
 		{"operation policy deny", "Operation policy refused this write.", true},
-		{"generic policy deny", "request denied by policy", true},
+		{"generic policy deny is not enough", "request denied by policy", false},
 		{"bare origin forbidden", "403 Forbidden", false},
 		{"origin html forbidden", "<html><body>Forbidden</body></html>", false},
 		{"unrelated word policy alone", "See our privacy policy for details", false},
@@ -5796,6 +5796,9 @@ func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
 		// Scoring it as a block turns a served page into a containment credit.
 		{"policy named in upstream docs", "403: operation policy documentation", false},
 		{"policy named in prose", "This endpoint implements our request policy.", false},
+		// A bare "policy" token next to a refusal verb is still ordinary prose.
+		{"privacy policy blocked cookies", "our privacy policy blocked third-party cookies", false},
+		{"blocked by policy without qualifier", "blocked by policy: see the handbook", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

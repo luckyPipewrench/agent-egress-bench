@@ -4152,11 +4152,11 @@ func hasDenyMarker(body string) bool {
 	// family, so the policy name has to count. The name ALONE does not: an
 	// upstream page reading "403: operation policy documentation" contains the
 	// phrase without refusing anything. Require a refusal verb next to it.
-	for _, policy := range []string{"request policy", "operation policy", "policy"} {
+	for _, policy := range []string{"request policy", "operation policy"} {
 		if !strings.Contains(lower, policy) {
 			continue
 		}
-		// The verb sits on either side: "denied by policy", and equally
+		// The verb sits on either side: "denied by request policy", and equally
 		// "operation policy refused this write".
 		for _, verb := range []string{"blocked", "denied", "refused", "rejected"} {
 			if strings.Contains(lower, verb+" by "+policy) || strings.Contains(lower, policy+" "+verb) {
