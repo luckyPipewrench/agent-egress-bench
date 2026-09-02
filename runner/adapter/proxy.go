@@ -4143,6 +4143,8 @@ func hasDenyMarker(body string) bool {
 		"dlp", "secret", "credential", "ssrf", "private ip", "metadata",
 		"injection", "prompt", "entropy", "blocklist", "blocked domain",
 		"kill switch", "airlock",
+		// Operation-policy rails deny by naming the policy, not a scanner family.
+		"request policy", "operation policy", "denied by policy", "blocked by policy",
 	} {
 		if strings.Contains(lower, marker) {
 			return true

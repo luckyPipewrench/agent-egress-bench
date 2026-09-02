@@ -5778,3 +5778,27 @@ func TestRunMCPHTTPReportsBatchUnscorableRatherThanFailing(t *testing.T) {
 		t.Errorf("verdict = %q, want an unscorable result for an uncorrelatable shape", result.Verdict)
 	}
 }
+
+func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"request policy deny", "blocked by request policy: package registry is allowlisted for fetch only\n", true},
+		{"operation policy deny", "Operation policy refused this write.", true},
+		{"generic policy deny", "request denied by policy", true},
+		{"bare origin forbidden", "403 Forbidden", false},
+		{"origin html forbidden", "<html><body>Forbidden</body></html>", false},
+		{"unrelated word policy alone", "See our privacy policy for details", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := hasDenyMarker(tc.body); got != tc.want {
+				t.Fatalf("hasDenyMarker(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
+	}
+}
