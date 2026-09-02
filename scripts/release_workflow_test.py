@@ -88,7 +88,8 @@ def check_workflow(path: Path) -> None:
         '--label "org.opencontainers.image.revision=$release_commit"',
         "reported_version=",
         "docker logout ghcr.io",
-        'docker pull "$pinned_image"',
+        'echo "ref=$pinned_image" >> "$GITHUB_OUTPUT"',
+        'docker pull "${{ steps.publish.outputs.ref }}"',
         "subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner",
         "subject-digest: ${{ steps.publish.outputs.digest }}",
         "push-to-registry: true",
@@ -101,6 +102,13 @@ def check_workflow(path: Path) -> None:
     )
     if any(value not in image for value in image_required):
         raise AssertionError("runner image publication is not pinned, multi-architecture, or tag-gated")
+    attest_position = image.index("name: Attest the published runner image")
+    logout_position = image.index("docker logout ghcr.io")
+    anonymous_pull_position = image.index('docker pull "${{ steps.publish.outputs.ref }}"')
+    if not attest_position < logout_position < anonymous_pull_position:
+        raise AssertionError(
+            "runner image attestation must retain registry credentials before the anonymous pull check"
+        )
     if "needs: [release, attest, image]" not in publish or "if: github.event_name == 'push'" not in publish or "contents: write" not in publish or "python3 scripts/release_publish.py --tag \"$GITHUB_REF_NAME\" --dist dist/release" not in publish or "name: agent-egress-bench-release-final-${{ github.sha }}" not in publish:
         raise AssertionError("GitHub release creation is not gated to tag pushes")
     if "Create an owned draft release or resume one on workflow retry" not in publish or "release_publish.py" not in publish:
@@ -199,6 +207,17 @@ class ReleaseWorkflowTest(unittest.TestCase):
             candidate = Path(directory) / "release.yaml"
             candidate.write_text(WORKFLOW.read_text(encoding="utf-8").replace("docker logout ghcr.io", "true", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "runner image publication"):
+                check_workflow(candidate)
+
+    def test_image_attestation_keeps_registry_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "release.yaml"
+            workflow = WORKFLOW.read_text(encoding="utf-8")
+            logout = "      - name: Log out of GitHub Container Registry\n        if: ${{ always() }}\n        run: docker logout ghcr.io\n\n"
+            workflow = workflow.replace(logout, "", 1)
+            attestation = "      - name: Attest the published runner image\n"
+            candidate.write_text(workflow.replace(attestation, logout + attestation, 1), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "must retain registry credentials"):
                 check_workflow(candidate)
 
     def test_publication_uses_the_owned_draft_guard(self) -> None:
