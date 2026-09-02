@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +55,41 @@ def corpus_manifest_sha256():
 
 def logical_case_count():
     return len({line.strip() for line in MANIFEST.read_text(encoding="utf-8").splitlines() if line.strip()})
+
+
+def write_active_authority_root(root):
+    manifest = b"a\nb\nc\n"
+    (root / "cases").mkdir(parents=True)
+    (root / "cases" / "MANIFEST.txt").write_bytes(manifest)
+    (root / "cases" / "CORPUS_VERSION").write_text("v9.9.9\n", encoding="utf-8")
+    active_set_path = root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"
+    active_set_path.parent.mkdir(parents=True)
+    active_set = {
+        "schema_version": 1,
+        "corpus_version": "v9.9.9",
+        "source_manifest_sha256": hashlib.sha256(manifest).hexdigest(),
+        "excluded_case_ids": ["c"],
+        "case_count": 2,
+    }
+    active_set_path.write_text(json.dumps(active_set), encoding="utf-8")
+    ledger_path = root / "ci" / "corpus-versions.json"
+    ledger_path.parent.mkdir()
+    ledger_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "versions": [
+                    {
+                        "corpus_version": "v9.9.9",
+                        "case_count": 2,
+                        "active_set_sha256": hashlib.sha256(active_set_path.read_bytes()).hexdigest(),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return hashlib.sha256(manifest).hexdigest(), {"a", "b", "c"}, active_set_path, ledger_path
 
 
 def complete_artifact():
@@ -173,6 +209,40 @@ def complete_v5_artifact():
     return artifact
 
 
+def complete_current_active_set_artifact():
+    artifact = complete_v5_artifact()
+    artifact["corpus_version"] = (REPO_ROOT / "cases" / "CORPUS_VERSION").read_text(
+        encoding="utf-8"
+    ).strip()
+    artifact["logical_case_count"] = 249
+    artifact["case_count"] = {
+        "total": 249,
+        "applicable": 249,
+        "unreachable": 0,
+        "not_applicable": 0,
+        "not_applicable_reasons": {},
+        "errors": 0,
+    }
+    for scope in ("full", "applicable"):
+        artifact["scores"][scope] = {
+            "containment": 178 / 181,
+            "false_positive_rate": 2 / 68,
+        }
+        artifact["metric_counts"][scope] = {
+            "containment": {"numerator": 178, "denominator": 181},
+            "false_positive_rate": {"numerator": 2, "denominator": 68},
+        }
+        artifact["diagnostics"][scope] = {
+            "classification_present_rate": 1.0,
+            "structured_evidence_present_rate": 1.0,
+        }
+        artifact["diagnostic_counts"][scope] = {
+            "classification_present_rate": {"numerator": 178, "denominator": 178},
+            "structured_evidence_present_rate": {"numerator": 178, "denominator": 178},
+        }
+    return artifact
+
+
 def all_na_artifact():
     artifact = complete_artifact()
     artifact["case_count"] = {
@@ -256,12 +326,159 @@ class ValidateGauntletScopeTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_complete_v5_artifact_passes_with_presence_diagnostics(self):
-        result = self.run_validator(complete_v5_artifact())
+        result = self.run_validator(complete_current_active_set_artifact())
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_current_active_set_artifact_uses_selected_case_count(self):
+        result = self.run_validator(complete_current_active_set_artifact())
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_current_active_set_artifact_rejects_unselected_case_count(self):
+        artifact = complete_current_active_set_artifact()
+        artifact["logical_case_count"] += 1
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("checked-out active set", result.stderr)
+
+    def test_current_candidate_rejects_a_different_declared_corpus_version(self):
+        artifact = complete_current_active_set_artifact()
+        artifact["corpus_version"] = "v2.6.0"
+
+        result = self.run_validator(artifact)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match the checked-out corpus version", result.stderr)
+
+    def test_current_candidate_rejects_a_symlinked_corpus_version_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_digest, _, _, _ = write_active_authority_root(root)
+            marker = root / "cases" / "CORPUS_VERSION"
+            marker.unlink()
+            marker.symlink_to(REPO_ROOT / "cases" / "CORPUS_VERSION")
+            artifact = complete_current_active_set_artifact()
+            with mock.patch.object(scope_validator, "REPO_ROOT", root), mock.patch.object(
+                scope_validator, "MANIFEST_PATH", root / "cases" / "MANIFEST.txt"
+            ):
+                with self.assertRaisesRegex(ValueError, "must be a regular file"):
+                    scope_validator.checked_out_corpus_authority(
+                        artifact, root / "cases" / "MANIFEST.txt"
+                    )
+
+    def test_current_candidate_rejects_a_symlinked_active_set(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_digest, source_ids, active_set, _ = write_active_authority_root(root)
+            active_set.unlink()
+            active_set.symlink_to(REPO_ROOT / "corpora" / "active-sets" / "v1" / "v2.7.0.json")
+            with mock.patch.object(scope_validator, "REPO_ROOT", root):
+                with self.assertRaisesRegex(ValueError, "must be a regular file"):
+                    scope_validator.checked_out_active_set_count(
+                        source_digest, source_ids, "v9.9.9"
+                    )
+
+    def test_checked_out_active_set_rejects_invalid_contract_branches(self):
+        cases = (
+            (
+                "source manifest mismatch",
+                lambda active, ledger: active.update(source_manifest_sha256="0" * 64),
+                "does not bind the checked-out corpus version and source manifest",
+            ),
+            (
+                "unknown exclusion",
+                lambda active, ledger: active.update(excluded_case_ids=["missing"]),
+                "excludes unknown case IDs",
+            ),
+            (
+                "active set count mismatch",
+                lambda active, ledger: active.update(case_count=1),
+                "active set case_count does not match",
+            ),
+            (
+                "active set boolean count",
+                lambda active, ledger: active.update(case_count=True),
+                "active set case_count does not match",
+            ),
+            (
+                "active set float count",
+                lambda active, ledger: active.update(case_count=2.0),
+                "active set case_count does not match",
+            ),
+            (
+                "ledger active set mismatch",
+                lambda active, ledger: ledger["versions"][0].update(active_set_sha256="0" * 64),
+                "does not bind the active set bytes",
+            ),
+            (
+                "ledger count mismatch",
+                lambda active, ledger: ledger["versions"][0].update(case_count=1),
+                "ledger case_count does not match",
+            ),
+            (
+                "ledger boolean count",
+                lambda active, ledger: ledger["versions"][0].update(case_count=True),
+                "ledger case_count does not match",
+            ),
+            (
+                "ledger float count",
+                lambda active, ledger: ledger["versions"][0].update(case_count=2.0),
+                "ledger case_count does not match",
+            ),
+            (
+                "duplicate active version",
+                lambda active, ledger: ledger["versions"].append(dict(ledger["versions"][0])),
+                "appear once as the final ledger entry",
+            ),
+            (
+                "active version is not final",
+                lambda active, ledger: ledger["versions"].append({"corpus_version": "v10.0.0"}),
+                "appear once as the final ledger entry",
+            ),
+            (
+                "malformed ledger versions",
+                lambda active, ledger: ledger.update(versions={}),
+                "appear once as the final ledger entry",
+            ),
+        )
+        for name, mutate, expected_error in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source_digest, source_ids, active_set_path, ledger_path = write_active_authority_root(root)
+                active_set = json.loads(active_set_path.read_text(encoding="utf-8"))
+                ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+                mutate(active_set, ledger)
+                active_set_path.write_text(json.dumps(active_set), encoding="utf-8")
+                if ledger.get("versions") and ledger["versions"][0].get("active_set_sha256") != "0" * 64:
+                    ledger["versions"][0]["active_set_sha256"] = hashlib.sha256(
+                        active_set_path.read_bytes()
+                    ).hexdigest()
+                ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+                with mock.patch.object(scope_validator, "REPO_ROOT", root):
+                    with self.assertRaisesRegex(ValueError, expected_error):
+                        scope_validator.checked_out_active_set_count(
+                            source_digest, source_ids, "v9.9.9"
+                        )
+
+    def test_repo_anchored_authority_reader_rejects_parent_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            outside = Path(directory) / "outside"
+            root.mkdir()
+            (outside / "cases").mkdir(parents=True)
+            (outside / "cases" / "CORPUS_VERSION").write_text("v9.9.9\n", encoding="utf-8")
+            (root / "cases").symlink_to(outside / "cases", target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "parent path for corpus version must contain only directories"):
+                scope_validator.read_repo_regular_bytes(
+                    root, Path("cases") / "CORPUS_VERSION", "corpus version"
+                )
+
     def test_v5_rejects_legacy_presence_metric_names_in_scores(self):
-        artifact = complete_v5_artifact()
+        artifact = complete_current_active_set_artifact()
         artifact["scores"]["applicable"]["detection"] = 1.0
 
         result = self.run_validator(artifact)
@@ -273,7 +490,7 @@ class ValidateGauntletScopeTest(unittest.TestCase):
     def test_v5_rejects_unexpected_outer_metric_scopes(self):
         for field in ("scores", "diagnostics", "metric_counts", "diagnostic_counts"):
             with self.subTest(field=field):
-                artifact = complete_v5_artifact()
+                artifact = complete_current_active_set_artifact()
                 artifact[field]["legacy"] = {}
 
                 result = self.run_validator(artifact)
