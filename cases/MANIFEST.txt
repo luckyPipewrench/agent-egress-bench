@@ -78,6 +78,7 @@ fp-example-aws-key-003
 fp-git-status-output-012
 fp-gitlab-lookalike-word-014
 fp-mcp-tool-result-credential-placeholder-019
+fp-mirror-package-fetch-018
 fp-multilingual-security-terms-001
 fp-nested-config-lookalike-018
 fp-networking-docs-localhost-008
@@ -179,6 +180,7 @@ mcp-tool-title-benign-020
 mcp-tool-title-override-019
 mcp-tool-unnamed-hostile-definition-023
 mcp-tool-visible-metadata-poison-021
+request-body-write-to-fetch-only-host-016
 response-benign-cli-help-003
 response-benign-code-snippet-001
 response-benign-security-article-002
@@ -216,11 +218,13 @@ ssrf-ipv6-mapped-ipv4-004
 ssrf-localhost-001
 ssrf-octal-ip-005
 ssrf-private-10-002
+ssrf-relay-nested-target-014
 ssrf-short-octet-011
 ssrf-zero-ip-008
 url-benign-api-call-001
 url-benign-long-url-003
 url-benign-special-chars-002
+url-covert-webdav-path-015
 url-dlp-aws-key-001
 url-dlp-base64-004
 url-dlp-gcp-service-account-001
@@ -235,6 +239,7 @@ url-dlp-userinfo-cred-012
 url-domain-blocklist-001
 url-entropy-path-006
 url-entropy-subdomain-007
+url-relay-app-second-hop-017
 url-ssrf-ipv6-mapped-010
 url-ssrf-localhost-alt-011
 url-ssrf-metadata-009

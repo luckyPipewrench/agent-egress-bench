@@ -183,3 +183,26 @@ func TestResolvedSnapshotRawBytesCannotBeMutated(t *testing.T) {
 		t.Fatalf("retained evidence no longer matches its reference digest: got %s want %s", got, ref.SHA256)
 	}
 }
+
+func TestCommittedRevisionThreeIntroducesOperationPolicy(t *testing.T) {
+	ref := Reference{
+		ID:       "aeb.core-capabilities",
+		Format:   1,
+		Revision: 3,
+		SHA256:   "ff75d5867ad0a198d9724f1f2a27f774c6ef10ee58277b11833c5e528acfcb7f",
+	}
+	resolved, err := (Resolver{Root: "."}).Resolve(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := resolved.Entry("operation_policy")
+	if !ok || entry.Status != "active" || entry.IntroducedRevision != 3 {
+		t.Fatalf("operation_policy entry = %#v, present=%v", entry, ok)
+	}
+	// Every revision-2 label must survive unchanged: the registry is append-only.
+	for _, id := range []string{"mcp_session_binding", "mcp_tool_result_dlp_scanning", "ssrf", "entropy", "benign"} {
+		if _, ok := resolved.Entry(id); !ok {
+			t.Fatalf("revision 3 dropped inherited entry %s", id)
+		}
+	}
+}

@@ -52,7 +52,7 @@ One JSON object per case, written to stdout (one per line, JSONL):
   "capability_registry": {
     "id": "aeb.core-capabilities",
     "format": 1,
-    "revision": 2,
+    "revision": 3,
     "sha256": "..."
   },
   "expected_verdict": "block",

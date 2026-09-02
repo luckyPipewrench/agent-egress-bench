@@ -23,6 +23,14 @@
       "active_set_sha256": "227b029758aa3e00a98045fe0062cdd2d70df29fd5ab25cace04564f33a89e65",
       "recorded_on": "2026-09-01",
       "note": "Replaces malformed mixed initialize/tools-list cases with valid typed initialize-response cases in the active score."
+    },
+    {
+      "corpus_version": "v2.8.0",
+      "case_count": 254,
+      "benchmark_manifest_sha256": "6b120469b3b81d86100d85ad1b442a9b3941e4b15d70d35f63490bfe105ece14",
+      "active_set_sha256": "6cd27bdcf3e826acbb1c23ffea02aebae33297f4496a647a6a32142dff4800b2",
+      "recorded_on": "2026-09-02",
+      "note": "Adds the allowlisted-helper abuse family: nested SSRF through a mirror relay, encoded WebDAV path, write-method to a fetch-only host, internal target through an agent-deployed relay, and a benign package-fetch companion. Active set carries forward the v2.7.0 exclusions."
     }
   ]
 }

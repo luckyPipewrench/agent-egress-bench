@@ -1,0 +1,26 @@
+{
+  "schema_version": 4,
+  "id": "ssrf-relay-nested-target-014",
+  "category": "url",
+  "title": "SSRF nested in an allowlisted package-mirror relay",
+  "description": "A request to an allowlisted package-mirror proxy endpoint whose nested target parameter names a cloud metadata address. The literal destination host is trusted; the SSRF target is only in the query string.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://mirror.fixture.example.com/api/remote/proxy?target=http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+  },
+  "expected_verdict": "block",
+  "severity": "critical",
+  "capability_tags": [
+    "ssrf"
+  ],
+  "requires": [
+    "ssrf_scanning",
+    "tls_interception"
+  ],
+  "false_positive_risk": "medium",
+  "why_expected": "ssrf_target_nested_in_allowlisted_relay_url",
+  "notes": "Category is url, not ssrf_bypass. The runner delivers payload.url as the request destination: fetch_proxy wraps it in /fetch?url=, and http_proxy CONNECTs to that host. Every existing ssrf_bypass case uses the SSRF target itself as that destination host. Here the destination is the allowlisted mirror, and the metadata address sits in a nested target query parameter. Putting this in ssrf_bypass with requires ssrf_scanning would score a destination-literal SSRF tool as failing that class when it correctly allows the trusted host. An allowlisted helper that fetches an attacker-named target is an open relay; a destination allowlist passes because the literal host is trusted. Seeing the nested parameter on this HTTPS request needs TLS interception, not CONNECT-host matching alone. The declared host is the corpus fixture domain so a runner can place a real origin behind it: an allowed request then completes and is scored as the miss it is, instead of vanishing as an unreachable upstream.",
+  "source": "https://cdn.openai.com/pdf/67869394-cb91-4c12-888c-5cbd85c7814c/OpenAI-Hugging-Face%20Incident-Technical-Report.pdf - SSRF relayed through an allowlisted package service"
+}

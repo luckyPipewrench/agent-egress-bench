@@ -125,6 +125,11 @@ dns:
       - 127.0.0.1
     allowed-chat-webhook.test:
       - 127.0.0.1
+    # Fetch-only package registry stand-in for the allowlisted-helper write cases.
+    # Resolves to loopback like the other allowed-channel hosts; trusted_domains
+    # exempts only SSRF on the hostname, never DLP, entropy, or method policy.
+    allowed-package-registry.test:
+      - 127.0.0.1
     # Resolve the benign agent-card hostnames to a public IP so private-IP SSRF
     # checks evaluate them (public -> allowed) instead of failing closed on an
     # unresolvable synthetic host. A real deployment's cards use resolvable hosts.
@@ -136,6 +141,7 @@ trusted_domains:
   - aeb-fixture.test
   - allowed-code-api.test
   - allowed-chat-webhook.test
+  - allowed-package-registry.test
 
 dlp:
   patterns:
@@ -185,6 +191,21 @@ dlp:
     - name: "Basic Authorization Credentials"
       regex: '(?i)\bBasic\s+[A-Za-z0-9+/]{16,}={0,2}\b'
       severity: high
+
+# The corpus defines allowed-package-registry.test as a fetch-only mirror. A
+# deployment that allowlists a registry for installs declares the same rail:
+# anything other than a read to that host is refused. This is operator intent
+# about one host, not a scanner heuristic, which is why it lives here rather
+# than in a detector default.
+request_policy:
+  enabled: true
+  rules:
+    - name: fetch-only-registry
+      action: block
+      route:
+        hosts: ["allowed-package-registry.test"]
+        methods: ["POST", "PUT", "PATCH", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"]
+      reason: "package registry is allowlisted for fetch only"
 
 mcp_input_scanning:
   enabled: true
