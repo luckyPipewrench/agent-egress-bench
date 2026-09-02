@@ -624,6 +624,20 @@ class ProvenanceBuilderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must be a regular file", result.stderr)
 
+    def test_manifest_parent_symlink_is_rejected(self):
+        cases_path = self.root / "cases"
+        backing_path = self.root / "cases-backing"
+        cases_path.replace(backing_path)
+        cases_path.symlink_to(backing_path.name, target_is_directory=True)
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "parent path for checked-out corpus manifest must contain only directories",
+            result.stderr,
+        )
+
     def test_corpus_version_ledger_symlink_is_rejected(self):
         self.make_active_set_fixture()
         ledger_path = self.root / "ci" / "corpus-versions.json"

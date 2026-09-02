@@ -283,19 +283,36 @@ def load_object(path):
     return value
 
 
-def read_regular_bytes(path, label, allow_missing=False):
+def read_repo_regular_bytes(repo_root, relative_path, label, allow_missing=False):
     if not hasattr(os, "O_NOFOLLOW"):
         raise ValueError(f"cannot safely open {label}: O_NOFOLLOW is unavailable")
+    relative_path = Path(relative_path)
+    if relative_path.is_absolute() or not relative_path.parts or any(
+        part in {"", ".", ".."} for part in relative_path.parts
+    ):
+        raise ValueError(f"invalid repository-relative path for {label}")
     close_on_exec = getattr(os, "O_CLOEXEC", 0)
-    directory_flags = os.O_RDONLY | close_on_exec | getattr(os, "O_DIRECTORY", 0)
+    directory_flags = (
+        os.O_RDONLY
+        | close_on_exec
+        | getattr(os, "O_DIRECTORY", 0)
+        | os.O_NOFOLLOW
+    )
     try:
-        directory = os.open(path.parent, directory_flags)
+        directory = os.open(repo_root, directory_flags)
     except OSError as exc:
-        raise ValueError(f"cannot open parent directory for {label}: {exc}") from exc
+        raise ValueError(f"cannot anchor repository path for {label}: {exc}") from exc
     try:
+        for component in relative_path.parts[:-1]:
+            try:
+                child = os.open(component, directory_flags, dir_fd=directory)
+            except OSError as exc:
+                raise ValueError(f"parent path for {label} must contain only directories") from exc
+            os.close(directory)
+            directory = child
         try:
             descriptor = os.open(
-                path.name,
+                relative_path.name,
                 os.O_RDONLY | close_on_exec | os.O_NOFOLLOW,
                 dir_fd=directory,
             )
@@ -318,8 +335,8 @@ def read_regular_bytes(path, label, allow_missing=False):
             os.close(descriptor)
 
 
-def load_regular_object(path, label):
-    value = json.loads(read_regular_bytes(path, label))
+def load_repo_regular_object(repo_root, relative_path, label):
+    value = json.loads(read_repo_regular_bytes(repo_root, relative_path, label))
     if not isinstance(value, dict):
         raise ValueError(f"{label} must contain a JSON object")
     return value
@@ -556,8 +573,8 @@ def read_results(path):
 def load_manifest(repo_root, run_dir):
     manifest_path = run_dir / RAW_EVIDENCE["corpus_manifest"]
     manifest = manifest_path.read_bytes()
-    checked_out_manifest = read_regular_bytes(
-        repo_root / "cases" / "MANIFEST.txt", "checked-out corpus manifest"
+    checked_out_manifest = read_repo_regular_bytes(
+        repo_root, "cases/MANIFEST.txt", "checked-out corpus manifest"
     )
     if manifest != checked_out_manifest:
         raise ValueError("retained corpus manifest does not match the checked-out corpus manifest")
@@ -571,8 +588,9 @@ def load_manifest(repo_root, run_dir):
 
 
 def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
-    marker_path = repo_root / "cases" / "CORPUS_VERSION"
-    marker_bytes = read_regular_bytes(marker_path, "corpus version marker", allow_missing=True)
+    marker_bytes = read_repo_regular_bytes(
+        repo_root, "cases/CORPUS_VERSION", "corpus version marker", allow_missing=True
+    )
     if marker_bytes is None:
         return manifest_ids
     marker = marker_bytes.decode("utf-8").strip()
@@ -581,8 +599,10 @@ def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", marker):
         raise ValueError("corpus version marker must be a v-prefixed semantic version")
 
-    active_set_path = repo_root / "corpora" / "active-sets" / "v1" / f"{marker}.json"
-    active_set_bytes = read_regular_bytes(active_set_path, f"active set {active_set_path}")
+    active_set_relative = Path("corpora") / "active-sets" / "v1" / f"{marker}.json"
+    active_set_bytes = read_repo_regular_bytes(
+        repo_root, active_set_relative, f"active set {active_set_relative}"
+    )
     active_set = json.loads(active_set_bytes)
     required_keys = {
         "schema_version",
@@ -622,8 +642,8 @@ def load_active_case_ids(repo_root, summary, manifest, manifest_ids):
             f"active set records case_count={case_count}, selected {len(selected_ids)}"
         )
 
-    ledger = load_regular_object(
-        repo_root / "ci" / "corpus-versions.json", "corpus version ledger"
+    ledger = load_repo_regular_object(
+        repo_root, "ci/corpus-versions.json", "corpus version ledger"
     )
     versions = ledger.get("versions")
     if not isinstance(versions, list) or not versions:
