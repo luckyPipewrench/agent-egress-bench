@@ -9,7 +9,8 @@ import sys
 from pathlib import Path
 
 MAKE_RULE = re.compile(r"^([A-Za-z0-9_.-]+)\s*:(?![=])\s*(.*)$")
-REPO_PATH = re.compile(r"(?<![A-Za-z0-9_.-])((?:scripts|ci)/[A-Za-z0-9_./-]+)")
+REPO_PATH = re.compile(r"(?<![A-Za-z0-9_.-])((?:scripts|ci|examples)/[A-Za-z0-9_./-]+)")
+MAKE_COMMAND = re.compile(r"\bmake(?:\s+--[^\s]+)*\s+([A-Za-z0-9_.-]+)")
 PRODUCT_RUNNER = re.compile(r"^run-[A-Za-z0-9_-]+-gauntlet\.sh$")
 MANDATORY_WORKFLOWS = (".github/workflows/validate.yaml", ".github/workflows/release.yaml")
 
@@ -32,9 +33,9 @@ def make_graph(source: str) -> tuple[dict[str, list[str]], dict[str, str]]:
     return dependencies, recipes
 
 
-def preflight_text(makefile: str) -> str:
+def make_targets_text(makefile: str, roots: set[str]) -> str:
     dependencies, recipes = make_graph(makefile)
-    pending = ["preflight"]
+    pending = list(roots)
     visited: set[str] = set()
     chunks: list[str] = []
     while pending:
@@ -49,6 +50,10 @@ def preflight_text(makefile: str) -> str:
 
 def referenced_paths(source: str) -> set[str]:
     return {match.group(1).rstrip(".,;:'\"") for match in REPO_PATH.finditer(source)}
+
+
+def workflow_make_roots(source: str) -> set[str]:
+    return {match.group(1) for match in MAKE_COMMAND.finditer(source)}
 
 
 def has_product_acceptance_shape(value: object) -> bool:
@@ -68,11 +73,16 @@ def has_product_acceptance_shape(value: object) -> bool:
 
 def violations(root: Path) -> list[str]:
     makefile = root / "Makefile"
-    sources = [preflight_text(makefile.read_text(encoding="utf-8"))]
+    workflow_sources: list[str] = []
     for relative in MANDATORY_WORKFLOWS:
         path = root / relative
         if path.exists():
-            sources.append(path.read_text(encoding="utf-8"))
+            workflow_sources.append(path.read_text(encoding="utf-8"))
+
+    make_roots = {"preflight"}
+    for source in workflow_sources:
+        make_roots.update(workflow_make_roots(source))
+    sources = [make_targets_text(makefile.read_text(encoding="utf-8"), make_roots), *workflow_sources]
 
     pending = set().union(*(referenced_paths(source) for source in sources))
     visited: set[str] = set()

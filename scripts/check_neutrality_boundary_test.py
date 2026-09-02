@@ -13,6 +13,7 @@ class NeutralityBoundaryTest(unittest.TestCase):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         (root / "scripts").mkdir()
         (root / "ci").mkdir()
+        (root / "examples/vendor").mkdir(parents=True)
         (root / ".github/workflows").mkdir(parents=True)
         (root / ".github/workflows/validate.yaml").write_text("run: make preflight\n", encoding="utf-8")
         (root / ".github/workflows/release.yaml").write_text("run: make release\n", encoding="utf-8")
@@ -34,6 +35,30 @@ class NeutralityBoundaryTest(unittest.TestCase):
             encoding="utf-8",
         )
         (root / "scripts/check-score.sh").write_text(
+            "./scripts/run-vendor-gauntlet.sh\n", encoding="utf-8"
+        )
+        (root / "scripts/run-vendor-gauntlet.sh").write_text("exit 0\n", encoding="utf-8")
+        self.assertEqual(
+            ["mandatory validation reaches product runner scripts/run-vendor-gauntlet.sh"],
+            violations(root),
+        )
+
+    def test_reference_adapter_entrypoint_is_traversed_without_product_policy(self) -> None:
+        root = self.fixture()
+        (root / "Makefile").write_text(
+            "preflight: test-adapter\ntest-adapter:\n\t@./examples/vendor/bridge_test.sh\n",
+            encoding="utf-8",
+        )
+        (root / "examples/vendor/bridge_test.sh").write_text("exit 0\n", encoding="utf-8")
+        self.assertEqual([], violations(root))
+
+    def test_release_workflow_make_target_reaching_product_runner_fails(self) -> None:
+        root = self.fixture()
+        (root / "Makefile").write_text(
+            "preflight:\nrelease:\n\t@./examples/vendor/release.sh\n",
+            encoding="utf-8",
+        )
+        (root / "examples/vendor/release.sh").write_text(
             "./scripts/run-vendor-gauntlet.sh\n", encoding="utf-8"
         )
         (root / "scripts/run-vendor-gauntlet.sh").write_text("exit 0\n", encoding="utf-8")
