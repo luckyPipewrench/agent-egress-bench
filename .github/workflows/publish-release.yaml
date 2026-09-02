@@ -1,0 +1,64 @@
+name: Publish verified release draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing verified draft tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind publication to the checked-out tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" == v* ]]
+          tag_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          [[ "$tag_commit" == "$(git rev-parse HEAD)" ]]
+
+      - name: Download the existing draft assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          gh release download "$RELEASE_TAG" --dir dist/release
+
+      - name: Re-verify the downloaded release and every attestation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .
+          for asset in dist/release/*; do
+            gh attestation verify "$asset" --repo luckyPipewrench/agent-egress-bench
+          done
+
+      - name: Publish the exact owned draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release_publish.py --tag "$RELEASE_TAG" --dist dist/release --finalize

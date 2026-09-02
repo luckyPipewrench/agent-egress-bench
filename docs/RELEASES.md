@@ -13,9 +13,9 @@ Each release contains:
 - One commit-pinned schema catalog and schema bundle. The bundle contains the
   catalog and every schema it names, so a vendor can validate schema bytes
   after download without a network connection.
-- `release-notes.md`, used as the GitHub Release body. It lists every schema
-  identity and version carried by that release and links to the offline
-  validation walkthrough and adapter quickstarts.
+- `release-notes.md`, used as the GitHub Release body. It summarizes the corpus,
+  runner, scoring contract, verification commands, and downloadable schema
+  inventory without repeating every machine-readable schema row on the page.
 - Archives for Linux, macOS, and Windows on amd64 and arm64. Each one carries
   both `aeb-gauntlet`, which runs the corpus, and `aeb-validate`, which checks a
   result against the contracts. The release verifier refuses an archive missing
@@ -114,8 +114,14 @@ The template profile names no real product, so that run exercises the corpus and
 
 A run that reaches no target reports `measurement_status: incomplete`, and the score covers only the cases the adapter actually routed. Pass `--require-complete` to exit nonzero on an incomplete measurement instead of reading a partial run as a result.
 
+## Release publication boundary
+
+A version tag builds and attests the archives, publishes and anonymously verifies the digest-pinned runner image, and creates a verified draft GitHub Release. It does not make the release public.
+
+Publishing is a separate manual workflow. That workflow checks out the tag, downloads the existing draft assets, verifies the release package and every GitHub attestation again, and only then publishes the owned draft. It refuses to create and publish a new release in one invocation.
+
 ## Build without publishing
 
-`make release-snapshot` builds the archive matrix, corpus data bundle, schema catalog and bundle, checksums, and identity verification under `dist/release`. It creates no tag and no GitHub release. The command requires a pinned GoReleaser installation. The release workflow installs GoReleaser v2.17.1 and runs this snapshot path for manual workflow dispatches.
+`make release-snapshot` builds the archive matrix, corpus data bundle, schema catalog and bundle, checksums, and identity verification under `dist/release`. It creates no tag and no GitHub release. The command requires a pinned GoReleaser installation. A manual release-workflow dispatch also builds a local runner image, binds its identity into the final asset set, and rehearses draft validation without pushing an image or calling the GitHub Release API.
 
 Tag pushes matching `v*` run the same gates against the tag, attach provenance to every release asset, upload the generated artifacts for inspection, and publish a draft only after those checks pass. If the publish job fails after creating a draft, rerunning that workflow resumes the existing draft and refuses to overwrite a published release. The workflow stops before publication when the release identity, corpus data, schema contract, archive layout, or checksum verification disagrees.

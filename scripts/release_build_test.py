@@ -700,6 +700,22 @@ class ReleaseBuildTest(unittest.TestCase):
             )
             self.assertEqual(entry["sha256"], hashlib.sha256(contents[entry["path"]]).hexdigest())
 
+    def test_release_notes_summarize_the_release_without_dumping_schema_rows(self) -> None:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        self.write_runner_archives(dist, self.identity.read_bytes(), identity)
+        notes = (dist / "release-notes.md").read_text(encoding="utf-8")
+        catalog = json.loads(next(dist.glob("*_schema-catalog.json")).read_text(encoding="utf-8"))
+
+        self.assertIn(f"corpus `{identity['corpus']['version']}` ({identity['corpus']['case_count']} cases)", notes)
+        self.assertIn("## Verify downloads", notes)
+        self.assertIn("sha256sum -c checksums.txt", notes)
+        self.assertLess(len(notes.splitlines()), 30)
+        for entry in catalog["schemas"]:
+            self.assertNotIn(entry["$id"], notes)
+
     def test_download_verifier_rejects_a_release_without_schema_bundle(self) -> None:
         self.prepare()
         dist = self.root / "dist"

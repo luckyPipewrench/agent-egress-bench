@@ -36,13 +36,32 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Classify the validation scope
+        id: scope
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) validation_base="$PR_BASE_SHA" ;;
+            push) validation_base="$PUSH_BEFORE_SHA" ;;
+            workflow_dispatch) validation_base="$(git merge-base "origin/$DEFAULT_BRANCH" HEAD)" ;;
+            *) echo "unsupported validation event: $GITHUB_EVENT_NAME" >&2; exit 1 ;;
+          esac
+          python3 scripts/ci_scope.py --base "$validation_base" --github-output "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.scope.outputs.workflow_only != 'true'
         with:
           # runner/go.mod requires Go 1.25; this toolchain also builds validate
           # and the receipt generator covered by the shared local preflight.
           go-version: "1.25"
 
       - name: Install pinned GoReleaser for release archive integration
+        if: steps.scope.outputs.workflow_only != 'true'
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
@@ -50,10 +69,16 @@ jobs:
           install-only: true
 
       - name: Run local preflight gate
+        if: steps.scope.outputs.workflow_only != 'true'
         run: make preflight
 
       - name: Verify pinned GoReleaser archive layout
+        if: steps.scope.outputs.workflow_only != 'true'
         run: make test-release-snapshot
+
+      - name: Test workflow contracts without rebuilding the corpus
+        if: steps.scope.outputs.workflow_only == 'true'
+        run: make test-workflows
 
       - name: Enforce append-only Gauntlet history
         shell: bash

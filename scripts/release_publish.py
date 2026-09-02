@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish one verified release directory only into its own draft release."""
+"""Prepare or finalize one verified release directory through its owned draft."""
 
 from __future__ import annotations
 
@@ -318,7 +318,7 @@ def _require_stable_during_read(descriptor: int, before: os.stat_result, copied:
         fail(f"{label} was written while it was being read")
 
 
-def publish(tag: str, dist: Path, gh: str) -> None:
+def publish(tag: str, dist: Path, gh: str, *, finalize: bool = False, dry_run: bool = False) -> None:
     sources = release_assets(dist)
     expected_names = [asset.name for asset in sources]
     with contextlib.ExitStack() as stack:
@@ -327,19 +327,38 @@ def publish(tag: str, dist: Path, gh: str) -> None:
         # the notes can describe identity A while the upload carries identity B.
         snapshot_dir, assets = _verified_asset_snapshot(sources, stack)
         notes, notes_text = _verified_notes_snapshot(snapshot_dir, stack)
-        _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text)
+        if dry_run:
+            return
+        _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text, finalize=finalize)
 
 
-def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text) -> None:
+def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text, *, finalize=False) -> None:
     release = inspect_draft(gh, tag)
     asset_arguments = [str(asset) for asset in assets]
-    if release is None:
-        command(gh, "release", "create", tag, *asset_arguments, "--title", tag, "--verify-tag", "--draft", "--notes-file", str(notes))
+    if finalize:
+        if release is None:
+            fail(f"refusing to publish {tag} without an existing owned draft")
+        require_owned_draft(release, tag)
+    elif release is None:
+        command(
+            gh,
+            "release",
+            "create",
+            tag,
+            *asset_arguments,
+            "--title",
+            tag,
+            "--verify-tag",
+            "--draft",
+            "--notes-file",
+            str(notes),
+        )
     else:
         require_owned_draft(release, tag)
         command(gh, "release", "upload", tag, *asset_arguments, "--clobber")
 
-    command(gh, "release", "edit", tag, "--notes-file", str(notes))
+    if not finalize:
+        command(gh, "release", "edit", tag, "--notes-file", str(notes))
 
     release = inspect_draft(gh, tag)
     if release is None:
@@ -360,6 +379,8 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # into "looks close enough", which is not what a published release body needs.
     if not isinstance(body, str) or body != notes_text:
         fail(f"draft {tag} body does not match the verified release notes")
+    if not finalize:
+        return
     # One update sets the verified body AND clears the draft. Doing those separately leaves a window
     # in which another editor can replace the body between the check and publication.
     command(gh, "release", "edit", tag, "--notes-file", str(notes), "--draft=false")
@@ -434,9 +455,21 @@ def main() -> int:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--dist", type=Path, required=True)
     parser.add_argument("--gh", default="gh")
+    parser.add_argument(
+        "--finalize",
+        action="store_true",
+        help="publish an existing owned draft after re-verifying its downloaded assets",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="verify and bind the local release directory without calling GitHub",
+    )
     args = parser.parse_args()
+    if args.finalize and args.dry_run:
+        parser.error("--finalize and --dry-run are mutually exclusive")
     try:
-        publish(args.tag, args.dist, args.gh)
+        publish(args.tag, args.dist, args.gh, finalize=args.finalize, dry_run=args.dry_run)
     except PublishError as exc:
         print(f"release publication failed: {exc}", file=sys.stderr)
         return 1

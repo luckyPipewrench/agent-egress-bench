@@ -34,6 +34,8 @@ class ReleasePublishFixture(unittest.TestCase):
         identity = {
             "release": {"version": "1.0.0", "tag": "v1.0.0"},
             "source": {"commit": "0" * 40},
+            "corpus": {"version": "v1.0.0", "case_count": 1},
+            "runner": {"runner_version": "1.0.0", "scoring_version": "1.0"},
         }
         catalog = {
             "format": 1,
@@ -115,9 +117,20 @@ class ReleasePublishFixture(unittest.TestCase):
     def calls(self) -> list[list[str]]:
         return json.loads(self.calls_path.read_text(encoding="utf-8")) if self.calls_path.exists() else []
 
-    def publish(self) -> subprocess.CompletedProcess[str]:
+    def write_owned_draft(self) -> None:
+        self.write_state(
+            body=(self.dist / "release-notes.md").read_text(encoding="utf-8"),
+            assets=sorted(path.name for path in self.dist.iterdir() if path.is_file()),
+        )
+
+    def publish(self, *, finalize: bool = False, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
+        args = [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(self.gh)]
+        if finalize:
+            args.append("--finalize")
+        if dry_run:
+            args.append("--dry-run")
         return subprocess.run(
-            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(self.gh)],
+            args,
             text=True,
             capture_output=True,
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
@@ -163,11 +176,11 @@ class ReleasePublishTest(ReleasePublishFixture):
         self.assertIn("does not match the notes generated", result.stderr)
         self.assertEqual([], self.calls())
 
-    def test_creates_marked_draft_with_exact_assets_before_publication(self) -> None:
+    def test_creates_marked_draft_with_exact_assets(self) -> None:
         result = self.publish()
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
-        self.assertFalse(state["isDraft"])
+        self.assertTrue(state["isDraft"])
         self.assertIn("agent-egress-bench-release-workflow-v1", state["body"])
         self.assertEqual(
             [
@@ -179,6 +192,23 @@ class ReleasePublishTest(ReleasePublishFixture):
             ],
             sorted(asset["name"] for asset in state["assets"]),
         )
+
+    def test_dry_run_verifies_without_calling_github(self) -> None:
+        result = self.publish(dry_run=True)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_finalize_refuses_to_create_and_publish_in_one_invocation(self) -> None:
+        result = self.publish(finalize=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("without an existing owned draft", result.stderr)
+        self.assertFalse(self.state_path.exists())
+
+    def test_finalize_publishes_an_existing_exact_owned_draft(self) -> None:
+        self.write_owned_draft()
+        result = self.publish(finalize=True)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertFalse(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"])
 
     def test_unrelated_draft_is_refused_before_upload_or_publication(self) -> None:
         self.write_state(body="draft written elsewhere", assets=["extra.bin"])
@@ -324,7 +354,7 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         # The fourth read is the withdrawal confirmation. A zero exit from the edit says the
         # command was accepted, not that the release came down, so the state is read back.
         withdrawn = {"isDraft": True, "body": notes, "assets": [{"name": "archive.tar.gz"}]}
-        releases = iter((None, draft, malformed_public, withdrawn))
+        releases = iter((draft, draft, malformed_public, withdrawn))
         calls = []
         original_inspect = release_publish.inspect_draft
         original_command = release_publish.command
@@ -333,7 +363,14 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         try:
             with self.assertRaisesRegex(release_publish.PublishError, "returned to draft"):
                 release_publish._publish_with_notes(
-                    "v1.0.0", self.dist, "gh", assets, ["archive.tar.gz"], self.root / "notes.md", notes
+                    "v1.0.0",
+                    self.dist,
+                    "gh",
+                    assets,
+                    ["archive.tar.gz"],
+                    self.root / "notes.md",
+                    notes,
+                    finalize=True,
                 )
         finally:
             release_publish.inspect_draft = original_inspect
@@ -447,8 +484,19 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
             encoding="utf-8",
         )
         gh.chmod(0o755)
+        self.write_owned_draft()
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--tag",
+                "v1.0.0",
+                "--dist",
+                str(self.dist),
+                "--gh",
+                str(gh),
+                "--finalize",
+            ],
             text=True,
             capture_output=True,
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
@@ -491,8 +539,19 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
             encoding="utf-8",
         )
         gh.chmod(0o755)
+        self.write_owned_draft()
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--tag",
+                "v1.0.0",
+                "--dist",
+                str(self.dist),
+                "--gh",
+                str(gh),
+                "--finalize",
+            ],
             text=True,
             capture_output=True,
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
@@ -546,8 +605,19 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
             encoding="utf-8",
         )
         gh.chmod(0o755)
+        self.write_owned_draft()
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--tag",
+                "v1.0.0",
+                "--dist",
+                str(self.dist),
+                "--gh",
+                str(gh),
+                "--finalize",
+            ],
             text=True,
             capture_output=True,
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
@@ -605,8 +675,19 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
             encoding="utf-8",
         )
         gh.chmod(0o755)
+        self.write_owned_draft()
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--tag",
+                "v1.0.0",
+                "--dist",
+                str(self.dist),
+                "--gh",
+                str(gh),
+                "--finalize",
+            ],
             text=True,
             capture_output=True,
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},
@@ -652,8 +733,19 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
             encoding="utf-8",
         )
         gh.chmod(0o755)
+        self.write_owned_draft()
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--tag", "v1.0.0", "--dist", str(self.dist), "--gh", str(gh)],
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--tag",
+                "v1.0.0",
+                "--dist",
+                str(self.dist),
+                "--gh",
+                str(gh),
+                "--finalize",
+            ],
             text=True,
             capture_output=True,
             env={"MOCK_GH_STATE": str(self.state_path), "MOCK_GH_CALLS": str(self.calls_path)},

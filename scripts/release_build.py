@@ -618,30 +618,36 @@ def release_catalog_entries(identity: dict[str, Any], catalog_bytes: bytes) -> l
 
 def rendered_release_notes(identity: dict[str, Any], catalog_bytes: bytes) -> bytes:
     """Render the GitHub release body from its checked release catalog."""
-    entries = release_catalog_entries(identity, catalog_bytes)
+    release_catalog_entries(identity, catalog_bytes)
     tag = identity["release"]["tag"]
+    version = identity["release"]["version"]
     commit = identity["source"]["commit"]
+    corpus = identity["corpus"]
+    runner = identity["runner"]
+    catalog_name, bundle_name = schema_asset_names(identity)
     lines = [
         RELEASE_NOTES_MARKER,
         "",
-        "## Schema contracts",
+        f"## Agent Egress Bench {tag}",
         "",
-        f"{tag} carries these schema identities and versions from `{commit}`:",
+        f"This release packages corpus `{corpus['version']}` ({corpus['case_count']} cases), runner `{runner['runner_version']}`, scoring contract `{runner['scoring_version']}`, and the validator from commit `{commit}`.",
+        "",
+        "Platform archives contain `aeb-gauntlet` and `aeb-validate`. The data archive contains the corpus and operator kit. The schema catalog and bundle keep the full versioned contract inventory available without turning this page into a schema listing.",
+        "",
+        "Tagged releases also include `runner-image.ref`, which pins the multi-architecture container image by digest.",
+        "",
+        "## Verify downloads",
+        "",
+        "Download `checksums.txt` with the assets you need, then verify them locally:",
+        "",
+        "```bash",
+        "sha256sum -c checksums.txt",
+        f"gh attestation verify agent-egress-bench_{version}_linux_amd64.tar.gz --repo {REPOSITORY}",
+        "```",
+        "",
+        f"The detailed schema inventory remains in `{catalog_name}`, and `{bundle_name}` supports offline validation. See [Schema identifiers and discovery](https://github.com/{REPOSITORY}/blob/{commit}/docs/SCHEMAS.md) for the validation walkthrough and adapter quickstarts.",
         "",
     ]
-    for entry in sorted(entries, key=lambda entry: entry["path"]):
-        lines.append(f"- `{entry['$id']}` (`{entry['path']}`)")
-    lines.extend(
-        [
-            "",
-            # The commit, not the tag. A snapshot build has the literal tag "snapshot", which is not a
-            # ref a reader can resolve, and a tag can be moved after the fact while a commit cannot.
-            "The release schema catalog contains commit-pinned retrieval URLs and SHA-256 digests. The schema bundle supports offline validation. See [Schema identifiers and discovery](https://github.com/luckyPipewrench/agent-egress-bench/blob/"
-            + commit
-            + "/docs/SCHEMAS.md) for the validation walkthrough and adapter quickstarts.",
-            "",
-        ]
-    )
     return "\n".join(lines).encode("utf-8")
 
 
