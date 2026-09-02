@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -111,8 +112,16 @@ class ReleasePublishFixture(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def asset_state(self, name: str) -> dict[str, str]:
+        path = self.dist / name
+        raw = path.read_bytes() if path.exists() else b""
+        return {"name": name, "id": f"asset-{name}", "digest": f"sha256:{hashlib.sha256(raw).hexdigest()}"}
+
     def write_state(self, *, body: str, assets: list[str], is_draft: bool = True) -> None:
-        self.state_path.write_text(json.dumps({"isDraft": is_draft, "body": body, "assets": [{"name": name} for name in assets]}), encoding="utf-8")
+        self.state_path.write_text(
+            json.dumps({"isDraft": is_draft, "body": body, "assets": [self.asset_state(name) for name in assets]}),
+            encoding="utf-8",
+        )
 
     def calls(self) -> list[list[str]]:
         return json.loads(self.calls_path.read_text(encoding="utf-8")) if self.calls_path.exists() else []
@@ -225,6 +234,18 @@ class ReleasePublishTest(ReleasePublishFixture):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertFalse(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"])
 
+    def test_finalize_refuses_same_name_with_a_different_digest(self) -> None:
+        self.write_owned_draft()
+        state = json.loads(self.state_path.read_text(encoding="utf-8"))
+        state["assets"][0]["digest"] = "sha256:" + "f" * 64
+        self.state_path.write_text(json.dumps(state), encoding="utf-8")
+
+        result = self.publish(finalize=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("digest does not match", result.stderr)
+        self.assertTrue(json.loads(self.state_path.read_text(encoding="utf-8"))["isDraft"])
+
     def test_unrelated_draft_is_refused_before_upload_or_publication(self) -> None:
         self.write_state(body="draft written elsewhere", assets=["extra.bin"])
         result = self.publish()
@@ -253,6 +274,40 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
     real read until later, so this drives the exact window: the gh stand-in replaces the source file
     on disk and only then reads the paths it was handed.
     """
+
+    def test_asset_id_change_during_publication_withdraws_release(self) -> None:
+        import release_publish
+
+        asset = self.dist / "archive.tar.gz"
+        notes = (self.dist / "release-notes.md").read_text(encoding="utf-8")
+        draft = {"isDraft": True, "body": notes, "assets": [self.asset_state(asset.name)]}
+        published = json.loads(json.dumps(draft))
+        published["isDraft"] = False
+        published["assets"][0]["id"] = "replacement-asset"
+        withdrawn = json.loads(json.dumps(published))
+        withdrawn["isDraft"] = True
+        releases = iter((draft, draft, published, withdrawn))
+        calls = []
+        original_inspect = release_publish.inspect_draft
+        original_command = release_publish.command
+        release_publish.inspect_draft = lambda *_: next(releases)
+        release_publish.command = lambda _gh, *args: calls.append(args) or ""
+        try:
+            with self.assertRaisesRegex(release_publish.PublishError, "returned to draft"):
+                release_publish._publish_with_notes(
+                    "v1.0.0",
+                    self.dist,
+                    "gh",
+                    [asset],
+                    [asset.name],
+                    self.dist / "release-notes.md",
+                    notes,
+                    finalize=True,
+                )
+        finally:
+            release_publish.inspect_draft = original_inspect
+            release_publish.command = original_command
+        self.assertIn(("release", "edit", "v1.0.0", "--draft=true"), calls)
 
     def tampering_gh(self) -> Path:
         gh = self.root / "gh-tamper"
@@ -361,14 +416,14 @@ class ReleaseAssetBindingTest(ReleasePublishFixture):
         import release_publish
 
         notes = "<!-- agent-egress-bench-release-workflow-v1 -->\n"
-        assets = [self.root / "archive.tar.gz"]
-        draft = {"isDraft": True, "body": notes, "assets": [{"name": "archive.tar.gz"}]}
+        assets = [self.dist / "archive.tar.gz"]
+        draft = {"isDraft": True, "body": notes, "assets": [self.asset_state("archive.tar.gz")]}
         # GitHub has already made the release public, but its response lacks the asset list the
         # verifier needs. Previously actual_asset_names raised directly and skipped _withdraw.
         malformed_public = {"isDraft": False, "body": notes}
         # The fourth read is the withdrawal confirmation. A zero exit from the edit says the
         # command was accepted, not that the release came down, so the state is read back.
-        withdrawn = {"isDraft": True, "body": notes, "assets": [{"name": "archive.tar.gz"}]}
+        withdrawn = {"isDraft": True, "body": notes, "assets": [self.asset_state("archive.tar.gz")]}
         releases = iter((draft, draft, malformed_public, withdrawn))
         calls = []
         original_inspect = release_publish.inspect_draft

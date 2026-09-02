@@ -118,7 +118,7 @@ A run that reaches no target reports `measurement_status: incomplete`, and the s
 
 A version tag builds and attests the archives, publishes and anonymously verifies the digest-pinned runner image, and creates a verified draft GitHub Release. It does not make the release public.
 
-Publishing is a separate manual workflow. That workflow checks out the tag, downloads the existing draft assets, verifies the release package and every GitHub attestation again, and only then publishes the owned draft. It refuses to create and publish a new release in one invocation.
+Publishing is a separate manual workflow. That workflow checks out the tag, downloads the existing draft assets, verifies the release package and every GitHub attestation again, and then binds the remote asset IDs and SHA-256 digests immediately around publication. One tag can have only one publication workflow at a time. The workflow refuses to create and publish a new release in one invocation, and it returns a release to draft if the body or assets change while it is being published.
 
 ## Build without publishing
 

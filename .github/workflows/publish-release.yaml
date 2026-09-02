@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: publish-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-24.04

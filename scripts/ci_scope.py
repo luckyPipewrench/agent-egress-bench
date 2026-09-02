@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 from pathlib import Path, PurePosixPath
 
@@ -24,13 +25,30 @@ def is_workflow_only(paths: list[str]) -> bool:
 
 
 def changed_paths(base: str, head: str) -> list[str]:
+    commits = []
+    for ref in (base, head):
+        resolved = subprocess.run(
+            ["git", "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        commits.append(resolved.stdout.strip())
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--no-renames", "--diff-filter=ACDMTUXB", f"{base}...{head}"],
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--diff-filter=ACDMTUXB",
+            f"{commits[0]}...{commits[1]}",
+            "--",
+        ],
         check=True,
-        text=True,
         capture_output=True,
     )
-    return [line for line in result.stdout.splitlines() if line]
+    return [os.fsdecode(raw) for raw in result.stdout.split(b"\0") if raw]
 
 
 def main() -> int:

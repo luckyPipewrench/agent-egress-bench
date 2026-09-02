@@ -97,6 +97,51 @@ def actual_asset_names(release: dict[str, Any]) -> list[str]:
     return sorted(names)
 
 
+def _asset_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        fail(f"cannot hash release asset {path.name}: {exc}")
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _bound_remote_assets(
+    release: dict[str, Any], expected_digests: dict[str, str]
+) -> dict[str, tuple[str, str]]:
+    """Bind the remote draft to stable asset IDs and the verified local bytes."""
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        fail("GitHub CLI returned release metadata without an asset list")
+    bound: dict[str, tuple[str, str]] = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            fail("GitHub CLI returned release metadata with an invalid asset")
+        name = asset.get("name")
+        asset_id = asset.get("id")
+        digest = asset.get("digest")
+        if not isinstance(name, str) or not name:
+            fail("GitHub CLI returned release metadata with an invalid asset name")
+        if not isinstance(asset_id, str) or not asset_id:
+            fail(f"GitHub CLI returned release asset {name} without a stable ID")
+        if not isinstance(digest, str) or not digest.startswith("sha256:"):
+            fail(f"GitHub CLI returned release asset {name} without a SHA-256 digest")
+        if name in bound:
+            fail(f"GitHub CLI returned more than one release asset named {name}")
+        bound[name] = (asset_id, digest)
+    if set(bound) != set(expected_digests):
+        fail(
+            "draft assets do not exactly match dist/release: "
+            f"expected={sorted(expected_digests)}, actual={sorted(bound)}"
+        )
+    for name, expected in expected_digests.items():
+        if bound[name][1] != expected:
+            fail(f"draft asset {name} digest does not match the verified local asset")
+    return bound
+
+
 def _require_opened_identity(source: Path, status: os.stat_result, label: str) -> None:
     """Refuse a pathname whose resolved target is not the object that was opened.
 
@@ -393,6 +438,8 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
         fail(f"draft {tag} body does not match the verified release notes")
     if not finalize:
         return
+    expected_digests = {asset.name: _asset_digest(asset) for asset in assets}
+    before_publish = _bound_remote_assets(release, expected_digests)
     # One update sets the verified body AND clears the draft. Doing those separately leaves a window
     # in which another editor can replace the body between the check and publication.
     command(gh, "release", "edit", tag, "--notes-file", str(notes), "--draft=false")
@@ -402,10 +449,9 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
     # not be read as a guarantee that the published release always matched.
     #
     # Residual, stated rather than implied: GitHub offers no compare-and-set on a release, so the
-    # asset set is verified and then undrafted as two operations. Another editor with write access
-    # can change assets in that window. The body is not exposed: one command sets the verified body
-    # and clears the draft together. Closing the asset window needs an API primitive that does not
-    # exist today; pretending otherwise would be the actual defect.
+    # asset IDs and digests are checked immediately before and after undrafting rather than under an
+    # atomic lock. Another editor with write access can still create a brief public divergence in
+    # that window. The post-check detects it and withdraws the release; it cannot undo exposure.
     try:
         published = inspect_draft(gh, tag)
         if published is None:
@@ -422,6 +468,9 @@ def _publish_with_notes(tag, dist, gh, assets, expected_names, notes, notes_text
             fail(
                 f"assets do not match dist/release: expected={sorted(expected_names)}, actual={published_names}"
             )
+        after_publish = _bound_remote_assets(published, expected_digests)
+        if after_publish != before_publish:
+            fail("release asset IDs changed during publication")
     except PublishError as exc:
         # Every failed post-publication check leaves the same state question: the release may be
         # public but no longer proved to match the verified snapshot. That includes malformed or

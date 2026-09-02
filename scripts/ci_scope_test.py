@@ -4,11 +4,32 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.ci_scope import changed_paths, is_workflow_only
 
 
 class CIScopeTest(unittest.TestCase):
+    def test_resolves_refs_before_diff_and_uses_nul_delimited_paths(self) -> None:
+        completed = [
+            subprocess.CompletedProcess([], 0, stdout="a" * 40 + "\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="b" * 40 + "\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout=b".github/workflows/a.yaml\0scripts/line\nbreak.py\0", stderr=b""),
+        ]
+        with mock.patch("scripts.ci_scope.subprocess.run", side_effect=completed) as run:
+            self.assertEqual(
+                [".github/workflows/a.yaml", "scripts/line\nbreak.py"],
+                changed_paths("--output=unsafe", "HEAD"),
+            )
+
+        self.assertEqual(
+            ["git", "rev-parse", "--verify", "--end-of-options", "--output=unsafe^{commit}"],
+            run.call_args_list[0].args[0],
+        )
+        diff_args = run.call_args_list[2].args[0]
+        self.assertIn("-z", diff_args)
+        self.assertEqual("--", diff_args[-1])
+
     def test_accepts_only_direct_workflow_yaml_files(self) -> None:
         self.assertTrue(is_workflow_only([".github/workflows/release.yaml", ".github/workflows/validate.yml"]))
 

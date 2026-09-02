@@ -155,6 +155,8 @@ def check_publish_workflow(path: Path) -> None:
         raise AssertionError("manual publication workflow has broad write permission")
     if "workflow_dispatch:" not in preamble or "tag:" not in preamble:
         raise AssertionError("manual publication workflow has no explicit tag input")
+    if "group: publish-release-${{ inputs.tag }}" not in preamble or "cancel-in-progress: false" not in preamble:
+        raise AssertionError("manual publication workflow does not serialize publication for one tag")
     if "contents: write" not in publish or "attestations: read" not in publish or any(value not in publish for value in required):
         raise AssertionError("manual publication does not re-verify and finalize the exact draft")
 
