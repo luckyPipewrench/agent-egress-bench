@@ -214,7 +214,7 @@ def read_repo_regular_bytes(repo_root, relative_path, label):
             os.close(descriptor)
 
 
-def checked_out_active_set_count(source_digest, source_ids, corpus_version):
+def checked_out_active_set_ids(source_digest, source_ids, corpus_version):
     """Authenticate the current version's selected subset of the source catalog."""
     active_set_path = ACTIVE_SET_DIRECTORY / f"{corpus_version}.json"
     try:
@@ -280,7 +280,12 @@ def checked_out_active_set_count(source_digest, source_ids, corpus_version):
         or ledger_entry.get("case_count") != selected_count
     ):
         raise ValueError("corpus version ledger case_count does not match the active set")
-    return selected_count
+    return source_ids - set(excluded)
+
+
+def checked_out_active_set_count(source_digest, source_ids, corpus_version):
+    """Return the authenticated current scoring denominator."""
+    return len(checked_out_active_set_ids(source_digest, source_ids, corpus_version))
 
 
 def checked_out_corpus_authority(document, expected_manifest=MANIFEST_PATH):
