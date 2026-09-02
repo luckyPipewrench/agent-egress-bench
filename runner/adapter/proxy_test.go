@@ -395,6 +395,86 @@ func TestRunMCPStdio_ForwardedResponseWithRunnerOwnedObservationAllows(t *testin
 	}
 }
 
+func TestRunMCPStdio_InitializeResponseUsesInitializeWireMethod(t *testing.T) {
+	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "expect-initialize")}).runMCPStdio(Case{
+		ID:        "mcp-initialize-wire-method",
+		Transport: "mcp_stdio",
+		InputType: "mcp_initialize_response",
+		Payload: map[string]interface{}{"jsonrpc_messages": []interface{}{
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test", "version": "1"}}},
+			map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}, "instructions": "Use the catalog."}},
+		}},
+	}, 5*time.Second)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.Verdict != "allow" {
+		t.Fatalf("verdict = %q, want allow; helper accepted only an initialize wire request", result.Verdict)
+	}
+}
+
+func TestMCPInitializeResponseRejectsToolsListAndAmbiguousResponse(t *testing.T) {
+	initialize := Case{ID: "initialize-as-tools-list", InputType: "mcp_initialize_response"}
+	response := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}, "instructions": "Use the catalog."}}}
+	withoutInstructions := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}}}}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, withoutInstructions); err != nil {
+		t.Fatalf("initialize response without optional instructions error = %v, want acceptance", err)
+	}
+	withInvalidInstructions := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}, "instructions": true}}}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, withInvalidInstructions); err == nil || !strings.Contains(err.Error(), "instructions must be a string") {
+		t.Fatalf("initialize response with non-string instructions error = %v, want rejection", err)
+	}
+	withResultAndError := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": response[0].(map[string]interface{})["result"], "error": map[string]interface{}{"code": -32603, "message": "failure"}}}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, withResultAndError); err == nil || !strings.Contains(err.Error(), "both result and error") {
+		t.Fatalf("initialize response with result and error = %v, want rejection", err)
+	}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}}, response); err == nil || !strings.Contains(err.Error(), "not tools/list") {
+		t.Fatalf("initialize delivered as tools/list error = %v, want rejection", err)
+	}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 2, "method": "initialize"}}, response); err == nil || !strings.Contains(err.Error(), "IDs must match") {
+		t.Fatalf("mismatched initialize response error = %v, want rejection", err)
+	}
+	if err := validateMCPResponseCaseMethod(initialize, []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"}}, []interface{}{"invalid"}); err == nil || !strings.Contains(err.Error(), "valid initialize result") {
+		t.Fatalf("non-object initialize response error = %v, want rejection", err)
+	}
+	for name, ids := range map[string][2]interface{}{
+		"missing":     {nil, nil},
+		"null":        {nil, nil},
+		"empty":       {"", ""},
+		"unsupported": {true, true},
+	} {
+		t.Run(name+" IDs", func(t *testing.T) {
+			request := map[string]interface{}{"jsonrpc": "2.0", "method": "initialize"}
+			candidateResponse := map[string]interface{}{"jsonrpc": "2.0", "result": response[0].(map[string]interface{})["result"]}
+			if name != "missing" {
+				request["id"] = ids[0]
+				candidateResponse["id"] = ids[1]
+			}
+			err := validateMCPResponseCaseMethod(initialize, []interface{}{request}, []interface{}{candidateResponse})
+			if err == nil || !strings.Contains(err.Error(), "require supported non-empty IDs") {
+				t.Fatalf("invalid initialize IDs error = %v, want rejection", err)
+			}
+		})
+	}
+	if _, err := syntheticMCPResponseRequest(Case{ID: "ambiguous", InputType: "mcp_tool_call"}); err == nil || !strings.Contains(err.Error(), "cannot determine its actual request method") {
+		t.Fatalf("response-only ambiguous MCP case error = %v, want rejection", err)
+	}
+}
+
+func TestMCPInitializeResponseNormalizesEquivalentNumericIDs(t *testing.T) {
+	initialize := Case{ID: "initialize-equivalent-numeric-ids", InputType: "mcp_initialize_response"}
+	request := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1"), "method": "initialize"}}
+	response := []interface{}{map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1.0"), "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test", "version": "1"}}}}
+	if err := validateMCPResponseCaseMethod(initialize, request, response); err != nil {
+		t.Fatalf("equivalent numeric initialize IDs error = %v, want acceptance", err)
+	}
+
+	response[0].(map[string]interface{})["id"] = json.Number("1.5")
+	if err := validateMCPResponseCaseMethod(initialize, request, response); err == nil || !strings.Contains(err.Error(), "IDs must match") {
+		t.Fatalf("different numeric initialize IDs error = %v, want mismatch rejection", err)
+	}
+}
+
 func TestRunMCPStdio_ClientRequestForwardedToRunnerOwnedObservationAllows(t *testing.T) {
 	result := (&ProxyAdapter{mcpCmd: mcpStdioTestProxyCommand(t, "forward")}).runMCPStdio(Case{
 		ID:              "mcp-stdio-client-request-forwarded",
@@ -849,6 +929,15 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 	upstream := bufio.NewScanner(conn)
 	client := bufio.NewScanner(os.Stdin)
 	for call := 0; client.Scan(); call++ {
+		if mode == "expect-initialize" {
+			var request struct {
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(client.Bytes(), &request); err != nil || request.Method != "initialize" {
+				fmt.Fprintln(os.Stderr, "expected initialize request")
+				os.Exit(2)
+			}
+		}
 		if mode == "policy-deny-then-payload" || mode == "matched-response-then-payload" || mode == "mixed-stdout-then-match" {
 			var request struct {
 				ID json.RawMessage `json:"id"`
@@ -984,7 +1073,7 @@ func TestMCPStdioProxyHelper(t *testing.T) {
 			// This is the pipelined forwarding shape the observer drain covers.
 			os.Exit(0)
 		}
-		if mode == "forward" || (mode == "forward-first" && call == 0) {
+		if mode == "forward" || mode == "expect-initialize" || (mode == "forward-first" && call == 0) {
 			if _, err := fmt.Fprintln(conn, client.Text()); err != nil {
 				fmt.Fprintf(os.Stderr, "forward request: %v\n", err)
 				os.Exit(2)
@@ -4194,7 +4283,8 @@ func TestRunMCPStdio_UnconfiguredUpstreamSkipsWithoutSeparator(t *testing.T) {
 	// explicit endpoint contract.
 	a := &ProxyAdapter{mcpCmd: "sh " + shellQuote(localSuccess)}
 	c := Case{
-		ID: "test-no-sep",
+		ID:        "test-no-sep",
+		InputType: "mcp_tool_definition",
 		Payload: map[string]interface{}{
 			"jsonrpc_messages": []interface{}{
 				map[string]interface{}{"result": map[string]interface{}{"tools": []interface{}{}}, "id": 1},

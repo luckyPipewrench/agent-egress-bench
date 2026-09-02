@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -871,6 +872,129 @@ func TestMCPToolDefinitionPayload(t *testing.T) {
 	errors := validateFile(path, ids)
 	if len(errors) > 0 {
 		t.Errorf("expected no errors for mcp_tool_definition, got: %v", errors)
+	}
+}
+
+func TestMCPInitializeResponsePayloadRequiresInitializeWireContract(t *testing.T) {
+	valid := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}, "instructions": "Use the catalog."}},
+	}}
+	if errors := validatePayload("mcp_initialize_response", valid); len(errors) != 0 {
+		t.Fatalf("valid initialize response errors = %v", errors)
+	}
+
+	withoutInstructions := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}}},
+	}}
+	if errors := validatePayload("mcp_initialize_response", withoutInstructions); len(errors) != 0 {
+		t.Fatalf("initialize response without optional instructions errors = %v", errors)
+	}
+
+	withInvalidInstructions := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}, "instructions": true}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", withInvalidInstructions), "instructions must be a string when present")
+
+	withResultAndError := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}}, "error": map[string]interface{}{"code": -32603, "message": "failure"}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", withResultAndError), "must not contain both result and error")
+
+	wrongMethod := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", wrongMethod), "initialize request, not tools/list")
+
+	malformedResult := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{}, "instructions": "Use the catalog.", "tools": []interface{}{}}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", malformedResult), "must not contain a tools/list inventory")
+
+	mismatchedID := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 2, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", mismatchedID), "request and result IDs must match")
+
+	missingIDs := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", missingIDs), "require supported non-empty IDs")
+
+	missingParams := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", missingParams), "initialize request requires params")
+
+	missingServerInfoName := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"version": "1.0.0"}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", missingServerInfoName), "result serverInfo requires name")
+
+	missingServerInfoVersion := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server"}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", missingServerInfoVersion), "result serverInfo requires version")
+
+	missingClientInfoVersion := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}, "instructions": "Use the catalog."}},
+	}}
+	assertContainsError(t, validatePayload("mcp_initialize_response", missingClientInfoVersion), "request params clientInfo requires version")
+}
+
+func TestMCPInitializeResponsePayloadPreservesLargeNumericIDs(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "mcp-tool", "mcp-large-id-001.json", `{
+		"schema_version": 4, "id": "mcp-large-id-001", "category": "mcp_tool",
+		"title": "T", "description": "D", "input_type": "mcp_initialize_response",
+		"transport": "mcp_stdio",
+		"payload": {"jsonrpc_messages": [
+			{"jsonrpc": "2.0", "id": 9007199254740992, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test-client", "version": "1.0.0"}}},
+			{"jsonrpc": "2.0", "id": 9007199254740993, "result": {"protocolVersion": "2025-06-18", "capabilities": {}, "serverInfo": {"name": "test-server", "version": "1.0.0"}}}
+		]},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["mcp_tool_poison"], "requires": [],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	path := filepath.Join(dir, "mcp-tool", "mcp-large-id-001.json")
+	assertContainsError(t, validateFile(path, make(map[string]string)), "request and result IDs must match")
+}
+
+func TestMCPInitializeResponsePayloadNormalizesEquivalentNumericIDs(t *testing.T) {
+	payload := map[string]interface{}{"jsonrpc_messages": []interface{}{
+		map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1"), "method": "initialize", "params": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "clientInfo": map[string]interface{}{"name": "test-client", "version": "1.0.0"}}},
+		map[string]interface{}{"jsonrpc": "2.0", "id": json.Number("1.0"), "result": map[string]interface{}{"protocolVersion": "2025-06-18", "capabilities": map[string]interface{}{}, "serverInfo": map[string]interface{}{"name": "test-server", "version": "1.0.0"}}},
+	}}
+	if errors := validatePayload("mcp_initialize_response", payload); len(errors) != 0 {
+		t.Fatalf("equivalent numeric initialize IDs errors = %v, want acceptance", errors)
+	}
+
+	payload["jsonrpc_messages"].([]interface{})[1].(map[string]interface{})["id"] = json.Number("1.5")
+	assertContainsError(t, validatePayload("mcp_initialize_response", payload), "request and result IDs must match")
+}
+
+func TestPositiveIntChecksNativeIntBounds(t *testing.T) {
+	value, ok := positiveInt(int64(^uint(0) >> 1))
+	if !ok || value <= 0 {
+		t.Fatalf("native max int = (%d, %t), want positive accepted value", value, ok)
+	}
+	if strconv.IntSize == 32 {
+		if _, ok := positiveInt(int64(1) << 31); ok {
+			t.Fatal("value above 32-bit int range accepted")
+		}
 	}
 }
 

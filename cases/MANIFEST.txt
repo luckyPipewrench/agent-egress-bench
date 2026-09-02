@@ -133,6 +133,8 @@ mcp-drift-http-benign-refinement-006
 mcp-drift-http-rugpull-desc-005
 mcp-drift-rugpull-desc-002
 mcp-drift-rugpull-param-003
+mcp-initialize-instructions-benign-025
+mcp-initialize-instructions-exfil-024
 mcp-input-base64-secret-004
 mcp-input-dlp-001
 mcp-input-double-encode-009

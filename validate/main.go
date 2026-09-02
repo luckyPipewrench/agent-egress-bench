@@ -5,11 +5,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
@@ -54,7 +56,7 @@ var (
 	validInputTypes = map[string]bool{
 		"url": true, "request_body": true, "header": true,
 		"response_content": true, "mcp_tool_call": true, "mcp_tool_result": true,
-		"mcp_tool_definition": true, "mcp_tool_sequence": true,
+		"mcp_tool_definition": true, "mcp_initialize_response": true, "mcp_tool_sequence": true,
 		"a2a_message": true, "a2a_agent_card": true, "websocket_frame": true,
 	}
 
@@ -132,7 +134,7 @@ var (
 		"response_fetch": {"response_content"},
 		"response_mitm":  {"response_content"},
 		"mcp_input":      {"mcp_tool_call"},
-		"mcp_tool":       {"mcp_tool_result", "mcp_tool_definition"},
+		"mcp_tool":       {"mcp_tool_result", "mcp_tool_definition", "mcp_initialize_response"},
 		"mcp_chain":      {"mcp_tool_sequence"},
 		// Gauntlet categories:
 		"a2a_message":           {"a2a_message"},
@@ -505,6 +507,7 @@ func validateFile(path string, ids map[string]string) []string {
 
 	var c Case
 	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.UseNumber()
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
 		addErr(fmt.Sprintf("JSON parse error: %v", err))
@@ -854,10 +857,18 @@ func positiveInt(v interface{}) (int, bool) {
 	case int:
 		return n, n > 0
 	case int64:
-		return int(n), n > 0
+		i := int(n)
+		return i, n > 0 && int64(i) == n
 	case float64:
 		i := int(n)
 		return i, n > 0 && float64(i) == n
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, false
+		}
+		value := int(i)
+		return value, i > 0 && int64(value) == i
 	default:
 		return 0, false
 	}
@@ -868,18 +879,37 @@ func jsonValueIDString(v interface{}) string {
 	case string:
 		return id
 	case float64:
-		i := int(id)
-		if float64(i) == id {
-			return fmt.Sprint(i)
-		}
-		return fmt.Sprint(id)
+		return canonicalJSONNumber(strconv.FormatFloat(id, 'g', -1, 64))
 	case int:
-		return fmt.Sprint(id)
+		return strconv.Itoa(id)
 	case int64:
-		return fmt.Sprint(id)
+		return strconv.FormatInt(id, 10)
+	case json.Number:
+		return canonicalJSONNumber(id.String())
 	default:
 		return ""
 	}
+}
+
+func canonicalJSONNumber(value string) string {
+	number, ok := new(big.Rat).SetString(value)
+	if !ok {
+		return ""
+	}
+	return number.RatString()
+}
+
+func jsonValueIDCorrelationKey(id interface{}) string {
+	if value, ok := id.(string); ok {
+		if value == "" {
+			return ""
+		}
+		return "string:" + value
+	}
+	if value := jsonValueIDString(id); value != "" {
+		return "number:" + value
+	}
+	return ""
 }
 
 // validatePayload checks that the payload has the required fields for the given input_type.
@@ -932,7 +962,7 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		requireStringKey("url")
 		requireStringKey("response_body")
 
-	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence",
+	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_initialize_response", "mcp_tool_sequence",
 		"a2a_message":
 		// Required: jsonrpc_messages (array of objects with "jsonrpc" field)
 		requireKey("jsonrpc_messages")
@@ -953,6 +983,9 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 					if _, hasVersion := obj["jsonrpc"]; !hasVersion {
 						errors = append(errors, fmt.Sprintf("payload.jsonrpc_messages[%d] missing required field \"jsonrpc\" for input_type %q", i, inputType))
 					}
+				}
+				if inputType == "mcp_initialize_response" {
+					errors = append(errors, validateInitializeResponsePayload(arr)...)
 				}
 			}
 		}
@@ -1000,6 +1033,101 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		}
 	}
 
+	return errors
+}
+
+func validateInitializeResponsePayload(messages []interface{}) []string {
+	var errors []string
+	if len(messages) != 2 {
+		return []string{"mcp_initialize_response requires exactly one initialize request and one initialize result"}
+	}
+	var request, response map[string]interface{}
+	for _, message := range messages {
+		obj, ok := message.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, hasResult := obj["result"]; hasResult {
+			response = obj
+		} else {
+			request = obj
+		}
+	}
+	if request == nil || request["method"] != "initialize" {
+		errors = append(errors, "mcp_initialize_response must be delivered with an initialize request, not tools/list")
+	}
+	if request != nil && request["jsonrpc"] != "2.0" {
+		errors = append(errors, "mcp_initialize_response initialize request requires jsonrpc 2.0")
+	}
+	if request != nil && response != nil {
+		requestID, hasRequestID := request["id"]
+		responseID, hasResponseID := response["id"]
+		requestKey := jsonValueIDCorrelationKey(requestID)
+		responseKey := jsonValueIDCorrelationKey(responseID)
+		if !hasRequestID || !hasResponseID || requestKey == "" || responseKey == "" {
+			errors = append(errors, "mcp_initialize_response request and result require supported non-empty IDs")
+		} else if requestKey != responseKey {
+			errors = append(errors, "mcp_initialize_response request and result IDs must match")
+		}
+	}
+	if response != nil {
+		_, hasResult := response["result"]
+		_, hasError := response["error"]
+		if hasResult && hasError {
+			errors = append(errors, "mcp_initialize_response result must not contain both result and error")
+		}
+	}
+	if request != nil {
+		params, ok := request["params"].(map[string]interface{})
+		if !ok {
+			errors = append(errors, "mcp_initialize_response initialize request requires params")
+		} else {
+			if protocolVersion, ok := params["protocolVersion"].(string); !ok || protocolVersion == "" {
+				errors = append(errors, "mcp_initialize_response request params require protocolVersion")
+			}
+			if _, ok := params["capabilities"].(map[string]interface{}); !ok {
+				errors = append(errors, "mcp_initialize_response request params require capabilities")
+			}
+			errors = append(errors, validateMCPImplementationInfo(params["clientInfo"], "request params clientInfo")...)
+		}
+	}
+	result, ok := response["result"].(map[string]interface{})
+	if response == nil || !ok {
+		return append(errors, "mcp_initialize_response requires an initialize result")
+	}
+	if response["jsonrpc"] != "2.0" {
+		errors = append(errors, "mcp_initialize_response initialize result requires jsonrpc 2.0")
+	}
+	if protocolVersion, ok := result["protocolVersion"].(string); !ok || protocolVersion == "" {
+		errors = append(errors, "mcp_initialize_response result requires protocolVersion")
+	}
+	if _, ok := result["capabilities"].(map[string]interface{}); !ok {
+		errors = append(errors, "mcp_initialize_response result requires capabilities")
+	}
+	if instructions, present := result["instructions"]; present {
+		if _, ok := instructions.(string); !ok {
+			errors = append(errors, "mcp_initialize_response result instructions must be a string when present")
+		}
+	}
+	errors = append(errors, validateMCPImplementationInfo(result["serverInfo"], "result serverInfo")...)
+	if _, hasTools := result["tools"]; hasTools {
+		errors = append(errors, "mcp_initialize_response result must not contain a tools/list inventory")
+	}
+	return errors
+}
+
+func validateMCPImplementationInfo(value interface{}, field string) []string {
+	info, ok := value.(map[string]interface{})
+	if !ok {
+		return []string{fmt.Sprintf("mcp_initialize_response %s requires name and version", field)}
+	}
+	var errors []string
+	if name, ok := info["name"].(string); !ok || name == "" {
+		errors = append(errors, fmt.Sprintf("mcp_initialize_response %s requires name", field))
+	}
+	if version, ok := info["version"].(string); !ok || version == "" {
+		errors = append(errors, fmt.Sprintf("mcp_initialize_response %s requires version", field))
+	}
 	return errors
 }
 

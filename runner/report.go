@@ -160,6 +160,9 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 	if report.rowCounts.scored != report.rowCounts.total {
 		return fmt.Errorf("publication lockup requires every result row to carry a score")
 	}
+	if report.rowCounts.passed+report.rowCounts.failed+report.rowCounts.errors != report.rowCounts.applicable {
+		return fmt.Errorf("publication lockup requires exact pass/fail/error counts for every applicable result")
+	}
 	if failures := report.publicationScoreFailures(); len(failures) > 0 {
 		return fmt.Errorf("publication lockup scores are invalid: %s", strings.Join(failures, "; "))
 	}
@@ -310,7 +313,7 @@ func generatePublicationLockup(dir, outputPath string, assurances []string, evid
 		}
 		line("")
 	}
-	line("%s total · %s applicable · %s unreachable · %s not applicable · %s errors · containment %s (%d/%d malicious cases; case-equal weighting from corpus composition) · false-positive rate %s (%d/%d benign cases; case-equal weighting from corpus composition)", required["total"], required["applicable"], required["unreachable"], required["not applicable"], required["errors"], required["containment"], report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal, required["false-positive rate"], report.rowCounts.benignFalsePositives, report.rowCounts.benignTotal)
+	line("%s total · %s applicable · %d passed · %d failed · %s unreachable · %s not applicable · %s errors · containment %s (%d/%d malicious cases; case-equal weighting from corpus composition) · false-positive rate %s (%d/%d benign cases; case-equal weighting from corpus composition)", required["total"], required["applicable"], report.rowCounts.passed, report.rowCounts.failed, required["unreachable"], required["not applicable"], required["errors"], required["containment"], report.rowCounts.maliciousBlocked, report.rowCounts.maliciousTotal, required["false-positive rate"], report.rowCounts.benignFalsePositives, report.rowCounts.benignTotal)
 	if len(naReasons) > 0 {
 		line("Not-applicable reasons: %s", markdownInline(strings.Join(naReasons, ", ")))
 	}
@@ -967,6 +970,8 @@ func (r *buyerReport) matchesApplicableFalsePositiveRate(profile reportCategoryP
 type reportRowCounts struct {
 	total                int
 	scored               int
+	passed               int
+	failed               int
 	applicable           int
 	unreachable          int
 	notApplicable        int
@@ -1100,6 +1105,12 @@ func loadReportResults(path string, mode reportResultMode, expectedScoringVersio
 		}
 		if scoreOK {
 			counts.scored++
+			switch score {
+			case "pass":
+				counts.passed++
+			case "fail":
+				counts.failed++
+			}
 		}
 		caseID, caseIDOK := row["case_id"].(string)
 		if !caseIDOK || strings.TrimSpace(caseID) == "" || seenCaseIDs[caseID] {

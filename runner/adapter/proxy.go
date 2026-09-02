@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -44,6 +45,7 @@ import (
 	"os/exec"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -128,6 +130,7 @@ func (p *ProxyAdapter) DeliveryTuples() []DeliveryTuple {
 			routes = append(routes, tuple(transport, surface))
 		}
 	}
+	routes = append(routes, tuple("mcp_stdio", "mcp_initialize_response"))
 	for _, surface := range []string{"a2a_message", "a2a_agent_card"} {
 		routes = append(routes, tuple("a2a", surface))
 	}
@@ -2305,6 +2308,9 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) (returned Resu
 			clientMsgs = append(clientMsgs, msg)
 		}
 	}
+	if err := validateMCPResponseCaseMethod(c, clientMsgs, serverResponses); err != nil {
+		return Result{Err: err}
+	}
 
 	// Every MCP stdio case gets an upstream endpoint under runner control. The
 	// command string is deliberately left untouched: an integration opts in by
@@ -2312,13 +2318,15 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) (returned Resu
 	// not need an observation, but every non-blocking result needs this endpoint
 	// to prove that it really reached an upstream.
 	var observer *mcpStdioUpstreamObserver
-	// If no client messages, send a tools/list request to trigger the response.
+	// A response-only case must name a semantic surface with one unambiguous
+	// request method. Do not turn every response into tools/list: that would
+	// claim delivery on a different MCP surface than the fixture describes.
 	if len(clientMsgs) == 0 {
-		clientMsgs = append(clientMsgs, map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "tools/list",
-			"id":      1,
-		})
+		synthetic, requestErr := syntheticMCPResponseRequest(c)
+		if requestErr != nil {
+			return Result{Err: requestErr}
+		}
+		clientMsgs = synthetic
 	}
 	// Corpus JSON-RPC IDs are stable fixture data, often small integers such as
 	// 1. They cannot correlate a policy denial: a subprocess can print a stale
@@ -2516,6 +2524,82 @@ func (p *ProxyAdapter) runMCPStdio(c Case, timeout time.Duration) (returned Resu
 	}
 	verified.Evidence["upstream_reached"] = true
 	return verified
+}
+
+// validateMCPResponseCaseMethod keeps the semantic surface and the request
+// actually delivered on the wire coupled. A response-only fixture cannot be
+// safely replayed by guessing tools/list: initialize and tools/list have
+// different response contracts.
+func validateMCPResponseCaseMethod(c Case, clientMsgs, serverResponses []interface{}) error {
+	if c.InputType != "mcp_initialize_response" {
+		for _, raw := range serverResponses {
+			response, ok := raw.(map[string]interface{})
+			result, hasResult := response["result"].(map[string]interface{})
+			if ok && hasResult {
+				if _, hasInstructions := result["instructions"]; hasInstructions {
+					return fmt.Errorf("case %s: initialize instructions require input_type mcp_initialize_response", c.ID)
+				}
+			}
+		}
+		return nil
+	}
+	if len(clientMsgs) != 1 || len(serverResponses) != 1 {
+		return fmt.Errorf("case %s: mcp_initialize_response requires one initialize request and one response", c.ID)
+	}
+	request, ok := clientMsgs[0].(map[string]interface{})
+	if !ok || request["method"] != "initialize" {
+		return fmt.Errorf("case %s: mcp_initialize_response must be delivered as initialize, not tools/list", c.ID)
+	}
+	response, ok := serverResponses[0].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("case %s: mcp_initialize_response must carry a valid initialize result", c.ID)
+	}
+	_, hasResult := response["result"]
+	_, hasError := response["error"]
+	if hasResult && hasError {
+		return fmt.Errorf("case %s: mcp_initialize_response must not contain both result and error", c.ID)
+	}
+	requestID, requestIDOK := requiredMessageIDCorrelationKey(request)
+	responseID, responseIDOK := requiredMessageIDCorrelationKey(response)
+	if !requestIDOK || !responseIDOK {
+		return fmt.Errorf("case %s: mcp_initialize_response request and result require supported non-empty IDs", c.ID)
+	}
+	if requestID != responseID {
+		return fmt.Errorf("case %s: mcp_initialize_response request and result IDs must match", c.ID)
+	}
+	result, ok := response["result"].(map[string]interface{})
+	if !ok || result["protocolVersion"] == nil || result["capabilities"] == nil || result["serverInfo"] == nil {
+		return fmt.Errorf("case %s: mcp_initialize_response must carry a valid initialize result", c.ID)
+	}
+	if instructions, present := result["instructions"]; present {
+		if _, ok := instructions.(string); !ok {
+			return fmt.Errorf("case %s: mcp_initialize_response instructions must be a string when present", c.ID)
+		}
+	}
+	if _, hasTools := result["tools"]; hasTools {
+		return fmt.Errorf("case %s: mcp_initialize_response must not put a tools/list inventory in initialize result", c.ID)
+	}
+	return nil
+}
+
+func syntheticMCPResponseRequest(c Case) ([]interface{}, error) {
+	switch c.InputType {
+	case "mcp_tool_definition":
+		return []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "tools/list",
+			"id":      1,
+		}}, nil
+	case "mcp_tool_result":
+		return []interface{}{map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "tools/call",
+			"params":  map[string]interface{}{"name": "aeb_tool_result_fixture", "arguments": map[string]interface{}{}},
+			"id":      1,
+		}}, nil
+	default:
+		return nil, fmt.Errorf("case %s: response-only %s payload cannot determine its actual request method", c.ID, c.InputType)
+	}
 }
 
 func isBudgetEnforcementCase(c Case) bool {
@@ -2779,13 +2863,18 @@ func positivePayloadInt(v interface{}) (int, bool) {
 	case int:
 		return n, n > 0
 	case int64:
-		return int(n), n > 0
+		i := int(n)
+		return i, n > 0 && int64(i) == n
 	case float64:
 		i := int(n)
 		return i, n > 0 && float64(i) == n
 	case json.Number:
 		i, err := n.Int64()
-		return int(i), err == nil && i > 0
+		if err != nil {
+			return 0, false
+		}
+		value := int(i)
+		return value, i > 0 && int64(value) == i
 	default:
 		return 0, false
 	}
@@ -2805,6 +2894,22 @@ func messageIDCorrelationKey(msg interface{}) string {
 		return ""
 	}
 	return jsonRPCIDCorrelationKey(m["id"])
+}
+
+func requiredMessageIDCorrelationKey(msg interface{}) (string, bool) {
+	m, ok := msg.(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	id, present := m["id"]
+	if !present || id == nil {
+		return "", false
+	}
+	if value, isString := id.(string); isString && value == "" {
+		return "", false
+	}
+	key := jsonRPCIDCorrelationKey(id)
+	return key, key != ""
 }
 
 func jsonRPCResponseIDCorrelationKey(line string) string {
@@ -2834,20 +2939,24 @@ func jsonRPCIDString(id interface{}) string {
 	case string:
 		return v
 	case float64:
-		i := int(v)
-		if float64(i) == v {
-			return fmt.Sprint(i)
-		}
-		return fmt.Sprint(v)
+		return canonicalJSONRPCNumber(strconv.FormatFloat(v, 'g', -1, 64))
 	case int:
-		return fmt.Sprint(v)
+		return strconv.Itoa(v)
 	case int64:
-		return fmt.Sprint(v)
+		return strconv.FormatInt(v, 10)
 	case json.Number:
-		return v.String()
+		return canonicalJSONRPCNumber(v.String())
 	default:
 		return ""
 	}
+}
+
+func canonicalJSONRPCNumber(value string) string {
+	number, ok := new(big.Rat).SetString(value)
+	if !ok {
+		return ""
+	}
+	return number.RatString()
 }
 
 func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) (mcpResult Result) {

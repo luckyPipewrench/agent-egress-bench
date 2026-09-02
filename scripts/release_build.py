@@ -39,6 +39,11 @@ RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress
 # harness. Without it a downloaded release can report the corpus but cannot run
 # it, because --profile is mandatory and nothing in the release satisfied it.
 DATA_ROOTS = ("cases", "schemas", "contracts", "capability-registry/aeb.core-capabilities", "examples", "result-pointers")
+# A corpus version may bind a scored subset through a versioned active-set
+# artifact. It is optional for older corpus versions, but when present it must
+# travel with the data bundle or an extracted runner would revert to the full
+# source catalog.
+OPTIONAL_DATA_ROOTS = ("corpora",)
 DATA_FILES = (
     "README.md",
     "LICENSE",
@@ -175,7 +180,9 @@ def safe_name(value: str) -> str:
 
 def data_paths(repo: Path) -> list[str]:
     result: list[str] = []
-    for root in DATA_ROOTS:
+    roots = list(DATA_ROOTS)
+    roots.extend(root for root in OPTIONAL_DATA_ROOTS if (repo / root).is_dir())
+    for root in roots:
         base = repo / root
         if not base.is_dir():
             fail(f"required release data directory is absent: {root}")
@@ -188,7 +195,7 @@ def data_paths(repo: Path) -> list[str]:
             fail(f"required release data file is absent: {name}")
         result.append(name)
     result = sorted(result)
-    tracked = set(filter(None, git(repo, "ls-tree", "-r", "--name-only", "HEAD", "--", *DATA_ROOTS, *DATA_FILES).splitlines()))
+    tracked = set(filter(None, git(repo, "ls-tree", "-r", "--name-only", "HEAD", "--", *roots, *DATA_FILES).splitlines()))
     if set(result) != tracked:
         missing, extra = sorted(tracked - set(result)), sorted(set(result) - tracked)
         fail(f"release data differs from the tracked source tree: missing={missing}, extra={extra}")
@@ -316,6 +323,9 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
         fail("release commit timestamp is invalid")
     metadata = runner_metadata(repo)
     data = data_paths(repo)
+    active_set = f"corpora/active-sets/v1/{metadata['corpus_version']}.json"
+    if (repo / active_set).is_file() and active_set not in data:
+        fail(f"release data omits active set {active_set}")
     return {
         "schema_version": 1,
         "release": {"tag": tag, "version": version, "snapshot": snapshot},

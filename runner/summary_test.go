@@ -73,6 +73,23 @@ func TestCountErrorsRejectsInconsistentResult(t *testing.T) {
 	}
 }
 
+func TestCountOutcomesSeparatesMeasuredFailuresFromCompletion(t *testing.T) {
+	got, err := countOutcomes([]CaseResult{
+		{CaseID: "passed", Score: "pass"},
+		{CaseID: "failed", Score: "fail"},
+		{CaseID: "errored", Score: "error"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (outcomeCounts{Passed: 1, Failed: 1, Errors: 1}) {
+		t.Fatalf("countOutcomes() = %+v, want one of each outcome", got)
+	}
+	if _, err := countOutcomes([]CaseResult{{CaseID: "unscored", Score: ""}}); err == nil {
+		t.Fatal("countOutcomes accepted an unscored applicable row")
+	}
+}
+
 func TestBuildSummaryUsesFixedDateEnv(t *testing.T) {
 	t.Setenv(summaryDateEnv, "2026-07-13T20:00:00Z")
 

@@ -37,9 +37,12 @@ The optional `supersedes` field records that one case replaces another case's se
 relationship metadata, not a loader instruction. The original case remains in the corpus and the
 runner executes both cases.
 
-Removing a superseded case from an active score would change the denominator. No mutable skip list
-may do that. A future active-set mechanism must be immutable, versioned, and bound to the release it
-changes before a runner may exclude any case.
+Removing a retained case from an active score changes the denominator. The complete source catalog
+remains `cases/MANIFEST.txt`. No mutable skip list may redefine it. An active score may instead use
+an immutable `corpora/active-sets/v1/<corpus-version>.json` artifact that names the corpus version,
+binds the exact source-manifest digest, records its exclusions and selected count, and is itself bound
+by the append-only corpus-version ledger. `cases/CORPUS_VERSION` makes the active-set requirement
+travel with an official corpus copy, so losing the selection artifact fails before a score runs.
 
 ## Per-case governance decision records
 
@@ -78,7 +81,7 @@ Every active profile and result binds an immutable capability-registry snapshot 
 
 ### Corpus version identity
 
-`corpus_version` names one exact corpus and is bound to it. [`ci/corpus-versions.json`](../ci/corpus-versions.json) records, for each label, the scored case count and the `benchmark_manifest_sha256` of the corpus that label names, and `runner/corpus_version_test.go` fails when the corpus on disk is not the corpus the current label names. Adding, removing, or re-expecting a scored case therefore requires a new label and a new ledger entry in the same change. The current label must be the ledger's final entry.
+`corpus_version` names one exact corpus and is bound to it. [`ci/corpus-versions.json`](../ci/corpus-versions.json) records, for each label, the scored case count and the `benchmark_manifest_sha256` of the corpus that label names, and `runner/corpus_version_test.go` fails when the corpus on disk is not the corpus the current label names. An active-set entry also records the SHA-256 of its versioned selection artifact. Adding, removing, or re-expecting a scored case therefore requires a new label and a new ledger entry in the same change. The current label must be the ledger's final entry.
 
 Ledger entries are append-only. Published results carry the label, so rewriting an entry retroactively changes what an already-published number was measured over. Documentation and unreferenced files are excluded from the digest, so editorial work on the corpus does not force a bump.
 

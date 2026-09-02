@@ -154,7 +154,7 @@ func syntheticTuples() []DeliveryTuple {
 	transports := []string{"fetch_proxy", "http_proxy", "mcp_stdio", "mcp_http", "websocket", "a2a"}
 	surfaces := []string{
 		"url", "request_body", "header", "response_content",
-		"mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_tool_sequence", "mcp_tool_sequence_temporal",
+		"mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_initialize_response", "mcp_tool_sequence", "mcp_tool_sequence_temporal",
 		"a2a_message", "a2a_agent_card", "websocket_frame",
 	}
 	routes := make([]DeliveryTuple, 0, len(transports)*len(surfaces))
