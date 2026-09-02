@@ -145,9 +145,8 @@ jobs:
           PY
           reported_version="$(docker run --rm --platform linux/amd64 "$pinned_image" --version)"
           [[ "$reported_version" == "aeb-gauntlet $version $release_commit" ]]
-          docker logout ghcr.io
-          docker pull "$pinned_image"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "ref=$pinned_image" >> "$GITHUB_OUTPUT"
           identity_dir="$RUNNER_TEMP/aeb-runner-image"
           mkdir -p "$identity_dir"
           printf '%s\n' "$pinned_image" > "$identity_dir/runner-image.ref"
@@ -160,6 +159,13 @@ jobs:
           subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
+
+      - name: Log out of GitHub Container Registry
+        if: ${{ always() }}
+        run: docker logout ghcr.io
+
+      - name: Verify the published image is anonymously pullable
+        run: docker pull "${{ steps.publish.outputs.ref }}"
 
       - name: Download verified release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
