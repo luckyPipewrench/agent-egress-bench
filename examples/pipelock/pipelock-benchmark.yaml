@@ -194,9 +194,16 @@ dlp:
 
 # The corpus defines allowed-package-registry.test as a fetch-only mirror. A
 # deployment that allowlists a registry for installs declares the same rail:
-# anything other than a read to that host is refused. This is operator intent
-# about one host, not a scanner heuristic, which is why it lives here rather
-# than in a detector default.
+# the write methods that turn a fetch host into a publish channel are refused.
+# This is operator intent about one host, not a scanner heuristic, which is why
+# it lives here rather than in a detector default.
+#
+# The list names only methods request_policy validates today. It is a deny list,
+# not a fetch-only allow list: request_policy is allow-by-default and has no
+# allow-only method predicate, so a method absent here still reaches the host.
+# That is sufficient for the corpus, whose write case uses PUT, and it keeps this
+# fixture loadable by any published Pipelock rather than binding the benchmark to
+# an unreleased validator.
 request_policy:
   enabled: true
   rules:
@@ -204,7 +211,7 @@ request_policy:
       action: block
       route:
         hosts: ["allowed-package-registry.test"]
-        methods: ["POST", "PUT", "PATCH", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"]
+        methods: ["POST", "PUT", "PATCH", "DELETE"]
       reason: "package registry is allowlisted for fetch only"
 
 mcp_input_scanning:

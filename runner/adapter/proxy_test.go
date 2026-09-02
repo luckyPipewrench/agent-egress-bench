@@ -5792,6 +5792,10 @@ func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
 		{"bare origin forbidden", "403 Forbidden", false},
 		{"origin html forbidden", "<html><body>Forbidden</body></html>", false},
 		{"unrelated word policy alone", "See our privacy policy for details", false},
+		// A policy NAME with no refusal verb is upstream content, not a denial.
+		// Scoring it as a block turns a served page into a containment credit.
+		{"policy named in upstream docs", "403: operation policy documentation", false},
+		{"policy named in prose", "This endpoint implements our request policy.", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

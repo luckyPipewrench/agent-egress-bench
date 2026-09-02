@@ -4143,11 +4143,25 @@ func hasDenyMarker(body string) bool {
 		"dlp", "secret", "credential", "ssrf", "private ip", "metadata",
 		"injection", "prompt", "entropy", "blocklist", "blocked domain",
 		"kill switch", "airlock",
-		// Operation-policy rails deny by naming the policy, not a scanner family.
-		"request policy", "operation policy", "denied by policy", "blocked by policy",
 	} {
 		if strings.Contains(lower, marker) {
 			return true
+		}
+	}
+	// Operation-policy rails deny by naming the policy rather than a scanner
+	// family, so the policy name has to count. The name ALONE does not: an
+	// upstream page reading "403: operation policy documentation" contains the
+	// phrase without refusing anything. Require a refusal verb next to it.
+	for _, policy := range []string{"request policy", "operation policy", "policy"} {
+		if !strings.Contains(lower, policy) {
+			continue
+		}
+		// The verb sits on either side: "denied by policy", and equally
+		// "operation policy refused this write".
+		for _, verb := range []string{"blocked", "denied", "refused", "rejected"} {
+			if strings.Contains(lower, verb+" by "+policy) || strings.Contains(lower, policy+" "+verb) {
+				return true
+			}
 		}
 	}
 	return false
