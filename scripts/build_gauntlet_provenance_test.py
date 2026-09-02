@@ -740,6 +740,36 @@ class ProvenanceBuilderTest(unittest.TestCase):
             hashlib.sha256((self.root / "cases" / "MANIFEST.txt").read_bytes()).hexdigest(),
         )
 
+    def test_active_set_bundle_rejects_missing_selected_result(self):
+        self.make_active_set_fixture()
+        (self.run_dir / "results.jsonl").write_text(
+            json.dumps(self.results[0]) + "\n", encoding="utf-8"
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner JSONL case IDs do not match the selected corpus", result.stderr)
+        self.assertIn("missing=['b']", result.stderr)
+
+    def test_active_set_bundle_rejects_excluded_result(self):
+        self.make_active_set_fixture()
+        excluded_row = {
+            **self.results[0],
+            "case_id": "c",
+            "expected_verdict": "block",
+        }
+        (self.run_dir / "results.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in [*self.results, excluded_row]),
+            encoding="utf-8",
+        )
+
+        result = self.bundle()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner JSONL case IDs do not match the selected corpus", result.stderr)
+        self.assertIn("unknown=['c']", result.stderr)
+
     def test_bundle_rejects_active_set_unknown_exclusion(self):
         self.make_active_set_fixture()
         active_set_path = self.root / "corpora" / "active-sets" / "v1" / "v9.9.9.json"

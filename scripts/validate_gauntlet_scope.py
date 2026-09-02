@@ -6,11 +6,14 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 import re
+import stat
 import subprocess
 import sys
 import urllib.parse
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -76,6 +79,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PROVENANCE_SCHEMAS = artifact_contracts.schema_paths("provenance_candidate")
 PROMOTED_RECORD_SCHEMAS = artifact_contracts.schema_paths("promoted_record")
 MANIFEST_PATH = REPO_ROOT / "cases" / "MANIFEST.txt"
+CORPUS_VERSION_PATH = Path("cases") / "CORPUS_VERSION"
+ACTIVE_SET_DIRECTORY = Path("corpora") / "active-sets" / "v1"
+CORPUS_VERSIONS_PATH = Path("ci") / "corpus-versions.json"
 ARCHIVE_RECORD_MANIFEST = "record-manifest.json"
 ARCHIVE_CANDIDATE = "continuous-gauntlet-pipelock.json"
 ARCHIVE_CORPUS_MANIFEST = "corpus-manifest.txt"
@@ -130,13 +136,8 @@ def non_empty_string(document, path):
     return value
 
 
-def corpus_manifest_identity(manifest_path, label="corpus manifest"):
-    """Return one manifest identity using the runner's non-empty/unique ID rules."""
-    try:
-        raw = manifest_path.read_bytes()
-    except OSError as exc:
-        raise ValueError(f"read {label} {manifest_path}: {exc}") from exc
-
+def corpus_manifest_authority(raw, label="corpus manifest"):
+    """Return one manifest identity and ID set from the same supplied bytes."""
     try:
         logical_ids = [line.strip() for line in raw.decode("utf-8").splitlines() if line.strip()]
     except UnicodeDecodeError as exc:
@@ -145,16 +146,179 @@ def corpus_manifest_identity(manifest_path, label="corpus manifest"):
         raise ValueError(f"{label} has no logical case IDs")
     if len(logical_ids) != len(set(logical_ids)):
         raise ValueError(f"{label} contains duplicate logical case IDs")
-    return hashlib.sha256(raw).hexdigest(), len(logical_ids)
+    return hashlib.sha256(raw).hexdigest(), len(logical_ids), set(logical_ids)
 
 
-def checked_out_corpus_identity(expected_manifest=MANIFEST_PATH):
-    """Return the independently supplied corpus identity for a candidate."""
+def corpus_manifest_identity(manifest_path, label="corpus manifest"):
+    """Return one manifest identity using the runner's non-empty/unique ID rules."""
+    try:
+        raw = manifest_path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"read {label} {manifest_path}: {exc}") from exc
+    digest, count, _ = corpus_manifest_authority(raw, label)
+    return digest, count
+
+
+@dataclass(frozen=True)
+class CorpusAuthority:
+    source_digest: str
+    source_count: int
+    logical_count: int
+    source_label: str
+    logical_label: str
+
+
+def read_repo_regular_bytes(repo_root, relative_path, label):
+    """Read a repository-relative authority file without following symlinks."""
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise ValueError(f"cannot safely open {label}: O_NOFOLLOW is unavailable")
+    relative_path = Path(relative_path)
+    if relative_path.is_absolute() or not relative_path.parts or any(
+        part in {"", ".", ".."} for part in relative_path.parts
+    ):
+        raise ValueError(f"invalid repository-relative path for {label}")
+    close_on_exec = getattr(os, "O_CLOEXEC", 0)
+    directory_flags = (
+        os.O_RDONLY | close_on_exec | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+    )
+    try:
+        directory = os.open(repo_root, directory_flags)
+    except OSError as exc:
+        raise ValueError(f"cannot anchor repository path for {label}: {exc}") from exc
+    try:
+        for component in relative_path.parts[:-1]:
+            try:
+                child = os.open(component, directory_flags, dir_fd=directory)
+            except OSError as exc:
+                raise ValueError(f"parent path for {label} must contain only directories") from exc
+            os.close(directory)
+            directory = child
+        try:
+            descriptor = os.open(
+                relative_path.name,
+                os.O_RDONLY | close_on_exec | os.O_NOFOLLOW,
+                dir_fd=directory,
+            )
+        except OSError as exc:
+            raise ValueError(f"{label} must be a regular file") from exc
+    finally:
+        os.close(directory)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError(f"{label} must be a regular file")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            return handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def checked_out_active_set_count(source_digest, source_ids, corpus_version):
+    """Authenticate the current version's selected subset of the source catalog."""
+    active_set_path = ACTIVE_SET_DIRECTORY / f"{corpus_version}.json"
+    try:
+        active_set_bytes = read_repo_regular_bytes(REPO_ROOT, active_set_path, "active set")
+        active_set = json.loads(active_set_bytes)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"parse active set {active_set_path}: {exc}") from exc
+
+    required_keys = {
+        "schema_version",
+        "corpus_version",
+        "source_manifest_sha256",
+        "excluded_case_ids",
+        "case_count",
+    }
+    if not isinstance(active_set, dict) or set(active_set) != required_keys:
+        raise ValueError("active set must contain exactly the versioned selection fields")
+    if (
+        isinstance(active_set["schema_version"], bool)
+        or active_set["schema_version"] != 1
+        or active_set["corpus_version"] != corpus_version
+        or active_set["source_manifest_sha256"] != source_digest
+    ):
+        raise ValueError("active set does not bind the checked-out corpus version and source manifest")
+    excluded = active_set["excluded_case_ids"]
+    if (
+        not isinstance(excluded, list)
+        or any(not isinstance(case_id, str) or not case_id for case_id in excluded)
+        or len(excluded) != len(set(excluded))
+    ):
+        raise ValueError("active set excluded_case_ids must be a unique string array")
+    unknown = sorted(set(excluded) - source_ids)
+    if unknown:
+        raise ValueError(f"active set excludes unknown case IDs: {unknown!r}")
+    selected_count = len(source_ids - set(excluded))
+    if (
+        isinstance(active_set["case_count"], bool)
+        or not isinstance(active_set["case_count"], int)
+        or active_set["case_count"] < 1
+        or active_set["case_count"] != selected_count
+    ):
+        raise ValueError("active set case_count does not match its selected source cases")
+    try:
+        ledger = json.loads(
+            read_repo_regular_bytes(REPO_ROOT, CORPUS_VERSIONS_PATH, "corpus version ledger")
+        )
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"parse corpus version ledger {CORPUS_VERSIONS_PATH}: {exc}") from exc
+    versions = ledger.get("versions") if isinstance(ledger, dict) else None
+    matches = [
+        entry
+        for entry in versions or []
+        if isinstance(entry, dict) and entry.get("corpus_version") == corpus_version
+    ]
+    if not isinstance(versions, list) or len(matches) != 1 or versions[-1] is not matches[0]:
+        raise ValueError("active corpus version must appear once as the final ledger entry")
+    ledger_entry = matches[0]
+    if ledger_entry.get("active_set_sha256") != hashlib.sha256(active_set_bytes).hexdigest():
+        raise ValueError("corpus version ledger does not bind the active set bytes")
+    if (
+        isinstance(ledger_entry.get("case_count"), bool)
+        or not isinstance(ledger_entry.get("case_count"), int)
+        or ledger_entry.get("case_count") != selected_count
+    ):
+        raise ValueError("corpus version ledger case_count does not match the active set")
+    return selected_count
+
+
+def checked_out_corpus_authority(document, expected_manifest=MANIFEST_PATH):
+    """Return source and logical corpus identities for candidate validation."""
     if expected_manifest == MANIFEST_PATH:
-        label = "checked-out cases/MANIFEST.txt"
+        source_label = "checked-out cases/MANIFEST.txt"
+        manifest_bytes = read_repo_regular_bytes(
+            REPO_ROOT, Path("cases") / "MANIFEST.txt", source_label
+        )
     else:
-        label = "explicit expected corpus manifest"
-    return corpus_manifest_identity(expected_manifest, label), label
+        source_label = "explicit expected corpus manifest"
+        try:
+            manifest_bytes = expected_manifest.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"read {source_label} {expected_manifest}: {exc}") from exc
+    source_digest, source_count, source_ids = corpus_manifest_authority(
+        manifest_bytes, source_label
+    )
+    logical_count = source_count
+    logical_label = source_label
+
+    # Historical artifacts and explicit manifest pairs retain their original
+    # source-manifest semantics. The current checked-out corpus instead has a
+    # declared active set whose count is the executed scoring denominator.
+    if expected_manifest == MANIFEST_PATH and document.get("corpus_version"):
+        try:
+            current_version = read_repo_regular_bytes(
+                REPO_ROOT, CORPUS_VERSION_PATH, "checked-out corpus version"
+            ).decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise ValueError("checked-out corpus version is not valid UTF-8") from exc
+        if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", current_version):
+            raise ValueError("checked-out corpus version must be a v-prefixed semantic version")
+        if document["corpus_version"] != current_version:
+            raise ValueError("artifact corpus_version does not match the checked-out corpus version")
+        logical_count = checked_out_active_set_count(source_digest, source_ids, current_version)
+        logical_label = f"checked-out active set {current_version}"
+    return CorpusAuthority(source_digest, source_count, logical_count, source_label, logical_label)
 
 
 def require_sha256(value, label):
@@ -319,21 +483,21 @@ def validate_canonical_url(document):
         raise ValueError("canonical_url must be an absolute https URL")
 
 
-def validate_scope(document, manifest_identity, manifest_label):
+def validate_scope(document, corpus_authority):
     """Dispatch provenance validation by the explicit artifact schema version."""
     if not isinstance(document, dict):
         raise ValueError("artifact must be a JSON object")
     version = path_value(document, ("schema_version",))
     if version == 1:
-        validate_scope_v1(document, manifest_identity, manifest_label)
+        validate_scope_v1(document, corpus_authority)
     elif version == 2:
-        validate_scope_v2(document, manifest_identity, manifest_label)
+        validate_scope_v2(document, corpus_authority)
     elif version == 4:
-        validate_scope_v4(document, manifest_identity, manifest_label)
+        validate_scope_v4(document, corpus_authority)
     elif version == 5:
-        validate_scope_v5(document, manifest_identity, manifest_label)
+        validate_scope_v5(document, corpus_authority)
     elif version == 6:
-        validate_scope_v5(document, manifest_identity, manifest_label, expected_version=6)
+        validate_scope_v5(document, corpus_authority, expected_version=6)
     else:
         raise ValueError(f"unsupported schema_version: {version!r}")
     return artifact_schema.validate_file(
@@ -341,7 +505,7 @@ def validate_scope(document, manifest_identity, manifest_label):
     )
 
 
-def validate_scope_v1(document, manifest_identity, manifest_label):
+def validate_scope_v1(document, corpus_authority):
     """Validate the original applicable-only provenance contract."""
     for path in V1_REQUIRED_SCOPE_PATHS:
         path_value(document, path)
@@ -355,11 +519,10 @@ def validate_scope_v1(document, manifest_identity, manifest_label):
     if not SHA256_HEX.fullmatch(manifest_digest):
         raise ValueError("corpus_manifest_sha256 must be 64 lower-case hex characters")
     manifest_count = non_negative_integer(document, ("logical_case_count",))
-    expected_digest, expected_count = manifest_identity
-    if manifest_digest != expected_digest:
-        raise ValueError(f"corpus_manifest_sha256 does not match {manifest_label}")
-    if manifest_count != expected_count:
-        raise ValueError(f"logical_case_count does not match {manifest_label}")
+    if manifest_digest != corpus_authority.source_digest:
+        raise ValueError(f"corpus_manifest_sha256 does not match {corpus_authority.source_label}")
+    if manifest_count != corpus_authority.logical_count:
+        raise ValueError(f"logical_case_count does not match {corpus_authority.logical_label}")
 
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
@@ -368,8 +531,8 @@ def validate_scope_v1(document, manifest_identity, manifest_label):
     # is outside score denominators but still part of the logical corpus.
     unreachable = optional_non_negative_integer(document, ("case_count", "unreachable"))
     not_applicable = non_negative_integer(document, ("case_count", "not_applicable"))
-    if total == 0 or total != expected_count:
-        raise ValueError(f"case_count.total does not match {manifest_label} logical corpus count")
+    if total == 0 or total != corpus_authority.logical_count:
+        raise ValueError(f"case_count.total does not match {corpus_authority.logical_label} logical corpus count")
     if applicable + unreachable + not_applicable != total:
         raise ValueError("case_count.applicable, unreachable, and not_applicable must equal case_count.total")
     reasons = path_value(document, ("case_count", "not_applicable_reasons"))
@@ -401,7 +564,7 @@ def validate_scope_v1(document, manifest_identity, manifest_label):
     validate_canonical_url(document)
 
 
-def validate_scope_v2(document, manifest_identity, manifest_label):
+def validate_scope_v2(document, corpus_authority):
     """Validate the full/applicable, case-index-bound provenance contract."""
     if document.get("schema_version") != 2:
         raise ValueError("schema_version must be 2 for a v2 artifact")
@@ -420,11 +583,10 @@ def validate_scope_v2(document, manifest_identity, manifest_label):
     if not SHA256_HEX.fullmatch(case_index_digest):
         raise ValueError("case_index_sha256 must be 64 lower-case hex characters")
     manifest_count = non_negative_integer(document, ("logical_case_count",))
-    expected_digest, expected_count = manifest_identity
-    if manifest_digest != expected_digest:
-        raise ValueError(f"corpus_manifest_sha256 does not match {manifest_label}")
-    if manifest_count != expected_count:
-        raise ValueError(f"logical_case_count does not match {manifest_label}")
+    if manifest_digest != corpus_authority.source_digest:
+        raise ValueError(f"corpus_manifest_sha256 does not match {corpus_authority.source_label}")
+    if manifest_count != corpus_authority.logical_count:
+        raise ValueError(f"logical_case_count does not match {corpus_authority.logical_label}")
 
     applicable = non_negative_integer(document, ("case_count", "applicable"))
     total = non_negative_integer(document, ("case_count", "total"))
@@ -433,8 +595,8 @@ def validate_scope_v2(document, manifest_identity, manifest_label):
     errors = non_negative_integer(document, ("case_count", "errors"))
     if total == 0:
         raise ValueError("case_count.total must be greater than zero")
-    if total != expected_count:
-        raise ValueError(f"case_count.total does not match {manifest_label} logical corpus count")
+    if total != corpus_authority.logical_count:
+        raise ValueError(f"case_count.total does not match {corpus_authority.logical_label} logical corpus count")
     if applicable > total:
         raise ValueError("case_count.applicable cannot exceed case_count.total")
     if applicable + unreachable + not_applicable != total:
@@ -499,11 +661,11 @@ def validate_scope_v2(document, manifest_identity, manifest_label):
     validate_canonical_url(document)
 
 
-def validate_scope_v4(document, manifest_identity, manifest_label):
+def validate_scope_v4(document, corpus_authority):
     """Validate an active registry-bound artifact without reusing a v2 claim."""
     copied = dict(document)
     copied["schema_version"] = 2
-    validate_scope_v2(copied, manifest_identity, manifest_label)
+    validate_scope_v2(copied, corpus_authority)
     reference = document.get("capability_registry")
     if not isinstance(reference, dict) or set(reference) != {"id", "format", "revision", "sha256"}:
         raise ValueError("capability_registry must be an exact registry reference")
@@ -516,7 +678,7 @@ def validate_scope_v4(document, manifest_identity, manifest_label):
         raise ValueError("capability_registry.sha256 must be 64 lower-case hex characters")
 
 
-def validate_scope_v5(document, manifest_identity, manifest_label, expected_version=5):
+def validate_scope_v5(document, corpus_authority, expected_version=5):
     """Validate the active outcome-score plus presence-diagnostics contract."""
     if document.get("schema_version") != expected_version:
         raise ValueError(
@@ -556,11 +718,10 @@ def validate_scope_v5(document, manifest_identity, manifest_label, expected_vers
             "evidence": diagnostic_counts["structured_evidence_present_rate"],
         }
 
-    validate_scope_v2(projected, manifest_identity, manifest_label)
+    validate_scope_v2(projected, corpus_authority)
     validate_scope_v4(
         {**projected, "capability_registry": document.get("capability_registry")},
-        manifest_identity,
-        manifest_label,
+        corpus_authority,
     )
 
     counts = {
@@ -622,15 +783,23 @@ def main(argv):
         with args.artifact.open(encoding="utf-8") as artifact_file:
             artifact = json.load(artifact_file)
         if args.archive_record is not None:
-            manifest_identity = archive_manifest_identity(
+            source_digest, source_count = archive_manifest_identity(
                 args.artifact,
                 args.archive_record,
                 args.expected_record_manifest_sha256,
             )
-            manifest_label = "authenticated archive corpus manifest"
+            corpus_authority = CorpusAuthority(
+                source_digest,
+                source_count,
+                source_count,
+                "authenticated archive corpus manifest",
+                "authenticated archive corpus manifest",
+            )
         else:
-            manifest_identity, manifest_label = checked_out_corpus_identity(args.expected_manifest or MANIFEST_PATH)
-        validate_scope(artifact, manifest_identity, manifest_label)
+            corpus_authority = checked_out_corpus_authority(
+                artifact, args.expected_manifest or MANIFEST_PATH
+            )
+        validate_scope(artifact, corpus_authority)
     except (OSError, json.JSONDecodeError, ValueError, subprocess.SubprocessError) as exc:
         print(f"scope validation: FAIL: {exc}", file=sys.stderr)
         return 1
