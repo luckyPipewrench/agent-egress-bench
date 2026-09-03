@@ -209,36 +209,36 @@
         "control-evidence/v0/verifier",
         "control-evidence/v1/verifier"
       ],
-    "reader_contracts": [
-      {
-        "consumer": "runner_scoring",
-        "role": "scoring",
-        "path": "runner/case.go",
+      "reader_contracts": [
+        {
+          "consumer": "runner_scoring",
+          "role": "scoring",
+          "path": "runner/case.go",
           "accepted_versions": [
             4
           ]
         },
-      {
-        "consumer": "validator_scoring",
-        "role": "scoring",
-        "path": "validate/main.go",
+        {
+          "consumer": "validator_scoring",
+          "role": "scoring",
+          "path": "validate/main.go",
           "accepted_versions": [
             4
           ]
         },
-      {
-        "consumer": "control_evidence_v0",
-        "role": "retained_evidence",
-        "path": "control-evidence/v0/verifier",
+        {
+          "consumer": "control_evidence_v0",
+          "role": "retained_evidence",
+          "path": "control-evidence/v0/verifier",
           "accepted_versions": [
             1,
             3
           ]
         },
-      {
-        "consumer": "control_evidence_v1",
-        "role": "retained_evidence",
-        "path": "control-evidence/v1/verifier",
+        {
+          "consumer": "control_evidence_v1",
+          "role": "retained_evidence",
+          "path": "control-evidence/v1/verifier",
           "accepted_versions": [
             1,
             4
@@ -473,17 +473,19 @@
     },
     {
       "family": "promoted_record",
-      "active_writer_version": 3,
+      "active_writer_version": 4,
       "accepted_reader_versions": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "frozen_versions": [
         1,
         2,
         3
       ],
-      "frozen_versions": [
-        1,
-        2
-      ],
-      "canonical_schema_path": "schemas/promoted-record-v3.schema.json",
+      "canonical_schema_path": "schemas/promoted-record-v4.schema.json",
       "schemas": [
         {
           "version": 1,
@@ -501,9 +503,16 @@
         },
         {
           "version": 3,
-          "status": "active",
+          "status": "frozen",
           "path": "schemas/promoted-record-v3.schema.json",
-          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v3.schema.json"
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v3.schema.json",
+          "sha256": "a6f63ef8a6fed1476beaf8b7ef126d107034b356637db8ec10396313475c57a8"
+        },
+        {
+          "version": 4,
+          "status": "active",
+          "path": "schemas/promoted-record-v4.schema.json",
+          "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v4.schema.json"
         }
       ],
       "writer": [
