@@ -235,6 +235,8 @@ class PromotionFixture:
         self.summary = root / "promotion-summary.md"
         write_json(self.baseline_path, baseline_value or baseline())
         write_json(self.source_baseline_path, baseline_value or baseline())
+        self.source_baseline_origin_path = root / "source-baseline-origin.json"
+        self.write_source_baseline_origin()
 
         value = dict(candidate_value or v6_candidate())
         publication_fields = (
@@ -391,6 +393,21 @@ class PromotionFixture:
         write_json(self.candidate_path, self.candidate_value)
         self.write_source_decision()
 
+    def write_source_baseline_origin(self):
+        """Describe the retained policy so the promoter can bind it to an owner."""
+        write_json(
+            self.source_baseline_origin_path,
+            {
+                "schema_version": 1,
+                "repository": "luckyPipewrench/example-product",
+                "commit": "c" * 40,
+                "path": "benchmark/gauntlet-baseline.json",
+                "sha256": hashlib.sha256(
+                    self.source_baseline_path.read_bytes()
+                ).hexdigest(),
+            },
+        )
+
     def write_source_decision(self):
         decision = evaluator.evaluate(self.candidate_path, self.source_baseline_path, self.evidence)
         write_json(self.artifact_dir / promotion.SOURCE_DECISION_FILENAME, decision)
@@ -407,6 +424,8 @@ class PromotionFixture:
             str(self.baseline_path),
             "--source-baseline",
             str(self.source_baseline_path),
+            "--source-baseline-origin",
+            str(self.source_baseline_origin_path),
             "--store-root",
             str(self.store_root),
             "--latest",
@@ -636,6 +655,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             artifact_dir=fixture.artifact_dir,
             baseline=fixture.baseline_path,
             source_baseline=fixture.source_baseline_path,
+            source_baseline_origin=fixture.source_baseline_origin_path,
             store_root=fixture.store_root,
             latest=fixture.latest,
             summary=None,
@@ -661,6 +681,10 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         source = evaluator.load_object(fixture.source_baseline_path)
         source["pipelock_version"] = "3.2.0"
         write_json(fixture.source_baseline_path, source)
+        # A changed policy needs a matching origin, exactly as a real producer
+        # would rewrite both. Leaving the origin behind would fail on the digest
+        # first and this test would stop exercising the policy-change gate.
+        fixture.write_source_baseline_origin()
         fixture.write_source_decision()
 
         blocked = fixture.run()
@@ -688,6 +712,7 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             artifact_dir=fixture.artifact_dir,
             baseline=fixture.baseline_path,
             source_baseline=None,
+            source_baseline_origin=fixture.source_baseline_origin_path,
             store_root=fixture.store_root,
             latest=fixture.latest,
             summary=None,
@@ -884,7 +909,9 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
         record = fixture.store_root / "pipelock" / pointer["candidate_sha256"]
         manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
         manifest = evaluator.load_object(manifest_path)
-        manifest["schema_version"] = 4
+        # Sentinel for "a version this promoter does not know". Bump it when a
+        # real version catches up, or the test silently stops testing anything.
+        manifest["schema_version"] = 99
         write_json(manifest_path, manifest)
         with self.assertRaisesRegex(ValueError, "manifest schema_version is unsupported"):
             promotion.validate_record(record, pointer["candidate_sha256"])

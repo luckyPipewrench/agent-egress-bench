@@ -307,11 +307,23 @@ SOURCE_BASELINE_ORIGIN_KEYS = {"schema_version", "repository", "commit", "path",
 def load_source_baseline_origin(path, source_baseline_bytes):
     """Read the origin record and bind it to the baseline bytes it describes.
 
-    The record already proves its decision was computed from the retained
-    baseline. It cannot say whose policy that was or where it lived, so a
-    substituted baseline with a recomputed decision satisfies every other
-    check. This document supplies that missing locator, and is only meaningful
-    when its digest matches the bytes actually used.
+    WHAT THIS PROVES, AND WHAT IT DOES NOT. The record already proves its
+    decision was computed from the retained baseline. It cannot say whose
+    policy that was or where it lived, so this document supplies that locator
+    and is only accepted when its digest matches the bytes actually used.
+
+    It is a LOCATOR, not an origin proof. This repository has no network and
+    should not acquire one, so nothing here resolves the named repository,
+    commit and path to confirm those bytes were ever published there. A forged
+    locator whose digest matches a forged policy is accepted by this function.
+    The producer is what makes it meaningful: the site promotion fetches the
+    policy from the named repository at the run's own commit and writes the
+    locator from what it fetched, so it is a true audit pointer at write time
+    and an unresolved claim at archive-validation time.
+
+    Closing that gap needs a product-signed acceptance artifact rather than a
+    stricter check here, because no check over self-authored data can establish
+    origin.
     """
     document = require_object(Path(path))
     if set(document) != SOURCE_BASELINE_ORIGIN_KEYS:
