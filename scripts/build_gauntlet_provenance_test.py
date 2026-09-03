@@ -1905,5 +1905,36 @@ exec git "$@"
         self.assertTrue((output_dir / "runner.stderr").is_file())
 
 
+class FrozenReceiptExceptionTest(unittest.TestCase):
+    """The grandfathered pairs must describe records that actually exist.
+
+    The v5-receipt requirement shipped with one hardcoded exception that missed
+    the published site record, because that record did not exist yet and lives
+    in a different repository. A constant nobody checks against a real record is
+    how that happens twice.
+    """
+
+    def test_each_frozen_pair_is_two_distinct_digests(self):
+        pairs = build_gauntlet_provenance.FROZEN_V5_SUMMARY_V4_RECEIPTS
+        self.assertGreaterEqual(len(pairs), 2)
+        seen = set()
+        for summary_digest, receipt_digest in pairs:
+            for digest in (summary_digest, receipt_digest):
+                self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            self.assertNotEqual(summary_digest, receipt_digest)
+            self.assertNotIn(summary_digest, seen)
+            seen.add(summary_digest)
+
+    def test_the_published_site_record_pair_is_present(self):
+        """The record the public pointer names, which the first exception missed."""
+        self.assertIn(
+            (
+                "436149a0f28eaf6aed0f0f20a711a39856dae43a0b05905284b2c592c73d95dd",
+                "63d20b502f5b901b3b42bb78d06b590b3bbd93b103a733abcf266980e21f76d2",
+            ),
+            build_gauntlet_provenance.FROZEN_V5_SUMMARY_V4_RECEIPTS,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

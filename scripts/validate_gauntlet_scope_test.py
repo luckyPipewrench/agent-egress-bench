@@ -630,7 +630,11 @@ class ValidateGauntletScopeTest(unittest.TestCase):
                 check=False,
             )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("schema_version must be 1, 2, or 3", result.stderr)
+        # Derived, not hardcoded. A literal list here goes stale on the next
+        # schema version and the test then asserts an old message rather than
+        # the behaviour it names, which is how this broke at version 4.
+        expected = scope_validator.render_version_options(scope_validator.PROMOTED_RECORD_SCHEMAS)
+        self.assertIn(f"schema_version must be {expected}", result.stderr)
 
     def test_archive_record_rejects_an_untrusted_record_manifest_digest(self):
         artifact_path = FROZEN_RECORD / "continuous-gauntlet-pipelock.json"

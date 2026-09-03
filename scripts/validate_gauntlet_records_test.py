@@ -333,11 +333,23 @@ class ValidRecordFixture:
             evaluator.evaluate(self.candidate_path, self.source_baseline, evidence),
         )
         self.site = root / "site"
+        self.source_baseline_origin = root / "source-baseline-origin.json"
+        write_json(
+            self.source_baseline_origin,
+            {
+                "schema_version": 1,
+                "repository": "luckyPipewrench/example-product",
+                "commit": "b" * 40,
+                "path": "benchmark/gauntlet-baseline.json",
+                "sha256": evaluator.file_sha256(self.source_baseline),
+            },
+        )
         promotion.promote(
             SimpleNamespace(
                 artifact_dir=self.artifact_dir,
                 baseline=self.baseline,
                 source_baseline=self.source_baseline,
+                source_baseline_origin=self.source_baseline_origin,
                 store_root=self.site / "results",
                 latest=self.site / promotion.LATEST_POINTER_FILENAME,
                 summary=None,
@@ -401,6 +413,7 @@ class ValidRecordFixture:
                 artifact_dir=self.artifact_dir,
                 baseline=self.baseline,
                 source_baseline=self.source_baseline,
+                source_baseline_origin=self.source_baseline_origin,
                 store_root=self.site / "results",
                 latest=self.site / promotion.LATEST_POINTER_FILENAME,
                 summary=None,
@@ -510,7 +523,13 @@ class ValidateGauntletRecordsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reviewed baseline does not match"):
             validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
 
-    def test_source_baseline_must_match_candidate_commit(self):
+    def test_substituted_source_baseline_is_caught_by_its_origin(self):
+        """The exact attack the origin record exists to stop.
+
+        Swap the acceptance policy for a friendlier one and recompute its
+        decision so the record is internally consistent, then repair every
+        digest. Before the origin record existed, that passed.
+        """
         fixture = ValidRecordFixture(self.root())
         pointer_path = fixture.site / promotion.LATEST_POINTER_FILENAME
         pointer = evaluator.load_object(pointer_path)
@@ -540,8 +559,58 @@ class ValidateGauntletRecordsTest(unittest.TestCase):
         pointer["record_manifest_sha256"] = evaluator.file_sha256(manifest_path)
         write_json(pointer_path, pointer)
 
-        with self.assertRaisesRegex(ValueError, "source baseline differs from corpus_git_sha"):
+        with self.assertRaisesRegex(
+            ValueError, "does not describe the retained source baseline"
+        ):
             validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
+
+    def test_record_without_a_source_baseline_origin_is_rejected(self):
+        fixture = ValidRecordFixture(self.root())
+        pointer_path = fixture.site / promotion.LATEST_POINTER_FILENAME
+        pointer = evaluator.load_object(pointer_path)
+        record = fixture.site / "results" / "pipelock" / pointer["candidate_sha256"]
+        origin = record / promotion.SOURCE_BASELINE_ORIGIN_FILENAME
+        origin.unlink()
+        manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
+        manifest = evaluator.load_object(manifest_path)
+        del manifest["files"][promotion.SOURCE_BASELINE_ORIGIN_FILENAME]
+        write_json(manifest_path, manifest)
+        pointer["record_manifest_sha256"] = evaluator.file_sha256(manifest_path)
+        write_json(pointer_path, pointer)
+
+        with self.assertRaises(ValueError):
+            validator.validate(fixture.site, fixture.baseline, fixture.corpus_root)
+
+    def test_source_baseline_origin_shape_is_exact(self):
+        for mutation, expected in (
+            ({"commit": "not-a-sha"}, "40-character Git SHA"),
+            ({"repository": ""}, "trimmed non-empty string"),
+            ({"schema_version": 2}, "schema_version must be 1"),
+        ):
+            with self.subTest(mutation=mutation):
+                fixture = ValidRecordFixture(self.root())
+                pointer_path = fixture.site / promotion.LATEST_POINTER_FILENAME
+                pointer = evaluator.load_object(pointer_path)
+                record = (
+                    fixture.site / "results" / "pipelock" / pointer["candidate_sha256"]
+                )
+                origin_path = record / promotion.SOURCE_BASELINE_ORIGIN_FILENAME
+                origin = evaluator.load_object(origin_path)
+                origin.update(mutation)
+                write_json(origin_path, origin)
+                manifest_path = record / promotion.RECORD_MANIFEST_FILENAME
+                manifest = evaluator.load_object(manifest_path)
+                manifest["files"][
+                    promotion.SOURCE_BASELINE_ORIGIN_FILENAME
+                ] = evaluator.file_sha256(origin_path)
+                write_json(manifest_path, manifest)
+                pointer["record_manifest_sha256"] = evaluator.file_sha256(manifest_path)
+                write_json(pointer_path, pointer)
+
+                with self.assertRaisesRegex(ValueError, expected):
+                    validator.validate(
+                        fixture.site, fixture.baseline, fixture.corpus_root
+                    )
 
     def test_missing_predecessor_breaks_append_only_chain(self):
         fixture = ValidRecordFixture(self.root())

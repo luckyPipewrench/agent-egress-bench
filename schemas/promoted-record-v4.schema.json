@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luckyPipewrench/agent-egress-bench/schemas/promoted-record-v4.schema.json",
+  "title": "agent-egress-bench Promoted Record v4",
+  "x-aeb-nullable-required": [
+    "previous_candidate_sha256",
+    "previous_record_manifest_sha256"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool",
+    "tool_version",
+    "artifact_id",
+    "canonical_url",
+    "generated_at",
+    "candidate_sha256",
+    "previous_candidate_sha256",
+    "previous_record_manifest_sha256",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 4
+    },
+    "tool": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "tool_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "artifact_id": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "canonical_url": {
+      "type": "string",
+      "pattern": "^https://[^?#]+$"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "candidate_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "previous_candidate_sha256": {
+      "$ref": "#/$defs/nullable_sha256"
+    },
+    "previous_record_manifest_sha256": {
+      "$ref": "#/$defs/nullable_sha256"
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "continuous-gauntlet-pipelock.json",
+        "destination-baseline.json",
+        "destination-promotion-decision.json",
+        "reviewed-baseline.json",
+        "reviewed-promotion-decision.json",
+        "source-baseline-origin.json",
+        "source-baseline.json",
+        "source-promotion-decision.json"
+      ],
+      "properties": {
+        "capability-registry.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "case-index.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "checksums.txt": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command.txt": {
+          "$ref": "#/$defs/sha256"
+        },
+        "continuous-gauntlet-pipelock.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "corpus-manifest.txt": {
+          "$ref": "#/$defs/sha256"
+        },
+        "destination-baseline.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "destination-promotion-decision.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "entrypoint-command.txt": {
+          "$ref": "#/$defs/sha256"
+        },
+        "execution-decision.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "make-stats.txt": {
+          "$ref": "#/$defs/sha256"
+        },
+        "pipelock-release.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "pipelock-version.txt": {
+          "$ref": "#/$defs/sha256"
+        },
+        "raw-summary.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receipt-profile.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "results.jsonl": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reviewed-baseline.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reviewed-promotion-decision.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run-bundle.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run-metadata.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runner.stderr": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source-baseline-origin.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source-baseline.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source-promotion-decision.json": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tool-profile.json": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullable_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

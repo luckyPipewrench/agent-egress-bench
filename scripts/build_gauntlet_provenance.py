@@ -43,10 +43,31 @@ FROZEN_SCORING_VERSIONS = frozenset({"2.4"})
 PROVENANCE_SCHEMAS = artifact_contracts.schema_paths("provenance_candidate")
 CASE_INDEX_SCHEMAS = artifact_contracts.schema_paths("case_index")
 ACTIVE_CASE_INDEX_SCHEMA_VERSION = artifact_contracts.active_version("case_index")
-FROZEN_V5_SUMMARY_V4_RECEIPT = (
-    "1e182405cdff08f8f0e8835c7c0aed7047b4c0e2fbd539f22c390175d5507b64",
-    "2beeb7194b0e1a5f610198e2d4e29ddb793f8213177627cb9f0de4775f36481b",
-)
+# Records published before the v5 receipt profile was required. Each pair is a
+# published record that was produced under a corpus commit predating that rule,
+# so it was valid when it was made and is immutable now. Membership is decided
+# by exact digest rather than by a date or a self-declared contract version,
+# because either of those can be claimed by a later record to escape the rule.
+# A pair belongs here only with the record it covers and the commit it was
+# produced against named in the comment beside it.
+FROZEN_V5_SUMMARY_V4_RECEIPTS = frozenset({
+    # agent-egress-bench gauntlet-site record 23ff4c7c, produced against a
+    # corpus commit before 95c4e76d ("bind receipt profiles to observed
+    # provenance") introduced the requirement.
+    (
+        "1e182405cdff08f8f0e8835c7c0aed7047b4c0e2fbd539f22c390175d5507b64",
+        "2beeb7194b0e1a5f610198e2d4e29ddb793f8213177627cb9f0de4775f36481b",
+    ),
+    # pipelab.org published record a4a6d7c8, the Pipelock 3.4.0 result the
+    # public pointer names. Produced against corpus commit 2d6cb1d6, which does
+    # not contain 95c4e76d. It was missed when the first pair was recorded
+    # because it did not exist yet and because it lives in the site repository
+    # rather than this one.
+    (
+        "436149a0f28eaf6aed0f0f20a711a39856dae43a0b05905284b2c592c73d95dd",
+        "63d20b502f5b901b3b42bb78d06b590b3bbd93b103a733abcf266980e21f76d2",
+    ),
+})
 
 RAW_EVIDENCE = {
     "raw_summary": "raw-summary.json",
@@ -388,7 +409,7 @@ def validate_active_registry_binding(run_dir, summary, results):
     if summary.get("schema_version") == 5 and receipt_version != 5:
         summary_bytes = (run_dir / RAW_EVIDENCE["raw_summary"]).read_bytes()
         pair = (hashlib.sha256(summary_bytes).hexdigest(), hashlib.sha256(receipt_bytes).hexdigest())
-        if pair != FROZEN_V5_SUMMARY_V4_RECEIPT:
+        if pair not in FROZEN_V5_SUMMARY_V4_RECEIPTS:
             raise ValueError("v5 summary requires a v5 receipt profile")
     try:
         profile = json.loads(profile_bytes)

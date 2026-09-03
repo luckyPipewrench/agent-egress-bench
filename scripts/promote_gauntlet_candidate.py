@@ -3,6 +3,7 @@
 
 import argparse
 import importlib.util
+import hashlib
 import json
 import os
 import re
@@ -35,6 +36,7 @@ RUN_BUNDLE_FILENAME = "run-bundle.json"
 PUBLISHED_DECISION_FILENAME = "reviewed-promotion-decision.json"
 BASELINE_SNAPSHOT_FILENAME = "reviewed-baseline.json"
 SOURCE_BASELINE_FILENAME = "source-baseline.json"
+SOURCE_BASELINE_ORIGIN_FILENAME = "source-baseline-origin.json"
 RECORD_MANIFEST_FILENAME = "record-manifest.json"
 LATEST_POINTER_FILENAME = "latest-verified.json"
 FIRST_PARTY_ASSURANCES = ["self-run", "artifact-validated"]
@@ -297,6 +299,69 @@ def proposed_baseline(candidate, candidate_sha256):
         baseline, PROMOTION_BASELINE_SCHEMA, "proposed baseline"
     )
     return baseline
+
+
+SOURCE_BASELINE_ORIGIN_KEYS = {"schema_version", "repository", "commit", "path", "sha256"}
+
+
+def load_source_baseline_origin(path, source_baseline_bytes):
+    """Read the file once and validate exactly the bytes the caller will keep."""
+    origin_bytes = Path(path).read_bytes()
+    return validate_source_baseline_origin(origin_bytes, source_baseline_bytes, path)
+
+
+def validate_source_baseline_origin(origin_bytes, source_baseline_bytes, path="origin"):
+    """Read the origin record and bind it to the baseline bytes it describes.
+
+    WHAT THIS PROVES, AND WHAT IT DOES NOT. The record already proves its
+    decision was computed from the retained baseline. It cannot say whose
+    policy that was or where it lived, so this document supplies that locator
+    and is only accepted when its digest matches the bytes actually used.
+
+    It is a LOCATOR, not an origin proof. This repository has no network and
+    should not acquire one, so nothing here resolves the named repository,
+    commit and path to confirm those bytes were ever published there. A forged
+    locator whose digest matches a forged policy is accepted by this function.
+    The producer is what makes it meaningful: the site promotion fetches the
+    policy from the named repository at the run's own commit and writes the
+    locator from what it fetched, so it is a true audit pointer at write time
+    and an unresolved claim at archive-validation time.
+
+    Closing that gap needs a product-signed acceptance artifact rather than a
+    stricter check here, because no check over self-authored data can establish
+    origin.
+    """
+    try:
+        document = json.loads(origin_bytes)
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise ValueError(f"{path} is not readable JSON: {exc}") from exc
+    if not isinstance(document, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    if set(document) != SOURCE_BASELINE_ORIGIN_KEYS:
+        raise ValueError(
+            "source baseline origin must contain exactly "
+            f"{sorted(SOURCE_BASELINE_ORIGIN_KEYS)!r}"
+        )
+    if document["schema_version"] != 1:
+        raise ValueError("source baseline origin schema_version must be 1")
+    for key in ("repository", "path"):
+        value = document[key]
+        if not isinstance(value, str) or not value or value.strip() != value:
+            raise ValueError(f"source baseline origin {key} must be a trimmed non-empty string")
+    commit = document["commit"]
+    if (
+        not isinstance(commit, str)
+        or len(commit) != 40
+        or any(character not in "0123456789abcdef" for character in commit)
+    ):
+        raise ValueError("source baseline origin commit must be a lower-case 40-character Git SHA")
+    require_sha256(document["sha256"], "source baseline origin sha256")
+    actual = hashlib.sha256(source_baseline_bytes).hexdigest()
+    if document["sha256"] != actual:
+        raise ValueError(
+            "source baseline origin does not describe the retained source baseline"
+        )
+    return origin_bytes
 
 
 def atomic_copy(source, destination):
@@ -612,6 +677,16 @@ def promote(args):
     source_baseline = (getattr(args, "source_baseline", None) or args.baseline).resolve()
     destination_baseline = args.baseline.resolve()
     source_baseline_bytes = source_baseline.read_bytes()
+    source_baseline_origin_path = getattr(args, "source_baseline_origin", None)
+    if source_baseline_origin_path is None:
+        raise ValueError("--source-baseline-origin is required: a record must state whose policy judged it")
+    source_baseline_origin_path = Path(source_baseline_origin_path).resolve()
+    # Read once and archive exactly what was validated. Reading again after the
+    # check would let a concurrent producer swap the file in between, so the
+    # record would carry origin bytes nothing ever checked.
+    source_baseline_origin_bytes = load_source_baseline_origin(
+        source_baseline_origin_path, source_baseline_bytes
+    )
     destination_baseline_bytes = destination_baseline.read_bytes()
     source_decision_bytes = source_decision_path.read_bytes()
     with tempfile.TemporaryDirectory(prefix="gauntlet-baseline-snapshots-") as temporary:
@@ -665,6 +740,9 @@ def promote(args):
                 source_decision_bytes
             )
             (temporary_record / SOURCE_BASELINE_FILENAME).write_bytes(source_baseline_bytes)
+            (temporary_record / SOURCE_BASELINE_ORIGIN_FILENAME).write_bytes(
+                source_baseline_origin_bytes
+            )
             (temporary_record / DESTINATION_BASELINE_FILENAME).write_bytes(
                 destination_baseline_bytes
             )
@@ -744,6 +822,12 @@ def parse_args():
         "--source-baseline",
         type=Path,
         help="baseline used by the producer to create promotion-decision.json; defaults to --baseline",
+    )
+    parser.add_argument(
+        "--source-baseline-origin",
+        type=Path,
+        required=True,
+        help="JSON document naming the repository, commit, path and digest of the source baseline",
     )
     parser.add_argument("--store-root", type=Path, default=Path("gauntlet-site/results"))
     parser.add_argument("--latest", type=Path, default=Path("gauntlet-site") / LATEST_POINTER_FILENAME)
