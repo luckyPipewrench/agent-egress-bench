@@ -305,6 +305,12 @@ SOURCE_BASELINE_ORIGIN_KEYS = {"schema_version", "repository", "commit", "path",
 
 
 def load_source_baseline_origin(path, source_baseline_bytes):
+    """Read the file once and validate exactly the bytes the caller will keep."""
+    origin_bytes = Path(path).read_bytes()
+    return validate_source_baseline_origin(origin_bytes, source_baseline_bytes, path)
+
+
+def validate_source_baseline_origin(origin_bytes, source_baseline_bytes, path="origin"):
     """Read the origin record and bind it to the baseline bytes it describes.
 
     WHAT THIS PROVES, AND WHAT IT DOES NOT. The record already proves its
@@ -325,7 +331,12 @@ def load_source_baseline_origin(path, source_baseline_bytes):
     stricter check here, because no check over self-authored data can establish
     origin.
     """
-    document = require_object(Path(path))
+    try:
+        document = json.loads(origin_bytes)
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise ValueError(f"{path} is not readable JSON: {exc}") from exc
+    if not isinstance(document, dict):
+        raise ValueError(f"{path} must contain a JSON object")
     if set(document) != SOURCE_BASELINE_ORIGIN_KEYS:
         raise ValueError(
             "source baseline origin must contain exactly "
@@ -350,7 +361,7 @@ def load_source_baseline_origin(path, source_baseline_bytes):
         raise ValueError(
             "source baseline origin does not describe the retained source baseline"
         )
-    return document
+    return origin_bytes
 
 
 def atomic_copy(source, destination):
@@ -670,8 +681,12 @@ def promote(args):
     if source_baseline_origin_path is None:
         raise ValueError("--source-baseline-origin is required: a record must state whose policy judged it")
     source_baseline_origin_path = Path(source_baseline_origin_path).resolve()
-    load_source_baseline_origin(source_baseline_origin_path, source_baseline_bytes)
-    source_baseline_origin_bytes = source_baseline_origin_path.read_bytes()
+    # Read once and archive exactly what was validated. Reading again after the
+    # check would let a concurrent producer swap the file in between, so the
+    # record would carry origin bytes nothing ever checked.
+    source_baseline_origin_bytes = load_source_baseline_origin(
+        source_baseline_origin_path, source_baseline_bytes
+    )
     destination_baseline_bytes = destination_baseline.read_bytes()
     source_decision_bytes = source_decision_path.read_bytes()
     with tempfile.TemporaryDirectory(prefix="gauntlet-baseline-snapshots-") as temporary:

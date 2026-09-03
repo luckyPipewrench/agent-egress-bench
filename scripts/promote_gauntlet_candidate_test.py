@@ -676,6 +676,48 @@ class PromoteGauntletCandidateTest(unittest.TestCase):
             destination_bytes,
         )
 
+    def test_archived_origin_is_the_bytes_that_were_validated(self):
+        """Swapping the origin file after validation must not reach the record.
+
+        The promoter used to validate the path and then read it again for
+        archival, so a concurrent producer could replace the file between those
+        two reads and the record would carry origin bytes nothing checked.
+        """
+        fixture = self.fixture()
+        validated = fixture.source_baseline_origin_path.read_bytes()
+        forged = json.dumps(
+            {
+                "schema_version": 1,
+                "repository": "attacker/friendly-policy",
+                "commit": "d" * 40,
+                "path": "benchmark/gauntlet-baseline.json",
+                "sha256": "0" * 64,
+            }
+        ).encode()
+        self.assertNotEqual(validated, forged)
+
+        original_read = Path.read_bytes
+        state = {"calls": 0}
+
+        def swapping_read(self_path, *args, **kwargs):
+            data = original_read(self_path, *args, **kwargs)
+            if self_path == fixture.source_baseline_origin_path:
+                state["calls"] += 1
+                # Replace the file the instant it is first read, which is what a
+                # concurrent producer does.
+                original_write = Path.write_bytes
+                original_write(self_path, forged)
+            return data
+
+        with mock.patch.object(Path, "read_bytes", swapping_read):
+            archived = promotion.load_source_baseline_origin(
+                fixture.source_baseline_origin_path,
+                fixture.source_baseline_path.read_bytes(),
+            )
+        self.assertGreaterEqual(state["calls"], 1)
+        self.assertEqual(archived, validated)
+        self.assertNotEqual(archived, forged)
+
     def test_blocked_source_decision_requires_explicit_review(self):
         fixture = self.fixture()
         source = evaluator.load_object(fixture.source_baseline_path)
