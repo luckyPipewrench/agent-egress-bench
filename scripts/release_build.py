@@ -35,6 +35,13 @@ BUILD_METADATA = r"(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?"
 CORE_VERSION = rf"{NUMERIC_ID}\.{NUMERIC_ID}\.{NUMERIC_ID}"
 VERSION_RE = re.compile(rf"^{CORE_VERSION}{PRERELEASE}{BUILD_METADATA}$")
 SNAPSHOT_VERSION_RE = re.compile(rf"^{CORE_VERSION}{PRERELEASE}-SNAPSHOT-[0-9a-f]{{4,40}}$")
+# A snapshot version is the source tag with -SNAPSHOT-<short-commit> appended, so a
+# source tag carrying build metadata cannot produce a valid one: the specification
+# allows nothing after build metadata, and the GoReleaser template renders the tag
+# verbatim before the suffix. Such a tag is refused at selection, where the message
+# can name the cause, rather than at render, where it surfaces as an opaque template
+# mismatch.
+SNAPSHOT_SOURCE_VERSION_RE = re.compile(rf"^{CORE_VERSION}{PRERELEASE}$")
 IDENTITY_NAME = "release-identity.json"
 CHECKSUM_NAME = "checksums.txt"
 SCHEMA_CATALOG_PATH = "schemas/index.json"
@@ -157,8 +164,13 @@ def snapshot_source_tag(repo: Path, commit: str) -> str:
     if not COMMIT_RE.fullmatch(commit):
         fail("snapshot commit must be a 40-character lower-case Git SHA")
     tags = git(repo, "tag", "--merged", commit, "--sort=-v:refname").splitlines()
-    tag = next((candidate for candidate in tags if candidate.startswith("v") and VERSION_RE.fullmatch(candidate[1:])), "")
+    tag = next(
+        (candidate for candidate in tags if candidate.startswith("v") and SNAPSHOT_SOURCE_VERSION_RE.fullmatch(candidate[1:])),
+        "",
+    )
     if not tag:
+        if any(candidate.startswith("v") and VERSION_RE.fullmatch(candidate[1:]) for candidate in tags):
+            fail("GoReleaser snapshot source tag must not carry build metadata")
         fail("GoReleaser snapshot source tag must be a v-prefixed semantic version")
     return tag
 

@@ -1362,6 +1362,21 @@ class ReleaseBuildTest(unittest.TestCase):
             with self.subTest(rejected=version):
                 self.assertIsNone(module.VERSION_RE.fullmatch(version))
 
+    def test_snapshot_source_tag_refuses_a_build_metadata_tag(self) -> None:
+        """A tag that cannot yield a valid snapshot version is refused where the cause is known.
+
+        The snapshot version appends the snapshot suffix to the source tag, and
+        the specification permits nothing after build metadata, so a `+build`
+        tag renders a string the snapshot contract must reject. Selecting it and
+        failing later reports a template mismatch instead of the real reason.
+        """
+        module = self.release_build_module()
+        self.assertIsNotNone(module.VERSION_RE.fullmatch("1.0.0+build.5"))
+        self.assertIsNone(module.SNAPSHOT_SOURCE_VERSION_RE.fullmatch("1.0.0+build.5"))
+        self.assertIsNone(module.SNAPSHOT_VERSION_RE.fullmatch("1.0.0+build.5-SNAPSHOT-abcdef12"))
+        self.assertIsNotNone(module.SNAPSHOT_SOURCE_VERSION_RE.fullmatch("1.0.0"))
+        self.assertIsNotNone(module.SNAPSHOT_SOURCE_VERSION_RE.fullmatch("1.0.0-alpha.1"))
+
     def test_snapshot_version_validation_rejects_leading_zero_cores(self) -> None:
         """The snapshot expression shares the version core, so it inherits the same rule."""
         module = self.release_build_module()
