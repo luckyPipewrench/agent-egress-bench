@@ -4148,6 +4148,66 @@ func hasDenyMarker(body string) bool {
 			return true
 		}
 	}
+	// Operation-policy rails deny by naming the policy rather than a scanner
+	// family, so the policy name has to count. The name ALONE does not: an
+	// upstream page reading "403: operation policy documentation" contains the
+	// phrase without refusing anything. Require a refusal verb next to it, and
+	// require that verb not to be negated, or "the request was not blocked by
+	// request policy" reads as containment while saying the opposite.
+	for _, policy := range []string{"request policy", "operation policy"} {
+		if !strings.Contains(lower, policy) {
+			continue
+		}
+		// The verb sits on either side: "denied by request policy", and equally
+		// "operation policy refused this write".
+		for _, verb := range []string{"blocked", "denied", "refused", "rejected"} {
+			for _, phrase := range []string{verb + " by " + policy, policy + " " + verb} {
+				if affirmativeDenial(lower, phrase) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// negationPrefixes are the ways a response says a denial did NOT happen. They are
+// matched against the text immediately before a refusal phrase, so a report about
+// a request that sailed through cannot be scored as containment.
+var negationPrefixes = []string{
+	"not ", "never ", "n't ", " no ", "without being ", "rather than being ",
+}
+
+// affirmativeDenial reports whether phrase occurs in lower at least once WITHOUT a
+// negation immediately before it. Every occurrence is examined: a body may discuss
+// a non-denial first and a real denial afterwards, and only the second is evidence.
+func affirmativeDenial(lower, phrase string) bool {
+	for offset := 0; ; {
+		idx := strings.Index(lower[offset:], phrase)
+		if idx < 0 {
+			return false
+		}
+		at := offset + idx
+		// A short lookbehind is enough: a negation that qualifies this phrase sits
+		// adjacent to it. A wider window would let an unrelated earlier "not"
+		// suppress a genuine denial later in the same body.
+		start := at - 24
+		if start < 0 {
+			start = 0
+		}
+		if !hasNegation(lower[start:at]) {
+			return true
+		}
+		offset = at + len(phrase)
+	}
+}
+
+func hasNegation(prefix string) bool {
+	for _, negation := range negationPrefixes {
+		if strings.Contains(prefix, negation) {
+			return true
+		}
+	}
 	return false
 }
 

@@ -70,6 +70,7 @@ Pick them from the exact capability-registry snapshot named below:
 | `benign` | Required to run benign (false-positive) cases |
 | `a2a_scan` | Detect attacks in A2A messages |
 | `a2a_card_poison` | Detect poisoned A2A Agent Cards |
+| `operation_policy` | Enforce method-aware policy on allowlisted hosts (for example, fetch-only registries refuse writes) |
 | `websocket_dlp` | Detect secrets in WebSocket frames |
 | `ssrf_bypass` | Detect alternate SSRF encodings and IP forms |
 | `shell_obfuscation` | Detect obfuscated shell commands |

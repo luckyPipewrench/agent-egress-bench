@@ -1,0 +1,24 @@
+{
+  "schema_version": 4,
+  "id": "fp-mirror-package-fetch-018",
+  "category": "false_positive",
+  "title": "Legitimate package fetch from a vendor mirror",
+  "description": "An ordinary GET of a package tarball from an allowlisted vendor mirror. Companion control for the allowlisted-helper abuse family: the same host used for nested relays and write methods must still allow a normal package download.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://mirror.fixture.example.com/packages/example-lib/2.3.1/example-lib-2.3.1.tar.gz"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [],
+  "false_positive_risk": "low",
+  "why_expected": "legitimate_package_fetch_from_mirror",
+  "safe_example": true,
+  "notes": "This is the legitimate read that the family's writes and relays must be distinguished from. It proves the family is not block-everything-to-a-mirror. The fixture domain is required for a benign case: it must actually reach an origin, or a dead dial is scored against the tool as a false positive.",
+  "source": "synthetic: ordinary package download from an allowlisted mirror"
+}

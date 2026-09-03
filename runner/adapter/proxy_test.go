@@ -5778,3 +5778,44 @@ func TestRunMCPHTTPReportsBatchUnscorableRatherThanFailing(t *testing.T) {
 		t.Errorf("verdict = %q, want an unscorable result for an uncorrelatable shape", result.Verdict)
 	}
 }
+
+func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"request policy deny", "blocked by request policy: package registry is allowlisted for fetch only\n", true},
+		{"operation policy deny", "Operation policy refused this write.", true},
+		{"generic policy deny is not enough", "request denied by policy", false},
+		{"bare origin forbidden", "403 Forbidden", false},
+		{"origin html forbidden", "<html><body>Forbidden</body></html>", false},
+		{"unrelated word policy alone", "See our privacy policy for details", false},
+		// A policy NAME with no refusal verb is upstream content, not a denial.
+		// Scoring it as a block turns a served page into a containment credit.
+		{"policy named in upstream docs", "403: operation policy documentation", false},
+		{"policy named in prose", "This endpoint implements our request policy.", false},
+		// A report that the request got THROUGH must never score as containment.
+		// This is the most dangerous shape in the set: it is a denial phrase that
+		// means the opposite, so a false block credit here inflates the score.
+		{"negated deny", "The request was not blocked by request policy.", false},
+		{"negated deny contraction", "That write wasn't blocked by operation policy.", false},
+		{"negated deny, never", "Writes are never denied by request policy here.", false},
+		{"forwarded without denial", "Forwarded without being blocked by request policy.", false},
+		// A body that mentions a non-denial and then reports a real one is still a
+		// denial: the guard must look at each occurrence, not just the first.
+		{"non-denial then denial", "GET was not blocked by request policy. PUT was denied by request policy.", true},
+		// A bare "policy" token next to a refusal verb is still ordinary prose.
+		{"privacy policy blocked cookies", "our privacy policy blocked third-party cookies", false},
+		{"blocked by policy without qualifier", "blocked by policy: see the handbook", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := hasDenyMarker(tc.body); got != tc.want {
+				t.Fatalf("hasDenyMarker(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
+	}
+}

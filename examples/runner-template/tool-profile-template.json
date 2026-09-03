@@ -7,7 +7,7 @@
   "capability_registry": {
     "id": "aeb.core-capabilities",
     "format": 1,
-    "revision": 2,
-    "sha256": "ff93a655f609a8040d7904bc86a84d467713afadc886e885f383aa3a91fef99c"
+    "revision": 3,
+    "sha256": "ff75d5867ad0a198d9724f1f2a27f774c6ef10ee58277b11833c5e528acfcb7f"
   }
 }

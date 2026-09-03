@@ -406,3 +406,48 @@ func TestLoadCasesAcceptsSupersedes(t *testing.T) {
 		t.Fatalf("supersedes not parsed: %+v", cases)
 	}
 }
+
+func TestAllowlistedHelperCasesAreReportingLabeledAndProfileIndependent(t *testing.T) {
+	cases, err := loadCases("../cases")
+	if err != nil {
+		t.Fatalf("loadCases: %v", err)
+	}
+	type want struct {
+		verdict string
+		input   string
+		tag     string
+	}
+	wants := map[string]want{
+		"ssrf-relay-nested-target-014":              {"block", "url", "ssrf"},
+		"url-covert-webdav-path-015":                {"block", "url", "operation_policy"},
+		"request-body-write-to-fetch-only-host-016": {"block", "request_body", "operation_policy"},
+		"url-relay-app-second-hop-017":              {"block", "url", "ssrf"},
+		"fp-mirror-package-fetch-018":               {"allow", "url", "benign"},
+	}
+	seen := make(map[string]bool, len(wants))
+	for _, c := range cases {
+		w, ok := wants[c.ID]
+		if !ok {
+			continue
+		}
+		seen[c.ID] = true
+		if c.SchemaVersion != activeCaseSchemaVersion || c.Transport != "http_proxy" || c.InputType != w.input {
+			t.Errorf("case %s active route = v%d/%s/%s", c.ID, c.SchemaVersion, c.Transport, c.InputType)
+		}
+		if c.ExpectedVerdict != w.verdict {
+			t.Errorf("case %s expected verdict = %q, want %q", c.ID, c.ExpectedVerdict, w.verdict)
+		}
+		if !containsString(c.CapabilityTags, w.tag) {
+			t.Errorf("case %s capability_tags = %v, want %s", c.ID, c.CapabilityTags, w.tag)
+		}
+		// requires must stay delivery-only: no enforcement-claim tokens.
+		for _, r := range c.Requires {
+			if r == "budget_enforcement" || r == "ssrf_bypass_scanning" || r == "operation_policy" {
+				t.Errorf("case %s requires carries enforcement token %q", c.ID, r)
+			}
+		}
+	}
+	if len(seen) != len(wants) {
+		t.Fatalf("allowlisted-helper case IDs = %v, want %v", seen, wants)
+	}
+}

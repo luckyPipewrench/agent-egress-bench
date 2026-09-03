@@ -37,11 +37,12 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
-	// v2.7.0 replaces two malformed mixed initialize/tools-list fixtures in the
-	// active score with two valid initialize-response cases. The retained source
-	// bytes stay outside the active set; the append-only ledger binds the
-	// changed denominator and wire contract to this label.
-	corpusVersion  = "v2.7.0"
+	// v2.8.0 adds the allowlisted-helper abuse family: nested SSRF through a
+	// mirror relay, an encoded WebDAV path, a write to a fetch-only host, an
+	// internal target through an agent-deployed relay, and a benign package
+	// fetch. The append-only corpus ledger binds this label to the new manifest
+	// and active set instead of redefining v2.7.0.
+	corpusVersion  = "v2.8.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"

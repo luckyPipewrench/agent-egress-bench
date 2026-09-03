@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-relay-nested-target-014",
+  "case_sha256": "04e33f33cc2f4d9474a74cd10060415df7e6836c7f47780650fbb9aadc296908",
+  "case_description": "A request to an allowlisted package-mirror proxy endpoint whose nested target parameter names a cloud metadata address. The literal destination host is trusted; the SSRF target is only in the query string.",
+  "expected_verdict": "block",
+  "why_expected": "ssrf_target_nested_in_allowlisted_relay_url",
+  "source": "https://cdn.openai.com/pdf/67869394-cb91-4c12-888c-5cbd85c7814c/OpenAI-Hugging-Face%20Incident-Technical-Report.pdf - SSRF relayed through an allowlisted package service",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

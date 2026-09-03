@@ -26,6 +26,8 @@ How agent-egress-bench cases map to the [OWASP Top 10 for Agentic Applications (
 
 The `denial_of_wallet` capability tag maps to OWASP LLM Top 10 Unbounded Consumption. In this corpus it is expressed through `mcp_chain` call-count budget sequences rather than a separate category.
 
+The `operation_policy` capability tag maps to ASI02 Tool Misuse & Exploitation. It labels cases where an allowlisted destination is used with an operation the operator never intended for it, such as a write to a fetch-only package registry or a non-fetch WebDAV verb, and it is expressed through `url` and `request_body` cases rather than a separate category.
+
 ## Detailed mapping
 
 ### ASI01: Agent Goal Hijack
