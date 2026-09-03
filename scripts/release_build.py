@@ -22,8 +22,19 @@ from typing import Any
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
-VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-SNAPSHOT_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-SNAPSHOT-[0-9a-f]{4,40}$")
+# Numeric identifiers, per the Semantic Versioning 2.0.0 specification: a numeric
+# identifier is either 0 or a non-zero digit followed by digits, so leading zeroes
+# are invalid. The previous [0-9]+ accepted "01.2.3" and calendar-style
+# "2026.09.0", so the release path advertised a SemVer check it did not perform.
+# Derived from the suggested expression published at semver.org, with its capture
+# groups removed because nothing here reads the parts.
+NUMERIC_ID = r"(?:0|[1-9][0-9]*)"
+PRERELEASE_ID = r"(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)"
+PRERELEASE = rf"(?:-{PRERELEASE_ID}(?:\.{PRERELEASE_ID})*)?"
+BUILD_METADATA = r"(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?"
+CORE_VERSION = rf"{NUMERIC_ID}\.{NUMERIC_ID}\.{NUMERIC_ID}"
+VERSION_RE = re.compile(rf"^{CORE_VERSION}{PRERELEASE}{BUILD_METADATA}$")
+SNAPSHOT_VERSION_RE = re.compile(rf"^{CORE_VERSION}{PRERELEASE}-SNAPSHOT-[0-9a-f]{{4,40}}$")
 IDENTITY_NAME = "release-identity.json"
 CHECKSUM_NAME = "checksums.txt"
 SCHEMA_CATALOG_PATH = "schemas/index.json"

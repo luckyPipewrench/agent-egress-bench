@@ -1325,6 +1325,51 @@ class ReleaseBuildTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def test_release_version_validation_follows_the_published_semver_grammar(self) -> None:
+        """A release tag claims SemVer, so the check must be SemVer and not merely dotted digits.
+
+        The earlier expression accepted any run of digits per position, so
+        "01.2.3" and a calendar-style "2026.09.0" both passed a check whose
+        failure message promises a semantic version. Cases below are taken
+        from the specification's own rules for numeric identifiers.
+        """
+        module = self.release_build_module()
+        accepted = (
+            "1.0.0",
+            "0.1.2",
+            "10.20.30",
+            "1.0.0-alpha.1",
+            "1.0.0-alpha.beta",
+            "1.0.0+build.5",
+            "1.0.0-alpha.1+build.5",
+            "2026.9.0",
+        )
+        rejected = (
+            "01.2.3",
+            "1.02.3",
+            "1.2.03",
+            "2026.09.0",
+            "1.0",
+            "1.0.0.0",
+            "v1.0.0",
+            "1.0.0-01",
+            "",
+        )
+        for version in accepted:
+            with self.subTest(accepted=version):
+                self.assertIsNotNone(module.VERSION_RE.fullmatch(version))
+        for version in rejected:
+            with self.subTest(rejected=version):
+                self.assertIsNone(module.VERSION_RE.fullmatch(version))
+
+    def test_snapshot_version_validation_rejects_leading_zero_cores(self) -> None:
+        """The snapshot expression shares the version core, so it inherits the same rule."""
+        module = self.release_build_module()
+        self.assertIsNotNone(module.SNAPSHOT_VERSION_RE.fullmatch("0.1.2-SNAPSHOT-abcdef12"))
+        self.assertIsNotNone(module.SNAPSHOT_VERSION_RE.fullmatch("1.0.0-alpha.1-SNAPSHOT-abcdef12"))
+        self.assertIsNone(module.SNAPSHOT_VERSION_RE.fullmatch("01.2.3-SNAPSHOT-abcdef12"))
+        self.assertIsNone(module.SNAPSHOT_VERSION_RE.fullmatch("0.1.2-SNAPSHOT-zz"))
+
     def test_checksums_reports_an_absent_distribution_directory(self) -> None:
         self.prepare()
         missing = self.root / "missing-dist"
