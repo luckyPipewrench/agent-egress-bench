@@ -79,6 +79,25 @@ Retained v1 and v2 evidence records are frozen. The v4 case and tool-profile for
 
 Every active profile and result binds an immutable capability-registry snapshot by ID, format, revision, and raw-byte SHA-256. Adding or deprecating a reporting label creates a registry revision, not an artifact schema bump.
 
+### Release tag identity
+
+The release tag versions one thing: the release bundle. That bundle is the public API this
+repository promises against, and it is the archive layout, the `aeb-gauntlet` and `aeb-validate`
+command behavior, the `release-identity.json` format, the reusable Action interface, and the
+verification procedure in [RELEASES.md](RELEASES.md). Tags are `vMAJOR.MINOR.PATCH` under
+[Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), validated on the release path,
+and a tag that is not a valid version, or that does not resolve to the release commit, fails the
+build before anything is produced.
+
+The tag is not a summary of the per-family versions above and cannot be read as one. Those answer
+whether a saved artifact still opens; the tag answers what an installable package is and whether a
+cited result came from a package anyone can rebuild. A release may bump the tag's MINOR while every
+artifact family holds its version, and a family may bump while the tag takes a PATCH, because they
+measure different things. Ask the compatibility question of the family manifest, never of the tag.
+
+Tags are immutable once published. A published tag is never moved, deleted, or reinterpreted, since
+results cite it and the verification procedure resolves it.
+
 ### Corpus version identity
 
 `corpus_version` names one exact corpus and is bound to it. [`ci/corpus-versions.json`](../ci/corpus-versions.json) records, for each label, the scored case count and the `benchmark_manifest_sha256` of the corpus that label names, and `runner/corpus_version_test.go` fails when the corpus on disk is not the corpus the current label names. An active-set entry also records the SHA-256 of its versioned selection artifact. Adding, removing, or re-expecting a scored case therefore requires a new label and a new ledger entry in the same change. The current label must be the ledger's final entry.

@@ -1,6 +1,6 @@
 # Release artifacts
 
-A tagged release fixes the corpus, schemas, contracts, runner source revision, and runner archives in one package. A release tag identifies the source revision. The `release-identity.json` asset records the exact revision and the SHA-256 digest of every bundled corpus and schema file.
+A tagged release fixes the corpus, schemas, contracts, runner source revision, and runner archives in one package. A release tag identifies the source revision. The tag versions the release bundle under [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), where the bundle is the archive layout, the `aeb-gauntlet` and `aeb-validate` command behavior, the `release-identity.json` format, the reusable Action interface, and the verification procedure below. Whether a saved artifact still opens is a separate question answered per family by [`contracts/artifacts.json`](../contracts/artifacts.json), not by the tag; [GOVERNANCE.md](GOVERNANCE.md#release-tag-identity) states both rules. The `release-identity.json` asset records the exact revision and the SHA-256 digest of every bundled corpus and schema file.
 
 Each release contains:
 
