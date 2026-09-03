@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,13 +19,15 @@ import promote_gauntlet_candidate as promotion
 RESULTS_PATH = Path("gauntlet-site/results/pipelock")
 
 
-def file_at_commit(repo_root, corpus_git_sha, path):
+def file_at_commit(repo_root, corpus_git_sha, path, allow_missing=False):
     retained = subprocess.run(
         ["git", "-C", str(repo_root), "show", f"{corpus_git_sha}:{path}"],
         check=False,
         capture_output=True,
     )
     if retained.returncode != 0:
+        if allow_missing:
+            return None
         raise ValueError(f"corpus_git_sha does not retain {path}")
     return retained.stdout
 
@@ -54,6 +57,39 @@ def reconstruct_result_contract(repo_root, corpus_git_sha, root):
     (root / contract_path).write_bytes(contract_bytes)
 
 
+def reconstruct_active_set(repo_root, corpus_git_sha, root, summary):
+    """Materialize the files that define which cases the run was meant to execute.
+
+    The reconstruction is only equivalent to the original derivation when it
+    carries the corpus version marker and its active set. Without them the
+    selection silently widens to the whole manifest, and a record measured
+    against the active corpus reads as missing every excluded case.
+    """
+    marker_bytes = file_at_commit(
+        repo_root, corpus_git_sha, "cases/CORPUS_VERSION", allow_missing=True
+    )
+    if marker_bytes is None:
+        # A record measured before the corpus carried a version marker selected
+        # the whole manifest. Reconstructing it must select the whole manifest
+        # too, so leaving these files absent is the faithful reconstruction.
+        return
+    marker = marker_bytes.decode("utf-8").strip()
+    if marker != summary.get("corpus_version"):
+        raise ValueError("corpus version marker does not match retained runner summary")
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", marker):
+        raise ValueError("corpus version marker must be a v-prefixed semantic version")
+    (root / "cases" / "CORPUS_VERSION").write_bytes(marker_bytes)
+    active_set_relative = f"corpora/active-sets/v1/{marker}.json"
+    active_set_bytes = file_at_commit(repo_root, corpus_git_sha, active_set_relative)
+    active_set_path = root / "corpora" / "active-sets" / "v1"
+    active_set_path.mkdir(parents=True)
+    (active_set_path / f"{marker}.json").write_bytes(active_set_bytes)
+    ledger_bytes = file_at_commit(repo_root, corpus_git_sha, "ci/corpus-versions.json")
+    ledger_path = root / "ci"
+    ledger_path.mkdir()
+    (ledger_path / "corpus-versions.json").write_bytes(ledger_bytes)
+
+
 def reconstruct_candidate(record_dir, candidate, repo_root):
     corpus_git_sha = promotion.require_non_empty_string(candidate, "corpus_git_sha")
     if len(corpus_git_sha) != 40 or any(char not in "0123456789abcdef" for char in corpus_git_sha):
@@ -78,6 +114,7 @@ def reconstruct_candidate(record_dir, candidate, repo_root):
         summary = evaluator.load_object(record_dir / provenance.RAW_EVIDENCE["raw_summary"])
         if summary.get("schema_version") in provenance.ACTIVE_SUMMARY_SCHEMA_VERSIONS:
             reconstruct_result_contract(repo_root, corpus_git_sha, root)
+            reconstruct_active_set(repo_root, corpus_git_sha, root, summary)
         rebuilt = root / promotion.CANDIDATE_FILENAME
         provenance.finalize_command(
             SimpleNamespace(
@@ -136,15 +173,22 @@ def validate_record(
     )
     promotion.validate_execution_decision(record_dir / promotion.EXECUTION_DECISION_FILENAME)
     reconstruct_candidate(record_dir, candidate, repo_root)
-    if manifest["schema_version"] >= 3:
-        expected_source_baseline = file_at_commit(
-            repo_root, candidate["corpus_git_sha"], "ci/gauntlet-baseline.json"
-        )
+    # The source baseline is the product's acceptance policy, not this
+    # repository's. Requiring it to equal ci/gauntlet-baseline.json would make
+    # the neutral benchmark the owner of every adopter's expected scores.
+    #
+    # It still has to be bound to an origin, or a substituted policy with a
+    # recomputed decision satisfies every remaining check. From record schema 4
+    # the record carries that origin, and this repository validates the generic
+    # locator and digest without knowing anything about the product's values.
+    if manifest["schema_version"] >= 4:
+        origin_path = record_dir / promotion.SOURCE_BASELINE_ORIGIN_FILENAME
+        if not origin_path.is_file():
+            raise ValueError(f"{record_dir}: record is missing its source baseline origin")
         retained_source_baseline = (
             record_dir / promotion.SOURCE_BASELINE_FILENAME
         ).read_bytes()
-        if retained_source_baseline != expected_source_baseline:
-            raise ValueError(f"{record_dir}: source baseline differs from corpus_git_sha")
+        promotion.load_source_baseline_origin(origin_path, retained_source_baseline)
     validate_decision(
         record_dir,
         candidate_path,
