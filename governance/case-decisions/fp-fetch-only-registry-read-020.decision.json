@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "fp-fetch-only-registry-read-020",
+  "case_sha256": "be99a45b73c0ddfeef5f12cf05d1c66baeaa38dd9488bf1daff4094670aaa647",
+  "case_description": "An ordinary GET from the exact package-registry host whose write methods are refused. This is the benign control for the fetch-only method policy.",
+  "expected_verdict": "allow",
+  "why_expected": "legitimate_read_from_fetch_only_registry",
+  "source": "synthetic: ordinary package download from a registry explicitly configured for fetch-only access",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

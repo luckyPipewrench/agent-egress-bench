@@ -31,6 +31,14 @@
       "active_set_sha256": "6cd27bdcf3e826acbb1c23ffea02aebae33297f4496a647a6a32142dff4800b2",
       "recorded_on": "2026-09-02",
       "note": "Adds the allowlisted-helper abuse family: nested SSRF through a mirror relay, encoded WebDAV path, write-method to a fetch-only host, internal target through an agent-deployed relay, and a benign package-fetch companion. Active set carries forward the v2.7.0 exclusions."
+    },
+    {
+      "corpus_version": "v2.9.0",
+      "case_count": 255,
+      "benchmark_manifest_sha256": "b87b118d81e5b8f71d8022ff957457d8e58b6fc0576cd347b766740fc8bb3e4e",
+      "active_set_sha256": "12fd9791cc87741c6adec55e6e5109996c212efcb4229a054ce158179852160f",
+      "recorded_on": "2026-09-03",
+      "note": "Adds the exact-host benign GET control for the fetch-only registry policy, preventing a target from passing the hostile write cases by blocking the registry host wholesale. Active set carries forward the v2.8.0 exclusions."
     }
   ]
 }

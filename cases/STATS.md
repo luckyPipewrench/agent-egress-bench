@@ -1,15 +1,15 @@
 # agent-egress-bench stats
-cases_total: 256
+cases_total: 257
 categories: 18
 block: 186
-allow: 69
+allow: 70
 warn: 1
 by_category:
   a2a_agent_card: 8
   a2a_message: 14
   crypto_financial: 11
   encoding_evasion: 9
-  false_positive: 22
+  false_positive: 23
   headers: 14
   hostname_exfiltration: 10
   mcp_chain: 17

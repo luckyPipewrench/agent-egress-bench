@@ -423,14 +423,15 @@ func TestAllowlistedHelperCasesAreReportingLabeledAndProfileIndependent(t *testi
 		"request-body-write-to-fetch-only-host-016": {"block", "request_body", "operation_policy"},
 		"url-relay-app-second-hop-017":              {"block", "url", "ssrf"},
 		"fp-mirror-package-fetch-018":               {"allow", "url", "benign"},
+		"fp-fetch-only-registry-read-020":           {"allow", "url", "benign"},
 	}
-	seen := make(map[string]bool, len(wants))
+	seen := make(map[string]Case, len(wants))
 	for _, c := range cases {
 		w, ok := wants[c.ID]
 		if !ok {
 			continue
 		}
-		seen[c.ID] = true
+		seen[c.ID] = c
 		if c.SchemaVersion != activeCaseSchemaVersion || c.Transport != "http_proxy" || c.InputType != w.input {
 			t.Errorf("case %s active route = v%d/%s/%s", c.ID, c.SchemaVersion, c.Transport, c.InputType)
 		}
@@ -449,5 +450,14 @@ func TestAllowlistedHelperCasesAreReportingLabeledAndProfileIndependent(t *testi
 	}
 	if len(seen) != len(wants) {
 		t.Fatalf("allowlisted-helper case IDs = %v, want %v", seen, wants)
+	}
+	writeCase := seen["request-body-write-to-fetch-only-host-016"]
+	readCase := seen["fp-fetch-only-registry-read-020"]
+	if writeCase.Payload["method"] != "PUT" || readCase.Payload["method"] != "GET" {
+		t.Fatalf("fetch-only method pair = write %v/read %v, want PUT/GET", writeCase.Payload["method"], readCase.Payload["method"])
+	}
+	if writeCase.Payload["url"] != "https://allowed-package-registry.test/packages/agent-collab/1.0.0" ||
+		readCase.Payload["url"] != writeCase.Payload["url"] {
+		t.Fatalf("fetch-only pair no longer uses the exact same URL: write %v/read %v", writeCase.Payload["url"], readCase.Payload["url"])
 	}
 }

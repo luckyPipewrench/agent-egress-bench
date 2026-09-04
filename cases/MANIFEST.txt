@@ -75,6 +75,7 @@ fp-crypto-tutorial-text-011
 fp-db-conn-no-credentials-013
 fp-error-message-token-expired-009
 fp-example-aws-key-003
+fp-fetch-only-registry-read-020
 fp-git-status-output-012
 fp-gitlab-lookalike-word-014
 fp-mcp-tool-result-credential-placeholder-019
