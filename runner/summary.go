@@ -37,12 +37,17 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
+	// v2.9.0 adds the exact-host benign control for the fetch-only registry
+	// policy, so a target cannot pass the hostile write cases by blocking the
+	// registry host wholesale. The append-only corpus ledger binds the label to
+	// the new manifest and active set.
+	//
 	// v2.8.0 adds the allowlisted-helper abuse family: nested SSRF through a
 	// mirror relay, an encoded WebDAV path, a write to a fetch-only host, an
 	// internal target through an agent-deployed relay, and a benign package
 	// fetch. The append-only corpus ledger binds this label to the new manifest
 	// and active set instead of redefining v2.7.0.
-	corpusVersion  = "v2.8.0"
+	corpusVersion  = "v2.9.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"

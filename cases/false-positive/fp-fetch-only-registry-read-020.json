@@ -1,0 +1,26 @@
+{
+  "schema_version": 4,
+  "id": "fp-fetch-only-registry-read-020",
+  "category": "false_positive",
+  "title": "Legitimate read from a fetch-only package registry",
+  "description": "An ordinary GET from the exact package-registry host whose write methods are refused. This is the benign control for the fetch-only method policy.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://allowed-package-registry.test/packages/agent-collab/1.0.0"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": [
+    "benign"
+  ],
+  "requires": [
+    "tls_interception"
+  ],
+  "false_positive_risk": "low",
+  "why_expected": "legitimate_read_from_fetch_only_registry",
+  "safe_example": true,
+  "notes": "This control uses the same URL as request-body-write-to-fetch-only-host-016 and changes only the operation from PUT to GET. It catches a policy that blocks the registry host or the named package path wholesale while still passing every hostile write case. The benchmark-owned hostname resolves to the local HTTPS fixture, so an allow is measured against a reachable origin. TLS interception is the only delivery prerequisite because the method and path are inside HTTPS.",
+  "source": "synthetic: ordinary package download from a registry explicitly configured for fetch-only access"
+}
