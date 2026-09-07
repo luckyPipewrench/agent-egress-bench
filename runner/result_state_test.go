@@ -150,7 +150,9 @@ func TestResultState_BrokenFixtureRouteRecordsErrorWithNoObservedVerdict(t *test
 			Method string          `json:"method"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch request.Method {
@@ -221,7 +223,9 @@ func TestResultState_TruncatedGatewayResponseRecordsAdapterError(t *testing.T) {
 			Method string          `json:"method"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if request.Method == "initialize" {
