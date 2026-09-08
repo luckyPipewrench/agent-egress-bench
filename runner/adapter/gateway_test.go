@@ -126,7 +126,9 @@ func TestMCPGatewayAdapterRejectsUnprovenJSONRPCDeny(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/call" {
 			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "policy denied"})
@@ -242,31 +244,43 @@ func TestMCPGatewayAdapterRequiresUpstreamToolResultBeforeBlock(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
-			t.Fatal(readErr)
+			t.Error(readErr)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		_ = r.Body.Close()
 		var request map[string]interface{}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request["method"] != "tools/call" {
 			id, err := json.Marshal(request["id"])
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "test handler failed", http.StatusInternalServerError)
+				return
 			}
 			writeJSONRPC(t, w, id, nil)
 			return
 		}
 		upstreamBody, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if !bytes.Contains(upstreamBody, []byte("ignore prior instructions")) {
-			t.Fatalf("upstream response = %s, want leased malicious result", upstreamBody)
+			t.Errorf("upstream response = %s, want leased malicious result", upstreamBody)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		id, err := json.Marshal(request["id"])
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		writeJSONRPC(t, w, id, map[string]interface{}{"code": -32042, "message": "policy denied tool result"})
 	}))
@@ -301,7 +315,9 @@ func TestMCPGatewayAdapterRejectsWrongJSONResponseID(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/call" {
 			writeJSONRPC(t, w, json.RawMessage(`"wrong-request"`), map[string]interface{}{"code": -32042, "message": "policy denied"})
@@ -334,14 +350,18 @@ func TestMCPGatewayAdapterInitializationDenyIsAdapterError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string          `json:"method"`
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "initialize" {
 			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "stale initialization deny"})
@@ -350,7 +370,9 @@ func TestMCPGatewayAdapterInitializationDenyIsAdapterError(t *testing.T) {
 		if request.Method == "tools/call" {
 			response, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "test handler failed", http.StatusInternalServerError)
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(response)
@@ -381,11 +403,15 @@ func TestMCPGatewayAdapterMissingInitializeResponseIsAdapterError(t *testing.T) 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if method := requestMethod(t, r); method != "initialize" {
-			t.Fatalf("received %s after missing initialize response", method)
+			t.Errorf("received %s after missing initialize response", method)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		conn, _, err := w.(http.Hijacker).Hijack()
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		_ = conn.Close()
 	}))
@@ -445,10 +471,14 @@ func TestMCPGatewayAdapterRejectsInvalidInitializeResponses(t *testing.T) {
 					ID     json.RawMessage `json:"id"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-					t.Fatal(err)
+					t.Error(err)
+					http.Error(w, "test handler failed", http.StatusInternalServerError)
+					return
 				}
 				if request.Method != "initialize" {
-					t.Fatalf("received %s after rejected initialize; lifecycle guard did not stop the session", request.Method)
+					t.Errorf("received %s after rejected initialize; lifecycle guard did not stop the session", request.Method)
+					http.Error(w, "test handler failed", http.StatusInternalServerError)
+					return
 				}
 				tc.write(t, w, request.ID)
 			}))
@@ -476,7 +506,9 @@ func TestMCPGatewayAdapterUsesUniqueInitializeIDs(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "initialize" {
 			initializeIDs <- string(request.ID)
@@ -562,14 +594,18 @@ func TestMCPGatewayAdapterRejectsLateForwardAfterDeny(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string          `json:"method"`
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method != "tools/call" {
 			writeJSONRPC(t, w, request.ID, nil)
@@ -612,7 +648,9 @@ func TestMCPGatewayAdapterCorrelatesStructuredHTTPDeny(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method != "tools/call" {
 			writeJSONRPC(t, w, request.ID, nil)
@@ -651,7 +689,9 @@ func TestMCPGatewayAdapterDoesNotAcceptConcurrentUnrelatedDelivery(t *testing.T)
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/call" {
 			close(targetSeen)
@@ -698,7 +738,9 @@ func TestMCPGatewayAdapterConcurrentToolResultsKeepOwnResponseAndProof(t *testin
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string          `json:"method"`
@@ -710,12 +752,16 @@ func TestMCPGatewayAdapterConcurrentToolResultsKeepOwnResponseAndProof(t *testin
 			} `json:"params"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/call" {
 			upstreamBody, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "test handler failed", http.StatusInternalServerError)
+				return
 			}
 			observedMu.Lock()
 			observed[request.Params.Meta.Identity] = string(upstreamBody)
@@ -841,7 +887,9 @@ func TestMCPGatewayAdapterBlocksConfiguredJSONRPCDenyForToolsList(t *testing.T) 
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/list" {
 			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32042, "message": "policy denied"})
@@ -996,7 +1044,9 @@ func TestMCPGatewayAdapterSkipsMalformedSSEToolsListResponse(t *testing.T) {
 			Method string          `json:"method"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/list" {
 			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
@@ -1036,13 +1086,17 @@ func TestMCPGatewayAdapterPreservesFixtureProofForMalformedSSEToolsListResponse(
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string `json:"method"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		responseBody, ferr := forwardMCPGatewayRequest(&http.Client{Timeout: time.Second}, r.Context(), fm.MCPHTTP().URL(), body)
 		if ferr != nil {
@@ -1057,7 +1111,8 @@ func TestMCPGatewayAdapterPreservesFixtureProofForMalformedSSEToolsListResponse(
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(responseBody); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 	}))
 	defer server.Close()
@@ -1088,7 +1143,9 @@ func TestMCPGatewayAdapterSkipsUnclassifiedJSONRPCErrorForToolsList(t *testing.T
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/list" {
 			writeJSONRPC(t, w, request.ID, map[string]interface{}{"code": -32603, "message": "upstream unavailable"})
@@ -1166,13 +1223,17 @@ func TestMCPGatewayAdapterConcurrentToolDefinitionsDoNotSerialize(t *testing.T) 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string `json:"method"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if r.Header.Get("X-AEB-Case") == "holder" && request.Method == "initialize" {
 			close(holderInitialized)
@@ -1189,7 +1250,8 @@ func TestMCPGatewayAdapterConcurrentToolDefinitionsDoNotSerialize(t *testing.T) 
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(responseBody); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 	}))
 	defer server.Close()
@@ -1278,7 +1340,9 @@ func TestMCPGatewayAdapterSkipsUnprovenToolsListResponse(t *testing.T) {
 			Method string          `json:"method"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/list" {
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"poisoned_tool"}]}}`, request.ID)
@@ -2011,11 +2075,15 @@ func TestMCPGatewayAdapterDoesNotLeaseFutureFinalSinkBeforePredecessor(t *testin
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request map[string]interface{}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		id := requestIDFromBody(t, body)
 		if request["method"] != "tools/call" {
@@ -2027,11 +2095,15 @@ func TestMCPGatewayAdapterDoesNotLeaseFutureFinalSinkBeforePredecessor(t *testin
 			// here, before this predecessor completed. That made a predictable
 			// future request eligible to preplay the final effect.
 			if got := fm.MCPHTTP().ActiveFinalSinkLeases(); got != 0 {
-				t.Fatalf("active final-sink leases during predecessor = %d, want 0", got)
+				t.Errorf("active final-sink leases during predecessor = %d, want 0", got)
+				http.Error(w, "test handler failed", http.StatusInternalServerError)
+				return
 			}
 			response, forwardErr := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
 			if forwardErr != nil {
-				t.Fatal(forwardErr)
+				t.Error(forwardErr)
+				http.Error(w, "test handler failed", http.StatusInternalServerError)
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(response)
@@ -2064,7 +2136,9 @@ func TestMCPGatewayAdapterDoesNotCreditDenyWithUnprovenPrefix(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		id := requestIDFromBody(t, body)
 		if requestMethodFromBody(t, body) != "tools/call" {
@@ -2100,7 +2174,9 @@ func TestMCPGatewayAdapterDoesNotCreditDenyWithoutAtomicBarrier(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		id := requestIDFromBody(t, body)
 		if requestMethodFromBody(t, body) != "tools/call" {
@@ -2178,7 +2254,9 @@ func TestMCPGatewayAdapterConfiguredHTTPAndBodyDeniesScoreBlock(t *testing.T) {
 					ID     json.RawMessage `json:"id"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-					t.Fatal(err)
+					t.Error(err)
+					http.Error(w, "test handler failed", http.StatusInternalServerError)
+					return
 				}
 				if request.Method == "tools/call" {
 					tc.write(w)
@@ -2211,7 +2289,9 @@ func TestMCPGatewayAdapterConnectionCloseIsNamedButNotBlock(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method != "tools/call" {
 			writeJSONRPC(t, w, request.ID, nil)
@@ -2219,7 +2299,9 @@ func TestMCPGatewayAdapterConnectionCloseIsNamedButNotBlock(t *testing.T) {
 		}
 		conn, _, err := w.(http.Hijacker).Hijack()
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		_ = conn.Close()
 	}))
@@ -2243,14 +2325,18 @@ func TestMCPGatewayAdapterMalformedJSONRPCResponseDoesNotScoreAllow(t *testing.T
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if requestMethodFromBody(t, body) != "tools/call" {
 			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
 			return
 		}
 		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		_, _ = w.Write(append([]byte(`{"jsonrpc":"2.0","id":`), append(requestIDFromBody(t, body), []byte(`}`)...)...))
 	}))
@@ -2272,14 +2358,18 @@ func TestMCPGatewayAdapterSSEWrongIDIsCorrelationFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if requestMethodFromBody(t, body) != "tools/call" {
 			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
 			return
 		}
 		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {\"jsonrpc\":\"2.0\",\"id\":\"wrong-id\",\"result\":{\"ok\":true}}\n\n"))
@@ -2302,7 +2392,9 @@ func TestMCPGatewayAdapterReplayDoesNotProveDelivery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if requestMethodFromBody(t, body) != "tools/call" {
 			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
@@ -2310,10 +2402,14 @@ func TestMCPGatewayAdapterReplayDoesNotProveDelivery(t *testing.T) {
 		}
 		first, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(first)
@@ -2336,7 +2432,9 @@ func TestMCPGatewayAdapterCopiedIdentityWithChangedContentDoesNotProveDelivery(t
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if requestMethodFromBody(t, body) != "tools/call" {
 			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
@@ -2344,15 +2442,21 @@ func TestMCPGatewayAdapterCopiedIdentityWithChangedContentDoesNotProveDelivery(t
 		}
 		var copied map[string]interface{}
 		if err := json.Unmarshal(body, &copied); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		copied["method"] = "tools/list"
 		forged, err := json.Marshal(copied)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if _, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), forged); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
 	}))
@@ -2372,24 +2476,31 @@ func TestMCPGatewayAdapterConcurrentToolResultAndToolCallKeepOwnResponses(t *tes
 	defer fm.Close()
 	client := &http.Client{Timeout: time.Second}
 	arrived := make(chan struct{}, 2)
-	release := make(chan struct{})
-	var once sync.Once
+	release := make(chan struct{}, 2)
 	var observedMu sync.Mutex
 	observed := map[string]string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if requestMethodFromBody(t, body) != "tools/call" {
 			writeJSONRPC(t, w, requestIDFromBody(t, body), nil)
 			return
 		}
 		arrived <- struct{}{}
-		<-release
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
 		upstreamBody, err := forwardMCPGatewayRequest(client, r.Context(), fm.MCPHTTP().URL(), body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		identity := requestIdentityFromBody(t, body)
 		observedMu.Lock()
@@ -2399,6 +2510,7 @@ func TestMCPGatewayAdapterConcurrentToolResultAndToolCallKeepOwnResponses(t *tes
 		_, _ = w.Write(upstreamBody)
 	}))
 	defer server.Close()
+	defer close(release)
 	a, err := NewMCPGatewayAdapter(GatewayPlugin{Name: "forwarder", Transport: "streamable_http", Client: GatewayClient{Endpoint: server.URL}}, fm)
 	if err != nil {
 		t.Fatal(err)
@@ -2411,9 +2523,17 @@ func TestMCPGatewayAdapterConcurrentToolResultAndToolCallKeepOwnResponses(t *tes
 		go func() {
 			resultCh <- a.Run(gatewayToolsCallCase(fmt.Sprintf("gateway-tool-call-%d", round)), time.Second)
 		}()
-		<-arrived
-		<-arrived
-		once.Do(func() { close(release) })
+		deadline := time.NewTimer(3 * time.Second)
+		for range 2 {
+			select {
+			case <-arrived:
+			case <-deadline.C:
+				t.Fatalf("round %d: timed out waiting for concurrent requests", round)
+			}
+		}
+		deadline.Stop()
+		release <- struct{}{}
+		release <- struct{}{}
 		first, second := <-resultCh, <-resultCh
 		for _, result := range []Result{first, second} {
 			if result.Err != nil || result.Verdict != "allow" || result.Evidence["upstream_reached"] != true {
@@ -2456,13 +2576,16 @@ func installSyntheticDenyBarrier(a *MCPGatewayAdapter) {
 	})
 }
 
+// These request helpers run only in HTTP handlers. Report assertion failures
+// without FailNow, then let net/http abort the request so the client unblocks.
 func requestMethodFromBody(t *testing.T, body []byte) string {
 	t.Helper()
 	var request struct {
 		Method string `json:"method"`
 	}
 	if err := json.Unmarshal(body, &request); err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		panic(http.ErrAbortHandler)
 	}
 	return request.Method
 }
@@ -2473,7 +2596,8 @@ func requestIDFromBody(t *testing.T, body []byte) json.RawMessage {
 		ID json.RawMessage `json:"id"`
 	}
 	if err := json.Unmarshal(body, &request); err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		panic(http.ErrAbortHandler)
 	}
 	return request.ID
 }
@@ -2488,10 +2612,12 @@ func requestIdentityFromBody(t *testing.T, body []byte) string {
 		} `json:"params"`
 	}
 	if err := json.Unmarshal(body, &request); err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		panic(http.ErrAbortHandler)
 	}
 	if request.Params.Meta.Identity == "" {
-		t.Fatal("gateway request is missing identity")
+		t.Error("gateway request is missing identity")
+		panic(http.ErrAbortHandler)
 	}
 	return request.Params.Meta.Identity
 }
@@ -2515,7 +2641,8 @@ func requestMethod(t *testing.T, r *http.Request) string {
 		Method string `json:"method"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		panic(http.ErrAbortHandler)
 	}
 	return request.Method
 }
@@ -2526,7 +2653,8 @@ func requestID(t *testing.T, r *http.Request) json.RawMessage {
 		ID json.RawMessage `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		panic(http.ErrAbortHandler)
 	}
 	return request.ID
 }
@@ -2544,11 +2672,13 @@ func writeJSONRPC(t *testing.T, w http.ResponseWriter, id json.RawMessage, rpcEr
 	_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"ok":true}}`, id)
 }
 
+// marshalForGatewayTest is used by writeJSONRPC inside HTTP handlers.
 func marshalForGatewayTest(t *testing.T, value interface{}) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		panic(http.ErrAbortHandler)
 	}
 	return data
 }
@@ -2559,11 +2689,15 @@ func forwardingGateway(t *testing.T, upstreamURL string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		upstream, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(body))
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		upstream.Header.Set("Content-Type", "application/json")
 		if sessionID := r.Header.Get("Mcp-Session-Id"); sessionID != "" {
@@ -2571,7 +2705,9 @@ func forwardingGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		}
 		resp, err := client.Do(upstream)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer func() { _ = resp.Body.Close() }()
 		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
@@ -2580,7 +2716,8 @@ func forwardingGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		}
 		w.WriteHeader(resp.StatusCode)
 		if _, err := io.Copy(w, resp.Body); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 	}))
 }
@@ -2591,13 +2728,17 @@ func transformingToolsListGateway(t *testing.T, upstreamURL string, transform fu
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string `json:"method"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		const sessionID = "transform-session"
 		if request.Method == "initialize" {
@@ -2608,7 +2749,9 @@ func transformingToolsListGateway(t *testing.T, upstreamURL string, transform fu
 		}
 		upstream, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(body))
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		upstream.Header.Set("Content-Type", "application/json")
 		if sessionID := r.Header.Get("Mcp-Session-Id"); sessionID != "" {
@@ -2616,28 +2759,37 @@ func transformingToolsListGateway(t *testing.T, upstreamURL string, transform fu
 		}
 		resp, err := client.Do(upstream)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer func() { _ = resp.Body.Close() }()
 		responseBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		if request.Method == "tools/list" {
 			var response map[string]interface{}
 			if err := json.Unmarshal(responseBody, &response); err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "test handler failed", http.StatusInternalServerError)
+				return
 			}
 			transform(response)
 			responseBody, err = json.Marshal(response)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "test handler failed", http.StatusInternalServerError)
+				return
 			}
 		}
 		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 		w.WriteHeader(resp.StatusCode)
 		if _, err := w.Write(responseBody); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 	}))
 }
@@ -2648,13 +2800,17 @@ func sseToolsListGateway(t *testing.T, upstreamURL string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string `json:"method"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		responseBody, ferr := forwardMCPGatewayRequest(client, r.Context(), upstreamURL, body)
 		if ferr != nil {
@@ -2669,7 +2825,8 @@ func sseToolsListGateway(t *testing.T, upstreamURL string) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(responseBody); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 	}))
 }
@@ -2692,13 +2849,17 @@ func sequencedInventoryGateway(t *testing.T, upstreamURL string) *inventoryGatew
 	gateway.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string `json:"method"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		caseName := r.Header.Get("X-AEB-Case")
 		if caseName == "A" && request.Method == "initialize" {
@@ -2722,7 +2883,8 @@ func sequencedInventoryGateway(t *testing.T, upstreamURL string) *inventoryGatew
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(responseBody); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 	}))
 	return gateway

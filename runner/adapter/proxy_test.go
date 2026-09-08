@@ -1901,11 +1901,15 @@ func TestDoHTTPProxyRequest_AllowsConfirmedUpstream500(t *testing.T) {
 		}
 		hj, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("test proxy does not support hijacking")
+			t.Error("test proxy does not support hijacking")
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		clientConn, _, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		_, _ = io.WriteString(clientConn, "HTTP/1.1 200 Connection Established\r\n\r\n")
 		go func() {
@@ -2107,26 +2111,34 @@ func TestRunWebSocketFrameViaProxy_UsesWebSocketFrames(t *testing.T) {
 		}
 		hj, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("test server does not support hijacking")
+			t.Error("test server does not support hijacking")
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		_, payload, err := readWebSocketFrame(rw.Reader)
 		if err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 		if string(payload) != "hello over ws" {
-			t.Fatalf("payload = %q, want websocket frame payload", payload)
+			t.Errorf("payload = %q, want websocket frame payload", payload)
+			return
 		}
 		upstreamMessages.Add(1)
 		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo")); err != nil {
-			t.Fatalf("write echo frame: %v", err)
+			t.Errorf("write echo frame: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2151,15 +2163,20 @@ func TestRunWebSocketFrameViaProxy_NoFramePayloadIsUnproven(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("test server does not support hijacking")
+			t.Error("test server does not support hijacking")
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		conn, _, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2183,21 +2200,28 @@ func TestRunWebSocketFrameViaProxy_ProxySynthesizedFrameIsUnproven(t *testing.T)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("test server does not support hijacking")
+			t.Error("test server does not support hijacking")
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("synthetic proxy echo")); err != nil {
-			t.Fatalf("write synthetic frame: %v", err)
+			t.Errorf("write synthetic frame: %v", err)
+			return
 		}
 		time.Sleep(200 * time.Millisecond)
 	}))
@@ -2226,14 +2250,18 @@ func TestProxyAdapterRunWebSocketAbruptCloseIsUnproven(t *testing.T) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2264,22 +2292,29 @@ func TestRunWebSocketFrameViaProxyRoutesReservedSinkHost(t *testing.T) {
 		gotTarget = r.URL.Query().Get("url")
 		hj, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("test server does not support hijacking")
+			t.Error("test server does not support hijacking")
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 		upstreamMessages.Add(1)
 		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo")); err != nil {
-			t.Fatalf("write echo frame: %v", err)
+			t.Errorf("write echo frame: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2385,17 +2420,22 @@ func TestRunWebSocketFrameViaProxy_CloseFrameBlocks(t *testing.T) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("blocked by policy")...)); err != nil {
-			t.Fatalf("write close frame: %v", err)
+			t.Errorf("write close frame: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2649,18 +2689,23 @@ func TestRunWebSocketFrameViaProxy_ProtocolCloseIsUnproven(t *testing.T) {
 				hj := w.(http.Hijacker)
 				conn, rw, err := hj.Hijack()
 				if err != nil {
-					t.Fatalf("hijack: %v", err)
+					t.Errorf("hijack: %v", err)
+					http.Error(w, "test handler failed", http.StatusInternalServerError)
+					return
 				}
 				defer conn.Close() //nolint:errcheck // test cleanup
 				if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-					t.Fatalf("write upgrade response: %v", err)
+					t.Errorf("write upgrade response: %v", err)
+					return
 				}
 				if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-					t.Fatalf("read websocket frame: %v", err)
+					t.Errorf("read websocket frame: %v", err)
+					return
 				}
 				payload := append([]byte{0x03, 0xea}, []byte("compressed frames not supported")...)
 				if err := writeServerWebSocketFrame(conn, wsOpcodeClose, payload); err != nil {
-					t.Fatalf("write close frame: %v", err)
+					t.Errorf("write close frame: %v", err)
+					return
 				}
 			}))
 			defer srv.Close()
@@ -2696,17 +2741,22 @@ func TestProxyAdapterRunWebSocketNormalCloseIsUnproven(t *testing.T) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xe8}, []byte("normal close")...)); err != nil {
-			t.Fatalf("write close: %v", err)
+			t.Errorf("write close: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2739,18 +2789,23 @@ func TestProxyAdapterRunWebSocketPolicyCloseAfterUpstreamDeliverySkips(t *testin
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 		upstreamMessages.Add(1)
 		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("origin policy")...)); err != nil {
-			t.Fatalf("write policy close: %v", err)
+			t.Errorf("write policy close: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2782,17 +2837,22 @@ func TestProxyAdapterRunWebSocketPolicyCloseWithoutUpstreamProofSkips(t *testing
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read websocket frame: %v", err)
+			t.Errorf("read websocket frame: %v", err)
+			return
 		}
 		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("policy")...)); err != nil {
-			t.Fatalf("write policy close: %v", err)
+			t.Errorf("write policy close: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -2827,28 +2887,35 @@ func TestRunWebSocketFrameViaProxy_BlockAfterEchoIsBlock(t *testing.T) {
 		hj := w.(http.Hijacker)
 		conn, rw, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer conn.Close() //nolint:errcheck // test cleanup
 		if _, err := fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"); err != nil {
-			t.Fatalf("write upgrade response: %v", err)
+			t.Errorf("write upgrade response: %v", err)
+			return
 		}
 		// Read both client frames.
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read msg1: %v", err)
+			t.Errorf("read msg1: %v", err)
+			return
 		}
 		upstreamMessages.Add(1)
 		if _, _, err := readWebSocketFrame(rw.Reader); err != nil {
-			t.Fatalf("read msg2: %v", err)
+			t.Errorf("read msg2: %v", err)
+			return
 		}
 		// Forward an echo of the first frame, then immediately write the
 		// close frame the proxy would send when its cross-message scanner
 		// fires on the second frame.
 		if err := writeServerWebSocketFrame(conn, wsOpcodeText, []byte("echo of msg1")); err != nil {
-			t.Fatalf("write echo: %v", err)
+			t.Errorf("write echo: %v", err)
+			return
 		}
 		if err := writeServerWebSocketFrame(conn, wsOpcodeClose, append([]byte{0x03, 0xf0}, []byte("DLP violation")...)); err != nil {
-			t.Fatalf("write close: %v", err)
+			t.Errorf("write close: %v", err)
+			return
 		}
 	}))
 	defer srv.Close()
@@ -3650,23 +3717,31 @@ func TestRunMCPHTTP_ResponseCasesUseFixtureRequestResponseDirection(t *testing.T
 	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
-			t.Fatalf("read gateway request: %v", readErr)
+			t.Errorf("read gateway request: %v", readErr)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		var request struct {
 			Method string `json:"method"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatalf("decode gateway request: %v", err)
+			t.Errorf("decode gateway request: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		methods = append(methods, request.Method)
 		upstreamResp, postErr := http.Post(upstream.URL(), "application/json", bytes.NewReader(body)) //nolint:gosec,noctx // runner-owned fixture
 		if postErr != nil {
-			t.Fatalf("forward to fixture: %v", postErr)
+			t.Errorf("forward to fixture: %v", postErr)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		defer func() { _ = upstreamResp.Body.Close() }()
 		response, readErr := io.ReadAll(upstreamResp.Body)
 		if readErr != nil {
-			t.Fatalf("read fixture response: %v", readErr)
+			t.Errorf("read fixture response: %v", readErr)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(response)
@@ -3735,7 +3810,9 @@ func TestRunMCPHTTP_ResponseCaseDoesNotScoreLocalBlockWithoutFixtureDelivery(t *
 			ID json.RawMessage `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatalf("decode local block request: %v", err)
+			t.Errorf("decode local block request: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32000,"message":"blocked locally"}}`, request.ID)
@@ -3766,18 +3843,24 @@ func TestRunMCPHTTP_FilteredToolDefinitionScoresBlock(t *testing.T) {
 	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
-			t.Fatalf("read gateway request: %v", readErr)
+			t.Errorf("read gateway request: %v", readErr)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		upstreamResp, postErr := http.Post(upstream.URL(), "application/json", bytes.NewReader(body)) //nolint:gosec,noctx // runner-owned fixture
 		if postErr != nil {
-			t.Fatalf("forward to fixture: %v", postErr)
+			t.Errorf("forward to fixture: %v", postErr)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		_ = upstreamResp.Body.Close()
 		var request struct {
 			ID json.RawMessage `json:"id"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
-			t.Fatalf("decode gateway request: %v", err)
+			t.Errorf("decode gateway request: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[]}}`, request.ID)
@@ -4381,7 +4464,9 @@ func TestRunScanAPIDualPass_AgentCardURLUsesURLKind(t *testing.T) {
 		seen = append(seen, string(body))
 		var req scanAPIRequest
 		if err := json.Unmarshal(body, &req); err != nil {
-			t.Fatalf("unmarshal request: %v", err)
+			t.Errorf("unmarshal request: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if req.Kind == "url" && req.Input.URL == "http://169.254.169.254/latest/meta-data/" {
@@ -4425,7 +4510,9 @@ func TestRunScanAPIDualPass_A2AFilePartURIUsesURLKind(t *testing.T) {
 		seen = append(seen, string(body))
 		var req scanAPIRequest
 		if err := json.Unmarshal(body, &req); err != nil {
-			t.Fatalf("unmarshal request: %v", err)
+			t.Errorf("unmarshal request: %v", err)
+			http.Error(w, "test handler failed", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if req.Kind == "url" && req.Input.URL == "http://169.254.169.254/latest/meta-data/iam/security-credentials/" {
