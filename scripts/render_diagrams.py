@@ -1226,10 +1226,24 @@ SINGLES = {
     "lockup.svg": lockup,
     "lockup-stacked.svg": stacked_lockup,
 }
-# Hand-exported rasters, each pinned to the SVG it came from.
+# Rasters exported from the vectors above, each pinned to the SVG it came from
+# AND to its own bytes. The sidecar used to record the SVG digest alone, so a
+# raster could be replaced with anything and the check still passed as long as
+# its vector had not moved; appending a byte to logo-256.png left the check
+# reporting OK. Both digests are bound now.
+#
+# Sizes live here rather than as export commands elsewhere, so adding one is a
+# single edit. Exporting by hand is how a logo ends up as a mark stranded in the
+# corner of its canvas: right in the exporter, blank everywhere else.
+ICON_SIZES = (16, 32, 48, 64, 128, 256, 512, 1024)
+ICO_SIZES = (16, 32, 48, 64, 128, 256)
+ICO_NAME = "icons/agent-egress-bench.ico"
+RENDER_EXCLUDED = frozenset({"social-preview.png"})
+
 PNG_EXPORTS = {
-    "social-preview.png": "social-preview.svg",
-    "logo-256.png": "logo.svg",
+    "social-preview.png": ("social-preview.svg", "1280x640"),
+    "logo-256.png": ("logo.svg", "256x256"),
+    **{f"icons/logo-{n}.png": ("logo.svg", f"{n}x{n}") for n in ICON_SIZES},
 }
 
 
@@ -1270,10 +1284,17 @@ def sidecar(png: str) -> Path:
     return ASSET_DIR / f"{png}.source"
 
 
+def raster_fingerprint(png: Path, svg: Path) -> str:
+    """Bind a provenance record to the vector source AND the exact raster bytes."""
+    svg_bytes = svg.read_bytes().replace(b"\r\n", b"\n")
+    return (f"svg {hashlib.sha256(svg_bytes).hexdigest()}\n"
+            f"png {hashlib.sha256(png.read_bytes()).hexdigest()}\n")
+
+
 def png_problems() -> list[str]:
-    """Rasters are exported by hand; each sidecar pins one to its SVG."""
+    """Each sidecar pins a raster to its vector and to its own bytes."""
     problems = []
-    for png, svg in PNG_EXPORTS.items():
+    for png, (svg, _size) in list(PNG_EXPORTS.items()) + [(ICO_NAME, ("logo.svg", ""))]:
         if not (ASSET_DIR / png).exists():
             problems.append(f"assets/{png}: missing; export it from assets/{svg}")
             continue
@@ -1283,24 +1304,77 @@ def png_problems() -> list[str]:
         if not (ASSET_DIR / svg).exists():
             problems.append(f"assets/{svg}: missing; run scripts/render_diagrams.py")
             continue
-        want = hashlib.sha256((ASSET_DIR / svg).read_bytes()).hexdigest()
-        if sidecar(png).read_text(encoding="utf-8").strip() != want:
-            problems.append(f"assets/{png}: exported from an older assets/{svg}; re-export it and run "
-                            "scripts/render_diagrams.py --stamp-png")
+        want = raster_fingerprint(ASSET_DIR / png, ASSET_DIR / svg)
+        if sidecar(png).read_text(encoding="utf-8") != want:
+            problems.append(f"assets/{png}: PNG or assets/{svg} changed since export; re-export it "
+                            "with scripts/render_diagrams.py --render-rasters")
     return problems
+
+
+def render_rasters() -> int:
+    """Export every raster from its vector, then record what it came from.
+
+    -strip and the excluded date chunks keep the bytes reproducible, so
+    re-exporting without a vector change produces no diff.
+    """
+    import shutil
+    import subprocess
+
+    magick = shutil.which("magick") or shutil.which("convert")
+    if magick is None:
+        raise SystemExit("render_diagrams: ImageMagick is required to export rasters")
+
+    ladder = []
+    for png, (svg, size) in PNG_EXPORTS.items():
+        # The social card stays out of this loop. Its committed bytes come from a
+        # renderer that produces a materially smaller file for the same picture
+        # (150KB against 574KB here), and a link preview is fetched often enough
+        # that the difference is worth keeping. Its provenance is still checked
+        # below like everything else; only its export is not automated here.
+        if png in RENDER_EXCLUDED:
+            continue
+        source = ASSET_DIR / svg
+        target = ASSET_DIR / png
+        if not source.exists():
+            print(f"cannot export assets/{png}: assets/{svg} missing", file=sys.stderr)
+            return 1
+        target.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [magick, "-background", "none", str(source), "-resize", size, "-strip",
+             "-define", "png:exclude-chunks=date,time", str(target)],
+            check=True, capture_output=True)
+        sidecar(png).write_text(raster_fingerprint(target, source), encoding="utf-8")
+        print(f"exported assets/{png}")
+        width = size.split("x")[0]
+        if png.startswith("icons/") and width.isdigit() and int(width) in ICO_SIZES:
+            ladder.append((int(width), target))
+
+    ico = ASSET_DIR / ICO_NAME
+    ico.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([magick, *[str(p) for _, p in sorted(ladder)], str(ico)],
+                   check=True, capture_output=True)
+    sidecar(ICO_NAME).write_text(
+        raster_fingerprint(ico, ASSET_DIR / "logo.svg"), encoding="utf-8")
+    print(f"exported assets/{ICO_NAME}")
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="compare committed assets without writing")
     parser.add_argument("--stamp-png", action="store_true",
-                        help="record the SVG digest each hand-exported PNG was made from")
+                        help="record the digests each exported raster was made from")
+    parser.add_argument("--render-rasters", action="store_true",
+                        help="export every raster from its vector, then stamp provenance")
     args = parser.parse_args()
 
+    if args.render_rasters:
+        return render_rasters()
+
     if args.stamp_png:
-        for png, svg in PNG_EXPORTS.items():
-            digest = hashlib.sha256((ASSET_DIR / svg).read_bytes()).hexdigest()
-            sidecar(png).write_text(digest + "\n", encoding="utf-8")
+        for png, (svg, _size) in list(PNG_EXPORTS.items()) + [(ICO_NAME, ("logo.svg", ""))]:
+            sidecar(png).write_text(
+                raster_fingerprint(ASSET_DIR / png, ASSET_DIR / svg), encoding="utf-8")
             print(f"stamped assets/{png}.source")
         return 0
 
