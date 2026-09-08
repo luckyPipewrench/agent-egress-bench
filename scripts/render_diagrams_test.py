@@ -334,6 +334,21 @@ class CorpusAgreementTest(unittest.TestCase):
         self.assertTrue(found <= generator.live_transports())
 
 
+def _png_dimensions(path):
+    """Width and height from a PNG's IHDR, so the check needs no image library.
+
+    A byte-count floor cannot say whether a 16-pixel icon is real; the declared
+    size can, and it catches an export that silently came out at the wrong one.
+    """
+    raw = path.read_bytes()
+    if raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR":
+        raise AssertionError(f"{path} is not a PNG")
+    return (
+        int.from_bytes(raw[16:20], "big"),
+        int.from_bytes(raw[20:24], "big"),
+    )
+
+
 class CommittedAssetTest(unittest.TestCase):
     def setUp(self) -> None:
         self.readme = (generator.REPO_ROOT / "README.md").read_text(encoding="utf-8")
@@ -345,9 +360,16 @@ class CommittedAssetTest(unittest.TestCase):
 
     def test_no_orphaned_generated_asset_remains(self):
         # A retired drawing left on disk keeps rendering somewhere forever.
-        expected = {path.name for path in generator.build()}
-        expected |= set(generator.PNG_EXPORTS) | {f"{png}.source" for png in generator.PNG_EXPORTS}
-        on_disk = {path.name for path in generator.ASSET_DIR.iterdir()}
+        expected = {
+            path.relative_to(generator.ASSET_DIR).as_posix() for path in generator.build()
+        }
+        tracked = set(generator.PNG_EXPORTS) | {generator.ICO_NAME}
+        expected |= tracked | {f"{name}.source" for name in tracked}
+        on_disk = {
+            path.relative_to(generator.ASSET_DIR).as_posix()
+            for path in generator.ASSET_DIR.rglob("*")
+            if path.is_file()
+        }
         self.assertEqual(on_disk - expected, set())
 
     def test_the_readme_embeds_both_themes_of_every_diagram(self):
@@ -390,8 +412,10 @@ class CommittedAssetTest(unittest.TestCase):
 
     def test_every_png_matches_its_source(self):
         self.assertEqual(generator.png_problems(), [])
-        for png in generator.PNG_EXPORTS:
-            self.assertGreater((generator.ASSET_DIR / png).stat().st_size, 1024)
+        for png, (_svg, size) in generator.PNG_EXPORTS.items():
+            with self.subTest(png=png):
+                want = tuple(int(part) for part in size.split("x"))
+                self.assertEqual(_png_dimensions(generator.ASSET_DIR / png), want)
 
     def test_a_stale_png_sidecar_is_reported(self):
         side = generator.sidecar("logo-256.png")
@@ -401,7 +425,23 @@ class CommittedAssetTest(unittest.TestCase):
             problems = generator.png_problems()
         finally:
             side.write_text(real, encoding="utf-8")
-        self.assertTrue(any("older" in p for p in problems), problems)
+        self.assertTrue(any("logo-256.png" in p for p in problems), problems)
+
+    def test_a_replaced_raster_is_reported(self):
+        """The sidecar once recorded only the vector's digest.
+
+        A raster could then be replaced with any bytes and the check still
+        passed, because the SVG it was pinned to had not moved. This is the
+        case that silently passed.
+        """
+        raster = generator.ASSET_DIR / "logo-256.png"
+        real = raster.read_bytes()
+        try:
+            raster.write_bytes(real + b"CORRUPT")
+            problems = generator.png_problems()
+        finally:
+            raster.write_bytes(real)
+        self.assertTrue(any("logo-256.png" in p for p in problems), problems)
 
 
 class ReadmeFactsTest(unittest.TestCase):
