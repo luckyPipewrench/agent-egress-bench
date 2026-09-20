@@ -1680,6 +1680,36 @@ func TestRouteTLSInterceptRequestPreservesDeclaredHost(t *testing.T) {
 	}
 }
 
+func TestRouteTLSInterceptURLPreservesDeclaredHost(t *testing.T) {
+	a, _ := NewProxyAdapter("127.0.0.1:1", "", "", "")
+	a.tlsFixtureAddr = "127.0.0.1:34567"
+	a.tlsCAFile = "/tmp/benchmark-ca.pem"
+	var gotHost, gotPath, gotResponse string
+	a.setTLSRouteHost = func(host, path, body, _ string) {
+		gotHost, gotPath, gotResponse = host, path, body
+	}
+	a.setTLSRoute = func(_, _ string) {
+		t.Fatal("host-scoped route must be preferred when a host setter is configured")
+	}
+
+	c := Case{
+		ID:        "fp-fetch-only-registry-read-020",
+		Transport: "http_proxy",
+		InputType: "url",
+		Requires:  []string{"tls_interception"},
+	}
+	gotURL, gotCA := a.routeTLSInterceptRequestURL(c, "https://allowed-package-registry.test/packages/agent-collab/1.0.0")
+	if gotURL != "https://allowed-package-registry.test:34567/packages/agent-collab/1.0.0" {
+		t.Fatalf("routed URL = %q", gotURL)
+	}
+	if gotCA != "/tmp/benchmark-ca.pem" {
+		t.Fatalf("CA file = %q", gotCA)
+	}
+	if gotHost != "allowed-package-registry.test" || gotPath != "/packages/agent-collab/1.0.0" || gotResponse != "benchmark fixture origin" {
+		t.Fatalf("fixture route = %q/%q/%q", gotHost, gotPath, gotResponse)
+	}
+}
+
 func TestRouteTLSInterceptRequestRequiresExplicitPrerequisite(t *testing.T) {
 	a, _ := NewProxyAdapter("127.0.0.1:1", "", "", "")
 	a.tlsFixtureAddr = "127.0.0.1:34567"
@@ -1691,11 +1721,41 @@ func TestRouteTLSInterceptRequestRequiresExplicitPrerequisite(t *testing.T) {
 		t.Fatal("case without tls_interception must not register a host-scoped TLS fixture route")
 	}
 
-	c := Case{ID: "ordinary-request", Transport: "http_proxy", InputType: "request_body"}
 	const original = "https://allowed-code-api.test/gists"
-	gotURL, gotCA := a.routeTLSInterceptRequestURL(c, original)
-	if gotURL != original || gotCA != "" {
-		t.Fatalf("route without prerequisite = %q, %q", gotURL, gotCA)
+	for _, inputType := range []string{"url", "request_body"} {
+		c := Case{ID: "ordinary-" + inputType, Transport: "http_proxy", InputType: inputType}
+		gotURL, gotCA := a.routeTLSInterceptRequestURL(c, original)
+		if gotURL != original || gotCA != "" {
+			t.Fatalf("%s route without prerequisite = %q, %q", inputType, gotURL, gotCA)
+		}
+	}
+}
+
+func TestRouteTLSInterceptURLPreservesFixtureExampleHost(t *testing.T) {
+	a, _ := NewProxyAdapter("127.0.0.1:1", "", "", "")
+	a.tlsFixtureAddr = "127.0.0.1:34567"
+	a.tlsCAFile = "/tmp/benchmark-ca.pem"
+	var gotHost, gotPath string
+	a.setTLSRouteHost = func(host, path, _, _ string) {
+		gotHost, gotPath = host, path
+	}
+	a.setTLSRoute = func(_, _ string) {}
+
+	c := Case{
+		ID:        "ssrf-relay-nested-target-014",
+		Transport: "http_proxy",
+		InputType: "url",
+		Requires:  []string{"ssrf_scanning", "tls_interception"},
+	}
+	gotURL, gotCA := a.routeTLSInterceptRequestURL(c, "https://mirror.fixture.example.com/api/remote/proxy?target=http://169.254.169.254/latest/meta-data/")
+	if gotURL != "https://mirror.fixture.example.com:34567/api/remote/proxy?target=http://169.254.169.254/latest/meta-data/" {
+		t.Fatalf("routed URL = %q", gotURL)
+	}
+	if gotCA != "/tmp/benchmark-ca.pem" {
+		t.Fatalf("CA file = %q", gotCA)
+	}
+	if gotHost != "mirror.fixture.example.com" || gotPath != "/api/remote/proxy" {
+		t.Fatalf("fixture route = %q/%q", gotHost, gotPath)
 	}
 }
 
@@ -1708,25 +1768,38 @@ func TestRunTLSInterceptRequestRequiresFixture(t *testing.T) {
 	defer proxy.Close()
 
 	a, _ := NewProxyAdapter(proxy.Listener.Addr().String(), "", "", "")
-	result := a.Run(Case{
-		ID:        "tls-request-proof",
-		Transport: "http_proxy",
-		InputType: "request_body",
-		Requires:  []string{"tls_interception", "request_body_dlp_scanning"},
-		Payload: map[string]interface{}{
-			"method": "POST",
-			"url":    "https://allowed-code-api.test/gists",
-			"body":   `{}`,
+	for _, c := range []Case{
+		{
+			ID:        "tls-request-proof",
+			Transport: "http_proxy",
+			InputType: "request_body",
+			Requires:  []string{"tls_interception", "request_body_dlp_scanning"},
+			Payload: map[string]interface{}{
+				"method": "POST",
+				"url":    "https://allowed-code-api.test/gists",
+				"body":   `{}`,
+			},
 		},
-	}, time.Second)
-	if result.Verdict != "skip" {
-		t.Fatalf("verdict = %q, want skip without TLS fixture", result.Verdict)
-	}
-	if got := result.Evidence["reason"]; got != "no TLS request interception fixture configured" {
-		t.Fatalf("reason = %v", got)
-	}
-	if _, ok := result.Evidence["observed_transport"]; ok {
-		t.Fatal("unexecuted request must not claim an observed transport")
+		{
+			ID:        "tls-url-proof",
+			Transport: "http_proxy",
+			InputType: "url",
+			Requires:  []string{"tls_interception"},
+			Payload: map[string]interface{}{
+				"url": "https://allowed-package-registry.test/packages/agent-collab/1.0.0",
+			},
+		},
+	} {
+		result := a.Run(c, time.Second)
+		if result.Verdict != "skip" {
+			t.Fatalf("case %s verdict = %q, want skip without TLS fixture", c.ID, result.Verdict)
+		}
+		if got := result.Evidence["reason"]; got != "no TLS request interception fixture configured" {
+			t.Fatalf("case %s reason = %v", c.ID, got)
+		}
+		if _, ok := result.Evidence["observed_transport"]; ok {
+			t.Fatalf("case %s unexecuted request must not claim an observed transport", c.ID)
+		}
 	}
 	if got := proxyCalls.Load(); got != 0 {
 		t.Fatalf("proxy calls = %d, want 0", got)

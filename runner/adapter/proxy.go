@@ -1218,13 +1218,13 @@ func (p *ProxyAdapter) routeProxyFixtureURL(targetURL string) (string, string) {
 	return u.String(), p.tlsCAFile
 }
 
-// routeTLSInterceptRequestURL sends a TLS-required request-body or header case
+// routeTLSInterceptRequestURL sends a TLS-required URL, request-body, or header case
 // to the local HTTPS origin while preserving the case's declared hostname. The
 // proxy therefore observes the realistic CONNECT authority and SNI, while its
 // benchmark DNS override resolves that authority to the deterministic fixture.
 func (p *ProxyAdapter) routeTLSInterceptRequestURL(c Case, targetURL string) (string, string) {
 	if !caseRequires(c, "tls_interception") ||
-		(c.InputType != "request_body" && c.InputType != "header") ||
+		(c.InputType != "url" && c.InputType != "request_body" && c.InputType != "header") ||
 		p.tlsFixtureAddr == "" || p.tlsCAFile == "" || p.setTLSRoute == nil {
 		return targetURL, ""
 	}
@@ -1275,7 +1275,7 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 
 	routed, caFile := p.routeTLSInterceptRequestURL(c, targetURL)
 	if caseRequires(c, "tls_interception") &&
-		(c.InputType == "request_body" || c.InputType == "header") && caFile == "" {
+		(c.InputType == "url" || c.InputType == "request_body" || c.InputType == "header") && caFile == "" {
 		return unsupportedTransport(c, "no TLS request interception fixture configured")
 	}
 	if caFile == "" {
