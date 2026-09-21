@@ -569,9 +569,9 @@ func unsupportedTransport(c Case, reason string) Result {
 // fixture and fetches it through the requested transport. A direct scan API
 // call is not equivalent evidence because it bypasses response interception.
 func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Duration) Result {
-	responseBody, ok := payloadString(c.Payload, "response_body")
-	if !ok || responseBody == "" {
-		return Result{Err: fmt.Errorf("case %s: payload missing 'response_body'", c.ID)}
+	responseBody, err := responseFixtureBody(c.Payload)
+	if err != nil {
+		return Result{Err: fmt.Errorf("case %s: %w", c.ID, err)}
 	}
 	if p.httpFixtureAddr == "" || p.setHTTPRoute == nil {
 		return unsupportedTransport(c, "no HTTP response fixture configured")
@@ -584,7 +584,7 @@ func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Dura
 	// from the case ID can trigger URL-entropy scanning, while a stable shared
 	// path races if execution becomes concurrent or a retry overlaps a request.
 	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
-	p.setHTTPRoute(path, responseBody)
+	setResponseFixtureRoute(path, responseBody, payloadContentType(c.Payload), p.setHTTPRoute, p.setHTTPRouteCT)
 	proof, err := p.beginHTTPFixtureDelivery(path)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: %w", c.ID, err)}
@@ -1269,8 +1269,12 @@ func (p *ProxyAdapter) runHTTPProxy(c Case, timeout time.Duration) Result {
 
 	// Response-MITM requires a TLS origin trusted by the benchmark client and
 	// interception by the product. The HTTP fixture cannot prove that path.
-	if respBody, ok := payloadString(c.Payload, "response_body"); ok && respBody != "" {
-		return p.runResponseContentViaTLSIntercept(c, timeout, respBody)
+	if c.InputType == "response_content" {
+		responseBody, bodyErr := responseFixtureBody(c.Payload)
+		if bodyErr != nil {
+			return Result{Err: fmt.Errorf("case %s: %w", c.ID, bodyErr)}
+		}
+		return p.runResponseContentViaTLSIntercept(c, timeout, responseBody)
 	}
 
 	routed, caFile := p.routeTLSInterceptRequestURL(c, targetURL)
@@ -1409,13 +1413,57 @@ func (p *ProxyAdapter) runResponseContentViaTLSIntercept(c Case, timeout time.Du
 		return Result{Err: fmt.Errorf("case %s: invalid TLS fixture address %q", c.ID, p.tlsFixtureAddr)}
 	}
 	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
-	if contentType, _ := payloadString(c.Payload, "content_type"); contentType != "" && p.setTLSRouteCT != nil {
-		p.setTLSRouteCT(path, responseBody, contentType)
-	} else {
-		p.setTLSRoute(path, responseBody)
-	}
+	setResponseFixtureRoute(path, responseBody, payloadContentType(c.Payload), p.setTLSRoute, p.setTLSRouteCT)
 	target := "https://" + net.JoinHostPort(fixtureHostname, port) + path
 	return p.doHTTPProxyRequest(c.ID, http.MethodGet, target, nil, nil, timeout, p.tlsCAFile)
+}
+
+// responseFixtureBody returns the exact bytes the fixture will serve. A Go
+// string preserves arbitrary bytes, and the fixture writes it unchanged.
+func responseFixtureBody(payload map[string]interface{}) (string, error) {
+	rawResponseBody, hasResponseBody := payload["response_body"]
+	rawResponseBodyBase64, hasResponseBodyBase64 := payload["response_body_base64"]
+	switch {
+	case hasResponseBody && hasResponseBodyBase64:
+		return "", fmt.Errorf("payload has both 'response_body' and 'response_body_base64'")
+	case !hasResponseBody && !hasResponseBodyBase64:
+		return "", fmt.Errorf("payload missing exactly one of 'response_body' or 'response_body_base64'")
+	case hasResponseBody:
+		responseBody, ok := rawResponseBody.(string)
+		if !ok {
+			return "", fmt.Errorf("payload.response_body is not a string")
+		}
+		if responseBody == "" {
+			return "", fmt.Errorf("payload.response_body is empty")
+		}
+		return responseBody, nil
+	default:
+		responseBodyBase64, ok := rawResponseBodyBase64.(string)
+		if !ok {
+			return "", fmt.Errorf("payload.response_body_base64 is not a string")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(responseBodyBase64)
+		if err != nil {
+			return "", fmt.Errorf("payload.response_body_base64 is not standard base64: %w", err)
+		}
+		if len(decoded) == 0 {
+			return "", fmt.Errorf("payload.response_body_base64 decodes to empty bytes")
+		}
+		return string(decoded), nil
+	}
+}
+
+func payloadContentType(payload map[string]interface{}) string {
+	contentType, _ := payloadString(payload, "content_type")
+	return contentType
+}
+
+func setResponseFixtureRoute(path, responseBody, contentType string, setRoute func(path, body string), setRouteWithContentType func(path, body, contentType string)) {
+	if contentType != "" && setRouteWithContentType != nil {
+		setRouteWithContentType(path, responseBody, contentType)
+		return
+	}
+	setRoute(path, responseBody)
 }
 
 func (p *ProxyAdapter) runA2A(c Case, timeout time.Duration) Result {

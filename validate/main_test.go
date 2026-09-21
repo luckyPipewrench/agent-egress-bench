@@ -195,7 +195,7 @@ func TestMissingPayloadFields(t *testing.T) {
 				"false_positive_risk": "low", "why_expected": "test",
 				"notes": "", "source": ""
 			}`,
-			wantError: `payload missing required key "response_body"`,
+			wantError: `payload requires exactly one of "response_body" or "response_body_base64"`,
 		},
 		{
 			name:     "MCP case missing payload.jsonrpc_messages",
@@ -1108,6 +1108,85 @@ func TestResponseMITMValidPayload(t *testing.T) {
 	}
 }
 
+func TestResponseContentPayloadRejectsInvalidBodyEncodingOrMediaType(t *testing.T) {
+	base := map[string]interface{}{
+		"url":           "https://example.com",
+		"response_body": "safe response",
+	}
+	tests := []struct {
+		name string
+		edit func(map[string]interface{})
+		want string
+	}{
+		{
+			name: "both body fields",
+			edit: func(payload map[string]interface{}) { payload["response_body_base64"] = "c2FmZSByZXNwb25zZQ==" },
+			want: `payload.response_body and payload.response_body_base64 are mutually exclusive`,
+		},
+		{
+			name: "neither body field",
+			edit: func(payload map[string]interface{}) { delete(payload, "response_body") },
+			want: `payload requires exactly one of "response_body" or "response_body_base64"`,
+		},
+		{
+			name: "undecodable base64",
+			edit: func(payload map[string]interface{}) {
+				delete(payload, "response_body")
+				payload["response_body_base64"] = "not base64!"
+			},
+			want: `payload.response_body_base64 must be standard base64`,
+		},
+		{
+			name: "invalid media type",
+			edit: func(payload map[string]interface{}) { payload["content_type"] = "not a media type" },
+			want: `payload.content_type must be a valid media type`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := make(map[string]interface{}, len(base))
+			for key, value := range base {
+				payload[key] = value
+			}
+			tt.edit(payload)
+			errors := validatePayload("response_content", payload)
+			assertContainsError(t, errors, tt.want)
+			t.Logf("observed rejection: %s", strings.Join(errors, "; "))
+		})
+	}
+}
+
+func TestResponseContentPayloadAcceptsBase64BodyAndMediaType(t *testing.T) {
+	errors := validatePayload("response_content", map[string]interface{}{
+		"url":                  "https://example.com",
+		"response_body_base64": "AP9iaW5hcnk=",
+		"content_type":         "application/octet-stream",
+	})
+	if len(errors) != 0 {
+		t.Fatalf("base64 response content errors = %v", errors)
+	}
+}
+
+func TestRequestBodyPayloadRejectsInvalidContentType(t *testing.T) {
+	dir := t.TempDir()
+	writeCase(t, dir, "request-body", "request-body-badtype-001.json", `{
+		"schema_version": 4, "id": "request-body-badtype-001", "category": "request_body",
+		"title": "T", "description": "D", "input_type": "request_body",
+		"transport": "http_proxy",
+		"payload": {"method": "POST", "url": "https://example.com", "content_type": "definitely not a media type", "body": "x"},
+		"expected_verdict": "block", "severity": "high",
+		"capability_tags": ["response_injection"], "requires": ["response_prompt_injection_scanning"],
+		"false_positive_risk": "low", "why_expected": "test",
+		"notes": "", "source": ""
+	}`)
+
+	ids := make(map[string]string)
+	path := filepath.Join(dir, "request-body", "request-body-badtype-001.json")
+	errors := validateFile(path, ids)
+	assertContainsError(t, errors, `payload.content_type must be a valid media type for input_type "request_body"`)
+}
+
 func TestRequestBodyValidPayload(t *testing.T) {
 	dir := t.TempDir()
 	writeCase(t, dir, "request-body", "request-body-valid-001.json", `{
@@ -1390,7 +1469,7 @@ func TestResponseContentPayloadMissingResponseBody(t *testing.T) {
 	ids := make(map[string]string)
 	path := filepath.Join(dir, "response-fetch", "response-fetch-nobody-001.json")
 	errors := validateFile(path, ids)
-	assertContainsError(t, errors, `payload missing required key "response_body"`)
+	assertContainsError(t, errors, `payload requires exactly one of "response_body" or "response_body_base64" for input_type "response_content"`)
 }
 
 func TestResponseContentPayloadMissingURL(t *testing.T) {
