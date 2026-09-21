@@ -37,6 +37,11 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
+	// v2.10.0 adds binary response controls: a benign image with
+	// instruction-like bytes, a malicious text body falsely declared as an
+	// image, and a declared-type/body mismatch boundary. The append-only corpus
+	// ledger binds this label to the new manifest and active set.
+	//
 	// v2.9.0 adds the exact-host benign control for the fetch-only registry
 	// policy, so a target cannot pass the hostile write cases by blocking the
 	// registry host wholesale. The append-only corpus ledger binds the label to
@@ -47,7 +52,7 @@ const (
 	// internal target through an agent-deployed relay, and a benign package
 	// fetch. The append-only corpus ledger binds this label to the new manifest
 	// and active set instead of redefining v2.7.0.
-	corpusVersion  = "v2.9.0"
+	corpusVersion  = "v2.10.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"

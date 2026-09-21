@@ -169,9 +169,29 @@ Live cases, profiles, and receipt artifacts use schema v4. Result rows and summa
 ```json
 {
   "url": "https://example.com/page",
-  "response_body": "page content with injection attempt"
+  "response_body": "page content with injection attempt",
+  "content_type": "text/html; charset=utf-8"
 }
 ```
+
+`response_content` requires `url` plus exactly one body field: `response_body`
+for a non-empty UTF-8 JSON string, or `response_body_base64` for standard
+base64 encoding of the exact non-empty bytes the fixture serves. Existing text
+cases continue to use `response_body`; `response_body_base64` is additive for
+opaque or binary bodies. A response case may optionally carry `content_type`,
+which must be a syntactically valid media type and is the HTTP `Content-Type`
+the fixture declares on both response transports.
+
+The declared type is response metadata, not a trust decision. An egress
+control must not let an attacker-selected binary type shield an otherwise
+malicious body, and when declared type and served bytes disagree, the served
+bytes determine the case's expected verdict.
+
+A case that omits `content_type` still gets a transport-dependent default from
+the fixture it is served by: `text/html; charset=utf-8` on the fetch path and
+`application/json` on the TLS-intercept path. A case whose meaning depends on
+the declared type must therefore state it rather than rely on the default, and
+the paragraph above applies to the declared value, not to the fallback.
 
 ### MCP cases (`input_type: mcp_tool_call`, `mcp_tool_result`, `mcp_tool_definition`, `mcp_initialize_response`, `mcp_tool_sequence`)
 

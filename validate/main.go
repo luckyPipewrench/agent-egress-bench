@@ -3,9 +3,11 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"mime"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -940,11 +942,22 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		requireStringKey("url")
 
 	case "request_body":
-		// Required: method (string), url (string), content_type (string), body (string)
+		// Required: method (string), url (string), content_type (string), body (string).
+		// content_type is parsed as a media type here for the same reason it is on
+		// response_content: a case that declares a type the fixture cannot serve is
+		// a broken case, and a benchmark should refuse it at authoring time rather
+		// than measure a target against traffic it never sent.
 		requireStringKey("method")
 		requireStringKey("url")
 		requireStringKey("content_type")
 		requireStringKey("body")
+		if rawContentType, present := payload["content_type"]; present {
+			if contentType, ok := rawContentType.(string); ok {
+				if _, _, err := mime.ParseMediaType(contentType); err != nil {
+					errors = append(errors, "payload.content_type must be a valid media type for input_type \"request_body\"")
+				}
+			}
+		}
 
 	case "header":
 		// Required: method (string), url (string), headers (object)
@@ -958,9 +971,40 @@ func validatePayload(inputType string, payload map[string]interface{}) []string 
 		}
 
 	case "response_content":
-		// Required: url (string), response_body (string)
+		// Required: url (string), exactly one response-body encoding.
 		requireStringKey("url")
-		requireStringKey("response_body")
+		responseBody, hasResponseBody := payload["response_body"]
+		responseBodyBase64, hasResponseBodyBase64 := payload["response_body_base64"]
+		switch {
+		case hasResponseBody && hasResponseBodyBase64:
+			errors = append(errors, "payload.response_body and payload.response_body_base64 are mutually exclusive for input_type \"response_content\"")
+		case !hasResponseBody && !hasResponseBodyBase64:
+			errors = append(errors, "payload requires exactly one of \"response_body\" or \"response_body_base64\" for input_type \"response_content\"")
+		case hasResponseBody:
+			body, ok := responseBody.(string)
+			if !ok {
+				errors = append(errors, "payload.response_body must be a string for input_type \"response_content\"")
+			} else if body == "" {
+				errors = append(errors, "payload.response_body must not be empty for input_type \"response_content\"")
+			}
+		case hasResponseBodyBase64:
+			encoded, ok := responseBodyBase64.(string)
+			if !ok {
+				errors = append(errors, "payload.response_body_base64 must be a string for input_type \"response_content\"")
+			} else if decoded, err := base64.StdEncoding.DecodeString(encoded); err != nil {
+				errors = append(errors, "payload.response_body_base64 must be standard base64 for input_type \"response_content\"")
+			} else if len(decoded) == 0 {
+				errors = append(errors, "payload.response_body_base64 must decode to non-empty bytes for input_type \"response_content\"")
+			}
+		}
+		if rawContentType, present := payload["content_type"]; present {
+			contentType, ok := rawContentType.(string)
+			if !ok {
+				errors = append(errors, "payload.content_type must be a string for input_type \"response_content\"")
+			} else if _, _, err := mime.ParseMediaType(contentType); err != nil {
+				errors = append(errors, "payload.content_type must be a valid media type for input_type \"response_content\"")
+			}
+		}
 
 	case "mcp_tool_call", "mcp_tool_result", "mcp_tool_definition", "mcp_initialize_response", "mcp_tool_sequence",
 		"a2a_message":
