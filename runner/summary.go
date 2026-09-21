@@ -37,6 +37,11 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
+	// v2.11.0 repairs the two binary allow controls so they use deterministic
+	// high-entropy PNG data rather than readable instruction metadata. The
+	// append-only corpus ledger preserves v2.10.0 and binds this label to the
+	// repaired manifest and its own active-set artifact.
+	//
 	// v2.10.0 adds binary response controls: a benign image with
 	// instruction-like bytes, a malicious text body falsely declared as an
 	// image, and a declared-type/body mismatch boundary. The append-only corpus
@@ -52,7 +57,7 @@ const (
 	// internal target through an agent-deployed relay, and a benign package
 	// fetch. The append-only corpus ledger binds this label to the new manifest
 	// and active set instead of redefining v2.7.0.
-	corpusVersion  = "v2.10.0"
+	corpusVersion  = "v2.11.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"

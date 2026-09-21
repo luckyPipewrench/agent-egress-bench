@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "case_id": "response-binary-type-mismatch-009",
+  "reason": "Replace readable instruction metadata with deterministic high-entropy pixel data so the media-type mismatch case tests binary false positives without asserting that metadata instructions should pass.",
+  "files": [
+    {
+      "path": "cases/response-fetch/response-binary-type-mismatch-009.json",
+      "base_sha256": "2ffab99ad0f138318b0afc8928df8904b091733c05c8d0ce303bde231853aaf3",
+      "repaired_sha256": "e795d205d49efc96539dfe26362e3ed38813c14a3b50f5435ae3ced67e18addf"
+    }
+  ]
+}
