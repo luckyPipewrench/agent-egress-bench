@@ -584,7 +584,9 @@ func (p *ProxyAdapter) runResponseContentViaFetchProxy(c Case, timeout time.Dura
 	// from the case ID can trigger URL-entropy scanning, while a stable shared
 	// path races if execution becomes concurrent or a retry overlaps a request.
 	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
-	setResponseFixtureRoute(path, responseBody, payloadContentType(c.Payload), p.setHTTPRoute, p.setHTTPRouteCT)
+	if routeErr := setResponseFixtureRoute(path, responseBody, payloadContentType(c.Payload), p.setHTTPRoute, p.setHTTPRouteCT); routeErr != nil {
+		return Result{Err: fmt.Errorf("case %s: %w", c.ID, routeErr)}
+	}
 	proof, err := p.beginHTTPFixtureDelivery(path)
 	if err != nil {
 		return Result{Err: fmt.Errorf("case %s: %w", c.ID, err)}
@@ -1413,7 +1415,9 @@ func (p *ProxyAdapter) runResponseContentViaTLSIntercept(c Case, timeout time.Du
 		return Result{Err: fmt.Errorf("case %s: invalid TLS fixture address %q", c.ID, p.tlsFixtureAddr)}
 	}
 	path := fmt.Sprintf("/response/c%d", p.responseRouteID.Add(1))
-	setResponseFixtureRoute(path, responseBody, payloadContentType(c.Payload), p.setTLSRoute, p.setTLSRouteCT)
+	if routeErr := setResponseFixtureRoute(path, responseBody, payloadContentType(c.Payload), p.setTLSRoute, p.setTLSRouteCT); routeErr != nil {
+		return Result{Err: fmt.Errorf("case %s: %w", c.ID, routeErr)}
+	}
 	target := "https://" + net.JoinHostPort(fixtureHostname, port) + path
 	return p.doHTTPProxyRequest(c.ID, http.MethodGet, target, nil, nil, timeout, p.tlsCAFile)
 }
@@ -1458,12 +1462,21 @@ func payloadContentType(payload map[string]interface{}) string {
 	return contentType
 }
 
-func setResponseFixtureRoute(path, responseBody, contentType string, setRoute func(path, body string), setRouteWithContentType func(path, body, contentType string)) {
-	if contentType != "" && setRouteWithContentType != nil {
+// setResponseFixtureRoute serves the body under the case's declared content
+// type. A declared type that cannot be honored is an error rather than a silent
+// fallback: the legacy setters apply the fixture's own default, so falling back
+// would serve the case under a type it did not ask for and quietly measure the
+// target against traffic the case never described.
+func setResponseFixtureRoute(path, responseBody, contentType string, setRoute func(path, body string), setRouteWithContentType func(path, body, contentType string)) error {
+	if contentType != "" {
+		if setRouteWithContentType == nil {
+			return fmt.Errorf("payload declares content_type %q but no content-type-aware response fixture is configured", contentType)
+		}
 		setRouteWithContentType(path, responseBody, contentType)
-		return
+		return nil
 	}
 	setRoute(path, responseBody)
+	return nil
 }
 
 func (p *ProxyAdapter) runA2A(c Case, timeout time.Duration) Result {
