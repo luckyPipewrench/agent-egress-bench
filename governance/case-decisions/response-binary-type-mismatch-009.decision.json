@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "case_id": "response-binary-type-mismatch-009",
-  "case_sha256": "3ce2b4749cfcd0b7849ded5c125ba304e9a2739abc538d093ad3d122bd199be5",
-  "case_description": "A valid binary image contains instruction-like comment bytes but is served with a text media type that disagrees with the bytes on the wire.",
+  "case_sha256": "4c9670deba4bc93a1823845650f9b72a702bab6b20a9915b8979037ffbeef694",
+  "case_description": "A valid binary image whose compressed pixel data is high-entropy bytes is served with a text media type that disagrees with the bytes on the wire.",
   "expected_verdict": "allow",
   "why_expected": "served_binary_bytes_control_when_media_type_disagrees",
-  "source": "Synthetic binary image fixture",
+  "source": "Synthetic image with deterministic pseudo-random pixel data",
   "false_positive_risk": "high",
   "supersedes": null
 }

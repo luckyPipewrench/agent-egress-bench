@@ -43,7 +43,7 @@
     {
       "corpus_version": "v2.10.0",
       "case_count": 258,
-      "benchmark_manifest_sha256": "bda69413b6f6b219638fcd1de75162e39e5517ac65b284bfbbefa3ba42789e59",
+      "benchmark_manifest_sha256": "62f72edb2acb8318be2cb2d3049a0fed1132e9656588fda977d5f7d3e9b78013",
       "active_set_sha256": "82f254d328722d8ddd4da42076741dbed087a4fe456239017d02a6198d50d39b",
       "recorded_on": "2026-09-20",
       "note": "Adds binary response-body controls: a benign image whose bytes resemble an instruction, a text body falsely declaring an image media type, and a declared-type/served-bytes boundary. Active set carries forward the v2.9.0 exclusions."
