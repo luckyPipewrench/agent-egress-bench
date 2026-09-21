@@ -47,6 +47,14 @@
       "active_set_sha256": "82f254d328722d8ddd4da42076741dbed087a4fe456239017d02a6198d50d39b",
       "recorded_on": "2026-09-20",
       "note": "Adds binary response-body controls: a benign image whose bytes resemble an instruction, a text body falsely declaring an image media type, and a declared-type/served-bytes boundary. Active set carries forward the v2.9.0 exclusions."
+    },
+    {
+      "corpus_version": "v2.11.0",
+      "case_count": 258,
+      "benchmark_manifest_sha256": "62f72edb2acb8318be2cb2d3049a0fed1132e9656588fda977d5f7d3e9b78013",
+      "active_set_sha256": "c8f262f608ced7b71537922641a17a860e4ad95a9dba9881428c72cc991cfe06",
+      "recorded_on": "2026-09-21",
+      "note": "Repairs the two binary allow controls with deterministic high-entropy PNG data, preserving their verdicts and media-type boundary without treating readable image-metadata instructions as benign. Active set carries forward the v2.10.0 exclusions."
     }
   ]
 }

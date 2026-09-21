@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "case_id": "response-binary-benign-007",
+  "reason": "Replace readable instruction metadata with deterministic high-entropy pixel data so the benign case tests binary false positives without asserting that metadata instructions should pass.",
+  "files": [
+    {
+      "path": "cases/response-fetch/response-binary-benign-007.json",
+      "base_sha256": "42fd1357b73f50e6a2cdd4f9bf396822a1ab7662173481ebe17769275bdf9d8c",
+      "repaired_sha256": "f02f4800ac8c3ddf64ce789021cc6dbe62d73d325dc6d852b14ac440c59c6987"
+    }
+  ]
+}
