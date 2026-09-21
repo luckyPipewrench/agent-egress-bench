@@ -1,8 +1,8 @@
 # agent-egress-bench stats
-cases_total: 257
+cases_total: 260
 categories: 18
-block: 186
-allow: 70
+block: 187
+allow: 72
 warn: 1
 by_category:
   a2a_agent_card: 8
@@ -17,7 +17,7 @@ by_category:
   mcp_input: 15
   mcp_tool: 32
   request_body: 25
-  response_fetch: 9
+  response_fetch: 12
   response_mitm: 9
   shell_obfuscation: 10
   ssrf_bypass: 11
