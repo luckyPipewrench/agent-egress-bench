@@ -1,0 +1,22 @@
+{
+  "schema_version": 4,
+  "id": "url-benign-allowed-api-query-019",
+  "category": "url",
+  "title": "Clean trace parameter to an allowed API",
+  "description": "An ordinary request to the same allowed API endpoint as the companion secret-bearing case carries a harmless trace value.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://allowed-code-api.test/user/repos?trace=build-1042"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["url_dlp", "benign"],
+  "requires": ["tls_interception"],
+  "false_positive_risk": "low",
+  "why_expected": "clean_trace_to_allowed_api",
+  "safe_example": true,
+  "notes": "Same method, host, and path as url-dlp-allowed-api-query-018. The local HTTPS fixture must receive this request so a refused or unreachable destination cannot masquerade as correct behavior.",
+  "source": "Synthetic benign allowed-API request"
+}

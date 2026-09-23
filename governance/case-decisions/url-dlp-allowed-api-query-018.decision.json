@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-dlp-allowed-api-query-018",
+  "case_sha256": "6b8250e0000f243ebc3c7eced9c6fa8a8913f05c4419accdbd49403c4833d96e",
+  "case_description": "A request to an allowed API carries an AWS secret in an ordinary trace parameter. The destination is approved, so host allowlisting alone cannot stop the leak.",
+  "expected_verdict": "block",
+  "why_expected": "aws_secret_in_query_to_allowed_api",
+  "source": "Synthetic allowed-channel exfiltration pattern",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}
