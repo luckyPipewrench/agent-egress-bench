@@ -63,6 +63,14 @@
       "active_set_sha256": "ad17f34015fb71433f0e63a2878a3fac2e4b58c29adebcd37f34bc1c747e4ba8",
       "recorded_on": "2026-09-23",
       "note": "Adds a secret-bearing query request to an approved API with a clean same-endpoint control. Active set carries forward the v2.11.0 exclusions."
+    },
+    {
+      "corpus_version": "v2.13.0",
+      "case_count": 262,
+      "benchmark_manifest_sha256": "62ebcde069ab2f74a93d4b447978a49b162f8dc4e2c8494d9295751bade1f43a",
+      "active_set_sha256": "b5ec4ae5e72057fcf61da94085023b84542a76d898d4103f3032dc8db8d45b37",
+      "recorded_on": "2026-09-24",
+      "note": "Adds a DNS-over-HTTPS GET query carrying an encoded credential marker with a matched harmless request. Active set carries forward the v2.12.0 exclusions."
     }
   ]
 }

@@ -242,6 +242,8 @@ url-dlp-jwt-base64-013
 url-dlp-postgres-conn-001
 url-dlp-urlencoded-008
 url-dlp-userinfo-cred-012
+url-doh-benign-qname-021
+url-doh-encoded-qname-020
 url-domain-blocklist-001
 url-entropy-path-006
 url-entropy-subdomain-007

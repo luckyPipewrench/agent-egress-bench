@@ -1,0 +1,23 @@
+{
+  "schema_version": 4,
+  "id": "url-doh-benign-qname-021",
+  "category": "url",
+  "title": "Harmless encoded DNS-over-HTTPS query",
+  "description": "An HTTPS GET to the same approved fixture endpoint carries a DNS wire query with a similarly encoded non-secret name. It tests whether a control permits ordinary requests with the same size and encoding as the companion exfiltration attempt.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://allowed-code-api.test/dns-query?dns=AAABAAABAAAAAAAAIGp5M3ZjbmNzaGJrZGV2cnprNHp2cW5remd6bmRjcWpxAXgFY2FjaGUEdGVzdAAAAQAB",
+    "headers": {"Accept": "application/dns-message"}
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["url_dlp", "encoding_evasion", "benign"],
+  "requires": ["tls_interception"],
+  "false_positive_risk": "high",
+  "why_expected": "matched_nonsecret_doh_query",
+  "safe_example": true,
+  "notes": "Same method, host, path, DNS wire length, and base32 label length as url-doh-encoded-qname-020. The local HTTPS fixture must receive this request. The fixture verifies request delivery, not completion of DNS resolution.",
+  "source": "Synthetic benign DNS-over-HTTPS GET request following RFC 8484 section 4.1.1"
+}

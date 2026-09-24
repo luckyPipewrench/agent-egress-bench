@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "url-doh-benign-qname-021",
+  "case_sha256": "0e1f30d19e764cbdd01fbf1f74366f9e9c841a459df177e0926e97a13afc9fe8",
+  "case_description": "An HTTPS GET to the same approved fixture endpoint carries a DNS wire query with a similarly encoded non-secret name. It tests whether a control permits ordinary requests with the same size and encoding as the companion exfiltration attempt.",
+  "expected_verdict": "allow",
+  "why_expected": "matched_nonsecret_doh_query",
+  "source": "Synthetic benign DNS-over-HTTPS GET request following RFC 8484 section 4.1.1",
+  "false_positive_risk": "high",
+  "supersedes": null
+}
