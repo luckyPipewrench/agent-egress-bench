@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-26
+
+The corpus moves from v2.8.0 (254 cases) to v2.14.0 (266 active cases). The scoring version, result formats, and the reusable Action interface are unchanged.
+
+### Added
+
+- DNS-over-HTTPS request pair: a credential-marker lookup and an equal-length harmless lookup, both sent as RFC 8484 GET requests (#277).
+- Approved-API query pair: a secret-bearing query to an approved API endpoint, with a benign control at the same endpoint (#276).
+- Trailing-dot host pair: a cloud-metadata request whose host ends in a DNS root dot, with an allowed host written the same way (#278).
+- Forged-media pair: an MCP tool result that hides a credential after a real image header, with a genuine image in the same field (#278).
+- Binary and image response-body family, with its two benign controls repaired to measure high-entropy binary availability (#274, #275).
+- Fetch-only method control (#270).
+- Marketplace branding metadata for the reusable Action (#278).
+
+### Fixed
+
+- TLS URL cases now route through the local fixtures instead of reaching real DNS (#273).
+- A case's declared content type is served on both response paths (#274).
+- Runner HTTP handler failures are bounded under test (#271).
+- Brand raster provenance is bound to its own bytes, and a size ladder is exported (#272).
+
+### Release process
+
+- A final release tag now requires a dated `## [X.Y.Z]` section in this file; the release build refuses the tag otherwise. Pre-release tags are exempt.
+
+## Changes released before v1.0.0
+
 ### Added
 
 - **Multi-file MCP-drift case runner support:** new `--multifile-cases <dir>` flag on the gauntlet runner loads each `cases/mcp-drift/<id>/` directory, converts the `before.json` / `after.json` snapshot pair into a four-message JSON-RPC sequence, and replays the sequence through a single MCP session against the running tool. The verdict on the second `tools/list` response is what scores. Closes the coverage gap previously called out in `profiles/README.md`.

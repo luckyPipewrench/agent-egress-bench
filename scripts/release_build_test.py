@@ -430,6 +430,25 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertEqual(result.returncode, 23, msg=result.stderr)
         self.assertIn("snapshot identity version came from GoReleaser configuration", result.stderr)
 
+    def test_tagged_prepare_requires_a_dated_changelog_section(self) -> None:
+        changelog = self.root / "CHANGELOG.md"
+        original = changelog.read_text(encoding="utf-8")
+        self.assertIn("## [1.0.0] - ", original, "premise: the fixture changelog carries the tagged version")
+        tagged = ["prepare", "--repo-root", str(self.root), "--tag", "v1.0.0", "--version", "1.0.0", "--commit", self.commit, "--output", str(self.identity)]
+        self.invoke(*tagged)
+        self.assertTrue(self.identity.exists(), "premise: a dated section lets the tagged build prepare")
+        self.identity.unlink()
+        changelog.write_text(original.replace("## [1.0.0] - ", "## [0.9.9] - "), encoding="utf-8")
+        result = self.invoke(*tagged, expect=1)
+        self.assertIn("CHANGELOG.md has no dated section for 1.0.0", result.stderr)
+        self.assertFalse(self.identity.exists())
+        # A pre-release tag is not held to the changelog rule.
+        spec = importlib.util.spec_from_file_location("release_build_under_test", SCRIPT)
+        assert spec is not None and spec.loader is not None
+        release_build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(release_build)
+        release_build.require_changelog_section(self.root, "1.0.0-beta.1")
+
     def test_release_shell_peels_an_annotated_tag_object_for_a_tagged_build(self) -> None:
         tag_object = subprocess.run(["git", "-C", str(self.root), "rev-parse", "v1.0.0"], check=True, text=True, capture_output=True).stdout.strip()
         fake_bin = Path(self.temp.name) / "bin"
