@@ -329,15 +329,18 @@ def require_changelog_section(repo: Path, version: str) -> None:
     already published release must not start failing because an older tag
     predates the rule.
     """
-    if "-" in version:
+    # Build metadata (after "+") does not make a version a pre-release, and the
+    # changelog names the release by its core version.
+    core = version.partition("+")[0]
+    if "-" in core:
         return
-    heading = re.compile(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}[ \t]*$", re.MULTILINE)
+    heading = re.compile(rf"^## \[{re.escape(core)}\] - \d{{4}}-\d{{2}}-\d{{2}}[ \t]*$", re.MULTILINE)
     try:
         changelog = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
     except OSError as exc:
         fail(f"CHANGELOG.md is unreadable: {exc}")
     if not heading.search(changelog):
-        fail(f"CHANGELOG.md has no dated section for {version}; add '## [{version}] - YYYY-MM-DD' before tagging")
+        fail(f"CHANGELOG.md has no dated section for {core}; add '## [{core}] - YYYY-MM-DD' before tagging")
 
 
 def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bool) -> dict[str, Any]:

@@ -31,7 +31,7 @@ The corpus moves from v2.8.0 (254 cases) to v2.14.0 (266 active cases). The scor
 
 - A final release tag now requires a dated `## [X.Y.Z]` section in this file; the release build refuses the tag otherwise. Pre-release tags are exempt.
 
-## Changes released before v1.0.0
+## Changes released in v0.1.0 through v1.0.0
 
 ### Added
 

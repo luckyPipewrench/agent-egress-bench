@@ -448,6 +448,12 @@ class ReleaseBuildTest(unittest.TestCase):
         release_build = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(release_build)
         release_build.require_changelog_section(self.root, "1.0.0-beta.1")
+        # Build metadata is not a pre-release: 1.0.0+build-42 still needs the
+        # dated 1.0.0 section, which the edited fixture no longer has.
+        with self.assertRaises(release_build.ReleaseError):
+            release_build.require_changelog_section(self.root, "1.0.0+build-42")
+        changelog.write_text(original, encoding="utf-8")
+        release_build.require_changelog_section(self.root, "1.0.0+build-42")
 
     def test_release_shell_peels_an_annotated_tag_object_for_a_tagged_build(self) -> None:
         tag_object = subprocess.run(["git", "-C", str(self.root), "rev-parse", "v1.0.0"], check=True, text=True, capture_output=True).stdout.strip()
