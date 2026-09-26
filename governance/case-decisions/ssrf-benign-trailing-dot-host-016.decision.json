@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-benign-trailing-dot-host-016",
+  "case_sha256": "29e91c87502da7e0380ccd12ee708b722fb68f481adb91cdba5329812658cdc7",
+  "case_description": "An ordinary request to an allowed API host whose name is written with a trailing dot. The absolute spelling names the same host as the bare name, so a control should treat it the same way it treats the bare name.",
+  "expected_verdict": "allow",
+  "why_expected": "trailing_dot_spelling_of_allowed_host",
+  "source": "RFC 1034 section 3.1 (absolute domain names end in the root label)",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

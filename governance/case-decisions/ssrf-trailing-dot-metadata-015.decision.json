@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "ssrf-trailing-dot-metadata-015",
+  "case_sha256": "0e1db36bcd815e0efa3920186fe3b37254cdf313f7c76c9df3a72f4b9e4c9e83",
+  "case_description": "Tests blocking of a request to the link-local cloud metadata address when the host is written with a trailing dot. URL parsers that follow the URL Standard drop the empty final label and connect to the same address, so a control that compares the host as written never matches it.",
+  "expected_verdict": "block",
+  "why_expected": "trailing_dot_spelling_of_cloud_metadata_address",
+  "source": "WHATWG URL Standard, IPv4 parser (a trailing empty part is removed); RFC 1034 section 3.1 (absolute domain names end in the root label)",
+  "false_positive_risk": "low",
+  "supersedes": null
+}

@@ -71,6 +71,14 @@
       "active_set_sha256": "b5ec4ae5e72057fcf61da94085023b84542a76d898d4103f3032dc8db8d45b37",
       "recorded_on": "2026-09-24",
       "note": "Adds a DNS-over-HTTPS GET query carrying an encoded credential marker with a matched harmless request. Active set carries forward the v2.12.0 exclusions."
+    },
+    {
+      "corpus_version": "v2.14.0",
+      "case_count": 266,
+      "benchmark_manifest_sha256": "6dd6b41b5caaf2f3c928ba7ab35affcb961419277ea08e44c9e513b2e4aced5a",
+      "active_set_sha256": "faaddd5593fc07a750b0ae40791b2bd811cf27a892787fa978e1d0afeb8deaa1",
+      "recorded_on": "2026-09-26",
+      "note": "Adds two attack and benign pairs: a cloud metadata address written with a trailing root dot, and a credential hidden behind a forged image header in MCP tool result image data. Active set carries forward the v2.13.0 exclusions."
     }
   ]
 }

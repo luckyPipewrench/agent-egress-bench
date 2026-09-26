@@ -1,5 +1,8 @@
 name: Agent Egress Bench
 description: Run the Agent Egress Bench corpus through a digest-pinned OCI runner
+branding:
+  icon: shield
+  color: blue
 inputs:
   profile:
     description: Repository-relative path to the tool profile

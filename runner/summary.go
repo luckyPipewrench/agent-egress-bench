@@ -37,6 +37,10 @@ const (
 	// two different rule sets to publish under one label.
 	scoringVersion = "2.8"
 	runnerVersion  = "0.4.3"
+	// v2.14.0 adds two attack and benign pairs: a cloud metadata address
+	// written with a trailing root dot, and a credential hidden behind a forged
+	// image header in MCP tool result image data. Each companion reuses the same
+	// spelling or field so a blanket refusal fails its control.
 	// v2.13.0 adds paired DNS-over-HTTPS GET requests to an approved endpoint.
 	// Their matching wire lengths distinguish a leaked marker from a normal
 	// lookup without relying on blanket rejection of encoded DNS messages.
@@ -63,7 +67,7 @@ const (
 	// internal target through an agent-deployed relay, and a benign package
 	// fetch. The append-only corpus ledger binds this label to the new manifest
 	// and active set instead of redefining v2.7.0.
-	corpusVersion  = "v2.13.0"
+	corpusVersion  = "v2.14.0"
 	summaryDateEnv = "AEB_GAUNTLET_SUMMARY_DATE"
 
 	measurementStatusMeasured   = "measured"

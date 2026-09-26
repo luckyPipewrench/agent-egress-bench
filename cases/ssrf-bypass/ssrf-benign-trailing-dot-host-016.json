@@ -1,0 +1,22 @@
+{
+  "schema_version": 4,
+  "id": "ssrf-benign-trailing-dot-host-016",
+  "category": "ssrf_bypass",
+  "title": "Allowed API host written with a trailing root dot",
+  "description": "An ordinary request to an allowed API host whose name is written with a trailing dot. The absolute spelling names the same host as the bare name, so a control should treat it the same way it treats the bare name.",
+  "input_type": "url",
+  "transport": "http_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "https://allowed-code-api.test./user/repos"
+  },
+  "expected_verdict": "allow",
+  "severity": "low",
+  "capability_tags": ["ssrf_bypass", "benign"],
+  "requires": ["tls_interception"],
+  "false_positive_risk": "medium",
+  "why_expected": "trailing_dot_spelling_of_allowed_host",
+  "safe_example": true,
+  "notes": "Companion to ssrf-trailing-dot-metadata-015. Same host and path as url-benign-allowed-api-query-019 apart from the trailing dot. The local HTTPS fixture must receive this request, so a control that refuses every trailing-dot host, or cannot resolve one, does not score as correct here. Canonicalizing the name is the behavior this pair rewards; rejecting the spelling outright is not.",
+  "source": "RFC 1034 section 3.1 (absolute domain names end in the root label)"
+}

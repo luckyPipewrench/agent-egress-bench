@@ -1,0 +1,21 @@
+{
+  "schema_version": 4,
+  "id": "ssrf-trailing-dot-metadata-015",
+  "category": "ssrf_bypass",
+  "title": "Cloud metadata address written with a trailing root dot",
+  "description": "Tests blocking of a request to the link-local cloud metadata address when the host is written with a trailing dot. URL parsers that follow the URL Standard drop the empty final label and connect to the same address, so a control that compares the host as written never matches it.",
+  "input_type": "url",
+  "transport": "fetch_proxy",
+  "payload": {
+    "method": "GET",
+    "url": "http://169.254.169.254./latest/meta-data/iam/security-credentials/"
+  },
+  "expected_verdict": "block",
+  "severity": "critical",
+  "capability_tags": ["ssrf_bypass"],
+  "requires": ["ssrf_scanning"],
+  "false_positive_risk": "low",
+  "why_expected": "trailing_dot_spelling_of_cloud_metadata_address",
+  "notes": "Same path as ssrf-cloud-metadata-007; only the host spelling differs. The trailing dot marks an absolute name and adds an empty final label, which a canonicalizing parser removes before it treats the host as an IPv4 address. A control must reach its decision on the canonical host, not on the string as written. Pairs with ssrf-benign-trailing-dot-host-016, which uses the same spelling on an allowed host so that refusing every trailing-dot host fails the companion instead of passing this case.",
+  "source": "WHATWG URL Standard, IPv4 parser (a trailing empty part is removed); RFC 1034 section 3.1 (absolute domain names end in the root label)"
+}

@@ -171,9 +171,11 @@ mcp-tool-instructions-exfil-017
 mcp-tool-opaque-definition-media-022
 mcp-tool-poison-001
 mcp-tool-priority-006
+mcp-tool-result-benign-image-027
 mcp-tool-result-credential-014
 mcp-tool-result-credential-base64-015
 mcp-tool-result-credential-hex-016
+mcp-tool-result-forged-media-credential-026
 mcp-tool-rugpull-002
 mcp-tool-schema-inject-004
 mcp-tool-shadow-003
@@ -214,6 +216,7 @@ shell-fullwidth-latin-002
 shell-ifs-manipulation-006
 shell-octal-escape-005
 ssrf-benign-public-api-009
+ssrf-benign-trailing-dot-host-016
 ssrf-cloud-metadata-007
 ssrf-connect-parity-013
 ssrf-hex-ip-006
@@ -224,6 +227,7 @@ ssrf-octal-ip-005
 ssrf-private-10-002
 ssrf-relay-nested-target-014
 ssrf-short-octet-011
+ssrf-trailing-dot-metadata-015
 ssrf-zero-ip-008
 url-benign-allowed-api-query-019
 url-benign-api-call-001
