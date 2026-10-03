@@ -226,6 +226,7 @@ test-control-evidence-g2-authentication:
 	@cd control-evidence/g2/authentication && go test -race -count=1 ./...
 
 test-pipelock-example:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/example_launcher_lifecycle_test.py
 	@sh examples/pipelock/mcp-stdio-upstream-bridge_test.sh
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
 		scripts.continuous_gauntlet_workflow_test.ContinuousGauntletWorkflowTest.test_entrypoint_pins_local_go_toolchain \

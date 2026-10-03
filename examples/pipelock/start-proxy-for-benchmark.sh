@@ -17,8 +17,25 @@ for name in "${required_vars[@]}"; do
   fi
 done
 
-tmp_config="$(mktemp "${TMPDIR:-/tmp}/aeb-pipelock-XXXXXX.yaml")"
-trap 'rm -f "$tmp_config"' EXIT
+# BSD mktemp requires the X template at the end. Keep the generated config
+# inside a private directory so its lifetime belongs to this launcher.
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/aeb-pipelock.XXXXXX")"
+tmp_config="$tmp_dir/config.yaml"
+trap 'rm -rf -- "$tmp_dir"' EXIT
+
+child_pid=""
+forward_signal() {
+  local signal="$1"
+  if [[ -n "$child_pid" ]]; then
+    kill -s "$signal" "$child_pid" 2>/dev/null || true
+  else
+    # A signal during config generation must stop setup and run EXIT cleanup.
+    exit "$2"
+  fi
+}
+trap 'forward_signal TERM 143' TERM
+trap 'forward_signal INT 130' INT
+trap 'forward_signal HUP 129' HUP
 
 # Receipt-axis runs are OPT-IN. Emitting durable signed receipts costs measurable
 # time per request, so enabling it by default would change what a published
@@ -88,4 +105,22 @@ awk -v scan_addr="$AEB_SCAN_ADDR" '
 # response is never actually scanned.
 export SSL_CERT_FILE="$AEB_TLS_CA_FILE"
 
-exec "$pipelock_bin" run --config "$tmp_config" --listen "$AEB_PROXY_ADDR"
+# Keep the shell alive to remove the config after the child exits. Explicitly
+# inherit stdin: asynchronous shell commands otherwise receive /dev/null.
+(
+  # Bash ignores INT/QUIT for asynchronous commands; restore their original
+  # dispositions before exec without creating a separate process group.
+  trap - INT QUIT
+  exec "$pipelock_bin" run --config "$tmp_config" --listen "$AEB_PROXY_ADDR"
+) <&0 &
+child_pid=$!
+status=0
+while true; do
+  wait "$child_pid" && status=0 || status=$?
+  # A trapped signal interrupts wait before the child has finished shutting down.
+  # Wait again in that case; cleanup must not race the child's config reads.
+  if ! kill -0 "$child_pid" 2>/dev/null; then
+    break
+  fi
+done
+exit "$status"
