@@ -27,7 +27,6 @@ config = pathlib.Path(sys.argv[sys.argv.index('--config') + 1])
 record = {'argv': sys.argv[1:], 'config': str(config), 'text': config.read_text(),
           'mode': config.parent.stat().st_mode & 0o777,
           'cert': os.environ.get('SSL_CERT_FILE'), 'pid': os.getpid()}
-pathlib.Path(os.environ['RECORD']).write_text(json.dumps(record))
 def stop(sig, frame):
     pathlib.Path(os.environ['SIGNAL_RECORD']).write_text(str(sig))
     # The config must remain available until shutdown finishes.
@@ -36,6 +35,10 @@ def stop(sig, frame):
 if not os.environ.get('DEFAULT_SIGNALS'):
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, stop)
+record_path = pathlib.Path(os.environ['RECORD'])
+record_tmp = record_path.with_suffix('.tmp')
+record_tmp.write_text(json.dumps(record))
+record_tmp.replace(record_path)
 if os.environ.get('READ_STDIN'):
     pathlib.Path(os.environ['STDIN_RECORD']).write_text(sys.stdin.read())
 if os.environ.get('HOLD'):
@@ -77,6 +80,13 @@ os.execv('/usr/bin/mktemp', ['mktemp', *args])
             proc.terminate()
             try:
                 proc.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate(timeout=3)
+        else:
+            # An exited launcher may have left a child holding the pipes.
+            try:
+                proc.communicate(timeout=1)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.communicate(timeout=3)
@@ -130,6 +140,45 @@ os.execv('/usr/bin/mktemp', ['mktemp', *args])
             with self.assertRaises(ProcessLookupError):
                 os.kill(record['pid'], 0)
         self.finish(self.launch(), 0)
+
+    def test_child_exit_during_signal_trap(self):
+        # Keep the forwarding trap active until the child has exited. This makes
+        # an interrupted wait distinct from the child's final status.
+        startup = self.base / 'startup.bash'
+        startup.write_text("""kill() {
+  if [[ "$1" == "-s" ]]; then
+    builtin kill "$@"
+    while builtin kill -0 "$3" 2>/dev/null; do sleep .01; done
+  else
+    builtin kill "$@"
+  fi
+}
+""")
+        proc = self.launch(HOLD='1', BASH_ENV=str(startup))
+        self.ready(proc)
+        proc.terminate()
+        self.finish(proc, 37)
+
+    def test_signal_during_child_handoff(self):
+        startup = self.base / 'handoff.bash'
+        startup.write_text("""handoff_debug() {
+  if [[ "$BASH_COMMAND" == 'child_pid=$!' ]]; then
+    while [[ ! -f "$RECORD" ]]; do sleep .01; done
+    builtin kill -TERM "$$"
+  fi
+}
+trap handoff_debug DEBUG
+""")
+        proc = self.launch(HOLD='1', BASH_ENV=str(startup))
+        self.addCleanup(self.kill_group, proc.pid)
+        self.finish(proc, 37)
+
+    @staticmethod
+    def kill_group(pid):
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
     def test_default_signal_status(self):
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):

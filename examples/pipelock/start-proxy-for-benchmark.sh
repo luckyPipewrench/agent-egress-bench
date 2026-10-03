@@ -24,10 +24,17 @@ tmp_config="$tmp_dir/config.yaml"
 trap 'rm -rf -- "$tmp_dir"' EXIT
 
 child_pid=""
+launching_child=0
+pending_signal=""
+wait_interrupted=0
 forward_signal() {
   local signal="$1"
+  wait_interrupted=1
   if [[ -n "$child_pid" ]]; then
     kill -s "$signal" "$child_pid" 2>/dev/null || true
+  elif (( launching_child )); then
+    # Defer delivery until the asynchronous child PID is owned by this shell.
+    pending_signal="$signal"
   else
     # A signal during config generation must stop setup and run EXIT cleanup.
     exit "$2"
@@ -107,6 +114,7 @@ export SSL_CERT_FILE="$AEB_TLS_CA_FILE"
 
 # Keep the shell alive to remove the config after the child exits. Explicitly
 # inherit stdin: asynchronous shell commands otherwise receive /dev/null.
+launching_child=1
 (
   # Bash ignores INT/QUIT for asynchronous commands; restore their original
   # dispositions before exec without creating a separate process group.
@@ -114,12 +122,17 @@ export SSL_CERT_FILE="$AEB_TLS_CA_FILE"
   exec "$pipelock_bin" run --config "$tmp_config" --listen "$AEB_PROXY_ADDR"
 ) <&0 &
 child_pid=$!
+launching_child=0
+if [[ -n "$pending_signal" ]]; then
+  forward_signal "$pending_signal" 0
+fi
 status=0
 while true; do
+  wait_interrupted=0
   wait "$child_pid" && status=0 || status=$?
-  # A trapped signal interrupts wait before the child has finished shutting down.
-  # Wait again in that case; cleanup must not race the child's config reads.
-  if ! kill -0 "$child_pid" 2>/dev/null; then
+  # A trapped signal interrupts wait even if the child exits during the trap.
+  # Retry to retrieve its final status before cleanup, including that case.
+  if (( wait_interrupted == 0 )); then
     break
   fi
 done
