@@ -290,6 +290,32 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
         self.assertEqual(statuses["command_go"], "ok")
         self.assertEqual(statuses["go_version"], "ok")
 
+    def test_doctor_reads_release_versions_and_rejects_prereleases(self):
+        # A distribution Go built with a default experiment reports
+        # "go1.27.0-X:nodwarf5". That is a release and must be read as one,
+        # while release candidates and devel builds stay unreadable.
+        cases = [
+            ("go version go1.27.0-X:nodwarf5 linux/amd64", "ok"),
+            ("go version go1.24.0-X:nodwarf5 linux/amd64", "too_old"),
+            ("go version go1.27rc1 linux/amd64", "unreadable"),
+            ("go version devel go1.28-abcdef linux/amd64", "unreadable"),
+            ("go version go1.27.0-X: linux/amd64", "unreadable"),
+        ]
+        for version_line, expected in cases:
+            with self.subTest(version_line=version_line), tempfile.TemporaryDirectory() as temporary:
+                selected = self._stub_go(temporary, version_line)
+                result = subprocess.run(
+                    ["bash", str(ENTRYPOINT), "--go", str(selected), "--doctor-json"],
+                    cwd=REPO_ROOT,
+                    env={**os.environ, "AEB_GO": ""},
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                report = json.loads(result.stdout)
+                statuses = {check["code"]: check["status"] for check in report["checks"]}
+                self.assertEqual(statuses["go_version"], expected)
+
     def test_go_override_cannot_bypass_the_minimum_version(self):
         # The override selects a toolchain; it must never waive the floor. A
         # too-old --go has to fail exactly like a too-old PATH toolchain.

@@ -144,11 +144,13 @@ go_bin_available() {
 
 installed_go_version() {
   local line=""
-  local version_re='^go version go([0-9]+\.[0-9]+(\.[0-9]+)?)[[:space:]]'
+  local version_re='^go version go([0-9]+\.[0-9]+(\.[0-9]+)?)(-X:[A-Za-z0-9_,]+)?[[:space:]]'
   go_bin_available || return 1
   line="$("$go_bin" version 2>/dev/null || true)"
   # Released toolchains print "go version go1.25.0 linux/amd64". A substring
-  # match would treat go1.25rc1 as 1.25 and devel go1.26-... as 1.26.
+  # match would treat go1.25rc1 as 1.25 and devel go1.26-... as 1.26. A release
+  # built with a default GOEXPERIMENT appends it ("go1.27.0-X:nodwarf5", as some
+  # distribution packages do); that is still the named release.
   if [[ "$line" =~ $version_re ]]; then
     printf '%s\n' "${BASH_REMATCH[1]}"
     return 0
