@@ -218,6 +218,14 @@ func TestX32CompatSyscallsAreKilled(t *testing.T) {
 	}
 	if os.Getenv("AEB_TARGET_SANDBOX_X32_HELPER") == "1" {
 		runtime.LockOSThread()
+		// The kill below is the expected outcome. Mark the helper non-dumpable so
+		// the kernel skips the core dump the host would otherwise report as a
+		// crash on every run. A core-size limit is not enough: a piped
+		// core_pattern handler ignores it. A failure here exits normally, which
+		// the parent rejects.
+		if err := unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0); err != nil {
+			t.Fatal(err)
+		}
 		if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
 			t.Fatal(err)
 		}
