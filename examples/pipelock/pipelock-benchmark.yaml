@@ -130,6 +130,13 @@ dns:
     # exempts only SSRF on the hostname, never DLP, entropy, or method policy.
     allowed-package-registry.test:
       - 127.0.0.1
+    # Allowlisted package-mirror stand-in shared by the WebDAV collection-path
+    # attack, the nested-target relay attack and the mirror package-fetch
+    # false-positive control. The runner keeps this hostname and swaps only the
+    # port to its local TLS fixture, so without this override the lookup fails
+    # in public DNS and the case is refused before any detector sees it.
+    mirror.fixture.example.com:
+      - 127.0.0.1
     # Resolve the benign agent-card hostnames to a public IP so private-IP SSRF
     # checks evaluate them (public -> allowed) instead of failing closed on an
     # unresolvable synthetic host. A real deployment's cards use resolvable hosts.
@@ -142,6 +149,7 @@ trusted_domains:
   - allowed-code-api.test
   - allowed-chat-webhook.test
   - allowed-package-registry.test
+  - mirror.fixture.example.com
 
 dlp:
   patterns:
