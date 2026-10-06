@@ -6006,6 +6006,15 @@ func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
 		{"media policy identifier alone", "Forbidden: see media_policy settings", false},
 		{"negated media policy refusal", "The image was not blocked: media policy allowed it.", false},
 		{"negated media policy deny", "This SVG wasn't blocked by media policy.", false},
+		// A refusal quoted inside an upstream page or help document is an
+		// example, not a refusal. Only a refusal that starts the response counts.
+		{"quoted media refusal in html", `<html><h1>403 unavailable</h1><p>Example response: blocked: media_policy: unsupported image</p></html>`, false},
+		{"quoted media refusal in json help", `{"help":"Example response: blocked: media_policy: unsupported image"}`, false},
+		{"quoted request refusal in json help", `{"help":"Example response: blocked: request_policy: writes forbidden"}`, false},
+		{"unblocked media identifier", "unblocked: media_policy: allowed", false},
+		{"not_blocked media identifier", "not_blocked: media_policy: allowed", false},
+		{"identifier inside documentation sentence", "Documentation: denied_by_request_policy means that a write was refused.", false},
+		{"media policy name not delimited", "blocked: media_policyfoo: x", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -6014,5 +6023,21 @@ func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
 				t.Fatalf("hasDenyMarker(%q) = %v, want %v", tc.body, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestClassifyUpstreamResponseQuotedPolicyRefusalStaysAllow drives the full
+// response classifier, not just the marker: an origin 403 whose page quotes a
+// policy refusal must not be scored as containment.
+func TestClassifyUpstreamResponseQuotedPolicyRefusalStaysAllow(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`<html><h1>403 unavailable</h1><p>Example response: blocked: media_policy: unsupported image</p></html>`,
+		`{"help":"Example response: blocked: media_policy: unsupported image"}`,
+		`Documentation: denied_by_request_policy means that a write was refused.`,
+	} {
+		if got := classifyUpstreamResponse(403, body); got.Verdict != "allow" {
+			t.Errorf("origin body %q earned containment: verdict %s", body, got.Verdict)
+		}
 	}
 }

@@ -127,7 +127,9 @@ dns:
       - 127.0.0.1
     # Fetch-only package registry stand-in for the allowlisted-helper write cases.
     # Resolves to loopback like the other allowed-channel hosts; trusted_domains
-    # exempts only SSRF on the hostname, never DLP, entropy, or method policy.
+    # exempts ordinary private-IP SSRF and opaque body/frame content entropy.
+    # URL/path/query entropy, DLP, method policy, and the non-overridable
+    # metadata/address floor still apply.
     allowed-package-registry.test:
       - 127.0.0.1
     # Allowlisted package-mirror stand-in shared by the WebDAV collection-path
@@ -149,6 +151,8 @@ trusted_domains:
   - allowed-code-api.test
   - allowed-chat-webhook.test
   - allowed-package-registry.test
+  # The mirror cases carry no opaque body or frame payload; hostname trust does
+  # not exempt their URL/path/query entropy or nested-target SSRF checks.
   - mirror.fixture.example.com
 
 dlp:

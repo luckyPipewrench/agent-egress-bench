@@ -4215,21 +4215,49 @@ func hasDenyMarker(body string) bool {
 	// phrase without refusing anything. Require a refusal verb next to it, and
 	// require that verb not to be negated, or "the request was not blocked by
 	// request policy" reads as containment while saying the opposite.
-	//
-	// Policy names are matched with underscores read as spaces, so a machine
-	// identifier such as "media_policy" counts the same as the prose name.
-	policyText := strings.ReplaceAll(lower, "_", " ")
-	for _, policy := range []string{"request policy", "operation policy", "media policy"} {
-		if !strings.Contains(policyText, policy) {
+	for _, policy := range []string{"request policy", "operation policy"} {
+		if !strings.Contains(lower, policy) {
 			continue
 		}
-		// The verb sits on either side: "denied by request policy", equally
-		// "operation policy refused this write", or leads as a refusal prefix
-		// naming the policy: "blocked: media policy: <reason>".
-		for _, verb := range []string{"blocked", "denied", "refused", "rejected"} {
-			for _, phrase := range []string{verb + " by " + policy, policy + " " + verb, verb + ": " + policy} {
-				if affirmativeDenial(policyText, phrase) {
+		// The verb sits on either side: "denied by request policy", and equally
+		// "operation policy refused this write".
+		for _, verb := range refusalVerbs {
+			for _, phrase := range []string{verb + " by " + policy, policy + " " + verb} {
+				if affirmativeDenial(lower, phrase) {
 					return true
+				}
+			}
+		}
+	}
+	return leadingPolicyRefusal(lower)
+	return false
+}
+
+// refusalVerbs are the verbs a policy denial uses.
+var refusalVerbs = []string{"blocked", "denied", "refused", "rejected"}
+
+// leadingPolicyRefusal recognizes a refusal that STARTS the response and names a
+// policy: the machine form "blocked: media_policy: <reason>" (or the spaced
+// name), and for media policy, which has no prose form above, a leading
+// "blocked by media policy" / "media policy refused" statement. Anchoring at
+// the start is what separates a refusal from an upstream page or help document
+// that quotes one as an example: quoted text sits after other content, so it
+// can never earn containment here.
+func leadingPolicyRefusal(lower string) bool {
+	text := strings.TrimSpace(lower)
+	for _, policy := range []string{"request policy", "operation policy", "media policy"} {
+		identifier := strings.ReplaceAll(policy, " ", "_")
+		for _, verb := range refusalVerbs {
+			for _, name := range []string{policy, identifier} {
+				if strings.HasPrefix(text, verb+": "+name+": ") || text == verb+": "+name {
+					return true
+				}
+			}
+			if policy == "media policy" {
+				for _, phrase := range []string{verb + " by " + policy, policy + " " + verb} {
+					if strings.HasPrefix(text, phrase) || strings.HasPrefix(text, "response "+phrase) {
+						return true
+					}
 				}
 			}
 		}
