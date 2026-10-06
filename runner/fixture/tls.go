@@ -139,8 +139,12 @@ func StartTLS() (*TLSFixture, error) {
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{"localhost", "*.example.com", "*.test"},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		// A wildcard covers exactly one label, so the reserved fixture
+		// subdomain's hosts (mirror.fixture.example.com) need their own entry;
+		// without it a proxy that verifies the origin refuses the handshake and
+		// the case reads as undelivered rather than measured.
+		DNSNames:    []string{"localhost", "*.example.com", "*.fixture.example.com", "*.test"},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
 	serverCertDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKey)

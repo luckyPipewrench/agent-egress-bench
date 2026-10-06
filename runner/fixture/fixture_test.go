@@ -113,7 +113,13 @@ func TestTLSFixtureAllowedChannelHostnames(t *testing.T) {
 			},
 		},
 	}
-	for _, host := range []string{"allowed-code-api.test", "allowed-chat-webhook.test"} {
+	// mirror.fixture.example.com is two labels below example.com, so the
+	// *.example.com wildcard does not cover it; a verifying proxy refused this
+	// handshake until the fixture certificate named the fixture subdomain.
+	for _, host := range []string{
+		"allowed-code-api.test", "allowed-chat-webhook.test", "allowed-package-registry.test",
+		"mirror.fixture.example.com",
+	} {
 		resp, getErr := client.Get("https://" + host + "/ok")
 		if getErr != nil {
 			t.Fatalf("GET through fixture as %s: %v", host, getErr)

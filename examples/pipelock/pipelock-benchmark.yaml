@@ -206,12 +206,12 @@ dlp:
 # This is operator intent about one host, not a scanner heuristic, which is why
 # it lives here rather than in a detector default.
 #
-# The list names only methods request_policy validates today. It is a deny list,
-# not a fetch-only allow list: request_policy is allow-by-default and has no
-# allow-only method predicate, so a method absent here still reaches the host.
-# That is sufficient for the corpus, whose write case uses PUT, and it keeps this
-# fixture loadable by any published Pipelock rather than binding the benchmark to
-# an unreleased validator.
+# The list names only methods every published Pipelock validates. Pipelock 3.6.0
+# and later also accept WebDAV methods such as MKCOL here; 3.5.0 rejects them, so
+# naming them would stop this fixture loading on a published release. It is a
+# deny list, not a fetch-only allow list: request_policy is allow-by-default and
+# has no allow-only method predicate, so a method absent here still reaches the
+# host. That is sufficient for the corpus's PUT write case.
 request_policy:
   enabled: true
   rules:
