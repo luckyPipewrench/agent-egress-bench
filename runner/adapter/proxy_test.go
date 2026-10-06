@@ -5995,6 +5995,17 @@ func TestHasDenyMarkerRecognizesPolicyDenials(t *testing.T) {
 		// A bare "policy" token next to a refusal verb is still ordinary prose.
 		{"privacy policy blocked cookies", "our privacy policy blocked third-party cookies", false},
 		{"blocked by policy without qualifier", "blocked by policy: see the handbook", false},
+		// Media-policy refusals name the policy as an identifier after a refusal
+		// prefix. The same name with no refusal, or with a negated one, is not
+		// a denial, so an origin page about media handling stays passthrough.
+		{"media policy refusal prefix", "blocked: media_policy: SVG requires complete validation\n", true},
+		{"media policy prose deny", "Response denied by media policy.", true},
+		{"media policy verb after", "media policy refused this response", true},
+		{"request policy refusal prefix", "blocked: request_policy: fetch only\n", true},
+		{"media policy named in docs", "403: media policy documentation", false},
+		{"media policy identifier alone", "Forbidden: see media_policy settings", false},
+		{"negated media policy refusal", "The image was not blocked: media policy allowed it.", false},
+		{"negated media policy deny", "This SVG wasn't blocked by media policy.", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

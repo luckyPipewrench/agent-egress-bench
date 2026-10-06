@@ -4215,15 +4215,20 @@ func hasDenyMarker(body string) bool {
 	// phrase without refusing anything. Require a refusal verb next to it, and
 	// require that verb not to be negated, or "the request was not blocked by
 	// request policy" reads as containment while saying the opposite.
-	for _, policy := range []string{"request policy", "operation policy"} {
-		if !strings.Contains(lower, policy) {
+	//
+	// Policy names are matched with underscores read as spaces, so a machine
+	// identifier such as "media_policy" counts the same as the prose name.
+	policyText := strings.ReplaceAll(lower, "_", " ")
+	for _, policy := range []string{"request policy", "operation policy", "media policy"} {
+		if !strings.Contains(policyText, policy) {
 			continue
 		}
-		// The verb sits on either side: "denied by request policy", and equally
-		// "operation policy refused this write".
+		// The verb sits on either side: "denied by request policy", equally
+		// "operation policy refused this write", or leads as a refusal prefix
+		// naming the policy: "blocked: media policy: <reason>".
 		for _, verb := range []string{"blocked", "denied", "refused", "rejected"} {
-			for _, phrase := range []string{verb + " by " + policy, policy + " " + verb} {
-				if affirmativeDenial(lower, phrase) {
+			for _, phrase := range []string{verb + " by " + policy, policy + " " + verb, verb + ": " + policy} {
+				if affirmativeDenial(policyText, phrase) {
 					return true
 				}
 			}
