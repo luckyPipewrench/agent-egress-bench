@@ -4230,7 +4230,6 @@ func hasDenyMarker(body string) bool {
 		}
 	}
 	return leadingPolicyRefusal(lower)
-	return false
 }
 
 // refusalVerbs are the verbs a policy denial uses.
