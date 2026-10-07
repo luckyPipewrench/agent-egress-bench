@@ -256,9 +256,6 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		if managed.scanAddr != "" {
 			scanAddr = managed.scanAddr
 		}
-		if managed.mcpHTTPURL != "" {
-			mcpHTTPURL = managed.mcpHTTPURL
-		}
 	}
 	switch adapterName {
 	case "dryrun":
@@ -304,7 +301,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			return fmt.Errorf("mcp http session declaration: %w", err)
 		}
 		pa.SetMCPHTTPListenerSession(session)
-		adapt = &caseIsolatedProxyAdapter{proxy: pa, mcpHTTPCommand: managedMCPHTTPCmd, fixtures: fm}
+		adapt = &caseIsolatedProxyAdapter{proxy: pa, mcpHTTPCommand: managedMCPHTTPCmd, externalMCPHTTPURL: mcpHTTPURL, fixtures: fm}
 	case "mcp-gateway":
 		if gatewayPluginPath == "" {
 			return fmt.Errorf("--gateway-plugin is required when using the mcp-gateway adapter")

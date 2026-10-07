@@ -15,8 +15,13 @@ import (
 type caseIsolatedProxyAdapter struct {
 	proxy          *adapter.ProxyAdapter
 	mcpHTTPCommand string
-	fixtures       *fixture.Manager
-	mu             sync.Mutex
+
+	// externalMCPHTTPURL is an operator-run endpoint the runner does not start.
+	// Only a case actually sent to one is labelled unverified; with neither it
+	// nor a managed command the adapter skips the case and claims nothing.
+	externalMCPHTTPURL string
+	fixtures           *fixture.Manager
+	mu                 sync.Mutex
 }
 
 func (a *caseIsolatedProxyAdapter) DeliveryTuples() []adapter.DeliveryTuple {
@@ -33,10 +38,12 @@ func (a *caseIsolatedProxyAdapter) Run(c adapter.Case, timeout time.Duration) ad
 	}
 	if a.mcpHTTPCommand == "" {
 		result := a.proxy.Run(c, timeout)
-		if result.Evidence == nil {
-			result.Evidence = map[string]interface{}{}
+		if a.externalMCPHTTPURL != "" {
+			if result.Evidence == nil {
+				result.Evidence = map[string]interface{}{}
+			}
+			result.Evidence["mcp_http_case_isolation"] = "external_listener_unverified"
 		}
-		result.Evidence["mcp_http_case_isolation"] = "external_listener_unverified"
 		return result
 	}
 	managed, err := startManagedProcesses("", a.mcpHTTPCommand, a.fixtures, timeout)

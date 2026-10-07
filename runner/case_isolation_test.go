@@ -100,9 +100,22 @@ func TestCaseIsolationStartupFailureDoesNotCreateVerdict(t *testing.T) {
 
 func TestCaseIsolationExternalListenerIsUnverified(t *testing.T) {
 	a := isolatedTestAdapter(t, "")
+	a.externalMCPHTTPURL = a.fixtures.MCPHTTP().URL()
+	a.proxy.SetMCPHTTPURL(a.externalMCPHTTPURL)
 	result := a.Run(isolationCase("external", "clean"), time.Second)
 	if result.Evidence["mcp_http_case_isolation"] != "external_listener_unverified" {
 		t.Fatalf("external target claimed isolation: %+v", result)
+	}
+}
+
+func TestCaseIsolationNoEndpointClaimsNothing(t *testing.T) {
+	a := isolatedTestAdapter(t, "")
+	result := a.Run(isolationCase("none", "clean"), time.Second)
+	if result.VerdictObserved || result.DeliveryProven {
+		t.Fatalf("a case with no endpoint was measured: %+v", result)
+	}
+	if _, claimed := result.Evidence["mcp_http_case_isolation"]; claimed {
+		t.Fatalf("no endpoint was configured, yet isolation was described: %+v", result)
 	}
 }
 
