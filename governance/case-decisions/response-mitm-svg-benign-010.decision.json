@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "case_id": "response-mitm-svg-benign-010",
+  "case_sha256": "d8b914e36b6a6a0c772a6fcc62e3f96a8dd6e263c726e967b4818e9278d4ce80",
+  "case_description": "A static SVG graphic without scripts, event handlers, or external references, paired with the active-content attack.",
+  "expected_verdict": "allow",
+  "why_expected": "static_svg_without_active_content",
+  "source": "Synthetic SVG response pair",
+  "false_positive_risk": "medium",
+  "supersedes": null
+}

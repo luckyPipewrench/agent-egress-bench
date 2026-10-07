@@ -79,6 +79,14 @@
       "active_set_sha256": "faaddd5593fc07a750b0ae40791b2bd811cf27a892787fa978e1d0afeb8deaa1",
       "recorded_on": "2026-09-26",
       "note": "Adds two attack and benign pairs: a cloud metadata address written with a trailing root dot, and a credential hidden behind a forged image header in MCP tool result image data. Active set carries forward the v2.13.0 exclusions."
+    },
+    {
+      "corpus_version": "v2.15.0",
+      "case_count": 268,
+      "benchmark_manifest_sha256": "54cbbc87ec9e0e7c17141e322bf502e889f814fea852e0120ab301c0e13e1ac6",
+      "active_set_sha256": "fb39f284d30ce4f46c2d889b5ddcd95dd418ef5e54596e3465950ed41a839902",
+      "recorded_on": "2026-10-07",
+      "note": "Adds an SVG script injection response and its static SVG companion. Active set carries forward the v2.14.0 exclusions."
     }
   ]
 }

@@ -40,7 +40,7 @@ func main() {
 	mcpHTTPSessionRefusalHeader := flag.String("mcp-http-session-refusal-header", "", "response header a target sets when it refuses a stateful request for want of a session, so that refusal is recorded as unproven rather than scored as a block it never made")
 	mcpHTTPSessionRefusalValue := flag.String("mcp-http-session-refusal-value", "", "exact value of --mcp-http-session-refusal-header identifying a session refusal")
 	managedProxyCmd := flag.String("managed-proxy-cmd", "", "optional shell command to start a proxy under test; receives AEB_* endpoint and fixture environment variables")
-	managedMCPHTTPCmd := flag.String("managed-mcp-http-cmd", "", "optional shell command to start an MCP HTTP endpoint under test; receives AEB_* endpoint and fixture environment variables")
+	managedMCPHTTPCmd := flag.String("managed-mcp-http-cmd", "", "optional shell command to start a fresh MCP HTTP endpoint for each logical case; receives AEB_* endpoint and fixture environment variables")
 	fixtures := flag.Bool("fixtures", false, "start TLS, WebSocket, and DNS test fixtures for full coverage")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-case timeout")
 	toolVersion := flag.String("tool-version", "", "override the tool_version field from the profile in result summaries (uses profile value when empty)")
@@ -240,9 +240,12 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 		defer fm.Close()
 	}
 	var managed *managedProcesses
-	if managedProxyCmd != "" || managedMCPHTTPCmd != "" {
+	if managedMCPHTTPCmd != "" && adapterName != "proxy" {
+		return fmt.Errorf("--managed-mcp-http-cmd requires the proxy adapter")
+	}
+	if managedProxyCmd != "" {
 		var managedErr error
-		managed, managedErr = startManagedProcesses(managedProxyCmd, managedMCPHTTPCmd, fm, timeout)
+		managed, managedErr = startManagedProcesses(managedProxyCmd, "", fm, timeout)
 		if managedErr != nil {
 			return managedErr
 		}
@@ -301,7 +304,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			return fmt.Errorf("mcp http session declaration: %w", err)
 		}
 		pa.SetMCPHTTPListenerSession(session)
-		adapt = pa
+		adapt = &caseIsolatedProxyAdapter{proxy: pa, mcpHTTPCommand: managedMCPHTTPCmd, fixtures: fm}
 	case "mcp-gateway":
 		if gatewayPluginPath == "" {
 			return fmt.Errorf("--gateway-plugin is required when using the mcp-gateway adapter")

@@ -118,6 +118,19 @@ operator-provided commands with managed command hooks. Managed commands receive
 endpoint and fixture values through environment variables. The runner does not
 parse or mutate tool configuration.
 
+With `--managed-mcp-http-cmd`, the proxy adapter starts a fresh target process
+for each logical `mcp_http` case and tears it down when that case finishes. All
+steps in a temporal case share that process. This resets process memory between
+cases; it does not reset state kept in files, databases, or other services. The
+operator must isolate those stores separately. Startup failure is an error,
+never an observed verdict.
+
+Per-case evidence records `mcp_http_case_isolation: fresh_managed_process` for
+this managed path. An already-running `--mcp-http-url` endpoint records
+`external_listener_unverified`; a new client session alone does not establish
+that the target cleared its state. These diagnostics do not grant scoring
+credit or replace delivery and verdict proof.
+
 Available managed-command environment variables:
 
 | Variable | Meaning |

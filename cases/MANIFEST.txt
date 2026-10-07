@@ -203,6 +203,8 @@ response-mitm-json-inject-004
 response-mitm-markdown-exfil-003
 response-mitm-markdown-link-008
 response-mitm-split-boundary-007
+response-mitm-svg-benign-010
+response-mitm-svg-script-009
 response-mitm-tool-instruction-002
 response-mitm-xml-comment-005
 shell-backslash-escape-003
