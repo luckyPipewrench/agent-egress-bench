@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -131,12 +134,22 @@ func TestCaseIsolationNonMCPDoesNotLaunchTarget(t *testing.T) {
 func TestCaseIsolationConcurrentCalls(t *testing.T) {
 	t.Setenv("AEB_ISOLATION_TARGET_HELPER", "1")
 	a := isolatedTestAdapter(t, isolationHelperCommand())
+	declarations := a.DeliveryTuples()
 	var wg sync.WaitGroup
 	results := make(chan adapter.Result, 4)
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go func(i int) { defer wg.Done(); results <- a.Run(isolationCase(fmt.Sprint(i), "poison"), 3*time.Second) }(i)
 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			if !reflect.DeepEqual(a.DeliveryTuples(), declarations) {
+				t.Error("capability declarations changed during execution")
+			}
+		}
+	}()
 	wg.Wait()
 	close(results)
 	for result := range results {
@@ -146,11 +159,35 @@ func TestCaseIsolationConcurrentCalls(t *testing.T) {
 	}
 }
 
+// TestCaseIsolationSharesStartupAndExecutionTimeout gives the target a slow
+// startup and a stalled request so a second full timeout is observable.
+func TestCaseIsolationSharesStartupAndExecutionTimeout(t *testing.T) {
+	t.Setenv("AEB_ISOLATION_TARGET_HELPER", "1")
+	t.Setenv("AEB_ISOLATION_SLOW_TARGET", "1")
+	a := isolatedTestAdapter(t, isolationHelperCommand())
+	started := time.Now()
+	result := a.Run(isolationCase("slow", "clean"), time.Second)
+	elapsed := time.Since(started)
+	if result.Err == nil || !errors.Is(result.Err, context.DeadlineExceeded) {
+		t.Fatalf("expected execution deadline, got %+v", result)
+	}
+	if elapsed > 1300*time.Millisecond {
+		t.Fatalf("startup and execution exceeded shared timeout: %s", elapsed)
+	}
+	if result.VerdictObserved || result.DeliveryProven {
+		t.Fatalf("stalled request became measured: %+v", result)
+	}
+}
+
 // This real subprocess deliberately retains state globally, even across
 // initialize calls. It exposes the contamination a fresh client token cannot fix.
 func TestIsolationTargetHelper(t *testing.T) {
 	if os.Getenv("AEB_ISOLATION_TARGET_HELPER") == "" {
 		return
+	}
+	if os.Getenv("AEB_ISOLATION_SLOW_TARGET") != "" {
+		// Model startup work without a synchronization sleep.
+		<-time.After(450 * time.Millisecond)
 	}
 	ln, err := net.Listen("tcp", os.Getenv("AEB_MCP_HTTP_ADDR"))
 	if err != nil {
@@ -190,6 +227,10 @@ func TestIsolationTargetHelper(t *testing.T) {
 		}
 		_ = json.Unmarshal(body, &message)
 		if message.Method == "tools/call" {
+			if os.Getenv("AEB_ISOLATION_SLOW_TARGET") != "" {
+				<-r.Context().Done()
+				return
+			}
 			mu.Lock()
 			deny := poisoned
 			if message.Params.Name == "poison" {

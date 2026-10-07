@@ -25,6 +25,7 @@ type caseIsolatedProxyAdapter struct {
 }
 
 func (a *caseIsolatedProxyAdapter) DeliveryTuples() []adapter.DeliveryTuple {
+	// Capability declarations are constant; they do not read the case endpoint.
 	return a.proxy.DeliveryTuples()
 }
 
@@ -33,6 +34,7 @@ func (a *caseIsolatedProxyAdapter) Run(c adapter.Case, timeout time.Duration) ad
 	// the whole case, including teardown, even if a caller later runs in parallel.
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	deadline := time.Now().Add(timeout)
 	if c.Transport != "mcp_http" {
 		return a.proxy.Run(c, timeout)
 	}
@@ -46,7 +48,7 @@ func (a *caseIsolatedProxyAdapter) Run(c adapter.Case, timeout time.Duration) ad
 		}
 		return result
 	}
-	managed, err := startManagedProcesses("", a.mcpHTTPCommand, a.fixtures, timeout)
+	managed, err := startManagedProcesses("", a.mcpHTTPCommand, a.fixtures, time.Until(deadline))
 	if err != nil {
 		return adapter.Result{
 			Err:      fmt.Errorf("case %s: start isolated MCP HTTP target: %w", c.ID, err),
@@ -56,7 +58,14 @@ func (a *caseIsolatedProxyAdapter) Run(c adapter.Case, timeout time.Duration) ad
 	defer managed.Close()
 	a.proxy.SetMCPHTTPURL(managed.mcpHTTPURL)
 	defer a.proxy.SetMCPHTTPURL("")
-	result := a.proxy.Run(c, timeout)
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return adapter.Result{
+			Err:      fmt.Errorf("case %s: timeout exhausted starting isolated MCP HTTP target", c.ID),
+			Evidence: map[string]interface{}{"mcp_http_case_isolation": "startup_failed"},
+		}
+	}
+	result := a.proxy.Run(c, remaining)
 	if result.Evidence == nil {
 		result.Evidence = map[string]interface{}{}
 	}
