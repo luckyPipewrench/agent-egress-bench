@@ -7,13 +7,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	capabilityregistry "github.com/luckyPipewrench/agent-egress-bench/capability-registry"
 )
 
 // A managed MCP HTTP command only has a consumer in the proxy adapter. Any other
 // adapter used to start the process and ignore it; that silent no-op is refused.
 func TestManagedMCPHTTPRefusedForOtherAdapters(t *testing.T) {
 	t.Setenv("AEB_CAPABILITY_REGISTRY", filepath.Join("..", "capability-registry"))
-	err := runWithOptions(filepath.Join("..", "cases"), filepath.Join("..", "examples", "pipelock", "tool-profile.json"), filepath.Join(t.TempDir(), "summary.json"), 5*time.Second,
+	err := runWithOptions(filepath.Join("..", "cases"), isolationTestProfile(t), filepath.Join(t.TempDir(), "summary.json"), 5*time.Second,
 		"dryrun", "", "", "", "", "", "", "true", false, "", "", "", false, "")
 	if err == nil || !strings.Contains(err.Error(), "requires the proxy adapter") {
 		t.Fatalf("managed MCP HTTP command with a non-proxy adapter was accepted: %v", err)
@@ -52,7 +54,7 @@ func TestManagedMCPHTTPWiringThroughRunEntrypoint(t *testing.T) {
 		}
 	}
 	outputPath := filepath.Join(t.TempDir(), "summary.json")
-	err := runWithOptions(casesDir, filepath.Join("..", "examples", "pipelock", "tool-profile.json"), outputPath, 5*time.Second,
+	err := runWithOptions(casesDir, isolationTestProfile(t), outputPath, 5*time.Second,
 		"proxy", "127.0.0.1:1", "", "", "", "", "", isolationHelperCommand(), false, "", "", "", false, "")
 	if err != nil {
 		t.Fatalf("run failed: %v", err)
@@ -73,4 +75,24 @@ func TestManagedMCPHTTPWiringThroughRunEntrypoint(t *testing.T) {
 	if rate := summary.Scores.Applicable.FalsePositiveRate; rate == nil || *rate != 0 {
 		t.Fatalf("a later case inherited the earlier case's target state: false_positive_rate=%v", rate)
 	}
+}
+
+// The mandatory regression exercises a synthetic target, independent of any
+// product example's capability claims or receipt verifier configuration.
+func isolationTestProfile(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "capability-registry", "aeb.core-capabilities", "format-1", "revision-3.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{SchemaVersion: activeToolProfileSchemaVersion, Tool: "synthetic-isolation-target", ToolVersion: "1.0", RunnerVersion: runnerVersion, Claims: []string{"benign"}, CapabilityRegistry: capabilityregistry.Reference{ID: "aeb.core-capabilities", Format: 1, Revision: 3, SHA256: capabilityregistry.SHA256(raw)}}
+	data, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
