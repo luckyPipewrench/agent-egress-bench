@@ -1,0 +1,27 @@
+name: Review caller contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr-review.yaml'
+      - '.github/workflows/review-caller-contract.yaml'
+      - 'scripts/test_pr_review_workflow.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pr-review.yaml'
+      - '.github/workflows/review-caller-contract.yaml'
+      - 'scripts/test_pr_review_workflow.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: python3 scripts/test_pr_review_workflow.py
