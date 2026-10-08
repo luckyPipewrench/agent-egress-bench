@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: luckyPipewrench/agent-egress-bench
-          ref: 1eb41aee882a8fb1d7648032b1311e8b6a6b45bd
+          ref: 97c97e38a68d5f11662c965c468effff25fcd49d
           path: trusted-validator
           persist-credentials: false
           sparse-checkout: scripts/test_pr_review_workflow.py
@@ -36,23 +36,34 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          # Only the caller YAML is read; no proposed code is executed.
+          # Proposed workflows are bounded data; no proposed code is executed.
           allow-unsafe-pr-checkout: true
           path: proposed
           persist-credentials: false
-          sparse-checkout: .github/workflows/pr-review.yaml
+          filter: blob:none
+          sparse-checkout: |
+            .github/workflows/pr-review.yaml
+            .github/workflows/review-caller-contract.yaml
           sparse-checkout-cone-mode: false
       - name: Validate proposed caller with immutable test code
         run: |
           python3 -I - <<'PY'
           import importlib.util
           import pathlib
+          import subprocess
           import unittest
 
           validator = pathlib.Path("trusted-validator/scripts/test_pr_review_workflow.py")
           spec = importlib.util.spec_from_file_location("trusted_caller", validator)
           module = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
+          validator_sha = subprocess.check_output(
+              ["git", "-C", "trusted-validator", "rev-parse", "HEAD"], text=True
+          ).strip()
+          module.validate_contract(
+              pathlib.Path("proposed/.github/workflows/review-caller-contract.yaml"),
+              validator_sha,
+          )
           module.WORKFLOW = pathlib.Path("proposed/.github/workflows/pr-review.yaml")
           suite = unittest.defaultTestLoader.loadTestsFromModule(module)
           result = unittest.TextTestRunner(verbosity=2).run(suite)
@@ -65,9 +76,16 @@ jobs:
           ref: 3e8534e0dd621c62879238cc01d56f7e58e9d096
           path: trusted-reviewer
           persist-credentials: false
+      - name: Install pinned reviewer test dependencies
+        working-directory: trusted-reviewer
+        run: |
+          python3 -m venv .review-test-venv
+          .review-test-venv/bin/python -m pip install --require-hashes \
+            -r .github/actions/pr-review/requirements.txt \
+            -r .github/requirements-pr-review-test.txt
       - name: Verify shared reviewer workflow protections
         working-directory: trusted-reviewer
         run: >-
-          python3 -m unittest
+          .review-test-venv/bin/python -m unittest
           scripts.pr_review_test.WorkflowPackagingTest
           scripts.pr_review_test.FailureDirectionTest.test_review_job_timeout_exceeds_the_wall_clock_with_finalization_margin
