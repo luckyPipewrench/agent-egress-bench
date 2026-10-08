@@ -1,6 +1,12 @@
 name: Review caller contract
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/pr-review.yaml'
+      - '.github/workflows/review-caller-contract.yaml'
+      - 'scripts/test_pr_review_workflow.py'
   pull_request_target:
     types: [opened, synchronize, reopened]
     paths:
@@ -18,15 +24,27 @@ permissions:
   contents: read
 
 jobs:
-  contract:
+  bootstrap:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out immutable caller validator
+      - name: Check out proposed contract for unprivileged installation tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Test proposed caller and contract without provider secrets
+        run: python3 -I scripts/test_pr_review_workflow.py
+  contract:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted default-branch caller validator
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: luckyPipewrench/agent-egress-bench
-          ref: 97c97e38a68d5f11662c965c468effff25fcd49d
+          ref: ${{ github.sha }}
           path: trusted-validator
           persist-credentials: false
           sparse-checkout: scripts/test_pr_review_workflow.py
@@ -45,35 +63,36 @@ jobs:
             .github/workflows/pr-review.yaml
             .github/workflows/review-caller-contract.yaml
           sparse-checkout-cone-mode: false
-      - name: Validate proposed caller with immutable test code
+      - name: Validate proposed caller with trusted test code
+        id: validate
         run: |
           python3 -I - <<'PY'
           import importlib.util
+          import os
           import pathlib
-          import subprocess
           import unittest
 
           validator = pathlib.Path("trusted-validator/scripts/test_pr_review_workflow.py")
           spec = importlib.util.spec_from_file_location("trusted_caller", validator)
           module = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
-          validator_sha = subprocess.check_output(
-              ["git", "-C", "trusted-validator", "rev-parse", "HEAD"], text=True
-          ).strip()
-          module.validate_contract(
-              pathlib.Path("proposed/.github/workflows/review-caller-contract.yaml"),
-              validator_sha,
-          )
           module.WORKFLOW = pathlib.Path("proposed/.github/workflows/pr-review.yaml")
+          reviewer_sha = module.validate_caller(module.WORKFLOW)
+          module.validate_contract(
+              pathlib.Path("proposed/.github/workflows/review-caller-contract.yaml")
+          )
           suite = unittest.defaultTestLoader.loadTestsFromModule(module)
           result = unittest.TextTestRunner(verbosity=2).run(suite)
-          raise SystemExit(not result.wasSuccessful())
+          if not result.wasSuccessful():
+              raise SystemExit(1)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"reviewer_sha={reviewer_sha}\n")
           PY
       - name: Check out immutable reviewer and its security tests
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: luckyPipewrench/pipelock
-          ref: 3e8534e0dd621c62879238cc01d56f7e58e9d096
+          ref: ${{ steps.validate.outputs.reviewer_sha }}
           path: trusted-reviewer
           persist-credentials: false
       - name: Install pinned reviewer test dependencies
