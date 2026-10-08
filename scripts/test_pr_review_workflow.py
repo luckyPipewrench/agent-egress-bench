@@ -38,6 +38,7 @@ jobs:
 
 class ReviewCallerTest(unittest.TestCase):
     def test_caller_contract_and_matching_immutable_pins(self):
+        """Reject caller structure drift and unequal or mutable source references."""
         text = WORKFLOW.read_text(encoding="utf-8")
         # Preserve indentation: changing YAML structure must not pass by
         # collapsing whitespace. Only empty lines and whole comments vary.

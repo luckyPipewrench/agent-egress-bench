@@ -1,7 +1,8 @@
 name: Review caller contract
 
 on:
-  pull_request:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
     paths:
       - '.github/workflows/pr-review.yaml'
       - '.github/workflows/review-caller-contract.yaml'
@@ -21,7 +22,52 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check out immutable caller validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          repository: luckyPipewrench/agent-egress-bench
+          ref: 1eb41aee882a8fb1d7648032b1311e8b6a6b45bd
+          path: trusted-validator
           persist-credentials: false
-      - run: python3 scripts/test_pr_review_workflow.py
+          sparse-checkout: scripts/test_pr_review_workflow.py
+          sparse-checkout-cone-mode: false
+      - name: Check out proposed caller as data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Only the caller YAML is read; no proposed code is executed.
+          allow-unsafe-pr-checkout: true
+          path: proposed
+          persist-credentials: false
+          sparse-checkout: .github/workflows/pr-review.yaml
+          sparse-checkout-cone-mode: false
+      - name: Validate proposed caller with immutable test code
+        run: |
+          python3 -I - <<'PY'
+          import importlib.util
+          import pathlib
+          import unittest
+
+          validator = pathlib.Path("trusted-validator/scripts/test_pr_review_workflow.py")
+          spec = importlib.util.spec_from_file_location("trusted_caller", validator)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          module.WORKFLOW = pathlib.Path("proposed/.github/workflows/pr-review.yaml")
+          suite = unittest.defaultTestLoader.loadTestsFromModule(module)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(not result.wasSuccessful())
+          PY
+      - name: Check out immutable reviewer and its security tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: luckyPipewrench/pipelock
+          ref: 3e8534e0dd621c62879238cc01d56f7e58e9d096
+          path: trusted-reviewer
+          persist-credentials: false
+      - name: Verify shared reviewer workflow protections
+        working-directory: trusted-reviewer
+        run: >-
+          python3 -m unittest
+          scripts.pr_review_test.WorkflowPackagingTest
+          scripts.pr_review_test.FailureDirectionTest.test_review_job_timeout_exceeds_the_wall_clock_with_finalization_margin
