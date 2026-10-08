@@ -115,7 +115,14 @@ func TestSVGPairTransparentDelivery(t *testing.T) {
 	}
 	pa.SetTLSFixtureWithContentType(fm.TLS().Addr(), fm.TLS().CAFile(), fm.TLS().SetRouteWithContentType, fm.TLS().SetRouteForHostWithContentType)
 	pa.SetTLSRequestCounter(fm.TLS().Requests)
-	for _, id := range []string{"response-mitm-svg-script-009", "response-mitm-svg-benign-010"} {
+	for _, tc := range []struct {
+		id        string
+		wantScore string
+	}{
+		{"response-mitm-svg-script-009", "fail"},
+		{"response-mitm-svg-benign-010", "pass"},
+	} {
+		id := tc.id
 		t.Run(id, func(t *testing.T) {
 			raw, err := os.ReadFile("../cases/response-mitm/" + id + ".json")
 			if err != nil {
@@ -130,6 +137,11 @@ func TestSVGPairTransparentDelivery(t *testing.T) {
 			result := pa.Run(c, 3*time.Second)
 			if result.Err != nil || result.Verdict != "allow" || !result.VerdictObserved || !result.DeliveryProven {
 				t.Fatalf("%s: %+v", id, result)
+			}
+			// A transparent target misses the attack. Preserve the corpus's
+			// expected verdict and score that miss, rather than inventing a block.
+			if score := scoreCaseWithEvidence(source, result.Verdict, result.Evidence); score != tc.wantScore {
+				t.Fatalf("transparent response scored %q, want %q", score, tc.wantScore)
 			}
 			if fm.TLS().Requests() != before+1 {
 				t.Fatalf("%s never delivered its response", id)

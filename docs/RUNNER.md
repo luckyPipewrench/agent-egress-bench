@@ -125,6 +125,8 @@ cases; it does not reset state kept in files, databases, or other services. The
 operator must isolate those stores separately. Startup failure is an error,
 never an observed verdict.
 
+The MCP HTTP case timeout covers session setup and every message in the case. Managed target startup spends the same budget. An expired case returns an error without a measured verdict; a new message does not restart the timeout.
+
 Per-case evidence records `mcp_http_case_isolation: fresh_managed_process` for
 this managed path. An already-running `--mcp-http-url` endpoint records
 `external_listener_unverified`; a new client session alone does not establish

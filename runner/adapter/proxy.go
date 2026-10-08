@@ -3043,11 +3043,14 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) (mcpResult Resu
 		return p.runMCPHTTPResponseCase(c, timeout)
 	}
 
+	// Session setup and every sequence message share the logical case budget.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	client := &http.Client{Timeout: timeout}
 	// Establish the session before the case's own messages so a target that
 	// requires an issued token evaluates them, rather than refusing every one
 	// for want of a session and turning that refusal into a scored block.
-	sessionToken, setupTruncated, err := p.establishMCPHTTPListenerSession(context.Background(), client)
+	sessionToken, setupTruncated, err := p.establishMCPHTTPListenerSession(ctx, client)
 	// Every return below must carry this, so merge on the way out rather than at
 	// each exit: a single missed path drops the evidence silently.
 	defer func() {
@@ -3070,7 +3073,7 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) (mcpResult Resu
 			return Result{Err: fmt.Errorf("case %s: correlate MCP HTTP request: %w", c.ID, err)}
 		}
 		line, _ := json.Marshal(msg)
-		req, err := http.NewRequest(http.MethodPost, p.mcpHTTPURL, bytes.NewReader(line))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.mcpHTTPURL, bytes.NewReader(line))
 		if err != nil {
 			return Result{Err: fmt.Errorf("case %s: building MCP HTTP request: %w", c.ID, err)}
 		}
