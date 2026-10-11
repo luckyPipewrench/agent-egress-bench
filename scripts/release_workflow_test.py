@@ -45,7 +45,7 @@ def check_workflow(path: Path) -> None:
     release_required = (
         "fetch-depth: 0",
         "persist-credentials: false",
-        "go-version: '1.25.13'",
+        "go-version: '1.26.9'",
         "run: make preflight",
         "goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94",
         "version: v2.17.1",

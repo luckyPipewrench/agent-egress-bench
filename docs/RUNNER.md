@@ -577,3 +577,5 @@ Independent runner comparisons use the pre-reveal commitment protocol in
 [`RUNNER-PARITY.md`](RUNNER-PARITY.md). It binds both the normalized decision
 vector and the environment that produced it without treating different host
 environments as different decisions.
+
+Private MCP HTTP exchange capture is bounded to 256 exchanges and 8 MiB of request and response bodies per case. Exhausting either budget marks the diagnostics incomplete and stops retaining additional bytes; requests and responses still follow the normal adapter path. The first listener-session setup follows the adapter's compatibility handshake rules; a later case request using its ID must still pass response decoding.

@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -164,5 +165,88 @@ func TestMCPHTTPExchangeValidationSSEAndUnreadBody(t *testing.T) {
 	_ = body.Close()
 	if entry.Complete {
 		t.Fatal("unread response declared complete")
+	}
+}
+
+func TestMCPHTTPExchangeSetupExceptionIsFirstInitializeOnly(t *testing.T) {
+	record := &MCPHTTPExchanges{Complete: true, PlannedMethods: []string{"initialize", "tools/list"}, Exchanges: []MCPHTTPExchange{
+		{Request: []byte(`{"jsonrpc":"2.0","id":"aeb-listener-session-setup","method":"initialize"}`), Status: 200, MediaType: "application/octet-stream", Complete: true},
+		{Request: []byte(`{"jsonrpc":"2.0","id":"aeb-listener-session-setup","method":"tools/list"}`), Response: []byte(`{"jsonrpc":"2.0","id":"aeb-listener-session-setup","result":{"tools":[]}}`), Status: 200, MediaType: "application/json", Complete: true},
+	}}
+	if err := ValidateMCPHTTPExchanges(record); err != nil {
+		t.Fatal(err)
+	}
+	record.Exchanges[1].Response = []byte("{")
+	if err := ValidateMCPHTTPExchanges(record); err == nil {
+		t.Fatal("setup ID bypassed case response decoding")
+	}
+}
+
+func TestMCPHTTPExchangeAggregateBudgetPreservesReads(t *testing.T) {
+	record := &MCPHTTPExchanges{retainedBytes: mcpExchangeByteCap - 2}
+	entry := MCPHTTPExchange{}
+	body := &exchangeBody{ReadCloser: io.NopCloser(strings.NewReader("abcdef")), entry: &entry, record: record}
+	received, err := io.ReadAll(body)
+	if err != nil || string(received) != "abcdef" {
+		t.Fatalf("read changed: %q %v", received, err)
+	}
+	if string(entry.Response) != "ab" || entry.Complete || !record.captureIncomplete || record.retainedBytes != mcpExchangeByteCap {
+		t.Fatalf("budget failed: %+v %+v", entry, record)
+	}
+}
+
+func TestMCPHTTPExchangeCountBudgetStillForwards(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("forwarded")) }))
+	defer server.Close()
+	for _, budget := range []string{"count", "bytes"} {
+		t.Run(budget, func(t *testing.T) {
+			record := &MCPHTTPExchanges{}
+			if budget == "count" {
+				record.Exchanges = make([]MCPHTTPExchange, mcpExchangeCountCap)
+			} else {
+				record.retainedBytes = mcpExchangeByteCap
+			}
+			count := len(record.Exchanges)
+			request, err := http.NewRequestWithContext(context.WithValue(context.Background(), exchangeContextKey{}, record), http.MethodPost, server.URL, strings.NewReader("request"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := (mcpExchangeTransport{}).RoundTrip(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			received, err := io.ReadAll(response.Body)
+			if err != nil || string(received) != "forwarded" || !record.captureIncomplete || len(record.Exchanges) != count {
+				t.Fatalf("budget changed forwarding or retained more: %q %v %+v", received, err, record)
+			}
+		})
+	}
+}
+
+func TestMCPHTTPExchangePlannedSequenceBudget(t *testing.T) {
+	for _, variant := range []string{"count", "method"} {
+		t.Run(variant, func(t *testing.T) {
+			messages := make([]interface{}, mcpExchangeCountCap+1)
+			for i := range messages {
+				messages[i] = map[string]interface{}{"method": "tools/list"}
+			}
+			if variant == "method" {
+				messages = []interface{}{map[string]interface{}{"method": strings.Repeat("a", 257)}}
+			}
+			a := &ProxyAdapter{retainMCPHTTPExchanges: true}
+			ctx, finish := a.recordMCPHTTPExchanges(context.Background(), Case{Payload: map[string]interface{}{"jsonrpc_messages": messages}})
+			record := ctx.Value(exchangeContextKey{}).(*MCPHTTPExchanges)
+			if len(record.PlannedMethods) > mcpExchangeCountCap || !record.captureIncomplete || finish(true).Complete {
+				t.Fatalf("unbounded metadata or complete record: %+v", record)
+			}
+		})
+	}
+}
+
+func TestMCPHTTPExchangeVerifierRejectsAggregateOverflow(t *testing.T) {
+	record := &MCPHTTPExchanges{Complete: true, PlannedMethods: []string{"initialize", "tools/list"}, Exchanges: []MCPHTTPExchange{{Complete: true, Status: 200, MediaType: "application/json", Request: []byte(`{"jsonrpc":"2.0","id":"aeb-listener-session-setup","method":"initialize"}`), Response: bytes.Repeat([]byte("a"), mcpExchangeByteCap+1)}, {Complete: true, Status: 200, MediaType: "application/json", Request: []byte(`{"jsonrpc":"2.0","method":"tools/list"}`)}}}
+	if err := ValidateMCPHTTPExchanges(record); err == nil {
+		t.Fatal("oversized forged capture accepted")
 	}
 }
