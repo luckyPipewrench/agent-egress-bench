@@ -74,11 +74,12 @@ const (
 // ProxyAdapter sends benchmark cases through an HTTP proxy and checks
 // whether the proxy blocked or allowed the request.
 type ProxyAdapter struct {
-	proxyURL   *url.URL
-	scanURL    string // base URL for scan API (e.g. http://127.0.0.1:9990)
-	scanToken  string // bearer token for scan API auth
-	mcpCmd     string // MCP proxy command that wraps an upstream stdio server
-	mcpHTTPURL string // MCP-over-HTTP JSON-RPC listener URL
+	proxyURL               *url.URL
+	scanURL                string // base URL for scan API (e.g. http://127.0.0.1:9990)
+	scanToken              string // bearer token for scan API auth
+	mcpCmd                 string // MCP proxy command that wraps an upstream stdio server
+	mcpHTTPURL             string // MCP-over-HTTP JSON-RPC listener URL
+	retainMCPHTTPExchanges bool
 	// Declared by the target, zero for every target that declares nothing.
 	// Zero means the runner replays no token and recognizes no refusal, while
 	// the ordinary MCP initialize still happens.
@@ -3046,7 +3047,9 @@ func (p *ProxyAdapter) runMCPHTTP(c Case, timeout time.Duration) (mcpResult Resu
 	// Session setup and every sequence message share the logical case budget.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	client := &http.Client{Timeout: timeout}
+	ctx, finishExchange := p.recordMCPHTTPExchanges(ctx, c)
+	defer func() { mcpResult.MCPHTTPExchanges = finishExchange(mcpResult.Err == nil) }()
+	client := &http.Client{Timeout: timeout, Transport: mcpExchangeTransport{}}
 	// Establish the session before the case's own messages so a target that
 	// requires an issued token evaluates them, rather than refusing every one
 	// for want of a session and turning that refusal into a scored block.
@@ -3226,7 +3229,7 @@ func correlateMCPHTTPRequest(rawMessage interface{}) (map[string]interface{}, st
 // upstream and only their matching tools/list requests are sent through the
 // product. Posting the response snapshots as client requests would exercise
 // invalid JSON-RPC handling instead of temporal inventory scanning.
-func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration) Result {
+func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration) (inventoryResult Result) {
 	steps, err := temporalInventorySteps(c)
 	if err != nil {
 		return Result{Verdict: "skip", Evidence: map[string]interface{}{
@@ -3241,6 +3244,8 @@ func (p *ProxyAdapter) runMCPHTTPTemporalInventory(c Case, timeout time.Duration
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	ctx, finishExchange := p.recordMCPHTTPExchanges(ctx, c)
+	defer func() { inventoryResult.MCPHTTPExchanges = finishExchange(inventoryResult.Err == nil) }()
 	client := newMCPHTTPClient(timeout)
 	evidence := map[string]interface{}{
 		"product_surface":                       "mcp_http_listener",
@@ -3630,7 +3635,8 @@ func listenerSessionUnprovenResult() Result {
 
 func newMCPHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout: timeout,
+		Transport: mcpExchangeTransport{},
+		Timeout:   timeout,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -3669,6 +3675,8 @@ func (p *ProxyAdapter) runMCPHTTPResponseCase(c Case, timeout time.Duration) (re
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	ctx, finishExchange := p.recordMCPHTTPExchanges(ctx, c)
+	defer func() { responseResult.MCPHTTPExchanges = finishExchange(responseResult.Err == nil) }()
 
 	identity, err := nextGatewayRequestIdentity()
 	if err != nil {
