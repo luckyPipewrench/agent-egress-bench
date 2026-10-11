@@ -258,3 +258,17 @@ func TestVerifyReturnedContentExchangeIdentityIndex(t *testing.T) {
 		t.Fatalf("nonzero exchange index accepted: %v", err)
 	}
 }
+
+func TestMCPHTTPExchangeRetentionRejectsWrongCase(t *testing.T) {
+	record := syntheticExchangeRecord()
+	record.CaseID = "different-case"
+	if err := retainMCPHTTPExchanges(t.TempDir(), "diagnostic-test", record); err == nil || !strings.Contains(err.Error(), "case identity mismatch") {
+		t.Fatalf("wrong producer identity accepted: %v", err)
+	}
+}
+
+func TestVerifyReturnedContentPositionalArguments(t *testing.T) {
+	if err := validateReturnedContentVerifierFlags([]string{"verify-returned-content"}, "extra"); err == nil {
+		t.Fatal("positional argument silently ignored")
+	}
+}

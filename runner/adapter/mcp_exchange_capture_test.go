@@ -77,3 +77,42 @@ func TestMCPHTTPExchangeHTTPRefusalBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPHTTPExchangeProducerIdentityAndUnreadBody(t *testing.T) {
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer listener.Close()
+	for _, variant := range []string{"complete", "unread", "no-get-body"} {
+		t.Run(variant, func(t *testing.T) {
+			p := &ProxyAdapter{}
+			p.SetRetainMCPHTTPExchanges(true)
+			ctx, finish := p.recordMCPHTTPExchanges(context.Background(), Case{ID: "producer-case", InputType: "mcp_tool_definition"})
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, listener.URL, strings.NewReader(`{"jsonrpc":"2.0","id":"case","method":"tools/list"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if variant == "no-get-body" {
+				req.GetBody = nil
+			}
+			resp, err := (mcpExchangeTransport{}).RoundTrip(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if variant != "unread" {
+				if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_ = resp.Body.Close()
+			record := finish(true)
+			if record.CaseID != "producer-case" {
+				t.Fatalf("producer case identity: %q", record.CaseID)
+			}
+			if record.Complete != (variant == "complete") {
+				t.Fatalf("%s completeness: %v", variant, record.Complete)
+			}
+		})
+	}
+}

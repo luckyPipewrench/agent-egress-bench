@@ -42,7 +42,7 @@ One JSON object per case, written to stdout (one per line, JSONL):
 
 `--report` also runs no cases: it reads an earlier run's artifact directory and writes Markdown to `--report-output`, or stdout when that is `-`.
 
-`--verify-returned-content` checks private diagnostics and exits without running cases or writing run artifacts. It needs no `--cases` and must be used alone, without other flags.
+`--verify-returned-content` checks private diagnostics and exits without running cases or writing run artifacts. It needs no `--cases` and must be used alone, without other flags or positional arguments.
 
 `--require-complete` keeps the JSONL rows, summary, and optional receipt profile, then exits nonzero when `measurement_status` is `incomplete`. Use it in automation and offline runs so a partial measurement can't produce a green job. A complete measurement can still contain ordinary pass and fail outcomes; the flag rejects missing measurement, not an unfavorable score.
 

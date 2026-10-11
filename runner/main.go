@@ -77,7 +77,7 @@ func main() {
 	if *verifyReturnedContent != "" {
 		var names []string
 		flag.Visit(func(f *flag.Flag) { names = append(names, f.Name) })
-		if err := validateReturnedContentVerifierFlags(names); err != nil {
+		if err := validateReturnedContentVerifierFlags(names, flag.Args()...); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

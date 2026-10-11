@@ -87,6 +87,8 @@ func (mcpExchangeTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		if err != nil {
 			record.captureIncomplete = true
 		}
+	} else {
+		record.captureIncomplete = true
 	}
 	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {

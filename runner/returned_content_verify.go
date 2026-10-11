@@ -32,12 +32,12 @@ func retainMCPHTTPExchanges(dir, caseID string, record *adapter.MCPHTTPExchanges
 	if err != nil {
 		return err
 	}
-	copy := *record
-	if copy.CaseID != "" && copy.CaseID != caseID {
+	retained := *record
+	if retained.CaseID != "" && retained.CaseID != caseID {
 		return fmt.Errorf("exchange case identity mismatch")
 	}
-	copy.CaseID = caseID
-	body, err := json.Marshal(&copy)
+	retained.CaseID = caseID
+	body, err := json.Marshal(&retained)
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,10 @@ func readRootedDiagnostic(root *os.Root, name string) ([]byte, error) {
 
 // The offline verifier is a separate mode; explicit run and reporting flags
 // must not be silently ignored, even when supplied with their default values.
-func validateReturnedContentVerifierFlags(names []string) error {
+func validateReturnedContentVerifierFlags(names []string, positional ...string) error {
+	if len(positional) != 0 {
+		return fmt.Errorf("--verify-returned-content does not accept positional arguments")
+	}
 	for _, name := range names {
 		if name != "verify-returned-content" {
 			return fmt.Errorf("--verify-returned-content is a separate mode; cannot combine with --%s", name)
