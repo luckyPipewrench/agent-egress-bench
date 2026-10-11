@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -56,90 +58,128 @@ func verifyReturnedContentDirectory(dir string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := listing.ReadDir(-1)
-	_ = listing.Close()
-	if err != nil {
-		return err
-	}
-	names := map[string]bool{}
-	for _, entry := range entries {
-		names[entry.Name()] = true
-	}
+	defer func() { _ = listing.Close() }()
+	return verifyReturnedContentEntries(root, listing)
+}
+
+// Read a fixed-size batch and validate it before requesting more entries. The
+// batch size bounds listing memory, not the number of valid diagnostic files.
+const diagnosticDirectoryBatchSize = 128
+
+type diagnosticDirectoryReader interface {
+	ReadDir(int) ([]os.DirEntry, error)
+}
+
+func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryReader) error {
 	count := 0
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".bin") {
-			return fmt.Errorf("unexpected diagnostic file %q", name)
+	// Pair halves by their listed names. A lookup by name also finds a partner
+	// spelled differently on a case-insensitive filesystem, so each half waits
+	// here until its exact partner is listed; only waiting halves are kept.
+	unpaired := map[string]string{}
+	for {
+		entries, readErr := listing.ReadDir(diagnosticDirectoryBatchSize)
+		if readErr != nil && readErr != io.EOF {
+			return fmt.Errorf("read diagnostic directory: %w", readErr)
 		}
-		stem := strings.TrimSuffix(strings.TrimSuffix(name, ".json"), ".bin")
-		if !names[stem+".json"] || !names[stem+".bin"] {
-			return fmt.Errorf("missing sidecar pair for %q", stem)
-		}
-		if !strings.HasSuffix(name, ".json") {
-			continue
-		}
-		for _, suffix := range []string{".json", ".bin"} {
-			info, err := root.Lstat(stem + suffix)
-			if err != nil || !info.Mode().IsRegular() {
-				return fmt.Errorf("sidecar %q is not a regular file", stem+suffix)
+		for _, entry := range entries {
+			name := entry.Name()
+			half := ".json"
+			if !strings.HasSuffix(name, half) {
+				half = ".bin"
+				if !strings.HasSuffix(name, half) {
+					return fmt.Errorf("unexpected diagnostic file %q", name)
+				}
 			}
-		}
-		body, err := readRootedDiagnostic(root, name)
-		if err != nil {
-			return err
-		}
-		var manifest returnedContentManifest
-		decoder := json.NewDecoder(bytes.NewReader(body))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&manifest); err != nil {
-			return fmt.Errorf("manifest %q: %w", name, err)
-		}
-		if err := decoder.Decode(new(interface{})); err != io.EOF {
-			return fmt.Errorf("manifest %q: trailing input", name)
-		}
-		exchange := manifest.Path == mcpHTTPExchangePath
-		expectedStem := stem
-		if exchange {
-			expectedStem = strings.TrimSuffix(stem, "-exchange")
-		}
-		prefix := manifest.CaseID + "-"
-		if !strings.HasPrefix(expectedStem, prefix) {
-			return fmt.Errorf("manifest %q: case identity mismatch", name)
-		}
-		index, err := strconv.Atoi(strings.TrimPrefix(expectedStem, prefix))
-		if err != nil || index < 0 {
-			return fmt.Errorf("manifest %q: invalid observation index", name)
-		}
-		canonical, err := returnedContentSidecarStem(manifest.CaseID, index)
-		if err != nil || canonical != expectedStem || (exchange && (index != 0 || stem != canonical+"-exchange")) {
-			return fmt.Errorf("manifest %q: invalid sidecar identity", name)
-		}
-		if _, ok := returnedContentPaths[manifest.Path]; !ok && !exchange {
-			return fmt.Errorf("manifest %q: invalid path", name)
-		}
-		if _, ok := returnedContentMediaTypes[manifest.MediaType]; !ok {
-			return fmt.Errorf("manifest %q: invalid media type", name)
-		}
-		if manifest.Bytes <= 0 {
-			return fmt.Errorf("manifest %q: invalid byte count", name)
-		}
-		content, err := loadVerifiedReturnedContentSidecarPair(root, stem+".bin", name, manifest)
-		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		if exchange {
-			if manifest.MediaType != "application/json" {
-				return fmt.Errorf("exchange manifest requires application/json")
+			stem := strings.TrimSuffix(strings.TrimSuffix(name, ".json"), ".bin")
+			switch unpaired[stem] {
+			case "":
+				unpaired[stem] = half
+			case half:
+				return fmt.Errorf("duplicate sidecar for %q", stem)
+			default:
+				delete(unpaired, stem)
 			}
-			record, err := adapter.DecodeMCPHTTPExchanges(content)
+			partners := []string{stem + ".json", stem + ".bin"}
+			if half == ".bin" {
+				// The manifest entry checks both files. Looking up only the
+				// manifest here still refuses an orphan without reading further.
+				partners = partners[:1]
+			}
+			for _, partner := range partners {
+				info, err := root.Lstat(partner)
+				if os.IsNotExist(err) {
+					return fmt.Errorf("missing sidecar pair for %q", stem)
+				}
+				if err != nil || !info.Mode().IsRegular() {
+					return fmt.Errorf("sidecar %q is not a regular file", partner)
+				}
+			}
+			if half == ".bin" {
+				continue
+			}
+			body, err := readRootedDiagnostic(root, name)
+			if err != nil {
+				return err
+			}
+			var manifest returnedContentManifest
+			decoder := json.NewDecoder(bytes.NewReader(body))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&manifest); err != nil {
+				return fmt.Errorf("manifest %q: %w", name, err)
+			}
+			if err := decoder.Decode(new(interface{})); err != io.EOF {
+				return fmt.Errorf("manifest %q: trailing input", name)
+			}
+			exchange := manifest.Path == mcpHTTPExchangePath
+			expectedStem := stem
+			if exchange {
+				expectedStem = strings.TrimSuffix(stem, "-exchange")
+			}
+			prefix := manifest.CaseID + "-"
+			if !strings.HasPrefix(expectedStem, prefix) {
+				return fmt.Errorf("manifest %q: case identity mismatch", name)
+			}
+			index, err := strconv.Atoi(strings.TrimPrefix(expectedStem, prefix))
+			if err != nil || index < 0 {
+				return fmt.Errorf("manifest %q: invalid observation index", name)
+			}
+			canonical, err := returnedContentSidecarStem(manifest.CaseID, index)
+			if err != nil || canonical != expectedStem || (exchange && (index != 0 || stem != canonical+"-exchange")) {
+				return fmt.Errorf("manifest %q: invalid sidecar identity", name)
+			}
+			if _, ok := returnedContentPaths[manifest.Path]; !ok && !exchange {
+				return fmt.Errorf("manifest %q: invalid path", name)
+			}
+			if _, ok := returnedContentMediaTypes[manifest.MediaType]; !ok {
+				return fmt.Errorf("manifest %q: invalid media type", name)
+			}
+			if manifest.Bytes <= 0 {
+				return fmt.Errorf("manifest %q: invalid byte count", name)
+			}
+			content, err := loadVerifiedReturnedContentSidecarPair(root, stem+".bin", name, manifest)
 			if err != nil {
 				return fmt.Errorf("%s: %w", name, err)
 			}
-			if record.CaseID != manifest.CaseID {
-				return fmt.Errorf("%s: exchange case identity mismatch", name)
+			if exchange {
+				if manifest.MediaType != "application/json" {
+					return fmt.Errorf("exchange manifest requires application/json")
+				}
+				record, err := adapter.DecodeMCPHTTPExchanges(content)
+				if err != nil {
+					return fmt.Errorf("%s: %w", name, err)
+				}
+				if record.CaseID != manifest.CaseID {
+					return fmt.Errorf("%s: exchange case identity mismatch", name)
+				}
 			}
+			count++
 		}
-		count++
+		if readErr == io.EOF {
+			break
+		}
+	}
+	if len(unpaired) != 0 {
+		return fmt.Errorf("missing sidecar pair for %q", slices.Min(slices.Collect(maps.Keys(unpaired))))
 	}
 	if count == 0 {
 		return fmt.Errorf("no retained diagnostics found")
