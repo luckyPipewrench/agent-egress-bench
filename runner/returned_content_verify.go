@@ -32,7 +32,12 @@ func retainMCPHTTPExchanges(dir, caseID string, record *adapter.MCPHTTPExchanges
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(record)
+	copy := *record
+	if copy.CaseID != "" && copy.CaseID != caseID {
+		return fmt.Errorf("exchange case identity mismatch")
+	}
+	copy.CaseID = caseID
+	body, err := json.Marshal(&copy)
 	if err != nil {
 		return err
 	}
@@ -126,8 +131,12 @@ func verifyReturnedContentDirectory(dir string) error {
 			if manifest.MediaType != "application/json" {
 				return fmt.Errorf("exchange manifest requires application/json")
 			}
-			if _, err := adapter.DecodeMCPHTTPExchanges(content); err != nil {
+			record, err := adapter.DecodeMCPHTTPExchanges(content)
+			if err != nil {
 				return fmt.Errorf("%s: %w", name, err)
+			}
+			if record.CaseID != manifest.CaseID {
+				return fmt.Errorf("%s: exchange case identity mismatch", name)
 			}
 		}
 		count++
@@ -154,4 +163,15 @@ func readRootedDiagnostic(root *os.Root, name string) ([]byte, error) {
 		return nil, errArtifactTooLarge
 	}
 	return content, nil
+}
+
+// The offline verifier is a separate mode; explicit run and reporting flags
+// must not be silently ignored, even when supplied with their default values.
+func validateReturnedContentVerifierFlags(names []string) error {
+	for _, name := range names {
+		if name != "verify-returned-content" {
+			return fmt.Errorf("--verify-returned-content is a separate mode; cannot combine with --%s", name)
+		}
+	}
+	return nil
 }

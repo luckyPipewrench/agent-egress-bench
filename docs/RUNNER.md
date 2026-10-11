@@ -38,7 +38,11 @@ just to get a numeric result.
 
 One JSON object per case, written to stdout (one per line, JSONL):
 
-> `--stats`, `--report`, and `--verify-returned-content` are exceptions to this contract. The verifier checks private diagnostics and exits without running cases or writing run artifacts. It reports the loaded corpus rather than running it, so it writes a human-readable Markdown snapshot to stdout and exits without producing JSONL or a summary. It requires `--cases` and ignores the tool-profile and adapter flags. `make stats`, `make stats-update` and `make check-stats` are its only intended callers. `--report` likewise runs no cases: it reads an artifact directory an earlier run left behind and writes Markdown to the path given by `--report-output`, or to stdout when that is `-`.
+`--stats` is an exception to this contract. It reports the loaded corpus rather than running it, writes a human-readable Markdown snapshot to stdout, and exits without producing JSONL or a summary. It requires `--cases` and ignores the tool-profile and adapter flags. `make stats`, `make stats-update` and `make check-stats` are its intended callers.
+
+`--report` also runs no cases: it reads an earlier run's artifact directory and writes Markdown to `--report-output`, or stdout when that is `-`.
+
+`--verify-returned-content` checks private diagnostics and exits without running cases or writing run artifacts. It needs no `--cases` and must be used alone, without other flags.
 
 `--require-complete` keeps the JSONL rows, summary, and optional receipt profile, then exits nonzero when `measurement_status` is `incomplete`. Use it in automation and offline runs so a partial measurement can't produce a green job. A complete measurement can still contain ordinary pass and fail outcomes; the flag rejects missing measurement, not an unfavorable score.
 
@@ -107,13 +111,15 @@ of public artifacts and does not include that directory, even when it sits
 beside a run. Public JSONL, summaries, reports, provenance, candidate
 evaluation, and buyer reports receive no payload snippets from this feature.
 
-For the proxy adapter's MCP HTTP cases, the same opt-in also stores `CASE-0-exchange.bin` and its digest manifest. The private diagnostic contains the planned method sequence and the actual request and response bodies in order, including initialize, notifications, baseline discovery, and case requests where that path sends them. It records HTTP status, bounded media type, and whether each body was read completely. URLs and headers are omitted, so issued session credentials aren't copied. Bodies use the existing response size limit; oversized or interrupted observations remain visibly incomplete. No extra handshake messages are sent for diagnostics.
+For the proxy adapter's MCP HTTP cases, the same opt-in also stores `CASE-0-exchange.bin` and its digest manifest. The private diagnostic contains the planned method sequence and the actual request and response bodies in order, including initialize, notifications, baseline discovery, and case requests where that path sends them. It records HTTP status, bounded media type, and whether each body was read completely. URLs and headers are omitted, including session credentials carried in headers. Request and response bodies are retained verbatim and may contain credentials or other sensitive data; the same opt-in now retains both kinds of body. Bodies use the existing response size limit; oversized or interrupted observations remain visibly incomplete. No extra handshake messages are sent for diagnostics.
 
 Verify a retained directory without running cases:
 
 ```bash
 aeb-gauntlet --verify-returned-content /path/to/private-diagnostics
 ```
+
+A target's early block or an unproven skip can leave an exchange sequence incomplete, so verification of that directory fails even if the target correctly blocked an attack. Redirect hops can also leave extra or bodyless exchanges that cannot verify. These diagnostics currently require a final case request after setup; initialize-only and notification-only sequences are unsupported.
 
 The command exits nonzero for an empty directory, missing sidecar pairs, malformed manifests, invalid metadata, digest mismatches, or incomplete or invalid exchange sequences. It uses the adapter's existing JSON-RPC response decoding and correlation rules. A complete exchange observation doesn't prove delivery upstream or a security verdict. A digest detects changes relative to its manifest; it can't authenticate a directory whose content and manifests were both replaced. Verification checks the observations present and doesn't establish full-run coverage if entire sidecar pairs were removed. Keep the directory private and use a fresh directory for each run. This utility doesn't add a public artifact schema or affect corpus identity, receipts, scores, or publication eligibility.
 

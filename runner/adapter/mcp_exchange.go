@@ -12,9 +12,11 @@ import (
 // MCPHTTPExchanges is a private diagnostic of the requests actually attempted.
 // It omits URLs and headers, including authentication and issued session tokens.
 type MCPHTTPExchanges struct {
-	Complete       bool              `json:"complete"`
-	PlannedMethods []string          `json:"planned_methods"`
-	Exchanges      []MCPHTTPExchange `json:"exchanges"`
+	CaseID            string `json:"case_id"`
+	captureIncomplete bool
+	Complete          bool              `json:"complete"`
+	PlannedMethods    []string          `json:"planned_methods"`
+	Exchanges         []MCPHTTPExchange `json:"exchanges"`
 }
 
 type MCPHTTPExchange struct {
@@ -35,7 +37,7 @@ func (p *ProxyAdapter) recordMCPHTTPExchanges(ctx context.Context, c Case) (cont
 	if !p.retainMCPHTTPExchanges {
 		return ctx, func(bool) *MCPHTTPExchanges { return nil }
 	}
-	record := &MCPHTTPExchanges{PlannedMethods: []string{"initialize"}}
+	record := &MCPHTTPExchanges{CaseID: c.ID, PlannedMethods: []string{"initialize"}}
 	switch c.InputType {
 	case "mcp_tool_definition":
 		record.PlannedMethods = append(record.PlannedMethods, "tools/list")
@@ -56,7 +58,10 @@ func (p *ProxyAdapter) recordMCPHTTPExchanges(ctx context.Context, c Case) (cont
 		}
 	}
 	return context.WithValue(ctx, exchangeContextKey{}, record), func(complete bool) *MCPHTTPExchanges {
-		record.Complete = complete
+		record.Complete = complete && !record.captureIncomplete
+		for _, exchange := range record.Exchanges {
+			record.Complete = record.Complete && exchange.Complete
+		}
 		return record
 	}
 }
@@ -80,7 +85,7 @@ func (mcpExchangeTransport) RoundTrip(req *http.Request) (*http.Response, error)
 			_ = body.Close()
 		}
 		if err != nil {
-			record.Complete = false
+			record.captureIncomplete = true
 		}
 	}
 	resp, err := http.DefaultTransport.RoundTrip(req)

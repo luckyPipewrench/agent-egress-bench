@@ -156,3 +156,105 @@ func TestMCPHTTPExchangeRunnerRetentionKeepsPublicRowsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestVerifyReturnedContentExpectedManifest(t *testing.T) {
+	dir := t.TempDir()
+	if err := retainReturnedContent(dir, "binding-test", map[string]interface{}{}, []adapter.ReturnedContent{{Bytes: []byte("synthetic"), MediaType: "text/plain", Path: "mcp_stdio_result"}}); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	body, err := os.ReadFile(filepath.Join(dir, "binding-test-0.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected returnedContentManifest
+	if err := json.Unmarshal(body, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadVerifiedReturnedContentSidecarPair(root, "binding-test-0.bin", "binding-test-0.json", expected); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"media", "path", "case-id"} {
+		t.Run(field, func(t *testing.T) {
+			mismatch := expected
+			switch field {
+			case "media":
+				mismatch.MediaType = "application/json"
+			case "path":
+				mismatch.Path = "mcp_tools_list"
+			case "case-id":
+				mismatch.CaseID = "other-case"
+			}
+			if _, err := loadVerifiedReturnedContentSidecarPair(root, "binding-test-0.bin", "binding-test-0.json", mismatch); err == nil || !strings.Contains(err.Error(), "metadata") {
+				t.Fatalf("metadata mismatch not isolated: %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyReturnedContentVerifierModes(t *testing.T) {
+	if err := validateReturnedContentVerifierFlags([]string{"verify-returned-content"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"stats", "case-index", "report", "publication-lockup", "version", "cases", "adapter", "require-complete"} {
+		if err := validateReturnedContentVerifierFlags([]string{"verify-returned-content", name}); err == nil {
+			t.Fatalf("silently accepted --%s", name)
+		}
+	}
+}
+
+func TestVerifyReturnedContentExchangeRelabel(t *testing.T) {
+	dir := t.TempDir()
+	if err := retainMCPHTTPExchanges(dir, "diagnostic-test", syntheticExchangeRecord()); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyReturnedContentDirectory(dir); err != nil {
+		t.Fatal(err)
+	}
+	old := "diagnostic-test-0-exchange"
+	newName := "other-case-0-exchange"
+	body, err := os.ReadFile(filepath.Join(dir, old+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest returnedContentManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.CaseID = "other-case"
+	body, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, newName+".json"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, old+".json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(dir, old+".bin"), filepath.Join(dir, newName+".bin")); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyReturnedContentDirectory(dir); err == nil || !strings.Contains(err.Error(), "exchange case identity") {
+		t.Fatalf("relabel accepted: %v", err)
+	}
+}
+
+func TestVerifyReturnedContentExchangeIdentityIndex(t *testing.T) {
+	dir := t.TempDir()
+	if err := retainMCPHTTPExchanges(dir, "diagnostic-test", syntheticExchangeRecord()); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{".json", ".bin"} {
+		if err := os.Rename(filepath.Join(dir, "diagnostic-test-0-exchange"+suffix), filepath.Join(dir, "diagnostic-test-1-exchange"+suffix)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := verifyReturnedContentDirectory(dir); err == nil || !strings.Contains(err.Error(), "invalid sidecar identity") {
+		t.Fatalf("nonzero exchange index accepted: %v", err)
+	}
+}

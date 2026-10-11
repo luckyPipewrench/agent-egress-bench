@@ -48,7 +48,7 @@ func main() {
 	toolVersionCommand := flag.String("tool-version-command", "", "JSON array argv used to ask the tool for its version when emitting a receipt profile; executed without a shell")
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
 	verifyReturnedContent := flag.String("verify-returned-content", "", "verify a private returned-content directory without running cases")
-	retainReturnedContent := flag.String("retain-returned-content", "", "directory for opt-in private copies of returned MCP content; excluded from public artifacts")
+	retainReturnedContent := flag.String("retain-returned-content", "", "directory for opt-in private MCP response and HTTP request bodies; may contain credentials; excluded from public artifacts")
 	multiFileCases := flag.String("multifile-cases", "", "override the auto-discovered multi-file case directory. The selected case IDs must equal the loader-backed corpus.")
 	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
 	caseIndex := flag.Bool("case-index", false, "print loader-normalized case IDs and expected verdicts as JSON (requires --cases; ignores runner profile flags)")
@@ -75,6 +75,12 @@ func main() {
 
 	flag.Parse()
 	if *verifyReturnedContent != "" {
+		var names []string
+		flag.Visit(func(f *flag.Flag) { names = append(names, f.Name) })
+		if err := validateReturnedContentVerifierFlags(names); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		if err := verifyReturnedContentDirectory(*verifyReturnedContent); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
