@@ -374,6 +374,9 @@ func TestVerifyReturnedContentDirectoryStreaming(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), "missing sidecar pair") {
 					t.Fatalf("orphan accepted: %v", err)
 				}
+				if observed.calls != 1 || observed.entries > diagnosticDirectoryBatchSize {
+					t.Fatalf("read past first orphan batch: %+v", observed)
+				}
 			}
 		})
 	}
