@@ -47,7 +47,8 @@ func main() {
 	emitReceiptProfile := flag.String("emit-receipt-profile", "", "if set, write a receipt-scoring profile (schemas/receipt-scoring-profile-v5.schema.json) to this path alongside the Gauntlet summary")
 	toolVersionCommand := flag.String("tool-version-command", "", "JSON array argv used to ask the tool for its version when emitting a receipt profile; executed without a shell")
 	receiptVerifierFile := flag.String("receipt-verifier-file", "", "JSON file describing the tool's receipt verifier (shipped, open_source, verifier_url, license, exit_code_contract). Used only when --emit-receipt-profile is set; omitted means \"no verifier shipped\".")
-	retainReturnedContent := flag.String("retain-returned-content", "", "directory for opt-in private copies of returned MCP content; excluded from public artifacts")
+	verifyReturnedContent := flag.String("verify-returned-content", "", "verify a private returned-content directory without running cases")
+	retainReturnedContent := flag.String("retain-returned-content", "", "directory for opt-in private MCP response and HTTP request bodies; may contain credentials; excluded from public artifacts")
 	multiFileCases := flag.String("multifile-cases", "", "override the auto-discovered multi-file case directory. The selected case IDs must equal the loader-backed corpus.")
 	stats := flag.Bool("stats", false, "print loader-backed corpus statistics (requires --cases; ignores runner profile flags)")
 	caseIndex := flag.Bool("case-index", false, "print loader-normalized case IDs and expected verdicts as JSON (requires --cases; ignores runner profile flags)")
@@ -73,6 +74,20 @@ func main() {
 	flag.BoolVar(&debug, "v", false, "alias for --debug")
 
 	flag.Parse()
+	if *verifyReturnedContent != "" {
+		var names []string
+		flag.Visit(func(f *flag.Flag) { names = append(names, f.Name) })
+		if err := validateReturnedContentVerifierFlags(names, flag.Args()...); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := verifyReturnedContentDirectory(*verifyReturnedContent); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		_, _ = fmt.Fprintln(os.Stdout, "Returned-content diagnostics verified")
+		return
+	}
 	if *reportDir != "" && *publicationLockupDir != "" {
 		_, _ = fmt.Fprintln(os.Stderr, "error: --report and --publication-lockup are separate modes")
 		os.Exit(1)
@@ -301,6 +316,7 @@ func runWithGatewayPluginOptions(casesDir, profilePath, outputPath string, timeo
 			return fmt.Errorf("mcp http session declaration: %w", err)
 		}
 		pa.SetMCPHTTPListenerSession(session)
+		pa.SetRetainMCPHTTPExchanges(prov.ReturnedContentDir != "")
 		adapt = &caseIsolatedProxyAdapter{proxy: pa, mcpHTTPCommand: managedMCPHTTPCmd, externalMCPHTTPURL: mcpHTTPURL, fixtures: fm}
 	case "mcp-gateway":
 		if gatewayPluginPath == "" {
@@ -493,6 +509,9 @@ func runCasesWithSetup(cases []Case, profile Profile, adapt adapter.Adapter, tim
 		}
 		if err := retainReturnedContent(setup.returnedContentDir, c.ID, adapterResult.Evidence, adapterResult.ReturnedContent); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("case %s: retain returned content: %w", c.ID, err)
+		}
+		if err := retainMCPHTTPExchanges(setup.returnedContentDir, c.ID, adapterResult.MCPHTTPExchanges); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("case %s: retain MCP HTTP exchanges: %w", c.ID, err)
 		}
 		state, notes := resultStateFor(adapterResult)
 		if state != ResultStateObserved {

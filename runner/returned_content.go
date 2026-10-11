@@ -136,27 +136,31 @@ func lockReturnedContentSidecar(dir, name string) func() {
 }
 
 func verifyReturnedContentSidecarPair(root *os.Root, binName, jsonName string, manifest returnedContentManifest) error {
-	stored, err := root.ReadFile(binName)
+	_, err := loadVerifiedReturnedContentSidecarPair(root, binName, jsonName, manifest)
+	return err
+}
+
+func loadVerifiedReturnedContentSidecarPair(root *os.Root, binName, jsonName string, manifest returnedContentManifest) ([]byte, error) {
+	stored, err := readRootedDiagnostic(root, binName)
 	if err != nil {
-		return fmt.Errorf("reread returned-content sidecar: %w", err)
+		return nil, fmt.Errorf("reread returned-content sidecar: %w", err)
 	}
-	encodedManifest, err := root.ReadFile(jsonName)
+	encodedManifest, err := readRootedDiagnostic(root, jsonName)
 	if err != nil {
-		return fmt.Errorf("reread returned-content manifest: %w", err)
+		return nil, fmt.Errorf("reread returned-content manifest: %w", err)
 	}
 	var published returnedContentManifest
 	if err := json.Unmarshal(encodedManifest, &published); err != nil {
-		return fmt.Errorf("decode returned-content manifest: %w", err)
+		return nil, fmt.Errorf("decode returned-content manifest: %w", err)
 	}
 	storedDigest := sha256.Sum256(stored)
-	digestText := hex.EncodeToString(storedDigest[:])
-	if published.SHA256 != digestText || published.Bytes != len(stored) {
-		return fmt.Errorf("returned-content sidecar digest does not match published manifest")
+	if published.SHA256 != hex.EncodeToString(storedDigest[:]) || published.Bytes != len(stored) {
+		return nil, fmt.Errorf("returned-content sidecar digest does not match published manifest")
 	}
-	if published.SHA256 != manifest.SHA256 || published.Bytes != manifest.Bytes {
-		return fmt.Errorf("returned-content sidecar digest does not match public evidence")
+	if published != manifest {
+		return nil, fmt.Errorf("returned-content sidecar metadata does not match expected evidence")
 	}
-	return nil
+	return stored, nil
 }
 
 func writeReturnedContentSidecarFile(root *os.Root, name string, data []byte) error {
