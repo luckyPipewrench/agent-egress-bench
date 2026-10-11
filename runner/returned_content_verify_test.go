@@ -169,7 +169,7 @@ func TestVerifyReturnedContentExpectedManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	body, err := os.ReadFile(filepath.Join(dir, "binding-test-0.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -316,17 +316,18 @@ func TestVerifyReturnedContentDirectoryStreaming(t *testing.T) {
 	for _, scenario := range []string{"valid-multiple-batches", "invalid-first-batch", "listing-error", "orphan-bin"} {
 		t.Run(scenario, func(t *testing.T) {
 			dir := t.TempDir()
-			if scenario == "invalid-first-batch" {
+			switch scenario {
+			case "invalid-first-batch":
 				for i := 0; i < diagnosticDirectoryBatchSize*3; i++ {
 					if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("unexpected-%d.txt", i)), nil, 0o600); err != nil {
 						t.Fatal(err)
 					}
 				}
-			} else if scenario == "orphan-bin" {
+			case "orphan-bin":
 				if err := os.WriteFile(filepath.Join(dir, "orphan.bin"), []byte("x"), 0o600); err != nil {
 					t.Fatal(err)
 				}
-			} else {
+			default:
 				for i := 0; i < diagnosticDirectoryBatchSize+1; i++ {
 					caseID := fmt.Sprintf("diagnostic-%d", i)
 					if err := retainReturnedContent(dir, caseID, map[string]interface{}{}, []adapter.ReturnedContent{{Bytes: []byte("synthetic"), MediaType: "text/plain", Path: "mcp_stdio_result"}}); err != nil {
@@ -338,12 +339,12 @@ func TestVerifyReturnedContentDirectoryStreaming(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer root.Close()
+			defer func() { _ = root.Close() }()
 			listing, err := root.Open(".")
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer listing.Close()
+			defer func() { _ = listing.Close() }()
 			observed := &observedDiagnosticDirectory{file: listing}
 			readFailure := errors.New("directory read failed")
 			if scenario == "listing-error" {
@@ -453,12 +454,12 @@ func TestVerifyReturnedContentDirectoryExactPairs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer root.Close()
+			defer func() { _ = root.Close() }()
 			listing, err := root.Open(".")
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer listing.Close()
+			defer func() { _ = listing.Close() }()
 			switch scenario {
 			case "case-alias":
 				err = verifyReturnedContentEntries(root, rewrittenDiagnosticDirectory{listing, listContentUpperCase})
