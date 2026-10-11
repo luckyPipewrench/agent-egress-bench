@@ -398,10 +398,10 @@ run_doctor() {
   required_go="$(required_go_version || true)"
   if ! go_bin_available; then
     add_doctor_result "go_version" "missing" \
-      "install Go ${required_go:-1.25} or newer from https://go.dev/dl/, or select an installed toolchain with --go BINARY or AEB_GO, and retry"
+      "install Go ${required_go:-1.26} or newer from https://go.dev/dl/, or select an installed toolchain with --go BINARY or AEB_GO, and retry"
   elif ! installed_go="$(installed_go_version)"; then
     add_doctor_result "go_version" "unreadable" \
-      "install Go ${required_go:-1.25} or newer from https://go.dev/dl/ and retry"
+      "install Go ${required_go:-1.26} or newer from https://go.dev/dl/ and retry"
   elif [[ -z "$required_go" ]]; then
     add_doctor_result "go_version" "unreadable" "restore runner/go.mod and retry"
   elif go_version_ge "$installed_go" "$required_go"; then

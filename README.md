@@ -8,7 +8,7 @@
   <a href="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml"><img src="https://github.com/luckyPipewrench/agent-egress-bench/actions/workflows/pipelock.yaml/badge.svg" alt="Pipelock self-scan"></a>
   <a href="https://codecov.io/gh/luckyPipewrench/agent-egress-bench"><img src="https://codecov.io/gh/luckyPipewrench/agent-egress-bench/graph/badge.svg" alt="Coverage"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/luckyPipewrench/agent-egress-bench"><img src="https://api.scorecard.dev/projects/github.com/luckyPipewrench/agent-egress-bench/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://go.dev/dl/"><img src="https://img.shields.io/badge/Go-1.25%2B-00e5a0?logo=go&logoColor=white&labelColor=0e0e11" alt="Go 1.25+"></a>
+  <a href="https://go.dev/dl/"><img src="https://img.shields.io/badge/Go-1.26%2B-00e5a0?logo=go&logoColor=white&labelColor=0e0e11" alt="Go 1.26+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-00e5a0?labelColor=0e0e11" alt="License: Apache 2.0"></a>
   <a href="https://discord.gg/badNfhGKTc"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white&labelColor=0e0e11" alt="Discord"></a>
 </p>
@@ -58,7 +58,7 @@ Tools already sit in that path. What a buyer usually gets is each vendor's own e
 
 ## Quick start
 
-You need [Go 1.25 or newer](https://go.dev/dl/). A distribution `golang` package may install an older release, so run `go version` before building.
+You need [Go 1.26 or newer](https://go.dev/dl/). A distribution `golang` package may install an older release, so run `go version` before building.
 
 ```bash
 git clone --branch main https://github.com/luckyPipewrench/agent-egress-bench.git
@@ -80,7 +80,7 @@ The repository includes Pipelock as one complete adapter example. This path need
 ./scripts/run-pipelock-gauntlet.sh            # run the corpus and retain the evidence
 ```
 
-The command downloads the pinned Pipelock release, verifies its digest and reported version, confines the target with Landlock and seccomp, starts the fixtures, and runs the corpus. Set `AEB_GO=/opt/go1.25/bin/go` or pass `--go /opt/go1.25/bin/go` to select a toolchain outside `PATH`. The [reference adapter guide](examples/pipelock/README.md) documents the evidence files.
+The command downloads the pinned Pipelock release, verifies its digest and reported version, confines the target with Landlock and seccomp, starts the fixtures, and runs the corpus. Set `AEB_GO=/opt/go1.26/bin/go` or pass `--go /opt/go1.26/bin/go` to select a toolchain outside `PATH`. The [reference adapter guide](examples/pipelock/README.md) documents the evidence files.
 
 </details>
 

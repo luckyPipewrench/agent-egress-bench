@@ -2,7 +2,7 @@
 
 The runner image packages `aeb-gauntlet`, the corpus, schemas, contracts, capability registry, and examples in one Linux environment that is built for `linux/amd64` and `linux/arm64`.
 
-The image is based on Alpine 3.24.1 and built with Go 1.25.12. Both base images are pinned by OCI index digest in the `Dockerfile`, both indexes contain amd64 and arm64 manifests, and the release workflow checks the installed Buildx and runner versions instead of trusting a tag. The runtime image uses the unprivileged `aeb` user; the Action maps that process to the caller's UID and GID for bind-mounted files.
+The image is based on Alpine 3.24.1 and built with Go 1.26.9. Both base images are pinned by OCI index digest in the `Dockerfile`, both indexes contain amd64 and arm64 manifests, and the release workflow checks the installed Buildx and runner versions instead of trusting a tag. The runtime image uses the unprivileged `aeb` user; the Action maps that process to the caller's UID and GID for bind-mounted files.
 
 ## Build and inspect the image
 

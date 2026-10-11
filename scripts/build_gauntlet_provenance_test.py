@@ -1742,7 +1742,7 @@ printf '%s\\n' 'pipelock version {version_prefix}{PIN_VERSION}'
             """#!/bin/sh
 set -eu
 if [ "${1:-}" = "version" ]; then
-  printf '%s\\n' 'go version go1.25.0 linux/amd64'
+  printf '%s\\n' 'go version go1.26.0 linux/amd64'
   exit 0
 fi
 if [ "$1" = "build" ]; then
@@ -1855,11 +1855,11 @@ exec git "$@"
         # rather than only the validator. The expected value comes from asking the
         # go binary, not from a literal, because a literal would pass on a machine
         # whose toolchain was never consulted.
-        # The harness puts a stub go on PATH that reports go1.25.0. Asserting that
+        # The harness puts a stub go on PATH that reports go1.26.0. Asserting that
         # exact line proves the recorded value comes from the toolchain that will
         # build the runner rather than from whatever go the machine happens to
         # have, which is the whole point of recording it.
-        expected = "go version go1.25.0 linux/amd64"
+        expected = "go version go1.26.0 linux/amd64"
         result, output_dir, _ = self.run_with_fake_runner("error")
         self.assertEqual(result.returncode, 23, result.stderr)
         metadata = json.loads((output_dir / "run-metadata.json").read_text(encoding="utf-8"))

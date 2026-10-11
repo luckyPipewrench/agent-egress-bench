@@ -21,7 +21,7 @@ AEB_IMMUTABILITY_BASE ?= origin/main
 # Pre-push gate. Race coverage remains here because the Go modules exercised
 # below complete comfortably inside the edit-to-push budget and it catches real
 # shared-state defects that ordinary go test would miss. It requires the Go
-# toolchain needed by runner/go.mod (currently Go 1.25 or newer).
+# toolchain needed by runner/go.mod (currently Go 1.26 or newer).
 preflight: check-test-layout check-neutrality-boundary check-contracts check-schema-catalog check-schema-discovery-feed check-public-contracts check-case-immutability check-case-governance check-frozen-schema-immutability check-schema-copies check-docs check-operator-kit check-citation test-capability-registry check-capability-registry-history check-scorecard-workflow test-label-boundary test-runner-parity test-runner-image test-validate validate-cases test-runner test-receipt-generator test-control-evidence-vectors test-control-evidence-verifier test-control-evidence-v1-verifier test-control-evidence-g2-authentication test-pipelock-example test-release-build test-release-workflow check-stats check-gauntlet-site check-result-pointers check-claim-language check-readme-categories check-diagrams
 
 # Mandatory repository validation may check shared contracts, but it must not

@@ -276,7 +276,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             stale = self._stub_go(temporary, "go version go1.24.0 linux/amd64")
             selected_dir = Path(temporary) / "selected"
             selected_dir.mkdir()
-            selected = self._stub_go(selected_dir, "go version go1.25.0 linux/amd64")
+            selected = self._stub_go(selected_dir, "go version go1.26.0 linux/amd64")
             result = subprocess.run(
                 ["bash", str(ENTRYPOINT), "--go", str(selected), "--doctor-json"],
                 cwd=REPO_ROOT,
@@ -542,7 +542,7 @@ class ContinuousGauntletWorkflowTest(unittest.TestCase):
             stale = self._stub_go(temporary, "go version go1.24.0 linux/amd64")
             selected_dir = Path(temporary) / "selected"
             selected_dir.mkdir()
-            selected = self._stub_go(selected_dir, "go version go1.25.0 linux/amd64")
+            selected = self._stub_go(selected_dir, "go version go1.26.0 linux/amd64")
             result = subprocess.run(
                 ["bash", str(ENTRYPOINT), "--doctor-json"],
                 cwd=REPO_ROOT,
