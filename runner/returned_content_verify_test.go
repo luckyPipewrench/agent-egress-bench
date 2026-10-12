@@ -587,11 +587,6 @@ func TestVerifyReturnedContentUnlistedManifest(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			dir := t.TempDir()
 			content := []adapter.ReturnedContent{{Bytes: []byte("synthetic"), MediaType: "text/plain", Path: "mcp_stdio_result"}}
-			// A separate complete pair keeps the directory nonempty even if
-			// the candidate manifest is omitted from the listing.
-			if err := retainReturnedContent(dir, "control-pair", map[string]interface{}{}, content); err != nil {
-				t.Fatal(err)
-			}
 			stem := "candidate-pair-0"
 			if scenario.exchange {
 				record := syntheticExchangeRecord()

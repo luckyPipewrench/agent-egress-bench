@@ -69,7 +69,7 @@ type diagnosticDirectoryReader interface {
 }
 
 func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryReader) error {
-	count := 0
+	verifiedPair := false
 	for {
 		entries, readErr := listing.ReadDir(diagnosticDirectoryBatchSize)
 		if readErr != nil && readErr != io.EOF {
@@ -160,16 +160,13 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 					return fmt.Errorf("%s: exchange case identity mismatch", name)
 				}
 			}
-			if half == ".bin" {
-				continue
-			}
-			count++
+			verifiedPair = true
 		}
 		if readErr == io.EOF {
 			break
 		}
 	}
-	if count == 0 {
+	if !verifiedPair {
 		return fmt.Errorf("no retained diagnostics found")
 	}
 	return nil
