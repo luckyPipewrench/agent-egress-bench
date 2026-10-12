@@ -485,3 +485,87 @@ func TestVerifyReturnedContentDirectoryExactPairs(t *testing.T) {
 		})
 	}
 }
+
+// Controls filesystem listing order without changing the retained files.
+type orderedDiagnosticDirectory struct {
+	entries []os.DirEntry
+	calls   int
+}
+
+func (d *orderedDiagnosticDirectory) ReadDir(n int) ([]os.DirEntry, error) {
+	d.calls++
+	if n != diagnosticDirectoryBatchSize {
+		return nil, fmt.Errorf("unexpected directory batch size %d", n)
+	}
+	if len(d.entries) == 0 {
+		return nil, io.EOF
+	}
+	count := min(n, len(d.entries))
+	entries := d.entries[:count]
+	d.entries = d.entries[count:]
+	return entries, nil
+}
+
+func TestVerifyReturnedContentSeparatedPairs(t *testing.T) {
+	for _, order := range []string{"bins-first", "manifests-first"} {
+		for _, mutation := range []string{"valid", "first-manifest", "last-manifest"} {
+			t.Run(order+"/"+mutation, func(t *testing.T) {
+				dir := t.TempDir()
+				const pairs = diagnosticDirectoryBatchSize*2 + 1
+				for i := 0; i < pairs; i++ {
+					if err := retainReturnedContent(dir, fmt.Sprintf("ordered-%04d", i), map[string]interface{}{}, []adapter.ReturnedContent{{Bytes: []byte("synthetic"), MediaType: "text/plain", Path: "mcp_stdio_result"}}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var bins, manifests []os.DirEntry
+				for _, entry := range entries {
+					if strings.HasSuffix(entry.Name(), ".bin") {
+						bins = append(bins, entry)
+					} else {
+						manifests = append(manifests, entry)
+					}
+				}
+				badIndex := 0
+				if mutation == "last-manifest" {
+					badIndex = pairs - 1
+				}
+				if mutation != "valid" {
+					if err := os.WriteFile(filepath.Join(dir, manifests[badIndex].Name()), []byte("{"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				ordered := append(bins, manifests...)
+				if order == "manifests-first" {
+					ordered = append(manifests, bins...)
+				}
+				root, err := os.OpenRoot(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = root.Close() }()
+				reader := &orderedDiagnosticDirectory{entries: ordered}
+				err = verifyReturnedContentEntries(root, reader)
+				if mutation == "valid" {
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(reader.entries) != 0 || reader.calls < 5 {
+						t.Fatalf("incomplete directory: %+v", reader)
+					}
+					return
+				}
+				if err == nil || !strings.Contains(err.Error(), "manifest") {
+					t.Fatalf("invalid manifest accepted: %v", err)
+				}
+				wantCalls := badIndex/diagnosticDirectoryBatchSize + 1
+				if reader.calls != wantCalls {
+					t.Fatalf("read past invalid pair: calls=%d want=%d", reader.calls, wantCalls)
+				}
+			})
+		}
+	}
+}

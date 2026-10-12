@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -72,15 +70,14 @@ type diagnosticDirectoryReader interface {
 
 func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryReader) error {
 	count := 0
-	// Pair halves by their listed names. A lookup by name also finds a partner
-	// spelled differently on a case-insensitive filesystem, so each half waits
-	// here until its exact partner is listed; only waiting halves are kept.
-	unpaired := map[string]string{}
 	for {
 		entries, readErr := listing.ReadDir(diagnosticDirectoryBatchSize)
 		if readErr != nil && readErr != io.EOF {
 			return fmt.Errorf("read diagnostic directory: %w", readErr)
 		}
+		// Directory entries are unique in a stable directory. Refuse repeated
+		// names within a batch without retaining names from earlier batches.
+		seen := make(map[string]bool, len(entries))
 		for _, entry := range entries {
 			name := entry.Name()
 			half := ".json"
@@ -90,21 +87,12 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 					return fmt.Errorf("unexpected diagnostic file %q", name)
 				}
 			}
-			stem := strings.TrimSuffix(strings.TrimSuffix(name, ".json"), ".bin")
-			switch unpaired[stem] {
-			case "":
-				unpaired[stem] = half
-			case half:
+			stem := strings.TrimSuffix(name, half)
+			if seen[name] {
 				return fmt.Errorf("duplicate sidecar for %q", stem)
-			default:
-				delete(unpaired, stem)
 			}
+			seen[name] = true
 			partners := []string{stem + ".json", stem + ".bin"}
-			if half == ".bin" {
-				// The manifest entry checks both files. Looking up only the
-				// manifest here still refuses an orphan without reading further.
-				partners = partners[:1]
-			}
 			for _, partner := range partners {
 				info, err := root.Lstat(partner)
 				if os.IsNotExist(err) {
@@ -114,10 +102,10 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 					return fmt.Errorf("sidecar %q is not a regular file", partner)
 				}
 			}
-			if half == ".bin" {
-				continue
-			}
-			body, err := readRootedDiagnostic(root, name)
+			// Bind either listed half to the canonical identity in its manifest.
+			// Rooted lookups alone can accept case aliases on some filesystems.
+			manifestName := stem + ".json"
+			body, err := readRootedDiagnostic(root, manifestName)
 			if err != nil {
 				return err
 			}
@@ -137,11 +125,11 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 			}
 			prefix := manifest.CaseID + "-"
 			if !strings.HasPrefix(expectedStem, prefix) {
-				return fmt.Errorf("manifest %q: case identity mismatch", name)
+				return fmt.Errorf("missing sidecar pair for %q: manifest case identity mismatch", stem)
 			}
 			index, err := strconv.Atoi(strings.TrimPrefix(expectedStem, prefix))
 			if err != nil || index < 0 {
-				return fmt.Errorf("manifest %q: invalid observation index", name)
+				return fmt.Errorf("missing sidecar pair for %q: invalid observation index", stem)
 			}
 			canonical, err := returnedContentSidecarStem(manifest.CaseID, index)
 			if err != nil || canonical != expectedStem || (exchange && (index != 0 || stem != canonical+"-exchange")) {
@@ -155,6 +143,9 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 			}
 			if manifest.Bytes <= 0 {
 				return fmt.Errorf("manifest %q: invalid byte count", name)
+			}
+			if half == ".bin" {
+				continue
 			}
 			content, err := loadVerifiedReturnedContentSidecarPair(root, stem+".bin", name, manifest)
 			if err != nil {
@@ -177,9 +168,6 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 		if readErr == io.EOF {
 			break
 		}
-	}
-	if len(unpaired) != 0 {
-		return fmt.Errorf("missing sidecar pair for %q", slices.Min(slices.Collect(maps.Keys(unpaired))))
 	}
 	if count == 0 {
 		return fmt.Errorf("no retained diagnostics found")
