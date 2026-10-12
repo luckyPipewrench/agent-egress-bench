@@ -144,10 +144,7 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 			if manifest.Bytes <= 0 {
 				return fmt.Errorf("manifest %q: invalid byte count", name)
 			}
-			if half == ".bin" {
-				continue
-			}
-			content, err := loadVerifiedReturnedContentSidecarPair(root, stem+".bin", name, manifest)
+			content, err := loadVerifiedReturnedContentSidecarPair(root, stem+".bin", manifestName, manifest)
 			if err != nil {
 				return fmt.Errorf("%s: %w", name, err)
 			}
@@ -162,6 +159,9 @@ func verifyReturnedContentEntries(root *os.Root, listing diagnosticDirectoryRead
 				if record.CaseID != manifest.CaseID {
 					return fmt.Errorf("%s: exchange case identity mismatch", name)
 				}
+			}
+			if half == ".bin" {
+				continue
 			}
 			count++
 		}

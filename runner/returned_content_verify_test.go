@@ -569,3 +569,74 @@ func TestVerifyReturnedContentSeparatedPairs(t *testing.T) {
 		}
 	}
 }
+
+func TestVerifyReturnedContentUnlistedManifest(t *testing.T) {
+	for _, scenario := range []struct {
+		name       string
+		exchange   bool
+		tamper     bool
+		incomplete bool
+		wantError  string
+	}{
+		{name: "valid-content"},
+		{name: "valid-exchange", exchange: true},
+		{name: "tampered-content", tamper: true, wantError: "digest"},
+		{name: "tampered-exchange", exchange: true, tamper: true, wantError: "digest"},
+		{name: "incomplete-exchange", exchange: true, incomplete: true, wantError: "incomplete"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			dir := t.TempDir()
+			content := []adapter.ReturnedContent{{Bytes: []byte("synthetic"), MediaType: "text/plain", Path: "mcp_stdio_result"}}
+			// A separate complete pair keeps the directory nonempty even if
+			// the candidate manifest is omitted from the listing.
+			if err := retainReturnedContent(dir, "control-pair", map[string]interface{}{}, content); err != nil {
+				t.Fatal(err)
+			}
+			stem := "candidate-pair-0"
+			if scenario.exchange {
+				record := syntheticExchangeRecord()
+				record.Complete = !scenario.incomplete
+				if err := retainMCPHTTPExchanges(dir, "candidate-pair", record); err != nil {
+					t.Fatal(err)
+				}
+				stem += "-exchange"
+			} else if err := retainReturnedContent(dir, "candidate-pair", map[string]interface{}{}, content); err != nil {
+				t.Fatal(err)
+			}
+			if scenario.tamper {
+				path := filepath.Join(dir, stem+".bin")
+				body, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body[0] ^= 1
+				if err := os.WriteFile(path, body, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var listed []os.DirEntry
+			for _, entry := range entries {
+				if entry.Name() != stem+".json" {
+					listed = append(listed, entry)
+				}
+			}
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = root.Close() }()
+			err = verifyReturnedContentEntries(root, &orderedDiagnosticDirectory{entries: listed})
+			if scenario.wantError == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), scenario.wantError) {
+				t.Fatalf("listed candidate was not verified: %v", err)
+			}
+		})
+	}
+}
