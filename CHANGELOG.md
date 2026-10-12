@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-12
+
+The corpus moves from v2.14.0 (266 active cases) to v2.15.0 (268 active cases). The scoring version, result formats, and the reusable Action interface are unchanged. MCP HTTP cases now run against a fresh target per case, so a v2.14.0 outcome that depended on state left by an earlier case can differ under v2.15.0.
+
+### Added
+
+- Paired SVG responses: an SVG carrying script injection and a static SVG graphic of the same media type, so rejecting every SVG fails the benign companion (#285).
+- Opt-in private diagnostics retain ordered MCP HTTP request and response bodies, status, media type, and capture completeness, and an offline verifier rejects incomplete or altered exchange pairs (#288).
+
+### Changed
+
+- Each logical MCP HTTP case starts a fresh managed target and keeps state across the steps of that case. Results record whether isolation was managed or unverified for an external listener (#285).
+- The runner requires Go 1.26 and builds with Go 1.26.9 and updated network dependencies (#289).
+
+### Fixed
+
+- Cases on `mirror.fixture.example.com` now reach the TLS fixture. The WebDAV collection case was previously scored from a DNS failure before any request was delivered (#284).
+- A response that starts with a refusal naming a policy, such as `blocked: media_policy: <reason>`, scores as a block. A page that quotes a refusal still scores as an upstream response (#284).
+- The portable benchmark launcher starts repeatedly on macOS and removes its generated configuration on exit while preserving stdin, signals, and the proxy's exit status (#282).
+- Retained diagnostics verify in bounded directory batches, so an invalid directory fails early (#290).
+
 ## [1.1.0] - 2026-09-26
 
 The corpus moves from v2.8.0 (254 cases) to v2.14.0 (266 active cases). The scoring version, result formats, and the reusable Action interface are unchanged.
