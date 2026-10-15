@@ -236,6 +236,17 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("schema_contract.families[0] digest disagrees with data_files", result.stderr)
 
+    def test_identity_verification_command_names_the_publisher(self) -> None:
+        self.prepare()
+        identity = json.loads(self.identity.read_text(encoding="utf-8"))
+        self.assertEqual(
+            "python3 scripts/release_build.py verify --release-dir <downloaded-release-directory>"
+            " --repository pipelab-org/agent-egress-bench",
+            identity["verification"]["command"],
+        )
+        self.assertEqual("luckyPipewrench/agent-egress-bench", identity["source"]["repository"])
+        self.assertEqual("luckyPipewrench/agent-egress-bench", identity["method_independence"]["method_owner"])
+
     def test_identity_carries_result_pointer_validator_and_schema_engine(self) -> None:
         self.prepare()
         data_files = json.loads(self.identity.read_text(encoding="utf-8"))["data_files"]
@@ -779,6 +790,11 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertIn(f"corpus `{identity['corpus']['version']}` ({identity['corpus']['case_count']} cases)", notes)
         self.assertIn("## Verify downloads", notes)
         self.assertIn("sha256sum -c checksums.txt", notes)
+        self.assertIn(
+            f"gh attestation verify agent-egress-bench_{identity['release']['version']}_linux_amd64.tar.gz"
+            " --repo pipelab-org/agent-egress-bench",
+            notes,
+        )
         self.assertLess(len(notes.splitlines()), 30)
         for entry in catalog["schemas"]:
             self.assertNotIn(entry["$id"], notes)

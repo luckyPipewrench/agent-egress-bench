@@ -51,6 +51,8 @@ RELEASE_NOTES_NAME = "release-notes.md"
 RELEASE_NOTES_MARKER = "<!-- agent-egress-bench-release-workflow-v1 -->"
 METHOD_INDEPENDENCE_PATH = "contracts/method-independence-v1.json"
 REPOSITORY = "luckyPipewrench/agent-egress-bench"
+# The release workflow signs attestations in this repository, separate from the stable REPOSITORY identifier.
+PUBLISHER_REPOSITORY = "pipelab-org/agent-egress-bench"
 RAW_SCHEMA_URL = "https://raw.githubusercontent.com/luckyPipewrench/agent-egress-bench/{commit}/{path}"
 # "examples" carries the operator kit: the tool-profile template the runner
 # requires, the gateway plugin template, the runner skeleton, and the reference
@@ -379,7 +381,7 @@ def build_identity(repo: Path, tag: str, version: str, commit: str, snapshot: bo
         "schema_contract": {"artifacts_manifest_path": "contracts/artifacts.json", "artifacts_manifest_sha256": sha256_file(repo / "contracts/artifacts.json"), "families": contract_families(repo)},
         "method_independence": method_independence_identity(repo),
         "data_files": {name: sha256_file(repo / name) for name in data},
-        "verification": {"checksums": {"algorithm": "sha256", "path": CHECKSUM_NAME}, "command": "python3 scripts/release_build.py verify --release-dir <downloaded-release-directory>"},
+        "verification": {"checksums": {"algorithm": "sha256", "path": CHECKSUM_NAME}, "command": f"python3 scripts/release_build.py verify --release-dir <downloaded-release-directory> --repository {PUBLISHER_REPOSITORY}"},
     }
 
 
@@ -686,7 +688,7 @@ def rendered_release_notes(identity: dict[str, Any], catalog_bytes: bytes) -> by
         "",
         "```bash",
         "sha256sum -c checksums.txt",
-        f"gh attestation verify agent-egress-bench_{version}_linux_amd64.tar.gz --repo {REPOSITORY}",
+        f"gh attestation verify agent-egress-bench_{version}_linux_amd64.tar.gz --repo {PUBLISHER_REPOSITORY}",
         "```",
         "",
         f"The detailed schema inventory remains in `{catalog_name}`, and `{bundle_name}` supports offline validation. See [Schema identifiers and discovery](https://github.com/{REPOSITORY}/blob/{commit}/docs/SCHEMAS.md) for the validation walkthrough and adapter quickstarts.",
