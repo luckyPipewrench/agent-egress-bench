@@ -4,8 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import subprocess
 import re
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -72,7 +76,7 @@ def check_workflow(path: Path) -> None:
         "contents: read",
         "--platform linux/amd64",
         "--load",
-        "release_build.py verify --release-dir dist/release --repo-root .",
+        'release_build.py verify --release-dir dist/release --repo-root . --repository "$GITHUB_REPOSITORY"',
         "agent-egress-bench-release-rehearsal-final-${{ github.sha }}",
     )
     if any(value not in rehearse_image for value in rehearsal_required) or "--push" in rehearse_image or "runner-image.ref" in rehearse_image:
@@ -86,6 +90,9 @@ def check_workflow(path: Path) -> None:
     if "subject-path: dist/release/*\n" not in attest:
         raise AssertionError("all release assets are not attested")
     image_required = (
+        'image_repository="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agent-egress-bench-runner"',
+        'image="$image_repository:$GITHUB_REF_NAME"',
+        'echo "repository=$image_repository" >> "$GITHUB_OUTPUT"',
         "needs: [release, attest]",
         "if: github.event_name == 'push'",
         "fetch-depth: 0",
@@ -108,13 +115,13 @@ def check_workflow(path: Path) -> None:
         'docker image rm "$RUNNER_IMAGE"',
         'docker image inspect "$RUNNER_IMAGE"',
         'printf \'{}\\n\' > "$anonymous_config/config.json"',
-        "subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner",
+        "subject-name: ${{ steps.publish.outputs.repository }}",
         "subject-digest: ${{ steps.publish.outputs.digest }}",
         "push-to-registry: true",
         "runner-image.ref",
         'cp "$identity_dir/runner-image.ref" dist/release/runner-image.ref',
         "release_build.py checksums",
-        "release_build.py verify --release-dir dist/release --repo-root .",
+        'release_build.py verify --release-dir dist/release --repo-root . --repository "$GITHUB_REPOSITORY"',
         "subject-path: dist/release/*",
         "name: agent-egress-bench-release-final-${{ github.sha }}",
     )
@@ -146,9 +153,9 @@ def check_publish_workflow(path: Path) -> None:
         'tag_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"',
         '[[ "$tag_commit" == "$(git rev-parse HEAD)" ]]',
         'gh release download "$RELEASE_TAG" --dir dist/release',
-        "release_build.py verify --release-dir dist/release --repo-root .",
+        'release_build.py verify --release-dir dist/release --repo-root . --repository "$GITHUB_REPOSITORY"',
         'for asset in dist/release/*; do',
-        'gh attestation verify "$asset" --repo luckyPipewrench/agent-egress-bench',
+        'gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY"',
         'release_publish.py --tag "$RELEASE_TAG" --dist dist/release --finalize',
     )
     if "permissions:\n  contents: read" not in preamble or "contents: write" in preamble:
@@ -180,6 +187,87 @@ def check_validate_release_integration(path: Path) -> None:
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
+    @staticmethod
+    def named_step_script(workflow: Path, name: str) -> str:
+        source = workflow.read_text(encoding="utf-8")
+        step = source.split(f"name: {name}\n", 1)[1]
+        script = step.split("        run: |\n", 1)[1].split("\n      - ", 1)[0]
+        return textwrap.dedent(script)
+
+    def test_publish_image_lowercases_runtime_owner_and_exports_subject(self) -> None:
+        script = self.named_step_script(WORKFLOW, "Build and publish the multi-architecture runner image")
+        for owner in ("pipelab-org", "PipeLab-Org", "PIPELAB-ORG", "luckyPipewrench"):
+            with self.subTest(owner=owner), tempfile.TemporaryDirectory() as directory:
+                workspace = Path(directory)
+                bin_dir = workspace / "bin"
+                bin_dir.mkdir()
+                (bin_dir / "git").write_text("#!/bin/sh\nprintf '%040d\\n' 0\n", encoding="utf-8")
+                (bin_dir / "docker").write_text(
+                    "#!/usr/bin/python3\n"
+                    "import json, pathlib, sys\n"
+                    "args = sys.argv[1:]\n"
+                    "if args[:2] == ['buildx', 'build']:\n"
+                    "  pathlib.Path(args[args.index('--metadata-file') + 1]).write_text(json.dumps({'containerimage.digest': 'sha256:' + 'a' * 64}))\n"
+                    "elif args[:3] == ['buildx', 'imagetools', 'inspect']:\n"
+                    "  print(json.dumps({'manifests': [{'platform': {'os': 'linux', 'architecture': arch}} for arch in ('amd64', 'arm64')]}))\n"
+                    "elif args[:1] == ['run']: print('aeb-gauntlet 1.3.0 ' + '0' * 40)\n"
+                    "else: raise SystemExit(98)\n", encoding="utf-8",
+                )
+                for name in ("git", "docker"):
+                    (bin_dir / name).chmod(0o755)
+                outputs = workspace / "outputs"
+                result = subprocess.run(
+                    ["bash", "-c", script], cwd=workspace, text=True, capture_output=True, timeout=15,
+                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                         "GITHUB_REPOSITORY_OWNER": owner, "GITHUB_REF_NAME": "v1.3.0",
+                         "RUNNER_TEMP": str(workspace), "GITHUB_OUTPUT": str(outputs),
+                         "GITHUB_STEP_SUMMARY": str(workspace / "summary")},
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                values = dict(line.split("=", 1) for line in outputs.read_text().splitlines())
+                repository = f"ghcr.io/{owner.lower()}/agent-egress-bench-runner"
+                self.assertEqual(repository, values["repository"])
+                self.assertEqual(f"{repository}@sha256:{'a' * 64}", values["ref"])
+                self.assertEqual(values["ref"] + "\n", (workspace / "aeb-runner-image/runner-image.ref").read_text())
+
+    def test_publish_assets_use_runtime_repository_with_original_case(self) -> None:
+        script = self.named_step_script(PUBLISH_WORKFLOW, "Re-verify the downloaded release and every attestation")
+        for repository in ("pipelab-org/agent-egress-bench", "PipeLab-Org/Agent-Egress-Bench", "luckyPipewrench/agent-egress-bench"):
+            with self.subTest(repository=repository), tempfile.TemporaryDirectory() as directory:
+                workspace = Path(directory)
+                release = workspace / "dist/release"
+                release.mkdir(parents=True)
+                for name in ("runner-image.ref", "checksums.txt"):
+                    (release / name).write_text("fixture\n", encoding="utf-8")
+                bin_dir = workspace / "bin"
+                bin_dir.mkdir()
+                for name in ("python3", "gh"):
+                    executable = bin_dir / name
+                    executable.write_text(
+                        "#!/usr/bin/python3\n"
+                        "import json, os, pathlib, sys\n"
+                        "with open(os.environ['MOCK_COMMAND_LOG'], 'a') as log:\n"
+                        "  log.write(json.dumps([pathlib.Path(sys.argv[0]).name, *sys.argv[1:]]) + '\\n')\n",
+                        encoding="utf-8",
+                    )
+                    executable.chmod(0o755)
+                log = workspace / "calls"
+                result = subprocess.run(
+                    ["bash", "-c", script], cwd=workspace, text=True, capture_output=True, timeout=15,
+                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                         "GITHUB_REPOSITORY": repository, "MOCK_COMMAND_LOG": str(log)},
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                calls = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertEqual(
+                    ["python3", "scripts/release_build.py", "verify", "--release-dir", "dist/release",
+                     "--repo-root", ".", "--repository", repository], calls[0],
+                )
+                self.assertEqual(3, len(calls))
+                for command in calls[1:]:
+                    self.assertEqual(["gh", "attestation", "verify"], command[:3])
+                    self.assertEqual(["--repo", repository], command[-2:])
+
     def test_workflow_has_release_and_dry_run_boundaries(self) -> None:
         check_workflow(WORKFLOW)
 
@@ -317,7 +405,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "release.yaml"
             workflow = WORKFLOW.read_text(encoding="utf-8")
-            target = "          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .\n"
+            target = '          python3 scripts/release_build.py verify --release-dir dist/release --repo-root . --repository "$GITHUB_REPOSITORY"\n'
             injected = "          printf 'ghcr.io/example.invalid/image@sha256:%064d\\n' 0 > dist/release/runner-image.ref\n"
             candidate.write_text(workflow.replace(target, injected + target, 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "no-publish image rehearsal"):
@@ -326,7 +414,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_manual_publication_asset_attestation_is_load_bearing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "publish-release.yaml"
-            candidate.write_text(PUBLISH_WORKFLOW.read_text(encoding="utf-8").replace('gh attestation verify "$asset" --repo luckyPipewrench/agent-egress-bench', "true", 1), encoding="utf-8")
+            candidate.write_text(PUBLISH_WORKFLOW.read_text(encoding="utf-8").replace('gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY"', "true", 1), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "manual publication"):
                 check_publish_workflow(candidate)
 

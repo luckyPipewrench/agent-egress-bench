@@ -554,6 +554,48 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("checksum mismatch", result.stderr)
 
+
+    def image_release_fixture(self) -> Path:
+        self.prepare()
+        dist = self.root / "dist"
+        self.invoke("data-bundle", "--repo-root", str(self.root), "--identity", str(self.identity), "--dist", str(dist))
+        identity = self.identity.read_bytes()
+        self.write_runner_archives(dist, identity, json.loads(identity))
+        return dist
+
+    def test_image_namespace_matches_only_the_explicit_release_repository(self) -> None:
+        dist = self.image_release_fixture()
+        for owner in ("pipelab-org", "luckypipewrench"):
+            (dist / "runner-image.ref").write_text(
+                f"ghcr.io/{owner}/agent-egress-bench-runner@sha256:{'a' * 64}\n", encoding="utf-8"
+            )
+            self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+            for repository in (
+                "pipelab-org/agent-egress-bench", "PipeLab-Org/Agent-Egress-Bench",
+                "PIPELAB-ORG/agent-egress-bench", "luckyPipewrench/agent-egress-bench",
+                "LUCKYPIPEWRENCH/Agent-Egress-Bench",
+            ):
+                with self.subTest(image_owner=owner, repository=repository):
+                    matches = owner == repository.split("/")[0].lower()
+                    result = self.invoke(
+                        "verify", "--release-dir", str(dist), "--repository", repository,
+                        expect=0 if matches else 1,
+                    )
+                    if not matches:
+                        self.assertIn("not the canonical published image reference", result.stderr)
+
+    def test_image_verification_fails_closed_without_repository_identity(self) -> None:
+        dist = self.image_release_fixture()
+        (dist / "runner-image.ref").write_text(
+            f"ghcr.io/pipelab-org/agent-egress-bench-runner@sha256:{'b' * 64}\n", encoding="utf-8"
+        )
+        self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
+        for repository in (None, "", "pipelab-org", "/agent-egress-bench", "pipelab-org/", "a/b/c"):
+            with self.subTest(repository=repository):
+                arguments = [] if repository is None else ["--repository", repository]
+                result = self.invoke("verify", "--release-dir", str(dist), *arguments, expect=1)
+                self.assertIn("--repository OWNER/REPO is required", result.stderr)
+
     def test_release_checksums_bind_the_published_runner_image_identity(self) -> None:
         self.prepare()
         dist = self.root / "dist"
@@ -565,7 +607,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
         checksums = (dist / "checksums.txt").read_text(encoding="utf-8")
         self.assertIn(f"{hashlib.sha256(image_identity.read_bytes()).hexdigest()}  runner-image.ref", checksums)
-        self.invoke("verify", "--release-dir", str(dist))
+        self.invoke("verify", "--release-dir", str(dist), "--repository", "luckyPipewrench/agent-egress-bench")
 
     def test_release_verifier_rejects_a_noncanonical_runner_image_identity(self) -> None:
         self.prepare()
@@ -575,7 +617,7 @@ class ReleaseBuildTest(unittest.TestCase):
         self.write_runner_archives(dist, identity, json.loads(identity))
         (dist / "runner-image.ref").write_text(f"registry.invalid/runner@sha256:{'a' * 64}\n", encoding="utf-8")
         self.invoke("checksums", "--identity", str(self.identity), "--dist", str(dist))
-        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist)], text=True, capture_output=True)
+        result = subprocess.run([sys.executable, str(SCRIPT), "verify", "--release-dir", str(dist), "--repository", "pipelab-org/agent-egress-bench"], text=True, capture_output=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("runner-image.ref is not the canonical published image reference", result.stderr)
 

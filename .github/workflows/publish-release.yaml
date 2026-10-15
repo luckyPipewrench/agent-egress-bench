@@ -55,9 +55,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .
+          python3 scripts/release_build.py verify --release-dir dist/release --repo-root . --repository "$GITHUB_REPOSITORY"
           for asset in dist/release/*; do
-            gh attestation verify "$asset" --repo luckyPipewrench/agent-egress-bench
+            gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY"
           done
 
       - name: Publish the exact owned draft

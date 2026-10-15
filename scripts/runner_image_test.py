@@ -15,6 +15,151 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RunnerImageContractTest(unittest.TestCase):
+
+    def publisher_probe(
+        self, image: str, repository: str, workflow: str, *,
+        doctor: bool, reference_suffix: str = "\n", waiver: bool = False,
+    ) -> tuple[subprocess.CompletedProcess[str], list[list[str]], list[list[str]]]:
+        """Model a bundle that verifies only for its own repository and signer."""
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / "profile.json").write_text("{}\n", encoding="utf-8")
+            (workspace / "image.ref").write_text(image + reference_suffix, encoding="utf-8")
+            (workspace / "bundle.json").write_text(
+                json.dumps({"repository": repository, "workflow": workflow}), encoding="utf-8"
+            )
+            (workspace / "root.json").write_text("{}\n", encoding="utf-8")
+            bin_dir = workspace / "bin"
+            bin_dir.mkdir()
+            gh_log, docker_log = workspace / "gh.log", workspace / "docker.log"
+            (bin_dir / "gh").write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "with open(os.environ['MOCK_GH_LOG'], 'a') as log: log.write(json.dumps(args) + '\\n')\n"
+                "assert args[:2] == ['attestation', 'verify']\n"
+                "bundle = json.loads(pathlib.Path(args[args.index('--bundle') + 1]).read_text())\n"
+                "expected = {'--repo': bundle['repository'], '--signer-workflow': bundle['workflow']}\n"
+                "for flag, value in expected.items():\n"
+                "  if flag not in args or args[args.index(flag) + 1] != value: raise SystemExit(1)\n"
+                "assert '--custom-trusted-root' in args\n",
+                encoding="utf-8",
+            )
+            (bin_dir / "docker").write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "with open(os.environ['MOCK_DOCKER_LOG'], 'a') as log: log.write(json.dumps(args) + '\\n')\n"
+                "if args[:1] in (['pull'], ['build']): raise SystemExit(97)\n"
+                "if args[:2] == ['image', 'inspect']:\n"
+                "  if '--format' in args: print('sha256:test')\n"
+                "elif args[:1] == ['info']: print('[]')\n"
+                "elif args[:1] == ['run']:\n"
+                "  volumes = [args[i + 1] for i, value in enumerate(args) if value == '--volume']\n"
+                "  output = next(value.split(':/aeb-output:', 1)[0] for value in volumes if ':/aeb-output:' in value)\n"
+                "  pathlib.Path(output, 'summary.json').write_text(json.dumps({'measurement_status': 'measured'}))\n"
+                "else: raise SystemExit(98)\n",
+                encoding="utf-8",
+            )
+            for name in ("gh", "docker"):
+                (bin_dir / name).chmod(0o755)
+            command = [
+                str(ROOT / "scripts/run-oci-action.sh"),
+                "--profile", "profile.json", "--adapter", "dryrun", "--image", image,
+                "--image-metadata", "image.ref", "--image-attestation", "bundle.json",
+                "--attestation-trusted-root", "root.json",
+            ]
+            if doctor:
+                command.append("--doctor-json")
+            if waiver:
+                command.append("--allow-unverified-image")
+            result = subprocess.run(
+                command, cwd=workspace, text=True, capture_output=True, timeout=15,
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                     "MOCK_GH_LOG": str(gh_log), "MOCK_DOCKER_LOG": str(docker_log)},
+            )
+            def calls(path: Path) -> list[list[str]]:
+                return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+            return result, calls(gh_log), calls(docker_log)
+
+    def test_current_and_legacy_publisher_bindings(self) -> None:
+        for owner, repository in (
+            ("pipelab-org", "pipelab-org/agent-egress-bench"),
+            ("luckypipewrench", "luckyPipewrench/agent-egress-bench"),
+        ):
+            for doctor in (False, True):
+                with self.subTest(owner=owner, doctor=doctor):
+                    image = f"ghcr.io/{owner}/agent-egress-bench-runner@sha256:{'a' * 64}"
+                    workflow = f"github.com/{repository}/.github/workflows/release.yaml"
+                    result, gh_calls, _ = self.publisher_probe(image, repository, workflow, doctor=doctor)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(1, len(gh_calls))
+                    self.assertEqual(repository, gh_calls[0][gh_calls[0].index("--repo") + 1])
+                    if doctor:
+                        self.assertTrue(json.loads(result.stdout)["publisher_verified"])
+
+    def test_cross_paired_publisher_bindings_fail_in_both_paths(self) -> None:
+        bindings = (
+            ("pipelab-org", "pipelab-org/agent-egress-bench"),
+            ("luckypipewrench", "luckyPipewrench/agent-egress-bench"),
+        )
+        for index, (owner, repository) in enumerate(bindings):
+            other = bindings[1 - index][1]
+            # Enforce both identity fields independently, as well as a wholly
+            # cross-paired publisher. Neither field may be omitted.
+            for bundle_repo, signer_repo in ((other, other), (other, repository), (repository, other)):
+                for doctor in (False, True):
+                    with self.subTest(owner=owner, repo=bundle_repo, signer=signer_repo, doctor=doctor):
+                        image = f"ghcr.io/{owner}/agent-egress-bench-runner@sha256:{'b' * 64}"
+                        workflow = f"github.com/{signer_repo}/.github/workflows/release.yaml"
+                        result, gh_calls, docker_calls = self.publisher_probe(
+                            image, bundle_repo, workflow, doctor=doctor,
+                        )
+                        self.assertNotEqual(0, result.returncode)
+                        self.assertEqual(1, len(gh_calls))
+                        self.assertFalse(any(call[:1] == ["run"] for call in docker_calls))
+                        if doctor:
+                            self.assertFalse(json.loads(result.stdout)["publisher_verified"])
+                        else:
+                            self.assertIn("metadata provenance verification failed", result.stderr)
+
+    def test_unknown_publisher_requires_waiver_in_both_paths(self) -> None:
+        repository = "pipelab-org/agent-egress-bench"
+        workflow = f"github.com/{repository}/.github/workflows/release.yaml"
+        for namespace in (
+            "ghcr.io/unknown/agent-egress-bench-runner",
+            "ghcr.io/pipelab-org/agent-egress-bench-runner-extra",
+            "ghcr.io/pipelab-org/agent-egress-bench-runner/nested",
+            "ghcr.io/PipeLab-Org/agent-egress-bench-runner",
+            "ghcr.io/pipelab-org/agent-egress-bench-runner:tag",
+        ):
+            for doctor in (False, True):
+                for waiver in (False, True):
+                    with self.subTest(namespace=namespace, doctor=doctor, waiver=waiver):
+                        image = f"{namespace}@sha256:{'c' * 64}"
+                        result, gh_calls, docker_calls = self.publisher_probe(
+                            image, repository, workflow, doctor=doctor, waiver=waiver,
+                        )
+                        if waiver:
+                            self.assertEqual(0, result.returncode, result.stderr)
+                        else:
+                            self.assertNotEqual(0, result.returncode)
+                            self.assertFalse(any(call[:1] == ["run"] for call in docker_calls))
+                        self.assertEqual([], gh_calls)
+
+    def test_signed_reference_bytes_match_in_both_paths(self) -> None:
+        repository = "pipelab-org/agent-egress-bench"
+        workflow = f"github.com/{repository}/.github/workflows/release.yaml"
+        image = f"ghcr.io/pipelab-org/agent-egress-bench-runner@sha256:{'d' * 64}"
+        for suffix in ("", "\n\n", "\r\n"):
+            for doctor in (False, True):
+                with self.subTest(suffix=suffix, doctor=doctor):
+                    result, _, docker_calls = self.publisher_probe(
+                        image, repository, workflow, doctor=doctor, reference_suffix=suffix,
+                    )
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse(any(call[:1] == ["run"] for call in docker_calls))
+
     def test_local_offline_doctor_reports_ready_without_starting_a_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
@@ -524,7 +669,7 @@ class RunnerImageContractTest(unittest.TestCase):
         self.assertIn("--push", workflow)
         self.assertIn("reported_version=", workflow)
         self.assertIn('{("linux", "amd64"), ("linux", "arm64")}', workflow)
-        self.assertIn("subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner", workflow)
+        self.assertIn("subject-name: ${{ steps.publish.outputs.repository }}", workflow)
         self.assertIn("subject-digest: ${{ steps.publish.outputs.digest }}", workflow)
         self.assertIn("runner-image.ref", workflow)
         self.assertIn("release_build.py checksums", workflow)

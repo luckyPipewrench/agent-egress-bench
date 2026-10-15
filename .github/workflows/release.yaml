@@ -95,7 +95,7 @@ jobs:
             .
           reported_version="$(docker run --rm "$local_image" --version)"
           [[ "$reported_version" == "aeb-gauntlet $version $release_commit" ]]
-          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .
+          python3 scripts/release_build.py verify --release-dir dist/release --repo-root . --repository "$GITHUB_REPOSITORY"
 
       - name: Upload the no-publish final asset set
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -186,7 +186,8 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           release_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
-          image="ghcr.io/luckypipewrench/agent-egress-bench-runner:$GITHUB_REF_NAME"
+          image_repository="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agent-egress-bench-runner"
+          image="$image_repository:$GITHUB_REF_NAME"
           metadata_file="$RUNNER_TEMP/aeb-image-metadata.json"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
@@ -219,6 +220,7 @@ jobs:
           PY
           reported_version="$(docker run --rm --platform linux/amd64 "$pinned_image" --version)"
           [[ "$reported_version" == "aeb-gauntlet $version $release_commit" ]]
+          echo "repository=$image_repository" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "ref=$pinned_image" >> "$GITHUB_OUTPUT"
           identity_dir="$RUNNER_TEMP/aeb-runner-image"
@@ -230,7 +232,7 @@ jobs:
       - name: Attest the published runner image
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ghcr.io/luckypipewrench/agent-egress-bench-runner
+          subject-name: ${{ steps.publish.outputs.repository }}
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
 
@@ -272,7 +274,7 @@ jobs:
           cp "$identity_dir/runner-image.ref" dist/release/runner-image.ref
           cp dist/release/release-identity.json "$RUNNER_TEMP/release-identity.json"
           python3 scripts/release_build.py checksums --identity "$RUNNER_TEMP/release-identity.json" --dist dist/release
-          python3 scripts/release_build.py verify --release-dir dist/release --repo-root .
+          python3 scripts/release_build.py verify --release-dir dist/release --repo-root . --repository "$GITHUB_REPOSITORY"
 
       - name: Attest the final release assets
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

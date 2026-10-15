@@ -975,7 +975,7 @@ def binary_archives(identity: dict[str, Any]) -> dict[str, tuple[str, str]]:
     }
 
 
-def verify_release(release_dir: Path, repo: Path | None, executable: Path | None, validator_executable: Path | None = None) -> None:
+def verify_release(release_dir: Path, repo: Path | None, executable: Path | None, validator_executable: Path | None = None, repository: str | None = None) -> None:
     release_dir = release_dir.resolve()
     identity_path, checksums_path = release_dir / IDENTITY_NAME, release_dir / CHECKSUM_NAME
     if not identity_path.is_file() or not checksums_path.is_file():
@@ -989,7 +989,10 @@ def verify_release(release_dir: Path, repo: Path | None, executable: Path | None
             fail(f"checksum mismatch: {name}")
     image_reference = release_dir / "runner-image.ref"
     if image_reference.is_file():
-        expected_prefix = b"ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:"
+        if repository is None or re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository) is None:
+            fail("--repository OWNER/REPO is required to verify runner-image.ref")
+        owner = repository.split("/", 1)[0].lower()
+        expected_prefix = f"ghcr.io/{owner}/agent-egress-bench-runner@sha256:".encode("ascii")
         value = image_reference.read_bytes()
         digest = value.removeprefix(expected_prefix).removesuffix(b"\n")
         if not value.startswith(expected_prefix) or value != expected_prefix + digest + b"\n" or re.fullmatch(rb"[0-9a-f]{64}", digest) is None:
@@ -1180,6 +1183,7 @@ def main() -> int:
     verify = commands.add_parser("verify")
     verify.add_argument("--release-dir", type=Path, required=True)
     verify.add_argument("--repo-root", type=Path)
+    verify.add_argument("--repository", help="GitHub OWNER/REPO that published the release; required with runner-image.ref")
     verify.add_argument("--executable", type=Path)
     verify.add_argument("--validator-executable", type=Path)
     args = parser.parse_args()
@@ -1204,7 +1208,7 @@ def main() -> int:
         elif args.command == "checksums":
             print(write_checksums(args.dist, args.identity))
         elif args.command == "verify":
-            verify_release(args.release_dir, args.repo_root, args.executable, args.validator_executable)
+            verify_release(args.release_dir, args.repo_root, args.executable, args.validator_executable, args.repository)
     except ReleaseError as exc:
         print(f"release verification failed: {exc}", file=sys.stderr)
         return 1

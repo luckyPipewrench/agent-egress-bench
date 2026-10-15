@@ -30,6 +30,8 @@ Each release contains:
 - `runner-image.ref` with the full digest-pinned OCI image reference.
 - GitHub Artifact Attestations for every release asset.
 
+New runner images publish to `ghcr.io/pipelab-org/agent-egress-bench-runner` and verify against `pipelab-org/agent-egress-bench`. Releases through `v1.2.0` remain at `ghcr.io/luckypipewrench/agent-egress-bench-runner` and verify against `luckyPipewrench/agent-egress-bench`. Both use the corresponding repository's `.github/workflows/release.yaml` signer. A redirect doesn't change an existing attestation's publisher identity.
+
 The platform archives are the bench tools (`aeb-gauntlet` and `aeb-validate`). The official Pipelock Gauntlet entrypoint is `scripts/run-pipelock-gauntlet.sh`, and that script is Linux-only: it downloads Linux Pipelock assets, uses Landlock and seccomp, and refuses any other kernel with `the portable Pipelock runner currently supports Linux only`. A macOS archive lets you inspect cases and validate saved artifacts on that host. It does not mean the full Pipelock Gauntlet runs on a Mac.
 
 Opening an N-1 artifact with a reader from tagged release N is family-specific. Pin package verification to the tag that produced the archives. [GOVERNANCE.md](GOVERNANCE.md#mixed-release-readers) records which saved run artifacts still verify and which fail with a named machine-readable error.
@@ -45,6 +47,8 @@ mkdir aeb-release/extracted
 tar -xzf aeb-release/agent-egress-bench_0.1.1_data.tar.gz -C aeb-release/extracted
 (cd aeb-release/extracted && python3 scripts/release_build.py verify --release-dir ..)
 ```
+
+When `runner-image.ref` is present, pass `--repository` with the release's publisher repository. Use `--repository luckyPipewrench/agent-egress-bench` for releases through `v1.2.0` and `--repository pipelab-org/agent-egress-bench` for new releases. The verifier requires the image namespace to match that repository's owner and refuses missing repository identity. Use the verifier bundled with a historical release for that release.
 
 The verifier rejects a missing asset, a checksum mismatch, an archive whose embedded identity differs from the release identity, a changed corpus or schema file, a schema catalog or bundle that disagrees with the release commit, or a data bundle whose file list differs from the recorded tree.
 

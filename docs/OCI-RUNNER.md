@@ -22,11 +22,13 @@ Build both release architectures with the same Dockerfile:
 docker buildx build --platform linux/amd64,linux/arm64 --build-arg AEB_VERSION=local --build-arg AEB_COMMIT=f8078cb --output type=oci,dest=/tmp/aeb-gauntlet-local.oci.tar .
 ```
 
-The tagged release workflow publishes the multi-architecture index to `ghcr.io/luckypipewrench/agent-egress-bench-runner`, verifies that the index contains both required platforms, runs the amd64 image, and records the full digest-pinned reference in the signed `runner-image.ref` release asset.
+The tagged release workflow publishes the multi-architecture index to `ghcr.io/pipelab-org/agent-egress-bench-runner`, verifies that the index contains both required platforms, runs the amd64 image, and records the full digest-pinned reference in the signed `runner-image.ref` release asset.
 
 The workflow logs out of GHCR and pulls the digest again before the GitHub Release can be created. GitHub documents that a newly published container package can start private, so the first publication must be made public in the package settings and rerun if that anonymous pull fails; a public package can then be pulled by an outside lab without credentials. See [Configuring a package's access control and visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 
-No published runner-image digest exists for this unreleased change, so this document doesn't invent one. After the first tagged publication, use the exact `ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:...` value in `runner-image.ref` and never replace it with a tag in a reproducibility record. The release checksums and GitHub attestation cover that identity file.
+Use the exact digest-pinned value in `runner-image.ref` and never replace it with a tag in a reproducibility record. The release checksums and GitHub attestation cover that identity file.
+
+Releases through `v1.2.0` remain at `ghcr.io/luckypipewrench/agent-egress-bench-runner` and verify against `luckyPipewrench/agent-egress-bench` and its `.github/workflows/release.yaml` signer. New releases use `ghcr.io/pipelab-org/agent-egress-bench-runner` and the `pipelab-org/agent-egress-bench` identity with the same workflow path. The requested image repository selects one publisher identity; verification won't accept the other identity for that image.
 
 ## Reusable GitHub Action
 
@@ -56,7 +58,7 @@ jobs:
 
 A real tool workflow selects `proxy` or `mcp-gateway` and supplies its endpoints, managed start commands, fixture switch, and other adapter settings as a JSON string array in `runner-args`; the adapter contract and complete command are documented in [RUNNER.md](RUNNER.md).
 
-When `image` is omitted, the Action builds the image from its own pinned Action checkout and needs network access for uncached base images and Go modules. When `image` is set, the Action requires the official `ghcr.io/luckypipewrench/agent-egress-bench-runner` repository, an immutable digest, and the matching signed `runner-image.ref` release asset. Digest pinning fixes the bytes while the signed reference proves which release workflow published them.
+When `image` is omitted, the Action builds the image from its own pinned Action checkout and needs network access for uncached base images and Go modules. When `image` is set, the Action requires the current `ghcr.io/pipelab-org/agent-egress-bench-runner` or legacy `ghcr.io/luckypipewrench/agent-egress-bench-runner` repository, an immutable digest, and the matching signed `runner-image.ref` release asset. Digest pinning fixes the bytes while the signed reference proves which release workflow published them.
 
 A lab using a reviewed mirror or custom image must set `allow-unverified-image: 'true'`. That opt-in keeps mirrors available without letting an arbitrary input silently inherit the official publisher claim.
 

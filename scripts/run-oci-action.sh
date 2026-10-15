@@ -9,7 +9,8 @@ fail() {
 if (($#)); then
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
   doctor_mode=""
-  export GITHUB_WORKSPACE="$(pwd -P)"
+  GITHUB_WORKSPACE="$(pwd -P)"
+  export GITHUB_WORKSPACE
   export GITHUB_ACTION_PATH="$repo_root"
   export INPUT_OFFLINE=true
   export INPUT_RUNNER_ARGS='[]'
@@ -69,8 +70,35 @@ EOF
   done
 fi
 
+# These publisher identities remain distinct after a repository transfer.
+select_publisher_binding() {
+  publisher_repo=""
+  publisher_workflow=""
+  case "${1%@*}" in
+    ghcr.io/pipelab-org/agent-egress-bench-runner)
+      publisher_repo="pipelab-org/agent-egress-bench"
+      publisher_workflow="github.com/pipelab-org/agent-egress-bench/.github/workflows/release.yaml"
+      ;;
+    ghcr.io/luckypipewrench/agent-egress-bench-runner)
+      publisher_repo="luckyPipewrench/agent-egress-bench"
+      publisher_workflow="github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+signed_reference_matches() {
+  python3 - "$1" "$2" <<'PY'
+from pathlib import Path
+import sys
+
+if Path(sys.argv[1]).read_bytes() != (sys.argv[2] + "\n").encode("utf-8"):
+    raise SystemExit("signed runner image reference differs from the requested image")
+PY
+}
+
 run_doctor() {
-  local failed=0 code status remediation index value material_valid=true publisher_verified=false
+  local failed=0 code index value material_valid=true publisher_verified=false
   local metadata_check="" attestation_check="" trusted_root_check=""
   local workspace_check
   local -a codes=() statuses=() remediations=()
@@ -122,10 +150,10 @@ run_doctor() {
   if [[ "${INPUT_ALLOW_UNVERIFIED_IMAGE:-false}" == true ]]; then
     add_check publisher_material waived "publisher identity was not verified; retain this waiver in the run packet"
   else
-    if [[ "${INPUT_IMAGE:-}" == ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:* ]]; then
+    if select_publisher_binding "${INPUT_IMAGE:-}"; then
       add_check image_repository ok ""
     else
-      add_check image_repository invalid "use the approved release repository or pass --allow-unverified-image for a reviewed mirror"
+      add_check image_repository invalid "use a current or legacy release repository or pass --allow-unverified-image for a reviewed mirror"
     fi
     if command -v gh >/dev/null 2>&1; then
       add_check command_gh ok ""
@@ -152,13 +180,13 @@ run_doctor() {
       fi
     done
     if command -v gh >/dev/null 2>&1 && [[ "$material_valid" == true ]] &&
-      [[ "${INPUT_IMAGE:-}" == ghcr.io/luckypipewrench/agent-egress-bench-runner@sha256:* ]] &&
+      select_publisher_binding "${INPUT_IMAGE:-}" &&
       gh attestation verify "$metadata_check" \
-        --repo luckyPipewrench/agent-egress-bench \
-        --signer-workflow github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml \
+        --repo "$publisher_repo" \
+        --signer-workflow "$publisher_workflow" \
         --bundle "$attestation_check" \
         --custom-trusted-root "$trusted_root_check" >/dev/null 2>&1 &&
-      [[ "$(<"$metadata_check")" == "${INPUT_IMAGE:-}" ]]; then
+      signed_reference_matches "$metadata_check" "${INPUT_IMAGE:-}" >/dev/null 2>&1; then
       add_check publisher_identity ok ""
       publisher_verified=true
     else
@@ -245,10 +273,7 @@ done
 stage_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 trusted_stage="$(mktemp -d "$stage_parent/aeb-action-trusted.XXXXXX")"
 container_stage="$(mktemp -d "$stage_parent/aeb-action-container.XXXXXX")"
-cleanup() {
-  rm -rf -- "$trusted_stage" "$container_stage"
-}
-trap cleanup EXIT
+trap 'rm -rf -- "$trusted_stage" "$container_stage"' EXIT
 results_stage="$trusted_stage/results.jsonl"
 metadata_stage="$trusted_stage/run-metadata.json"
 summary_stage="$container_stage/summary.json"
@@ -279,16 +304,15 @@ workspace_file() {
 }
 
 verify_image_identity() {
-  local official_repository="ghcr.io/luckypipewrench/agent-egress-bench-runner"
-  [[ "$image" == "$official_repository"@sha256:* ]] || fail "image must use the approved release repository; set allow-unverified-image to true only for a reviewed mirror or custom image"
+  select_publisher_binding "$image" || fail "image must use the approved release repository (current or legacy); set allow-unverified-image to true only for a reviewed mirror or custom image"
   command -v gh >/dev/null 2>&1 || fail "GitHub CLI is required to verify runner image publisher identity"
 
   local metadata_path
   metadata_path="$(workspace_file image-metadata "${INPUT_IMAGE_METADATA:-}")"
   local verify_args=(
     attestation verify "$metadata_path"
-    --repo luckyPipewrench/agent-egress-bench
-    --signer-workflow github.com/luckyPipewrench/agent-egress-bench/.github/workflows/release.yaml
+    --repo "$publisher_repo"
+    --signer-workflow "$publisher_workflow"
   )
   if [[ "$offline" == true ]]; then
     local bundle_path trusted_root_path
@@ -300,13 +324,7 @@ verify_image_identity() {
   fi
   gh "${verify_args[@]}" >/dev/null || fail "runner image metadata provenance verification failed"
 
-  python3 - "$metadata_path" "$image" <<'PY' || fail "runner image does not match the signed release reference"
-from pathlib import Path
-import sys
-
-if Path(sys.argv[1]).read_bytes() != (sys.argv[2] + "\n").encode("utf-8"):
-    raise SystemExit("signed runner image reference differs from the requested image")
-PY
+  signed_reference_matches "$metadata_path" "$image" || fail "runner image does not match the signed release reference"
 }
 
 if [[ -n "$image" ]]; then
@@ -439,10 +457,12 @@ python3 "$GITHUB_ACTION_PATH/scripts/action_artifacts.py" publish \
   --metadata "$metadata_stage" || fail "cannot publish Action artifacts without following symlinks"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  echo "results=$results_path" >> "$GITHUB_OUTPUT"
-  echo "summary=$summary_path" >> "$GITHUB_OUTPUT"
-  echo "metadata=$metadata_path" >> "$GITHUB_OUTPUT"
-  echo "measurement-status=$measurement_status" >> "$GITHUB_OUTPUT"
+  {
+    echo "results=$results_path"
+    echo "summary=$summary_path"
+    echo "metadata=$metadata_path"
+    echo "measurement-status=$measurement_status"
+  } >> "$GITHUB_OUTPUT"
 fi
 
 exit "$run_exit"
