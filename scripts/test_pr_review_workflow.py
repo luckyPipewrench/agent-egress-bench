@@ -13,7 +13,7 @@ WORKFLOW = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows/pr-r
 MAX_WORKFLOW_BYTES = 65536
 # Upgrade trusted approvals in three stages: expand, migrate, then contract.
 # Both bootstrap and trusted validation must pass each stage before merging.
-APPROVED_REVIEWER_SHAS = ("3e8534e0dd621c62879238cc01d56f7e58e9d096",)
+APPROVED_REVIEWER_SHAS = ("3e8534e0dd621c62879238cc01d56f7e58e9d096", "4edcf46d02011c2aa1e305aff69d4d7100aae0ca")
 EXPECTED_CALLERS = ("""name: AI PR Review
 
 on:
@@ -47,6 +47,27 @@ jobs:
       review_token: ${{ secrets.GITHUB_TOKEN }}
       openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 """,)
+# After the move into pipelab-org: approve the organization caller shape before
+# the caller switches to it, because the contract check validates a proposed
+# caller with the approved list on the default branch. GitHub does not follow
+# repository redirects for reusable workflows, so the reviewer is loaded from
+# pipelab-org/pipelock.
+_ORG_CALLER = EXPECTED_CALLERS[0].replace(
+    "luckyPipewrench/pipelock/.github/workflows/pr-review-reusable.yaml@",
+    "pipelab-org/pipelock/.github/workflows/pr-review-reusable.yaml@",
+)
+if "author_association == 'OWNER'" in _ORG_CALLER:
+    _ORG_CALLER = _ORG_CALLER.replace(
+        "github.actor == 'luckyPipewrench' &&",
+        "github.actor == 'luckyPipewrench' &&\n"
+        "      github.actor_id == '142104046' &&\n"
+        "      github.run_attempt == '1' &&",
+    ).replace(
+        "github.event.comment.user.login == 'luckyPipewrench' &&",
+        "github.event.comment.user.login == 'luckyPipewrench' &&\n"
+        "      github.event.comment.user.id == 142104046 &&",
+    ).replace("author_association == 'OWNER'", "author_association == 'MEMBER'")
+EXPECTED_CALLERS += (_ORG_CALLER,)
 EXPECTED_CONTRACTS = (r"""name: Review caller contract
 
 on:
