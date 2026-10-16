@@ -13,16 +13,19 @@ jobs:
   review:
     if: >-
       github.actor == 'luckyPipewrench' &&
+      github.actor_id == '142104046' &&
+      github.run_attempt == '1' &&
       github.triggering_actor == 'luckyPipewrench' &&
       github.event.comment.user.login == 'luckyPipewrench' &&
-      github.event.comment.author_association == 'OWNER' &&
+      github.event.comment.user.id == 142104046 &&
+      github.event.comment.author_association == 'MEMBER' &&
       github.event.issue.pull_request &&
       (github.event.comment.body == '/review' ||
        github.event.comment.body == '/review deep')
     # Keep both pins equal until the nested source identity is verified live.
-    uses: luckyPipewrench/pipelock/.github/workflows/pr-review-reusable.yaml@3e8534e0dd621c62879238cc01d56f7e58e9d096
+    uses: pipelab-org/pipelock/.github/workflows/pr-review-reusable.yaml@4edcf46d02011c2aa1e305aff69d4d7100aae0ca
     with:
-      reviewer_sha: 3e8534e0dd621c62879238cc01d56f7e58e9d096
+      reviewer_sha: 4edcf46d02011c2aa1e305aff69d4d7100aae0ca
       pr_number: ${{ github.event.issue.number }}
       review_mode: >-
         ${{ github.event.comment.body == '/review deep' && 'deep' ||
